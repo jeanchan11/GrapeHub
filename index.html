@@ -1,0 +1,365 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GrapeHub</title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico?v=5">
+    <link rel="shortcut icon" href="/favicon.ico?v=5">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            /* Tema Escuro (Padrão) */
+            --dark-bg: 10 1 24; /* #0a0118 */
+            --dark-card: 20 8 46; /* #14082e */
+            --dark-sidebar: 5 0 12; /* #05000c */
+            --dark-text: 255 255 255; /* #ffffff */
+            --dark-card-hover: 28 14 58; /* #1c0e3a */
+            --dark-input: 20 8 46; /* #14082e */
+            --dark-tooltip: 10 1 24; /* #0a0118 */
+            --accent-color: 124 58 237; /* #7c3aed */
+            --accent-color-dark: 109 40 217; /* #6d28d9 */
+        }
+        
+        /* Tema Escuro Profundo (Preto) */
+        html.darker {
+            --dark-bg: 0 0 0; /* #000000 */
+            --dark-card: 10 10 10; /* #0a0a0a */
+            --dark-sidebar: 0 0 0; /* #000000 */
+            --dark-text: 229 229 229; /* #e5e5e5 */
+            --dark-card-hover: 18 18 18; /* #121212 */
+            --dark-input: 10 10 10; /* #0a0a0a */
+            --dark-tooltip: 0 0 0; /* #000000 */
+            --accent-color: 124 58 237; /* #7c3aed */
+            --accent-color-dark: 109 40 217; /* #6d28d9 */
+        }
+
+        /* Tema Claro (Branco) */
+        html.light {
+            --dark-bg: 255 255 255; /* #ffffff */
+            --dark-card: 248 250 252; /* #f8fafc */
+            --dark-sidebar: 241 245 249; /* #f1f5f9 */
+            --dark-text: 30 41 59; /* #1e293b */
+            --dark-card-hover: 241 245 249; /* #f1f5f9 */
+            --dark-input: 248 250 252; /* #f8fafc */
+            --dark-tooltip: 255 255 255; /* #ffffff */
+            --accent-color: 124 58 237; /* #7c3aed */
+            --accent-color-dark: 109 40 217; /* #6d28d9 */
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            plugins: [
+                function({ addVariant }) {
+                    addVariant('darker', '.darker &');
+                }
+            ],
+            theme: {
+                extend: {
+                    colors: {
+                        dark: {
+                            bg: 'rgb(var(--dark-bg) / <alpha-value>)',
+                            card: 'rgb(var(--dark-card) / <alpha-value>)',
+                            sidebar: 'rgb(var(--dark-sidebar) / <alpha-value>)',
+                            text: 'rgb(var(--dark-text) / <alpha-value>)',
+                            'card-hover': 'rgb(var(--dark-card-hover) / <alpha-value>)',
+                            input: 'rgb(var(--dark-input) / <alpha-value>)',
+                            tooltip: 'rgb(var(--dark-tooltip) / <alpha-value>)',
+                        },
+                        violet: {
+                            500: 'rgb(var(--accent-color) / <alpha-value>)',
+                            600: 'rgb(var(--accent-color-dark) / <alpha-value>)',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            transition: background-color 0.3s, color 0.3s;
+        }
+        
+        html.dark body {
+            background-color: var(--dark-bg);
+            color: var(--dark-text);
+        }
+
+        /* Global Card Styling for Dark Mode */
+        html.dark .dark\:bg-dark-card, html.dark .dark\:bg-dark-input, html.dark .dark\:bg-dark-sidebar {
+            border-color: rgba(255, 255, 255, 0.05) !important;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            position: relative;
+        }
+
+        /* Modals - Glassmorphism */
+        /* Claro (padrão) */
+        .modal-overlay {
+            background: rgba(15, 23, 42, 0.35);
+        }
+        .modal-container {
+            background: #FFFFFF;
+            border: 1px solid rgba(0, 0, 0, 0.07);
+            box-shadow: 0 8px 32px rgba(31, 38, 135, 0.10);
+            border-radius: 22px;
+        }
+        .modal-input {
+            background: #F9FAFB;
+            border: 1px solid #E5E7EB;
+            color: #111827;
+        }
+        .modal-input::placeholder {
+            color: #9CA3AF;
+        }
+        .modal-divider {
+            border-color: #F3F4F6;
+        }
+        .modal-title {
+            color: #111827;
+        }
+        .modal-tab-active {
+            color: #7C3AED;
+            border-bottom: 2px solid #7C3AED;
+        }
+        .modal-btn-cancel {
+            background: #FFFFFF;
+            border: 1.5px solid #E5E7EB;
+            color: #4B5563;
+        }
+
+        /* Escuro (roxo) */
+        html.dark .modal-overlay {
+            background: rgba(0, 0, 0, 0.60);
+        }
+        html.dark .modal-container {
+            background: #1E1B2E;
+            border: 1px solid rgba(167, 139, 250, 0.12);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.50);
+            border-radius: 22px;
+        }
+        html.dark .modal-input {
+            background: #2D2845;
+            border: 1px solid rgba(167, 139, 250, 0.18);
+            color: #EDE9FE;
+        }
+        html.dark .modal-input::placeholder {
+            color: #5B4F8A;
+        }
+        html.dark .modal-divider {
+            border-color: rgba(255, 255, 255, 0.06);
+        }
+        html.dark .modal-title {
+            color: #EDE9FE;
+        }
+        html.dark .modal-tab-active {
+            color: #A78BFA;
+            border-bottom: 2px solid #A78BFA;
+        }
+        html.dark .modal-btn-cancel {
+            background: rgba(255, 255, 255, 0.06);
+            border: 1.5px solid rgba(167, 139, 250, 0.20);
+            color: #C4B5FD;
+        }
+
+        /* Escuro Profundo (preto) */
+        html.darker .modal-overlay {
+            background: rgba(0, 0, 0, 0.75);
+        }
+        html.darker .modal-container {
+            background: #0D0B14;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            box-shadow: 0 8px 40px rgba(0, 0, 0, 0.80);
+            border-radius: 22px;
+        }
+        html.darker .modal-input {
+            background: #160F2A;
+            border: 1px solid rgba(196, 181, 253, 0.10);
+            color: #E9E3FF;
+        }
+        html.darker .modal-input::placeholder {
+            color: #3D3566;
+        }
+        html.darker .modal-divider {
+            border-color: rgba(255, 255, 255, 0.05);
+        }
+        html.darker .modal-title {
+            color: #F0EEFF;
+        }
+        html.darker .modal-tab-active {
+            color: #C4B5FD;
+            border-bottom: 2px solid #C4B5FD;
+        }
+        html.darker .modal-btn-cancel {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1.5px solid rgba(255, 255, 255, 0.10);
+            color: #8B7EC8;
+        }
+
+        /* Botões Modais (Compartilhado) */
+        .modal-btn-primary {
+            background: #6D28D9;
+            border: none;
+            color: #ffffff;
+            border-radius: 10px;
+            padding: 11px 0;
+            font-size: 13px;
+            font-weight: 600;
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: opacity 0.2s;
+        }
+        .modal-btn-primary:hover {
+            opacity: 0.9;
+        }
+        .modal-btn-cancel {
+            border-radius: 10px;
+            padding: 11px 0;
+            font-size: 13px;
+            font-weight: 500;
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.2s;
+        }
+        .modal-btn-cancel:hover {
+            opacity: 0.8;
+        }
+        
+        html.dark .dark\:bg-dark-card::before, html.dark .dark\:bg-dark-input::before, html.dark .dark\:bg-dark-sidebar::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(to bottom right, rgba(255, 255, 255, 0.05), transparent);
+            pointer-events: none;
+            border-radius: inherit;
+        }
+        
+        html:not(.dark) body {
+            background-color: #f8fafc;
+            color: #1e293b;
+        }
+
+        ::selection {
+            background: rgba(124, 58, 237, 0.3);
+        }
+        .font-serif {
+            font-family: 'Playfair Display', serif;
+        }
+        
+        .glass {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .glass-hover:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.2);
+            transition: all 0.3s duration-300;
+        }
+
+        @keyframes float {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+            100% { transform: translateY(0px); }
+        }
+
+        .animate-float {
+            animation: float 6s ease-in-out infinite;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .scrollbar-hide::-webkit-scrollbar {
+            display: none;
+        }
+        .scrollbar-hide {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        /* Print Styles */
+        @media print {
+            body {
+                background-color: white !important;
+                color: black !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            .no-print {
+                display: none !important;
+            }
+            header {
+                padding-bottom: 2rem !important;
+                background-color: #0f172a !important;
+                color: white !important;
+            }
+            main {
+                margin-top: 0 !important;
+                padding: 0 !important;
+            }
+            .grid {
+                display: block !important;
+            }
+            .lg\:col-span-4, .lg\:col-span-8 {
+                width: 100% !important;
+                margin-bottom: 2rem;
+            }
+            .shadow-xl, .shadow-sm {
+                box-shadow: none !important;
+                border: 1px solid #e2e8f0 !important;
+            }
+            .bg-white, .bg-slate-900, .bg-[#1e2030] {
+                background-color: white !important;
+                color: black !important;
+                break-inside: avoid;
+                page-break-inside: avoid;
+            }
+            .fixed {
+                position: relative !important;
+                display: none !important;
+            }
+            input, button {
+                display: none !important;
+            }
+        }
+    </style>
+    <script>
+        window.onerror = function(msg) {
+            const root = document.getElementById('root');
+            if (root && root.innerHTML === "") {
+                root.innerHTML = '<div style="padding: 40px; text-align: center; font-family: sans-serif; background: white; min-height: 100vh; display: flex; flex-direction: column; justify-content: center;"><h1>Erro ao carregar</h1><p style="color: #64748b;">' + msg + '</p><p style="font-size: 12px; margin-top: 10px;">Verifique se as variáveis de ambiente VITE_FIREBASE_* estão configuradas na Hostinger.</p></div>';
+            }
+        };
+    </script>
+</head>
+<body>
+    <div id="root"></div>
+<script type="module" src="index.tsx"></script>
+</body>
+</html>

@@ -1,0 +1,76 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and permissions",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "email": { "type": "string", "description": "User's email" },
+        "role": { "type": "string", "enum": ["superadmin", "gerente-operacional", "gestor-trafego", "design", "user"], "description": "User's role" },
+        "allowedPages": { "type": "array", "items": { "type": "string" }, "description": "List of page IDs the user can access" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Todo": {
+      "title": "Todo",
+      "description": "A task for the operational team",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "completed"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "dueDate": { "type": "string", "format": "date-time" },
+        "createdBy": { "type": "string" },
+        "assignedTo": { "type": "string", "description": "UID of the user or 'all'" },
+        "subtasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" },
+              "status": { "type": "string", "enum": ["pending", "completed"] }
+            }
+          }
+        }
+      },
+      "required": ["title", "status", "createdAt", "createdBy"]
+    },
+    "Client": {
+      "title": "Client",
+      "description": "Active client information",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "status": { "type": "string", "enum": ["Ativo", "Inativo"] },
+        "startDate": { "type": "string" },
+        "location": { "type": "string" },
+        "squad": { "type": "string" },
+        "tags": { "type": "string" },
+        "contracts": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": "User",
+      "description": "User profiles and permissions"
+    },
+    "/todos/{todoId}": {
+      "schema": "Todo",
+      "description": "Operational tasks"
+    },
+    "/clients/{clientId}": {
+      "schema": "Client",
+      "description": "Active clients"
+    }
+  }
+}
