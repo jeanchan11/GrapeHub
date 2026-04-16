@@ -1,6 +1,31 @@
 import React, { useState, useRef, useEffect } from 'react';
 import ReactDOM from 'react-dom';
-import { Layers, Plus, Save, Loader2, FolderPlus, Edit, Trash2, Folder, FileText, ChevronUp, ChevronDown, GripVertical, Users, Settings, Bell, Check, X, Search, Lock, Unlock, Database, FolderOpen, Home, Briefcase, BarChart2, PieChart, Activity, Calendar, MessageSquare, Mail, Image, Video, Music, Map, ShoppingCart, CreditCard, DollarSign, Percent, Tag, Bookmark, Star, Heart, Shield, Zap, TrendingUp, TrendingDown, Target, Award, Compass, Navigation, MapPin, Phone, Smartphone, Monitor, Laptop, Server, HardDrive, Cpu, Wifi, Bluetooth, Battery, Cloud, Sun, Moon, Umbrella, Wind, Droplet, Flame, PersonStanding, Swords, UsersRound } from 'lucide-react';
+import { Layers, Plus, Save, Loader2, FolderPlus, Edit, Trash2, Folder, FileText, ChevronUp, ChevronDown, GripVertical, Users, Settings, Bell, Check, X, Search, Lock, Unlock, Database, FolderOpen, Home, Briefcase, BarChart2, PieChart, Activity, Calendar, MessageSquare, Mail, Image, Video, Music, Map, ShoppingCart, CreditCard, DollarSign, Percent, Tag, Bookmark, Star, Heart, Shield, Zap, TrendingUp, TrendingDown, Target, Award, Compass, Navigation, MapPin, Phone, Smartphone, Monitor, Laptop, Server, HardDrive, Cpu, Wifi, Bluetooth, Battery, Cloud, Sun, Moon, Umbrella, Wind, Droplet, Flame, PersonStanding, Swords, UsersRound,
+  // New icons
+  LayoutDashboard, LayoutGrid, LayoutList, Columns, Rows, Grid, Table, List, SidebarOpen, PanelLeft,
+  BookOpen, BookMarked, Book, ClipboardList, Clipboard, ClipboardCheck, NotepadText, NotebookPen, Notebook,
+  LineChart, AreaChart, BarChart, ScatterChart, Gauge, Sigma, Binary, Hash, Calculator,
+  Building, Building2, Landmark, Store, Warehouse, Factory, Hotel, Church,
+  UserCheck, UserPlus, UserCircle, UserCog, UserSearch, Contact, Handshake, HeartHandshake, PersonStandingIcon,
+  Megaphone, Mic, Radio, Rss, Send, SendHorizonal, Share2, Share, Link, Link2, Globe, Globe2, ExternalLink,
+  Box, Package, PackageOpen, Archive, Inbox, Layers3, Blocks, Component,
+  Clock, Timer, AlarmClock, Hourglass, CalendarDays, CalendarCheck, CalendarRange, CalendarClock,
+  Rocket, Plane, Car, Truck, Ship, Train, Bus, Bike, Sailboat,
+  ShoppingBag, Receipt, Banknote, Coins, Wallet, PiggyBank, BadgeDollarSign, TrendingUpIcon,
+  Wrench, Hammer, Ruler, Scissors, Pen, Pencil, HighlighterIcon,
+  Camera, Film, Tv, Speaker, Headphones, Gamepad2, Joystick,
+  Apple, Coffee, Pizza, Utensils, Wine, Beer, Cookie,
+  Leaf, Flower, Flower2, Sprout, Clover,
+  Trophy, Medal, Ribbon, Crown, Gem, Diamond, CircleDollarSign,
+  AlertCircle, AlertTriangle, Info, HelpCircle, MessageCircle, MessagesSquare, BotMessageSquare,
+  Code, Code2, Terminal, Bug, GitBranch, GitCommit, Github, Gitlab,
+  Key, KeyRound, Fingerprint, Eye, EyeOff, ShieldCheck, ShieldAlert, ShieldX,
+  Printer, ScanLine, QrCode, Barcode, Nfc, CreditCardIcon,
+  Route, Milestone, Flag, FlagOff, Signpost,
+  Accessibility, Dumbbell, HeartPulse, Stethoscope, Pill, Syringe, Microscope, FlaskConical,
+  Lightbulb, Flashlight, Lamp, LampDesk, Sparkles, Wand2,
+  ChevronRight, ChevronLeft, ArrowRight, ArrowLeft, ArrowUp, ArrowDown, MoveRight, CornerDownRight
+} from 'lucide-react';
 import Soldier from './icons/Soldier';
 import Squad from './icons/Squad';
 import ColorSelector from './ColorSelector';
@@ -10,63 +35,157 @@ import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSo
 import { CSS } from '@dnd-kit/utilities';
 
 const availableIcons = [
-  { name: 'Settings', component: Settings },
-  { name: 'PersonStanding', component: PersonStanding },
+  // ── Custom ──────────────────────────────────────────────────────
   { name: 'Soldier', component: Soldier },
   { name: 'Squad', component: Squad },
   { name: 'Swords', component: Swords },
-  { name: 'UsersRound', component: UsersRound },
-  { name: 'Plus', component: Plus },
-  { name: 'Save', component: Save },
-  { name: 'Loader2', component: Loader2 },
-  { name: 'FolderPlus', component: FolderPlus },
-  { name: 'Edit', component: Edit },
-  { name: 'Trash2', component: Trash2 },
-  { name: 'Folder', component: Folder },
-  { name: 'FolderOpen', component: FolderOpen },
-  { name: 'FileText', component: FileText },
+  { name: 'PersonStanding', component: PersonStanding },
+
+  // ── Navigation & Layout ─────────────────────────────────────────
+  { name: 'Home', component: Home },
+  { name: 'LayoutDashboard', component: LayoutDashboard },
+  { name: 'LayoutGrid', component: LayoutGrid },
+  { name: 'LayoutList', component: LayoutList },
+  { name: 'Columns', component: Columns },
+  { name: 'Rows', component: Rows },
+  { name: 'Grid', component: Grid },
+  { name: 'Table', component: Table },
+  { name: 'List', component: List },
+  { name: 'SidebarOpen', component: SidebarOpen },
+  { name: 'Layers', component: Layers },
+  { name: 'Layers3', component: Layers3 },
+  { name: 'Blocks', component: Blocks },
+  { name: 'Component', component: Component },
+  { name: 'ChevronRight', component: ChevronRight },
+  { name: 'ChevronLeft', component: ChevronLeft },
   { name: 'ChevronUp', component: ChevronUp },
   { name: 'ChevronDown', component: ChevronDown },
-  { name: 'GripVertical', component: GripVertical },
-  { name: 'Users', component: Users },
-  { name: 'Bell', component: Bell },
-  { name: 'Check', component: Check },
-  { name: 'X', component: X },
-  { name: 'Search', component: Search },
-  { name: 'Lock', component: Lock },
-  { name: 'Unlock', component: Unlock },
-  { name: 'Database', component: Database },
-  { name: 'Home', component: Home },
-  { name: 'Briefcase', component: Briefcase },
+  { name: 'ArrowRight', component: ArrowRight },
+  { name: 'ArrowLeft', component: ArrowLeft },
+  { name: 'ArrowUp', component: ArrowUp },
+  { name: 'ArrowDown', component: ArrowDown },
+  { name: 'CornerDownRight', component: CornerDownRight },
+
+  // ── Analytics & Charts ───────────────────────────────────────────
   { name: 'BarChart2', component: BarChart2 },
+  { name: 'BarChart', component: BarChart },
   { name: 'PieChart', component: PieChart },
+  { name: 'LineChart', component: LineChart },
+  { name: 'AreaChart', component: AreaChart },
+  { name: 'ScatterChart', component: ScatterChart },
   { name: 'Activity', component: Activity },
-  { name: 'Calendar', component: Calendar },
-  { name: 'MessageSquare', component: MessageSquare },
-  { name: 'Mail', component: Mail },
-  { name: 'Image', component: Image },
-  { name: 'Video', component: Video },
-  { name: 'Music', component: Music },
-  { name: 'Map', component: Map },
-  { name: 'ShoppingCart', component: ShoppingCart },
-  { name: 'CreditCard', component: CreditCard },
-  { name: 'DollarSign', component: DollarSign },
-  { name: 'Percent', component: Percent },
-  { name: 'Tag', component: Tag },
-  { name: 'Bookmark', component: Bookmark },
-  { name: 'Star', component: Star },
-  { name: 'Heart', component: Heart },
-  { name: 'Shield', component: Shield },
-  { name: 'Zap', component: Zap },
   { name: 'TrendingUp', component: TrendingUp },
   { name: 'TrendingDown', component: TrendingDown },
+  { name: 'Gauge', component: Gauge },
+  { name: 'Sigma', component: Sigma },
+  { name: 'Calculator', component: Calculator },
   { name: 'Target', component: Target },
-  { name: 'Award', component: Award },
-  { name: 'Compass', component: Compass },
-  { name: 'Navigation', component: Navigation },
-  { name: 'MapPin', component: MapPin },
+
+  // ── Business & Work ──────────────────────────────────────────────
+  { name: 'Briefcase', component: Briefcase },
+  { name: 'Building', component: Building },
+  { name: 'Building2', component: Building2 },
+  { name: 'Landmark', component: Landmark },
+  { name: 'Store', component: Store },
+  { name: 'Warehouse', component: Warehouse },
+  { name: 'Factory', component: Factory },
+  { name: 'Hotel', component: Hotel },
+  { name: 'Handshake', component: Handshake },
+  { name: 'HeartHandshake', component: HeartHandshake },
+  { name: 'ClipboardList', component: ClipboardList },
+  { name: 'Clipboard', component: Clipboard },
+  { name: 'ClipboardCheck', component: ClipboardCheck },
+  { name: 'NotepadText', component: NotepadText },
+  { name: 'Notebook', component: Notebook },
+  { name: 'NotebookPen', component: NotebookPen },
+
+  // ── People & Users ───────────────────────────────────────────────
+  { name: 'Users', component: Users },
+  { name: 'UsersRound', component: UsersRound },
+  { name: 'UserCheck', component: UserCheck },
+  { name: 'UserPlus', component: UserPlus },
+  { name: 'UserCircle', component: UserCircle },
+  { name: 'UserCog', component: UserCog },
+  { name: 'UserSearch', component: UserSearch },
+  { name: 'Contact', component: Contact },
+
+  // ── Communication ────────────────────────────────────────────────
+  { name: 'Mail', component: Mail },
+  { name: 'MessageSquare', component: MessageSquare },
+  { name: 'MessageCircle', component: MessageCircle },
+  { name: 'MessagesSquare', component: MessagesSquare },
+  { name: 'BotMessageSquare', component: BotMessageSquare },
   { name: 'Phone', component: Phone },
   { name: 'Smartphone', component: Smartphone },
+  { name: 'Megaphone', component: Megaphone },
+  { name: 'Mic', component: Mic },
+  { name: 'Radio', component: Radio },
+  { name: 'Rss', component: Rss },
+  { name: 'Send', component: Send },
+  { name: 'SendHorizonal', component: SendHorizonal },
+  { name: 'Share2', component: Share2 },
+  { name: 'Link', component: Link },
+  { name: 'Link2', component: Link2 },
+  { name: 'Globe', component: Globe },
+  { name: 'Globe2', component: Globe2 },
+  { name: 'ExternalLink', component: ExternalLink },
+  { name: 'Bell', component: Bell },
+
+  // ── Files & Folders ──────────────────────────────────────────────
+  { name: 'Folder', component: Folder },
+  { name: 'FolderOpen', component: FolderOpen },
+  { name: 'FolderPlus', component: FolderPlus },
+  { name: 'FileText', component: FileText },
+  { name: 'Book', component: Book },
+  { name: 'BookOpen', component: BookOpen },
+  { name: 'BookMarked', component: BookMarked },
+  { name: 'Database', component: Database },
+  { name: 'Archive', component: Archive },
+  { name: 'Inbox', component: Inbox },
+  { name: 'Box', component: Box },
+  { name: 'Package', component: Package },
+  { name: 'PackageOpen', component: PackageOpen },
+  { name: 'Save', component: Save },
+
+  // ── Time & Calendar ──────────────────────────────────────────────
+  { name: 'Calendar', component: Calendar },
+  { name: 'CalendarDays', component: CalendarDays },
+  { name: 'CalendarCheck', component: CalendarCheck },
+  { name: 'CalendarRange', component: CalendarRange },
+  { name: 'CalendarClock', component: CalendarClock },
+  { name: 'Clock', component: Clock },
+  { name: 'Timer', component: Timer },
+  { name: 'AlarmClock', component: AlarmClock },
+  { name: 'Hourglass', component: Hourglass },
+
+  // ── Commerce & Finance ───────────────────────────────────────────
+  { name: 'ShoppingCart', component: ShoppingCart },
+  { name: 'ShoppingBag', component: ShoppingBag },
+  { name: 'CreditCard', component: CreditCard },
+  { name: 'Receipt', component: Receipt },
+  { name: 'DollarSign', component: DollarSign },
+  { name: 'Banknote', component: Banknote },
+  { name: 'Coins', component: Coins },
+  { name: 'Wallet', component: Wallet },
+  { name: 'PiggyBank', component: PiggyBank },
+  { name: 'BadgeDollarSign', component: BadgeDollarSign },
+  { name: 'Percent', component: Percent },
+  { name: 'CircleDollarSign', component: CircleDollarSign },
+
+  // ── Security ─────────────────────────────────────────────────────
+  { name: 'Shield', component: Shield },
+  { name: 'ShieldCheck', component: ShieldCheck },
+  { name: 'ShieldAlert', component: ShieldAlert },
+  { name: 'ShieldX', component: ShieldX },
+  { name: 'Lock', component: Lock },
+  { name: 'Unlock', component: Unlock },
+  { name: 'Key', component: Key },
+  { name: 'KeyRound', component: KeyRound },
+  { name: 'Fingerprint', component: Fingerprint },
+  { name: 'Eye', component: Eye },
+  { name: 'EyeOff', component: EyeOff },
+
+  // ── Technology ───────────────────────────────────────────────────
   { name: 'Monitor', component: Monitor },
   { name: 'Laptop', component: Laptop },
   { name: 'Server', component: Server },
@@ -76,12 +195,108 @@ const availableIcons = [
   { name: 'Bluetooth', component: Bluetooth },
   { name: 'Battery', component: Battery },
   { name: 'Cloud', component: Cloud },
+  { name: 'Code', component: Code },
+  { name: 'Code2', component: Code2 },
+  { name: 'Terminal', component: Terminal },
+  { name: 'Bug', component: Bug },
+  { name: 'GitBranch', component: GitBranch },
+  { name: 'Github', component: Github },
+  { name: 'QrCode', component: QrCode },
+  { name: 'Barcode', component: Barcode },
+  { name: 'Printer', component: Printer },
+  { name: 'Camera', component: Camera },
+  { name: 'Video', component: Video },
+  { name: 'Tv', component: Tv },
+  { name: 'Speaker', component: Speaker },
+  { name: 'Headphones', component: Headphones },
+  { name: 'Gamepad2', component: Gamepad2 },
+  { name: 'Nfc', component: Nfc },
+
+  // ── Transport ────────────────────────────────────────────────────
+  { name: 'Rocket', component: Rocket },
+  { name: 'Plane', component: Plane },
+  { name: 'Car', component: Car },
+  { name: 'Truck', component: Truck },
+  { name: 'Ship', component: Ship },
+  { name: 'Train', component: Train },
+  { name: 'Bus', component: Bus },
+  { name: 'Bike', component: Bike },
+  { name: 'Map', component: Map },
+  { name: 'MapPin', component: MapPin },
+  { name: 'Navigation', component: Navigation },
+  { name: 'Compass', component: Compass },
+  { name: 'Route', component: Route },
+  { name: 'Milestone', component: Milestone },
+  { name: 'Flag', component: Flag },
+  { name: 'Signpost', component: Signpost },
+
+  // ── Nature & Weather ─────────────────────────────────────────────
   { name: 'Sun', component: Sun },
   { name: 'Moon', component: Moon },
+  { name: 'Cloud', component: Cloud },
   { name: 'Umbrella', component: Umbrella },
   { name: 'Wind', component: Wind },
   { name: 'Droplet', component: Droplet },
   { name: 'Flame', component: Flame },
+  { name: 'Leaf', component: Leaf },
+  { name: 'Flower', component: Flower },
+  { name: 'Flower2', component: Flower2 },
+  { name: 'Sprout', component: Sprout },
+  { name: 'Clover', component: Clover },
+
+  // ── Health & Science ─────────────────────────────────────────────
+  { name: 'Heart', component: Heart },
+  { name: 'HeartPulse', component: HeartPulse },
+  { name: 'Stethoscope', component: Stethoscope },
+  { name: 'Pill', component: Pill },
+  { name: 'Syringe', component: Syringe },
+  { name: 'Microscope', component: Microscope },
+  { name: 'FlaskConical', component: FlaskConical },
+  { name: 'Dumbbell', component: Dumbbell },
+  { name: 'Accessibility', component: Accessibility },
+  { name: 'Apple', component: Apple },
+  { name: 'Coffee', component: Coffee },
+  { name: 'Utensils', component: Utensils },
+
+  // ── Awards & Achievement ─────────────────────────────────────────
+  { name: 'Award', component: Award },
+  { name: 'Trophy', component: Trophy },
+  { name: 'Medal', component: Medal },
+  { name: 'Crown', component: Crown },
+  { name: 'Gem', component: Gem },
+  { name: 'Diamond', component: Diamond },
+  { name: 'Star', component: Star },
+  { name: 'Ribbon', component: Ribbon },
+  { name: 'Sparkles', component: Sparkles },
+  { name: 'Zap', component: Zap },
+
+  // ── Tools & Creation ─────────────────────────────────────────────
+  { name: 'Settings', component: Settings },
+  { name: 'Wrench', component: Wrench },
+  { name: 'Hammer', component: Hammer },
+  { name: 'Ruler', component: Ruler },
+  { name: 'Scissors', component: Scissors },
+  { name: 'Pen', component: Pen },
+  { name: 'Pencil', component: Pencil },
+  { name: 'Edit', component: Edit },
+  { name: 'Lightbulb', component: Lightbulb },
+  { name: 'Wand2', component: Wand2 },
+  { name: 'Music', component: Music },
+  { name: 'Image', component: Image },
+
+  // ── Info & Status ────────────────────────────────────────────────
+  { name: 'Info', component: Info },
+  { name: 'AlertCircle', component: AlertCircle },
+  { name: 'AlertTriangle', component: AlertTriangle },
+  { name: 'HelpCircle', component: HelpCircle },
+  { name: 'Check', component: Check },
+  { name: 'X', component: X },
+  { name: 'Search', component: Search },
+  { name: 'Tag', component: Tag },
+  { name: 'Bookmark', component: Bookmark },
+  { name: 'Hash', component: Hash },
+  { name: 'Plus', component: Plus },
+  { name: 'GripVertical', component: GripVertical },
 ];
 
 const IconSelector = ({ value, onChange }: { value: string, onChange: (icon: string) => void }) => {
@@ -196,6 +411,8 @@ const templates = [
   { id: 'projects', label: 'Projetos & Parceiros' },
   { id: 'todo', label: 'Tarefas' },
   { id: 'crm-comercial', label: 'CRM Comercial' },
+  { id: 'crm-atividades', label: 'CRM Atividades' },
+  { id: 'task-templates', label: 'Modelos de Tarefas' },
   { id: 'kpis-squad', label: 'KPIs Squad' },
   { id: 'parceiros-squad', label: 'Parceiros Squad' },
   { id: 'gestor', label: 'Calculadora Gestor' },
@@ -413,11 +630,20 @@ const SortableSubSubSession = ({ subsub, subId, editingSubsub, editSubsubData, s
             <div className="shrink-0">
               <ColorSelector value={editSubsubData.icon_color} onChange={(icon_color) => setEditSubsubData({ ...editSubsubData, icon_color })} />
             </div>
-            <select value={editSubsubData.subsession_id} onChange={e => setEditSubsubData({...editSubsubData, subsession_id: e.target.value})} className="bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded px-2 py-1 text-sm flex-1 min-w-[150px]">
+            <select value={editSubsubData.subsession_id ? `sub_${editSubsubData.subsession_id}` : (editSubsubData.section_id ? `sec_${editSubsubData.section_id}` : '')} onChange={e => {
+              const val = e.target.value;
+              if (val.startsWith('sec_')) {
+                setEditSubsubData({...editSubsubData, section_id: val.replace('sec_', ''), subsession_id: ''});
+              } else if (val.startsWith('sub_')) {
+                setEditSubsubData({...editSubsubData, subsession_id: val.replace('sub_', ''), section_id: ''});
+              }
+            }} className="bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded px-2 py-1 text-sm flex-1 min-w-[150px]">
+              <option value="">Selecione o pai...</option>
               {Array.isArray(menu) && menu.map((s: any) => (
                 <optgroup key={s.id} label={s.title}>
+                  <option value={`sec_${s.id}`}>📁 {s.title} (direto na seção)</option>
                   {s.subSessions.map((ss: any) => (
-                    <option key={ss.id} value={ss.id}>{s.title} &gt; {ss.label}</option>
+                    <option key={ss.id} value={`sub_${ss.id}`}>{s.title} &gt; {ss.label}</option>
                   ))}
                 </optgroup>
               ))}
@@ -437,7 +663,7 @@ const SortableSubSubSession = ({ subsub, subId, editingSubsub, editSubsubData, s
               <span className="text-slate-800 dark:text-slate-300">└ {subsub.label}</span>
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={(e) => { e.stopPropagation(); handleEditSubsub(subsub, subId); }} className="p-1.5 text-blue-500 hover:bg-blue-500/10 rounded transition-colors" title="Editar Sub-sub-seção"><Edit size={14} /></button>
+              <button onClick={(e) => { e.stopPropagation(); handleEditSubsub(subsub, subId, 'subsession'); }} className="p-1.5 text-blue-500 hover:bg-blue-500/10 rounded transition-colors" title="Editar Sub-sub-seção"><Edit size={14} /></button>
               <button onClick={(e) => { e.stopPropagation(); handleDeleteSubsub(subsub.id); }} className="p-1.5 text-rose-500 hover:bg-rose-500/10 rounded transition-colors" title="Excluir Sub-sub-seção"><Trash2 size={14} /></button>
             </div>
           </>
@@ -454,6 +680,8 @@ export const PageManager: React.FC = () => {
   const [isAdding, setIsAdding] = useState(false);
   
   const activeOriginalParentId = useRef<string | null>(null);
+  // Track cross-container move separately without mutating dnd-kit's data
+  const crossContainerMove = useRef<{ newParentId: string; isSubsub: boolean } | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -470,7 +698,7 @@ export const PageManager: React.FC = () => {
   const [pageData, setPageData] = useState({ id: '', label: '', icon: 'FileText', icon_color: '#64748b', template: 'blank', subsubsession_id: '', subsession_id: '', section_id: '' });
   const [sectionData, setSectionData] = useState({ id: '', title: '', icon: 'Folder', icon_color: '#64748b' });
   const [subData, setSubData] = useState({ id: '', section_id: '', label: '', icon: 'Folder', icon_color: '#64748b' });
-  const [subsubData, setSubsubData] = useState({ id: '', subsession_id: '', label: '', icon: 'FolderOpen', icon_color: '#64748b' });
+  const [subsubData, setSubsubData] = useState({ id: '', subsession_id: '', section_id: '', label: '', icon: 'FolderOpen', icon_color: '#64748b' });
 
   const [confirmDialog, setConfirmDialog] = useState<{ isOpen: boolean, message: string } | null>(null);
   const onConfirmRef = useRef<() => void>(() => {});
@@ -530,14 +758,14 @@ export const PageManager: React.FC = () => {
 
   const handleCreateSubsub = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!subsubData.id || !subsubData.label || !subsubData.subsession_id) return alert('Preencha todos os campos obrigatórios.');
+    if (!subsubData.id || !subsubData.label || (!subsubData.subsession_id && !subsubData.section_id)) return alert('Preencha todos os campos obrigatórios.');
     setIsAdding(true);
     try {
       const res = await fetch('/api/menu/subsubsessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(subsubData) });
       if (res.ok) {
         alert('Sub-sub-seção criada com sucesso!');
         await refreshMenu();
-        setSubsubData({ id: '', subsession_id: '', label: '', icon: 'FolderOpen', icon_color: '#64748b' });
+        setSubsubData({ id: '', subsession_id: '', section_id: '', label: '', icon: 'FolderOpen', icon_color: '#64748b' });
       } else alert('Erro ao criar sub-sub-seção.');
     } catch (err) { console.error(err); alert('Erro ao criar sub-sub-seção.'); } finally { setIsAdding(false); }
   };
@@ -552,7 +780,7 @@ export const PageManager: React.FC = () => {
   const [editSubData, setEditSubData] = useState({ id: '', section_id: '', label: '', icon: '', icon_color: '#64748b' });
 
   const [editingSubsub, setEditingSubsub] = useState<string | null>(null);
-  const [editSubsubData, setEditSubsubData] = useState({ id: '', subsession_id: '', label: '', icon: '', icon_color: '#64748b' });
+  const [editSubsubData, setEditSubsubData] = useState({ id: '', subsession_id: '', section_id: '', label: '', icon: '', icon_color: '#64748b' });
 
   const handleEditPage = (page: any, parentId: string, parentType: 'section' | 'subsession' | 'subsubsession') => {
     setEditingPage(page.id);
@@ -682,18 +910,29 @@ export const PageManager: React.FC = () => {
     });
   };
 
-  const handleEditSubsub = (subsub: any, subsessionId: string) => {
+  const handleEditSubsub = (subsub: any, parentId: string, parentType: 'subsession' | 'section') => {
     setEditingSubsub(subsub.id);
-    setEditSubsubData({ id: subsub.id, subsession_id: subsessionId, label: subsub.label, icon: subsub.icon || 'FolderOpen', icon_color: subsub.icon_color || '#64748b' });
+    setEditSubsubData({
+      id: subsub.id,
+      subsession_id: parentType === 'subsession' ? parentId : '',
+      section_id: parentType === 'section' ? parentId : '',
+      label: subsub.label,
+      icon: subsub.icon || 'FolderOpen',
+      icon_color: subsub.icon_color || '#64748b'
+    });
   };
 
   const handleSaveEditSubsub = async () => {
-    if (!editSubsubData.label || !editSubsubData.subsession_id) return alert('Preencha os campos obrigatórios.');
+    if (!editSubsubData.label || (!editSubsubData.subsession_id && !editSubsubData.section_id)) return alert('Preencha os campos obrigatórios.');
     try {
       const res = await fetch(`/api/menu/subsubsessions/${editSubsubData.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editSubsubData)
+        body: JSON.stringify({
+          ...editSubsubData,
+          subsession_id: editSubsubData.subsession_id || null,
+          section_id: editSubsubData.section_id || null,
+        })
       });
       if (res.ok) {
         alert('Sub-sub-seção atualizada!');
@@ -715,67 +954,52 @@ export const PageManager: React.FC = () => {
   };
 
   const handleReorder = async (type: string, items: any[], oldIndex: number, newIndex: number, parentId: string | null = null) => {
-    console.log('handleReorder called', { type, items, oldIndex, newIndex, parentId });
+    if (oldIndex === newIndex) return;
     const newItems = arrayMove(items, oldIndex, newIndex);
-    console.log('newItems', newItems);
 
     // Optimistic UI update
     const updateMenu = (currentMenu: any[]): any[] => {
       if (type === 'section') return newItems;
-      
+
       return currentMenu.map(section => {
-        const updatedSection = { ...section };
-        
-        if (type === 'subsession' && updatedSection.id === parentId) {
-            console.log('Updating subSessions for section', updatedSection.id);
-            return { ...updatedSection, subSessions: newItems };
+        if (type === 'subsession' && section.id === parentId) {
+          return { ...section, subSessions: newItems };
         }
-        
-        if (updatedSection.subSessions) {
-            updatedSection.subSessions = updatedSection.subSessions.map(sub => {
-                const updatedSub = { ...sub };
-                
-                if (type === 'subsubsession' && updatedSub.id === parentId) {
-                    console.log('Updating subSubSessions for sub', updatedSub.id);
-                    return { ...updatedSub, subSubSessions: newItems };
-                }
-                
-                if (type === 'page' && updatedSub.id === parentId) {
-                    console.log('Updating pages for sub', updatedSub.id);
-                    return { ...updatedSub, pages: newItems };
-                }
-                
-                if (updatedSub.subSubSessions) {
-                    updatedSub.subSubSessions = updatedSub.subSubSessions.map(subsub => {
-                        const updatedSubsub = { ...subsub };
-                        if (type === 'page' && updatedSubsub.id === parentId) {
-                            console.log('Updating pages for subsub', updatedSubsub.id);
-                            return { ...updatedSubsub, pages: newItems };
-                        }
-                        return updatedSubsub;
-                    });
-                }
-                return updatedSub;
-            });
+        if (type === 'page_in_section' && section.id === parentId) {
+          return { ...section, pages: newItems };
         }
-        return updatedSection;
+
+        const updatedSubSessions = section.subSessions?.map((sub: any) => {
+          if (type === 'subsubsession' && sub.id === parentId) {
+            return { ...sub, subSubSessions: newItems };
+          }
+          if (type === 'page' && sub.id === parentId) {
+            return { ...sub, pages: newItems };
+          }
+
+          const updatedSubSubSessions = sub.subSubSessions?.map((subsub: any) => {
+            if (type === 'page' && subsub.id === parentId) {
+              return { ...subsub, pages: newItems };
+            }
+            return subsub;
+          });
+
+          return { ...sub, subSubSessions: updatedSubSubSessions ?? sub.subSubSessions };
+        });
+
+        return { ...section, subSessions: updatedSubSessions ?? section.subSessions };
       });
     };
 
-    const updatedMenu = updateMenu(menu);
-    console.log('updatedMenu', updatedMenu);
-    setMenu(updatedMenu);
+    setMenu(updateMenu(menu));
 
-    const updates = newItems.map((item, i) => ({
-      id: item.id,
-      order_index: i
-    }));
+    const updates = newItems.map((item: any, i: number) => ({ id: item.id, order_index: i }));
 
     let apiType = '';
     if (type === 'section') apiType = 'sections';
     else if (type === 'subsession') apiType = 'subsessions';
     else if (type === 'subsubsession') apiType = 'subsubsessions';
-    else if (type === 'page') apiType = 'pages';
+    else if (type === 'page' || type === 'page_in_section') apiType = 'pages';
 
     try {
       const res = await fetch('/api/menu/reorder', {
@@ -785,12 +1009,12 @@ export const PageManager: React.FC = () => {
       });
       if (!res.ok) {
         alert('Erro ao reordenar. Recarregando...');
-        window.location.reload();
+        await refreshMenu();
       }
     } catch (err) {
       console.error(err);
       alert('Erro ao reordenar. Recarregando...');
-      window.location.reload();
+      await refreshMenu();
     }
   };
 
@@ -847,6 +1071,7 @@ export const PageManager: React.FC = () => {
 
   const onDragStart = (event: any) => {
     activeOriginalParentId.current = event.active.data.current?.parentId || null;
+    crossContainerMove.current = null;
   };
 
   const onDragOver = (event: any) => {
@@ -855,169 +1080,190 @@ export const PageManager: React.FC = () => {
 
     const activeData = active.data.current;
     const overData = over.data.current;
-
     if (!activeData || !overData) return;
+    if (activeData.type !== 'page') return;
 
-    if (activeData.type === 'page') {
-      const activeContainerId = activeData.parentId;
-      let overContainerId = overData.parentId;
+    const activeContainerId = activeData.parentId;
+    let overContainerId: string | null = null;
+    let overIsSubsub = false;
 
-      if (overData.type === 'subsession' || overData.type === 'subsession_container') {
-        overContainerId = overData.type === 'subsession_container' ? overData.subId : over.id;
-      } else if (overData.type === 'subsubsession' || overData.type === 'subsubsession_container') {
-        overContainerId = overData.type === 'subsubsession_container' ? overData.subsubId : over.id;
-      }
+    if (overData.type === 'page') {
+      overContainerId = overData.parentId;
+      overIsSubsub = overData.parentType === 'subsubsession';
+    } else if (overData.type === 'subsession_container') {
+      overContainerId = overData.subId;
+      overIsSubsub = false;
+    } else if (overData.type === 'subsubsession_container') {
+      overContainerId = overData.subsubId;
+      overIsSubsub = true;
+    } else {
+      return;
+    }
 
-      if (!overContainerId || activeContainerId === overContainerId) {
-        return;
-      }
+    if (!overContainerId || activeContainerId === overContainerId) return;
 
-      setMenu((prevMenu: any[]) => {
-        const newMenu = JSON.parse(JSON.stringify(prevMenu));
-        let activePage = null;
-        let sourceList = null;
+    // Track cross-container move without mutating dnd-kit data
+    crossContainerMove.current = { newParentId: overContainerId, isSubsub: overIsSubsub };
 
-        // Find and remove
-        for (const section of newMenu) {
-          if (section.subSessions) {
-            for (const sub of section.subSessions) {
-              if (sub.id === activeContainerId) {
-                sourceList = sub.pages = sub.pages || [];
-                const idx = sourceList.findIndex((p: any) => p.id === active.id);
-                if (idx !== -1) { activePage = sourceList.splice(idx, 1)[0]; break; }
-              }
-              if (sub.subSubSessions) {
-                for (const subsub of sub.subSubSessions) {
-                  if (subsub.id === activeContainerId) {
-                    sourceList = subsub.pages = subsub.pages || [];
-                    const idx = sourceList.findIndex((p: any) => p.id === active.id);
-                    if (idx !== -1) { activePage = sourceList.splice(idx, 1)[0]; break; }
-                  }
-                }
-              }
-              if (activePage) break;
+    setMenu((prevMenu: any[]) => {
+      const newMenu = JSON.parse(JSON.stringify(prevMenu));
+      let activePage: any = null;
+
+      // Find and remove from source
+      for (const section of newMenu) {
+        if (section.pages) {
+          const idx = section.pages.findIndex((p: any) => p.id === active.id);
+          if (idx !== -1) { activePage = section.pages.splice(idx, 1)[0]; break; }
+        }
+        for (const sub of (section.subSessions || [])) {
+          if (sub.id === activeContainerId && sub.pages) {
+            const idx = sub.pages.findIndex((p: any) => p.id === active.id);
+            if (idx !== -1) { activePage = sub.pages.splice(idx, 1)[0]; break; }
+          }
+          for (const subsub of (sub.subSubSessions || [])) {
+            if (subsub.id === activeContainerId && subsub.pages) {
+              const idx = subsub.pages.findIndex((p: any) => p.id === active.id);
+              if (idx !== -1) { activePage = subsub.pages.splice(idx, 1)[0]; break; }
             }
           }
           if (activePage) break;
         }
+        if (activePage) break;
+      }
 
-        if (!activePage) return prevMenu;
+      if (!activePage) return prevMenu;
 
-        // Insert
-        for (const section of newMenu) {
-          if (section.subSessions) {
-            for (const sub of section.subSessions) {
-              if (sub.id === overContainerId) {
-                sub.pages = sub.pages || [];
-                if (overData.type === 'page') {
-                  const overIndex = sub.pages.findIndex((p: any) => p.id === over.id);
-                  sub.pages.splice(overIndex >= 0 ? overIndex : sub.pages.length, 0, activePage);
-                } else {
-                  sub.pages.push(activePage);
-                }
-                active.data.current.parentId = overContainerId;
-                active.data.current.isSubsub = false;
-                return newMenu;
-              }
-              if (sub.subSubSessions) {
-                for (const subsub of sub.subSubSessions) {
-                  if (subsub.id === overContainerId) {
-                    subsub.pages = subsub.pages || [];
-                    if (overData.type === 'page') {
-                      const overIndex = subsub.pages.findIndex((p: any) => p.id === over.id);
-                      subsub.pages.splice(overIndex >= 0 ? overIndex : subsub.pages.length, 0, activePage);
-                    } else {
-                      subsub.pages.push(activePage);
-                    }
-                    active.data.current.parentId = overContainerId;
-                    active.data.current.isSubsub = true;
-                    return newMenu;
-                  }
-                }
-              }
+      // Insert into target
+      for (const section of newMenu) {
+        for (const sub of (section.subSessions || [])) {
+          if (sub.id === overContainerId) {
+            sub.pages = sub.pages || [];
+            const overIdx = overData.type === 'page' ? sub.pages.findIndex((p: any) => p.id === over.id) : -1;
+            sub.pages.splice(overIdx >= 0 ? overIdx : sub.pages.length, 0, activePage);
+            return newMenu;
+          }
+          for (const subsub of (sub.subSubSessions || [])) {
+            if (subsub.id === overContainerId) {
+              subsub.pages = subsub.pages || [];
+              const overIdx = overData.type === 'page' ? subsub.pages.findIndex((p: any) => p.id === over.id) : -1;
+              subsub.pages.splice(overIdx >= 0 ? overIdx : subsub.pages.length, 0, activePage);
+              return newMenu;
             }
           }
         }
-        return prevMenu;
-      });
-    }
+      }
+      return newMenu;
+    });
   };
 
   const onDragEnd = async (event: any) => {
     const { active, over } = event;
-    console.log('onDragEnd', { active, over });
-    if (!over) return;
-
-    const activeData = active.data.current;
-    const overData = over.data.current;
-    console.log('Drag data', { activeData, overData });
-
-    if (!activeData || !overData) return;
-
-    // Check if a page was moved to a different container during onDragOver
-    let isCrossContainerMove = false;
-    if (activeData.type === 'page' && activeOriginalParentId.current !== activeData.parentId) {
-      console.log('Page moved to new container', { pageId: active.id, newParentId: activeData.parentId, isSubsub: activeData.isSubsub });
-      isCrossContainerMove = true;
-      // Persist the move to the backend
-      const success = await handleMovePage(active.id, activeData.parentId, activeData.isSubsub);
-      if (!success) return;
-    } else if (active.id === over.id) {
+    if (!over || active.id === over.id) {
+      crossContainerMove.current = null;
       return;
     }
 
-    if (activeData.type !== overData.type && activeData.type !== 'page') return;
+    const activeData = active.data.current;
+    const overData = over.data.current;
+    if (!activeData || !overData) return;
 
-    // Find the list
-    let items: any[] = [];
-    if (activeData.type === 'section') {
-      items = Array.isArray(menu) ? menu : [];
-    } else if (activeData.type === 'subsession') {
-      const section = Array.isArray(menu) ? menu.find((s: any) => s.id === activeData.parentId) : undefined;
-      if (section) items = section.subSessions;
-    } else if (activeData.type === 'subsubsession') {
-      if (Array.isArray(menu)) {
-        for (const section of menu) {
-          const sub = section.subSessions.find((s: any) => s.id === activeData.parentId);
-          if (sub) {
-            items = sub.subSubSessions;
-            break;
+    // --- Handle cross-container page move ---
+    if (activeData.type === 'page' && crossContainerMove.current) {
+      const { newParentId, isSubsub } = crossContainerMove.current;
+      crossContainerMove.current = null;
+      await handleMovePage(active.id, newParentId, isSubsub);
+      // The UI was already updated optimistically in onDragOver — reorder within new list
+      const currentMenu = menu;
+      let newParentItems: any[] = [];
+      for (const section of currentMenu) {
+        for (const sub of (section.subSessions || [])) {
+          if (sub.id === newParentId) { newParentItems = sub.pages || []; break; }
+          for (const subsub of (sub.subSubSessions || [])) {
+            if (subsub.id === newParentId) { newParentItems = subsub.pages || []; break; }
           }
+          if (newParentItems.length) break;
         }
+        if (newParentItems.length) break;
+      }
+      if (newParentItems.length > 1) {
+        const oldIdx = newParentItems.findIndex((p: any) => p.id === active.id);
+        const newIdx = newParentItems.findIndex((p: any) => p.id === over.id);
+        if (oldIdx !== -1 && newIdx !== -1 && oldIdx !== newIdx) {
+          await handleReorder('page', newParentItems, oldIdx, newIdx, newParentId);
+        } else {
+          await handleReorder('page', newParentItems, 0, 0, newParentId);
+        }
+      }
+      return;
+    }
+    crossContainerMove.current = null;
+
+    // --- Find the items list for this type ---
+    let items: any[] = [];
+    let reorderType = activeData.type;
+    const parentId: string = activeData.parentId;
+
+    if (activeData.type === 'section') {
+      // When dragging sections, the cursor often lands over a child (subsession/page)
+      // We need to find which section the over.id belongs to
+      items = Array.isArray(menu) ? [...menu] : [];
+      // Find what section contains over.id (could be a section itself, or a child)
+      const overIsDirectSection = items.some((s: any) => s.id === over.id);
+      if (!overIsDirectSection) {
+        // Find the section containing the over item and use it as the drop target
+        let overSectionId: string | null = null;
+        for (const section of items) {
+          if (section.pages?.some((p: any) => p.id === over.id)) { overSectionId = section.id; break; }
+          if (section.subSubSessions?.some((sss: any) => sss.id === over.id || sss.pages?.some((p: any) => p.id === over.id))) { overSectionId = section.id; break; }
+          for (const sub of (section.subSessions || [])) {
+            if (sub.id === over.id || sub.pages?.some((p: any) => p.id === over.id)) { overSectionId = section.id; break; }
+            if (sub.subSubSessions?.some((sss: any) => sss.id === over.id || sss.pages?.some((p: any) => p.id === over.id))) { overSectionId = section.id; break; }
+          }
+          if (overSectionId) break;
+        }
+        if (!overSectionId) return; // couldn't resolve, bail
+        const oldIndex = items.findIndex((s: any) => s.id === active.id);
+        const newIndex = items.findIndex((s: any) => s.id === overSectionId);
+        if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
+        await handleReorder('section', items, oldIndex, newIndex, null);
+        return;
+      }
+    } else if (activeData.type === 'subsession') {
+      // For non-section types, require matching over type
+      if (overData.type !== activeData.type) return;
+      const section = (menu as any[]).find((s: any) => s.id === parentId);
+      if (section) items = [...(section.subSessions || [])];
+    } else if (activeData.type === 'subsubsession') {
+      for (const section of (menu as any[])) {
+        const sub = (section.subSessions || []).find((s: any) => s.id === parentId);
+        if (sub) { items = [...(sub.subSubSessions || [])]; break; }
       }
     } else if (activeData.type === 'page') {
-      if (Array.isArray(menu)) {
-        for (const section of menu) {
-          for (const sub of section.subSessions) {
-            // Check if it's in a subsubsession
-            const subsub = sub.subSubSessions?.find((s: any) => s.id === activeData.parentId);
-            if (subsub) {
-              items = subsub.pages;
-              break;
-            }
-            // Check if it's in the subsession directly
-            if (sub.id === activeData.parentId) {
-                items = sub.pages || [];
-                break;
-            }
-          }
+      for (const section of (menu as any[])) {
+        // section-level pages
+        if (section.id === parentId && section.pages) {
+          items = [...section.pages];
+          reorderType = 'page_in_section';
+          break;
         }
+        for (const sub of (section.subSessions || [])) {
+          if (sub.id === parentId) { items = [...(sub.pages || [])]; break; }
+          for (const subsub of (sub.subSubSessions || [])) {
+            if (subsub.id === parentId) { items = [...(subsub.pages || [])]; break; }
+          }
+          if (items.length) break;
+        }
+        if (items.length) break;
       }
     }
 
-    if (items.length === 0) return;
+    if (!items.length) return;
 
-    let oldIndex = items.findIndex((i: any) => i.id === active.id);
-    let newIndex = items.findIndex((i: any) => i.id === over.id);
+    const oldIndex = items.findIndex((i: any) => i.id === active.id);
+    const newIndex = items.findIndex((i: any) => i.id === over.id);
+    if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
 
-    if (isCrossContainerMove) {
-      // The item is already in the correct position in the new list thanks to onDragOver
-      // We just need to save the new order
-      oldIndex = 0;
-      newIndex = 0;
-    }
-
-    handleReorder(activeData.type, items, oldIndex, newIndex, activeData.parentId);
+    await handleReorder(reorderType, items, oldIndex, newIndex, parentId || null);
   };
 
   return (
@@ -1195,13 +1441,23 @@ export const PageManager: React.FC = () => {
               <ColorSelector value={subsubData.icon_color} onChange={(icon_color) => setSubsubData({ ...subsubData, icon_color })} />
             </div>
             <div>
-              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Sub-seção Pai</label>
-              <select required value={subsubData.subsession_id} onChange={(e) => setSubsubData({ ...subsubData, subsession_id: e.target.value })} className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/5 rounded-xl py-2.5 px-4 text-sm text-light-text dark:text-white outline-none focus:ring-2 focus:ring-violet-500/20">
+              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Pai (Seção ou Sub-seção)</label>
+              <select required value={subsubData.subsession_id ? `sub_${subsubData.subsession_id}` : (subsubData.section_id ? `sec_${subsubData.section_id}` : '')} onChange={(e) => {
+                const val = e.target.value;
+                if (val.startsWith('sec_')) {
+                  setSubsubData({ ...subsubData, section_id: val.replace('sec_', ''), subsession_id: '' });
+                } else if (val.startsWith('sub_')) {
+                  setSubsubData({ ...subsubData, subsession_id: val.replace('sub_', ''), section_id: '' });
+                } else {
+                  setSubsubData({ ...subsubData, subsession_id: '', section_id: '' });
+                }
+              }} className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/5 rounded-xl py-2.5 px-4 text-sm text-light-text dark:text-white outline-none focus:ring-2 focus:ring-violet-500/20">
                 <option value="">Selecione...</option>
                 {Array.isArray(menu) && menu.map(section => (
                   <optgroup key={section.id} label={section.title}>
+                    <option value={`sec_${section.id}`}>📁 {section.title} (direto na seção)</option>
                     {section.subSessions.map((sub: any) => (
-                      <option key={sub.id} value={sub.id}>{section.title} &gt; {sub.label}</option>
+                      <option key={sub.id} value={`sub_${sub.id}`}>{section.title} &gt; {sub.label}</option>
                     ))}
                   </optgroup>
                 ))}

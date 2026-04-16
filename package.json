@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "NODE_ENV=development tsx server.ts",
+    "dev": "NODE_ENV=development tsx watch server.ts",
     "build": "mkdir -p dist && npx vite build && npx esbuild server.ts --bundle --platform=node --format=esm --outfile=dist/server.js --external:vite --external:pg --external:express --external:dotenv",
     "start": "NODE_ENV=production node dist/server.js",
     "preview": "vite preview",

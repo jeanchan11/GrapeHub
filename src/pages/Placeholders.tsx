@@ -57,8 +57,8 @@ export const NotificationsPage = () => {
   );
 };
 
-export const SettingsPage = () => {
-  const sections = [
+export const SettingsPage = ({ onPageChange, isSuperAdmin }: { onPageChange?: (page: string) => void, isSuperAdmin?: boolean }) => {
+  const staticSections = [
     {
       title: 'Perfil',
       icon: User,
@@ -75,14 +75,17 @@ export const SettingsPage = () => {
         { label: 'Idioma', description: 'Português (Brasil)' },
       ]
     },
-    {
-      title: 'Sistema',
-      icon: Settings,
-      items: [
-        { label: 'Integrações', description: 'Conectar com Neon DB e outras ferramentas' },
-        { label: 'Logs de Atividade', description: 'Histórico de ações no sistema' },
-      ]
-    }
+  ];
+
+  const sistemaItems: { label: string; description: string; icon?: any; action?: () => void }[] = [
+    { label: 'Integrações', description: 'Conectar com Neon DB e outras ferramentas' },
+    { label: 'Logs de Atividade', description: 'Histórico de ações no sistema' },
+    ...(isSuperAdmin ? [{
+      label: 'Painel Admin',
+      description: 'Gerenciar usuários, permissões e configurações do sistema',
+      icon: Shield,
+      action: () => onPageChange?.('admin')
+    }] : [])
   ];
 
   return (
@@ -94,7 +97,7 @@ export const SettingsPage = () => {
       />
       
       <div className="space-y-8">
-        {sections.map((section) => (
+        {staticSections.map((section) => (
           <div key={section.title} className="space-y-4">
             <div className="flex items-center gap-2 px-2">
               <section.icon size={18} className="text-violet-500" />
@@ -110,6 +113,29 @@ export const SettingsPage = () => {
             </div>
           </div>
         ))}
+
+        {/* Sistema */}
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 px-2">
+            <Settings size={18} className="text-violet-500" />
+            <h2 className="text-sm font-bold text-slate-500 uppercase tracking-widest">Sistema</h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {sistemaItems.map((item) => (
+              <button 
+                key={item.label} 
+                onClick={item.action}
+                className="bg-light-card dark:bg-dark-card p-6 rounded-2xl border border-slate-200 dark:border-white/5 text-left hover:border-violet-500/30 transition-all shadow-sm group"
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  {item.icon && <item.icon size={16} className="text-violet-500" />}
+                  <h3 className="font-bold text-light-text dark:text-white group-hover:text-violet-500 transition-colors">{item.label}</h3>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{item.description}</p>
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );

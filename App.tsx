@@ -14,6 +14,7 @@ import CrmComercial from './src/pages/CrmComercial';
 import { GestorDashboard } from './src/pages/GestorDashboard';
 import FinanceiroDashboard from './src/pages/FinanceiroDashboard';
 import TaskTemplates from './src/pages/TaskTemplates';
+import Atividades from './src/pages/Atividades';
 import Login from './src/components/LoginView';
 import AdminPanel from './src/components/AdminPanel';
 import LoadingSpinner from './src/components/LoadingSpinner';
@@ -84,8 +85,19 @@ const AppContent: React.FC = () => {
     const isAdmin = userData?.role === 'superadmin' || userData?.role === 'gerente-operacional';
     const isAllowed = isAdmin || userData?.allowedPages?.includes(activePage);
     
-    if (activePage === 'admin' && isAdmin) {
+    if (activePage === 'admin' && userData?.role === 'superadmin') {
       return <AdminPanel />;
+    }
+    // Block any other user from accessing admin directly
+    if (activePage === 'admin') {
+      return (
+        <div className="flex items-center justify-center h-full text-slate-500">
+          <div className="text-center">
+            <p className="text-xl font-bold mb-2">Acesso Restrito</p>
+            <p className="text-sm">Apenas o super administrador pode acessar esta área.</p>
+          </div>
+        </div>
+      );
     }
     
     if (!isAllowed) {
@@ -182,7 +194,7 @@ const AppContent: React.FC = () => {
       case 'notifications':
         return <NotificationsPage />;
       case 'settings':
-        return <SettingsPage />;
+        return <SettingsPage onPageChange={setActivePage} isSuperAdmin={userData?.role === 'superadmin'} />;
       case 'financeiro-dashboard':
         return <FinanceiroDashboard />;
       case 'kpis-squad':
@@ -193,6 +205,8 @@ const AppContent: React.FC = () => {
         return <div className="p-8 text-center text-slate-500">Esta é uma página em branco.</div>;
       case 'task-templates':
         return <TaskTemplates />;
+      case 'crm-atividades':
+        return <Atividades />;
       default:
         return <GestorCalculator />;
     }
@@ -220,7 +234,7 @@ const AppContent: React.FC = () => {
         theme={theme}
         toggleTheme={toggleTheme}
       />
-      <main className="flex-1 overflow-y-auto scrollbar-hide rounded-tl-[2.5rem] bg-light-bg dark:bg-dark-bg relative z-0 transition-colors duration-300">
+      <main className="flex-1 overflow-y-auto scrollbar-hide rounded-tl-[2.5rem] bg-light-bg dark:bg-dark-bg transition-colors duration-300">
         {renderPage()}
       </main>
     </div>

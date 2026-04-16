@@ -2,6 +2,7 @@ import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
+import https from "https";
 import pg from "pg";
 import dotenv from "dotenv";
 
@@ -343,6 +344,73 @@ async function startServer() {
         page_id TEXT
       );
 
+      CREATE TABLE IF NOT EXISTS crm_comercial_tasks (
+        id SERIAL PRIMARY KEY,
+        lead_id TEXT,
+        title TEXT NOT NULL,
+        type VARCHAR(50),
+        priority VARCHAR(20),
+        due_date TIMESTAMP,
+        start_time TIME,
+        end_time TIME,
+        responsible_id TEXT,
+        observations TEXT,
+        completed BOOLEAN DEFAULT FALSE,
+        completed_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS crm_comercial_task_templates (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS crm_comercial_task_template_items (
+        id SERIAL PRIMARY KEY,
+        template_id INTEGER REFERENCES crm_comercial_task_templates(id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        type VARCHAR(50),
+        priority VARCHAR(20),
+        due_days_offset INTEGER DEFAULT 0,
+        order_index INTEGER DEFAULT 0
+      );
+
+      -- Seed CRM Comercial Task Templates
+      DO $$
+      DECLARE
+        template_count INTEGER;
+      BEGIN
+        SELECT COUNT(*) INTO template_count FROM crm_comercial_task_templates;
+        IF template_count = 0 THEN
+          INSERT INTO crm_comercial_task_templates (name, description) VALUES
+            ('Comercial', 'Vendas'),
+            ('Pré-vendas 1', 'Pré-vendas 1'),
+            ('Pré-vendas 2', 'Pré-vendas 2');
+          
+          -- Comercial items
+          INSERT INTO crm_comercial_task_template_items (template_id, title, type, priority, due_days_offset, order_index) VALUES
+            (1, 'DIA 1 - WhatsApp 🔴', 'WhatsApp', 'Urgente', 0, 0),
+            (1, 'DIA 1 - Ligação 🔴', 'Ligação', 'Urgente', 0, 1),
+            (1, 'Proposta Comercial 📝', 'Tarefa', 'Normal', 1, 2);
+
+          -- Pré-vendas 1 items
+          INSERT INTO crm_comercial_task_template_items (template_id, title, type, priority, due_days_offset, order_index) VALUES
+            (2, 'Primeiro Contato', 'WhatsApp', 'Normal', 0, 0),
+            (2, 'Qualificação', 'Ligação', 'Alta', 1, 1);
+        END IF;
+      END $$;
+
+      CREATE TABLE IF NOT EXISTS crm_comercial_loss_reasons (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        color VARCHAR(20) DEFAULT '#6b7280',
+        order_index INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+
       CREATE TABLE IF NOT EXISTS task_subtasks (
         id SERIAL PRIMARY KEY,
         task_id TEXT,
@@ -455,6 +523,7 @@ async function startServer() {
       );
 
       ALTER TABLE menu_subsubsessions ADD COLUMN IF NOT EXISTS icon_color TEXT;
+      ALTER TABLE menu_subsubsessions ADD COLUMN IF NOT EXISTS section_id TEXT REFERENCES menu_sections(id) ON DELETE CASCADE;
 
       CREATE TABLE IF NOT EXISTS menu_pages (
         id TEXT PRIMARY KEY,
@@ -490,6 +559,160 @@ async function startServer() {
       WHERE allowed_pages @> '["active-clients"]'::jsonb 
       AND NOT allowed_pages @> '["crm-financeiro"]'::jsonb
     `);
+
+    // Migrations for crm_comercial_history
+    await pool.query(`ALTER TABLE crm_comercial_history ADD COLUMN IF NOT EXISTS action_type VARCHAR(50)`);
+    await pool.query(`ALTER TABLE crm_comercial_history ADD COLUMN IF NOT EXISTS description TEXT`);
+    await pool.query(`ALTER TABLE crm_comercial_history ADD COLUMN IF NOT EXISTS user_name TEXT`);
+    await pool.query(`ALTER TABLE crm_comercial_history ADD COLUMN IF NOT EXISTS task_type VARCHAR(50)`);
+    
+    // Timezone migrations (convert to TIMESTAMPTZ)
+    try { await pool.query(`ALTER TABLE crm_comercial_history ALTER COLUMN created_at TYPE TIMESTAMPTZ`); } catch(e) {}
+    try { await pool.query(`ALTER TABLE crm_comercial_leads ALTER COLUMN created_at TYPE TIMESTAMPTZ`); } catch(e) {}
+    try { await pool.query(`ALTER TABLE crm_comercial_leads ALTER COLUMN updated_at TYPE TIMESTAMPTZ`); } catch(e) {}
+    try { await pool.query(`ALTER TABLE crm_comercial_tasks ALTER COLUMN created_at TYPE TIMESTAMPTZ`); } catch(e) {}
+    try { await pool.query(`ALTER TABLE crm_comercial_tasks ALTER COLUMN completed_at TYPE TIMESTAMPTZ`); } catch(e) {}
+    try { await pool.query(`ALTER TABLE crm_comercial_tasks ALTER COLUMN due_date TYPE TIMESTAMPTZ`); } catch(e) {}
+
+    // Api4Com Settings Table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS crm_api4com_settings (
+        id SERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL UNIQUE,
+        api4com_token TEXT,
+        api4com_domain TEXT,
+        sip_extension TEXT,
+        sip_password TEXT,
+        sip_server TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
+    // Ensure missing columns in crm_comercial_leads
+    await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS previsao DATE`);
+    await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS etapa_updated_at TIMESTAMPTZ DEFAULT NOW()`);
+    await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS tags JSONB DEFAULT '[]'::jsonb`);
+    await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS instagram TEXT`);
+    await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS nicho TEXT`);
+    await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS tempo_oab TEXT`);
+    await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS faturamento TEXT`);
+    
+    // Novas colunas (Editáveis text)
+    await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS reunion_date TEXT`);
+    await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS office_location TEXT`);
+    await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS monthly_closings TEXT`);
+    await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS closing_goal TEXT`);
+    await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS reunion_link TEXT`);
+    await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS utm_platform TEXT`);
+    await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS utm_campaign TEXT`);
+    await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS utm_set TEXT`);
+    await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS utm_creative TEXT`);
+    await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS utm_position TEXT`);
+    
+    // Tabela global de tags para o Comercial
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS crm_comercial_tags (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL UNIQUE,
+        color VARCHAR(50) NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
+    // Garantia de criação das tabelas de tasks (executadas separadamente para não falhar no bloco grande)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS crm_comercial_tasks (
+        id SERIAL PRIMARY KEY,
+        lead_id TEXT,
+        title TEXT NOT NULL,
+        type VARCHAR(50) DEFAULT 'Tarefa',
+        priority VARCHAR(20) DEFAULT 'Normal',
+        due_date TIMESTAMP,
+        start_time TIME,
+        end_time TIME,
+        responsible_id TEXT,
+        observations TEXT,
+        completed BOOLEAN DEFAULT FALSE,
+        completed_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS crm_comercial_task_templates (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS crm_comercial_task_template_items (
+        id SERIAL PRIMARY KEY,
+        template_id INTEGER REFERENCES crm_comercial_task_templates(id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        type VARCHAR(50) DEFAULT 'Tarefa',
+        priority VARCHAR(20) DEFAULT 'Normal',
+        due_days_offset INTEGER DEFAULT 0,
+        order_index INTEGER DEFAULT 0
+      )
+    `);
+    // Seed inicial de templates (só insere se ainda não existir)
+    const templateCount = await pool.query("SELECT COUNT(*) FROM crm_comercial_task_templates");
+    if (parseInt(templateCount.rows[0].count) === 0) {
+      const t1 = await pool.query(
+        "INSERT INTO crm_comercial_task_templates (name, description) VALUES ($1, $2) RETURNING id",
+        ['Comercial', 'Fluxo de vendas']
+      );
+      const t2 = await pool.query(
+        "INSERT INTO crm_comercial_task_templates (name, description) VALUES ($1, $2) RETURNING id",
+        ['Pré-vendas', 'Fluxo de pré-vendas']
+      );
+      await pool.query(
+        `INSERT INTO crm_comercial_task_template_items (template_id, title, type, priority, due_days_offset, order_index) VALUES
+         ($1, 'DIA 1 - WhatsApp 🔴', 'WhatsApp', 'Urgente', 0, 0),
+         ($1, 'DIA 1 - Ligação 🔴', 'Ligação', 'Urgente', 0, 1),
+         ($1, 'Proposta Comercial 📝', 'Tarefa', 'Normal', 1, 2)`,
+        [t1.rows[0].id]
+      );
+      await pool.query(
+        `INSERT INTO crm_comercial_task_template_items (template_id, title, type, priority, due_days_offset, order_index) VALUES
+         ($1, 'Primeiro Contato', 'WhatsApp', 'Normal', 0, 0),
+         ($1, 'Qualificação', 'Ligação', 'Alta', 1, 1)`,
+        [t2.rows[0].id]
+      );
+      console.log('[SEED] CRM task templates criados com sucesso.');
+    }
+
+    // Auto-fix: Recuperar leads que perderam o ID da coluna (null ou vazio)
+    try {
+      await pool.query("ALTER TABLE crm_comercial_columns ADD COLUMN IF NOT EXISTS icon varchar(50) DEFAULT 'LayoutGrid'");
+    } catch(err) {
+      console.error("Error adding icon column:", err);
+    }
+
+    try {
+      const leadsToFix = await pool.query("SELECT id, kanban_id FROM crm_comercial_leads WHERE coluna IS NULL OR coluna = ''");
+      if (leadsToFix.rows.length > 0) {
+        console.log(`[AUTOREPAIR] Found ${leadsToFix.rows.length} leads with corrupted 'coluna'. Attempting to fix...`);
+        for (const lead of leadsToFix.rows) {
+          const firstColResult = await pool.query(
+            "SELECT id FROM crm_comercial_columns WHERE kanban_id = $1 ORDER BY order_index ASC LIMIT 1",
+            [lead.kanban_id]
+          );
+          if (firstColResult.rows.length > 0) {
+            await pool.query(
+              "UPDATE crm_comercial_leads SET coluna = $1 WHERE id = $2",
+              [firstColResult.rows[0].id, lead.id]
+            );
+          }
+        }
+        console.log(`[AUTOREPAIR] Leads recovered successfully.`);
+      }
+    } catch (err) {
+      console.error("[AUTOREPAIR] Failed to repair leads:", err);
+    }
   } catch (err) {
     console.error("Error initializing database tables:", err);
   }
@@ -1019,6 +1242,25 @@ async function startServer() {
       const pages = pagesRes.rows;
 
       const menu = sections.map(section => {
+        // subsubsessions directly under this section (no subsession_id)
+        const sectionSubSubSessions = subsubsessions
+          .filter(sss => sss.section_id === section.id && !sss.subsession_id)
+          .map(sss => ({
+            id: sss.id,
+            label: sss.label,
+            icon: sss.icon,
+            icon_color: sss.icon_color,
+            pages: pages
+              .filter(p => p.subsubsession_id === sss.id)
+              .map(p => ({
+                id: p.id,
+                label: p.label,
+                icon: p.icon,
+                icon_color: p.icon_color,
+                template: p.template
+              }))
+          }));
+
         return {
           id: section.id,
           title: section.title,
@@ -1033,6 +1275,7 @@ async function startServer() {
               icon_color: p.icon_color,
               template: p.template
             })),
+          subSubSessions: sectionSubSubSessions,
           subSessions: subsessions
             .filter(ss => ss.section_id === section.id)
             .map(ss => {
@@ -1176,10 +1419,17 @@ async function startServer() {
 
   app.post("/api/menu/subsubsessions", async (req, res) => {
     try {
-      const { id, subsession_id, label, icon, icon_color } = req.body;
+      const { id, subsession_id, section_id, label, icon, icon_color } = req.body;
+      if (!subsession_id && !section_id) {
+        return res.status(400).json({ error: "subsession_id ou section_id é obrigatório" });
+      }
+      const parentClause = subsession_id
+        ? "WHERE subsession_id = $2"
+        : "WHERE section_id = $2";
+      const parentValue = subsession_id || section_id;
       await pool.query(
-        "INSERT INTO menu_subsubsessions (id, subsession_id, label, icon, icon_color, order_index) VALUES ($1, $2, $3, $4, $5, (SELECT COALESCE(MAX(order_index) + 1, 0) FROM menu_subsubsessions WHERE subsession_id = $2))",
-        [id, subsession_id, label, icon || 'FolderOpen', icon_color || '#64748b']
+        `INSERT INTO menu_subsubsessions (id, subsession_id, section_id, label, icon, icon_color, order_index) VALUES ($1, $3, $4, $5, $6, $7, (SELECT COALESCE(MAX(order_index) + 1, 0) FROM menu_subsubsessions ${parentClause}))`,
+        [id, parentValue, subsession_id || null, section_id || null, label, icon || 'FolderOpen', icon_color || '#64748b']
       );
       res.json({ success: true });
     } catch (err) {
@@ -1240,10 +1490,10 @@ async function startServer() {
   app.put("/api/menu/subsubsessions/:id", async (req, res) => {
     try {
       const { id } = req.params;
-      const { subsession_id, label, icon, icon_color } = req.body;
+      const { subsession_id, section_id, label, icon, icon_color } = req.body;
       await pool.query(
-        "UPDATE menu_subsubsessions SET subsession_id = $1, label = $2, icon = $3, icon_color = $4 WHERE id = $5",
-        [subsession_id, label, icon || 'FolderOpen', icon_color || '#64748b', id]
+        "UPDATE menu_subsubsessions SET subsession_id = $1, section_id = $2, label = $3, icon = $4, icon_color = $5 WHERE id = $6",
+        [subsession_id || null, section_id || null, label, icon || 'FolderOpen', icon_color || '#64748b', id]
       );
       res.json({ success: true });
     } catch (err) {
@@ -2774,6 +3024,24 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
+  app.patch("/api/crm-comercial/kanbans/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { nome } = req.body;
+      const result = await pool.query(
+        "UPDATE crm_comercial_kanbans SET nome = $1 WHERE id = $2 RETURNING *",
+        [nome, id]
+      );
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: "Kanban not found" });
+      }
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error("Error updating kanban:", err);
+      res.status(500).json({ error: "Failed to update kanban" });
+    }
+  });
+
   app.delete("/api/crm-comercial/kanbans/:id", async (req, res) => {
     try {
       const { id } = req.params;
@@ -2822,16 +3090,49 @@ app.get("/api/todos", async (req, res) => {
 
   app.post("/api/crm-comercial/columns", async (req, res) => {
     try {
-      const { kanban_id, title, color, order_index } = req.body;
+      const { kanban_id, title, color, order_index, icon } = req.body;
       const result = await pool.query(
-        `INSERT INTO crm_comercial_columns (kanban_id, title, color, order_index) 
-         VALUES ($1, $2, $3, $4) RETURNING *`,
-        [kanban_id, title, color || 'orange', order_index || 0]
+        `INSERT INTO crm_comercial_columns (kanban_id, title, color, order_index, icon) 
+         VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+        [kanban_id, title, color || 'orange', order_index || 0, icon || 'LayoutGrid']
       );
       res.status(201).json(result.rows[0]);
     } catch (err) {
       console.error("Error creating column:", err);
       res.status(500).json({ error: "Failed to create column" });
+    }
+  });
+
+  app.patch("/api/crm-comercial/columns/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { title, color, icon } = req.body;
+      
+      const result = await pool.query(
+        "UPDATE crm_comercial_columns SET title = $1, color = $2, icon = $3 WHERE id = $4 RETURNING *",
+        [title, color, icon || 'LayoutGrid', id]
+      );
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: "Column not found" });
+      }
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error("Error updating column:", err);
+      res.status(500).json({ error: "Failed to update column" });
+    }
+  });
+
+  app.delete("/api/crm-comercial/columns/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      // Update leads in this column to be orphaned or handled. 
+      // For simplicity here, we'll just delete the column. Leads without a column will be auto-recovered or disappear.
+      await pool.query("DELETE FROM crm_comercial_columns WHERE id = $1", [id]);
+      res.status(204).send();
+    } catch (err) {
+      console.error("Error deleting column:", err);
+      res.status(500).json({ error: "Failed to delete column" });
     }
   });
 
@@ -2865,11 +3166,24 @@ app.get("/api/todos", async (req, res) => {
 
   app.post("/api/crm-comercial/leads", async (req, res) => {
     try {
-      const { nome, telefone, origem, responsavel_id, valor, observacoes, kanban_id } = req.body;
+      const { nome, telefone, origem, responsavel_id, valor, observacoes, kanban_id, coluna } = req.body;
+      
+      // Se não foi passada uma coluna, busca a primeira coluna do kanban automaticamente
+      let colunaId = coluna || null;
+      if (!colunaId && kanban_id) {
+        const firstColResult = await pool.query(
+          "SELECT id FROM crm_comercial_columns WHERE kanban_id = $1 ORDER BY order_index ASC LIMIT 1",
+          [kanban_id]
+        );
+        if (firstColResult.rows.length > 0) {
+          colunaId = firstColResult.rows[0].id;
+        }
+      }
+
       const result = await pool.query(
-        `INSERT INTO crm_comercial_leads (nome, telefone, origem, responsavel_id, valor, observacoes, kanban_id) 
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-        [nome, telefone, origem || 'Outro', responsavel_id, valor || 0, observacoes, kanban_id]
+        `INSERT INTO crm_comercial_leads (nome, telefone, origem, responsavel_id, valor, observacoes, kanban_id, coluna) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+        [nome, telefone, origem || 'Outro', responsavel_id, valor || 0, observacoes, kanban_id, colunaId]
       );
       res.status(201).json(result.rows[0]);
     } catch (err) {
@@ -2883,9 +3197,14 @@ app.get("/api/todos", async (req, res) => {
     console.log(`[PATCH] Request body:`, req.body);
     try {
       const { id } = req.params;
-      const { coluna, valor, responsavel_id, moved_by } = req.body;
+      const { 
+        coluna, valor, responsavel_id, moved_by, kanban_id, previsao, tags, origem, instagram, nicho, tempo_oab, faturamento,
+        reunion_date, office_location, monthly_closings, closing_goal, reunion_link,
+        utm_platform, utm_campaign, utm_set, utm_creative, utm_position,
+        nome, telefone, observacoes
+      } = req.body;
       
-      const currentResult = await pool.query("SELECT coluna FROM crm_comercial_leads WHERE id = $1", [id]);
+      const currentResult = await pool.query("SELECT coluna, kanban_id FROM crm_comercial_leads WHERE id = $1", [id]);
       if (currentResult.rows.length === 0) {
         console.log(`[PATCH] Lead not found: ${id}`);
         return res.status(404).json({ error: "Lead not found" });
@@ -2897,9 +3216,30 @@ app.get("/api/todos", async (req, res) => {
       const params = [];
       let paramIdx = 1;
       
-      if (coluna !== undefined) {
+      if (kanban_id !== undefined) {
+        // Moving to a new kanban: find its first column automatically
+        const firstColResult = await pool.query(
+          "SELECT id FROM crm_comercial_columns WHERE kanban_id = $1 ORDER BY order_index ASC LIMIT 1",
+          [kanban_id]
+        );
+        const firstColId = firstColResult.rows[0]?.id || null;
+        updates.push(`kanban_id = $${paramIdx++}`);
+        params.push(kanban_id);
+        if (firstColId) {
+          updates.push(`coluna = $${paramIdx++}`);
+          params.push(firstColId);
+          updates.push(`etapa_updated_at = NOW()`);
+        }
+        await pool.query(
+          `INSERT INTO crm_comercial_history (lead_id, from_coluna, to_coluna, moved_by) VALUES ($1, $2, $3, $4)`,
+          [id, currentColuna, firstColId || 'outro-kanban', moved_by || 'Sistema']
+        );
+      } else if (coluna !== undefined) {
         updates.push(`coluna = $${paramIdx++}`);
         params.push(coluna);
+        if (coluna !== currentColuna) {
+          updates.push(`etapa_updated_at = NOW()`);
+        }
       }
       if (valor !== undefined) {
         updates.push(`valor = $${paramIdx++}`);
@@ -2909,6 +3249,47 @@ app.get("/api/todos", async (req, res) => {
         updates.push(`responsavel_id = $${paramIdx++}`);
         params.push(responsavel_id);
       }
+      if (previsao !== undefined) {
+        updates.push(`previsao = $${paramIdx++}`);
+        params.push(previsao || null);
+      }
+      if (tags !== undefined) {
+        updates.push(`tags = $${paramIdx++}`);
+        params.push(JSON.stringify(tags));
+      }
+      if (origem !== undefined) {
+        updates.push(`origem = $${paramIdx++}`);
+        params.push(origem);
+      }
+      if (instagram !== undefined) {
+        updates.push(`instagram = $${paramIdx++}`);
+        params.push(instagram);
+      }
+      if (nicho !== undefined) {
+        updates.push(`nicho = $${paramIdx++}`);
+        params.push(nicho);
+      }
+      if (tempo_oab !== undefined) {
+        updates.push(`tempo_oab = $${paramIdx++}`);
+        params.push(tempo_oab);
+      }
+      if (faturamento !== undefined) {
+        updates.push(`faturamento = $${paramIdx++}`);
+        params.push(faturamento);
+      }
+      if (reunion_date !== undefined) { updates.push(`reunion_date = $${paramIdx++}`); params.push(reunion_date); }
+      if (office_location !== undefined) { updates.push(`office_location = $${paramIdx++}`); params.push(office_location); }
+      if (monthly_closings !== undefined) { updates.push(`monthly_closings = $${paramIdx++}`); params.push(monthly_closings); }
+      if (closing_goal !== undefined) { updates.push(`closing_goal = $${paramIdx++}`); params.push(closing_goal); }
+      if (reunion_link !== undefined) { updates.push(`reunion_link = $${paramIdx++}`); params.push(reunion_link); }
+      if (utm_platform !== undefined) { updates.push(`utm_platform = $${paramIdx++}`); params.push(utm_platform); }
+      if (utm_campaign !== undefined) { updates.push(`utm_campaign = $${paramIdx++}`); params.push(utm_campaign); }
+      if (utm_set !== undefined) { updates.push(`utm_set = $${paramIdx++}`); params.push(utm_set); }
+      if (utm_creative !== undefined) { updates.push(`utm_creative = $${paramIdx++}`); params.push(utm_creative); }
+      if (utm_position !== undefined) { updates.push(`utm_position = $${paramIdx++}`); params.push(utm_position); }
+      if (nome !== undefined) { updates.push(`nome = $${paramIdx++}`); params.push(nome); }
+      if (telefone !== undefined) { updates.push(`telefone = $${paramIdx++}`); params.push(telefone); }
+      if (observacoes !== undefined) { updates.push(`observacoes = $${paramIdx++}`); params.push(observacoes); }
       
       if (updates.length > 0) {
         updates.push(`updated_at = NOW()`);
@@ -2919,7 +3300,7 @@ app.get("/api/todos", async (req, res) => {
           params
         );
         
-        if (coluna !== undefined && coluna !== currentColuna) {
+        if (!kanban_id && coluna !== undefined && coluna !== currentColuna) {
           await pool.query(
             `INSERT INTO crm_comercial_history (lead_id, from_coluna, to_coluna, moved_by) VALUES ($1, $2, $3, $4)`,
             [id, currentColuna, coluna, moved_by || 'Sistema']
@@ -2936,6 +3317,44 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
+  // --- Tags (Globais do Kanban) ---
+  app.get("/api/crm-comercial/tags", async (_req, res) => {
+    try {
+      const result = await pool.query("SELECT * FROM crm_comercial_tags ORDER BY name ASC");
+      res.json(result.rows);
+    } catch (err) {
+      console.error("Error fetching tags:", err);
+      res.status(500).json({ error: "Failed to fetch tags" });
+    }
+  });
+
+  app.post("/api/crm-comercial/tags", async (req, res) => {
+    try {
+      const { name, color } = req.body;
+      if (!name || !color) return res.status(400).json({ error: "Name and color required" });
+      const result = await pool.query(
+        "INSERT INTO crm_comercial_tags (name, color) VALUES ($1, $2) ON CONFLICT (name) DO UPDATE SET color = EXCLUDED.color RETURNING *",
+        [name, color]
+      );
+      res.status(201).json(result.rows[0]);
+    } catch (err) {
+      console.error("Error creating tag:", err);
+      res.status(500).json({ error: "Failed to create tag", details: err instanceof Error ? err.message : String(err)  });
+    }
+  });
+  
+  app.delete("/api/crm-comercial/tags/:name", async (req, res) => {
+    try {
+      const { name } = req.params;
+      const result = await pool.query("DELETE FROM crm_comercial_tags WHERE name = $1 RETURNING *", [name]);
+      if (result.rowCount === 0) return res.status(404).json({ error: "Tag not found" });
+      res.json({ message: "Tag deleted" });
+    } catch (err) {
+      console.error("Error deleting tag:", err);
+      res.status(500).json({ error: "Failed to delete tag", details: err instanceof Error ? err.message : String(err)  });
+    }
+  });
+
   app.delete("/api/crm-comercial/leads/:id", async (req, res) => {
     try {
       const { id } = req.params;
@@ -2944,6 +3363,360 @@ app.get("/api/todos", async (req, res) => {
     } catch (err) {
       console.error("Error deleting lead:", err);
       res.status(500).json({ error: "Failed to delete lead" });
+    }
+  });
+
+  // All CRM Comercial Activities (across all leads)
+  app.get("/api/crm-comercial/activities", async (req, res) => {
+    try {
+      const { type, completed, responsible_id } = req.query;
+      let conditions: string[] = [];
+      const params: any[] = [];
+      let paramIdx = 1;
+
+      if (type && type !== 'all') {
+        conditions.push(`t.type = $${paramIdx++}`);
+        params.push(type);
+      }
+      if (completed !== undefined && completed !== 'all') {
+        conditions.push(`t.completed = $${paramIdx++}`);
+        params.push(completed === 'true');
+      }
+      if (responsible_id && responsible_id !== 'all') {
+        conditions.push(`t.responsible_id = $${paramIdx++}`);
+        params.push(responsible_id);
+      }
+
+      const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+      const result = await pool.query(
+        `SELECT 
+           t.id, t.lead_id, t.title, t.type, t.priority, t.due_date, t.start_time,
+           t.end_time, t.responsible_id, t.observations, t.completed, t.completed_at, t.created_at,
+           k.nome as lead_name
+         FROM crm_comercial_tasks t
+         LEFT JOIN crm_comercial_leads k ON t.lead_id::text = k.id::text
+         ${whereClause}
+         ORDER BY 
+           CASE WHEN t.due_date IS NULL THEN 1 ELSE 0 END,
+           t.due_date ASC,
+           t.created_at DESC`,
+        params
+      );
+      res.json(result.rows);
+    } catch (err: any) {
+      console.error("Error fetching all activities:", err?.message || err);
+      res.status(500).json({ error: "Failed to fetch activities", detail: String(err?.message) });
+    }
+  });
+
+  // CRM Comercial Tasks
+  app.get("/api/crm-comercial/kanbans/:kanban_id/tasks", async (req, res) => {
+    try {
+      const { kanban_id } = req.params;
+      const result = await pool.query(
+        `SELECT ct.* FROM crm_comercial_tasks ct
+         JOIN crm_comercial_leads cl ON ct.lead_id = cl.id
+         WHERE cl.kanban_id = $1 AND ct.completed = false
+         ORDER BY ct.due_date ASC, ct.start_time ASC`,
+        [kanban_id]
+      );
+      res.json(result.rows);
+    } catch (err) {
+      console.error("Error fetching kanban tasks:", err);
+      res.status(500).json({ error: "Failed to fetch tasks" });
+    }
+  });
+
+  // ── Loss Reasons ──────────────────────────────────────────────────────────
+  app.get("/api/crm-comercial/loss-reasons", async (req, res) => {
+    try {
+      const result = await pool.query("SELECT * FROM crm_comercial_loss_reasons ORDER BY order_index ASC, created_at ASC");
+      res.json(result.rows);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch loss reasons" });
+    }
+  });
+
+  app.post("/api/crm-comercial/loss-reasons", async (req, res) => {
+    try {
+      const { name, description, color } = req.body;
+      const countResult = await pool.query("SELECT COUNT(*) FROM crm_comercial_loss_reasons");
+      const order_index = parseInt(countResult.rows[0].count);
+      const result = await pool.query(
+        "INSERT INTO crm_comercial_loss_reasons (name, description, color, order_index) VALUES ($1, $2, $3, $4) RETURNING *",
+        [name, description || null, color || '#6b7280', order_index]
+      );
+      res.json(result.rows[0]);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to create loss reason" });
+    }
+  });
+
+  app.patch("/api/crm-comercial/loss-reasons/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { name, description, color } = req.body;
+      const result = await pool.query(
+        "UPDATE crm_comercial_loss_reasons SET name = COALESCE($1, name), description = COALESCE($2, description), color = COALESCE($3, color) WHERE id = $4 RETURNING *",
+        [name, description, color, id]
+      );
+      res.json(result.rows[0]);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to update loss reason" });
+    }
+  });
+
+  app.delete("/api/crm-comercial/loss-reasons/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      await pool.query("DELETE FROM crm_comercial_loss_reasons WHERE id = $1", [id]);
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to delete loss reason" });
+    }
+  });
+
+  app.get("/api/crm-comercial/leads/:id/tasks", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const result = await pool.query(
+        "SELECT * FROM crm_comercial_tasks WHERE lead_id = $1 ORDER BY due_date ASC, created_at ASC",
+        [id]
+      );
+      res.json(result.rows);
+    } catch (err) {
+      console.error("Error fetching tasks:", err);
+      res.status(500).json({ error: "Failed to fetch tasks" });
+    }
+  });
+
+  app.post("/api/crm-comercial/leads/:id/tasks", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { title, type, priority, due_date, start_time, end_time, responsible_id, observations, user_name } = req.body;
+      const result = await pool.query(
+        `INSERT INTO crm_comercial_tasks 
+         (lead_id, title, type, priority, due_date, start_time, end_time, responsible_id, observations) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+        [id, title, type, priority, due_date, start_time || null, end_time || null, responsible_id || null, observations || null]
+      );
+
+      // Record in activity history
+      await pool.query(
+        `INSERT INTO crm_comercial_history (lead_id, action_type, description, user_name, task_type, created_at) 
+         VALUES ($1, 'task_created', $2, $3, $4, NOW())`,
+        [id, `Tarefa criada: "${title}"`, user_name || 'Sistema', type]
+      );
+
+      res.status(201).json(result.rows[0]);
+    } catch (err) {
+      console.error("Error creating task:", err);
+      res.status(500).json({ error: "Failed to create task" });
+    }
+  });
+
+  app.patch("/api/crm-comercial/tasks/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { user_name, ...bodyRest } = req.body;
+      const updates = [];
+      const params = [];
+      let paramIdx = 1;
+
+      Object.entries(bodyRest).forEach(([key, value]) => {
+        if (['title', 'type', 'priority', 'due_date', 'start_time', 'end_time', 'responsible_id', 'observations', 'completed', 'completed_at'].includes(key)) {
+          updates.push(`${key} = $${paramIdx}`);
+          params.push(value);
+          paramIdx++;
+        }
+      });
+
+      if (updates.length === 0) return res.status(400).json({ error: "No valid updates provided" });
+
+      params.push(id);
+      const result = await pool.query(
+        `UPDATE crm_comercial_tasks SET ${updates.join(', ')} WHERE id = $${paramIdx} RETURNING *`,
+        params
+      );
+      const task = result.rows[0];
+
+      // Record completion/reopen in history
+      if (bodyRest.completed !== undefined) {
+        await pool.query(
+          `INSERT INTO crm_comercial_history (lead_id, action_type, description, user_name, task_type, created_at) 
+           VALUES ($1, $2, $3, $4, $5, NOW())`,
+          [
+            task.lead_id,
+            bodyRest.completed ? 'task_completed' : 'task_reopened',
+            bodyRest.completed ? `Tarefa concluída: "${task.title}"` : `Tarefa reaberta: "${task.title}"`,
+            user_name || 'Sistema',
+            task.type
+          ]
+        );
+      }
+
+      res.json(task);
+    } catch (err) {
+      console.error("Error updating task:", err);
+      res.status(500).json({ error: "Failed to update task" });
+    }
+  });
+
+  app.delete("/api/crm-comercial/tasks/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const taskRes = await pool.query("SELECT lead_id, title FROM crm_comercial_tasks WHERE id = $1", [id]);
+      await pool.query("DELETE FROM crm_comercial_tasks WHERE id = $1", [id]);
+
+      if (taskRes.rows.length > 0) {
+        const { lead_id, title, type } = taskRes.rows[0];
+        await pool.query(
+          `INSERT INTO crm_comercial_history (lead_id, action_type, description, user_name, task_type, created_at) 
+           VALUES ($1, 'task_deleted', $2, 'Sistema', $3, NOW())`,
+          [lead_id, `Tarefa excluída: "${title}"`, type]
+        );
+      }
+
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Error deleting task:", err);
+      res.status(500).json({ error: "Failed to delete task" });
+    }
+  });
+
+  app.get("/api/crm-comercial/task-templates", async (req, res) => {
+    try {
+      const templatesRes = await pool.query("SELECT * FROM crm_comercial_task_templates ORDER BY id ASC");
+      const itemsRes = await pool.query("SELECT * FROM crm_comercial_task_template_items ORDER BY template_id ASC, order_index ASC");
+      
+      const templates = templatesRes.rows.map(t => ({
+        ...t,
+        items: itemsRes.rows.filter(i => i.template_id === t.id)
+      }));
+      
+      res.json(templates);
+    } catch (err) {
+      console.error("Error fetching templates:", err);
+      res.status(500).json({ error: "Failed to fetch templates" });
+    }
+  });
+
+  app.post("/api/crm-comercial/task-templates", async (req, res) => {
+    try {
+      const { name, description, items } = req.body;
+      const templateRes = await pool.query(
+        "INSERT INTO crm_comercial_task_templates (name, description) VALUES ($1, $2) RETURNING *",
+        [name, description || '']
+      );
+      const template = templateRes.rows[0];
+
+      if (items && items.length > 0) {
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          await pool.query(
+            `INSERT INTO crm_comercial_task_template_items (template_id, title, type, priority, due_days_offset, order_index) 
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [template.id, item.title, item.type || 'Tarefa', item.priority || 'Normal', item.due_days_offset || 0, i]
+          );
+        }
+      }
+
+      // Return with items
+      const itemsRes = await pool.query(
+        "SELECT * FROM crm_comercial_task_template_items WHERE template_id = $1 ORDER BY order_index ASC",
+        [template.id]
+      );
+      res.status(201).json({ ...template, items: itemsRes.rows });
+    } catch (err) {
+      console.error("Error creating template:", err);
+      res.status(500).json({ error: "Failed to create template" });
+    }
+  });
+
+  app.put("/api/crm-comercial/task-templates/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { name, description, items } = req.body;
+
+      await pool.query(
+        "UPDATE crm_comercial_task_templates SET name = $1, description = $2 WHERE id = $3",
+        [name, description || '', id]
+      );
+
+      // Replace all items
+      await pool.query("DELETE FROM crm_comercial_task_template_items WHERE template_id = $1", [id]);
+      if (items && items.length > 0) {
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          await pool.query(
+            `INSERT INTO crm_comercial_task_template_items (template_id, title, type, priority, due_days_offset, order_index) 
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [id, item.title, item.type || 'Tarefa', item.priority || 'Normal', item.due_days_offset || 0, i]
+          );
+        }
+      }
+
+      const itemsRes = await pool.query(
+        "SELECT * FROM crm_comercial_task_template_items WHERE template_id = $1 ORDER BY order_index ASC",
+        [id]
+      );
+      const templateRes = await pool.query("SELECT * FROM crm_comercial_task_templates WHERE id = $1", [id]);
+      res.json({ ...templateRes.rows[0], items: itemsRes.rows });
+    } catch (err) {
+      console.error("Error updating template:", err);
+      res.status(500).json({ error: "Failed to update template" });
+    }
+  });
+
+  app.delete("/api/crm-comercial/task-templates/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      await pool.query("DELETE FROM crm_comercial_task_templates WHERE id = $1", [id]);
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Error deleting template:", err);
+      res.status(500).json({ error: "Failed to delete template" });
+    }
+  });
+
+  app.post("/api/crm-comercial/leads/:id/apply-template", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { template_id } = req.body;
+      
+      const itemsRes = await pool.query(
+        "SELECT * FROM crm_comercial_task_template_items WHERE template_id = $1 ORDER BY order_index ASC",
+        [template_id]
+      );
+
+      const templateRes = await pool.query("SELECT * FROM crm_comercial_task_templates WHERE id = $1", [template_id]);
+      const templateName = templateRes.rows[0]?.name || 'Modelo';
+
+      const tasks = [];
+      for (const item of itemsRes.rows) {
+        const dueDate = new Date();
+        dueDate.setDate(dueDate.getDate() + (item.due_days_offset || 0));
+        
+        const taskRes = await pool.query(
+          `INSERT INTO crm_comercial_tasks (lead_id, title, type, priority, due_date) 
+           VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+          [id, item.title, item.type, item.priority, dueDate.toISOString()]
+        );
+        tasks.push(taskRes.rows[0]);
+      }
+
+      // Record in history
+      await pool.query(
+        `INSERT INTO crm_comercial_history (lead_id, action_type, description, task_type, created_at) 
+         VALUES ($1, 'template_applied', $2, 'Tarefa', NOW())`,
+        [id, `Modelo "${templateName}" aplicado com ${tasks.length} tarefa(s)`]
+      );
+      
+      res.status(201).json(tasks);
+    } catch (err) {
+      console.error("Error applying template:", err);
+      res.status(500).json({ error: "Failed to apply template" });
     }
   });
 
@@ -3029,6 +3802,261 @@ app.get("/api/todos", async (req, res) => {
     } catch (err) {
       console.error("Error fetching history:", err);
       res.status(500).json({ error: "Failed to fetch history" });
+    }
+  });
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // API4COM — Telephony Integration
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  // Helper: make a request to api4com using native https module
+  const api4comRequest = (method: string, path: string, token: string, body?: object): Promise<{ status: number, data: any }> => {
+    return new Promise((resolve, reject) => {
+      const bodyStr = body ? JSON.stringify(body) : undefined;
+      const options = {
+        hostname: 'api.api4com.com',
+        port: 443,
+        path: `/api/v1${path}`,
+        method,
+        headers: {
+          'Authorization': token,
+          'Content-Type': 'application/json',
+          ...(bodyStr ? { 'Content-Length': Buffer.byteLength(bodyStr) } : {})
+        }
+      };
+      const req = https.request(options, (resp) => {
+        let rawData = '';
+        resp.on('data', (chunk) => { rawData += chunk; });
+        resp.on('end', () => {
+          try {
+            const parsed = rawData ? JSON.parse(rawData) : {};
+            resolve({ status: resp.statusCode || 0, data: parsed });
+          } catch {
+            resolve({ status: resp.statusCode || 0, data: rawData });
+          }
+        });
+      });
+      req.on('error', reject);
+      if (bodyStr) req.write(bodyStr);
+      req.end();
+    });
+  };
+
+  // GET /api/api4com/settings — fetch settings for a user (token is masked)
+  app.get("/api/api4com/settings", async (req, res) => {
+    const { user_id } = req.query;
+    if (!user_id) return res.status(400).json({ error: 'user_id is required' });
+    try {
+      const result = await pool.query(
+        'SELECT * FROM crm_api4com_settings WHERE user_id = $1',
+        [user_id]
+      );
+      if (result.rows.length === 0) {
+        return res.json({ configured: false });
+      }
+      const row = result.rows[0];
+      res.json({
+        configured: !!(row.api4com_token && row.sip_extension),
+        api4com_token: row.api4com_token ? '••••••••' + row.api4com_token.slice(-6) : '',
+        api4com_domain: row.api4com_domain || '',
+        sip_extension: row.sip_extension || '',
+        sip_password: row.sip_password || '',   // returned unmasked — needed for WebRTC SIP registration
+        sip_server: row.sip_server || ''
+      });
+    } catch (err) {
+      console.error('Error fetching api4com settings:', err);
+      res.status(500).json({ error: 'Failed to fetch api4com settings' });
+    }
+  });
+
+  // POST /api/api4com/settings — save/update settings for a user
+  app.post("/api/api4com/settings", async (req, res) => {
+    const { user_id, api4com_token, api4com_domain, sip_extension, sip_password, sip_server } = req.body;
+    if (!user_id) return res.status(400).json({ error: 'user_id is required' });
+    try {
+      // Only update non-masked fields
+      const existing = await pool.query('SELECT * FROM crm_api4com_settings WHERE user_id = $1', [user_id]);
+      const current = existing.rows[0] || {};
+      const finalToken = api4com_token && !api4com_token.startsWith('••••') ? api4com_token : current.api4com_token;
+      const finalPassword = sip_password && !sip_password.startsWith('••••') ? sip_password : current.sip_password;
+
+      await pool.query(
+        `INSERT INTO crm_api4com_settings (user_id, api4com_token, api4com_domain, sip_extension, sip_password, sip_server, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())
+         ON CONFLICT (user_id) DO UPDATE SET
+           api4com_token = EXCLUDED.api4com_token,
+           api4com_domain = EXCLUDED.api4com_domain,
+           sip_extension = EXCLUDED.sip_extension,
+           sip_password = EXCLUDED.sip_password,
+           sip_server = EXCLUDED.sip_server,
+           updated_at = NOW()`,
+        [user_id, finalToken, api4com_domain, sip_extension, finalPassword, sip_server]
+      );
+      res.json({ success: true });
+    } catch (err) {
+      console.error('Error saving api4com settings:', err);
+      res.status(500).json({ error: 'Failed to save api4com settings' });
+    }
+  });
+
+  // GET /api/api4com/test-connection — validate the token by calling the Api4Com API
+  app.get("/api/api4com/test-connection", async (req, res) => {
+    const { user_id } = req.query;
+    if (!user_id) return res.status(400).json({ success: false, message: 'user_id é obrigatório' });
+    try {
+      const result = await pool.query('SELECT api4com_token, api4com_domain FROM crm_api4com_settings WHERE user_id = $1', [user_id]);
+      if (result.rows.length === 0 || !result.rows[0].api4com_token) {
+        return res.json({ success: false, message: 'Token não configurado. Salve as configurações primeiro.' });
+      }
+      const token = result.rows[0].api4com_token;
+      let apiResult: { status: number, data: any };
+      try {
+        apiResult = await api4comRequest('GET', '/users/me', token);
+      } catch (fetchErr) {
+        console.error('[API4COM] External request failed:', fetchErr);
+        return res.json({ success: false, message: 'Não foi possível contactar a Api4Com. Verifique a conectividade.' });
+      }
+      if (apiResult.status >= 200 && apiResult.status < 300) {
+        const data = apiResult.data;
+        return res.json({ success: true, message: `✓ Conectado — ${data.email || data.username || 'conta verificada'}` });
+      } else {
+        return res.json({ success: false, message: `Token inválido ou sem permissão (HTTP ${apiResult.status})` });
+      }
+    } catch (err) {
+      console.error('Error in test-connection:', err);
+      return res.json({ success: false, message: 'Erro interno. Tente novamente.' });
+    }
+  });
+
+  // GET /api/api4com/sip-credentials — fetch WebRTC/SIP credentials from Api4Com API
+  // This returns the correct WSS server URL and SIP settings as provided by Api4Com
+  app.get("/api/api4com/sip-credentials", async (req, res) => {
+    const { user_id } = req.query;
+    if (!user_id) return res.status(400).json({ error: 'user_id is required' });
+    try {
+      const result = await pool.query('SELECT * FROM crm_api4com_settings WHERE user_id = $1', [user_id]);
+      if (result.rows.length === 0 || !result.rows[0].api4com_token) {
+        return res.status(404).json({ error: 'Token não configurado' });
+      }
+      const { api4com_token, api4com_domain, sip_extension, sip_password, sip_server } = result.rows[0];
+
+      // Try to get SIP/WebRTC credentials from Api4Com API
+      let wssServer = sip_server || `wss://${api4com_domain}`;
+      let sipDomain = api4com_domain;
+      let sipUser = sip_extension;
+      let sipPass = sip_password;
+
+      try {
+        // Try /extensions endpoint to get SIP extension details
+        const extResult = await api4comRequest('GET', `/extensions/${sip_extension}`, api4com_token);
+        console.log('[SIP CREDS] /extensions response:', extResult.status, JSON.stringify(extResult.data).slice(0, 300));
+        if (extResult.status === 200 && extResult.data) {
+          const d = extResult.data;
+          // Extract WSS server from api4com response if present
+          if (d.wss_server) wssServer = d.wss_server;
+          else if (d.websocket_server) wssServer = d.websocket_server;
+          else if (d.sip_server) wssServer = d.sip_server;
+          if (d.sip_domain || d.domain) sipDomain = d.sip_domain || d.domain;
+          if (d.sip_user || d.username) sipUser = d.sip_user || d.username || sip_extension;
+          if (d.sip_password || d.password) sipPass = d.sip_password || d.password || sip_password;
+        }
+      } catch (e) {
+        console.warn('[SIP CREDS] Could not fetch extension details:', e);
+      }
+
+      // Try /me or /users/me for account-level wss info
+      try {
+        const meResult = await api4comRequest('GET', '/users/me', api4com_token);
+        console.log('[SIP CREDS] /users/me response:', meResult.status, JSON.stringify(meResult.data).slice(0, 300));
+        if (meResult.status === 200 && meResult.data) {
+          const d = meResult.data;
+          if (d.wss_server && !wssServer.includes(':8089')) wssServer = d.wss_server;
+          if (d.sip_domain) sipDomain = d.sip_domain;
+        }
+      } catch (e) {}
+
+      res.json({
+        extension: sipUser,
+        password: sipPass,
+        domain: sipDomain,
+        wss_server: wssServer,
+        raw_sip_server: sip_server
+      });
+    } catch (err) {
+      console.error('[SIP CREDS] Error:', err);
+      res.status(500).json({ error: 'Erro ao buscar credenciais SIP' });
+    }
+  });
+
+  // POST /api/api4com/call/initiate — trigger a call via Api4Com Dialer
+  app.post("/api/api4com/call/initiate", async (req, res) => {
+    const { user_id, phone, lead_id } = req.body;
+    if (!user_id || !phone) return res.status(400).json({ error: 'user_id and phone are required' });
+    try {
+      const result = await pool.query('SELECT * FROM crm_api4com_settings WHERE user_id = $1', [user_id]);
+      if (result.rows.length === 0 || !result.rows[0].api4com_token || !result.rows[0].sip_extension) {
+        return res.status(400).json({ error: 'Telefonia não configurada para este usuário' });
+      }
+      const { api4com_token, sip_extension } = result.rows[0];
+
+      let dialerResult: { status: number, data: any };
+      try {
+        dialerResult = await api4comRequest('POST', '/dialer', api4com_token, {
+          extension: sip_extension,
+          phone: phone,
+          metadata: { gateway: 'grapehub-crm', userId: user_id, entityId: lead_id }
+        });
+      } catch (fetchErr) {
+        console.error('[API4COM] Dialer request failed:', fetchErr);
+        return res.status(500).json({ error: 'Falha de conexão com a Api4Com' });
+      }
+
+      if (dialerResult.status < 200 || dialerResult.status >= 300) {
+        return res.status(400).json({ error: 'Falha ao iniciar chamada', details: dialerResult.data });
+      }
+
+      // Log call initiation in the lead history
+      if (lead_id) {
+        await pool.query(
+          `INSERT INTO crm_comercial_history (lead_id, action_type, description, user_name, from_coluna, to_coluna)
+           VALUES ($1, 'call_initiated', $2, $3, '', '')`,
+          [lead_id, `📞 Chamada iniciada para ${phone}`, req.body.user_name || 'Sistema']
+        );
+      }
+
+      res.json({ success: true, call_id: dialerResult.data?.id });
+    } catch (err) {
+      console.error('Error initiating api4com call:', err);
+      res.status(500).json({ error: 'Erro interno ao iniciar chamada' });
+    }
+  });
+
+  // POST /api/api4com/webhook — receive call hangup from Api4Com and record in history
+  app.post("/api/api4com/webhook", async (req, res) => {
+    try {
+      const { eventType, metadata, caller, called, duration, answeredAt, recordUrl } = req.body;
+      console.log('[API4COM WEBHOOK]', eventType, metadata);
+
+      if (eventType === 'channel-hangup' && metadata?.entityId) {
+        const leadId = metadata.entityId;
+        const mins = Math.floor((duration || 0) / 60);
+        const secs = (duration || 0) % 60;
+        const durationStr = mins > 0 ? `${mins}min ${secs}s` : `${secs}s`;
+        const answered = answeredAt ? true : false;
+        const description = answered
+          ? `📞 Ligação para ${called} — Duração: ${durationStr}${recordUrl ? ' — [🎧 Gravação](' + recordUrl + ')' : ''}`
+          : `📞 Ligação para ${called} — Não atendida`;
+
+        await pool.query(
+          `INSERT INTO crm_comercial_history (lead_id, action_type, description, user_name, from_coluna, to_coluna)
+           VALUES ($1, 'call_completed', $2, $3, '', '')`,
+          [leadId, description, `Ramal ${caller}`]
+        );
+      }
+      res.json({ received: true });
+    } catch (err) {
+      console.error('Error processing api4com webhook:', err);
+      res.status(500).json({ error: 'Webhook processing failed' });
     }
   });
 

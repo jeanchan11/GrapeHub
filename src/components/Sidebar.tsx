@@ -11,7 +11,7 @@ import { useMenu } from '../context/MenuContext';
 import { 
   Search, Bell, Settings, X,
   ChevronRight, ChevronLeft, LogOut,
-  ChevronDown, Sun, Moon, Zap, Folder
+  ChevronDown, Sun, Moon, Zap, Folder, Shield
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -50,24 +50,21 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
   };
 
   const hasAllowedPagesInSubSubSession = (subSubSession: any) => {
-    const allowed = subSubSession.pages.some((p: any) => isPageAllowed(p.id));
-    console.log(`SubSubSession ${subSubSession.id} allowed:`, allowed);
+    const allowed = subSubSession.pages?.some((p: any) => isPageAllowed(p.id)) ?? false;
     return allowed;
   };
 
   const hasAllowedPagesInSubSession = (subSession: any) => {
     const allowedInSubSub = subSession.subSubSessions?.some((sss: any) => hasAllowedPagesInSubSubSession(sss)) ?? false;
     const allowedInPages = subSession.pages?.some((p: any) => isPageAllowed(p.id)) ?? false;
-    const allowed = allowedInSubSub || allowedInPages;
-    console.log(`SubSession ${subSession.id} allowed:`, allowed);
-    return allowed;
+    return allowedInSubSub || allowedInPages;
   };
 
   const hasAllowedPagesInSection = (section: any) => {
     const allowedInSubs = section.subSessions?.some((ss: any) => hasAllowedPagesInSubSession(ss)) ?? false;
     const allowedInSectionPages = section.pages?.some((p: any) => isPageAllowed(p.id)) ?? false;
-    const allowed = allowedInSubs || allowedInSectionPages;
-    return allowed;
+    const allowedInSectionSubSubs = section.subSubSessions?.some((sss: any) => hasAllowedPagesInSubSubSession(sss)) ?? false;
+    return allowedInSubs || allowedInSectionPages || allowedInSectionSubSubs;
   };
 
   const bottomItems = [
@@ -158,12 +155,14 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
 
       {/* Navigation */}
       <motion.div layout className={`flex-1 overflow-y-auto space-y-2 scrollbar-hide py-2 transition-all duration-300 ${isCollapsed ? 'px-0' : 'px-2'}`}>
-        {Array.isArray(menu) && menu.map((section) => {
-          const allowed = hasAllowedPagesInSection(section);
-          if (!allowed) return null;
-          
-          return (
-            <div key={section.id} className="mb-2">
+        {Array.isArray(menu) && (() => {
+          const allowedSections = menu.filter(s => hasAllowedPagesInSection(s));
+          return allowedSections.map((section, sectionIndex) => (
+            <div key={section.id}>
+              {sectionIndex > 0 && (
+                <div className="mx-4 my-1 border-t border-slate-200/40 dark:border-white/5" />
+              )}
+              <div className="mb-2">
               {!isCollapsed && (
                 <button 
                   onClick={(section.subSessions?.length > 0 || section.pages?.length > 0) ? () => toggleExpand(`sec-${section.id}`) : undefined}
@@ -227,6 +226,78 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                         >
                           {PageIcon && <PageIcon size={14} color={isActive ? '#FFFFFF' : (page.icon_color || '#9CA3AF')} />}
                           {!isCollapsed && <span style={{ color: isActive ? '#FFFFFF' : 'inherit' }}>{page.label}</span>}
+                        </div>
+                      );
+                    })}
+
+                    {/* SubSubSessions directly in Section */}
+                    {Array.isArray(section.subSubSessions) && section.subSubSessions.filter((sss: any) => hasAllowedPagesInSubSubSession(sss)).map((subSubSession: any) => {
+                      const SubSubIcon = iconMap[subSubSession.icon];
+                      return (
+                        <div key={subSubSession.id}>
+                          <div
+                            onClick={(e) => { e.stopPropagation(); toggleExpand(`secsubsub-${subSubSession.id}`); }}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: '8px',
+                              paddingLeft: '28px', paddingRight: '12px',
+                              paddingTop: '7px', paddingBottom: '7px',
+                              borderRadius: '8px', margin: '1px 8px 1px 0',
+                              cursor: 'pointer', background: 'transparent',
+                            }}
+                            className="w-full text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white transition-all group"
+                          >
+                            <div className="relative flex items-center justify-center w-4 h-4">
+                              <div className="opacity-100 group-hover:opacity-0 transition-opacity">
+                                {SubSubIcon && <SubSubIcon size={14} color={subSubSession.icon_color || '#9CA3AF'} />}
+                              </div>
+                              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                {subSubSession.pages?.length > 0 ? (
+                                  expanded[`secsubsub-${subSubSession.id}`]
+                                    ? <ChevronDown size={14} color="#7C3AED" />
+                                    : <ChevronRight size={14} color="#C4C4C4" />
+                                ) : <span style={{ width: 14 }} />}
+                              </div>
+                            </div>
+                            {!isCollapsed && <span className="text-sm">{subSubSession.label}</span>}
+                          </div>
+                          <AnimatePresence initial={false}>
+                            {expanded[`secsubsub-${subSubSession.id}`] && !isCollapsed && (
+                              <motion.div
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: 'auto', opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                transition={{ duration: 0.2, ease: 'easeInOut' }}
+                                className="overflow-hidden"
+                              >
+                                {Array.isArray(subSubSession.pages) && subSubSession.pages.filter((p: any) => isPageAllowed(p.id)).map((page: any) => {
+                                  const PageIcon = iconMap[page.icon];
+                                  const isActive = activePage === page.id;
+                                  return (
+                                    <div
+                                      key={page.id}
+                                      onClick={() => onPageChange(page.id)}
+                                      style={{
+                                        display: 'flex', alignItems: 'center', gap: '8px',
+                                        paddingLeft: '40px', paddingRight: '12px',
+                                        paddingTop: '7px', paddingBottom: '7px',
+                                        borderRadius: '8px', margin: '1px 8px 1px 0',
+                                        cursor: 'pointer',
+                                        background: isActive ? '#7C3AED' : 'transparent',
+                                      }}
+                                      className={`w-full text-sm font-medium transition-all duration-200 ${
+                                        isActive
+                                          ? 'text-white font-semibold'
+                                          : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white'
+                                      }`}
+                                    >
+                                      {PageIcon && <PageIcon size={14} color={isActive ? '#FFFFFF' : (page.icon_color || '#9CA3AF')} />}
+                                      <span style={{ color: isActive ? '#FFFFFF' : 'inherit' }}>{page.label}</span>
+                                    </div>
+                                  );
+                                })}
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
                         </div>
                       );
                     })}
@@ -338,7 +409,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                                           cursor: 'pointer',
                                           background: 'transparent',
                                         }}
-                                        className="w-full text-sm font-medium text-slate-600 dark:text-slate-500 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white group"
+                                        className="w-full text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white group"
                                       >
                                         <div className="relative flex items-center justify-center w-4 h-4">
                                           <div className="opacity-100 group-hover:opacity-0 transition-opacity">
@@ -354,7 +425,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                                             )}
                                           </div>
                                         </div>
-                                        {!isCollapsed && <span className="text-xs">{subSubSession.label}</span>}
+                                        {!isCollapsed && <span className="text-sm">{subSubSession.label}</span>}
                                       </div>
 
                                       <AnimatePresence initial={false}>
@@ -413,8 +484,9 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                 )}
               </AnimatePresence>
             </div>
-          );
-        })}
+          </div>
+          ));
+        })()}
       </motion.div>
 
       {/* Bottom Items */}

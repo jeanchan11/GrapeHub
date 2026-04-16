@@ -1314,18 +1314,18 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsProductModalOpen(false)}
-              className="fixed inset-0 bg-slate-900/20 dark:bg-black/40 darker:bg-black/60 backdrop-blur-sm"
+              className="fixed inset-0 modal-overlay"
             />
             <motion.div 
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-4xl bg-white/20 backdrop-blur-lg dark:bg-violet-500/10 darker:!bg-black/80 dark:backdrop-blur-lg rounded-3xl border border-white/30 dark:border-violet-500/20 darker:!border-white/5 shadow-[0_8px_32px_0_rgba(31,38,135,0.1)] dark:shadow-[0_8px_32px_0_rgba(0,0,0,0.3)] overflow-hidden mb-10 transition-colors duration-300"
+              className="relative w-full max-w-4xl modal-container overflow-hidden mb-10 transition-colors duration-300"
             >
               {/* Modal Header */}
-              <div className="p-8 border-b border-white/20 dark:border-white/10">
-                <div className="flex items-center justify-between mb-6">
-                  <div className="flex items-center gap-4">
+              <div className="p-8 border-b border-slate-200 dark:border-white/10">
+                <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6 mb-6">
+                  <div className="flex flex-wrap items-center gap-4">
                     {isEditingMetrics ? (
                       <div className="flex items-center gap-3">
                         <div className="relative group">
@@ -1370,7 +1370,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
                       {selectedProduct.status}
                     </span>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-3 justify-end w-full xl:w-auto mt-4 xl:mt-0">
                     {!isEditingMetrics && (
                       <>
                         <button 
@@ -1417,7 +1417,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
                 </div>
 
                 {/* Tabs */}
-                <div className="flex items-center gap-6 mb-8 border-b border-white/20 dark:border-white/10">
+                <div className="flex items-center gap-6 mb-8 border-b border-slate-200 dark:border-white/10">
                   {(['resultado', 'kpis'] as const).map((tab) => (
                     <button
                       key={tab}
@@ -1805,12 +1805,12 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
               {/* Add Metrics Modal */}
               <AnimatePresence>
                 {isAddMetricsModalOpen && (
-                  <div className="absolute inset-0 z-[500] flex items-center justify-center p-4 bg-white/50 dark:bg-dark-card/50 backdrop-blur-sm rounded-2xl">
+                  <div className="absolute inset-0 z-[500] flex items-center justify-center p-4 modal-overlay rounded-3xl">
                     <motion.div 
                       initial={{ opacity: 0, scale: 0.9 }}
                       animate={{ opacity: 1, scale: 1 }}
                       exit={{ opacity: 0, scale: 0.9 }}
-                      className="relative bg-white dark:bg-dark-card p-6 rounded-2xl shadow-xl w-full max-w-lg border border-slate-200 dark:border-white/10"
+                      className="relative p-6 modal-container w-full max-w-lg"
                     >
                       <h3 className="text-lg font-bold mb-1">Adicionar Métricas Semanais</h3>
                       <input 
@@ -1882,21 +1882,21 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
       {/* Add Product Modal */}
       <AnimatePresence>
         {isAddProductModalOpen && (
-          <div className="fixed inset-0 z-[100] overflow-y-auto p-4 flex justify-center items-start pl-[280px]">
+          <div className="fixed inset-0 z-[100] overflow-y-auto p-4 flex justify-center items-start">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsAddProductModalOpen(false)}
-              className="fixed inset-0 bg-slate-900/20 dark:bg-black/40 darker:bg-black/60 backdrop-blur-sm left-[280px]"
+              className="fixed inset-0 modal-overlay"
             />
             <motion.div 
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-2xl bg-white/20 backdrop-blur-lg dark:bg-violet-500/10 darker:!bg-black/80 dark:backdrop-blur-lg rounded-3xl border border-white/30 dark:border-violet-500/20 darker:!border-white/5 shadow-[0_8px_32px_0_rgba(31,38,135,0.1)] dark:shadow-[0_8px_32px_0_rgba(0,0,0,0.3)] overflow-hidden my-auto transition-colors duration-300"
+              className="relative w-full max-w-2xl modal-container overflow-hidden my-auto transition-colors duration-300"
             >
-              <div className="p-8 border-b border-slate-200 dark:border-white/5 flex items-center justify-between">
+              <div className="p-8 border-b border-slate-200 dark:border-white/10 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-violet-600/20 rounded-lg">
                     <Plus className="text-violet-500" size={20} />
@@ -2057,15 +2057,15 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsMeetingModalOpen(false)}
-              className="fixed inset-0 bg-slate-900/20 dark:bg-black/40 darker:bg-black/60 backdrop-blur-sm"
+              className="fixed inset-0 modal-overlay"
             />
             <motion.div 
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-lg bg-white/20 backdrop-blur-lg dark:bg-violet-500/10 darker:!bg-black/80 dark:backdrop-blur-lg rounded-3xl border border-white/30 dark:border-violet-500/20 darker:!border-white/5 shadow-[0_8px_32px_0_rgba(31,38,135,0.1)] dark:shadow-[0_8px_32px_0_rgba(0,0,0,0.3)] overflow-hidden my-auto transition-colors duration-300"
+              className="relative w-full max-w-lg modal-container overflow-hidden my-auto transition-colors duration-300"
             >
-              <div className="p-6 border-b border-slate-200 dark:border-white/5 flex items-center justify-between">
+              <div className="p-6 border-b border-slate-200 dark:border-white/10 flex items-center justify-between">
                 <h2 className="text-lg font-bold text-light-text dark:text-white">Adicionar Reunião</h2>
                 <button 
                   onClick={() => setIsMeetingModalOpen(false)}
@@ -2116,21 +2116,21 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
       {/* Add Partner Modal */}
       <AnimatePresence>
         {isAddPartnerModalOpen && (
-          <div className="fixed inset-0 z-[150] overflow-y-auto p-4 flex justify-center items-start pl-[280px]">
+          <div className="fixed inset-0 z-[150] overflow-y-auto p-4 flex justify-center items-start">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsAddPartnerModalOpen(false)}
-              className="fixed inset-0 bg-slate-900/20 dark:bg-black/40 darker:bg-black/60 backdrop-blur-sm left-[280px]"
+              className="fixed inset-0 modal-overlay"
             />
             <motion.div 
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-xl bg-white/20 backdrop-blur-lg dark:bg-violet-500/10 darker:!bg-black/80 dark:backdrop-blur-lg rounded-3xl border border-white/30 dark:border-violet-500/20 darker:!border-white/5 shadow-[0_8px_32px_0_rgba(31,38,135,0.1)] dark:shadow-[0_8px_32px_0_rgba(0,0,0,0.3)] overflow-hidden my-auto transition-colors"
+              className="relative w-full max-w-xl modal-container overflow-hidden my-auto transition-colors"
             >
-              <div className="p-8 border-b border-slate-200 dark:border-white/5">
+              <div className="p-8 border-b border-slate-200 dark:border-white/10">
                 <div className="flex items-center justify-between mb-6">
                   <div className="flex items-center gap-4">
                     <div className="p-3 bg-violet-600/20 rounded-xl">
@@ -3086,7 +3086,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={() => setPreviewImage(null)}
-            className="fixed inset-0 bg-slate-900/20 dark:bg-black/40 darker:bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 modal-overlay"
           />
           <motion.img 
             initial={{ opacity: 0, scale: 0.9 }}
