@@ -1078,14 +1078,19 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                 };
                 const formatRelativeTime = (dateStr: string) => {
                   if (!dateStr) return '';
-                  const diff = Date.now() - new Date(dateStr).getTime();
+                  // Api4Com returns times in Brazil local time (UTC-3) without timezone info
+                  // Normalize: replace space with T and append -03:00 so JS parses correctly
+                  const normalized = dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T');
+                  const withTz = normalized.endsWith('Z') || normalized.includes('+') ? normalized : normalized + '-03:00';
+                  const diff = Date.now() - new Date(withTz).getTime();
                   const mins = Math.floor(diff / 60000);
+                  if (mins < 2) return 'agora';
                   if (mins < 60) return `há ${mins} min`;
                   const hrs = Math.floor(mins / 60);
                   if (hrs < 24) return `há ${hrs}h`;
                   const days = Math.floor(hrs / 24);
                   if (days < 30) return `há ${days} dia${days !== 1 ? 's' : ''}`;
-                  return new Date(dateStr).toLocaleDateString('pt-BR');
+                  return new Date(withTz).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
                 };
                 const getCallTypeLabel = (call: any) => {
                   if (call.call_type === 'inbound') return 'Recebida';
