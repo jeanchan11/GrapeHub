@@ -4134,7 +4134,7 @@ app.get("/api/todos", async (req, res) => {
 
       const apiRes = await fetch('https://api.api4com.com/api/v1/integrations', {
         method: 'PATCH',
-        headers: { 'Authorization': `Bearer ${api4com_token}`, 'Content-Type': 'application/json' },
+        headers: { 'Authorization': api4com_token, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           gateway: 'grapehub-crm',
           webhook: true,
@@ -4192,7 +4192,7 @@ app.get("/api/todos", async (req, res) => {
 
       const apiRes = await fetch(url, {
         headers: {
-          'Authorization': `Bearer ${api4com_token}`,
+          'Authorization': api4com_token,
           'Content-Type': 'application/json'
         }
       });
