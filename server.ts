@@ -3928,6 +3928,24 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
+  // GET /api/api4com/extensions — list extensions from Api4Com account
+  app.get("/api/api4com/extensions", async (req, res) => {
+    const { user_id } = req.query;
+    if (!user_id) return res.status(400).json({ error: 'user_id is required' });
+    try {
+      const result = await pool.query('SELECT api4com_token, api4com_domain FROM crm_api4com_settings WHERE user_id = $1', [user_id as string]);
+      if (result.rows.length === 0 || !result.rows[0].api4com_token) {
+        return res.status(400).json({ error: 'Token não configurado' });
+      }
+      const { api4com_token, api4com_domain } = result.rows[0];
+      const extResult = await api4comRequest('GET', `/extensions?domain=${encodeURIComponent(api4com_domain)}`, api4com_token);
+      console.log('[API4COM] Extensions:', JSON.stringify(extResult.data));
+      res.json(extResult.data);
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to fetch extensions' });
+    }
+  });
+
   // GET /api/api4com/sip-credentials — fetch WebRTC/SIP credentials from Api4Com API
   // This returns the correct WSS server URL and SIP settings as provided by Api4Com
   app.get("/api/api4com/sip-credentials", async (req, res) => {
@@ -3991,19 +4009,33 @@ app.get("/api/todos", async (req, res) => {
   // POST /api/api4com/call/initiate — trigger a call via Api4Com Dialer
   app.post("/api/api4com/call/initiate", async (req, res) => {
     const { user_id, phone, lead_id } = req.body;
+    console.log('[DIALER DEBUG] Request body:', JSON.stringify(req.body));
     if (!user_id || !phone) return res.status(400).json({ error: 'user_id and phone are required' });
     try {
+      console.log('[DIALER DEBUG] Querying DB for user:', user_id);
       const result = await pool.query('SELECT * FROM crm_api4com_settings WHERE user_id = $1', [user_id]);
+      console.log('[DIALER DEBUG] DB rows found:', result.rows.length);
       if (result.rows.length === 0 || !result.rows[0].api4com_token || !result.rows[0].sip_extension) {
+        console.log('[DIALER DEBUG] Missing token or extension:', result.rows[0]);
         return res.status(400).json({ error: 'Telefonia não configurada para este usuário' });
       }
       const { api4com_token, sip_extension } = result.rows[0];
+      console.log('[DIALER DEBUG] Using extension:', sip_extension, 'token length:', api4com_token?.length);
+
+      // Normalize phone number to international format (+55XXXXXXXXXXX)
+      let normalizedPhone = phone.replace(/\D/g, ''); // strip non-digits
+      if (!normalizedPhone.startsWith('55')) {
+        normalizedPhone = '55' + normalizedPhone;
+      }
+      normalizedPhone = '+' + normalizedPhone;
+
+      console.log(`[API4COM] Initiating call: extension=${sip_extension}, phone=${normalizedPhone}`);
 
       let dialerResult: { status: number, data: any };
       try {
         dialerResult = await api4comRequest('POST', '/dialer', api4com_token, {
           extension: sip_extension,
-          phone: phone,
+          phone: normalizedPhone,
           metadata: { gateway: 'grapehub-crm', userId: user_id, entityId: lead_id }
         });
       } catch (fetchErr) {
@@ -4011,52 +4043,164 @@ app.get("/api/todos", async (req, res) => {
         return res.status(500).json({ error: 'Falha de conexão com a Api4Com' });
       }
 
+      console.log(`[API4COM] Dialer response: status=${dialerResult.status}`, JSON.stringify(dialerResult.data));
+
       if (dialerResult.status < 200 || dialerResult.status >= 300) {
-        return res.status(400).json({ error: 'Falha ao iniciar chamada', details: dialerResult.data });
+        const errMsg = dialerResult.data?.message || dialerResult.data?.error || JSON.stringify(dialerResult.data);
+        return res.status(400).json({ error: 'Falha ao iniciar chamada', details: dialerResult.data, message: errMsg });
       }
 
       // Log call initiation in the lead history
-      if (lead_id) {
-        await pool.query(
-          `INSERT INTO crm_comercial_history (lead_id, action_type, description, user_name, from_coluna, to_coluna)
-           VALUES ($1, 'call_initiated', $2, $3, '', '')`,
-          [lead_id, `📞 Chamada iniciada para ${phone}`, req.body.user_name || 'Sistema']
-        );
+      if (lead_id && lead_id !== 'test123') {
+        try {
+          await pool.query(
+            `INSERT INTO crm_comercial_history (lead_id, action_type, description, user_name, from_coluna, to_coluna)
+             VALUES ($1, 'call_initiated', $2, $3, '', '')`,
+            [lead_id, `📞 Chamada iniciada para ${phone}`, req.body.user_name || 'Sistema']
+          );
+        } catch (histErr) {
+          console.warn('[DIALER] Could not log history:', histErr);
+        }
       }
 
       res.json({ success: true, call_id: dialerResult.data?.id });
     } catch (err) {
-      console.error('Error initiating api4com call:', err);
-      res.status(500).json({ error: 'Erro interno ao iniciar chamada' });
+      console.error('[DIALER DEBUG] FATAL error:', err);
+      res.status(500).json({ error: 'Erro interno ao iniciar chamada', detail: String(err) });
     }
   });
 
-  // POST /api/api4com/webhook — receive call hangup from Api4Com and record in history
+  // POST /api/api4com/webhook — receive call hangup from Api4Com (v1.4 payload)
   app.post("/api/api4com/webhook", async (req, res) => {
     try {
-      const { eventType, metadata, caller, called, duration, answeredAt, recordUrl } = req.body;
-      console.log('[API4COM WEBHOOK]', eventType, metadata);
+      const body = req.body;
+      console.log('[API4COM WEBHOOK] Received:', JSON.stringify(body).slice(0, 300));
+
+      const eventType = body.eventType;
+      const metadata = body.metadata || {};
+      const caller = body.caller;
+      const called = body.called;
+      const duration = body.duration || 0;
+      const answeredAt = body.answeredAt;
+      const hangupCause = body.hangupCause || body.hangup_cause;
+      const recordUrl = body.recordUrl || body.record_url;
+      const direction = body.direction || 'outbound';
 
       if (eventType === 'channel-hangup' && metadata?.entityId) {
         const leadId = metadata.entityId;
-        const mins = Math.floor((duration || 0) / 60);
-        const secs = (duration || 0) % 60;
+        const mins = Math.floor(duration / 60);
+        const secs = duration % 60;
         const durationStr = mins > 0 ? `${mins}min ${secs}s` : `${secs}s`;
-        const answered = answeredAt ? true : false;
+        const answered = !!answeredAt && hangupCause === 'NORMAL_CLEARING';
+
         const description = answered
-          ? `📞 Ligação para ${called} — Duração: ${durationStr}${recordUrl ? ' — [🎧 Gravação](' + recordUrl + ')' : ''}`
-          : `📞 Ligação para ${called} — Não atendida`;
+          ? `📞 Ligação ${direction === 'inbound' ? 'recebida de' : 'para'} ${called} — Duração: ${durationStr}${recordUrl ? ` — 🎧 Gravação disponível` : ''}`
+          : `📞 Ligação para ${called} — Não atendida (${hangupCause || 'sem resposta'})`;
 
         await pool.query(
           `INSERT INTO crm_comercial_history (lead_id, action_type, description, user_name, from_coluna, to_coluna)
            VALUES ($1, 'call_completed', $2, $3, '', '')`,
           [leadId, description, `Ramal ${caller}`]
         );
+        console.log(`[API4COM WEBHOOK] Logged call for lead ${leadId}: ${answered ? 'answered' : 'not answered'}`);
       }
       res.json({ received: true });
     } catch (err) {
       console.error('Error processing api4com webhook:', err);
       res.status(500).json({ error: 'Webhook processing failed' });
+    }
+  });
+
+  // POST /api/api4com/register-webhook — register our webhook URL in Api4Com integrations
+  app.post("/api/api4com/register-webhook", async (req, res) => {
+    try {
+      const { user_id } = req.body;
+      if (!user_id) return res.status(400).json({ error: 'user_id required' });
+
+      const settingsRes = await pool.query(
+        `SELECT api4com_token, api4com_domain FROM crm_api4com_settings WHERE user_id = $1`,
+        [user_id]
+      );
+      if (!settingsRes.rows.length || !settingsRes.rows[0].api4com_token) {
+        return res.status(404).json({ error: 'Api4Com not configured' });
+      }
+      const { api4com_token } = settingsRes.rows[0];
+
+      const host = req.headers['x-forwarded-host'] || req.headers['host'] || 'localhost:3000';
+      const protocol = req.headers['x-forwarded-proto'] || (process.env.NODE_ENV === 'production' ? 'https' : 'http');
+      const webhookUrl = `${protocol}://${host}/api/api4com/webhook`;
+
+      console.log(`[WEBHOOK REGISTER] Registering webhook at: ${webhookUrl}`);
+
+      const apiRes = await fetch('https://api.api4com.com/api/v1/integrations', {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${api4com_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gateway: 'grapehub-crm',
+          webhook: true,
+          webhookConstraint: { metadata: { gateway: 'grapehub-crm' } },
+          metadata: {
+            webhookUrl,
+            webhookVersion: 'v1.4',
+            webhookTypes: ['channel-hangup']
+          }
+        })
+      });
+
+      const data = await apiRes.json();
+      if (!apiRes.ok) {
+        return res.status(apiRes.status).json({ error: 'Failed to register webhook', detail: data });
+      }
+      res.json({ success: true, webhookUrl, data });
+    } catch (err) {
+      console.error('[WEBHOOK REGISTER] Error:', err);
+      res.status(500).json({ error: 'Erro ao registrar webhook', detail: String(err) });
+    }
+  });
+
+  // GET /api/api4com/calls — fetch call history from Api4Com API (filtered by phone)
+  app.get("/api/api4com/calls", async (req, res) => {
+    try {
+      const { user_id, phone, page = '1' } = req.query as Record<string, string>;
+      if (!user_id) return res.status(400).json({ error: 'user_id required' });
+
+      const settingsRes = await pool.query(
+        `SELECT api4com_token, api4com_domain FROM crm_api4com_settings WHERE user_id = $1`,
+        [user_id]
+      );
+      if (!settingsRes.rows.length || !settingsRes.rows[0].api4com_token) {
+        return res.status(404).json({ error: 'Api4Com not configured' });
+      }
+      const { api4com_token } = settingsRes.rows[0];
+
+      // Build filter: if phone provided, filter by 'to' field (the destination number)
+      const filter: any = {};
+      if (phone) {
+        // Try the full number and also without country code variants
+        const cleanPhone = String(phone).replace(/\D/g, '');
+        filter.where = { or: [
+          { to: phone },
+          { to: cleanPhone },
+          { to: { like: `%${cleanPhone.slice(-9)}%` } }
+        ]};
+      }
+      filter.order = 'started_at DESC';
+      filter.limit = 20;
+
+      const filterStr = encodeURIComponent(JSON.stringify(filter));
+      const url = `https://api.api4com.com/api/v1/calls?page=${page}&filter=${filterStr}`;
+
+      const apiRes = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${api4com_token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      const data = await apiRes.json();
+      res.json(data);
+    } catch (err) {
+      console.error('[API4COM CALLS]', err);
+      res.status(500).json({ error: 'Erro ao buscar histórico de ligações' });
     }
   });
 

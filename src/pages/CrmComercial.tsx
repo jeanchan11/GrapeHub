@@ -232,6 +232,7 @@ interface SortableCardProps {
 }
 
 interface LeadDetailModalProps {
+  currentUserEmail?: string;
   lead: Lead | null;
   users: User[];
   columns: any[];
@@ -406,9 +407,12 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   onMove, onDelete, onWin, onLose, onMoveToKanban, 
   onAddTask, onUpdateTask, onDeleteTask, onApplyTemplate, onManageTemplates,
   onRefreshTasks, currentKanbanId, api4comSettings, callingLeadId, onCallLead, onUpdateLeadField,
-  tags, onRefreshTags
+  tags, onRefreshTags, currentUserEmail
 }) => {
   const [activeTab, setActiveTab] = useState<'atividades' | 'histórico' | 'notas' | 'ligações' | 'arquivos'>('atividades');
+  const [callLogs, setCallLogs] = useState<any[]>([]);
+  const [callLogsLoading, setCallLogsLoading] = useState(false);
+  const [callLogsFetched, setCallLogsFetched] = useState(false);
   const [showMoveMenu, setShowMoveMenu] = useState(false);
   const [showKanbanMenu, setShowKanbanMenu] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -438,7 +442,28 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, []);
+  }, []);  // Reset call logs when lead changes
+  useEffect(() => {
+    setCallLogs([]);
+    setCallLogsFetched(false);
+  }, [lead?.id]);
+
+  // Fetch call history when ligações tab is active
+  useEffect(() => {
+    if (activeTab !== 'ligações' || !lead || callLogsFetched) return;
+    setCallLogsLoading(true);
+    const phone = encodeURIComponent(lead.telefone || '');
+    const userId = encodeURIComponent(currentUserEmail || '');
+    fetch(`/api/api4com/calls?user_id=${userId}&phone=${phone}&page=1`)
+      .then(r => r.json())
+      .then(data => {
+        setCallLogs(Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : []);
+        setCallLogsFetched(true);
+      })
+      .catch(() => setCallLogs([]))
+      .finally(() => setCallLogsLoading(false));
+  }, [activeTab, lead?.id, callLogsFetched]);
+
 
   if (!lead) return null;
 
@@ -1044,12 +1069,96 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                   <p className="text-sm font-medium text-center">Bloco de notas em breve</p>
                 </div>
               )}
-              {activeTab === 'ligações' && (
-                <div className="p-6 space-y-4 flex-1 flex flex-col items-center justify-center text-gray-400 dark:text-slate-500">
-                  <Phone size={32} className="mb-3 opacity-40" />
-                  <p className="text-sm font-medium text-center">Central de ligações em breve</p>
-                </div>
-              )}
+              {activeTab === 'ligações' && (() => {
+                const formatCallDuration = (secs: number) => {
+                  if (!secs) return '0:00';
+                  const m = Math.floor(secs / 60);
+                  const s = secs % 60;
+                  return `${m}:${String(s).padStart(2, '0')}`;
+                };
+                const formatRelativeTime = (dateStr: string) => {
+                  if (!dateStr) return '';
+                  const diff = Date.now() - new Date(dateStr).getTime();
+                  const mins = Math.floor(diff / 60000);
+                  if (mins < 60) return `há ${mins} min`;
+                  const hrs = Math.floor(mins / 60);
+                  if (hrs < 24) return `há ${hrs}h`;
+                  const days = Math.floor(hrs / 24);
+                  if (days < 30) return `há ${days} dia${days !== 1 ? 's' : ''}`;
+                  return new Date(dateStr).toLocaleDateString('pt-BR');
+                };
+                const getCallTypeLabel = (call: any) => {
+                  if (call.call_type === 'inbound') return 'Recebida';
+                  if (call.hangup_cause === 'NORMAL_CLEARING') return 'Chamada realizada';
+                  if (call.hangup_cause === 'NO_ANSWER' || call.hangup_cause === 'ORIGINATOR_CANCEL') return 'Não atendida';
+                  return 'Chamada realizada';
+                };
+                const isSuccess = (call: any) => call.hangup_cause === 'NORMAL_CLEARING';
+                return (
+                  <div className="p-4 space-y-3 flex-1 overflow-y-auto">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500">Histórico de ligações</p>
+                      <button onClick={() => setCallLogsFetched(false)} className="text-xs text-purple-500 hover:text-purple-400 flex items-center gap-1 transition-colors">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                        Atualizar
+                      </button>
+                    </div>
+                    {callLogsLoading && (
+                      <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+                        <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mb-3" />
+                        <p className="text-sm">Carregando ligações...</p>
+                      </div>
+                    )}
+                    {!callLogsLoading && callLogsFetched && callLogs.length === 0 && (
+                      <div className="flex flex-col items-center justify-center py-12 text-gray-400 dark:text-slate-500">
+                        <Phone size={36} className="mb-3 opacity-30" />
+                        <p className="text-sm font-medium">Nenhuma ligação encontrada</p>
+                        <p className="text-xs mt-1 opacity-60">As ligações aparecerão aqui após serem realizadas</p>
+                      </div>
+                    )}
+                    {!callLogsLoading && callLogs.map((call: any) => (
+                      <div key={call.id} className="rounded-2xl border transition-all duration-200 hover:shadow-md overflow-hidden"
+                        style={{ background: 'var(--card-bg, #fff)', borderColor: 'var(--border-color, #e5e7eb)', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                        <div className="p-4">
+                          <div className="flex items-start gap-3">
+                            <div className="flex-shrink-0 w-11 h-11 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.12)' }}>
+                              <Phone size={20} style={{ color: '#7c3aed' }} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-semibold text-sm text-gray-800 dark:text-slate-100">Ligação</span>
+                                <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                                  style={{ background: isSuccess(call) ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', color: isSuccess(call) ? '#059669' : '#dc2626' }}>
+                                  {isSuccess(call) ? '✓' : '✕'} {getCallTypeLabel(call)}
+                                </span>
+                              </div>
+                              <p className="text-xs mt-0.5" style={{ color: '#9ca3af' }}>ORIGEM: GrapeHub CRM</p>
+                              {call.duration > 0 && (
+                                <p className="text-sm mt-2 text-gray-600 dark:text-slate-400">⏱ Duração: <strong>{formatCallDuration(call.duration)}</strong></p>
+                              )}
+                              {call.record_url && (
+                                <div className="mt-3 rounded-xl p-2 flex items-center gap-2" style={{ background: 'rgba(0,0,0,0.04)', border: '1px solid rgba(0,0,0,0.08)' }}>
+                                  <audio controls src={call.record_url} className="w-full h-8" style={{ minWidth: 0, flex: 1 }} preload="none" />
+                                  <a href={call.record_url} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 p-1.5 rounded-lg hover:bg-purple-50 transition-colors" title="Abrir gravação">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                                  </a>
+                                </div>
+                              )}
+                              <div className="flex items-center gap-1.5 mt-3">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                <span className="text-xs" style={{ color: '#9ca3af' }}>
+                                  {formatRelativeTime(call.started_at)}
+                                  {(call.first_name || call.last_name) && <> por <strong className="font-medium text-gray-600 dark:text-slate-400">{[call.first_name, call.last_name].filter(Boolean).join(' ')}</strong></>}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
               {activeTab === 'arquivos' && (
                 <div className="p-6 space-y-4 flex-1 flex flex-col items-center justify-center text-gray-400 dark:text-slate-500">
                   <Paperclip size={32} className="mb-3 opacity-40" />
@@ -1624,6 +1733,8 @@ const CrmComercial = () => {
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsSaved, setSettingsSaved] = useState(false);
   const [settingsTab, setSettingsTab] = useState<'telefonia' | 'webhook' | 'sequencias' | 'motivos-perda'>('telefonia');
+  const [webhookRegistering, setWebhookRegistering] = useState(false);
+  const [webhookResult, setWebhookResult] = useState<{success?: boolean; webhookUrl?: string; error?: string} | null>(null);
   // Loss Reasons state
   const [lossReasons, setLossReasons] = useState<{id: number, name: string, description: string | null, color: string}[]>([]);
   const [newLossReason, setNewLossReason] = useState({ name: '', description: '', color: '#6b7280' });
@@ -1894,23 +2005,22 @@ const CrmComercial = () => {
             };
             setSettingsForm(form);
 
-            // 🔑 Try to auto-register using credentials stored in sessionStorage
-            // (saved there after the last successful manual save)
-            try {
-              const stored = sessionStorage.getItem('softphone_creds');
-              if (stored) {
-                const creds = JSON.parse(stored);
-                if (creds.extension && creds.password && creds.domain) {
-                  console.log('[Softphone] Auto-registering from sessionStorage...');
-                  softphone.register({
-                    extension: creds.extension,
-                    password: creds.password,
-                    domain: creds.domain,
-                    sipServer: creds.sipServer || `wss://${creds.domain}`
-                  });
-                }
+            // 🔑 Auto-register SIP using DB credentials directly
+            if (form.sip_extension && form.sip_password && form.api4com_domain) {
+              let sipServer = form.sip_server
+                ? (form.sip_server.startsWith('wss://') || form.sip_server.startsWith('ws://') ? form.sip_server : `wss://${form.sip_server}`)
+                : `wss://${form.api4com_domain}:6443`;
+              if (!sipServer.includes(':6443') && !sipServer.includes(':8089') && !sipServer.includes('/ws')) {
+                sipServer = sipServer.replace(/\/$/, '') + ':6443';
               }
-            } catch (e) { /* sessionStorage may be unavailable */ }
+              console.log('[Softphone] Auto-registering from DB settings, WSS:', sipServer);
+              softphone.register({
+                extension: form.sip_extension,
+                password: form.sip_password,
+                domain: form.api4com_domain,
+                sipServer
+              });
+            }
           }
         })
         .catch(() => setApi4comSettings({ configured: false }));
@@ -1925,9 +2035,14 @@ const CrmComercial = () => {
     if (sip_extension && sip_password && api4com_domain) {
       if (prevSipKeyRef.current !== key) {
         prevSipKeyRef.current = key;
-        const sipServer = sip_server
-          ? (sip_server.startsWith('wss://') ? sip_server : `wss://${sip_server}`)
-          : `wss://${api4com_domain}`;
+        // Api4Com requires port 6443 for WSS connections
+        let sipServer = sip_server
+          ? (sip_server.startsWith('wss://') || sip_server.startsWith('ws://') ? sip_server : `wss://${sip_server}`)
+          : `wss://${api4com_domain}:6443`;
+        // If user typed the bare domain without port, add :6443
+        if (!sipServer.includes(':6443') && !sipServer.includes(':8089') && !sipServer.includes('/ws')) {
+          sipServer = sipServer.replace(/\/$/, '') + ':6443';
+        }
         softphone.register({ extension: sip_extension, password: sip_password, domain: api4com_domain, sipServer });
       }
     }
@@ -2375,55 +2490,14 @@ const CrmComercial = () => {
     if (!user?.email) return;
     setCallingLeadId(leadId);
 
-    // If WebRTC softphone is registered, use it directly
-    if (softphone.sipStatus === 'registered') {
-      softphone.makeCall(phone, leadName || phone);
-      setCallingLeadId(null);
-      return;
-    }
+    console.log('[CRM] handleCallLead chamado:', { phone, leadName, leadId, userId: user.email, sipStatus: softphone.sipStatus });
 
-    // Otherwise, use the Api4Com Dialer API (click-to-call via extension)
-    if (!api4comSettings?.configured) {
-      setSoftphoneCall({
-        leadId, leadName: leadName || phone, phone,
-        status: 'error',
-        errorMsg: 'Configure a telefonia primeiro (⚙ ícone no cabeçalho)'
-      });
-      setCallingLeadId(null);
-      return;
-    }
-
-    // Show "dialing" popup immediately
-    setSoftphoneCall({
-      leadId, leadName: leadName || phone, phone,
-      status: 'active',
-      startedAt: Date.now(),
-      errorMsg: undefined
-    });
-
-    try {
-      const res = await fetch('/api/api4com/call/initiate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: user.email, phone, lead_id: leadId, user_name: user.name || user.email })
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        setSoftphoneCall(prev => prev ? {
-          ...prev, status: 'error',
-          errorMsg: data.error || data.details?.message || 'Falha ao iniciar chamada via ramal'
-        } : null);
-      } else {
-        // Success — keep showing the popup (user will answer their extension)
-        setSoftphoneCall(prev => prev ? { ...prev, status: 'active', dialerCallId: data.call_id } : null);
-      }
-    } catch (e: any) {
-      setSoftphoneCall(prev => prev ? {
-        ...prev, status: 'error',
-        errorMsg: 'Erro de conexão com o servidor de telefonia'
-      } : null);
-    }
-
+    // Usa o fluxo correto da Api4Com:
+    // 1. Chamamos a REST API do Dialer
+    // 2. Api4Com liga para nosso ramal via SIP (com X-Api4comintegratedcall: true)
+    // 3. O browser auto-atende via WebRTC
+    // 4. Api4Com conecta ao cliente
+    softphone.initiateDialerCall(phone, leadName || phone, leadId, user.email);
     setCallingLeadId(null);
   };
 
@@ -2442,6 +2516,34 @@ const CrmComercial = () => {
     }
   };
 
+  const handleRegisterWebhook = async () => {
+    if (!user?.email) {
+      setWebhookResult({ error: 'Usuário não identificado — faça login novamente' });
+      return;
+    }
+    setWebhookRegistering(true);
+    setWebhookResult(null);
+    try {
+      const res = await fetch('/api/api4com/register-webhook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: user.email })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setWebhookResult({ success: true, webhookUrl: data.webhookUrl });
+      } else {
+        // Show the detail from the server if available
+        const detail = data.detail ? ` (${JSON.stringify(data.detail).slice(0, 120)})` : '';
+        setWebhookResult({ error: (data.error || 'Falha ao registrar') + detail });
+      }
+    } catch (e) {
+      setWebhookResult({ error: `Erro de conexão: ${String(e)}` });
+    } finally {
+      setWebhookRegistering(false);
+    }
+  };
+
   const handleSaveApi4ComSettings = async () => {
     if (!user?.email) return;
     setSavingSettings(true);
@@ -2456,9 +2558,12 @@ const CrmComercial = () => {
         setSettingsSaved(true);
         // ✅ Register SIP immediately with the current form credentials
         if (settingsForm.sip_extension && settingsForm.sip_password && settingsForm.api4com_domain) {
-          const sipServer = settingsForm.sip_server
-            ? (settingsForm.sip_server.startsWith('wss://') ? settingsForm.sip_server : `wss://${settingsForm.sip_server}`)
-            : `wss://${settingsForm.api4com_domain}`;
+          let sipServer = settingsForm.sip_server
+            ? (settingsForm.sip_server.startsWith('wss://') || settingsForm.sip_server.startsWith('ws://') ? settingsForm.sip_server : `wss://${settingsForm.sip_server}`)
+            : `wss://${settingsForm.api4com_domain}:6443`;
+          if (!sipServer.includes(':6443') && !sipServer.includes(':8089') && !sipServer.includes('/ws')) {
+            sipServer = sipServer.replace(/\/$/, '') + ':6443';
+          }
           softphone.register({
             extension: settingsForm.sip_extension,
             password: settingsForm.sip_password,
@@ -2949,6 +3054,7 @@ const CrmComercial = () => {
           onManageTemplates={() => setIsManageTemplatesOpen(true)}
           currentKanbanId={activeKanbanId}
           api4comSettings={api4comSettings}
+          currentUserEmail={user?.email}
           callingLeadId={callingLeadId}
           onCallLead={handleCallLead}
           onUpdateLeadField={handleUpdateLeadField}
@@ -3564,19 +3670,18 @@ const CrmComercial = () => {
         </div>
       </Modal>
 
-      {/* ━━━━━━ SOFTPHONE POPUP (WebRTC) ━━━━━━ */}
+      {/* ━━━━━━ SOFTPHONE POPUP (WebRTC + Dialer Hybrid) ━━━━━━ */}
       <AnimatePresence>
-        {/* === DIALER API POPUP (click-to-call) === */}
-        {softphoneCall && !softphone.currentCall && (() => {
-          const isError = softphoneCall.status === 'error';
-          const isActive = softphoneCall.status === 'active';
-          const initials = (softphoneCall.leadName || '?').split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2);
-          const accentColor = isError ? '#ef4444' : '#22c55e';
-          const elapsed = softphoneCall.startedAt ? Math.floor((Date.now() - softphoneCall.startedAt) / 1000) : 0;
+        {/* === WAITING / ERROR state — from the hook's currentCall (pre-answer) === */}
+        {softphone.currentCall && (softphone.currentCall.status === 'calling' || softphone.currentCall.status === 'failed') && !softphone.currentCall.startedAt && (() => {
+          const call = softphone.currentCall!;
+          const isError = call.status === 'failed';
+          const initials = (call.leadName || '?').split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2);
+          const accentColor = isError ? '#ef4444' : '#a78bfa';
 
           return (
             <motion.div
-              key="softphone-dialer"
+              key="softphone-waiting"
               initial={{ opacity: 0, y: 30, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 30, scale: 0.95 }}
@@ -3585,20 +3690,19 @@ const CrmComercial = () => {
               style={{
                 background: isError
                   ? 'linear-gradient(135deg, #1c0a0a 0%, #0d0b14 60%)'
-                  : 'linear-gradient(135deg, #064e3b 0%, #0d0b14 60%)',
+                  : 'linear-gradient(135deg, #1a1230 0%, #0d0b14 60%)',
                 border: `1px solid ${accentColor}22`,
                 boxShadow: `0 32px 80px rgba(0,0,0,0.7), 0 0 0 1px ${accentColor}15`
               }}
             >
-              {/* Avatar */}
               <div className="relative flex flex-col items-center pt-8 pb-4 px-6">
-                {isActive && (
+                {/* Pulsing rings while calling */}
+                {!isError && (
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ top: '20px' }}>
-                    <span className="absolute w-24 h-24 rounded-full animate-ping" style={{ background: `${accentColor}20`, animationDuration: '2s' }} />
-                    <span className="absolute w-32 h-32 rounded-full animate-ping" style={{ background: `${accentColor}10`, animationDuration: '2s', animationDelay: '0.6s' }} />
+                    <span className="absolute w-24 h-24 rounded-full animate-ping" style={{ background: `${accentColor}15`, animationDuration: '1.5s' }} />
+                    <span className="absolute w-32 h-32 rounded-full animate-ping" style={{ background: `${accentColor}08`, animationDuration: '1.5s', animationDelay: '0.5s' }} />
                   </div>
                 )}
-
                 <div className="relative w-20 h-20 rounded-full flex items-center justify-center text-2xl font-black mb-3 z-10"
                   style={{
                     background: `linear-gradient(135deg, ${accentColor}40, ${accentColor}20)`,
@@ -3608,46 +3712,44 @@ const CrmComercial = () => {
                 >
                   <span className="text-2xl font-bold" style={{ color: accentColor }}>{initials}</span>
                 </div>
+                <p className="text-white font-bold text-lg text-center truncate w-full">{call.leadName}</p>
+                <p className="text-sm font-mono mt-0.5 mb-3" style={{ color: '#6b7280' }}>{call.phone}</p>
 
-                <p className="text-white font-bold text-lg text-center truncate w-full">{softphoneCall.leadName}</p>
-                <p className="text-sm font-mono mt-0.5 mb-3" style={{ color: '#6b7280' }}>{softphoneCall.phone}</p>
-
-                {isActive && (
-                  <>
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: '#22c55e' }} />
-                      <p className="text-sm font-semibold" style={{ color: '#22c55e' }}>Chamada conectada via Api4Com</p>
+                {!isError && (
+                  <div className="flex flex-col items-center gap-1.5 mb-2 w-full">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: accentColor }} />
+                      <p className="text-sm font-semibold" style={{ color: accentColor }}>
+                        {call.status === 'calling' ? 'Chamando via Api4Com...' : 'Aguardando atender...'}
+                      </p>
                     </div>
-                    <div className="rounded-xl px-4 py-2.5 w-full text-center mb-2" style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.15)' }}>
-                      <p className="text-xs font-semibold" style={{ color: '#86efac' }}>📞 Seu ramal <strong>{settingsForm.sip_extension}</strong> vai tocar em instantes</p>
-                      <p className="text-xs mt-1" style={{ color: '#6b7280' }}>Atenda o telefone para falar com o cliente</p>
-                    </div>
-                    <p className="text-4xl font-mono font-black tabular-nums tracking-widest" style={{ color: '#fff', textShadow: '0 0 20px rgba(34,197,94,0.35)' }}>
-                      {formatCallTime(callElapsed + elapsed)}
+                    <p className="text-xs text-center" style={{ color: '#4b5563' }}>
+                      {call.status === 'calling'
+                        ? 'Api4Com vai ligar para o seu browser em instantes'
+                        : 'Telefone do cliente está tocando'}
                     </p>
-                  </>
+                  </div>
                 )}
 
                 {isError && (
                   <div className="rounded-xl px-3 py-2.5 w-full" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.15)' }}>
-                    <p className="text-xs text-red-400 font-semibold">✗ {softphoneCall.errorMsg || 'Falha na chamada'}</p>
+                    <p className="text-xs text-red-400 font-semibold">✗ {call.errorMsg || 'Falha na chamada'}</p>
                   </div>
                 )}
               </div>
 
-              {/* Controls */}
               <div className="flex items-center justify-center gap-4 pb-8 px-6">
                 {isError ? (
                   <>
                     <button
-                      onClick={() => softphoneCall && handleCallLead(softphoneCall.leadId, softphoneCall.phone, softphoneCall.leadName)}
+                      onClick={() => call.phone && handleCallLead('retry', call.phone, call.leadName)}
                       className="flex-1 py-3 rounded-2xl text-sm font-bold transition-all"
                       style={{ background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(124,58,237,0.3)', color: '#a78bfa' }}
                     >
                       Tentar novamente
                     </button>
                     <button
-                      onClick={() => setSoftphoneCall(null)}
+                      onClick={() => softphone.hangUp()}
                       className="flex-1 py-3 rounded-2xl text-sm font-bold transition-all"
                       style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#6b7280' }}
                     >
@@ -3656,8 +3758,8 @@ const CrmComercial = () => {
                   </>
                 ) : (
                   <button
-                    onClick={() => setSoftphoneCall(null)}
-                    title="Encerrar"
+                    onClick={() => softphone.hangUp()}
+                    title="Cancelar"
                     className="w-16 h-16 rounded-full flex items-center justify-center transition-all active:scale-90"
                     style={{ background: 'linear-gradient(135deg,#dc2626,#b91c1c)', boxShadow: '0 8px 30px rgba(220,38,38,0.5)', color: '#fff' }}
                   >
@@ -3665,9 +3767,8 @@ const CrmComercial = () => {
                   </button>
                 )}
               </div>
-
               <p className="text-center pb-4 text-xs" style={{ color: '#374151' }}>
-                📞 Ramal {settingsForm.sip_extension} · Api4Com Dialer
+                🎙 Ramal {settingsForm.sip_extension} · WebRTC
               </p>
             </motion.div>
           );
@@ -3889,12 +3990,48 @@ const CrmComercial = () => {
 
                 {/* ── TELEFONIA ── */}
                 {settingsTab === 'telefonia' && (<>
-                  {!api4comSettings?.configured && (
-                    <div className="flex items-start gap-3 rounded-lg p-3 text-sm" style={{ background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.2)', color: '#facc15' }}>
-                      <span>⚠</span>
-                      <span>Configure suas credenciais para ativar o botão de ligação</span>
+                  {/* SIP Status Banner — sempre visível */}
+                  <div className="rounded-xl p-4" style={{
+                    background: softphone.sipStatus === 'registered' ? 'rgba(34,197,94,0.08)' :
+                                softphone.sipStatus === 'connecting' ? 'rgba(245,158,11,0.08)' :
+                                softphone.sipStatus === 'error' ? 'rgba(239,68,68,0.08)' : 'rgba(255,255,255,0.04)',
+                    border: `1px solid ${
+                      softphone.sipStatus === 'registered' ? 'rgba(34,197,94,0.25)' :
+                      softphone.sipStatus === 'connecting' ? 'rgba(245,158,11,0.25)' :
+                      softphone.sipStatus === 'error' ? 'rgba(239,68,68,0.25)' : 'rgba(255,255,255,0.08)'
+                    }`
+                  }}>
+                    <div className="flex items-center gap-3">
+                      <span className="w-3 h-3 rounded-full flex-shrink-0" style={{
+                        background: softphone.sipStatus === 'registered' ? '#22c55e' :
+                                    softphone.sipStatus === 'connecting' ? '#f59e0b' :
+                                    softphone.sipStatus === 'error' ? '#ef4444' : '#374151',
+                        boxShadow: softphone.sipStatus === 'registered' ? '0 0 8px #22c55e' :
+                                   softphone.sipStatus === 'connecting' ? '0 0 8px #f59e0b' : 'none'
+                      }} />
+                      <div>
+                        <p className="text-sm font-bold" style={{
+                          color: softphone.sipStatus === 'registered' ? '#22c55e' :
+                                 softphone.sipStatus === 'connecting' ? '#f59e0b' :
+                                 softphone.sipStatus === 'error' ? '#ef4444' : '#9ca3af'
+                        }}>
+                          {softphone.sipStatus === 'registered' ? '✓ Softphone conectado — pronto para ligar' :
+                           softphone.sipStatus === 'connecting' ? '⏳ Conectando ao servidor SIP...' :
+                           softphone.sipStatus === 'error' ? '✗ Falha na conexão SIP' : '● Softphone desconectado'}
+                        </p>
+                        {softphone.sipStatus === 'error' && softphone.registrationError && (
+                          <p className="text-xs mt-1" style={{ color: '#f87171' }}>{softphone.registrationError}</p>
+                        )}
+                        {softphone.sipStatus === 'idle' && (
+                          <p className="text-xs mt-1" style={{ color: '#6b7280' }}>Salve as configurações abaixo para conectar</p>
+                        )}
+                        {softphone.sipStatus === 'registered' && (
+                          <p className="text-xs mt-1" style={{ color: '#4ade80' }}>Ramal {settingsForm.sip_extension} · Clique em 📞 em qualquer lead para ligar pelo browser</p>
+                        )}
+                      </div>
                     </div>
-                  )}
+                  </div>
+
                   <div>
                     <h3 className="text-xs font-bold uppercase tracking-widest mb-4" style={{ color: '#6b7280' }}>Credenciais da Conta</h3>
                     <div className="space-y-4">
@@ -3909,7 +4046,12 @@ const CrmComercial = () => {
                       <div>
                         <label className="block text-xs mb-1.5" style={{ color: '#9ca3af' }}>Domínio da empresa</label>
                         <input type="text" value={settingsForm.api4com_domain} onChange={e => setSettingsForm(f => ({ ...f, api4com_domain: e.target.value }))}
-                          onBlur={e => { const domain = e.target.value.trim(); if (domain && !settingsForm.sip_server) { setSettingsForm(f => ({ ...f, sip_server: 'wss://' + domain })); } }}
+                          onBlur={e => {
+                            const domain = e.target.value.trim();
+                            if (domain && !settingsForm.sip_server) {
+                              setSettingsForm(f => ({ ...f, sip_server: `wss://${domain}:6443` }));
+                            }
+                          }}
                           placeholder="seudominio.api4com.com" className="w-full rounded-lg px-3.5 py-2.5 text-sm text-white outline-none transition-all" style={{ background: '#0d0b14', border: '1px solid #2d2b3d' }}
                           onFocus={e => { e.currentTarget.style.borderColor = '#7c3aed'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(124,58,237,0.15)'; }} />
                         <p className="text-xs mt-1" style={{ color: '#6b7280' }}>Domínio criado no cadastro da Api4Com</p>
@@ -3934,20 +4076,25 @@ const CrmComercial = () => {
                           onBlur={e => { e.currentTarget.style.borderColor = '#2d2b3d'; e.currentTarget.style.boxShadow = 'none'; }} />
                       </div>
                       <div>
-                        <label className="block text-xs mb-1.5" style={{ color: '#9ca3af' }}>Servidor WSS</label>
-                        <input type="text" value={settingsForm.sip_server} onChange={e => setSettingsForm(f => ({ ...f, sip_server: e.target.value }))} placeholder="wss://seudominio.api4com.com"
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="block text-xs" style={{ color: '#9ca3af' }}>Servidor WSS</label>
+                          {settingsForm.api4com_domain && (
+                            <button onClick={() => setSettingsForm(f => ({ ...f, sip_server: `wss://${settingsForm.api4com_domain}:6443` }))}
+                              className="text-xs px-2 py-0.5 rounded-md transition-all"
+                              style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', color: '#4ade80' }}>
+                              ✓ Usar padrão Api4Com (:6443)
+                            </button>
+                          )}
+                        </div>
+                        <input type="text" value={settingsForm.sip_server} onChange={e => setSettingsForm(f => ({ ...f, sip_server: e.target.value }))}
+                          placeholder={settingsForm.api4com_domain ? `wss://${settingsForm.api4com_domain}:6443` : 'wss://seudominio.api4com.com:6443'}
                           className="w-full rounded-lg px-3.5 py-2.5 text-sm outline-none transition-all" style={{ background: '#0d0b14', border: '1px solid #2d2b3d', color: '#9ca3af' }}
                           onFocus={e => { e.currentTarget.style.borderColor = '#7c3aed'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(124,58,237,0.15)'; }}
                           onBlur={e => { e.currentTarget.style.borderColor = '#2d2b3d'; e.currentTarget.style.boxShadow = 'none'; }} />
-                        <p className="text-xs mt-1 mb-1.5" style={{ color: '#6b7280' }}>Tente formatos comuns:</p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {settingsForm.api4com_domain && [`wss://${settingsForm.api4com_domain}`, `wss://${settingsForm.api4com_domain}:8089/ws`, `wss://${settingsForm.api4com_domain}/ws`, `wss://${settingsForm.api4com_domain}:443/ws`].map(url => (
-                            <button key={url} onClick={() => setSettingsForm(f => ({ ...f, sip_server: url }))} className="text-xs px-2 py-1 rounded-md transition-all"
-                              style={{ background: settingsForm.sip_server === url ? 'rgba(124,58,237,0.2)' : 'rgba(255,255,255,0.04)', border: `1px solid ${settingsForm.sip_server === url ? 'rgba(124,58,237,0.4)' : 'rgba(255,255,255,0.08)'}`, color: settingsForm.sip_server === url ? '#a78bfa' : '#6b7280', fontFamily: 'monospace', fontSize: '10px' }}>
-                              {url.replace(`wss://${settingsForm.api4com_domain}`, '…')}
-                            </button>
-                          ))}
-                        </div>
+                        <p className="text-xs mt-1" style={{ color: '#6b7280' }}>
+                          Api4Com usa porta <strong style={{ color: '#a78bfa', fontFamily: 'monospace' }}>:6443</strong> — deixe em branco para usar automaticamente
+                        </p>
+
                       </div>
                     </div>
                   </div>
@@ -3956,27 +4103,6 @@ const CrmComercial = () => {
                       <span>{testResult.success ? '✓' : '✗'}</span><span>{testResult.message}</span>
                     </div>
                   )}
-                  <div className="rounded-xl overflow-hidden" style={{ border: '1px solid rgba(124,58,237,0.2)', background: 'rgba(124,58,237,0.05)' }}>
-                    <div className="px-3 py-2.5 flex items-center gap-2" style={{ background: 'rgba(124,58,237,0.1)', borderBottom: '1px solid rgba(124,58,237,0.2)' }}>
-                      <span className="text-sm">📞</span>
-                      <p className="text-xs font-bold" style={{ color: '#a78bfa' }}>Como funciona o Clique-para-Ligar</p>
-                    </div>
-                    <div className="px-3 py-3">
-                      <p className="text-xs mb-2" style={{ color: '#9ca3af' }}>Ao clicar em 📞 em qualquer lead, o Api4Com vai <strong style={{ color: '#e5e7eb' }}>ligar para o seu ramal</strong> e então conectar ao cliente.</p>
-                      <p className="text-xs font-semibold mb-1.5" style={{ color: '#d1d5db' }}>Para funcionar, você precisa de um dos:</p>
-                      <div className="space-y-1.5">
-                        <div className="flex items-start gap-2"><span className="text-green-400 text-xs mt-0.5">✓</span><p className="text-xs" style={{ color: '#9ca3af' }}><strong style={{ color: '#e5e7eb' }}>Zoiper 5</strong> (gratuito) instalado no PC com ramal {settingsForm.sip_extension || '1000'}{' → '}<a href="https://www.zoiper.com/en/voip-softphone/download/current" target="_blank" rel="noreferrer" className="underline" style={{ color: '#a78bfa' }}>Baixar Zoiper</a></p></div>
-                        <div className="flex items-start gap-2"><span className="text-green-400 text-xs mt-0.5">✓</span><p className="text-xs" style={{ color: '#9ca3af' }}><strong style={{ color: '#e5e7eb' }}>Telefone IP</strong> configurado com o ramal {settingsForm.sip_extension || '1000'}</p></div>
-                      </div>
-                      {settingsForm.sip_extension && settingsForm.sip_password && settingsForm.api4com_domain && (
-                        <div className="mt-3 p-2 rounded-lg text-xs font-mono" style={{ background: 'rgba(0,0,0,0.3)', color: '#6b7280' }}>
-                          Servidor: <span style={{ color: '#a78bfa' }}>{settingsForm.api4com_domain}</span><br/>
-                          Usuário: <span style={{ color: '#a78bfa' }}>{settingsForm.sip_extension}</span><br/>
-                          Senha: <span style={{ color: '#a78bfa' }}>{settingsForm.sip_password}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
                   <div className="flex items-center gap-3 pt-2 flex-wrap">
                     <button onClick={handleSaveApi4ComSettings} disabled={savingSettings} className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold text-white transition-all disabled:opacity-50" style={{ background: settingsSaved ? '#16a34a' : '#7c3aed' }}>
                       {savingSettings ? <Loader2 size={14} className="animate-spin" /> : null}
@@ -3992,17 +4118,58 @@ const CrmComercial = () => {
                   </div>
                 </>)}
 
+
                 {/* ── WEBHOOK ── */}
                 {settingsTab === 'webhook' && (
-                  <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
-                    <div className="w-16 h-16 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.2)' }}>
-                      <span className="text-3xl">🔗</span>
+                  <div className="space-y-5">
+                    <div className="rounded-2xl p-5 space-y-4" style={{ background: 'rgba(124,58,237,0.07)', border: '1px solid rgba(124,58,237,0.18)' }}>
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(124,58,237,0.15)' }}>
+                          <span className="text-xl">🔗</span>
+                        </div>
+                        <div>
+                          <p className="font-bold text-white text-sm">Webhook Api4Com</p>
+                          <p className="text-xs mt-0.5" style={{ color: '#9ca3af' }}>Recebe notificações ao final de cada chamada (duração, gravação, status)</p>
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <p className="text-xs font-medium" style={{ color: '#9ca3af' }}>URL do Webhook (GrapeHub)</p>
+                        <div className="flex items-center gap-2 rounded-lg px-3 py-2.5" style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                          <code className="text-xs flex-1 break-all" style={{ color: '#a78bfa' }}>{window.location.origin}/api/api4com/webhook</code>
+                          <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}/api/api4com/webhook`)} className="flex-shrink-0 p-1 rounded hover:bg-white/10 transition-colors" title="Copiar URL">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                          </button>
+                        </div>
+                      </div>
+                      <div className="rounded-xl p-3 space-y-1.5" style={{ background: 'rgba(0,0,0,0.2)' }}>
+                        <p className="text-xs font-semibold" style={{ color: '#e5e7eb' }}>Como funciona:</p>
+                        <div className="space-y-1 text-xs" style={{ color: '#9ca3af' }}>
+                          <p>1️⃣ Você clica em ligar → GrapeHub chama o Dialer da Api4Com</p>
+                          <p>2️⃣ Api4Com realiza a chamada via SIP</p>
+                          <p>3️⃣ Ao finalizar → Api4Com envia POST para esta URL</p>
+                          <p>4️⃣ GrapeHub salva duração, gravação e status no histórico do lead</p>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-bold text-white text-lg">Webhooks</p>
-                      <p className="text-sm mt-1" style={{ color: '#6b7280' }}>Em desenvolvimento — em breve você poderá configurar webhooks para integrar com outras ferramentas.</p>
+                    <div className="flex items-center gap-3">
+                      <button onClick={handleRegisterWebhook} disabled={webhookRegistering}
+                        className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold text-white transition-all disabled:opacity-50"
+                        style={{ background: webhookResult?.success ? '#16a34a' : '#7c3aed' }}>
+                        {webhookRegistering ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <span>🔗</span>}
+                        {webhookResult?.success ? '✓ Webhook Registrado!' : 'Registrar Webhook na Api4Com'}
+                      </button>
+                      <p className="text-xs" style={{ color: '#6b7280' }}>Atualiza o webhook cadastrado na sua conta Api4Com</p>
                     </div>
-                    <span className="px-3 py-1 rounded-full text-xs font-bold" style={{ background: 'rgba(234,179,8,0.1)', border: '1px solid rgba(234,179,8,0.2)', color: '#facc15' }}>Em breve</span>
+                    {webhookResult?.error && (
+                      <div className="rounded-xl px-4 py-3 text-sm" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', color: '#fca5a5' }}>
+                        ❌ {webhookResult.error}
+                      </div>
+                    )}
+                    {webhookResult?.success && (
+                      <div className="rounded-xl px-4 py-3 text-sm" style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.2)', color: '#6ee7b7' }}>
+                        ✅ Webhook registrado! A Api4Com vai notificar o GrapeHub após cada chamada.
+                      </div>
+                    )}
                   </div>
                 )}
 

@@ -17,7 +17,7 @@ export interface UseSoftphoneReturn {
   currentCall: SoftphoneCall | null;
   isMuted: boolean;
   callElapsed: number;
-  makeCall: (phone: string, leadName: string) => void;
+  initiateDialerCall: (phone: string, leadName: string, leadId: string, userId: string) => void;
   hangUp: () => void;
   toggleMute: () => void;
   register: (config: SipConfig) => void;
@@ -37,25 +37,20 @@ export const formatCallTime = (secs: number): string => {
   return `${m}:${s}`;
 };
 
-// Load JsSIP from local public file (no CDN dependency)
+// Load JsSIP (embedded in libwebphone, but we use jssip.min.js directly since libwebphone is CommonJS)
 let jssipLoadPromise: Promise<any> | null = null;
-
 function loadJsSIP(): Promise<any> {
   if (jssipLoadPromise) return jssipLoadPromise;
   jssipLoadPromise = new Promise((resolve, reject) => {
     if ((window as any).JsSIP) { resolve((window as any).JsSIP); return; }
     const script = document.createElement('script');
-    script.src = '/jssip.min.js';  // served from /public by Vite
+    script.src = '/jssip.min.js';
     script.onload = () => {
       const J = (window as any).JsSIP;
-      if (J) {
-        console.log('[Softphone] JsSIP loaded locally ✓ version:', J.version);
-        resolve(J);
-      } else {
-        reject(new Error('JsSIP not found on window after local load'));
-      }
+      if (J) { console.log('[Softphone] JsSIP loaded ✓ v', J.version); resolve(J); }
+      else reject(new Error('JsSIP not found after load'));
     };
-    script.onerror = () => reject(new Error('Failed to load /jssip.min.js — file missing in public/'));
+    script.onerror = () => reject(new Error('Failed to load /jssip.min.js'));
     document.head.appendChild(script);
   });
   return jssipLoadPromise;
@@ -64,9 +59,13 @@ function loadJsSIP(): Promise<any> {
 export function useSoftphone(): UseSoftphoneReturn {
   const uaRef = useRef<any>(null);
   const sessionRef = useRef<any>(null);
-  const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
-  const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const configRef = useRef<SipConfig | null>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
+  const pendingCallRef = useRef<{ phone: string; leadName: string } | null>(null);
+  const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const ringbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ringbackNodesRef = useRef<{ osc: OscillatorNode; gain: GainNode } | null>(null);
 
   const [sipStatus, setSipStatus] = useState<SipStatus>('idle');
   const [registrationError, setRegistrationError] = useState<string | null>(null);
@@ -74,6 +73,7 @@ export function useSoftphone(): UseSoftphoneReturn {
   const [isMuted, setIsMuted] = useState(false);
   const [callElapsed, setCallElapsed] = useState(0);
 
+  // ── Remote audio element ──
   useEffect(() => {
     const audio = document.createElement('audio');
     audio.id = 'softphone-remote-audio';
@@ -84,261 +84,282 @@ export function useSoftphone(): UseSoftphoneReturn {
     return () => { audio.remove(); };
   }, []);
 
+  // ── Elapsed timer ──
   const stopElapsedTimer = useCallback(() => {
     if (elapsedTimerRef.current) { clearInterval(elapsedTimerRef.current); elapsedTimerRef.current = null; }
   }, []);
-
   const startElapsedTimer = useCallback((startedAt: number) => {
     stopElapsedTimer();
     setCallElapsed(0);
-    elapsedTimerRef.current = setInterval(() => {
-      setCallElapsed(Math.floor((Date.now() - startedAt) / 1000));
-    }, 1000);
+    elapsedTimerRef.current = setInterval(() => setCallElapsed(Math.floor((Date.now() - startedAt) / 1000)), 1000);
   }, [stopElapsedTimer]);
 
-  const cleanupSession = useCallback(() => {
-    stopElapsedTimer();
-    sessionRef.current = null;
-    setIsMuted(false);
-    setCallElapsed(0);
-  }, [stopElapsedTimer]);
+  // ── Ringback tone (425 Hz, 1s ON / 4s OFF) ──
+  const stopRingback = useCallback(() => {
+    if (ringbackTimerRef.current) { clearTimeout(ringbackTimerRef.current); ringbackTimerRef.current = null; }
+    if (ringbackNodesRef.current) {
+      try { ringbackNodesRef.current.gain.gain.setTargetAtTime(0, audioCtxRef.current!.currentTime, 0.01); setTimeout(() => { try { ringbackNodesRef.current?.osc.stop(); } catch {} ringbackNodesRef.current = null; }, 60); } catch {}
+    }
+  }, []);
+  const startRingback = useCallback(() => {
+    stopRingback();
+    try {
+      if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') audioCtxRef.current = new AudioContext();
+      const ctx = audioCtxRef.current;
+      if (ctx.state === 'suspended') ctx.resume();
+      const playBurst = () => {
+        const osc = ctx.createOscillator(); const gain = ctx.createGain();
+        osc.type = 'sine'; osc.frequency.value = 425; gain.gain.value = 0.15;
+        osc.connect(gain); gain.connect(ctx.destination); osc.start();
+        ringbackNodesRef.current = { osc, gain };
+        ringbackTimerRef.current = setTimeout(() => {
+          try { gain.gain.setTargetAtTime(0, ctx.currentTime, 0.01); setTimeout(() => { try { osc.stop(); } catch {} }, 60); } catch {}
+          ringbackNodesRef.current = null;
+          ringbackTimerRef.current = setTimeout(playBurst, 4000);
+        }, 1000);
+      };
+      playBurst();
+    } catch (e) { console.warn('[Softphone] Ringback error:', e); }
+  }, [stopRingback]);
 
+  // ── Register with JsSIP using Api4Com libwebphone-compatible settings ──
   const register = useCallback(async (config: SipConfig) => {
-    if (!config.extension || !config.password || !config.domain || !config.sipServer) {
-      console.warn('[Softphone] Missing required SIP config fields', config);
-      setRegistrationError('Preencha todos os campos SIP antes de conectar');
+    if (!config.extension || !config.password || !config.domain) {
       setSipStatus('error');
+      setRegistrationError('Preencha ramal, senha e domínio');
       return;
     }
-
     configRef.current = config;
-
-    if (uaRef.current) {
-      try { uaRef.current.stop(); } catch {}
-      uaRef.current = null;
-    }
-
+    if (uaRef.current) { try { uaRef.current.stop(); } catch {} uaRef.current = null; }
     setSipStatus('connecting');
     setRegistrationError(null);
 
-    console.log('[Softphone] Loading JsSIP...');
     let JsSIP: any;
-    try {
-      JsSIP = await loadJsSIP();
-      console.log('[Softphone] JsSIP loaded ✓ version:', JsSIP?.version);
-    } catch (e: any) {
-      console.error('[Softphone] Load failed:', e);
-      setSipStatus('error');
-      setRegistrationError('Falha ao carregar JsSIP: ' + e?.message);
-      return;
-    }
+    try { JsSIP = await loadJsSIP(); }
+    catch (e: any) { setSipStatus('error'); setRegistrationError('Falha ao carregar JsSIP: ' + e?.message); return; }
 
+    // Enable JsSIP debug — helps diagnose if incoming INVITE arrives
     JsSIP.debug.enable('JsSIP:*');
+    console.log('[Softphone] JsSIP debug enabled — check console for SIP messages');
+
 
     try {
-      // Normalize WSS URL
-      const wsServer = config.sipServer.startsWith('wss://') || config.sipServer.startsWith('ws://')
-        ? config.sipServer
-        : `wss://${config.sipServer}`;
+      // Api4Com requires port 6443 for WSS
+      let wssServer = config.sipServer || `wss://${config.domain}:6443`;
+      if (!wssServer.startsWith('wss://') && !wssServer.startsWith('ws://')) wssServer = `wss://${wssServer}`;
+      // Check if port already present (parse host part only, after removing protocol)
+      const hostPart = wssServer.replace(/^wss?:\/\//, '').split('/')[0];
+      const hasPort = /:\d+$/.test(hostPart);
+      if (!hasPort) wssServer = wssServer.replace(/\/?$/, '') + ':6443';
 
-      console.log(`[Softphone] Connecting → WSS: ${wsServer}`);
-      console.log(`[Softphone] SIP URI: sip:${config.extension}@${config.domain}`);
+      console.log(`[Softphone] Registering: sip:${config.extension}@${config.domain} via ${wssServer}`);
 
-      const socket = new JsSIP.WebSocketInterface(wsServer);
+      const socket = new JsSIP.WebSocketInterface(wssServer);
 
-      let wsConnected = false;
-      let connectionTimeoutId: ReturnType<typeof setTimeout> | null = null;
+      // IMPORTANT: Use the FIXED instance_id from Api4Com docs — this ensures SINGLETON behavior.
+      // Using the same UUID as the Api4Com webphone means our registration REPLACES theirs,
+      // so Api4Com only routes calls to ONE endpoint (our browser). Different UUIDs = 2 contacts = fork = failure.
+      const INSTANCE_ID = 'd73b96ea-5473-44e3-a50d-d0361311b570';
 
       const ua = new JsSIP.UA({
         sockets: [socket],
         uri: `sip:${config.extension}@${config.domain}`,
         password: config.password,
-        display_name: `Ramal ${config.extension}`,
+        authorization_user: config.extension,
+        instance_id: INSTANCE_ID,
         register: true,
-        register_expires: 300,
+        register_expires: 600,
         session_timers: false,
-        user_agent: 'GrapeHub/1.0',
+        user_agent: 'yourcompany-libwebphone', // Match Api4Com docs exactly
         connection_recovery_min_interval: 2,
-        connection_recovery_max_interval: 8,
+        connection_recovery_max_interval: 30,
+        // NAT traversal hacks
+        hack_via_tcp: true,
+        hack_ip_in_contact: true,
+        hack_wss_in_transport: true,
+        no_answer_timeout: 30,
       });
 
-      // Connection timeout: 12s
-      connectionTimeoutId = setTimeout(() => {
+      let wsConnected = false;
+      const connTimeout = setTimeout(() => {
         if (!wsConnected) {
-          console.error('[Softphone] WSS connection timeout (12s)');
           setSipStatus('error');
-          setRegistrationError(`Timeout ao conectar em ${wsServer} — verifique o Servidor WSS`);
+          setRegistrationError(`Timeout conectando em ${wssServer}`);
           try { ua.stop(); } catch {}
         }
-      }, 12000);
+      }, 15000);
 
-      ua.on('connecting', () => {
-        console.log('[Softphone] → Connecting to WSS...');
-        setSipStatus('connecting');
-      });
-
-      ua.on('connected', () => {
-        wsConnected = true;
-        if (connectionTimeoutId) clearTimeout(connectionTimeoutId);
-        console.log('[Softphone] ✓ WSS connected, sending REGISTER...');
-      });
-
+      ua.on('connected', () => { wsConnected = true; clearTimeout(connTimeout); });
       ua.on('registered', () => {
-        wsConnected = true;
-        if (connectionTimeoutId) clearTimeout(connectionTimeoutId);
+        wsConnected = true; clearTimeout(connTimeout);
         console.log('[Softphone] ✓ SIP Registered!');
-        setSipStatus('registered');
-        setRegistrationError(null);
+        setSipStatus('registered'); setRegistrationError(null);
       });
-
-      ua.on('unregistered', (e: any) => {
-        console.warn('[Softphone] Unregistered:', e?.cause);
-        setSipStatus('unregistered');
-      });
-
+      ua.on('unregistered', () => setSipStatus('unregistered'));
       ua.on('registrationFailed', (e: any) => {
-        const cause = e?.cause || 'Unknown';
+        clearTimeout(connTimeout);
         const code = e?.response?.status_code;
-        console.error(`[Softphone] ✗ Registration failed: ${cause} (${code})`);
-        if (connectionTimeoutId) clearTimeout(connectionTimeoutId);
+        const cause = e?.cause || '';
         setSipStatus('error');
         setRegistrationError(
-          code === 401 || code === 403 ? `Credenciais inválidas (${code}) — verifique ramal e senha` :
-          code === 407 ? 'Autenticação de proxy necessária (407)' :
-          code === 408 ? 'Servidor SIP não respondeu (408 timeout)' :
-          code === 503 ? 'Servidor SIP indisponível (503)' :
-          `Falha no registro: ${cause}${code ? ` (${code})` : ''}`
+          (code === 401 || code === 403) ? `Credenciais inválidas (${code}) — verifique ramal e senha`
+          : code === 408 ? 'Servidor SIP não respondeu (timeout)'
+          : code === 503 ? 'Serviço SIP indisponível'
+          : `Falha no registro: ${cause}${code ? ` (${code})` : ''}`
         );
       });
-
       ua.on('disconnected', (e: any) => {
-        const cause = e?.cause || '';
-        const code = e?.code;
-        console.warn(`[Softphone] WSS disconnected: ${cause} code=${code}`);
-        if (connectionTimeoutId) clearTimeout(connectionTimeoutId);
-        if (!wsConnected) {
-          // Never connected — wrong URL, port, or server is down
-          setSipStatus('error');
-          setRegistrationError(
-            `Não foi possível conectar ao servidor WSS (${wsServer}). ` +
-            `Verifique se o endereço e porta estão corretos. Tente: wss://${config.domain}:8089/ws`
-          );
+        clearTimeout(connTimeout);
+        if (!wsConnected) { setSipStatus('error'); setRegistrationError(`Não conectou ao WSS: ${wssServer}`); }
+        else setSipStatus('unregistered');
+      });
+
+      // ── INCOMING CALL from Api4Com Dialer ──
+      ua.on('newRTCSession', (e: any) => {
+        const session = e.session;
+        if (session.direction !== 'incoming') return;
+
+        const req = e.request; // ← CORRECT: e.request (not session.request which is undefined in JsSIP)
+        // Log ALL headers for diagnosis
+        const fromHeader = req?.getHeader?.('from') || req?.from?.toString() || '';
+        const hasApi4ComHeader =
+          req?.hasHeader?.('x-api4comintegratedcall') ||
+          req?.hasHeader?.('X-Api4comintegratedcall') || false;
+        const headerValue = req?.getHeader?.('x-api4comintegratedcall') || req?.getHeader?.('X-Api4comintegratedcall') || '';
+
+        console.log('[Softphone] ✅ INCOMING CALL received!', {
+          from: fromHeader,
+          hasApi4ComHeader,
+          headerValue,
+          allHeaders: req?.headers ? Object.keys(req.headers).join(', ') : 'N/A'
+        });
+
+        sessionRef.current = session;
+        const pending = pendingCallRef.current;
+        stopRingback();
+
+        const startedAt = Date.now();
+        setCurrentCall({ phone: pending?.phone || '', leadName: pending?.leadName || 'Cliente', status: 'active', startedAt });
+        startElapsedTimer(startedAt);
+
+        // Auto-answer — Api4Com Dialer calls our extension
+        console.log('[Softphone] Auto-answering incoming call...');
+        session.answer({
+          mediaConstraints: { audio: true, video: false },
+          pcConfig: {
+            iceServers: [
+              { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
+              { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+              { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+              { urls: 'turns:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+            ],
+            iceTransportPolicy: 'all',
+          }
+        });
+
+        // Route remote audio to the audio element
+        const handleTrack = (ev: RTCTrackEvent) => {
+          if (remoteAudioRef.current && ev.streams[0]) {
+            console.log('[Softphone] Remote audio stream connected ✓');
+            remoteAudioRef.current.srcObject = ev.streams[0];
+          }
+        };
+        if (session.connection) {
+          session.connection.addEventListener('track', handleTrack);
         } else {
-          setSipStatus('unregistered');
+          session.on('peerconnection', (pcEvent: any) => {
+            pcEvent.peerconnection.addEventListener('track', handleTrack);
+          });
         }
+
+        session.on('ended', (ev: any) => {
+          console.log('[Softphone] Call ended:', ev?.cause);
+          stopElapsedTimer(); pendingCallRef.current = null;
+          setCurrentCall(p => p ? { ...p, status: 'ended' } : null);
+          setTimeout(() => setCurrentCall(null), 3000);
+        });
+        session.on('failed', (ev: any) => {
+          console.log('[Softphone] Call failed:', ev?.cause);
+          stopElapsedTimer(); pendingCallRef.current = null;
+          setCurrentCall(p => p ? { ...p, status: 'failed', errorMsg: ev?.cause || 'Chamada falhou' } : null);
+        });
       });
 
       uaRef.current = ua;
       ua.start();
     } catch (e: any) {
-      console.error('[Softphone] UA init error:', e);
       setSipStatus('error');
-      setRegistrationError(e?.message || 'Erro ao inicializar ramal');
+      setRegistrationError(e?.message || 'Erro ao inicializar softphone');
     }
-  }, []);
+  }, [stopRingback, startElapsedTimer, stopElapsedTimer]);
 
   const unregister = useCallback(() => {
     if (uaRef.current) { try { uaRef.current.stop(); } catch {} uaRef.current = null; }
-    setSipStatus('idle');
-    setRegistrationError(null);
+    setSipStatus('idle'); setRegistrationError(null);
   }, []);
 
-  const makeCall = useCallback((phone: string, leadName: string) => {
-    if (!uaRef.current || sipStatus !== 'registered') {
-      console.warn('[Softphone] Cannot call: not registered. Status:', sipStatus);
-      return;
-    }
-
-    const normalized = phone.replace(/[^\d+]/g, '');
-    const domain = configRef.current?.domain || uaRef.current._configuration?.uri?.host || '';
-    const target = `sip:${normalized}@${domain}`;
-
-    console.log(`[Softphone] Calling ${target}`);
-    setCurrentCall({ phone: normalized, leadName, status: 'calling' });
-    setIsMuted(false);
-    setCallElapsed(0);
-
-    let session: any;
-    try {
-      session = uaRef.current.call(target, {
-        mediaConstraints: { audio: true, video: false },
-        rtcOfferConstraints: { offerToReceiveAudio: true, offerToReceiveVideo: false },
-        pcConfig: {
-          iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-          ]
-        }
+  // ── Initiate call via Api4Com Dialer API ──
+  const initiateDialerCall = useCallback(async (
+    phone: string, leadName: string, leadId: string, userId: string
+  ) => {
+    if (sipStatus !== 'registered') {
+      setCurrentCall({
+        phone, leadName, status: 'failed',
+        errorMsg: sipStatus === 'connecting' ? 'Softphone ainda conectando, aguarde...'
+          : sipStatus === 'error' ? `SIP não conectado: ${registrationError || 'verifique as configurações'}`
+          : 'Softphone não conectado. Salve as configurações de telefonia.'
       });
-    } catch (e: any) {
-      console.error('[Softphone] Call initiation error:', e);
-      setCurrentCall({ phone: normalized, leadName, status: 'failed', errorMsg: e?.message || 'Erro ao discar' });
       return;
     }
 
-    sessionRef.current = session;
+    pendingCallRef.current = { phone, leadName };
+    setCurrentCall({ phone, leadName, status: 'calling' });
+    startRingback();
 
-    session.on('progress', (e: any) => {
-      console.log('[Softphone] Call progress:', e?.response?.status_code);
-      setCurrentCall(prev => prev ? { ...prev, status: 'ringing' } : null);
-    });
-
-    session.on('confirmed', () => {
-      console.log('[Softphone] Call confirmed ✓');
-      const startedAt = Date.now();
-      setCurrentCall(prev => prev ? { ...prev, status: 'active', startedAt } : null);
-      startElapsedTimer(startedAt);
-      if (session.connection) {
-        session.connection.ontrack = (ev: RTCTrackEvent) => {
-          if (remoteAudioRef.current && ev.streams[0]) {
-            remoteAudioRef.current.srcObject = ev.streams[0];
-          }
-        };
+    try {
+      const res = await fetch('/api/api4com/call/initiate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userId, phone, lead_id: leadId })
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        stopRingback(); pendingCallRef.current = null;
+        const msg = typeof data.message === 'string' ? data.message : data.message?.message || data.error || 'Falha ao iniciar chamada';
+        setCurrentCall({ phone, leadName, status: 'failed', errorMsg: msg });
+        return;
       }
-    });
-
-    session.on('ended', (e: any) => {
-      console.log('[Softphone] Call ended:', e?.cause);
-      cleanupSession();
-      setCurrentCall(prev => prev ? { ...prev, status: 'ended' } : null);
-      setTimeout(() => setCurrentCall(null), 3000);
-    });
-
-    session.on('failed', (e: any) => {
-      const cause = e?.cause || 'Falha';
-      const code = e?.response?.status_code;
-      console.error(`[Softphone] Call failed: ${cause} (${code})`);
-      cleanupSession();
-      setCurrentCall(prev => prev ? {
-        ...prev,
-        status: 'failed',
-        errorMsg: code === 486 ? 'Ocupado' : code === 404 ? 'Número não encontrado' : cause
-      } : null);
-    });
-  }, [sipStatus, startElapsedTimer, cleanupSession]);
-
-  const hangUp = useCallback(() => {
-    if (sessionRef.current) {
-      try { if (!sessionRef.current.isEnded()) sessionRef.current.terminate(); } catch {}
+      console.log('[Softphone] Dialer API call initiated ✓ call_id:', data.call_id);
+      // Api4Com will call our extension → newRTCSession will auto-answer
+    } catch (err) {
+      stopRingback(); pendingCallRef.current = null;
+      setCurrentCall({ phone, leadName, status: 'failed', errorMsg: 'Erro de conexão com o servidor' });
     }
-    cleanupSession();
-    setCurrentCall(prev => prev ? { ...prev, status: 'ended' } : null);
-    setTimeout(() => setCurrentCall(null), 1500);
-  }, [cleanupSession]);
+  }, [sipStatus, registrationError, startRingback, stopRingback]);
 
+  // ── Hang up ──
+  const hangUp = useCallback(() => {
+    stopRingback(); stopElapsedTimer(); pendingCallRef.current = null;
+    if (sessionRef.current) { try { if (!sessionRef.current.isEnded()) sessionRef.current.terminate(); } catch {} }
+    setCurrentCall(p => p ? { ...p, status: 'ended' } : null);
+    setTimeout(() => setCurrentCall(null), 1500);
+  }, [stopRingback, stopElapsedTimer]);
+
+  // ── Toggle mute ──
   const toggleMute = useCallback(() => {
     if (!sessionRef.current) return;
-    if (isMuted) { sessionRef.current.unmute({ audio: true }); }
-    else { sessionRef.current.mute({ audio: true }); }
+    if (isMuted) sessionRef.current.unmute({ audio: true });
+    else sessionRef.current.mute({ audio: true });
     setIsMuted(m => !m);
   }, [isMuted]);
 
+  // ── Cleanup ──
   useEffect(() => {
     return () => {
-      stopElapsedTimer();
+      stopElapsedTimer(); stopRingback();
       if (uaRef.current) { try { uaRef.current.stop(); } catch {} }
     };
-  }, [stopElapsedTimer]);
+  }, [stopElapsedTimer, stopRingback]);
 
-  return { sipStatus, registrationError, currentCall, isMuted, callElapsed, makeCall, hangUp, toggleMute, register, unregister };
+  return { sipStatus, registrationError, currentCall, isMuted, callElapsed, initiateDialerCall, hangUp, toggleMute, register, unregister };
 }
