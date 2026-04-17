@@ -158,15 +158,18 @@ export const UserPermissionsModal: React.FC<Props> = ({
               {/* Permissions */}
               <div className="space-y-8">
                 {Array.isArray(menu) && menu.map(section => {
-                  const pageIds = section.subSessions.flatMap(ss => {
-                    const pIds = ss.subSubSessions ? ss.subSubSessions.flatMap(sss => sss.pages ? sss.pages.map(p => p.id) : []) : [];
-                    if (ss.pages) {
-                      pIds.push(...ss.pages.map(p => p.id));
-                    }
-                    return pIds;
-                  });
-                  const allAllowed = pageIds.length > 0 && pageIds.every(id => currentData.allowedPages.includes(id));
-                  const someAllowed = pageIds.some(id => currentData.allowedPages.includes(id));
+                  // Collect all page IDs from every level: section.pages, section.subSubSessions, section.subSessions
+                  const sectionPageIds = [
+                    ...(section.pages || []).map((p: any) => p.id),
+                    ...(section.subSubSessions || []).flatMap((sss: any) => (sss.pages || []).map((p: any) => p.id)),
+                    ...(section.subSessions || []).flatMap((ss: any) => {
+                      const pIds = (ss.subSubSessions || []).flatMap((sss: any) => (sss.pages || []).map((p: any) => p.id));
+                      if (ss.pages) pIds.push(...ss.pages.map((p: any) => p.id));
+                      return pIds;
+                    }),
+                  ];
+                  const allAllowed = sectionPageIds.length > 0 && sectionPageIds.every(id => currentData.allowedPages.includes(id));
+                  const someAllowed = sectionPageIds.some(id => currentData.allowedPages.includes(id));
 
                   return (
                     <div key={section.id} className="space-y-4">
@@ -181,13 +184,73 @@ export const UserPermissionsModal: React.FC<Props> = ({
                           {allAllowed ? 'Liberar Tudo' : someAllowed ? 'Parcial' : 'Bloquear'}
                         </button>
                       </div>
-                      {Array.isArray(section.subSessions) && section.subSessions.map(subSession => {
-                        const pageIds = Array.isArray(subSession.subSubSessions) ? subSession.subSubSessions.flatMap(sss => sss.pages ? sss.pages.map(p => p.id) : []) : [];
-                        if (subSession.pages) {
-                          pageIds.push(...subSession.pages.map(p => p.id));
-                        }
-                        const allAllowed = pageIds.length > 0 && pageIds.every(id => currentData.allowedPages.includes(id));
-                        const someAllowed = pageIds.some(id => currentData.allowedPages.includes(id));
+
+                      {/* Pages directly under section */}
+                      {Array.isArray(section.pages) && section.pages.length > 0 && (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 mb-4">
+                          {section.pages.map((page: any) => {
+                            const isAllowed = currentData.allowedPages.includes(page.id);
+                            return (
+                              <button
+                                key={page.id}
+                                onClick={() => togglePage(user.id, page.id)}
+                                className={`px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-2 border ${
+                                  isAllowed ? 'bg-purple-600/10 dark:bg-violet-600/10 text-purple-600 dark:text-violet-400 border-purple-500/30 dark:border-violet-500/30' : 'bg-gray-50 dark:bg-white/5 text-gray-400 dark:text-slate-400 border-gray-200 dark:border-white/5'
+                                }`}
+                              >
+                                {isAllowed ? <Unlock size={12} /> : <Lock size={12} />}
+                                {page.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* SubSubSessions directly under section (no subsession) */}
+                      {Array.isArray(section.subSubSessions) && section.subSubSessions.map((sss: any) => {
+                        const sssPageIds = (sss.pages || []).map((p: any) => p.id);
+                        const sssAll = sssPageIds.length > 0 && sssPageIds.every((id: string) => currentData.allowedPages.includes(id));
+                        const sssSome = sssPageIds.some((id: string) => currentData.allowedPages.includes(id));
+                        return (
+                          <div key={sss.id} className="ml-4 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <h5 className="text-sm font-bold text-gray-500 dark:text-slate-400">{sss.label}</h5>
+                              <button
+                                onClick={() => toggleSection(user.id, sss.id)}
+                                className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${
+                                  sssAll ? 'bg-purple-600 dark:bg-violet-600 text-white' : sssSome ? 'bg-purple-600/40 dark:bg-violet-600/40 text-white' : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-slate-500'
+                                }`}
+                              >
+                                {sssAll ? 'Liberar Tudo' : sssSome ? 'Parcial' : 'Bloquear'}
+                              </button>
+                            </div>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                              {(sss.pages || []).map((page: any) => {
+                                const isAllowed = currentData.allowedPages.includes(page.id);
+                                return (
+                                  <button key={page.id} onClick={() => togglePage(user.id, page.id)}
+                                    className={`px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-2 border ${
+                                      isAllowed ? 'bg-purple-600/10 dark:bg-violet-600/10 text-purple-600 dark:text-violet-400 border-purple-500/30 dark:border-violet-500/30' : 'bg-gray-50 dark:bg-white/5 text-gray-400 dark:text-slate-400 border-gray-200 dark:border-white/5'
+                                    }`}
+                                  >
+                                    {isAllowed ? <Unlock size={12} /> : <Lock size={12} />}
+                                    {page.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {/* SubSessions */}
+                      {Array.isArray(section.subSessions) && section.subSessions.map((subSession: any) => {
+                        const ssPageIds = [
+                          ...(subSession.pages || []).map((p: any) => p.id),
+                          ...(subSession.subSubSessions || []).flatMap((sss: any) => (sss.pages || []).map((p: any) => p.id)),
+                        ];
+                        const ssAll = ssPageIds.length > 0 && ssPageIds.every(id => currentData.allowedPages.includes(id));
+                        const ssSome = ssPageIds.some(id => currentData.allowedPages.includes(id));
 
                         return (
                           <div key={subSession.id} className="ml-4 space-y-4">
@@ -196,21 +259,20 @@ export const UserPermissionsModal: React.FC<Props> = ({
                               <button
                                 onClick={() => toggleSubSession(user.id, subSession.id)}
                                 className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${
-                                  allAllowed ? 'bg-purple-600 dark:bg-violet-600 text-white' : someAllowed ? 'bg-purple-600/40 dark:bg-violet-600/40 text-white' : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-slate-500'
+                                  ssAll ? 'bg-purple-600 dark:bg-violet-600 text-white' : ssSome ? 'bg-purple-600/40 dark:bg-violet-600/40 text-white' : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-slate-500'
                                 }`}
                               >
-                                {allAllowed ? 'Liberar Tudo' : someAllowed ? 'Parcial' : 'Bloquear'}
+                                {ssAll ? 'Liberar Tudo' : ssSome ? 'Parcial' : 'Bloquear'}
                               </button>
                             </div>
-                            
+
+                            {/* Pages directly under subSession */}
                             {Array.isArray(subSession.pages) && subSession.pages.length > 0 && (
                               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 mb-4">
-                                {subSession.pages.map(page => {
+                                {subSession.pages.map((page: any) => {
                                   const isAllowed = currentData.allowedPages.includes(page.id);
                                   return (
-                                    <button
-                                      key={page.id}
-                                      onClick={() => togglePage(user.id, page.id)}
+                                    <button key={page.id} onClick={() => togglePage(user.id, page.id)}
                                       className={`px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-2 border ${
                                         isAllowed ? 'bg-purple-600/10 dark:bg-violet-600/10 text-purple-600 dark:text-violet-400 border-purple-500/30 dark:border-violet-500/30' : 'bg-gray-50 dark:bg-white/5 text-gray-400 dark:text-slate-400 border-gray-200 dark:border-white/5'
                                       }`}
@@ -223,31 +285,29 @@ export const UserPermissionsModal: React.FC<Props> = ({
                               </div>
                             )}
 
-                            {Array.isArray(subSession.subSubSessions) && subSession.subSubSessions.map(subSubSession => {
-                              const pageIds = Array.isArray(subSubSession.pages) ? subSubSession.pages.map(p => p.id) : [];
-                              const allAllowed = pageIds.length > 0 && pageIds.every(id => currentData.allowedPages.includes(id));
-                              const someAllowed = pageIds.some(id => currentData.allowedPages.includes(id));
-
+                            {/* SubSubSessions */}
+                            {Array.isArray(subSession.subSubSessions) && subSession.subSubSessions.map((sss: any) => {
+                              const sssPageIds = (sss.pages || []).map((p: any) => p.id);
+                              const sssAll = sssPageIds.length > 0 && sssPageIds.every((id: string) => currentData.allowedPages.includes(id));
+                              const sssSome = sssPageIds.some((id: string) => currentData.allowedPages.includes(id));
                               return (
-                                <div key={subSubSession.id} className="ml-4 space-y-2">
+                                <div key={sss.id} className="ml-4 space-y-2">
                                   <div className="flex items-center justify-between">
-                                    <h5 className="text-sm font-bold text-gray-500 dark:text-slate-400">{subSubSession.label}</h5>
+                                    <h5 className="text-sm font-bold text-gray-500 dark:text-slate-400">{sss.label}</h5>
                                     <button
-                                      onClick={() => toggleSection(user.id, subSubSession.id)}
+                                      onClick={() => toggleSection(user.id, sss.id)}
                                       className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${
-                                        allAllowed ? 'bg-purple-600 dark:bg-violet-600 text-white' : someAllowed ? 'bg-purple-600/40 dark:bg-violet-600/40 text-white' : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-slate-500'
+                                        sssAll ? 'bg-purple-600 dark:bg-violet-600 text-white' : sssSome ? 'bg-purple-600/40 dark:bg-violet-600/40 text-white' : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-slate-500'
                                       }`}
                                     >
-                                      {allAllowed ? 'Liberar Tudo' : someAllowed ? 'Parcial' : 'Bloquear'}
+                                      {sssAll ? 'Liberar Tudo' : sssSome ? 'Parcial' : 'Bloquear'}
                                     </button>
                                   </div>
                                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                                    {Array.isArray(subSubSession.pages) && subSubSession.pages.map(page => {
+                                    {(sss.pages || []).map((page: any) => {
                                       const isAllowed = currentData.allowedPages.includes(page.id);
                                       return (
-                                        <button
-                                          key={page.id}
-                                          onClick={() => togglePage(user.id, page.id)}
+                                        <button key={page.id} onClick={() => togglePage(user.id, page.id)}
                                           className={`px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-2 border ${
                                             isAllowed ? 'bg-purple-600/10 dark:bg-violet-600/10 text-purple-600 dark:text-violet-400 border-purple-500/30 dark:border-violet-500/30' : 'bg-gray-50 dark:bg-white/5 text-gray-400 dark:text-slate-400 border-gray-200 dark:border-white/5'
                                           }`}

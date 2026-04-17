@@ -175,13 +175,15 @@ const AdminPanel: React.FC = () => {
       const current = prev[id];
       if (!current) return prev;
 
-      const pageIds = targetSection.subSessions.flatMap((ss: any) => {
-        const pIds = ss.subSubSessions ? ss.subSubSessions.flatMap((sss: any) => sss.pages ? sss.pages.map((p: any) => p.id) : []) : [];
-        if (ss.pages) {
-          pIds.push(...ss.pages.map((p: any) => p.id));
-        }
-        return pIds;
-      });
+      const pageIds = [
+        ...(targetSection.pages || []).map((p: any) => p.id),
+        ...(targetSection.subSubSessions || []).flatMap((sss: any) => (sss.pages || []).map((p: any) => p.id)),
+        ...(targetSection.subSessions || []).flatMap((ss: any) => {
+          const pIds = (ss.subSubSessions || []).flatMap((sss: any) => (sss.pages || []).map((p: any) => p.id));
+          if (ss.pages) pIds.push(...ss.pages.map((p: any) => p.id));
+          return pIds;
+        }),
+      ];
       const allPagesAllowed = pageIds.every((pid: string) => current.allowedPages.includes(pid));
 
       let newPages: string[];

@@ -589,6 +589,9 @@ async function startServer() {
       )
     `);
 
+    // Migration: add squad column to users if missing
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS squad TEXT`);
+
     // Ensure missing columns in crm_comercial_leads
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS previsao DATE`);
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS etapa_updated_at TIMESTAMPTZ DEFAULT NOW()`);
@@ -737,6 +740,21 @@ async function startServer() {
   });
 
   // API Routes
+  // DIAGNOSTIC: check actual users table columns
+  app.get("/api/debug-users-schema", async (req, res) => {
+    try {
+      const result = await pool.query(`
+        SELECT column_name, data_type, is_nullable, column_default
+        FROM information_schema.columns
+        WHERE table_name = 'users'
+        ORDER BY ordinal_position
+      `);
+      res.json({ columns: result.rows });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
   app.get("/api/db-test", async (req, res) => {
     try {
       const client = await pool.connect();
@@ -1582,32 +1600,36 @@ async function startServer() {
   });
 
   app.post("/api/users", async (req, res) => {
-    const { email, role, allowedPages, name, picture } = req.body;
-    const id = Math.random().toString(36).substring(2, 15);
+    const { email, role, allowedPages, name, picture, uid } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email is required', message: 'Email é obrigatório' });
+    // uid is required by the DB (NOT NULL). Use provided uid, or derive one from email.
+    const userUid = uid || email.toLowerCase().replace(/[^a-z0-9]/g, '_');
     try {
       await pool.query(
-        "INSERT INTO users (id, email, name, picture, role, allowed_pages) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (email) DO UPDATE SET name = COALESCE(EXCLUDED.name, users.name), picture = COALESCE(EXCLUDED.picture, users.picture), role = EXCLUDED.role, allowed_pages = EXCLUDED.allowed_pages",
-        [id, email, name, picture, role, JSON.stringify(allowedPages || [])]
+        "INSERT INTO users (uid, email, name, picture, role, allowed_pages) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (email) DO UPDATE SET name = COALESCE(EXCLUDED.name, users.name), picture = COALESCE(EXCLUDED.picture, users.picture), role = EXCLUDED.role, allowed_pages = EXCLUDED.allowed_pages",
+        [userUid, email.toLowerCase().trim(), name || null, picture || null, role || 'user', JSON.stringify(allowedPages || [])]
       );
       res.json({ success: true });
     } catch (err) {
       console.error("Error adding user:", err);
-      res.status(500).json({ error: "Failed to add user" });
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: "Failed to add user", message: msg });
     }
   });
 
   app.put("/api/users/:id", async (req, res) => {
     const { id } = req.params;
-    const { role, allowedPages, name, picture } = req.body;
+    const { role, allowedPages, name, picture, squad } = req.body;
     try {
       await pool.query(
-        "UPDATE users SET role = $1, allowed_pages = $2, name = COALESCE($3, name), picture = COALESCE($4, picture) WHERE id = $5",
-        [role, JSON.stringify(allowedPages || []), name, picture, id]
+        "UPDATE users SET role = $1, allowed_pages = $2, name = COALESCE($3, name), picture = COALESCE($4, picture), squad = $5 WHERE id = $6",
+        [role, JSON.stringify(allowedPages || []), name, picture, squad || null, id]
       );
       res.json({ success: true });
     } catch (err) {
       console.error("Error updating user:", err);
-      res.status(500).json({ error: "Failed to update user" });
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: "Failed to update user", message: msg });
     }
   });
 
@@ -4197,7 +4219,14 @@ app.get("/api/todos", async (req, res) => {
         }
       });
       const data = await apiRes.json();
+      // DEBUG: log the raw started_at to diagnose timezone
+      if (Array.isArray(data) && data.length > 0) {
+        console.log('[API4COM CALLS DEBUG] first started_at:', data[0].started_at, '| type:', typeof data[0].started_at);
+      } else if (data?.data?.length > 0) {
+        console.log('[API4COM CALLS DEBUG] first started_at:', data.data[0].started_at, '| type:', typeof data.data[0].started_at);
+      }
       res.json(data);
+
     } catch (err) {
       console.error('[API4COM CALLS]', err);
       res.status(500).json({ error: 'Erro ao buscar histórico de ligações' });

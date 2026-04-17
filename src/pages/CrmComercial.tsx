@@ -128,6 +128,35 @@ const formatDuration = (start: string, end: string) => {
   return `${minutes}min`;
 };
 
+// Format call timestamp from Api4Com.
+// Api4Com incorrectly labels BRT (UTC-3) timestamps with Z (UTC), so times are 3h behind.
+// Fix: ALWAYS add 3h to the returned timestamp to get the real BRT→UTC reference.
+const formatCallRelativeTime = (dateStr: string): string => {
+  if (!dateStr) return '';
+  // Parse the date as-is (with or without Z), then add 3h to correct BRT mislabeled as UTC
+  const raw = new Date(dateStr.replace(' ', 'T')).getTime();
+  const ts = raw + 3 * 60 * 60 * 1000;
+  const diff = Date.now() - ts;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 2) return 'agora';
+  if (mins < 60) return `há ${mins} min`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `há ${hrs}h`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `há ${days} dia${days !== 1 ? 's' : ''}`;
+  return new Date(ts).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+};
+
+
+const getCallTypeLabel = (call: any): string => {
+  if (call.call_type === 'inbound') return 'Recebida';
+  if (call.hangup_cause === 'NORMAL_CLEARING') return 'Chamada realizada';
+  if (call.hangup_cause === 'NO_ANSWER' || call.hangup_cause === 'ORIGINATOR_CANCEL') return 'Não atendida';
+  if (call.hangup_cause === 'USER_BUSY' || call.hangup_cause === 'CALL_REJECTED') return 'Ocupado';
+  if (call.answered_at) return 'Chamada realizada';
+  return 'Não atendida';
+};
+
 export const COLUMN_ICONS = [
   'LayoutGrid', 'MessageSquare', 'Phone', 'Mail', 'Users', 
   'Briefcase', 'Calendar', 'FileText', 'Award', 'Flame', 
@@ -450,7 +479,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
 
   // Fetch call history when ligações tab is active
   useEffect(() => {
-    if (activeTab !== 'ligações' || !lead || callLogsFetched) return;
+    if ((activeTab !== 'ligações' && activeTab !== 'histórico') || !lead || callLogsFetched) return;
     setCallLogsLoading(true);
     const phone = encodeURIComponent(lead.telefone || '');
     const userId = encodeURIComponent(currentUserEmail || '');
@@ -707,177 +736,292 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
               {activeTab === 'histórico' && (
                 <div className="p-6 space-y-4 flex-1">
                   <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-2">Histórico</h3>
-                  {history.length === 0 && comments.length === 0 ? (
+                  {history.length === 0 && comments.length === 0 && callLogs.length === 0 ? (
                     <p className="text-sm text-gray-500 dark:text-slate-500 text-center py-8">Nenhuma atividade registrada.</p>
                   ) : (
-                    <>
-                      {history.map((item, index) => {
-                        const nextItem = history[index + 1];
-                        const prevDate = nextItem ? nextItem.created_at : lead.created_at;
-                        const duration = formatDuration(prevDate, item.created_at);
-                        const isTaskAction = item.action_type?.startsWith('task_');
+                    (() => {
+                      const formatCallDuration = (secs: number) => {
+                        if (!secs) return '0:00';
+                        const m = Math.floor(secs / 60);
+                        const s = secs % 60;
+                        return `${m}:${String(s).padStart(2, '0')}`;
+                      };
+                      const formatRelativeTime = formatCallRelativeTime;
+                      const isSuccess = (call: any) => call.hangup_cause === 'NORMAL_CLEARING';
 
-                        // Task-specific events get a different style
-                        if (isTaskAction || item.action_type === 'template_applied') {
-                          const iconMap: Record<string, { icon: any; color: string; bg: string }> = {
-                            task_created: { icon: <Plus size={10} />, color: 'text-blue-500', bg: 'bg-blue-500' },
-                            task_completed: { icon: <Check size={10} />, color: 'text-emerald-500', bg: 'bg-emerald-500' },
-                            task_reopened: { icon: <Clock size={10} />, color: 'text-orange-500', bg: 'bg-orange-500' },
-                            task_deleted: { icon: <Trash2 size={10} />, color: 'text-red-500', bg: 'bg-red-500' },
-                            template_applied: { icon: <FileText size={10} />, color: 'text-violet-500', bg: 'bg-violet-500' },
-                          };
+                      const parseDateSafe = (dStr?: string) => {
+                        if (!dStr) return 0;
+                        const t = new Date(dStr.replace(' ', 'T')).getTime();
+                        return isNaN(t) ? 0 : t;
+                      };
 
-                          const taskTypeIcons: Record<string, any> = {
-                            'Tarefa': <CheckSquare size={14} />,
-                            'Ligação': <Phone size={14} />,
-                            'WhatsApp': <MessageSquare size={14} />,
-                            'Email': <Mail size={14} />,
-                            'Reunião': <Users size={14} />,
-                            'Lembrete': <Clock size={14} />,
-                          };
+                      const unifiedItems = [
+                        ...history
+                          .filter(item => item.action_type !== 'call_initiated' && item.action_type !== 'call_completed')
+                          .map(item => ({ ...item, _rawType: 'history', _date: parseDateSafe(item.created_at) })),
+                        ...comments.map(c => ({ ...c, _rawType: 'comment', _date: parseDateSafe(c.created_at) })),
+                        ...callLogs.map(call => ({ ...call, _rawType: 'call', _date: parseDateSafe(call.started_at || call.created_at) }))
+                      ].sort((a, b) => b._date - a._date);
 
-                          const meta = iconMap[item.action_type] || iconMap.task_created;
-                          
-                          // Fallback for older records: parse type from description or title content
-                          let effectiveTaskType = (item.task_type || '').trim();
-                          
-                          // Split description to show action and title as badges
-                          const descParts = item.description.split(':');
-                          const action = descParts[0];
-                          let title = descParts[1]?.replace(/"/g, '').trim() || '';
-
-                          // Cleanup old metadata from title if present (e.g., "(Tarefa · Normal)")
-                          if (title.includes('(')) {
-                            const metaMatch = title.match(/\(([^·]+)·/);
-                            if (!effectiveTaskType && metaMatch) effectiveTaskType = metaMatch[1].trim();
-                            title = title.split('(')[0].trim();
-                          }
-
-                          // Smart icon detection by keyword if still no type
-                          const lowerTitle = title.toLowerCase();
-                          if (!effectiveTaskType || effectiveTaskType === 'Tarefa') {
-                             if (lowerTitle.includes('whatsapp') || lowerTitle.includes('wpp')) effectiveTaskType = 'WhatsApp';
-                             else if (lowerTitle.includes('ligar') || lowerTitle.includes('ligação') || lowerTitle.includes('call')) effectiveTaskType = 'Ligação';
-                             else if (lowerTitle.includes('email') || lowerTitle.includes('e-mail')) effectiveTaskType = 'Email';
-                             else if (lowerTitle.includes('reunião') || lowerTitle.includes('meeting')) effectiveTaskType = 'Reunião';
-                          }
-
-                          const taskIcon = taskTypeIcons[effectiveTaskType] || taskTypeIcons[effectiveTaskType.charAt(0).toUpperCase() + effectiveTaskType.slice(1)] || taskTypeIcons['Tarefa'];
-
-                          return (
-                            <div key={item.id} className="relative pl-6 pb-6 last:pb-0">
-                              {index !== history.length - 1 && (
-                                <div className="absolute left-[7px] top-[14px] w-[2px] h-full bg-gray-100 dark:bg-white/5" />
-                              )}
-                              {/* Dot */}
-                              <div className={`absolute left-0 top-1 w-[16px] h-[16px] rounded-full ${meta.bg} border-4 border-white dark:border-[#1A1625] shadow-sm z-10`} />
+                      return (
+                        <>
+                          {unifiedItems.map((unifiedItem, index) => {
+                            if (unifiedItem._rawType === 'call') {
+                              const call = unifiedItem;
+                              const success = isSuccess(call);
+                              const dotColor = success ? 'bg-emerald-500' : 'bg-red-500';
                               
-                              <div className="bg-white/50 dark:bg-white/5 border border-gray-100 dark:border-white/10 rounded-2xl p-4 shadow-sm">
-                                <div className="flex flex-wrap items-center gap-2 mb-3">
-                                  <span className="px-2.5 py-1 rounded-lg bg-violet-600 text-white text-[10px] font-black uppercase tracking-wider shadow-sm">
-                                    {action.replace('Tarefa ', '').trim()}
-                                  </span>
-                                  
-                                  {title && (
-                                    <span className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${
-                                      effectiveTaskType === 'WhatsApp' ? 'bg-emerald-100/50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' :
-                                      (effectiveTaskType === 'Ligação' || effectiveTaskType === 'Lembrete') ? 'bg-blue-100/50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400' :
-                                      effectiveTaskType === 'Tarefa' ? 'bg-amber-100/50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400' :
-                                      effectiveTaskType === 'Reunião' ? 'bg-yellow-200/50 dark:bg-yellow-600/20 text-yellow-700 dark:text-yellow-500' :
-                                      effectiveTaskType === 'Email' ? 'bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-slate-400' :
-                                      'bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-slate-400'
-                                    }`}>
-                                      {taskIcon}
-                                      {title}
-                                    </span>
+                              return (
+                                <div key={`call-${call.id}`} className="relative pl-6 pb-6 last:pb-0">
+                                  {/* Timeline Line */}
+                                  {index !== unifiedItems.length - 1 && (
+                                    <div className="absolute left-[7px] top-[14px] w-[2px] h-full bg-gray-100 dark:bg-white/5" />
                                   )}
+                                  
+                                  {/* Timeline Dot */}
+                                  <div className={`absolute left-0 top-1 w-[16px] h-[16px] rounded-full border-4 border-white dark:border-[#1A1625] shadow-sm z-10 flex items-center justify-center ${dotColor}`} />
+                                  
+                                  <div className="bg-white/50 dark:bg-white/5 border border-gray-100 dark:border-white/10 rounded-2xl p-4 shadow-sm transition-all hover:shadow-md">
+                                    <div className="flex items-start gap-3">
+                                      <div className="flex-shrink-0 w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.12)' }}>
+                                        <Phone size={18} style={{ color: '#7c3aed' }} />
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                                          <span className="font-semibold text-[13px] text-gray-800 dark:text-slate-100">Ligação</span>
+                                          <span className="text-[10px] px-2 py-0.5 rounded-full font-medium"
+                                            style={{ background: success ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', color: success ? '#059669' : '#dc2626' }}>
+                                            {success ? '✓' : '✕'} {getCallTypeLabel(call)}
+                                          </span>
+                                        </div>
+                                        <p className="text-[11px]" style={{ color: '#9ca3af' }}>ORIGEM: GrapeHub CRM</p>
+
+                                        {call.duration > 0 && (
+                                          <div className="mt-2 text-[11px] text-gray-400 dark:text-slate-500">
+                                            ⏱ Duração: <strong className="text-gray-600 dark:text-slate-400">{formatCallDuration(call.duration)}</strong>
+                                          </div>
+                                        )}
+
+                                        {call.record_url && (
+                                          <div className="mt-2.5 rounded-lg p-1.5 flex items-center gap-2 max-w-[350px]" style={{ background: 'rgba(0,0,0,0.03)', border: '1px solid rgba(0,0,0,0.06)' }}>
+                                            <audio controls src={call.record_url} className="w-full h-7" style={{ minWidth: 0, flex: 1 }} preload="none" />
+                                            <a href={call.record_url} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 p-1 rounded hover:bg-purple-50 transition-colors" title="Abrir gravação">
+                                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                                            </a>
+                                          </div>
+                                        )}
+
+                                        <div className="flex items-center gap-1.5 mt-2.5">
+                                          <Clock size={11} className="text-gray-400" />
+                                          <span className="text-[11px]" style={{ color: '#9ca3af' }}>
+                                            {formatRelativeTime(call.started_at)}
+                                            {(call.first_name || call.last_name) && <> por <strong className="font-medium text-gray-600 dark:text-slate-400">{[call.first_name, call.last_name].filter(Boolean).join(' ')}</strong></>}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
                                 </div>
+                              );
+                            }
+
+                            if (unifiedItem._rawType === 'comment') {
+                              const comment = unifiedItem;
+                              return (
+                                <div key={`comment-${comment.id}`} className="relative pl-6 pb-6 last:pb-0">
+                                  {/* Timeline Line */}
+                                  {index !== unifiedItems.length - 1 && (
+                                    <div className="absolute left-[7px] top-[14px] w-[2px] h-full bg-gray-100 dark:bg-white/5" />
+                                  )}
+                                  
+                                  {/* Timeline Dot */}
+                                  <div className="absolute left-0 top-1 w-[16px] h-[16px] rounded-full border-4 border-white dark:border-[#1A1625] shadow-sm z-10 flex items-center justify-center bg-violet-400" />
+
+                                  <div className="bg-white/50 dark:bg-white/5 border border-gray-100 dark:border-white/10 rounded-2xl p-4 shadow-sm">
+                                    <div className="flex items-start gap-3">
+                                      <div className="w-8 h-8 rounded-full bg-violet-500/10 flex items-center justify-center flex-shrink-0 mt-0.5 text-xs font-bold text-violet-600">
+                                        {getInitials(comment.user_name)}
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center justify-between gap-2">
+                                          <span className="text-sm font-bold text-gray-900 dark:text-white truncate">{comment.user_name || 'Nota'}</span>
+                                          <div className="flex items-center gap-2 shrink-0">
+                                            <span className="text-[11px] text-gray-400 dark:text-slate-500">{new Date(comment.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                                            <button onClick={() => onDeleteComment(comment.id)} className="text-gray-400 hover:text-red-500 transition-colors p-1 rounded-md hover:bg-red-50 dark:hover:bg-red-900/30">
+                                              <Trash2 size={12} />
+                                            </button>
+                                          </div>
+                                        </div>
+                                        <p className="text-sm text-gray-600 dark:text-slate-300 mt-1 whitespace-pre-wrap">{comment.content}</p>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            }
+
+                            // else history
+                            const item = unifiedItem;
+                            
+                            const historyIndex = history.findIndex((h) => h.id === item.id);
+                            const nextItem = history[historyIndex + 1];
+                            const prevDate = nextItem ? nextItem.created_at : lead.created_at;
+                            const duration = formatDuration(prevDate, item.created_at);
+                            const isTaskAction = item.action_type?.startsWith('task_');
+
+                            // Task-specific events get a different style
+                            if (isTaskAction || item.action_type === 'template_applied') {
+                              const iconMap: Record<string, { icon: any; color: string; bg: string }> = {
+                                task_created: { icon: <Plus size={10} />, color: 'text-blue-500', bg: 'bg-blue-500' },
+                                task_completed: { icon: <Check size={10} />, color: 'text-emerald-500', bg: 'bg-emerald-500' },
+                                task_reopened: { icon: <Clock size={10} />, color: 'text-orange-500', bg: 'bg-orange-500' },
+                                task_deleted: { icon: <Trash2 size={10} />, color: 'text-red-500', bg: 'bg-red-500' },
+                                template_applied: { icon: <FileText size={10} />, color: 'text-violet-500', bg: 'bg-violet-500' },
+                              };
+
+                              const taskTypeIcons: Record<string, any> = {
+                                'Tarefa': <CheckSquare size={14} />,
+                                'Ligação': <Phone size={14} />,
+                                'WhatsApp': <MessageSquare size={14} />,
+                                'Email': <Mail size={14} />,
+                                'Reunião': <Users size={14} />,
+                                'Lembrete': <Clock size={14} />,
+                              };
+
+                              const meta = iconMap[item.action_type] || iconMap.task_created;
+                              
+                              // Fallback for older records: parse type from description or title content
+                              let effectiveTaskType = (item.task_type || '').trim();
+                              
+                              // Split description to show action and title as badges
+                              const descParts = item.description.split(':');
+                              const action = descParts[0];
+                              let title = descParts[1]?.replace(/"/g, '').trim() || '';
+
+                              // Cleanup old metadata from title if present (e.g., "(Tarefa · Normal)")
+                              if (title.includes('(')) {
+                                const metaMatch = title.match(/\(([^·]+)·/);
+                                if (!effectiveTaskType && metaMatch) effectiveTaskType = metaMatch[1].trim();
+                                title = title.split('(')[0].trim();
+                              }
+
+                              // Smart icon detection by keyword if still no type
+                              const lowerTitle = title.toLowerCase();
+                              if (!effectiveTaskType || effectiveTaskType === 'Tarefa') {
+                                 if (lowerTitle.includes('whatsapp') || lowerTitle.includes('wpp')) effectiveTaskType = 'WhatsApp';
+                                 else if (lowerTitle.includes('ligar') || lowerTitle.includes('ligação') || lowerTitle.includes('call')) effectiveTaskType = 'Ligação';
+                                 else if (lowerTitle.includes('email') || lowerTitle.includes('e-mail')) effectiveTaskType = 'Email';
+                                 else if (lowerTitle.includes('reunião') || lowerTitle.includes('meeting')) effectiveTaskType = 'Reunião';
+                              }
+
+                              const taskIcon = taskTypeIcons[effectiveTaskType] || taskTypeIcons[effectiveTaskType.charAt(0).toUpperCase() + effectiveTaskType.slice(1)] || taskTypeIcons['Tarefa'];
+
+                              return (
+                                <div key={item.id} className="relative pl-6 pb-6 last:pb-0">
+                                  {index !== unifiedItems.length - 1 && (
+                                    <div className="absolute left-[7px] top-[14px] w-[2px] h-full bg-gray-100 dark:bg-white/5" />
+                                  )}
+                                  {/* Dot */}
+                                  <div className={`absolute left-0 top-1 w-[16px] h-[16px] rounded-full ${meta.bg} border-4 border-white dark:border-[#1A1625] shadow-sm z-10`} />
+                                  
+                                  <div className="bg-white/50 dark:bg-white/5 border border-gray-100 dark:border-white/10 rounded-2xl p-4 shadow-sm transition-all hover:shadow-md">
+                                    <div className="flex items-start gap-3">
+                                      <div className="flex-shrink-0 w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.12)' }}>
+                                        {React.cloneElement(taskIcon as React.ReactElement, { size: 18, style: { color: '#7c3aed' } })}
+                                      </div>
+                                      
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                                          <span className="px-2 py-0.5 rounded font-black text-[10px] uppercase tracking-wider"
+                                            style={{
+                                              background: action.includes('Concluída') ? 'rgba(16,185,129,0.1)' : 'rgba(124,58,237,0.1)',
+                                              color: action.includes('Concluída') ? '#059669' : '#7c3aed'
+                                            }}
+                                          >
+                                            {action.replace('Tarefa ', '').trim()}
+                                          </span>
+                                          {title && (
+                                            <span className="font-semibold text-[13px] text-gray-800 dark:text-slate-100">
+                                              {title}
+                                            </span>
+                                          )}
+                                        </div>
+
+                                        <p className="text-[11px]" style={{ color: '#9ca3af' }}>
+                                          ORIGEM: {effectiveTaskType || 'Atividade'}
+                                        </p>
+                                        
+                                        <div className="flex items-center gap-1.5 mt-2.5">
+                                          <Clock size={11} className="text-gray-400" />
+                                          <span className="text-[11px]" style={{ color: '#9ca3af' }}>
+                                            {formatRelativeTime(item.created_at)}
+                                            {item.user_name && <> por <strong className="font-medium text-gray-600 dark:text-slate-400">{item.user_name}</strong></>}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            }
+
+                            const toColumnTitle = columns.find(c => c.id === item.to_coluna)?.title || item.to_coluna;
+                            const isWonMove = isWonColumn(toColumnTitle);
+
+                            return (
+                              <div key={item.id} className="relative pl-6 pb-6 last:pb-0">
+                                {/* Line connecting items */}
+                                {index !== unifiedItems.length - 1 && (
+                                  <div className="absolute left-[7px] top-[14px] w-[2px] h-full bg-gray-100 dark:bg-white/5" />
+                                )}
                                 
-                                <div className="space-y-1">
-                                  <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-slate-400">
-                                    <Clock size={12} />
-                                    <span>{new Date(item.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                                {/* Dot */}
+                                <div className={`absolute left-0 top-1 w-[16px] h-[16px] rounded-full border-4 border-white dark:border-[#1A1625] shadow-sm z-10 flex items-center justify-center ${
+                                  isWonMove ? 'bg-emerald-500 scale-125' : 'bg-violet-500'
+                                }`}>
+                                  {isWonMove && <Trophy size={6} className="text-white" />}
+                                </div>
+
+                                <div className={`rounded-2xl p-4 shadow-sm border transition-all duration-300 ${
+                                  isWonMove 
+                                  ? 'bg-emerald-500/10 border-emerald-500/30 shadow-[0_0_20px_rgba(16,185,129,0.1)]' 
+                                  : 'bg-white/50 dark:bg-white/5 border-gray-100 dark:border-white/10'
+                                }`}>
+                                  <div className="flex flex-wrap items-center gap-2 mb-3">
+                                    {isWonMove && (
+                                      <span className="px-2.5 py-1 rounded-lg bg-emerald-500 text-white text-[10px] font-black uppercase tracking-wider shadow-lg shadow-emerald-500/20">
+                                        CONQUISTA! 🏆
+                                      </span>
+                                    )}
+                                    <span className="px-2.5 py-1 rounded-lg bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-xs font-bold text-gray-700 dark:text-slate-300">
+                                      {columns.find(c => c.id === item.from_coluna)?.title || 'Sem Coluna'}
+                                    </span>
+                                    <ArrowRight size={14} className="text-gray-400" />
+                                    <span className={`px-2.5 py-1 rounded-lg text-xs font-bold shadow-lg ${
+                                      isWonMove 
+                                      ? 'bg-emerald-500 text-white shadow-emerald-500/30' 
+                                      : 'bg-violet-500 text-white shadow-violet-500/20'
+                                    }`}>
+                                      {toColumnTitle}
+                                    </span>
+                                  </div>
+
+                                  <div className="space-y-1">
+                                    <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-slate-400">
+                                      <Clock size={12} />
+                                      <span>{new Date(item.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                                    </div>
+                                    <div className="text-[11px] text-gray-400 dark:text-slate-500 italic">
+                                      Tempo na etapa anterior: {duration}
+                                    </div>
                                   </div>
                                 </div>
                               </div>
-                            </div>
-                          );
-                        }
-
-                        const toColumnTitle = columns.find(c => c.id === item.to_coluna)?.title || item.to_coluna;
-                        const isWonMove = isWonColumn(toColumnTitle);
-
-                        return (
-                          <div key={item.id} className="relative pl-6 pb-6 last:pb-0">
-                            {/* Line connecting items */}
-                            {index !== history.length - 1 && (
-                              <div className="absolute left-[7px] top-[14px] w-[2px] h-full bg-gray-100 dark:bg-white/5" />
-                            )}
-                            
-                            {/* Dot */}
-                            <div className={`absolute left-0 top-1 w-[16px] h-[16px] rounded-full border-4 border-white dark:border-[#1A1625] shadow-sm z-10 flex items-center justify-center ${
-                              isWonMove ? 'bg-emerald-500 scale-125' : 'bg-violet-500'
-                            }`}>
-                              {isWonMove && <Trophy size={6} className="text-white" />}
-                            </div>
-
-                            <div className={`rounded-2xl p-4 shadow-sm border transition-all duration-300 ${
-                              isWonMove 
-                              ? 'bg-emerald-500/10 border-emerald-500/30 shadow-[0_0_20px_rgba(16,185,129,0.1)]' 
-                              : 'bg-white/50 dark:bg-white/5 border-gray-100 dark:border-white/10'
-                            }`}>
-                              <div className="flex flex-wrap items-center gap-2 mb-3">
-                                {isWonMove && (
-                                  <span className="px-2.5 py-1 rounded-lg bg-emerald-500 text-white text-[10px] font-black uppercase tracking-wider shadow-lg shadow-emerald-500/20">
-                                    CONQUISTA! 🏆
-                                  </span>
-                                )}
-                                <span className="px-2.5 py-1 rounded-lg bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-xs font-bold text-gray-700 dark:text-slate-300">
-                                  {columns.find(c => c.id === item.from_coluna)?.title || 'Sem Coluna'}
-                                </span>
-                                <ArrowRight size={14} className="text-gray-400" />
-                                <span className={`px-2.5 py-1 rounded-lg text-xs font-bold shadow-lg ${
-                                  isWonMove 
-                                  ? 'bg-emerald-500 text-white shadow-emerald-500/30' 
-                                  : 'bg-violet-500 text-white shadow-violet-500/20'
-                                }`}>
-                                  {toColumnTitle}
-                                </span>
-                              </div>
-
-                              <div className="space-y-1">
-                                <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-slate-400">
-                                  <Clock size={12} />
-                                  <span>{new Date(item.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-                                </div>
-                                <div className="text-[11px] text-gray-400 dark:text-slate-500 italic">
-                                  Tempo na etapa anterior: {duration}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                      {comments.map(comment => (
-                        <div key={comment.id} className="flex items-start gap-3">
-                          <div className="w-7 h-7 rounded-full bg-violet-500/10 flex items-center justify-center flex-shrink-0 mt-0.5 text-[10px] font-bold text-violet-600">
-                            {getInitials(comment.user_name)}
-                          </div>
-                          <div className="flex-1">
-                            <div className="flex items-center justify-between">
-                              <span className="text-sm font-bold text-gray-900 dark:text-white">{comment.user_name}</span>
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs text-gray-400 dark:text-slate-500">{new Date(comment.created_at).toLocaleString('pt-BR')}</span>
-                                <button onClick={() => onDeleteComment(comment.id)} className="text-gray-400 hover:text-red-500 transition-colors">
-                                  <Trash2 size={12} />
-                                </button>
-                              </div>
-                            </div>
-                            <p className="text-sm text-gray-600 dark:text-slate-300 mt-0.5 whitespace-pre-wrap">{comment.content}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </>
+                            );
+                          })}
+                        </>
+                      );
+                    })()
                   )}
                 </div>
               )}
@@ -1076,29 +1220,9 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                   const s = secs % 60;
                   return `${m}:${String(s).padStart(2, '0')}`;
                 };
-                const formatRelativeTime = (dateStr: string) => {
-                  if (!dateStr) return '';
-                  // Api4Com returns times in Brazil local time (UTC-3) without timezone info
-                  // Normalize: replace space with T and append -03:00 so JS parses correctly
-                  const normalized = dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T');
-                  const withTz = normalized.endsWith('Z') || normalized.includes('+') ? normalized : normalized + '-03:00';
-                  const diff = Date.now() - new Date(withTz).getTime();
-                  const mins = Math.floor(diff / 60000);
-                  if (mins < 2) return 'agora';
-                  if (mins < 60) return `há ${mins} min`;
-                  const hrs = Math.floor(mins / 60);
-                  if (hrs < 24) return `há ${hrs}h`;
-                  const days = Math.floor(hrs / 24);
-                  if (days < 30) return `há ${days} dia${days !== 1 ? 's' : ''}`;
-                  return new Date(withTz).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-                };
-                const getCallTypeLabel = (call: any) => {
-                  if (call.call_type === 'inbound') return 'Recebida';
-                  if (call.hangup_cause === 'NORMAL_CLEARING') return 'Chamada realizada';
-                  if (call.hangup_cause === 'NO_ANSWER' || call.hangup_cause === 'ORIGINATOR_CANCEL') return 'Não atendida';
-                  return 'Chamada realizada';
-                };
+                const formatRelativeTime = formatCallRelativeTime;
                 const isSuccess = (call: any) => call.hangup_cause === 'NORMAL_CLEARING';
+
                 return (
                   <div className="p-4 space-y-3 flex-1 overflow-y-auto">
                     <div className="flex items-center justify-between mb-2">
@@ -1121,46 +1245,64 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                         <p className="text-xs mt-1 opacity-60">As ligações aparecerão aqui após serem realizadas</p>
                       </div>
                     )}
-                    {!callLogsLoading && callLogs.map((call: any) => (
-                      <div key={call.id} className="rounded-2xl border transition-all duration-200 hover:shadow-md overflow-hidden"
-                        style={{ background: 'var(--card-bg, #fff)', borderColor: 'var(--border-color, #e5e7eb)', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-                        <div className="p-4">
-                          <div className="flex items-start gap-3">
-                            <div className="flex-shrink-0 w-11 h-11 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.12)' }}>
-                              <Phone size={20} style={{ color: '#7c3aed' }} />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-semibold text-sm text-gray-800 dark:text-slate-100">Ligação</span>
-                                <span className="text-xs px-2 py-0.5 rounded-full font-medium"
-                                  style={{ background: isSuccess(call) ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', color: isSuccess(call) ? '#059669' : '#dc2626' }}>
-                                  {isSuccess(call) ? '✓' : '✕'} {getCallTypeLabel(call)}
-                                </span>
+                    {!callLogsLoading && callLogs.map((call: any, index: number) => {
+                      const success = isSuccess(call);
+                      const dotColor = success ? 'bg-emerald-500' : 'bg-red-500';
+                      
+                      return (
+                        <div key={call.id} className="relative pl-6 pb-6 last:pb-0">
+                          {/* Timeline Line */}
+                          {index !== callLogs.length - 1 && (
+                            <div className="absolute left-[7px] top-[14px] w-[2px] h-full bg-gray-100 dark:bg-white/5" />
+                          )}
+                          
+                          {/* Timeline Dot */}
+                          <div className={`absolute left-0 top-1 w-[16px] h-[16px] rounded-full border-4 border-white dark:border-[#1A1625] shadow-sm z-10 flex items-center justify-center ${dotColor}`} />
+                          
+                          <div className="bg-white/50 dark:bg-white/5 border border-gray-100 dark:border-white/10 rounded-2xl p-4 shadow-sm transition-all hover:shadow-md">
+                            <div className="flex items-start gap-3">
+                              <div className="flex-shrink-0 w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.12)' }}>
+                                <Phone size={18} style={{ color: '#7c3aed' }} />
                               </div>
-                              <p className="text-xs mt-0.5" style={{ color: '#9ca3af' }}>ORIGEM: GrapeHub CRM</p>
-                              {call.duration > 0 && (
-                                <p className="text-sm mt-2 text-gray-600 dark:text-slate-400">⏱ Duração: <strong>{formatCallDuration(call.duration)}</strong></p>
-                              )}
-                              {call.record_url && (
-                                <div className="mt-3 rounded-xl p-2 flex items-center gap-2" style={{ background: 'rgba(0,0,0,0.04)', border: '1px solid rgba(0,0,0,0.08)' }}>
-                                  <audio controls src={call.record_url} className="w-full h-8" style={{ minWidth: 0, flex: 1 }} preload="none" />
-                                  <a href={call.record_url} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 p-1.5 rounded-lg hover:bg-purple-50 transition-colors" title="Abrir gravação">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                                  </a>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap mb-1">
+                                  <span className="font-semibold text-[13px] text-gray-800 dark:text-slate-100">Ligação</span>
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full font-medium"
+                                    style={{ background: success ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', color: success ? '#059669' : '#dc2626' }}>
+                                    {success ? '✓' : '✕'} {getCallTypeLabel(call)}
+                                  </span>
                                 </div>
-                              )}
-                              <div className="flex items-center gap-1.5 mt-3">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                                <span className="text-xs" style={{ color: '#9ca3af' }}>
-                                  {formatRelativeTime(call.started_at)}
-                                  {(call.first_name || call.last_name) && <> por <strong className="font-medium text-gray-600 dark:text-slate-400">{[call.first_name, call.last_name].filter(Boolean).join(' ')}</strong></>}
-                                </span>
+                                <p className="text-[11px]" style={{ color: '#9ca3af' }}>ORIGEM: GrapeHub CRM</p>
+
+                                {call.duration > 0 && (
+                                  <div className="mt-2 text-[11px] text-gray-400 dark:text-slate-500">
+                                    ⏱ Duração: <strong className="text-gray-600 dark:text-slate-400">{formatCallDuration(call.duration)}</strong>
+                                  </div>
+                                )}
+
+                                {call.record_url && (
+                                  <div className="mt-2.5 rounded-lg p-1.5 flex items-center gap-2 max-w-[350px]" style={{ background: 'rgba(0,0,0,0.03)', border: '1px solid rgba(0,0,0,0.06)' }}>
+                                    <audio controls src={call.record_url} className="w-full h-7" style={{ minWidth: 0, flex: 1 }} preload="none" />
+                                    <a href={call.record_url} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 p-1 rounded hover:bg-purple-50 transition-colors" title="Abrir gravação">
+                                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                                    </a>
+                                  </div>
+                                )}
+
+                                <div className="flex items-center gap-1.5 mt-2.5">
+                                  <Clock size={11} className="text-gray-400" />
+                                  <span className="text-[11px]" style={{ color: '#9ca3af' }}>
+                                    {formatRelativeTime(call.started_at)}
+                                    {(call.first_name || call.last_name) && <> por <strong className="font-medium text-gray-600 dark:text-slate-400">{[call.first_name, call.last_name].filter(Boolean).join(' ')}</strong></>}
+                                  </span>
+                                </div>
                               </div>
                             </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
+
                   </div>
                 );
               })()}
@@ -2520,6 +2662,7 @@ const CrmComercial = () => {
       setTestingConnection(false);
     }
   };
+
 
   const handleRegisterWebhook = async () => {
     if (!user?.email) {

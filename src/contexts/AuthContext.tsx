@@ -74,6 +74,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         // User not found in Postgres, bootstrap them
         const isSuperAdmin = email === 'jeanchan@grapemidia.com';
         const initialData = {
+          uid: firebaseUser.uid,
           email: email,
           name: firebaseUser.displayName,
           picture: firebaseUser.photoURL,
