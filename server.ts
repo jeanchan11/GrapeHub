@@ -636,6 +636,8 @@ async function startServer() {
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS utm_set TEXT`);
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS utm_creative TEXT`);
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS utm_position TEXT`);
+    await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS email TEXT`);
+    await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS investimento TEXT`);
     
     // Tabela global de tags para o Comercial
     await pool.query(`
@@ -4177,7 +4179,11 @@ app.get("/api/todos", async (req, res) => {
   app.post("/api/public/webhooks/inbound/:token", async (req, res) => {
     try {
       const { token } = req.params;
-      const { nome, telefone, nicho, origem, instagram, tags, forma_pagamento, valor } = req.body;
+      const { 
+        nome, telefone, nicho, origem, instagram, tags, forma_pagamento, valor,
+        email, faturamento, tempo_advocacia, investimento, 
+        utm_source, utm_medium, utm_campaign, umt_campaign, formulario 
+      } = req.body;
       
       if (!nome) return res.status(400).json({ error: "Campo 'nome' é obrigatório" });
 
@@ -4198,15 +4204,22 @@ app.get("/api/todos", async (req, res) => {
          return res.status(400).json({ error: "Destino do lead (Kanban e Coluna) não foi configurado pelo proprietário deste token nas configurações do CRM." });
       }
 
+      const finalCampaign = utm_campaign || umt_campaign || '';
+      const finalOrigem = origem || formulario || 'Inbound Webhook';
+
       const insertResult = await pool.query(
         `INSERT INTO crm_comercial_leads (
           nome, telefone, nicho, origem, responsavel_id, instagram, 
-          forma_pagamento, valor, tags, kanban_id, coluna
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+          forma_pagamento, valor, tags, kanban_id, coluna,
+          email, faturamento, tempo_oab, investimento,
+          utm_platform, utm_position, utm_campaign
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING *`,
         [
-          nome, telefone || '', nicho || '', origem || 'Inbound Webhook', user_id, 
+          nome, telefone || '', nicho || '', finalOrigem, user_id, 
           instagram || '', forma_pagamento || '', valor || 0,
-          JSON.stringify(Array.isArray(tags) ? tags : []), inbound_kanban_id, inbound_coluna
+          JSON.stringify(Array.isArray(tags) ? tags : []), inbound_kanban_id, inbound_coluna,
+          email || '', faturamento || '', tempo_advocacia || '', investimento || '',
+          utm_source || '', utm_medium || '', finalCampaign
         ]
       );
 
