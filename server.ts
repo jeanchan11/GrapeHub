@@ -5,6 +5,7 @@ import fs from "fs";
 import https from "https";
 import pg from "pg";
 import dotenv from "dotenv";
+import crypto from "crypto";
 
 // IMMEDIATE LOGGING TO VERIFY BOOT
 console.log("-----------------------------------------");
@@ -589,6 +590,23 @@ async function startServer() {
       )
     `);
 
+    // Webhook Settings Table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS crm_webhook_settings (
+        id SERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL UNIQUE,
+        form_webhook_url TEXT,
+        whatsapp_webhook_url TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
+    // Migrações Inbound Webhooks
+    await pool.query(`ALTER TABLE crm_webhook_settings ADD COLUMN IF NOT EXISTS inbound_token TEXT`);
+    await pool.query(`ALTER TABLE crm_webhook_settings ADD COLUMN IF NOT EXISTS inbound_kanban_id TEXT`);
+    await pool.query(`ALTER TABLE crm_webhook_settings ADD COLUMN IF NOT EXISTS inbound_coluna TEXT`);
+
     // Migration: add squad column to users if missing
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS squad TEXT`);
 
@@ -607,6 +625,12 @@ async function startServer() {
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS monthly_closings TEXT`);
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS closing_goal TEXT`);
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS reunion_link TEXT`);
+    await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS form_nome_completo TEXT`);
+    await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS form_nome_fantasia TEXT`);
+    await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS form_telefone_whatsapp TEXT`);
+    await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS form_cep TEXT`);
+    await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS form_cidade TEXT`);
+    await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS form_estado TEXT`);
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS utm_platform TEXT`);
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS utm_campaign TEXT`);
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS utm_set TEXT`);
@@ -642,6 +666,46 @@ async function startServer() {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS crm_comercial_notes (
+        id SERIAL PRIMARY KEY,
+        lead_id TEXT,
+        content TEXT,
+        user_name TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS crm_comercial_files (
+        id SERIAL PRIMARY KEY,
+        lead_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        size TEXT,
+        url TEXT NOT NULL,
+        sender TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS crm_comercial_meetings (
+        id SERIAL PRIMARY KEY,
+        lead_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        meeting_date TIMESTAMP NOT NULL,
+        responsible_name TEXT NOT NULL,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await pool.query(`
+      ALTER TABLE crm_comercial_meetings 
+      ADD COLUMN IF NOT EXISTS office_location TEXT,
+      ADD COLUMN IF NOT EXISTS reunion_link TEXT,
+      ADD COLUMN IF NOT EXISTS reunion_niche TEXT,
+      ADD COLUMN IF NOT EXISTS monthly_closings TEXT,
+      ADD COLUMN IF NOT EXISTS closing_goal TEXT;
+    `).catch(e => console.error("Error migrating crm_comercial_meetings columns", e));
     await pool.query(`
       CREATE TABLE IF NOT EXISTS crm_comercial_task_templates (
         id SERIAL PRIMARY KEY,
@@ -3827,6 +3891,146 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
+  app.get("/api/crm-comercial/meetings", async (req, res) => {
+    try {
+      const { lead_id } = req.query;
+      if (!lead_id) return res.status(400).json({ error: "lead_id required" });
+      const result = await pool.query(
+        "SELECT * FROM crm_comercial_meetings WHERE lead_id = $1 ORDER BY meeting_date DESC",
+        [lead_id]
+      );
+      res.json(result.rows);
+    } catch (err) {
+      console.error("Error fetching meetings:", err);
+      res.status(500).json({ error: "Failed to fetch meetings" });
+    }
+  });
+
+  app.post("/api/crm-comercial/meetings", async (req, res) => {
+    try {
+      const { lead_id, title, meeting_date, responsible_name, notes, office_location, reunion_link, reunion_niche, monthly_closings, closing_goal } = req.body;
+      if (!lead_id || !title || !meeting_date || !responsible_name) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+      
+      const result = await pool.query(
+        `INSERT INTO crm_comercial_meetings (lead_id, title, meeting_date, responsible_name, notes, office_location, reunion_link, reunion_niche, monthly_closings, closing_goal)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+        [lead_id, title, meeting_date, responsible_name, notes, office_location, reunion_link, reunion_niche, monthly_closings, closing_goal]
+      );
+      
+      // Also log it into the general history
+      await pool.query(
+        `INSERT INTO crm_comercial_history (lead_id, action_type, description, user_name)
+         VALUES ($1, 'meeting_created', $2, $3)`,
+        [lead_id, `Reunião agendada: ${title}`, responsible_name]
+      );
+
+      res.status(201).json(result.rows[0]);
+    } catch (err) {
+      console.error("Error creating meeting:", err);
+      res.status(500).json({ error: "Failed to create meeting" });
+    }
+  });
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // NOTES ENDPOINTS
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  app.get("/api/crm-comercial/notes", async (req, res) => {
+    try {
+      const { lead_id } = req.query;
+      if (!lead_id) return res.status(400).json({ error: "Missing lead_id" });
+
+      const result = await pool.query(
+        "SELECT * FROM crm_comercial_notes WHERE lead_id = $1 ORDER BY created_at DESC",
+        [lead_id]
+      );
+      res.json(result.rows);
+    } catch (err) {
+      console.error("Error fetching notes:", err);
+      res.status(500).json({ error: "Failed to fetch notes" });
+    }
+  });
+
+  app.post("/api/crm-comercial/notes", async (req, res) => {
+    try {
+      const { lead_id, content, user_name } = req.body;
+      if (!lead_id || !content) return res.status(400).json({ error: "Missing lead_id or content" });
+
+      const result = await pool.query(
+        `INSERT INTO crm_comercial_notes (lead_id, content, user_name)
+         VALUES ($1, $2, $3) RETURNING *`,
+        [lead_id, content, user_name || 'Sistema']
+      );
+      
+      // Also log it into the general history with full content
+      await pool.query(
+        `INSERT INTO crm_comercial_history (lead_id, action_type, description, user_name)
+         VALUES ($1, 'note_created', $2, $3)`,
+        [lead_id, content, user_name || 'Sistema']
+      );
+
+      res.status(201).json(result.rows[0]);
+    } catch (err) {
+      console.error("Error creating note:", err);
+      res.status(500).json({ error: "Failed to create note" });
+    }
+  });
+
+  // ========== CRM COMERCIAL FILES ENDPOINTS ==========
+  app.get("/api/crm-comercial/files", async (req, res) => {
+    try {
+      const { lead_id } = req.query;
+      if (!lead_id) return res.status(400).json({ error: "Missing lead_id" });
+
+      const result = await pool.query(
+        "SELECT * FROM crm_comercial_files WHERE lead_id = $1 ORDER BY created_at DESC",
+        [lead_id]
+      );
+      res.json(result.rows);
+    } catch (err) {
+      console.error("Error fetching files:", err);
+      res.status(500).json({ error: "Failed to fetch files" });
+    }
+  });
+
+  app.post("/api/crm-comercial/files", async (req, res) => {
+    try {
+      const { lead_id, name, size, url, sender } = req.body;
+      if (!lead_id || !name || !url) return res.status(400).json({ error: "Missing required fields" });
+
+      const result = await pool.query(
+        `INSERT INTO crm_comercial_files (lead_id, name, size, url, sender)
+         VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+        [lead_id, name, size, url, sender || 'Agência']
+      );
+
+      // Also log it into the general history
+      await pool.query(
+        `INSERT INTO crm_comercial_history (lead_id, action_type, description, user_name)
+         VALUES ($1, 'note_created', $2, $3)`,
+        [lead_id, `Fez upload do arquivo: ${name} (${size || ''})`, sender || 'Sistema']
+      );
+
+      res.status(201).json(result.rows[0]);
+    } catch (err) {
+      console.error("Error creating file record:", err);
+      res.status(500).json({ error: "Failed to create file record" });
+    }
+  });
+
+  app.delete("/api/crm-comercial/files/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      await pool.query("DELETE FROM crm_comercial_files WHERE id = $1", [id]);
+      res.status(200).json({ success: true });
+    } catch (err) {
+      console.error("Error deleting file:", err);
+      res.status(500).json({ error: "Failed to delete file" });
+    }
+  });
+
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // API4COM — Telephony Integration
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -3920,6 +4124,190 @@ app.get("/api/todos", async (req, res) => {
       res.status(500).json({ error: 'Failed to save api4com settings' });
     }
   });
+
+  // GET /api/crm/settings/webhooks
+  app.get("/api/crm/settings/webhooks", async (req, res) => {
+    const { user_id } = req.query;
+    if (!user_id) return res.status(400).json({ error: "user_id is required" });
+    try {
+      const result = await pool.query('SELECT form_webhook_url, whatsapp_webhook_url, inbound_token, inbound_kanban_id, inbound_coluna FROM crm_webhook_settings WHERE user_id = $1', [user_id]);
+      
+      let settings = result.rows[0];
+      if (settings && !settings.inbound_token) {
+        const token = crypto.randomUUID();
+        await pool.query('UPDATE crm_webhook_settings SET inbound_token = $1 WHERE user_id = $2', [token, user_id]);
+        settings.inbound_token = token;
+      } else if (!settings) {
+        const token = crypto.randomUUID();
+        await pool.query('INSERT INTO crm_webhook_settings (user_id, inbound_token) VALUES ($1, $2)', [user_id, token]);
+        settings = { form_webhook_url: '', whatsapp_webhook_url: '', inbound_token: token, inbound_kanban_id: '', inbound_coluna: '' };
+      }
+      
+      res.json(settings);
+    } catch (err) {
+      console.error('Error fetching webhook settings:', err);
+      res.status(500).json({ error: 'Failed to fetch webhook settings' });
+    }
+  });
+
+  app.post("/api/crm/settings/webhooks", async (req, res) => {
+    const { user_id, form_webhook_url, whatsapp_webhook_url, inbound_kanban_id, inbound_coluna, inbound_token } = req.body;
+    if (!user_id) return res.status(400).json({ error: "user_id is required" });
+    try {
+      await pool.query(
+        `INSERT INTO crm_webhook_settings (user_id, form_webhook_url, whatsapp_webhook_url, inbound_kanban_id, inbound_coluna, inbound_token, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())
+         ON CONFLICT (user_id) DO UPDATE SET
+           form_webhook_url = EXCLUDED.form_webhook_url,
+           whatsapp_webhook_url = EXCLUDED.whatsapp_webhook_url,
+           inbound_kanban_id = EXCLUDED.inbound_kanban_id,
+           inbound_coluna = EXCLUDED.inbound_coluna,
+           inbound_token = EXCLUDED.inbound_token,
+           updated_at = NOW()`,
+        [user_id, form_webhook_url || '', whatsapp_webhook_url || '', inbound_kanban_id || '', inbound_coluna || '', inbound_token || '']
+      );
+      res.json({ success: true });
+    } catch (err) {
+      console.error('Error saving webhook settings:', err);
+      res.status(500).json({ error: 'Failed to save webhook settings' });
+    }
+  });
+
+  // POST /api/public/webhooks/inbound/:token
+  app.post("/api/public/webhooks/inbound/:token", async (req, res) => {
+    try {
+      const { token } = req.params;
+      const { nome, telefone, nicho, origem, instagram, tags, forma_pagamento, valor } = req.body;
+      
+      if (!nome) return res.status(400).json({ error: "Campo 'nome' é obrigatório" });
+
+      const hookSettings = await pool.query(`
+        SELECT ws.inbound_kanban_id, ws.inbound_coluna, u.id as user_id 
+        FROM crm_webhook_settings ws 
+        JOIN users u ON u.email = ws.user_id 
+        WHERE ws.inbound_token = $1
+      `, [token]);
+
+      if (hookSettings.rows.length === 0) {
+        return res.status(404).json({ error: "Token de webhook inválido ou não encontrado." });
+      }
+
+      const { inbound_kanban_id, inbound_coluna, user_id } = hookSettings.rows[0];
+
+      if (!inbound_kanban_id || !inbound_coluna) {
+         return res.status(400).json({ error: "Destino do lead (Kanban e Coluna) não foi configurado pelo proprietário deste token nas configurações do CRM." });
+      }
+
+      const insertResult = await pool.query(
+        `INSERT INTO crm_comercial_leads (
+          nome, telefone, nicho, origem, responsavel_id, instagram, 
+          forma_pagamento, valor, tags, kanban_id, coluna
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+        [
+          nome, telefone || '', nicho || '', origem || 'Inbound Webhook', user_id, 
+          instagram || '', forma_pagamento || '', valor || 0,
+          JSON.stringify(Array.isArray(tags) ? tags : []), inbound_kanban_id, inbound_coluna
+        ]
+      );
+
+      const newLead = insertResult.rows[0];
+
+      try {
+        await pool.query(
+          `INSERT INTO crm_comercial_history (lead_id, action_type, description, user_name)
+           VALUES ($1, 'whatsapp_trigger', $2, $3)`,
+          [newLead.id, 'Recebido via Webhook CRM 📥', 'Automação Inbound']
+        );
+      } catch (e) {
+        console.error("Erro inserindo historico de inbound webhook:", e.message);
+      }
+
+      res.status(201).json({ success: true, lead: newLead });
+    } catch (err) {
+      console.error("Falha no inbound webhook:", err);
+      res.status(500).json({ error: "Erro interno no processamento do webhook" });
+    }
+  });
+
+  // POST /api/crm/webhooks/trigger/whatsapp/:id
+  app.post("/api/crm/webhooks/trigger/whatsapp/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      console.log(`[Webhook Trigger] Request for lead id: ${id}`);
+      
+      const leadRes = await pool.query('SELECT * FROM crm_comercial_leads WHERE id = $1', [id]);
+      if (leadRes.rows.length === 0) {
+        console.log(`[Webhook Trigger] Lead not found`);
+        return res.status(404).json({ error: 'Lead not found' });
+      }
+      const lead = leadRes.rows[0];
+
+      if (!lead.form_nome_completo || !lead.form_nome_fantasia) {
+        return res.status(400).json({ error: 'Preencha o formulário do lead (Nome Completo e Nome Fantasia devem estar preenchidos) para criar o grupo.' });
+      }
+
+      const user_email = req.query.user_email;
+      let targetEmail = user_email;
+
+      if (lead.responsavel_id) {
+         const userRes = await pool.query('SELECT email FROM users WHERE id = $1', [lead.responsavel_id]);
+         if (userRes.rows.length > 0) targetEmail = userRes.rows[0].email;
+      }
+
+      if (!targetEmail) {
+        console.log(`[Webhook Trigger] Lead missing responsavel_id and no user_email provided`);
+        return res.status(400).json({ error: 'Lead sem responsável e usuário não identificado.' });
+      }
+
+      console.log(`[Webhook Trigger] Using targetEmail: ${targetEmail}`);
+      const webhookRes = await pool.query(`
+        SELECT whatsapp_webhook_url 
+        FROM crm_webhook_settings 
+        WHERE user_id = $1
+      `, [targetEmail]);
+
+      if (webhookRes.rows.length === 0 || !webhookRes.rows[0].whatsapp_webhook_url) {
+        console.log(`[Webhook Trigger] Webhook settings not found or empty for email: ${targetEmail}`);
+        return res.status(400).json({ error: 'URL do Webhook do WhatsApp não configurada na aba Webhook.' });
+      }
+
+      const webhookUrl = webhookRes.rows[0].whatsapp_webhook_url;
+      console.log(`[Webhook Trigger] Webhook URL found: ${webhookUrl}. Proceeding to fetch.`);
+
+      // Fire and keep track
+      fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          event: 'whatsapp_group_requested',
+          lead_id: lead.id,
+          nome: lead.nome,
+          telefone: lead.telefone,
+          nicho: lead.nicho,
+          responsavel_id: lead.responsavel_id,
+          valor: lead.valor,
+          origem: lead.origem
+        })
+      }).catch(e => console.error("Error firing whatsapp webhook:", e.message));
+
+      // Log no histórico
+      try {
+        await pool.query(
+          `INSERT INTO crm_comercial_history (lead_id, action_type, description, user_name)
+           VALUES ($1, 'whatsapp_trigger', $2, $3)`,
+          [lead.id, 'Grupo do Whatsapp Criado ✅', 'Sistema']
+        );
+      } catch (logErr) {
+        console.error("Error logging whatsapp group creation to history:", logErr);
+      }
+
+      res.json({ success: true, message: 'Webhook disparado' });
+    } catch (err) {
+      console.error('Error triggering whatsapp webhook:', err);
+      res.status(500).json({ error: 'Falha interna ao disparar webhook' });
+    }
+  });
+
 
   // GET /api/api4com/test-connection — validate the token by calling the Api4Com API
   app.get("/api/api4com/test-connection", async (req, res) => {
@@ -4230,6 +4618,113 @@ app.get("/api/todos", async (req, res) => {
     } catch (err) {
       console.error('[API4COM CALLS]', err);
       res.status(500).json({ error: 'Erro ao buscar histórico de ligações' });
+    }
+  });
+
+  // Public Form Endpoints
+  app.get('/api/public/lead-form/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const result = await pool.query(
+        "SELECT form_nome_completo, form_nome_fantasia, form_telefone_whatsapp, form_cep, form_cidade, form_estado FROM crm_comercial_leads WHERE id = $1",
+        [id]
+      );
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: "Lead not found" });
+      }
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error("GET public leadform error:", err);
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+  app.post('/api/public/lead-form/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { 
+        form_nome_completo, 
+        form_nome_fantasia, 
+        form_telefone_whatsapp, 
+        form_cep, 
+        form_cidade, 
+        form_estado 
+      } = req.body;
+      
+      const result = await pool.query(
+        `UPDATE crm_comercial_leads 
+         SET form_nome_completo = $1, 
+             form_nome_fantasia = $2, 
+             form_telefone_whatsapp = $3, 
+             form_cep = $4, 
+             form_cidade = $5, 
+             form_estado = $6
+         WHERE id = $7 RETURNING *`,
+        [form_nome_completo, form_nome_fantasia, form_telefone_whatsapp, form_cep, form_cidade, form_estado, id]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: "Lead not found" });
+      }
+
+      const updatedLead = result.rows[0];
+
+      // Log it into the general history
+      try {
+        await pool.query(
+          `INSERT INTO crm_comercial_history (lead_id, action_type, description, user_name)
+           VALUES ($1, 'whatsapp_trigger', $2, $3)`,
+          [id, 'Formulário Preenchido ✅', 'Sistema']
+        );
+      } catch (logErr) {
+        console.error("Error logging form submission to history:", logErr);
+      }
+
+      res.json({ success: true, id });
+
+      // After responding successfully to the client, silently trigger webhook
+      try {
+        if (updatedLead.responsavel_id) {
+          const webhookRes = await pool.query(`
+            SELECT ws.form_webhook_url 
+            FROM crm_webhook_settings ws
+            JOIN users u ON u.email = ws.user_id
+            WHERE u.id = $1
+          `, [updatedLead.responsavel_id]);
+          
+          if (webhookRes.rows.length > 0 && webhookRes.rows[0].form_webhook_url) {
+            const webhookUrl = webhookRes.rows[0].form_webhook_url;
+            
+            // Fire and forget
+            fetch(webhookUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                event: 'form_submitted',
+                lead_id: id,
+                nome: updatedLead.nome,
+                telefone: updatedLead.telefone,
+                nicho: updatedLead.nicho,
+                responsavel_id: updatedLead.responsavel_id,
+                formData: {
+                  form_nome_completo,
+                  form_nome_fantasia,
+                  form_telefone_whatsapp,
+                  form_cep,
+                  form_cidade,
+                  form_estado
+                }
+              })
+            }).catch(e => console.error("Error firing webhook:", e.message));
+          }
+        }
+      } catch (webhookErr) {
+        console.error("Error in webhook logic:", webhookErr);
+      }
+
+    } catch (err) {
+      console.error("POST public leadform error:", err);
+      res.status(500).json({ error: "Internal error" });
     }
   });
 

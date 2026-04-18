@@ -6,8 +6,10 @@ import {
   TrendingUp, TrendingDown, MoreHorizontal, ArrowRightLeft, Send, History, Phone, Mail,
   ArrowRight, Calendar, CheckSquare, FileText, Paperclip, Trophy, Star, Eye, EyeOff, Settings, PhoneCall, Loader2, Mic, MicOff,
   CheckCircle2, Circle, Video, Tag, Instagram, Briefcase, Award, Copy,
-  Handshake, RefreshCw, XCircle, ClipboardList
+  Handshake, RefreshCw, XCircle, ClipboardList, Upload, Folder, Download, File, Bot, Zap
 } from 'lucide-react';
+import { storage } from '../firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { 
   DndContext, 
   closestCorners, 
@@ -262,6 +264,7 @@ interface SortableCardProps {
 
 interface LeadDetailModalProps {
   currentUserEmail?: string;
+  currentUserName?: string;
   lead: Lead | null;
   users: User[];
   columns: any[];
@@ -436,7 +439,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   onMove, onDelete, onWin, onLose, onMoveToKanban, 
   onAddTask, onUpdateTask, onDeleteTask, onApplyTemplate, onManageTemplates,
   onRefreshTasks, currentKanbanId, api4comSettings, callingLeadId, onCallLead, onUpdateLeadField,
-  tags, onRefreshTags, currentUserEmail
+  tags, onRefreshTags, currentUserEmail, currentUserName
 }) => {
   const [activeTab, setActiveTab] = useState<'atividades' | 'histórico' | 'notas' | 'ligações' | 'arquivos'>('atividades');
   const [callLogs, setCallLogs] = useState<any[]>([]);
@@ -445,6 +448,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   const [showMoveMenu, setShowMoveMenu] = useState(false);
   const [showKanbanMenu, setShowKanbanMenu] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [creatingWhatsapp, setCreatingWhatsapp] = useState(false);
   const [isAddingTask, setIsAddingTask] = useState(false);
   const [taskToEdit, setTaskToEdit] = useState<CrmTask | null>(null);
   const [isSelectingTemplate, setIsSelectingTemplate] = useState(false);
@@ -459,6 +463,54 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
     observations: ''
   });
 
+  const [meetings, setMeetings] = useState<any[]>([]);
+  const [meetingsLoading, setMeetingsLoading] = useState(false);
+  const [meetingsFetched, setMeetingsFetched] = useState(false);
+  
+  const [notes, setNotes] = useState<any[]>([]);
+  const [notesLoading, setNotesLoading] = useState(false);
+  const [notesFetched, setNotesFetched] = useState(false);
+
+  const handleCreateWhatsappGroup = async () => {
+    setCreatingWhatsapp(true);
+    try {
+      const url = `/api/crm/webhooks/trigger/whatsapp/${lead.id}${currentUserEmail ? `?user_email=${encodeURIComponent(currentUserEmail)}` : ''}`;
+      const res = await fetch(url, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || 'Falha ao disparar webhook do WhatsApp');
+      } else {
+        setShowMoreMenu(false);
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Erro bloqueando tentativa de disparo');
+    } finally {
+      setCreatingWhatsapp(false);
+    }
+  };
+  const [newNoteContent, setNewNoteContent] = useState('');
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
+  const [showMeetingModal, setShowMeetingModal] = useState(false);
+  const [meetingForm, setMeetingForm] = useState({
+    title: '',
+    meeting_date: new Date().toISOString().slice(0, 16),
+    notes: '',
+    office_location: '',
+    reunion_niche: '',
+    monthly_closings: '',
+    closing_goal: '',
+    reunion_link: ''
+  });
+  
+  const [files, setFiles] = useState<any[]>([]);
+  const [filesLoading, setFilesLoading] = useState(false);
+  const [filesFetched, setFilesFetched] = useState(false);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+
   const moveRef = useRef<HTMLDivElement>(null);
   const kanbanRef = useRef<HTMLDivElement>(null);
   const moreRef = useRef<HTMLDivElement>(null);
@@ -471,10 +523,14 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, []);  // Reset call logs when lead changes
+  }, []);  // Reset state when lead changes
   useEffect(() => {
     setCallLogs([]);
     setCallLogsFetched(false);
+    setMeetings([]);
+    setMeetingsFetched(false);
+    setNotes([]);
+    setNotesFetched(false);
   }, [lead?.id]);
 
   // Fetch call history when ligações tab is active
@@ -492,6 +548,110 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
       .catch(() => setCallLogs([]))
       .finally(() => setCallLogsLoading(false));
   }, [activeTab, lead?.id, callLogsFetched]);
+
+  // Fetch meetings when reuniões tab is active
+  useEffect(() => {
+    if (activeTab !== 'reuniões' || !lead || meetingsFetched) return;
+    setMeetingsLoading(true);
+    fetch(`/api/crm-comercial/meetings?lead_id=${lead.id}`)
+      .then(r => r.json())
+      .then(data => {
+        setMeetings(Array.isArray(data) ? data : []);
+        setMeetingsFetched(true);
+      })
+      .catch(() => setMeetings([]))
+      .finally(() => setMeetingsLoading(false));
+  }, [activeTab, lead?.id, meetingsFetched]);
+
+  // Fetch notes when notas tab is active
+  useEffect(() => {
+    if (activeTab !== 'notas' || !lead || notesFetched) return;
+    setNotesLoading(true);
+    fetch(`/api/crm-comercial/notes?lead_id=${lead.id}`)
+      .then(res => res.json())
+      .then(data => {
+        setNotes(Array.isArray(data) ? data : []);
+        setNotesFetched(true);
+      })
+      .catch(() => setNotes([]))
+      .finally(() => setNotesLoading(false));
+  }, [activeTab, lead?.id, notesFetched]);
+
+  // Fetch files when arquivos tab is active
+  useEffect(() => {
+    if (activeTab !== 'arquivos' || !lead || filesFetched) return;
+    setFilesLoading(true);
+    fetch(`/api/crm-comercial/files?lead_id=${lead.id}`)
+      .then(res => res.json())
+      .then(data => {
+        setFiles(Array.isArray(data) ? data : []);
+        setFilesFetched(true);
+      })
+      .catch(() => setFiles([]))
+      .finally(() => setFilesLoading(false));
+  }, [activeTab, lead?.id, filesFetched]);
+
+  const handleFileUpload = async (file: File) => {
+    if (!lead) return;
+    
+    setUploadingFiles(true);
+    try {
+      // Usando path "projects/crm_comercial" para contornar limitações de firebase.rules locais no Storage
+      const storageRef = ref(storage, `projects/crm_comercial/${lead.id}/${Date.now()}_${file.name}`);
+      await uploadBytes(storageRef, file);
+      const downloadURL = await getDownloadURL(storageRef);
+      
+      const newFileObj = {
+        lead_id: lead.id,
+        name: file.name,
+        size: (file.size / 1024 / 1024).toFixed(1) + ' MB',
+        url: downloadURL,
+        sender: currentUserName || currentUserEmail || 'Sistema'
+      };
+
+      const resp = await fetch('/api/crm-comercial/files', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newFileObj)
+      });
+      const savedFile = await resp.json();
+      setFiles(prev => [savedFile, ...prev]);
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      alert("Erro ao fazer upload do arquivo.");
+    } finally {
+      setUploadingFiles(false);
+    }
+  };
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files && event.target.files[0]) {
+      handleFileUpload(event.target.files[0]);
+      // Reset input so the same file could be selected again if needed
+      event.target.value = '';
+    }
+  };
+
+  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+  };
+
+  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    if (event.dataTransfer.files && event.dataTransfer.files[0]) {
+      handleFileUpload(event.dataTransfer.files[0]);
+    }
+  };
+
+  const handleDeleteFile = async (id: number) => {
+    if (!window.confirm('Tem certeza que deseja excluir este arquivo?')) return;
+    try {
+      await fetch(`/api/crm-comercial/files/${id}`, { method: 'DELETE' });
+      setFiles(prev => prev.filter(f => f.id !== id));
+    } catch (e) {
+      console.error('Error deleting file', e);
+    }
+  };
 
 
   if (!lead) return null;
@@ -518,46 +678,166 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
+  const handleCreateMeeting = () => {
+    if (!meetingForm.title || !meetingForm.meeting_date) return;
+    
+    // Atualizar dados de Informações da Reunião no Lead
+    ['office_location', 'reunion_niche', 'monthly_closings', 'closing_goal', 'reunion_link'].forEach(f => {
+      const val = meetingForm[f as keyof typeof meetingForm] as string;
+      if (val !== undefined && val !== (lead as any)[f]) {
+        onUpdateLeadField(lead.id, f, val);
+      }
+    });
+
+    if (meetingForm.meeting_date && meetingForm.meeting_date !== (lead as any).reunion_date) {
+      onUpdateLeadField(lead.id, 'reunion_date', meetingForm.meeting_date);
+    }
+    
+    setMeetingsLoading(true);
+    fetch('/api/crm-comercial/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        lead_id: lead.id,
+        title: meetingForm.title,
+        meeting_date: meetingForm.meeting_date,
+        responsible_name: currentUserEmail || 'Sistema',
+        notes: meetingForm.notes,
+        office_location: meetingForm.office_location,
+        reunion_link: meetingForm.reunion_link,
+        reunion_niche: meetingForm.reunion_niche,
+        monthly_closings: meetingForm.monthly_closings,
+        closing_goal: meetingForm.closing_goal
+      })
+    })
+    .then(r => r.json())
+    .then(newMeeting => {
+      setMeetings(prev => [newMeeting, ...prev].sort((a,b) => new Date(b.meeting_date).getTime() - new Date(a.meeting_date).getTime()));
+      setShowMeetingModal(false);
+      setMeetingForm({ title: '', meeting_date: new Date().toISOString().slice(0, 16), notes: '', office_location: '', reunion_niche: '', monthly_closings: '', closing_goal: '', reunion_link: '' });
+      setMeetingsLoading(false);
+    })
+    .catch(() => setMeetingsLoading(false));
+  };
+
+  const handleNoteClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).tagName === 'IMG') {
+      setSelectedImage((e.target as HTMLImageElement).src);
+    }
+  };
+
+  const handleCreateNote = async () => {
+    if (!editorRef.current || !editorRef.current.innerHTML.trim() || editorRef.current.innerHTML === '<br>') return;
+    const content = editorRef.current.innerHTML;
+
+    // Use the name directly (same pattern as tasks, meetings, etc.)
+    const authorName = currentUserName || currentUserEmail || 'Sistema';
+
+    setNotesLoading(true);
+    try {
+      const res = await fetch('/api/crm-comercial/notes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lead_id: lead.id,
+          content: content,
+          user_name: authorName
+        })
+      });
+      const newNote = await res.json();
+      setNotes(prev => [newNote, ...prev].sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
+      editorRef.current.innerHTML = '';
+      setNewNoteContent('');
+      setNotesLoading(false);
+    } catch (e) {
+      setNotesLoading(false);
+    }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
+    const items = e.clipboardData.items;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1) {
+        e.preventDefault();
+        const blob = items[i].getAsFile();
+        if (blob) {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            const base64String = event.target?.result as string;
+            // Create image element and insert at selection
+            const img = document.createElement('img');
+            img.src = base64String;
+            img.style.maxWidth = '100%';
+            img.style.borderRadius = '8px';
+            img.style.marginTop = '12px';
+            img.style.marginBottom = '12px';
+            
+            const selection = window.getSelection();
+            if (selection && selection.rangeCount > 0) {
+              const range = selection.getRangeAt(0);
+              range.deleteContents();
+              range.insertNode(img);
+              
+              // Move cursor after the image
+              range.setStartAfter(img);
+              range.setEndAfter(img);
+              selection.removeAllRanges();
+              selection.addRange(range);
+            } else if (editorRef.current) {
+              editorRef.current.appendChild(img);
+            }
+          };
+          reader.readAsDataURL(blob);
+        }
+      }
+    }
+  };
+
   const responsavel = users.find(u => u.id === lead.responsavel_id);
   const currentColumn = columns.find(c => c.id === lead.coluna);
-  const tabs = ['Atividades', 'Histórico', 'Notas', 'Ligações', 'Arquivos'];
+  const tabs = ['Atividades', 'Histórico', 'Notas', 'Reuniões', 'Ligações', 'Arquivos'];
 
   return (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4">
-      {/* Backdrop */}
-      <div className="fixed inset-0 modal-overlay" onClick={onClose} />
-      
-      {/* Modal */}
-      <div className="relative w-full max-w-7xl h-[90vh] modal-container overflow-hidden flex flex-col shadow-2xl">
+    <>
+      <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4">
+        {/* Backdrop */}
+        <div className="fixed inset-0 modal-overlay" onClick={onClose} />
+        
+        {/* Modal */}
+        <div className="relative w-full max-w-7xl h-[90vh] modal-container overflow-hidden flex flex-col shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b modal-divider shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center font-bold text-violet-600 dark:text-violet-400">
-              {getInitials(lead.nome)}
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center font-bold text-violet-600 dark:text-violet-400">
+                {getInitials(lead.nome)}
+              </div>
+              <div>
+                <h2 className="font-bold text-lg modal-title">{lead.nome}</h2>
+                {lead.telefone && <p className="text-xs text-gray-500 dark:text-slate-400">{lead.telefone}</p>}
+              </div>
             </div>
-            <div>
-              <h2 className="font-bold text-lg modal-title">{lead.nome}</h2>
-              {lead.telefone && <p className="text-xs text-gray-500 dark:text-slate-400">{lead.telefone}</p>}
-            </div>
-          </div>
 
-          <div className="flex items-center gap-2">
-          {/* Botão de Ligação (Api4Com) */}
+            {/* Botão de Ligação (Api4Com) */}
             <button
               title={api4comSettings?.configured && lead.telefone ? 'Ligar para contato' : !lead.telefone ? 'Sem telefone cadastrado' : 'Configure a telefonia primeiro'}
               disabled={!api4comSettings?.configured || !lead.telefone || callingLeadId === lead.id}
               onClick={(e) => { e.stopPropagation(); onCallLead(lead.id, lead.telefone!, lead.nome); }}
-              className={`w-9 h-9 rounded-full flex items-center justify-center border transition-all flex-shrink-0 ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all shadow-lg flex-shrink-0 ${
                 api4comSettings?.configured && lead.telefone
-                  ? 'border-emerald-500 text-emerald-500 hover:bg-emerald-500/10 active:scale-95'
-                  : 'border-gray-600 text-gray-600 opacity-40 cursor-not-allowed'
+                  ? 'bg-violet-600 hover:bg-violet-700 text-white shadow-violet-500/20 active:scale-95'
+                  : 'bg-gray-100 dark:bg-white/5 text-gray-400 dark:text-gray-600 shadow-none cursor-not-allowed'
               }`}
             >
               {callingLeadId === lead.id
                 ? <Loader2 size={15} className="animate-spin" />
                 : <PhoneCall size={15} />
               }
+              Ligar
             </button>
+          </div>
+
+          <div className="flex items-center gap-2">
 
             {/* Ganhar */}
             <button
@@ -687,6 +967,37 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                       )}
                     </AnimatePresence>
                   </div>
+
+                  <div className="h-px bg-gray-100 dark:bg-white/5 my-1" />
+
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(`${window.location.origin}/f/${lead.id}`);
+                      alert("Link copiado para a área de transferência!");
+                      setShowMoreMenu(false);
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-violet-50 dark:hover:bg-violet-500/10 text-sm text-gray-700 dark:text-slate-200 transition-colors"
+                  >
+                    <Copy size={15} className="text-violet-500" />
+                    Copiar link do Formulário
+                  </button>
+
+                  <div className="h-px bg-gray-100 dark:bg-white/5 my-1" />
+
+                  <button
+                    onClick={handleCreateWhatsappGroup}
+                    disabled={creatingWhatsapp}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 text-sm text-gray-700 dark:text-slate-200 transition-colors disabled:opacity-50"
+                  >
+                    {creatingWhatsapp ? (
+                      <span className="w-[15px] h-[15px] border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="none" className="text-emerald-500">
+                        <path d="M11.996 0A12 12 0 0 0 0 12c0 2.155.565 4.18 1.554 5.955L.032 23.978l6.166-1.616A11.956 11.956 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 11.996 0zm0 21.995c-1.848 0-3.623-.483-5.228-1.39l-.375-.213-3.882 1.017 1.037-3.784-.233-.37A9.972 9.972 0 0 1 2.006 12C2.006 6.486 6.484 2.005 11.996 2.005c5.512 0 9.99 4.481 9.99 9.995s-4.478 9.995-9.99 9.995zm5.49-7.513c-.301-.151-1.782-.879-2.058-.98-.276-.1-.478-.151-.678.151-.2.301-.78 1.011-.954 1.218-.175.207-.35.232-.651.081-1.391-.689-2.39-1.32-3.328-2.923-.243-.414.24-.396.828-1.572.075-.152.038-.284-.038-.435-.075-.151-.678-1.632-.931-2.235-.245-.584-.492-.505-.678-.514-.175-.01-.377-.01-.577-.01s-.527.075-.803.376c-.276.302-1.055 1.031-1.055 2.513s1.08 2.914 1.231 3.115c.151.202 2.126 3.245 5.147 4.549 1.952.84 2.628.71 3.129.591.688-.163 1.782-.728 2.033-1.433.251-.705.251-1.309.176-1.433-.076-.124-.277-.2-.578-.35z" />
+                      </svg>
+                    )}
+                    Criar grupo do Whatsapp
+                  </button>
 
                   <div className="h-px bg-gray-100 dark:bg-white/5 my-1" />
 
@@ -869,16 +1180,21 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                             const duration = formatDuration(prevDate, item.created_at);
                             const isTaskAction = item.action_type?.startsWith('task_');
 
-                            // Task-specific events get a different style
-                            if (isTaskAction || item.action_type === 'template_applied') {
+                            const isNoteAction = item.action_type === 'note_created';
+                            const isWhatsappTrigger = item.action_type === 'whatsapp_trigger';
+
+                            // Task/meeting/note-specific events get a different style
+                            if (isTaskAction || item.action_type === 'template_applied' || item.action_type === 'meeting_created' || isNoteAction || isWhatsappTrigger) {
                               const iconMap: Record<string, { icon: any; color: string; bg: string }> = {
                                 task_created: { icon: <Plus size={10} />, color: 'text-blue-500', bg: 'bg-blue-500' },
                                 task_completed: { icon: <Check size={10} />, color: 'text-emerald-500', bg: 'bg-emerald-500' },
                                 task_reopened: { icon: <Clock size={10} />, color: 'text-orange-500', bg: 'bg-orange-500' },
                                 task_deleted: { icon: <Trash2 size={10} />, color: 'text-red-500', bg: 'bg-red-500' },
                                 template_applied: { icon: <FileText size={10} />, color: 'text-violet-500', bg: 'bg-violet-500' },
+                                meeting_created: { icon: <Calendar size={10} />, color: 'text-violet-500', bg: 'bg-violet-500' },
+                                note_created: { icon: <FileText size={10} />, color: 'text-fuchsia-500', bg: 'bg-fuchsia-500' },
+                                whatsapp_trigger: { icon: <Bot size={10} />, color: 'text-emerald-500', bg: 'bg-emerald-500' },
                               };
-
                               const taskTypeIcons: Record<string, any> = {
                                 'Tarefa': <CheckSquare size={14} />,
                                 'Ligação': <Phone size={14} />,
@@ -886,6 +1202,8 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                                 'Email': <Mail size={14} />,
                                 'Reunião': <Users size={14} />,
                                 'Lembrete': <Clock size={14} />,
+                                'Nota Rica': <FileText size={14} />,
+                                'Automação': <Bot size={14} />,
                               };
 
                               const meta = iconMap[item.action_type] || iconMap.task_created;
@@ -895,7 +1213,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                               
                               // Split description to show action and title as badges
                               const descParts = item.description.split(':');
-                              const action = descParts[0];
+                              let action = descParts[0];
                               let title = descParts[1]?.replace(/"/g, '').trim() || '';
 
                               // Cleanup old metadata from title if present (e.g., "(Tarefa · Normal)")
@@ -907,7 +1225,17 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
 
                               // Smart icon detection by keyword if still no type
                               const lowerTitle = title.toLowerCase();
-                              if (!effectiveTaskType || effectiveTaskType === 'Tarefa') {
+                              if (item.action_type === 'meeting_created' && !effectiveTaskType) {
+                                effectiveTaskType = 'Reunião';
+                              } else if (item.action_type === 'note_created') {
+                                effectiveTaskType = 'Nota Rica';
+                                title = ''; // Content is rendered in a dedicated box below
+                                action = '';
+                              } else if (item.action_type === 'whatsapp_trigger') {
+                                effectiveTaskType = 'Automação';
+                                title = '';
+                                action = '';
+                              } else if (!effectiveTaskType || effectiveTaskType === 'Tarefa') {
                                  if (lowerTitle.includes('whatsapp') || lowerTitle.includes('wpp')) effectiveTaskType = 'WhatsApp';
                                  else if (lowerTitle.includes('ligar') || lowerTitle.includes('ligação') || lowerTitle.includes('call')) effectiveTaskType = 'Ligação';
                                  else if (lowerTitle.includes('email') || lowerTitle.includes('e-mail')) effectiveTaskType = 'Email';
@@ -915,9 +1243,97 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                               }
 
                               const taskIcon = taskTypeIcons[effectiveTaskType] || taskTypeIcons[effectiveTaskType.charAt(0).toUpperCase() + effectiveTaskType.slice(1)] || taskTypeIcons['Tarefa'];
+                              const matchMeeting = item.action_type === 'meeting_created' ? meetings.find(m => m.title === title && m.responsible_name === item.user_name) : null;
 
-                              return (
-                                <div key={item.id} className="relative pl-6 pb-6 last:pb-0">
+                              if (item.action_type === 'meeting_created' && matchMeeting) {
+                                const dateObj = new Date(matchMeeting.meeting_date);
+                                const mMonth = dateObj.toLocaleString('pt-BR', { month: 'short' }).toUpperCase();
+                                const mDay = String(dateObj.getDate()).padStart(2, '0');
+                                const uResp = users.find(u => u.email === matchMeeting.responsible_name || u.name === matchMeeting.responsible_name);
+                                const getInitials = (n?: string) => n ? n.substring(0, 2).toUpperCase() : '??';
+
+                                return (
+                                  <div key={item.id} className="relative pl-6 pb-6 last:pb-0">
+                                    {index !== unifiedItems.length - 1 && (
+                                      <div className="absolute left-[7px] top-[14px] w-[2px] h-full bg-gray-100 dark:bg-white/5" />
+                                    )}
+                                    <div className={`absolute left-0 top-[28px] w-[16px] h-[16px] rounded-full bg-violet-500 border-4 border-white dark:border-[#1A1625] shadow-sm z-10`} />
+                                    
+                                    <div className="w-full max-w-[420px]">
+                                      <div className="p-5 rounded-2xl border border-indigo-50 dark:border-white/10 bg-white dark:bg-white/5 shadow-sm hover:shadow-md transition-all relative group w-full">
+                                        <div className="flex items-start gap-3.5 mb-4">
+                                          <div className="w-[52px] h-[52px] rounded-xl flex flex-col items-center justify-center bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 shrink-0 shadow-inner mt-0.5">
+                                            <span className="text-[9px] font-black tracking-widest">{mMonth}.</span>
+                                            <span className="text-lg font-bold leading-none mt-0.5">{mDay}</span>
+                                          </div>
+                                          <div className="flex-1 min-w-0 pr-1">
+                                            <div className="flex items-start justify-between gap-2">
+                                              <h4 className="font-extrabold text-gray-800 dark:text-slate-100 text-[13px] leading-tight break-words pr-2">{matchMeeting.title}</h4>
+                                              <span className="text-[9px] font-medium text-gray-400 shrink-0 mt-0.5">{dateObj.toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric'})} às {dateObj.toLocaleString('pt-BR', { hour:'2-digit', minute:'2-digit'})}</span>
+                                            </div>
+                                            <div className="flex items-center gap-1.5 mt-2.5 text-[10px] text-gray-500 font-medium">
+                                              {uResp ? (
+                                                <>
+                                                  {uResp.picture ? (
+                                                    <img src={uResp.picture} alt={uResp.name} className="w-4 h-4 rounded-full object-cover" />
+                                                  ) : (
+                                                    <div className="w-4 h-4 rounded-full bg-violet-100 dark:bg-violet-500/20 text-violet-600 flex items-center justify-center font-bold text-[7px]" title={uResp.name}>
+                                                      {getInitials(uResp.name)}
+                                                    </div>
+                                                  )}
+                                                  <span className="truncate max-w-[150px]">{uResp.name || uResp.email}</span>
+                                                </>
+                                              ) : (
+                                                <>
+                                                  <Users size={11} className="opacity-70" />
+                                                  <span className="truncate max-w-[150px]">{matchMeeting.responsible_name || 'Sistema'}</span>
+                                                </>
+                                              )}
+                                            </div>
+                                          </div>
+                                        </div>
+                                        
+                                        {(matchMeeting.office_location || matchMeeting.reunion_link || matchMeeting.reunion_niche || matchMeeting.monthly_closings || matchMeeting.closing_goal || true) && (
+                                          <div className="mt-4 pt-4 border-t border-gray-100 dark:border-white/5 space-y-3">
+                                            <h5 className="text-[10px] font-bold text-gray-500/80 uppercase tracking-widest" style={{ color: '#6b7280' }}>Detalhes:</h5>
+                                            <div className="grid grid-cols-2 gap-y-3 gap-x-2 text-xs">
+                                              <div><span className="text-gray-400 font-medium block text-[9px] uppercase tracking-wider mb-0.5">Local</span><span className="font-semibold text-gray-700 dark:text-slate-300">{matchMeeting.office_location || '-'}</span></div>
+                                              <div><span className="text-gray-400 font-medium block text-[9px] uppercase tracking-wider mb-0.5">Link</span>{matchMeeting.reunion_link ? <a href={matchMeeting.reunion_link.startsWith('http') ? matchMeeting.reunion_link : `https://${matchMeeting.reunion_link}`} target="_blank" rel="noreferrer" className="text-violet-500 hover:text-violet-600 font-semibold hover:underline truncate inline-block max-w-[120px]">{matchMeeting.reunion_link}</a> : <span className="font-semibold text-gray-700 dark:text-slate-300">-</span>}</div>
+                                              <div><span className="text-gray-400 font-medium block text-[9px] uppercase tracking-wider mb-0.5">Nicho</span><span className="font-semibold text-gray-700 dark:text-slate-300 truncate max-w-[120px] inline-block">{matchMeeting.reunion_niche || '-'}</span></div>
+                                              <div><span className="text-gray-400 font-medium block text-[9px] uppercase tracking-wider mb-0.5">Fechamentos Mês</span><span className="font-semibold text-gray-700 dark:text-slate-300">{matchMeeting.monthly_closings || '-'}</span></div>
+                                              <div><span className="text-gray-400 font-medium block text-[9px] uppercase tracking-wider mb-0.5">Meta</span><span className="font-semibold text-gray-700 dark:text-slate-300">{matchMeeting.closing_goal || '-'}</span></div>
+                                            </div>
+                                          </div>
+                                        )}
+                              
+                                        {matchMeeting.notes && (
+                                          <div className="mt-4 pt-4 border-t border-gray-100 dark:border-white/5">
+                                            <h5 className="text-[10px] font-bold text-gray-500/80 uppercase tracking-widest mb-3" style={{ color: '#6b7280' }}>Informações da Reunião:</h5>
+                                            <ul className="space-y-2">
+                                              {matchMeeting.notes.split('\n').filter((l:string) => l.trim().length > 0).map((line:string, i:number) => {
+                                                const isCheck = line.trim().startsWith('-');
+                                                return (
+                                                  <li key={i} className="flex items-start gap-2.5 text-[11px] text-gray-600 dark:text-slate-300">
+                                                    {isCheck ? (
+                                                      <Check size={14} className="text-emerald-500 shrink-0 mt-0.5 opacity-80" />
+                                                    ) : (
+                                                      <span className="w-1 h-3 mt-1.5 shrink-0" />
+                                                    )}
+                                                    <span className="leading-relaxed font-medium" style={{ color: '#4b5563' }}>{line.replace(/^- /, '')}</span>
+                                                  </li>
+                                                );
+                                              })}
+                                            </ul>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              }
+
+                                return (
+                                  <div key={item.id} className="relative pl-6 pb-6 last:pb-0">
                                   {index !== unifiedItems.length - 1 && (
                                     <div className="absolute left-[7px] top-[14px] w-[2px] h-full bg-gray-100 dark:bg-white/5" />
                                   )}
@@ -926,8 +1342,8 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                                   
                                   <div className="bg-white/50 dark:bg-white/5 border border-gray-100 dark:border-white/10 rounded-2xl p-4 shadow-sm transition-all hover:shadow-md">
                                     <div className="flex items-start gap-3">
-                                      <div className="flex-shrink-0 w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.12)' }}>
-                                        {React.cloneElement(taskIcon as React.ReactElement, { size: 18, style: { color: '#7c3aed' } })}
+                                      <div className="flex-shrink-0 w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: isWhatsappTrigger ? 'rgba(16,185,129,0.1)' : 'rgba(124,58,237,0.12)' }}>
+                                        {React.cloneElement(taskIcon as React.ReactElement, { size: 18, style: { color: isWhatsappTrigger ? '#10b981' : '#7c3aed' } })}
                                       </div>
                                       
                                       <div className="flex-1 min-w-0">
@@ -950,12 +1366,32 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                                         <p className="text-[11px]" style={{ color: '#9ca3af' }}>
                                           ORIGEM: {effectiveTaskType || 'Atividade'}
                                         </p>
+
+                                        {item.action_type === 'note_created' && (
+                                          <div 
+                                            className="mt-3 text-sm text-gray-700 dark:text-slate-200 leading-relaxed whitespace-pre-wrap prose prose-sm dark:prose-invert max-w-none prose-img:cursor-zoom-in hover:prose-img:opacity-90 prose-img:transition-opacity prose-img:rounded-xl border border-gray-100 dark:border-white/5 shadow-sm"
+                                            style={{ wordBreak: 'break-word', padding: '14px', background: 'rgba(0,0,0,0.015)', borderRadius: '12px' }}
+                                            onClick={handleNoteClick}
+                                            dangerouslySetInnerHTML={{ __html: item.description?.replace(/style="[^"]*color:[^"]*"/g, '') || '' }}
+                                          />
+                                        )}
+                                        {item.action_type === 'whatsapp_trigger' && (
+                                          <div 
+                                            className="mt-3 text-[13px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/20 shadow-sm flex items-center gap-2"
+                                            style={{ wordBreak: 'break-word', padding: '12px 14px', borderRadius: '12px' }}
+                                          >
+                                            <span className="flex-1">{item.description || 'Gatilho de WhatsApp acionado ✅'}</span>
+                                          </div>
+                                        )}
                                         
                                         <div className="flex items-center gap-1.5 mt-2.5">
                                           <Clock size={11} className="text-gray-400" />
                                           <span className="text-[11px]" style={{ color: '#9ca3af' }}>
                                             {formatRelativeTime(item.created_at)}
-                                            {item.user_name && <> por <strong className="font-medium text-gray-600 dark:text-slate-400">{item.user_name}</strong></>}
+                                            {item.user_name && (() => {
+                                              const userMatch = users?.find((u:any) => u.email === item.user_name || u.name === item.user_name);
+                                              return <> por <strong className="font-medium text-gray-600 dark:text-slate-400">{userMatch?.name || item.user_name}</strong></>;
+                                            })()}
                                           </span>
                                         </div>
                                       </div>
@@ -1208,9 +1644,244 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                 </>
               )}
               {activeTab === 'notas' && (
-                <div className="p-6 space-y-4 flex-1 flex flex-col items-center justify-center text-gray-400 dark:text-slate-500">
-                  <FileText size={32} className="mb-3 opacity-40" />
-                  <p className="text-sm font-medium text-center">Bloco de notas em breve</p>
+                <div className="space-y-6 flex-1 flex flex-col overflow-y-auto relative bg-[#F8F9FA] dark:bg-[#15121E]">
+                  <div className="flex flex-col py-4 px-6 shrink-0 bg-white dark:bg-white/5 border-b border-gray-100 dark:border-white/10 shadow-sm z-20 sticky top-0">
+                    <h3 className="font-bold text-gray-700 dark:text-white uppercase text-[11px] tracking-wider mb-3">Editor de Notas Rico</h3>
+                    <div className="w-full bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl overflow-hidden shadow-inner flex flex-col">
+                      <div className="flex gap-2 p-2 bg-slate-100 dark:bg-white/5 border-b border-slate-200 dark:border-white/10 text-xs text-gray-500 items-center justify-between">
+                        <span className="font-medium px-2">Suporta Colagem de Imagens (Ctrl+V)</span>
+                        <button
+                           onClick={handleCreateNote}
+                           disabled={notesLoading}
+                           className="px-4 py-1.5 bg-violet-600 hover:bg-violet-700 active:scale-95 text-white rounded-lg text-xs font-bold transition-all shadow-sm shadow-violet-500/20 disabled:opacity-50"
+                        >
+                           {notesLoading ? <Loader2 size={14} className="animate-spin" /> : 'Salvar Nota'}
+                        </button>
+                      </div>
+                      <div 
+                        ref={editorRef}
+                        contentEditable
+                        onPaste={handlePaste}
+                        className="p-4 min-h-[120px] max-h-[300px] overflow-y-auto outline-none text-sm text-gray-700 dark:text-slate-200"
+                        style={{ cursor: 'text' }}
+                        onInput={(e) => {
+                          if (e.currentTarget.innerHTML === '<br>') e.currentTarget.innerHTML = '';
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="relative flex-1 p-6 z-10 w-full max-w-4xl mx-auto pb-16">
+                    {notesLoading && notes.length === 0 ? (
+                      <div className="flex flex-col justify-center items-center mt-12 text-gray-400">
+                         <Loader2 size={32} className="animate-spin text-violet-500 mb-2" />
+                         <span className="text-sm">Carregando anotações...</span>
+                      </div>
+                    ) : notes.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-16 text-gray-400 dark:text-slate-500">
+                        <FileText size={36} className="mb-3 opacity-30" />
+                        <p className="text-sm font-medium">Nenhuma nota registrada</p>
+                        <p className="text-xs mt-1 opacity-60">Use o editor acima para criar a primeira anotação</p>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="absolute left-1/2 top-4 bottom-4 w-[2px] bg-indigo-50/50 dark:bg-white/5 -translate-x-1/2" />
+                        
+                        <div className="space-y-16 relative">
+                          {notes.map((n, idx) => {
+                            const isLeft = idx % 2 === 0;
+                            const dateObj = new Date(n.created_at || new Date());
+                            const nMonth = dateObj.toLocaleString('pt-BR', { month: 'short' }).toUpperCase();
+                            const nDay = String(dateObj.getDate()).padStart(2, '0');
+                            const uResp = users.find(u => u.name === n.user_name);
+                            const getInitials = (num?: string) => num ? num.substring(0, 2).toUpperCase() : '??';
+
+                            return (
+                              <div key={n.id || idx} className={`flex items-start w-full relative ${isLeft ? 'justify-start' : 'justify-end'}`}>
+                                <div className="absolute left-1/2 top-[34px] -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border-[3px] border-white dark:border-[#15121E] bg-violet-50 dark:bg-violet-500/20 flex items-center justify-center z-10 shadow-sm">
+                                  <FileText size={14} className="text-violet-500" />
+                                </div>
+                                
+                                <div className="w-[45%]">
+                                  <div className={`p-5 rounded-2xl border border-indigo-50 dark:border-white/10 bg-white dark:bg-white/5 shadow-sm hover:shadow-md transition-all relative group
+                                      ${isLeft ? 'mr-auto' : 'ml-auto'}`}>
+                                    
+                                    <div className="flex items-center justify-between mb-3 border-b border-gray-100 dark:border-white/5 pb-3">
+                                      <div className="flex items-center gap-1.5 text-[11px] text-gray-500 font-medium">
+                                        {uResp ? (
+                                          <>
+                                            {uResp.picture ? (
+                                              <img src={uResp.picture} alt={uResp.name} className="w-5 h-5 rounded-full object-cover" />
+                                            ) : (
+                                              <div className="w-5 h-5 rounded-full bg-violet-100 dark:bg-violet-500/20 text-violet-600 flex items-center justify-center font-bold text-[8px]" title={uResp.name}>
+                                                {getInitials(uResp.name)}
+                                              </div>
+                                            )}
+                                            <span className="truncate max-w-[150px] font-bold text-gray-700 dark:text-slate-300">{uResp.name || uResp.email}</span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Users size={12} className="opacity-70" />
+                                            <span className="truncate max-w-[150px] font-bold text-gray-700 dark:text-slate-300">{n.user_name || 'Sistema'}</span>
+                                          </>
+                                        )}
+                                      </div>
+                                      <span className="text-[10px] font-bold text-gray-400">
+                                        {!isNaN(dateObj.getTime()) ? `${dateObj.toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric'})} às ${dateObj.toLocaleString('pt-BR', { hour:'2-digit', minute:'2-digit'})}` : 'Agora mesmo'}
+                                      </span>
+                                    </div>
+                                    
+                                    <div 
+                                      className="mt-2 text-sm text-gray-700 dark:text-slate-200 leading-relaxed whitespace-pre-wrap prose prose-sm dark:prose-invert max-w-none prose-img:cursor-zoom-in hover:prose-img:opacity-90 prose-img:transition-opacity prose-img:rounded-xl"
+                                      style={{ wordBreak: 'break-word' }}
+                                      onClick={handleNoteClick}
+                                      dangerouslySetInnerHTML={{ __html: n.content?.replace(/style="[^"]*color:[^"]*"/g, '') || '' }}
+                                    />
+                                    
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+              {activeTab === 'reuniões' && (
+                <div className="space-y-6 flex-1 flex flex-col overflow-y-auto relative bg-[#F8F9FA] dark:bg-[#15121E]">
+                  <div className="flex items-center justify-between py-4 px-6 shrink-0 bg-white dark:bg-white/5 border-b border-gray-100 dark:border-white/10 shadow-sm z-20 sticky top-0">
+                    <h3 className="font-bold text-gray-700 dark:text-white uppercase text-[11px] tracking-wider">Histórico de Reuniões</h3>
+                    <button 
+                      onClick={() => {
+                        setMeetingForm(p => ({
+                          ...p,
+                          meeting_date: (lead as any).reunion_date || new Date().toISOString().slice(0, 16),
+                          office_location: (lead as any).office_location || '',
+                          reunion_niche: (lead as any).reunion_niche || '',
+                          monthly_closings: (lead as any).monthly_closings || '',
+                          closing_goal: (lead as any).closing_goal || '',
+                          reunion_link: (lead as any).reunion_link || ''
+                        }));
+                        setShowMeetingModal(true);
+                      }}
+                      className="px-4 py-2 bg-violet-600 hover:bg-violet-700 active:scale-95 text-white rounded-xl text-sm font-bold transition-all shadow-md shadow-violet-500/20 flex items-center gap-2">
+                      <Plus size={15} /> Adicionar Reunião
+                    </button>
+                  </div>
+
+                  <div className="relative flex-1 p-6 z-10 w-full max-w-4xl mx-auto pb-16">
+                    {meetingsLoading ? (
+                      <div className="flex flex-col justify-center items-center mt-12 text-gray-400">
+                         <Loader2 size={32} className="animate-spin text-violet-500 mb-2" />
+                         <span className="text-sm">Carregando reuniões...</span>
+                      </div>
+                    ) : meetings.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-16 text-gray-400 dark:text-slate-500">
+                        <Users size={36} className="mb-3 opacity-30" />
+                        <p className="text-sm font-medium">Nenhuma reunião registrada</p>
+                        <p className="text-xs mt-1 opacity-60">As marcações ficarão registradas no nosso histórico vertical</p>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="absolute left-1/2 top-4 bottom-4 w-[2px] bg-indigo-50/50 dark:bg-white/5 -translate-x-1/2" />
+                        
+                        <div className="space-y-16 relative">
+                          {meetings.map((m, idx) => {
+                            const isLeft = idx % 2 === 0;
+                            const dateObj = new Date(m.meeting_date);
+                            const mMonth = dateObj.toLocaleString('pt-BR', { month: 'short' }).toUpperCase();
+                            const mDay = String(dateObj.getDate()).padStart(2, '0');
+                            const notesLines = (m.notes || '').split('\n').filter((l:string) => l.trim().length > 0);
+                            const uResp = users.find(u => u.email === m.responsible_name || u.name === m.responsible_name);
+                            const getInitials = (n?: string) => n ? n.substring(0, 2).toUpperCase() : '??';
+
+                            return (
+                              <div key={m.id || idx} className={`flex items-start w-full relative ${isLeft ? 'justify-start' : 'justify-end'}`}>
+                                <div className="absolute left-1/2 top-[34px] -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border-[3px] border-white dark:border-[#15121E] bg-violet-50 dark:bg-violet-500/20 flex items-center justify-center z-10 shadow-sm">
+                                  <Check size={14} className="text-violet-500" />
+                                </div>
+                                
+                                <div className="w-[45%]">
+                                  <div className={`p-5 rounded-2xl border border-indigo-50 dark:border-white/10 bg-white dark:bg-white/5 shadow-sm hover:shadow-md transition-all relative group
+                                      ${isLeft ? 'mr-auto' : 'ml-auto'}`}>
+                                    
+                                    <div className="flex items-start gap-3.5 mb-4">
+                                      <div className="w-[52px] h-[52px] rounded-xl flex flex-col items-center justify-center bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 shrink-0 shadow-inner mt-0.5">
+                                        <span className="text-[9px] font-black tracking-widest">{mMonth}.</span>
+                                        <span className="text-lg font-bold leading-none mt-0.5">{mDay}</span>
+                                      </div>
+                                      
+                                      <div className="flex-1 min-w-0 pr-1">
+                                        <div className="flex items-start justify-between gap-2">
+                                          <h4 className="font-extrabold text-gray-800 dark:text-slate-100 text-[13px] leading-tight break-words pr-2">{m.title}</h4>
+                                          <span className="text-[9px] font-medium text-gray-400 shrink-0 mt-0.5">{dateObj.toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric'})} às {dateObj.toLocaleString('pt-BR', { hour:'2-digit', minute:'2-digit'})}</span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5 mt-2.5 text-[10px] text-gray-500 font-medium">
+                                          {uResp ? (
+                                            <>
+                                              {uResp.picture ? (
+                                                <img src={uResp.picture} alt={uResp.name} className="w-4 h-4 rounded-full object-cover" />
+                                              ) : (
+                                                <div className="w-4 h-4 rounded-full bg-violet-100 dark:bg-violet-500/20 text-violet-600 flex items-center justify-center font-bold text-[7px]" title={uResp.name}>
+                                                  {getInitials(uResp.name)}
+                                                </div>
+                                              )}
+                                              <span className="truncate max-w-[150px]">{uResp.name || uResp.email}</span>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <Users size={11} className="opacity-70" />
+                                              <span className="truncate max-w-[150px]">{m.responsible_name || 'Sistema'}</span>
+                                            </>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    
+                                    {(m.office_location || m.reunion_link || m.reunion_niche || m.monthly_closings || m.closing_goal || true) && (
+                                      <div className="mt-4 pt-4 border-t border-gray-100 dark:border-white/5 space-y-3">
+                                        <h5 className="text-[10px] font-bold text-gray-500/80 uppercase tracking-widest" style={{ color: '#6b7280' }}>Detalhes:</h5>
+                                        <div className="grid grid-cols-2 gap-y-3 gap-x-2 text-xs">
+                                          <div><span className="text-gray-400 font-medium block text-[9px] uppercase tracking-wider mb-0.5">Local</span><span className="font-semibold text-gray-700 dark:text-slate-300">{m.office_location || '-'}</span></div>
+                                          <div><span className="text-gray-400 font-medium block text-[9px] uppercase tracking-wider mb-0.5">Link</span>{m.reunion_link ? <a href={m.reunion_link.startsWith('http') ? m.reunion_link : `https://${m.reunion_link}`} target="_blank" rel="noreferrer" className="text-violet-500 hover:text-violet-600 font-semibold hover:underline truncate inline-block max-w-[120px]">{m.reunion_link}</a> : <span className="font-semibold text-gray-700 dark:text-slate-300">-</span>}</div>
+                                          <div><span className="text-gray-400 font-medium block text-[9px] uppercase tracking-wider mb-0.5">Nicho</span><span className="font-semibold text-gray-700 dark:text-slate-300 truncate max-w-[120px] inline-block">{m.reunion_niche || '-'}</span></div>
+                                          <div><span className="text-gray-400 font-medium block text-[9px] uppercase tracking-wider mb-0.5">Fechamentos Mês</span><span className="font-semibold text-gray-700 dark:text-slate-300">{m.monthly_closings || '-'}</span></div>
+                                          <div><span className="text-gray-400 font-medium block text-[9px] uppercase tracking-wider mb-0.5">Meta</span><span className="font-semibold text-gray-700 dark:text-slate-300">{m.closing_goal || '-'}</span></div>
+                                        </div>
+                                      </div>
+                                    )}
+                                    
+                                    {(notesLines.length > 0) && (
+                                      <div className="mt-4 pt-4 border-t border-gray-100 dark:border-white/5">
+                                        <h5 className="text-[10px] font-bold text-gray-500/80 uppercase tracking-widest mb-3" style={{ color: '#6b7280' }}>Informações da Reunião:</h5>
+                                        <ul className="space-y-2">
+                                          {notesLines.map((line:string, i:number) => {
+                                            const isCheck = line.trim().startsWith('-');
+                                            return (
+                                              <li key={i} className="flex items-start gap-2.5 text-[11px] text-gray-600 dark:text-slate-300">
+                                                {isCheck ? (
+                                                  <Check size={14} className="text-emerald-500 shrink-0 mt-0.5 opacity-80" />
+                                                ) : (
+                                                  <span className="w-1 h-3 mt-1.5 shrink-0" />
+                                                )}
+                                                <span className="leading-relaxed font-medium" style={{ color: '#4b5563' }}>{line.replace(/^- /, '')}</span>
+                                              </li>
+                                            );
+                                          })}
+                                        </ul>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </div>
                 </div>
               )}
               {activeTab === 'ligações' && (() => {
@@ -1307,9 +1978,99 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                 );
               })()}
               {activeTab === 'arquivos' && (
-                <div className="p-6 space-y-4 flex-1 flex flex-col items-center justify-center text-gray-400 dark:text-slate-500">
-                  <Paperclip size={32} className="mb-3 opacity-40" />
-                  <p className="text-sm font-medium text-center">Anexo de arquivos em breve</p>
+                <div className="p-6 space-y-6 flex-1 flex flex-col font-sans">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-bold text-gray-800 dark:text-slate-100">Documentos e Arquivos</h3>
+                    <button 
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploadingFiles}
+                      className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 border border-gray-200 dark:border-white/10 text-gray-700 dark:text-slate-200 rounded-xl text-sm font-bold transition-all disabled:opacity-50"
+                    >
+                      {uploadingFiles ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                      {uploadingFiles ? 'Enviando...' : 'Fazer Upload'}
+                    </button>
+                    <input 
+                      type="file" 
+                      ref={fileInputRef} 
+                      onChange={handleFileChange} 
+                      className="hidden" 
+                    />
+                  </div>
+
+                  <div 
+                    onDragOver={handleDragOver}
+                    onDrop={handleDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                    className="border-2 border-dashed border-gray-300 dark:border-white/10 rounded-2xl p-8 text-center bg-gray-50 dark:bg-white/5 backdrop-blur-md cursor-pointer hover:border-violet-500 transition-all relative overflow-hidden"
+                  >
+                    <div className="flex flex-col items-center gap-3 relative z-10">
+                      <div className="p-3 bg-white/50 dark:bg-white/5 rounded-full border border-gray-200 dark:border-white/10 shadow-sm">
+                        <Folder size={24} className="text-gray-400 dark:text-slate-400" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-gray-700 dark:text-slate-200">Clique ou arraste arquivos para cá</p>
+                        <p className="text-xs text-gray-500 dark:text-slate-500 mt-1">Suporta PDF, DOCX, XLSX, imagens e vídeos (Máx 50MB)</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-gray-50 dark:bg-white/5 backdrop-blur-md rounded-2xl border border-gray-200 dark:border-white/10 overflow-hidden relative">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-slate-400 font-bold uppercase tracking-widest">
+                        <tr>
+                          <th className="px-6 py-4">Nome do Arquivo</th>
+                          <th className="px-6 py-4">Data</th>
+                          <th className="px-6 py-4">Tamanho</th>
+                          <th className="px-6 py-4">Enviado por</th>
+                          <th className="px-6 py-4 text-right">Ações</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200 dark:divide-white/10 text-gray-700 dark:text-slate-200">
+                        {filesLoading && files.length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="px-6 py-8 text-center text-gray-400">Carregando arquivos...</td>
+                          </tr>
+                        ) : files.length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="px-6 py-8 text-center text-gray-400 italic">Nenhum arquivo enviado.</td>
+                          </tr>
+                        ) : (
+                          files.map((file: any) => (
+                            <tr key={file.id} className="hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
+                              <td className="px-6 py-4 flex items-center gap-3 font-bold max-w-[200px] truncate">
+                                <File size={16} className="text-violet-500 flex-shrink-0" />
+                                <span className="truncate" title={file.name}>{file.name}</span>
+                              </td>
+                              <td className="px-6 py-4 text-gray-500 dark:text-slate-400">{new Date(file.created_at).toLocaleDateString('pt-BR')}</td>
+                              <td className="px-6 py-4 text-gray-500 dark:text-slate-400">{file.size || '-'}</td>
+                              <td className="px-6 py-4">
+                                <span className="px-2 py-1 rounded-lg font-bold text-[10px] uppercase tracking-wider bg-violet-500/10 text-violet-500">
+                                  {(() => {
+                                    if (file.sender === 'Agência') return currentUserName || 'Sistema';
+                                    const userMatch = users?.find((u:any) => u.email === file.sender || u.name === file.sender);
+                                    return userMatch?.name || file.sender || 'Sistema';
+                                  })()}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 text-right">
+                                <div className="flex items-center justify-end gap-3 text-gray-400">
+                                  <button onClick={() => window.open(file.url, '_blank')} className="hover:text-violet-500 transition-colors" title="Visualizar"><Eye size={16} /></button>
+                                  <button onClick={() => {
+                                    const a = document.createElement('a');
+                                    a.href = file.url;
+                                    a.download = file.name;
+                                    a.target = '_blank';
+                                    a.click();
+                                  }} className="hover:text-violet-500 transition-colors" title="Baixar"><Download size={16} /></button>
+                                  <button onClick={() => handleDeleteFile(file.id)} className="hover:text-red-500 transition-colors" title="Excluir"><Trash2 size={16} /></button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               )}
             </div>
@@ -1675,7 +2436,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                 onClick={() => toggleSection('meeting')}
               >
                 <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-slate-400 group-hover:text-gray-700 dark:group-hover:text-slate-300 transition-colors">
-                  Informações da Reunião
+                  Formulário
                 </h4>
                 <ChevronDown size={14} className={`text-gray-400 transition-transform ${sectionsOpen.meeting ? 'rotate-180' : ''}`} />
               </div>
@@ -1683,12 +2444,12 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
               {sectionsOpen.meeting && (
                 <div className="space-y-3">
                   {[
-                    { label: 'Data da reunião', field: 'reunion_date', type: 'date' },
-                    { label: 'Local do escritório', field: 'office_location', type: 'text' },
-                    { label: 'Nicho de atuação', field: 'reunion_niche', type: 'text' },
-                    { label: 'Fechamentos mês', field: 'monthly_closings', type: 'text' },
-                    { label: 'Meta de fechamentos', field: 'closing_goal', type: 'text' },
-                    { label: 'Link da reunião', field: 'reunion_link', type: 'text' },
+                    { label: 'Nome Completo', field: 'form_nome_completo', type: 'text' },
+                    { label: 'Nome Fantasia', field: 'form_nome_fantasia', type: 'text' },
+                    { label: 'Telefone (Whatsapp)', field: 'form_telefone_whatsapp', type: 'text' },
+                    { label: 'CEP', field: 'form_cep', type: 'text' },
+                    { label: 'Cidade', field: 'form_cidade', type: 'text' },
+                    { label: 'Estado', field: 'form_estado', type: 'text' },
                   ].map(({ label, field, type }) => (
                     <div key={label} className="flex items-center justify-between gap-2">
                       <span className="text-xs text-gray-500 dark:text-slate-400 shrink-0 min-w-max">{label}</span>
@@ -1697,7 +2458,6 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                         value={(lead as any)[field] || ''}
                         onChange={(e) => onUpdateLeadField(lead.id, field, e.target.value)}
                         placeholder="Adicionar..."
-                        title={label === 'Link da reunião' && (lead as any)[field] ? 'Clique duas vezes ou copie para abrir' : ''}
                         className="text-right text-xs font-medium text-gray-800 dark:text-slate-200 bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 w-full ml-2 truncate"
                       />
                     </div>
@@ -1746,9 +2506,142 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
           </div>
         </div>
       </div>
+{/* Meeting Modal */}
+      {showMeetingModal && (
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowMeetingModal(false)} />
+          <div className="bg-white dark:bg-[#1A1625] rounded-3xl w-full max-w-lg p-6 shadow-2xl relative z-10 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h3 className="text-lg font-bold text-gray-800 dark:text-white">Adicionar Reunião</h3>
+                <p className="text-[11px] font-medium text-gray-500 dark:text-slate-400 mt-1 uppercase tracking-wider">Registre na timeline do lead</p>
+              </div>
+              <button onClick={() => setShowMeetingModal(false)} className="w-8 h-8 rounded-full bg-gray-100 dark:bg-white/5 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-white/10 transition-colors">
+                <X size={16} className="text-gray-500" />
+              </button>
+            </div>
+
+            <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="text-xs font-bold text-gray-600 dark:text-slate-300 uppercase tracking-wider mb-2 block">Título da Reunião</label>
+                  <input
+                    type="text"
+                    value={meetingForm.title}
+                    onChange={e => setMeetingForm(p => ({...p, title: e.target.value}))}
+                    placeholder="Ex: Reunião de alinhamento estratégico..."
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all font-medium text-sm text-gray-800 dark:text-slate-200 placeholder-gray-400"
+                  />
+                </div>
+
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="text-xs font-bold text-gray-600 dark:text-slate-300 uppercase tracking-wider mb-2 block">Data e Hora</label>
+                  <input
+                    type="datetime-local"
+                    value={meetingForm.meeting_date}
+                    onChange={e => setMeetingForm(p => ({...p, meeting_date: e.target.value}))}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all font-medium text-sm text-gray-800 dark:text-slate-200"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="text-xs font-bold text-gray-600 dark:text-slate-300 uppercase tracking-wider mb-2 block">Local do escritório</label>
+                  <input
+                    type="text"
+                    value={meetingForm.office_location}
+                    onChange={e => setMeetingForm(p => ({...p, office_location: e.target.value}))}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all font-medium text-sm text-gray-800 dark:text-slate-200"
+                  />
+                </div>
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="text-xs font-bold text-gray-600 dark:text-slate-300 uppercase tracking-wider mb-2 block">Link da reunião</label>
+                  <input
+                    type="text"
+                    value={meetingForm.reunion_link}
+                    onChange={e => setMeetingForm(p => ({...p, reunion_link: e.target.value}))}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all font-medium text-sm text-gray-800 dark:text-slate-200"
+                  />
+                </div>
+
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="text-xs font-bold text-gray-600 dark:text-slate-300 uppercase tracking-wider mb-2 block">Nicho de atuação</label>
+                  <input
+                    type="text"
+                    value={meetingForm.reunion_niche}
+                    onChange={e => setMeetingForm(p => ({...p, reunion_niche: e.target.value}))}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all font-medium text-sm text-gray-800 dark:text-slate-200"
+                  />
+                </div>
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="text-xs font-bold text-gray-600 dark:text-slate-300 uppercase tracking-wider mb-2 block">Fechamentos mês</label>
+                  <input
+                    type="text"
+                    value={meetingForm.monthly_closings}
+                    onChange={e => setMeetingForm(p => ({...p, monthly_closings: e.target.value}))}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all font-medium text-sm text-gray-800 dark:text-slate-200"
+                  />
+                </div>
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="text-xs font-bold text-gray-600 dark:text-slate-300 uppercase tracking-wider mb-2 block">Meta de fechamentos</label>
+                  <input
+                    type="text"
+                    value={meetingForm.closing_goal}
+                    onChange={e => setMeetingForm(p => ({...p, closing_goal: e.target.value}))}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all font-medium text-sm text-gray-800 dark:text-slate-200"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-gray-600 dark:text-slate-300 uppercase tracking-wider mb-2 flex items-center justify-between">
+                  <span>Próximas Ações / Acordos</span>
+                  <span className="text-[9px] font-medium text-violet-500 lowercase opacity-70">Use - pra marcações</span>
+                </label>
+                <textarea
+                  value={meetingForm.notes}
+                  onChange={e => setMeetingForm(p => ({...p, notes: e.target.value}))}
+                  placeholder="Dica: Registre aqui os detalhes...&#10;&#10;- Primeiro ponto acordado&#10;- Segundo item de ação"
+                  rows={4}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all font-medium text-sm resize-none text-gray-800 dark:text-slate-200 placeholder-gray-400"
+                />
+              </div>
+
+              <button 
+                 onClick={handleCreateMeeting}
+                 disabled={!meetingForm.title || !meetingForm.meeting_date || meetingsLoading}
+                 className="w-full py-3.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-bold mt-2 transition-all active:scale-[0.98] shadow-xl shadow-violet-500/20 disabled:opacity-50 disabled:active:scale-100 flex justify-center items-center gap-2">
+                {meetingsLoading ? <Loader2 size={18} className="animate-spin" /> : 'Salvar Reunião'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}      {/* Image Viewer Popup */}
+      {selectedImage && (
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm transition-all" onClick={() => setSelectedImage(null)}>
+          <div className="relative max-w-[90vw] max-h-[90vh] flex flex-col items-center">
+            <button 
+              onClick={() => setSelectedImage(null)}
+              className="absolute -top-12 right-0 p-2 text-white/70 hover:text-white bg-black/20 hover:bg-black/50 rounded-full transition-colors backdrop-blur-md"
+            >
+              <X size={24} />
+            </button>
+            <img 
+              src={selectedImage} 
+              alt="Visualização" 
+              className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl" 
+              onClick={(e) => e.stopPropagation()} 
+            />
+          </div>
+        </div>
+      )}
     </div>
+    </>
   );
 };
+
+
 
 const GerenciarKanbansModal = ({ isOpen, onClose, kanbans, columns, leads, onRename, onDelete }: any) => {
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -1862,6 +2755,7 @@ const GerenciarKanbansModal = ({ isOpen, onClose, kanbans, columns, leads, onRen
           })}
         </div>
       </div>
+
     </div>
   );
 };
@@ -1882,6 +2776,10 @@ const CrmComercial = () => {
   const [settingsTab, setSettingsTab] = useState<'telefonia' | 'webhook' | 'sequencias' | 'motivos-perda'>('telefonia');
   const [webhookRegistering, setWebhookRegistering] = useState(false);
   const [webhookResult, setWebhookResult] = useState<{success?: boolean; webhookUrl?: string; error?: string} | null>(null);
+  const [crmWebhookSettings, setCrmWebhookSettings] = useState<any>({ form_webhook_url: '', whatsapp_webhook_url: '', inbound_token: '', inbound_kanban_id: '', inbound_coluna: '' });
+  const [savingWebhookSettings, setSavingWebhookSettings] = useState(false);
+  const [showWebhookConfig, setShowWebhookConfig] = useState<'form' | 'whatsapp' | 'inbound' | null>(null);
+  const [inboundColumns, setInboundColumns] = useState<any[]>([]);
   // Loss Reasons state
   const [lossReasons, setLossReasons] = useState<{id: number, name: string, description: string | null, color: string}[]>([]);
   const [newLossReason, setNewLossReason] = useState({ name: '', description: '', color: '#6b7280' });
@@ -2135,8 +3033,26 @@ const CrmComercial = () => {
   }, []);
 
   useEffect(() => {
+    if (crmWebhookSettings?.inbound_kanban_id) {
+       fetch(`/api/crm-comercial/columns?kanban_id=${crmWebhookSettings.inbound_kanban_id}`)
+         .then(r => r.json())
+         .then(setInboundColumns)
+         .catch(() => setInboundColumns([]));
+    } else {
+       setInboundColumns([]);
+    }
+  }, [crmWebhookSettings?.inbound_kanban_id]);
+
+  useEffect(() => {
     if (user?.email) {
       fetchData();
+      
+      // Fetch CRM Webhook settings
+      fetch(`/api/crm/settings/webhooks?user_id=${encodeURIComponent(user.email)}`)
+        .then(r => r.json())
+        .then(data => setCrmWebhookSettings(data))
+        .catch(e => console.error(e));
+
       // Fetch Api4Com settings when user is known
       fetch(`/api/api4com/settings?user_id=${encodeURIComponent(user.email)}`)
         .then(r => r.json())
@@ -2692,6 +3608,25 @@ const CrmComercial = () => {
     }
   };
 
+  const handleSaveWebhookSettings = async () => {
+    if (!user?.email) return;
+    setSavingWebhookSettings(true);
+    try {
+      const res = await fetch('/api/crm/settings/webhooks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: user.email, ...crmWebhookSettings })
+      });
+      if (res.ok) {
+        setShowWebhookConfig(null);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSavingWebhookSettings(false);
+    }
+  };
+
   const handleSaveApi4ComSettings = async () => {
     if (!user?.email) return;
     setSavingSettings(true);
@@ -2874,24 +3809,18 @@ const CrmComercial = () => {
       >
         <div className="flex items-center gap-3">
 
-          {/* ⚙ Gear icon — Telephony Settings + SIP Status */}
           <button
-            id="btn-telefonia-settings"
-            title={`Configurações de Telefonia — Ramal: ${
+            title={`Configurações do CRM e Telefonia — Ramal: ${
               softphone.sipStatus === 'registered' ? '✓ Registrado' :
               softphone.sipStatus === 'connecting' ? 'Conectando...' :
               softphone.sipStatus === 'error' ? '✗ Falha no registro' : 'Não conectado'
             }`}
             onClick={() => { setTestResult(null); setSettingsTab('telefonia'); fetchLossReasons(); setIsTelefonySettingsOpen(true); }}
-            className="relative w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 border transition-all"
-            style={{ borderColor: '#2d2b3d', color: '#9ca3af' }}
-            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#1c1a27'; (e.currentTarget as HTMLButtonElement).style.color = 'white'; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'transparent'; (e.currentTarget as HTMLButtonElement).style.color = '#9ca3af'; }}
+            className="relative flex items-center justify-center w-[38px] h-[38px] flex-shrink-0 bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-lg text-gray-500 dark:text-slate-400 hover:text-violet-600 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-white/5 transition-all shadow-sm"
           >
-            <Settings size={16} />
+            <Settings size={18} />
             {/* SIP status dot */}
-            <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border" style={{
-              borderColor: '#0d0b14',
+            <span className="absolute -top-[3px] -right-[3px] w-2.5 h-2.5 rounded-full border border-white dark:border-[#0d0b14]" style={{
               background: softphone.sipStatus === 'registered' ? '#22c55e' :
                           softphone.sipStatus === 'connecting' ? '#f59e0b' :
                           softphone.sipStatus === 'error' ? '#ef4444' : '#374151'
@@ -3203,6 +4132,7 @@ const CrmComercial = () => {
           currentKanbanId={activeKanbanId}
           api4comSettings={api4comSettings}
           currentUserEmail={user?.email}
+          currentUserName={user?.name}
           callingLeadId={callingLeadId}
           onCallLead={handleCallLead}
           onUpdateLeadField={handleUpdateLeadField}
@@ -4098,21 +5028,21 @@ const CrmComercial = () => {
               exit={{ scale: 0.95, opacity: 0 }}
               transition={{ duration: 0.2 }}
               onClick={e => e.stopPropagation()}
-              className="w-full rounded-xl overflow-hidden flex flex-col"
-              style={{ maxWidth: 560, maxHeight: '90vh', background: '#13111a', border: '1px solid #2d2b3d' }}
+              className="w-full rounded-xl overflow-hidden flex flex-col bg-white dark:bg-[#13111a] border border-gray-200 dark:border-[#2d2b3d]"
+              style={{ maxWidth: 560, maxHeight: '90vh' }}
             >
               {/* Modal Header */}
-              <div className="flex items-center justify-between px-6 py-4 shrink-0" style={{ borderBottom: '1px solid #2d2b3d' }}>
-                <h2 className="font-bold text-white text-lg flex items-center gap-2">
-                  <Settings size={18} className="text-violet-400" /> Configurações do CRM
+              <div className="flex items-center justify-between px-6 py-4 shrink-0 border-b border-gray-200 dark:border-[#2d2b3d]">
+                <h2 className="font-bold text-gray-900 dark:text-white text-lg flex items-center gap-2">
+                  <Settings size={18} className="text-violet-500" /> Configurações do CRM
                 </h2>
-                <button onClick={() => setIsTelefonySettingsOpen(false)} className="p-2 rounded-lg hover:bg-white/5 text-gray-400 hover:text-white transition-colors">
+                <button onClick={() => setIsTelefonySettingsOpen(false)} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors">
                   <X size={18} />
                 </button>
               </div>
 
               {/* Tabs */}
-              <div className="flex items-center gap-1 px-4 pt-3 shrink-0" style={{ borderBottom: '1px solid #2d2b3d' }}>
+              <div className="flex items-center gap-1 px-4 pt-3 shrink-0 border-b border-gray-200 dark:border-[#2d2b3d]">
                 {([
                   { key: 'telefonia', label: 'Telefonia' },
                   { key: 'webhook', label: 'Webhook' },
@@ -4122,11 +5052,11 @@ const CrmComercial = () => {
                   <button
                     key={tab.key}
                     onClick={() => setSettingsTab(tab.key)}
-                    className="px-4 py-2.5 text-sm font-semibold transition-all border-b-2 -mb-px"
-                    style={{
-                      borderColor: settingsTab === tab.key ? '#7c3aed' : 'transparent',
-                      color: settingsTab === tab.key ? '#a78bfa' : '#6b7280',
-                    }}
+                    className={`px-4 py-2.5 text-sm font-semibold transition-all border-b-2 -mb-px ${
+                      settingsTab === tab.key
+                        ? 'border-violet-600 text-violet-600 dark:border-violet-500 dark:text-violet-400'
+                        : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
+                    }`}
                   >
                     {tab.label}
                   </button>
@@ -4184,15 +5114,14 @@ const CrmComercial = () => {
                     <h3 className="text-xs font-bold uppercase tracking-widest mb-4" style={{ color: '#6b7280' }}>Credenciais da Conta</h3>
                     <div className="space-y-4">
                       <div>
-                        <label className="block text-xs mb-1.5" style={{ color: '#9ca3af' }}>Token de Acesso (permanente)</label>
+                        <label className="block text-xs mb-1.5 text-gray-500 dark:text-[#9ca3af]">Token de Acesso (permanente)</label>
                         <input type="password" autoComplete="off" value={settingsForm.api4com_token} onChange={e => setSettingsForm(f => ({ ...f, api4com_token: e.target.value }))} placeholder="YggyHfrLEHAWmKiUFb..."
-                          className="w-full rounded-lg px-3.5 py-2.5 text-sm text-white outline-none transition-all" style={{ background: '#0d0b14', border: '1px solid #2d2b3d' }}
-                          onFocus={e => { e.currentTarget.style.borderColor = '#7c3aed'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(124,58,237,0.15)'; }}
-                          onBlur={e => { e.currentTarget.style.borderColor = '#2d2b3d'; e.currentTarget.style.boxShadow = 'none'; }} />
-                        <p className="text-xs mt-1" style={{ color: '#6b7280' }}>Token com ttl: -1 gerado na Api4Com. Nunca expira.</p>
+                          className="w-full rounded-lg px-3.5 py-2.5 text-sm outline-none transition-all text-gray-900 bg-gray-50 border border-gray-200 focus:border-violet-600 focus:ring-2 focus:ring-violet-600/20 dark:text-white dark:bg-[#0d0b14] dark:border-[#2d2b3d] dark:focus:border-violet-500 dark:focus:ring-violet-500/20"
+                        />
+                        <p className="text-xs mt-1 text-gray-500 dark:text-[#6b7280]">Token com ttl: -1 gerado na Api4Com. Nunca expira.</p>
                       </div>
                       <div>
-                        <label className="block text-xs mb-1.5" style={{ color: '#9ca3af' }}>Domínio da empresa</label>
+                        <label className="block text-xs mb-1.5 text-gray-500 dark:text-[#9ca3af]">Domínio da empresa</label>
                         <input type="text" value={settingsForm.api4com_domain} onChange={e => setSettingsForm(f => ({ ...f, api4com_domain: e.target.value }))}
                           onBlur={e => {
                             const domain = e.target.value.trim();
@@ -4200,9 +5129,9 @@ const CrmComercial = () => {
                               setSettingsForm(f => ({ ...f, sip_server: `wss://${domain}:6443` }));
                             }
                           }}
-                          placeholder="seudominio.api4com.com" className="w-full rounded-lg px-3.5 py-2.5 text-sm text-white outline-none transition-all" style={{ background: '#0d0b14', border: '1px solid #2d2b3d' }}
-                          onFocus={e => { e.currentTarget.style.borderColor = '#7c3aed'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(124,58,237,0.15)'; }} />
-                        <p className="text-xs mt-1" style={{ color: '#6b7280' }}>Domínio criado no cadastro da Api4Com</p>
+                          placeholder="seudominio.api4com.com" className="w-full rounded-lg px-3.5 py-2.5 text-sm outline-none transition-all text-gray-900 bg-gray-50 border border-gray-200 focus:border-violet-600 focus:ring-2 focus:ring-violet-600/20 dark:text-white dark:bg-[#0d0b14] dark:border-[#2d2b3d] dark:focus:border-violet-500 dark:focus:ring-violet-500/20"
+                        />
+                        <p className="text-xs mt-1 text-gray-500 dark:text-[#6b7280]">Domínio criado no cadastro da Api4Com</p>
                       </div>
                     </div>
                   </div>
@@ -4210,37 +5139,34 @@ const CrmComercial = () => {
                     <h3 className="text-xs font-bold uppercase tracking-widest mb-4" style={{ color: '#6b7280' }}>Ramal SIP do Usuário</h3>
                     <div className="space-y-4">
                       <div>
-                        <label className="block text-xs mb-1.5" style={{ color: '#9ca3af' }}>Número do Ramal</label>
+                        <label className="block text-xs mb-1.5 text-gray-500 dark:text-[#9ca3af]">Número do Ramal</label>
                         <input type="text" value={settingsForm.sip_extension} onChange={e => setSettingsForm(f => ({ ...f, sip_extension: e.target.value }))} placeholder="1000"
-                          className="w-full rounded-lg px-3.5 py-2.5 text-sm text-white outline-none transition-all" style={{ background: '#0d0b14', border: '1px solid #2d2b3d' }}
-                          onFocus={e => { e.currentTarget.style.borderColor = '#7c3aed'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(124,58,237,0.15)'; }}
-                          onBlur={e => { e.currentTarget.style.borderColor = '#2d2b3d'; e.currentTarget.style.boxShadow = 'none'; }} />
+                          className="w-full rounded-lg px-3.5 py-2.5 text-sm outline-none transition-all text-gray-900 bg-gray-50 border border-gray-200 focus:border-violet-600 focus:ring-2 focus:ring-violet-600/20 dark:text-white dark:bg-[#0d0b14] dark:border-[#2d2b3d] dark:focus:border-violet-500 dark:focus:ring-violet-500/20"
+                        />
                       </div>
                       <div>
-                        <label className="block text-xs mb-1.5" style={{ color: '#9ca3af' }}>Senha do Ramal</label>
+                        <label className="block text-xs mb-1.5 text-gray-500 dark:text-[#9ca3af]">Senha do Ramal</label>
                         <input type="password" autoComplete="new-password" value={settingsForm.sip_password} onChange={e => setSettingsForm(f => ({ ...f, sip_password: e.target.value }))} placeholder="••••••••"
-                          className="w-full rounded-lg px-3.5 py-2.5 text-sm text-white outline-none transition-all" style={{ background: '#0d0b14', border: '1px solid #2d2b3d' }}
-                          onFocus={e => { e.currentTarget.style.borderColor = '#7c3aed'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(124,58,237,0.15)'; }}
-                          onBlur={e => { e.currentTarget.style.borderColor = '#2d2b3d'; e.currentTarget.style.boxShadow = 'none'; }} />
+                          className="w-full rounded-lg px-3.5 py-2.5 text-sm outline-none transition-all text-gray-900 bg-gray-50 border border-gray-200 focus:border-violet-600 focus:ring-2 focus:ring-violet-600/20 dark:text-white dark:bg-[#0d0b14] dark:border-[#2d2b3d] dark:focus:border-violet-500 dark:focus:ring-violet-500/20"
+                        />
                       </div>
                       <div>
                         <div className="flex items-center justify-between mb-1.5">
-                          <label className="block text-xs" style={{ color: '#9ca3af' }}>Servidor WSS</label>
+                          <label className="block text-xs text-gray-500 dark:text-[#9ca3af]">Servidor WSS</label>
                           {settingsForm.api4com_domain && (
                             <button onClick={() => setSettingsForm(f => ({ ...f, sip_server: `wss://${settingsForm.api4com_domain}:6443` }))}
-                              className="text-xs px-2 py-0.5 rounded-md transition-all"
-                              style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', color: '#4ade80' }}>
+                              className="text-xs px-2 py-0.5 rounded-md transition-all text-emerald-600 bg-emerald-100/50 border border-emerald-400 dark:bg-emerald-500/10 dark:border-emerald-500/30 dark:text-emerald-400"
+                            >
                               ✓ Usar padrão Api4Com (:6443)
                             </button>
                           )}
                         </div>
                         <input type="text" value={settingsForm.sip_server} onChange={e => setSettingsForm(f => ({ ...f, sip_server: e.target.value }))}
                           placeholder={settingsForm.api4com_domain ? `wss://${settingsForm.api4com_domain}:6443` : 'wss://seudominio.api4com.com:6443'}
-                          className="w-full rounded-lg px-3.5 py-2.5 text-sm outline-none transition-all" style={{ background: '#0d0b14', border: '1px solid #2d2b3d', color: '#9ca3af' }}
-                          onFocus={e => { e.currentTarget.style.borderColor = '#7c3aed'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(124,58,237,0.15)'; }}
-                          onBlur={e => { e.currentTarget.style.borderColor = '#2d2b3d'; e.currentTarget.style.boxShadow = 'none'; }} />
-                        <p className="text-xs mt-1" style={{ color: '#6b7280' }}>
-                          Api4Com usa porta <strong style={{ color: '#a78bfa', fontFamily: 'monospace' }}>:6443</strong> — deixe em branco para usar automaticamente
+                          className="w-full rounded-lg px-3.5 py-2.5 text-sm outline-none transition-all text-gray-900 bg-gray-50 border border-gray-200 focus:border-violet-600 focus:ring-2 focus:ring-violet-600/20 dark:text-white dark:bg-[#0d0b14] dark:border-[#2d2b3d] dark:focus:border-violet-500 dark:focus:ring-violet-500/20"
+                        />
+                        <p className="text-xs mt-1 text-gray-500 dark:text-[#6b7280]">
+                          Api4Com usa porta <strong className="text-violet-600 dark:text-violet-400 font-mono">:6443</strong> — deixe em branco para usar automaticamente
                         </p>
 
                       </div>
@@ -4260,38 +5186,34 @@ const CrmComercial = () => {
                       {testingConnection ? <Loader2 size={14} className="animate-spin" /> : <PhoneCall size={14} />}
                       Testar Conexão
                     </button>
-                    <button onClick={() => setIsTelefonySettingsOpen(false)} className="px-4 py-2.5 rounded-lg text-sm font-semibold transition-all" style={{ background: 'transparent', border: '1px solid #2d2b3d', color: '#9ca3af' }}>
+                    <button onClick={() => setIsTelefonySettingsOpen(false)} className="px-4 py-2.5 rounded-lg text-sm font-semibold transition-all bg-transparent border border-gray-300 dark:border-[#2d2b3d] text-gray-600 dark:text-[#9ca3af] hover:bg-gray-100 dark:hover:bg-white/5">
                       Cancelar
                     </button>
                   </div>
-                </>)}
 
-
-                {/* ── WEBHOOK ── */}
-                {settingsTab === 'webhook' && (
-                  <div className="space-y-5">
+                  <div className="mt-6 pt-6 border-t border-gray-200 dark:border-white/10 space-y-5">
                     <div className="rounded-2xl p-5 space-y-4" style={{ background: 'rgba(124,58,237,0.07)', border: '1px solid rgba(124,58,237,0.18)' }}>
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(124,58,237,0.15)' }}>
                           <span className="text-xl">🔗</span>
                         </div>
                         <div>
-                          <p className="font-bold text-white text-sm">Webhook Api4Com</p>
-                          <p className="text-xs mt-0.5" style={{ color: '#9ca3af' }}>Recebe notificações ao final de cada chamada (duração, gravação, status)</p>
+                          <p className="font-bold text-gray-900 dark:text-white text-sm">Webhook Api4Com</p>
+                          <p className="text-xs mt-0.5 text-gray-500 dark:text-[#9ca3af]">Recebe notificações ao final de cada chamada (duração, gravação, status)</p>
                         </div>
                       </div>
                       <div className="space-y-1.5">
-                        <p className="text-xs font-medium" style={{ color: '#9ca3af' }}>URL do Webhook (GrapeHub)</p>
-                        <div className="flex items-center gap-2 rounded-lg px-3 py-2.5" style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.08)' }}>
-                          <code className="text-xs flex-1 break-all" style={{ color: '#a78bfa' }}>{window.location.origin}/api/api4com/webhook</code>
-                          <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}/api/api4com/webhook`)} className="flex-shrink-0 p-1 rounded hover:bg-white/10 transition-colors" title="Copiar URL">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                        <p className="text-xs font-medium text-gray-500 dark:text-[#9ca3af]">URL do Webhook (GrapeHub)</p>
+                        <div className="flex items-center gap-2 rounded-lg px-3 py-2.5 bg-gray-100 dark:bg-black/30 border border-gray-200 dark:border-white/10">
+                          <code className="text-xs flex-1 break-all text-violet-600 dark:text-violet-400">{window.location.origin}/api/api4com/webhook</code>
+                          <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}/api/api4com/webhook`)} className="flex-shrink-0 p-1 rounded hover:bg-black/5 dark:hover:bg-white/10 transition-colors" title="Copiar URL">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="text-gray-500 dark:text-[#9ca3af]" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                           </button>
                         </div>
                       </div>
-                      <div className="rounded-xl p-3 space-y-1.5" style={{ background: 'rgba(0,0,0,0.2)' }}>
-                        <p className="text-xs font-semibold" style={{ color: '#e5e7eb' }}>Como funciona:</p>
-                        <div className="space-y-1 text-xs" style={{ color: '#9ca3af' }}>
+                      <div className="rounded-xl p-3 space-y-1.5 bg-white dark:bg-black/20">
+                        <p className="text-xs font-semibold text-gray-700 dark:text-[#e5e7eb]">Como funciona:</p>
+                        <div className="space-y-1 text-xs text-gray-500 dark:text-[#9ca3af]">
                           <p>1️⃣ Você clica em ligar → GrapeHub chama o Dialer da Api4Com</p>
                           <p>2️⃣ Api4Com realiza a chamada via SIP</p>
                           <p>3️⃣ Ao finalizar → Api4Com envia POST para esta URL</p>
@@ -4304,9 +5226,9 @@ const CrmComercial = () => {
                         className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold text-white transition-all disabled:opacity-50"
                         style={{ background: webhookResult?.success ? '#16a34a' : '#7c3aed' }}>
                         {webhookRegistering ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <span>🔗</span>}
-                        {webhookResult?.success ? '✓ Webhook Registrado!' : 'Registrar Webhook na Api4Com'}
+                        {webhookResult?.success ? '✓ Webhook Registrado!' : 'Registrar na Api4Com'}
                       </button>
-                      <p className="text-xs" style={{ color: '#6b7280' }}>Atualiza o webhook cadastrado na sua conta Api4Com</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">Atualiza o webhook na conta</p>
                     </div>
                     {webhookResult?.error && (
                       <div className="rounded-xl px-4 py-3 text-sm" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', color: '#fca5a5' }}>
@@ -4318,6 +5240,213 @@ const CrmComercial = () => {
                         ✅ Webhook registrado! A Api4Com vai notificar o GrapeHub após cada chamada.
                       </div>
                     )}
+                  </div>
+                </>)}
+
+                {/* ── WEBHOOKS GERAIS ── */}
+                {settingsTab === 'webhook' && (
+                  <div className="space-y-6">
+                    <div>
+                      <h3 className="text-xs font-bold uppercase tracking-widest mb-1 text-gray-500 dark:text-[#6b7280]">Integrações via Webhook</h3>
+                      <p className="text-xs text-gray-500 dark:text-[#4b5563]">Configure eventos para conectar o CRM a outras plataformas.</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Grupo Whatsapp */}
+                      <div className="rounded-2xl p-5 border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 flex flex-col hover:border-emerald-500/50 transition-colors cursor-pointer group shadow-sm">
+                        <div className="flex items-center gap-3 mb-4">
+                          <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-500">
+                            <span className="text-xl">💬</span>
+                          </div>
+                          <div>
+                            <p className="font-bold text-gray-900 dark:text-white text-sm">Grupo WhatsApp</p>
+                            <p className="text-xs mt-0.5 text-gray-500 dark:text-[#9ca3af]">Avisos de negócios ganhos.</p>
+                          </div>
+                        </div>
+                        {showWebhookConfig === 'whatsapp' ? (
+                          <div className="mt-2 space-y-3 animate-in fade-in slide-in-from-top-2">
+                            <label className="text-xs font-semibold text-gray-700 dark:text-gray-300">URL do Webhook (POST)</label>
+                            <input 
+                              type="url"
+                              value={crmWebhookSettings.whatsapp_webhook_url}
+                              onChange={e => setCrmWebhookSettings({...crmWebhookSettings, whatsapp_webhook_url: e.target.value})}
+                              placeholder="https://seu-webhook.com/..."
+                              className="w-full bg-white dark:bg-black/40 border border-gray-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:border-emerald-500 outline-none"
+                            />
+                            <div className="flex gap-2">
+                              <button 
+                                onClick={() => setShowWebhookConfig(null)}
+                                className="flex-1 py-2 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
+                              >
+                                Cancelar
+                              </button>
+                              <button 
+                                onClick={handleSaveWebhookSettings}
+                                disabled={savingWebhookSettings}
+                                className="flex-[2] py-2 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white transition-colors disabled:opacity-50"
+                              >
+                                {savingWebhookSettings ? 'Salvando...' : 'Salvar URL'}
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="mt-auto">
+                            <button 
+                              onClick={() => setShowWebhookConfig('whatsapp')} 
+                              className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all bg-gray-50 dark:bg-black/30 border border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300 hover:bg-emerald-500 hover:text-white hover:border-emerald-500"
+                            >
+                              {crmWebhookSettings.whatsapp_webhook_url ? '✨ Editar Integração' : 'Configurar Integração'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Notificação Formulário */}
+                      <div className="rounded-2xl p-5 border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 flex flex-col hover:border-blue-500/50 transition-colors cursor-pointer group shadow-sm">
+                        <div className="flex items-center gap-3 mb-4">
+                          <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-blue-100 dark:bg-blue-500/10 text-blue-600 dark:text-blue-500">
+                            <span className="text-xl">📝</span>
+                          </div>
+                          <div>
+                            <p className="font-bold text-gray-900 dark:text-white text-sm">Notificação Formulário</p>
+                            <p className="text-xs mt-0.5 text-gray-500 dark:text-[#9ca3af]">Receber leads externos.</p>
+                          </div>
+                        </div>
+                        {showWebhookConfig === 'form' ? (
+                          <div className="mt-2 space-y-3 animate-in fade-in slide-in-from-top-2">
+                            <label className="text-xs font-semibold text-gray-700 dark:text-gray-300">URL do Webhook (POST)</label>
+                            <input 
+                              type="url"
+                              value={crmWebhookSettings.form_webhook_url}
+                              onChange={e => setCrmWebhookSettings({...crmWebhookSettings, form_webhook_url: e.target.value})}
+                              placeholder="https://seu-webhook.com/..."
+                              className="w-full bg-white dark:bg-black/40 border border-gray-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:border-blue-500 outline-none"
+                            />
+                            <div className="flex gap-2">
+                              <button 
+                                onClick={() => setShowWebhookConfig(null)}
+                                className="flex-1 py-2 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
+                              >
+                                Cancelar
+                              </button>
+                              <button 
+                                onClick={handleSaveWebhookSettings}
+                                disabled={savingWebhookSettings}
+                                className="flex-[2] py-2 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-50"
+                              >
+                                {savingWebhookSettings ? 'Salvando...' : 'Salvar URL'}
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="mt-auto">
+                            <button 
+                              onClick={() => setShowWebhookConfig('form')} 
+                              className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all bg-gray-50 dark:bg-black/30 border border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300 hover:bg-blue-500 hover:text-white hover:border-blue-500"
+                            >
+                              {crmWebhookSettings.form_webhook_url ? '✨ Editar Integração' : 'Configurar Integração'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      
+                      {/* Recebimento Inbound (Portal Leads) */}
+                      <div className="rounded-2xl p-5 border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 flex flex-col hover:border-violet-500/50 transition-colors cursor-pointer group shadow-sm md:col-span-2">
+                        <div className="flex items-center gap-3 mb-4">
+                          <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-violet-100 dark:bg-violet-500/10 text-violet-600 dark:text-violet-500">
+                            <span className="text-xl">📥</span>
+                          </div>
+                          <div>
+                            <p className="font-bold text-gray-900 dark:text-white text-sm">Receber Leads (Inbound)</p>
+                            <p className="text-xs mt-0.5 text-gray-500 dark:text-[#9ca3af]">Crie leads automaticamente injetando dados via JSON POST no CRM.</p>
+                          </div>
+                        </div>
+                        {showWebhookConfig === 'inbound' ? (
+                          <div className="mt-2 space-y-4 animate-in fade-in slide-in-from-top-2">
+                            <div className="p-3 bg-gray-50 dark:bg-black/30 rounded-lg border border-gray-200 dark:border-white/5">
+                              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">Sua URL Exclusiva (POST JSON)</label>
+                              <div className="flex items-center gap-2">
+                                <input 
+                                  type="text" 
+                                  readOnly 
+                                  value={`${window.location.origin}/api/public/webhooks/inbound/${crmWebhookSettings.inbound_token}`}
+                                  className="w-full bg-transparent text-xs text-gray-600 dark:text-gray-300 outline-none selection:bg-violet-500/30"
+                                />
+                                <button
+                                  onClick={(e) => {
+                                    navigator.clipboard.writeText(`${window.location.origin}/api/public/webhooks/inbound/${crmWebhookSettings.inbound_token}`);
+                                    const btn = e.currentTarget;
+                                    const oldHtml = btn.innerHTML;
+                                    btn.innerHTML = '<span class="text-emerald-500"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>';
+                                    setTimeout(() => btn.innerHTML = oldHtml, 2000);
+                                  }}
+                                  className="p-1.5 hover:bg-gray-200 dark:hover:bg-white/10 rounded-md transition-colors"
+                                  title="Copiar URL"
+                                >
+                                  <Copy size={14} className="text-gray-500" />
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 block mb-1.5">Kanban de Destino</label>
+                                <select 
+                                  value={crmWebhookSettings.inbound_kanban_id || ''}
+                                  onChange={e => setCrmWebhookSettings({...crmWebhookSettings, inbound_kanban_id: e.target.value, inbound_coluna: ''})}
+                                  className="w-full bg-white dark:bg-black/40 border border-gray-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:border-violet-500 outline-none"
+                                >
+                                  <option value="">Selecione...</option>
+                                  {kanbans.map((k:any) => (
+                                    <option key={k.id} value={k.id}>{k.nome}</option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              <div>
+                                <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 block mb-1.5">Coluna de Destino</label>
+                                <select 
+                                  value={crmWebhookSettings.inbound_coluna || ''}
+                                  onChange={e => setCrmWebhookSettings({...crmWebhookSettings, inbound_coluna: e.target.value})}
+                                  disabled={!crmWebhookSettings.inbound_kanban_id}
+                                  className="w-full bg-white dark:bg-black/40 border border-gray-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:border-violet-500 outline-none disabled:opacity-50"
+                                >
+                                  <option value="">Selecione...</option>
+                                  {inboundColumns.sort((a,b) => Number(a.order_index) - Number(b.order_index)).map((c:any) => (
+                                    <option key={c.id} value={c.title}>{c.title}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+                            
+                            <div className="flex gap-2 pt-2">
+                              <button 
+                                onClick={() => setShowWebhookConfig(null)}
+                                className="flex-1 py-2 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
+                              >
+                                Fechar
+                              </button>
+                              <button 
+                                onClick={handleSaveWebhookSettings}
+                                disabled={savingWebhookSettings || !crmWebhookSettings.inbound_kanban_id || !crmWebhookSettings.inbound_coluna}
+                                className="flex-[2] py-2 rounded-lg text-xs font-semibold bg-violet-600 hover:bg-violet-700 text-white transition-colors disabled:opacity-50"
+                              >
+                                {savingWebhookSettings ? 'Salvando...' : 'Salvar Destino'}
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="mt-auto">
+                            <button 
+                              onClick={() => setShowWebhookConfig('inbound')} 
+                              className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all bg-gray-50 dark:bg-black/30 border border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300 hover:bg-violet-500 hover:text-white hover:border-violet-500"
+                            >
+                              {crmWebhookSettings.inbound_kanban_id && crmWebhookSettings.inbound_coluna ? '✨ Editar Roteamento (Ativo)' : 'Configurar Roteamento'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -4339,20 +5468,19 @@ const CrmComercial = () => {
                 {settingsTab === 'motivos-perda' && (
                   <div className="space-y-5">
                     <div>
-                      <h3 className="text-xs font-bold uppercase tracking-widest mb-1" style={{ color: '#6b7280' }}>Motivos de Perda</h3>
-                      <p className="text-xs" style={{ color: '#4b5563' }}>Cadastre os motivos pelos quais os negócios são perdidos.</p>
+                      <h3 className="text-xs font-bold uppercase tracking-widest mb-1 text-gray-500 dark:text-[#6b7280]">Motivos de Perda</h3>
+                      <p className="text-xs text-gray-500 dark:text-[#4b5563]">Cadastre os motivos pelos quais os negócios são perdidos.</p>
                     </div>
 
                     {/* Add Form */}
-                    <div className="rounded-xl p-4 space-y-3" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid #2d2b3d' }}>
-                      <p className="text-xs font-semibold" style={{ color: '#9ca3af' }}>Novo Motivo</p>
+                    <div className="rounded-xl p-4 space-y-3 bg-gray-50 border border-gray-200 dark:bg-white/5 dark:border-[#2d2b3d]">
+                      <p className="text-xs font-semibold text-gray-500 dark:text-[#9ca3af]">Novo Motivo</p>
                       <div className="flex gap-2 items-center">
                         <input
                           type="color"
                           value={newLossReason.color}
                           onChange={e => setNewLossReason(f => ({ ...f, color: e.target.value }))}
-                          className="w-9 h-9 rounded-lg cursor-pointer border-0 p-0.5"
-                          style={{ background: '#0d0b14', border: '1px solid #2d2b3d' }}
+                          className="w-9 h-9 rounded-lg cursor-pointer p-0.5 bg-white dark:bg-[#0d0b14] border border-gray-200 dark:border-[#2d2b3d]"
                           title="Cor do motivo"
                         />
                         <input
@@ -4361,10 +5489,7 @@ const CrmComercial = () => {
                           onChange={e => setNewLossReason(f => ({ ...f, name: e.target.value }))}
                           onKeyDown={e => e.key === 'Enter' && handleCreateLossReason()}
                           placeholder="Ex: Preço alto, Concorrência..."
-                          className="flex-1 rounded-lg px-3.5 py-2.5 text-sm text-white outline-none transition-all"
-                          style={{ background: '#0d0b14', border: '1px solid #2d2b3d' }}
-                          onFocus={e => { e.currentTarget.style.borderColor = '#7c3aed'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(124,58,237,0.15)'; }}
-                          onBlur={e => { e.currentTarget.style.borderColor = '#2d2b3d'; e.currentTarget.style.boxShadow = 'none'; }}
+                          className="flex-1 rounded-lg px-3.5 py-2.5 text-sm outline-none transition-all text-gray-900 dark:text-white bg-white dark:bg-[#0d0b14] border border-gray-200 dark:border-[#2d2b3d] focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20"
                         />
                         <button
                           onClick={handleCreateLossReason}
@@ -4381,10 +5506,7 @@ const CrmComercial = () => {
                         value={newLossReason.description}
                         onChange={e => setNewLossReason(f => ({ ...f, description: e.target.value }))}
                         placeholder="Descrição (opcional)"
-                        className="w-full rounded-lg px-3.5 py-2 text-sm outline-none transition-all"
-                        style={{ background: '#0d0b14', border: '1px solid #2d2b3d', color: '#9ca3af' }}
-                        onFocus={e => { e.currentTarget.style.borderColor = '#7c3aed'; }}
-                        onBlur={e => { e.currentTarget.style.borderColor = '#2d2b3d'; }}
+                        className="w-full rounded-lg px-3.5 py-2 text-sm outline-none transition-all text-gray-600 dark:text-gray-400 bg-white dark:bg-[#0d0b14] border border-gray-200 dark:border-[#2d2b3d] focus:border-violet-500 focus:ring-1 focus:ring-violet-500"
                       />
                     </div>
 

@@ -220,6 +220,18 @@ const AppContent: React.FC = () => {
     );
   }
 
+  // Bypass Auth for Public Forms
+  if (window.location.pathname.startsWith('/f/')) {
+    const leadId = window.location.pathname.split('/').pop() || '';
+    // Import dynamically or inline
+    const PublicFormModule = React.lazy(() => import('./src/pages/PublicForm'));
+    return (
+      <React.Suspense fallback={<div className="min-h-screen bg-slate-950 flex items-center justify-center"><LoadingSpinner size="lg" /></div>}>
+        <PublicFormModule leadId={leadId} />
+      </React.Suspense>
+    );
+  }
+
   if (!user) {
     return <Login />;
   }
