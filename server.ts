@@ -632,6 +632,7 @@ async function startServer() {
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS form_cidade TEXT`);
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS form_estado TEXT`);
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS form_cnpj_cpf TEXT`);
+    await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS forma_pagamento TEXT`);
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS utm_platform TEXT`);
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS utm_campaign TEXT`);
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS utm_set TEXT`);
@@ -4792,12 +4793,9 @@ app.get("/api/todos", async (req, res) => {
   app.post("/api/public/webhooks/inbound/:token", async (req, res) => {
     try {
       const { token } = req.params;
-      const { 
-        nome, telefone, nicho, origem, instagram, tags, forma_pagamento, valor,
-        email, faturamento, tempo_advocacia, investimento, 
-        utm_source, utm_medium, utm_campaign, umt_campaign, formulario 
-      } = req.body;
-      
+      const body = req.body || {};
+
+      const nome = body.nome || body.NOME || body.name || '';
       if (!nome) return res.status(400).json({ error: "Campo 'nome' é obrigatório" });
 
       const hookSettings = await pool.query(`
@@ -4814,26 +4812,43 @@ app.get("/api/todos", async (req, res) => {
       const { inbound_kanban_id, inbound_coluna, user_id } = hookSettings.rows[0];
 
       if (!inbound_kanban_id || !inbound_coluna) {
-         return res.status(400).json({ error: "Destino do lead (Kanban e Coluna) não foi configurado pelo proprietário deste token nas configurações do CRM." });
+        return res.status(400).json({ error: "Destino do lead (Kanban e Coluna) não foi configurado pelo proprietário deste token nas configurações do CRM." });
       }
 
-      const finalCampaign = utm_campaign || umt_campaign || '';
-      const finalOrigem = origem || formulario || 'Inbound Webhook';
+      // Mapa de campos conhecidos: { coluna_db: valor_do_body }
+      // Qualquer campo extra enviado pelo form é ignorado automaticamente.
+      const finalCampaign = body.utm_campaign || body.umt_campaign || '';
+      const finalOrigem   = body.origem || body.formulario || body.source || 'Inbound Webhook';
+      const tags          = body.tags;
+
+      const knownFields: Record<string, any> = {
+        nome,
+        telefone:       body.telefone || body.TELEFONE || body.phone || '',
+        nicho:          body.nicho    || body.NICHO    || '',
+        origem:         finalOrigem,
+        responsavel_id: user_id,
+        instagram:      body.instagram || '',
+        forma_pagamento:body.forma_pagamento || '',
+        valor:          Number(body.valor) || 0,
+        tags:           JSON.stringify(Array.isArray(tags) ? tags : []),
+        kanban_id:      inbound_kanban_id,
+        coluna:         inbound_coluna,
+        email:          body.email    || body.EMAIL    || '',
+        faturamento:    body.faturamento || body.FATURAMENTO || '',
+        tempo_oab:      body.tempo_oab || body.tempo_advocacia || body['TEMPO DE ADV'] || '',
+        investimento:   body.investimento || body.INVESTIMENTO || '',
+        utm_platform:   body.utm_source  || body.utm_platform  || '',
+        utm_position:   body.utm_medium  || body.utm_position  || '',
+        utm_campaign:   finalCampaign,
+      };
+
+      const columns = Object.keys(knownFields);
+      const values  = Object.values(knownFields);
+      const placeholders = columns.map((_, i) => `$${i + 1}`).join(', ');
 
       const insertResult = await pool.query(
-        `INSERT INTO crm_comercial_leads (
-          nome, telefone, nicho, origem, responsavel_id, instagram, 
-          forma_pagamento, valor, tags, kanban_id, coluna,
-          email, faturamento, tempo_oab, investimento,
-          utm_platform, utm_position, utm_campaign
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING *`,
-        [
-          nome, telefone || '', nicho || '', finalOrigem, user_id, 
-          instagram || '', forma_pagamento || '', valor || 0,
-          JSON.stringify(Array.isArray(tags) ? tags : []), inbound_kanban_id, inbound_coluna,
-          email || '', faturamento || '', tempo_advocacia || '', investimento || '',
-          utm_source || '', utm_medium || '', finalCampaign
-        ]
+        `INSERT INTO crm_comercial_leads (${columns.join(', ')}) VALUES (${placeholders}) RETURNING *`,
+        values
       );
 
       const newLead = insertResult.rows[0];
@@ -4844,14 +4859,14 @@ app.get("/api/todos", async (req, res) => {
            VALUES ($1, 'whatsapp_trigger', $2, $3)`,
           [newLead.id, 'Recebido via Webhook CRM 📥', 'Automação Inbound']
         );
-      } catch (e) {
+      } catch (e: any) {
         console.error("Erro inserindo historico de inbound webhook:", e.message);
       }
 
       res.status(201).json({ success: true, lead: newLead });
     } catch (err) {
-      console.error("Falha no inbound webhook:", err);
-      res.status(500).json({ error: "Erro interno no processamento do webhook" });
+      console.error("Falha no inbound webhook:", err instanceof Error ? err.message : String(err));
+      res.status(500).json({ error: "Erro interno no processamento do webhook", detail: err instanceof Error ? err.message : String(err) });
     }
   });
 
