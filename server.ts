@@ -4866,8 +4866,8 @@ app.get("/api/todos", async (req, res) => {
         utm_platform:   body.utm_source  || body.utm_platform  || '',  // Plataforma
         utm_campaign:   finalCampaign,                                  // Campanha
         utm_set:        body.utm_medium  || body.utm_set       || '',  // Conjunto
-        utm_creative:   body.utm_content || body.utm_term      || body.utm_creative  || '',  // Criativo
-        utm_position:   body.utm_position || '',                        // Posicionamento
+        utm_creative:   body.utm_content  || body.utm_creative  || '',  // Criativo    ← utm_content
+        utm_position:   body.utm_term     || body.utm_position  || '',  // Posicionamento ← utm_term
       };
 
       const columns = Object.keys(knownFields);
