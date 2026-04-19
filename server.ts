@@ -4815,11 +4815,33 @@ app.get("/api/todos", async (req, res) => {
         return res.status(400).json({ error: "Destino do lead (Kanban e Coluna) não foi configurado pelo proprietário deste token nas configurações do CRM." });
       }
 
+      // Resolver o ID real da coluna (inbound_coluna pode ser nome ou UUID)
+      let resolvedColuna = inbound_coluna;
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(inbound_coluna);
+      if (!isUUID) {
+        // É um nome de coluna — buscar o ID correspondente
+        const colResult = await pool.query(
+          `SELECT id FROM crm_comercial_columns WHERE kanban_id = $1 AND LOWER(title) = LOWER($2) LIMIT 1`,
+          [inbound_kanban_id, inbound_coluna]
+        );
+        if (colResult.rows.length > 0) {
+          resolvedColuna = colResult.rows[0].id;
+        } else {
+          // Fallback: usar a primeira coluna do kanban
+          const firstCol = await pool.query(
+            `SELECT id FROM crm_comercial_columns WHERE kanban_id = $1 ORDER BY order_index ASC LIMIT 1`,
+            [inbound_kanban_id]
+          );
+          if (firstCol.rows.length > 0) resolvedColuna = firstCol.rows[0].id;
+        }
+      }
+
       // Mapa de campos conhecidos: { coluna_db: valor_do_body }
       // Qualquer campo extra enviado pelo form é ignorado automaticamente.
       const finalCampaign = body.utm_campaign || body.umt_campaign || '';
       const finalOrigem   = body.origem || body.formulario || body.source || 'Inbound Webhook';
       const tags          = body.tags;
+
 
       const knownFields: Record<string, any> = {
         nome,
@@ -4832,7 +4854,7 @@ app.get("/api/todos", async (req, res) => {
         valor:          Number(body.valor) || 0,
         tags:           JSON.stringify(Array.isArray(tags) ? tags : []),
         kanban_id:      inbound_kanban_id,
-        coluna:         inbound_coluna,
+        coluna:         resolvedColuna,
         email:          body.email    || body.EMAIL    || '',
         faturamento:    body.faturamento || body.FATURAMENTO || '',
         tempo_oab:      body.tempo_oab || body.tempo_advocacia || body['TEMPO DE ADV'] || '',
