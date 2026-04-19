@@ -4859,9 +4859,12 @@ app.get("/api/todos", async (req, res) => {
         faturamento:    body.faturamento || body.FATURAMENTO || '',
         tempo_oab:      body.tempo_oab || body.tempo_advocacia || body['TEMPO DE ADV'] || '',
         investimento:   body.investimento || body.INVESTIMENTO || '',
-        utm_platform:   body.utm_source  || body.utm_platform  || '',
-        utm_position:   body.utm_medium  || body.utm_position  || '',
-        utm_campaign:   finalCampaign,
+        // UTMs: campo_body → coluna_db (exibição no CRM)
+        utm_platform:   body.utm_source  || body.utm_platform  || '',  // Plataforma
+        utm_campaign:   finalCampaign,                                  // Campanha
+        utm_set:        body.utm_medium  || body.utm_set       || '',  // Conjunto
+        utm_creative:   body.utm_content || body.utm_creative  || '',  // Criativo
+        utm_position:   body.utm_term    || body.utm_position  || '',  // Posicionamento
       };
 
       const columns = Object.keys(knownFields);
