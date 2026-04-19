@@ -4839,7 +4839,10 @@ app.get("/api/todos", async (req, res) => {
       // Mapa de campos conhecidos: { coluna_db: valor_do_body }
       // Qualquer campo extra enviado pelo form é ignorado automaticamente.
       const finalCampaign = body.utm_campaign || body.umt_campaign || '';
-      const finalOrigem   = body.origem || body.formulario || body.source || 'Inbound Webhook';
+      const utmPlatform   = body.utm_source || body.utm_platform || '';
+      // Auto-origem: se a plataforma for FacebookAds → "Meta ads"
+      const autoOrigem    = utmPlatform.toLowerCase() === 'facebookads' ? 'Meta ads' : '';
+      const finalOrigem   = body.origem || autoOrigem || body.formulario || body.source || 'Inbound Webhook';
       const tags          = body.tags;
 
 
@@ -4863,8 +4866,8 @@ app.get("/api/todos", async (req, res) => {
         utm_platform:   body.utm_source  || body.utm_platform  || '',  // Plataforma
         utm_campaign:   finalCampaign,                                  // Campanha
         utm_set:        body.utm_medium  || body.utm_set       || '',  // Conjunto
-        utm_creative:   body.utm_content || body.utm_creative  || '',  // Criativo
-        utm_position:   body.utm_term    || body.utm_position  || '',  // Posicionamento
+        utm_creative:   body.utm_content || body.utm_term      || body.utm_creative  || '',  // Criativo
+        utm_position:   body.utm_position || '',                        // Posicionamento
       };
 
       const columns = Object.keys(knownFields);
