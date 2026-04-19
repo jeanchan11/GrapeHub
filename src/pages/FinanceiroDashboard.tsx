@@ -76,22 +76,19 @@ interface Receita extends Despesa {
 const StatCard = ({ icon: Icon, title, value, subtitle, colorClass, isNegative = false }: { 
   icon: any, title: string, value: string, subtitle?: string | React.ReactNode, colorClass: string, isNegative?: boolean
 }) => (
-  <div className={`${designSystem.card.base} p-6 relative overflow-hidden transition-all flex flex-col min-h-[160px]`}>
-    <div className="absolute top-5 right-5 text-gray-400 dark:text-gray-500 cursor-pointer hover:text-gray-600 dark:hover:text-gray-300">
-      <MoreVertical size={18} />
-    </div>
-    <div className="flex items-center gap-3 mb-4">
+  <div className="bg-dark-card border border-white/10 rounded-2xl p-6 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[160px]">
+    <div className="flex items-center justify-between mb-4">
       <div className={`p-2.5 rounded-2xl ${colorClass}`}>
         <Icon size={20} className="text-white" />
       </div>
-      <p className={designSystem.typography.label}>{title}</p>
+      <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">{title}</p>
     </div>
     <div className="flex flex-col mt-auto">
-      <h3 className={`text-3xl font-bold tracking-tight mb-3 ${isNegative ? 'text-red-500/80 dark:text-red-400/80' : 'text-gray-900 dark:text-white'}`}>
+      <h3 className={`text-3xl font-black tracking-tight mb-3 ${isNegative ? 'text-red-500/80 dark:text-red-400/80' : 'text-dark-text'}`}>
         {value}
       </h3>
       {subtitle && (
-        <div className="pt-3 border-t border-gray-100 dark:border-neutral-800 darker:border-neutral-900">
+        <div className="pt-3 border-t border-white/10">
           {subtitle}
         </div>
       )}
@@ -142,31 +139,31 @@ const CollapsibleGroup = ({ category, items, total, icon, formatCurrency }: any)
   const [isOpen, setIsOpen] = useState(false);
   
   return (
-    <div className="mb-2 border border-slate-100 dark:border-white/5 rounded-xl overflow-hidden">
+    <div className="mb-2 border border-white/10 rounded-xl overflow-hidden">
       <button 
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between p-4 bg-white dark:bg-white/5 hover:bg-slate-50 dark:hover:bg-white/10 transition-colors"
+        className="w-full flex items-center justify-between p-4 bg-dark-card hover:bg-dark-card-hover transition-colors"
       >
         <div className="flex items-center gap-3">
           <span className="text-xl">{icon}</span>
-          <span className="text-sm font-bold text-slate-900 dark:text-white">{category}</span>
+          <span className="text-sm font-bold text-dark-text">{category}</span>
           <span className="text-[10px] text-slate-500 font-normal ml-2">{items.length} itens</span>
         </div>
         <div className="flex items-center gap-4">
-          <span className="text-sm font-bold text-slate-900 dark:text-white">{formatCurrency(total)}</span>
+          <span className="text-sm font-bold text-dark-text">{formatCurrency(total)}</span>
           {isOpen ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
         </div>
       </button>
       
       {isOpen && (
-        <div className="bg-slate-50/50 dark:bg-black/20 p-2 space-y-1 border-t border-slate-100 dark:border-white/5">
+        <div className="bg-dark-bg p-2 space-y-1 border-t border-white/10">
           {items.map((item, idx) => (
-            <div key={idx} className="flex items-center justify-between p-3 hover:bg-white dark:hover:bg-white/5 rounded-lg transition-colors">
+            <div key={idx} className="flex items-center justify-between p-3 hover:bg-dark-card rounded-lg transition-colors">
               <div className="flex flex-col">
-                <span className="text-xs font-medium text-slate-900 dark:text-white">{item.description}</span>
+                <span className="text-xs font-medium text-dark-text">{item.description}</span>
                 <span className="text-[10px] text-slate-500">{item.date}</span>
               </div>
-              <span className="text-xs font-bold text-slate-900 dark:text-white">{formatCurrency(item.value)}</span>
+              <span className="text-xs font-bold text-dark-text">{formatCurrency(item.value)}</span>
             </div>
           ))}
         </div>
@@ -492,7 +489,7 @@ export default function FinanceiroDashboard() {
   const totalDespesasMes = valorPago + valorAPagar;
 
   return (
-    <div className="min-h-screen p-8 font-sans text-slate-800 dark:text-white transition-colors duration-300">
+    <div className="min-h-screen bg-dark-bg p-8 font-sans text-dark-text transition-colors duration-300">
       <div className="max-w-[1600px] mx-auto space-y-6">
         
         {/* Header */}
@@ -501,7 +498,7 @@ export default function FinanceiroDashboard() {
           titleAccent="ceiro" 
           subtitle="Gestão integrada de caixa e indicadores de saúde do negócio"
         >
-          <div className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-[#1a1a1a] darker:bg-[#0d0d0d] border border-gray-100 dark:border-neutral-800 darker:border-neutral-900 rounded-xl shadow-sm">
+          <div className="flex items-center gap-2 px-4 py-2 bg-dark-card border border-white/10 rounded-xl">
             <Calendar size={16} className="text-gray-500" />
             <span className="text-sm font-bold text-gray-700 dark:text-gray-300">Abril 2026</span>
           </div>
@@ -509,15 +506,15 @@ export default function FinanceiroDashboard() {
 
         {/* Tabs */}
         <div className="flex mb-8">
-          <div className="inline-flex items-center p-1.5 bg-gray-50 dark:bg-neutral-900 darker:bg-black rounded-full border border-gray-100 dark:border-neutral-800 darker:border-neutral-900 shadow-sm">
+          <div className="inline-flex items-center p-1.5 bg-dark-bg border border-white/10 rounded-full">
             {['Visão Geral', 'Despesas', 'Inadimplentes', 'Clientes'].map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
                 className={`relative flex items-center px-6 py-2.5 text-sm font-bold rounded-full transition-all duration-200 ${
                   activeTab === tab 
-                    ? 'bg-white dark:bg-[#1a1a1a] darker:bg-[#0d0d0d] text-gray-900 dark:text-white shadow-sm' 
-                    : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                    ? 'bg-dark-card text-dark-text shadow-sm' 
+                    : 'text-slate-500 hover:text-dark-text'
                 }`}
               >
                 {tab}
@@ -619,7 +616,7 @@ export default function FinanceiroDashboard() {
 
         {/* Linha 2 - Gráficos */}
         <div className="grid grid-cols-1 gap-6">
-          <div className="bg-white/80 dark:bg-dark-bg/80 p-6 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm">
+          <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200">
             <div className="mb-6">
               <h2 className="text-lg font-bold text-slate-900 dark:text-white">Movimentação Diária</h2>
               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Entradas (Verde) vs Saídas (Vermelho)</p>
@@ -655,7 +652,7 @@ export default function FinanceiroDashboard() {
               </ResponsiveContainer>
             </div>
           </div>
-          <div className="bg-white/80 dark:bg-dark-bg/80 p-6 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm">
+          <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200">
             <div className="flex justify-between items-start mb-6">
               <div>
                 <h2 className="text-lg font-bold text-slate-900 dark:text-white">Saúde do Caixa Diário</h2>
@@ -677,14 +674,14 @@ export default function FinanceiroDashboard() {
         {/* Linha 3 - Clientes e Inadimplência */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Clientes Recentes */}
-          <div className="bg-white/80 dark:bg-dark-bg/80 p-6 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm flex flex-col">
+          <div className="bg-dark-card border border-white/10 rounded-2xl p-6 flex flex-col transition-colors duration-200">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-widest">Clientes recentes</h2>
               <button className="text-[10px] font-bold text-[#7C3AED] uppercase tracking-widest hover:underline">ver todos</button>
             </div>
             <div className="flex-1 overflow-y-auto pr-2 space-y-4 max-h-[300px]">
               {clientes.map((cliente, idx) => (
-                <div key={idx} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-white/5 rounded-xl border border-slate-200 dark:border-white/5">
+                <div key={idx} className="flex items-center justify-between p-3 bg-dark-bg border border-white/10 rounded-xl">
                   <div className="flex items-center gap-3">
                     <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white ${getStatusDotColor(cliente.status)}`}>
                       {getInitials(cliente.fantasy_name || cliente.name)}
@@ -709,21 +706,21 @@ export default function FinanceiroDashboard() {
           </div>
 
           {/* Inadimplência */}
-          <div className="bg-white/80 dark:bg-dark-bg/80 p-6 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm flex flex-col">
+          <div className="bg-dark-card border border-white/10 rounded-2xl p-6 flex flex-col transition-colors duration-200">
             <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-widest mb-6">Inadimplência</h2>
             <div className="space-y-4 flex-1">
-              <div className="flex justify-between items-center p-4 bg-slate-50 dark:bg-white/5 rounded-xl border border-slate-200 dark:border-white/5">
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Clientes atrasados</span>
-                <span className="text-xl font-bold text-slate-900 dark:text-white">{inadimplentes.length}</span>
-              </div>
-              <div className="flex justify-between items-center p-4 bg-slate-50 dark:bg-white/5 rounded-xl border border-slate-200 dark:border-white/5">
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Valor em risco</span>
-                <span className="text-xl font-bold text-[#DC2626]">{formatCurrency(totalInadimplencia)}</span>
-              </div>
-              <div className="flex justify-between items-center p-4 bg-slate-50 dark:bg-white/5 rounded-xl border border-slate-200 dark:border-white/5">
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Maior atraso</span>
-                <span className="text-xl font-bold text-slate-900 dark:text-white">{maxAtraso} dias</span>
-              </div>
+            <div className="flex justify-between items-center p-4 bg-dark-bg border border-white/10 rounded-xl">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Clientes atrasados</span>
+              <span className="text-xl font-black text-dark-text">{inadimplentes.length}</span>
+            </div>
+            <div className="flex justify-between items-center p-4 bg-dark-bg border border-white/10 rounded-xl">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Valor em risco</span>
+              <span className="text-xl font-black text-red-500">{formatCurrency(totalInadimplencia)}</span>
+            </div>
+            <div className="flex justify-between items-center p-4 bg-dark-bg border border-white/10 rounded-xl">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Maior atraso</span>
+              <span className="text-xl font-black text-dark-text">{maxAtraso} dias</span>
+            </div>
             </div>
             <button className="w-full mt-6 py-3 bg-[#EDE9FE] dark:bg-[#7C3AED]/20 text-[#7C3AED] dark:text-[#A78BFA] font-bold text-[11px] uppercase tracking-widest rounded-xl hover:bg-[#DDD6FE] dark:hover:bg-[#7C3AED]/30 transition-colors">
               Ver inadimplentes
@@ -751,31 +748,31 @@ export default function FinanceiroDashboard() {
 
                 return (
                   <>
-                    <div className={`${designSystem.card.base} p-5`}>
-                      <p className={designSystem.typography.label}>Total Previsto</p>
+                    <div className="bg-dark-card border border-white/10 rounded-2xl p-5 transition-colors duration-200">
+                      <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Total Previsto</p>
                       <div className="flex items-center justify-between mt-1">
-                        <h3 className="text-2xl font-bold text-gray-900 dark:text-white">{formatCurrency(totalPrevisto)}</h3>
-                        <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-[10px] font-bold rounded-full uppercase tracking-wider">a pagar</span>
+                        <h3 className="text-2xl font-black text-dark-text">{formatCurrency(totalPrevisto)}</h3>
+                        <span className="px-2 py-0.5 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 text-[10px] font-bold rounded-full uppercase tracking-wider">a pagar</span>
                       </div>
                     </div>
-                    <div className={`${designSystem.card.base} p-5`}>
-                      <p className={designSystem.typography.label}>Já Pago</p>
+                    <div className="bg-dark-card border border-white/10 rounded-2xl p-5 transition-colors duration-200">
+                      <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Já Pago</p>
                       <div className="flex items-center justify-between mt-1">
-                        <h3 className="text-2xl font-bold text-gray-900 dark:text-white">{formatCurrency(jaPago)}</h3>
-                        <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-full uppercase tracking-wider">conciliado</span>
+                        <h3 className="text-2xl font-black text-dark-text">{formatCurrency(jaPago)}</h3>
+                        <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-[10px] font-bold rounded-full uppercase tracking-wider">conciliado</span>
                       </div>
                     </div>
-                    <div className={`${designSystem.card.base} p-5`}>
-                      <p className={designSystem.typography.label}>Operacional Real</p>
+                    <div className="bg-dark-card border border-white/10 rounded-2xl p-5 transition-colors duration-200">
+                      <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Operacional Real</p>
                       <div className="flex items-center justify-between mt-1">
-                        <h3 className="text-2xl font-bold text-gray-900 dark:text-white">{formatCurrency(operacionalReal)}</h3>
-                        <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-[10px] font-bold rounded-full uppercase tracking-wider">excl. distribuição</span>
+                        <h3 className="text-2xl font-black text-dark-text">{formatCurrency(operacionalReal)}</h3>
+                        <span className="px-2 py-0.5 bg-dark-bg text-slate-500 text-[10px] font-bold rounded-full uppercase tracking-wider border border-white/10">excl. distribuição</span>
                       </div>
                     </div>
-                    <div className="bg-white/80 dark:bg-dark-bg/80 p-5 rounded-3xl border-2 border-rose-500/20 dark:border-rose-500/40 shadow-sm">
+                    <div className="bg-dark-card border-2 border-rose-500/30 rounded-2xl p-5 transition-colors duration-200">
                       <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Vence Hoje/Amanhã</p>
                       <div className="flex items-center justify-between">
-                        <h3 className="text-2xl font-bold text-rose-600 dark:text-rose-400">{formatCurrency(venceHojeAmanha)}</h3>
+                        <h3 className="text-2xl font-black text-rose-500">{formatCurrency(venceHojeAmanha)}</h3>
                         <span className="px-2 py-0.5 bg-rose-600 text-white text-[10px] font-bold rounded-full uppercase tracking-wider">urgente</span>
                       </div>
                     </div>
@@ -786,9 +783,9 @@ export default function FinanceiroDashboard() {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Painel Esquerdo - Despesas Pagas Agrupadas */}
-              <div className="bg-white/80 dark:bg-dark-bg/80 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm overflow-hidden flex flex-col">
-                <div className="p-6 border-b border-slate-100 dark:border-white/5 flex justify-between items-center">
-                  <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-widest">Despesas pagas</h2>
+              <div className="bg-dark-card border border-white/10 rounded-2xl overflow-hidden flex flex-col transition-colors duration-200">
+                <div className="p-6 border-b border-white/10 flex justify-between items-center">
+                  <h2 className="text-sm font-bold text-dark-text uppercase tracking-widest">Despesas pagas</h2>
                   <span className="px-3 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-full uppercase tracking-wider">Conciliado</span>
                 </div>
                 <div className="flex-1 overflow-y-auto max-h-[600px] p-4">
@@ -837,9 +834,9 @@ export default function FinanceiroDashboard() {
               </div>
 
               {/* Painel Direito - Despesas Previstas Agrupadas */}
-              <div className="bg-white/80 dark:bg-dark-bg/80 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm overflow-hidden flex flex-col">
-                <div className="p-6 border-b border-slate-100 dark:border-white/5 flex justify-between items-center">
-                  <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-widest">Despesas previstas</h2>
+              <div className="bg-dark-card border border-white/10 rounded-2xl overflow-hidden flex flex-col transition-colors duration-200">
+                <div className="p-6 border-b border-white/10 flex justify-between items-center">
+                  <h2 className="text-sm font-bold text-dark-text uppercase tracking-widest">Despesas previstas</h2>
                   <span className="px-3 py-1 bg-amber-100 text-amber-700 text-[10px] font-bold rounded-full uppercase tracking-wider">Pendente</span>
                 </div>
                 <div className="flex-1 overflow-y-auto max-h-[600px] p-4">
@@ -893,7 +890,7 @@ export default function FinanceiroDashboard() {
         {activeTab === 'Inadimplentes' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Painel Esquerdo - Lista */}
-            <div className="lg:col-span-2 bg-white/80 dark:bg-dark-bg/80 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm overflow-hidden flex flex-col">
+            <div className="lg:col-span-2 bg-dark-card border border-white/10 rounded-2xl overflow-hidden flex flex-col transition-colors duration-200">
               {/* Banner de Alerta */}
               <div className="bg-rose-50 dark:bg-rose-500/10 p-4 flex items-start gap-3 border-b border-rose-100 dark:border-rose-500/20">
                 <AlertTriangle className="text-rose-500 shrink-0 mt-0.5" size={20} />
@@ -916,7 +913,7 @@ export default function FinanceiroDashboard() {
                   if (dias > 20) badgeColor = 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400';
 
                   return (
-                    <div key={index} className="flex items-center justify-between p-4 hover:bg-slate-50 dark:hover:bg-white/5 rounded-2xl transition-colors border-b border-slate-100 dark:border-white/5 last:border-0">
+                    <div key={index} className="flex items-center justify-between p-4 hover:bg-dark-card-hover rounded-2xl transition-colors border-b border-white/5 last:border-0">
                       <div className="flex items-center gap-4">
                         <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-sm font-bold text-slate-600 dark:text-slate-300 shrink-0">
                           {cliente.fantasy_name ? cliente.fantasy_name.substring(0, 2).toUpperCase() : cliente.name.substring(0, 2).toUpperCase()}
@@ -948,7 +945,7 @@ export default function FinanceiroDashboard() {
             {/* Painel Direito - Resumo */}
             <div className="space-y-6">
               {/* Card 1 - Resumo de Risco */}
-              <div className="bg-white/80 dark:bg-dark-bg/80 p-6 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm">
+              <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200">
                 <div className="flex items-center gap-3 mb-6">
                   <div className="p-2.5 bg-rose-100 dark:bg-rose-500/20 rounded-xl">
                     <ShieldAlert className="text-rose-600 dark:text-rose-400" size={20} />
@@ -957,7 +954,7 @@ export default function FinanceiroDashboard() {
                 </div>
                 
                 <div className="space-y-4">
-                  <div className="flex justify-between items-center p-3 bg-slate-50 dark:bg-white/5 rounded-xl border border-slate-100 dark:border-white/5">
+                  <div className="flex justify-between items-center p-3 bg-dark-bg border border-white/10 rounded-xl">
                     <div className="flex items-center gap-2">
                       <div className="w-2 h-2 rounded-full bg-amber-500"></div>
                       <span className="text-xs font-bold text-slate-600 dark:text-slate-400">1-10 dias</span>
@@ -970,7 +967,7 @@ export default function FinanceiroDashboard() {
                     </div>
                   </div>
                   
-                  <div className="flex justify-between items-center p-3 bg-slate-50 dark:bg-white/5 rounded-xl border border-slate-100 dark:border-white/5">
+                  <div className="flex justify-between items-center p-3 bg-dark-bg border border-white/10 rounded-xl">
                     <div className="flex items-center gap-2">
                       <div className="w-2 h-2 rounded-full bg-orange-500"></div>
                       <span className="text-xs font-bold text-slate-600 dark:text-slate-400">11-20 dias</span>
@@ -997,7 +994,7 @@ export default function FinanceiroDashboard() {
               </div>
 
               {/* Card 2 - Taxa de Inadimplência */}
-              <div className="bg-white/80 dark:bg-dark-bg/80 p-6 rounded-3xl border border-slate-200 dark:border-white/5 shadow-sm">
+              <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200">
                 <div className="flex items-center gap-3 mb-6">
                   <div className="p-2.5 bg-slate-100 dark:bg-white/10 rounded-xl">
                     <Users className="text-slate-600 dark:text-slate-400" size={20} />
@@ -1024,12 +1021,12 @@ export default function FinanceiroDashboard() {
               </div>
 
               {/* Card 3 - Impacto no Caixa */}
-              <div className={`${designSystem.card.base} p-6`}>
+              <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200">
                 <div className="flex items-center gap-3 mb-6">
-                  <div className="p-2.5 bg-emerald-100 dark:bg-emerald-500/20 rounded-xl">
-                    <TrendingUp className="text-emerald-600 dark:text-emerald-400" size={20} />
+                  <div className="p-2.5 bg-emerald-500/15 rounded-xl">
+                    <TrendingUp className="text-emerald-500" size={20} />
                   </div>
-                  <h2 className={designSystem.typography.label}>Impacto no Caixa</h2>
+                  <h2 className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Impacto no Caixa</h2>
                 </div>
                 
                 <div className="space-y-4">
@@ -1043,7 +1040,7 @@ export default function FinanceiroDashboard() {
                     <p className="text-xl font-bold text-emerald-500">{formatCurrency(saldoAncoraHoje + totalInadimplencia)}</p>
                   </div>
                   
-                  <div className="pt-4 border-t border-slate-100 dark:border-white/5">
+                  <div className="pt-4 border-t border-white/10">
                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Runway Atual</p>
                     {(() => {
                       const despesasTotaisMes = despesasRealizadas + parseFloat(previsto?.despesas_previstas || '0');
@@ -1062,8 +1059,8 @@ export default function FinanceiroDashboard() {
         )}
 
         {activeTab !== 'Visão Geral' && activeTab !== 'Inadimplentes' && (
-          <div className={`${designSystem.card.base} p-12 flex flex-col items-center justify-center min-h-[400px]`}>
-            <div className="p-4 bg-gray-50 dark:bg-neutral-900 darker:bg-black rounded-2xl mb-4">
+          <div className="bg-dark-card border border-white/10 rounded-2xl p-12 flex flex-col items-center justify-center min-h-[400px] transition-colors duration-200">
+            <div className="p-4 bg-dark-bg rounded-2xl mb-4">
               <Wallet className="text-gray-400" size={32} />
             </div>
             <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Em breve</h2>

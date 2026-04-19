@@ -15,6 +15,11 @@ import { GestorDashboard } from './src/pages/GestorDashboard';
 import FinanceiroDashboard from './src/pages/FinanceiroDashboard';
 import TaskTemplates from './src/pages/TaskTemplates';
 import Atividades from './src/pages/Atividades';
+import CrmLigacoes from './src/pages/CrmLigacoes';
+import CrmPessoas from './src/pages/CrmPessoas';
+import CrmEmpresas from './src/pages/CrmEmpresas';
+import CrmMetas from './src/pages/CrmMetas';
+import CrmMetricas from './src/pages/CrmMetricas';
 import Login from './src/components/LoginView';
 import AdminPanel from './src/components/AdminPanel';
 import LoadingSpinner from './src/components/LoadingSpinner';
@@ -129,6 +134,20 @@ const AppContent: React.FC = () => {
           }
         }
 
+        // Check pages under section's direct subSubSessions
+        if (Array.isArray(section.subSubSessions)) {
+          for (const subSubSession of section.subSubSessions) {
+            if (Array.isArray(subSubSession.pages)) {
+              const page = subSubSession.pages.find((p: any) => p.id === activePage);
+              if (page && page.template) {
+                pageTemplate = page.template;
+                foundTemplate = true;
+                break;
+              }
+            }
+          }
+        }
+
         if (Array.isArray(section.subSessions)) {
           for (const subSession of section.subSessions) {
             if (foundTemplate) break;
@@ -207,6 +226,16 @@ const AppContent: React.FC = () => {
         return <TaskTemplates />;
       case 'crm-atividades':
         return <Atividades />;
+      case 'crm-pessoas':
+        return <CrmPessoas />;
+      case 'crm-empresas':
+        return <CrmEmpresas />;
+      case 'crm-metas':
+        return <CrmMetas />;
+      case 'crm-metricas':
+        return <CrmMetricas />;
+      case 'ligacoes-dashboard':
+        return <CrmLigacoes />;
       default:
         return <GestorCalculator />;
     }

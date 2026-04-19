@@ -1,23 +1,36 @@
-import pg from 'pg';
-import dotenv from 'dotenv';
+import { Pool } from 'pg';
+import * as dotenv from 'dotenv';
 dotenv.config();
-const { Pool } = pg;
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-async function fix() {
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
+
+(async () => {
   try {
-    const res = await pool.query('SELECT kanban_id, id FROM crm_comercial_columns ORDER BY order_index ASC');
-    const kanbans = {};
-    res.rows.forEach(r => { if (!kanbans[r.kanban_id]) kanbans[r.kanban_id] = r.id; });
+    console.log("Removing duplicates...");
+    await pool.query(`
+      DELETE FROM crm_pessoas 
+      WHERE id IN (
+        SELECT id FROM (
+          SELECT id, ROW_NUMBER() OVER(PARTITION BY user_id, COALESCE(telefone, '') ORDER BY updated_at DESC) as rnum
+          FROM crm_pessoas
+        ) t 
+        WHERE t.rnum > 1
+      )
+    `);
     
-    const leads = await pool.query('SELECT id, kanban_id, coluna FROM crm_comercial_leads WHERE coluna IS NULL OR coluna = \'\'');
-    console.log('Fixing leads:', leads.rows.length);
-    for (const lead of leads.rows) {
-      const firstCol = kanbans[lead.kanban_id];
-      if (firstCol) {
-        await pool.query('UPDATE crm_comercial_leads SET coluna = $1 WHERE id = $2', [firstCol, lead.id]);
-        console.log('Updated lead', lead.id, 'to column', firstCol);
-      }
-    }
-  } catch(e) { console.error(e) } finally { await pool.end(); }
-}
-fix();
+    try {
+      await pool.query(`ALTER TABLE crm_pessoas DROP CONSTRAINT IF EXISTS crm_pessoas_unique_phone`);
+    } catch(e) {}
+    
+    console.log("Adding unique constraint...");
+    await pool.query(`ALTER TABLE crm_pessoas ADD CONSTRAINT crm_pessoas_unique_phone UNIQUE (user_id, telefone)`);
+    console.log("SUCCESS!");
+  } catch(e: any) {
+    console.error("FAIL:", e.message);
+  } finally {
+    pool.end();
+  }
+})();

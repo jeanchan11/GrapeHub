@@ -412,6 +412,10 @@ const templates = [
   { id: 'todo', label: 'Tarefas' },
   { id: 'crm-comercial', label: 'CRM Comercial' },
   { id: 'crm-atividades', label: 'CRM Atividades' },
+  { id: 'crm-pessoas', label: 'CRM Pessoas' },
+  { id: 'crm-empresas', label: 'CRM Empresas' },
+  { id: 'crm-metas', label: 'CRM Metas' },
+  { id: 'ligacoes-dashboard', label: 'Dashboard de Ligações' },
   { id: 'task-templates', label: 'Modelos de Tarefas' },
   { id: 'kpis-squad', label: 'KPIs Squad' },
   { id: 'parceiros-squad', label: 'Parceiros Squad' },
@@ -681,7 +685,7 @@ export const PageManager: React.FC = () => {
   
   const activeOriginalParentId = useRef<string | null>(null);
   // Track cross-container move separately without mutating dnd-kit's data
-  const crossContainerMove = useRef<{ newParentId: string; isSubsub: boolean } | null>(null);
+  const crossContainerMove = useRef<{ newParentId: string; parentType: string } | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -1020,6 +1024,18 @@ export const PageManager: React.FC = () => {
 
   const findPage = (menu: any[], pageId: string): any => {
     for (const section of menu) {
+      if (section.pages) {
+        const page = section.pages.find((p: any) => p.id === pageId);
+        if (page) return page;
+      }
+      if (section.subSubSessions) {
+        for (const subsub of section.subSubSessions) {
+          if (subsub.pages) {
+            const page = subsub.pages.find((p: any) => p.id === pageId);
+            if (page) return page;
+          }
+        }
+      }
       if (section.subSessions) {
         for (const sub of section.subSessions) {
           if (sub.subSubSessions) {
@@ -1040,15 +1056,16 @@ export const PageManager: React.FC = () => {
     return null;
   };
 
-  const handleMovePage = async (pageId: string, newParentId: string, isSubsub: boolean) => {
+  const handleMovePage = async (pageId: string, newParentId: string, parentType: string) => {
     const page = findPage(menu, pageId);
     if (!page) return false;
 
     try {
       const payload = {
         ...page,
-        subsubsession_id: isSubsub ? newParentId : null,
-        subsession_id: isSubsub ? null : newParentId
+        subsubsession_id: parentType === 'subsubsession' ? newParentId : null,
+        subsession_id: parentType === 'subsession' ? newParentId : null,
+        section_id: parentType === 'section' ? newParentId : null
       };
       
       const res = await fetch(`/api/menu/pages/${pageId}`, {
@@ -1085,17 +1102,20 @@ export const PageManager: React.FC = () => {
 
     const activeContainerId = activeData.parentId;
     let overContainerId: string | null = null;
-    let overIsSubsub = false;
+    let overParentType = 'section';
 
     if (overData.type === 'page') {
       overContainerId = overData.parentId;
-      overIsSubsub = overData.parentType === 'subsubsession';
+      overParentType = overData.parentType;
     } else if (overData.type === 'subsession_container') {
       overContainerId = overData.subId;
-      overIsSubsub = false;
+      overParentType = 'subsession';
     } else if (overData.type === 'subsubsession_container') {
       overContainerId = overData.subsubId;
-      overIsSubsub = true;
+      overParentType = 'subsubsession';
+    } else if (overData.type === 'section_container') {
+      overContainerId = overData.sectionId;
+      overParentType = 'section';
     } else {
       return;
     }
@@ -1103,7 +1123,7 @@ export const PageManager: React.FC = () => {
     if (!overContainerId || activeContainerId === overContainerId) return;
 
     // Track cross-container move without mutating dnd-kit data
-    crossContainerMove.current = { newParentId: overContainerId, isSubsub: overIsSubsub };
+    crossContainerMove.current = { newParentId: overContainerId, parentType: overParentType };
 
     setMenu((prevMenu: any[]) => {
       const newMenu = JSON.parse(JSON.stringify(prevMenu));
@@ -1111,10 +1131,17 @@ export const PageManager: React.FC = () => {
 
       // Find and remove from source
       for (const section of newMenu) {
-        if (section.pages) {
+        if (section.pages && activeContainerId === section.id) {
           const idx = section.pages.findIndex((p: any) => p.id === active.id);
           if (idx !== -1) { activePage = section.pages.splice(idx, 1)[0]; break; }
         }
+        for (const subsub of (section.subSubSessions || [])) {
+          if (subsub.id === activeContainerId && subsub.pages) {
+            const idx = subsub.pages.findIndex((p: any) => p.id === active.id);
+            if (idx !== -1) { activePage = subsub.pages.splice(idx, 1)[0]; break; }
+          }
+        }
+        if (activePage) break;
         for (const sub of (section.subSessions || [])) {
           if (sub.id === activeContainerId && sub.pages) {
             const idx = sub.pages.findIndex((p: any) => p.id === active.id);
@@ -1135,6 +1162,21 @@ export const PageManager: React.FC = () => {
 
       // Insert into target
       for (const section of newMenu) {
+        if (section.id === overContainerId && overParentType === 'section') {
+          // If moving directly into section (rarely used via droppable zone, but good to have)
+          section.pages = section.pages || [];
+          const overIdx = overData.type === 'page' ? section.pages.findIndex((p: any) => p.id === over.id) : -1;
+          section.pages.splice(overIdx >= 0 ? overIdx : section.pages.length, 0, activePage);
+          return newMenu;
+        }
+        for (const subsub of (section.subSubSessions || [])) {
+          if (subsub.id === overContainerId) {
+            subsub.pages = subsub.pages || [];
+            const overIdx = overData.type === 'page' ? subsub.pages.findIndex((p: any) => p.id === over.id) : -1;
+            subsub.pages.splice(overIdx >= 0 ? overIdx : subsub.pages.length, 0, activePage);
+            return newMenu;
+          }
+        }
         for (const sub of (section.subSessions || [])) {
           if (sub.id === overContainerId) {
             sub.pages = sub.pages || [];
@@ -1169,13 +1211,19 @@ export const PageManager: React.FC = () => {
 
     // --- Handle cross-container page move ---
     if (activeData.type === 'page' && crossContainerMove.current) {
-      const { newParentId, isSubsub } = crossContainerMove.current;
+      const { newParentId, parentType } = crossContainerMove.current;
       crossContainerMove.current = null;
-      await handleMovePage(active.id, newParentId, isSubsub);
+      await handleMovePage(active.id, newParentId, parentType);
       // The UI was already updated optimistically in onDragOver — reorder within new list
       const currentMenu = menu;
       let newParentItems: any[] = [];
       for (const section of currentMenu) {
+        if (section.id === newParentId && parentType === 'section') { newParentItems = section.pages || []; break; }
+        for (const subsub of (section.subSubSessions || [])) {
+          if (subsub.id === newParentId) { newParentItems = subsub.pages || []; break; }
+        }
+        if (newParentItems.length) break;
+        
         for (const sub of (section.subSessions || [])) {
           if (sub.id === newParentId) { newParentItems = sub.pages || []; break; }
           for (const subsub of (sub.subSubSessions || [])) {
@@ -1498,6 +1546,35 @@ export const PageManager: React.FC = () => {
                         <SortableContext items={section.pages.map((p: any) => p.id)} strategy={verticalListSortingStrategy}>
                           {section.pages.map((page: any) => (
                             <SortablePage key={page.id} page={page} parentId={section.id} parentType="section" editingPage={editingPage} editPageData={editPageData} setEditPageData={setEditPageData} setEditingPage={setEditingPage} handleSaveEditPage={handleSaveEditPage} handleDeletePage={handleDeletePage} handleEditPage={handleEditPage} menu={menu} />
+                          ))}
+                        </SortableContext>
+                      )}
+
+                      {/* Section-level SubSubSessions */}
+                      {section.subSubSessions && section.subSubSessions.length > 0 && (
+                        <SortableContext items={section.subSubSessions.map((s: any) => s.id)} strategy={verticalListSortingStrategy}>
+                          {section.subSubSessions.map((subsub: any) => (
+                            <SortableSubSubSession 
+                              key={subsub.id} 
+                              subsub={subsub} 
+                              subId={section.id} 
+                              editingSubsub={editingSubsub} 
+                              editSubsubData={editSubsubData} 
+                              setEditSubsubData={setEditSubsubData} 
+                              setEditingSubsub={setEditingSubsub} 
+                              handleSaveEditSubsub={handleSaveEditSubsub} 
+                              handleDeleteSubsub={handleDeleteSubsub} 
+                              handleEditSubsub={handleEditSubsub}
+                              menu={menu}
+                            >
+                              {subsub.pages && (
+                                  <SortableContext items={subsub.pages.map((p: any) => p.id)} strategy={verticalListSortingStrategy}>
+                                    {subsub.pages.map((page: any) => (
+                                      <SortablePage key={page.id} page={page} parentId={subsub.id} parentType="subsubsession" editingPage={editingPage} editPageData={editPageData} setEditPageData={setEditPageData} setEditingPage={setEditingPage} handleSaveEditPage={handleSaveEditPage} handleDeletePage={handleDeletePage} handleEditPage={handleEditPage} menu={menu} />
+                                    ))}
+                                  </SortableContext>
+                                )}
+                            </SortableSubSubSession>
                           ))}
                         </SortableContext>
                       )}

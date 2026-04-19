@@ -15,37 +15,33 @@ const PublicForm: React.FC<PublicFormProps> = ({ leadId }) => {
     form_nome_completo: '',
     form_nome_fantasia: '',
     form_telefone_whatsapp: '',
+    form_cnpj_cpf: '',
     form_cep: '',
     form_cidade: '',
     form_estado: '',
   });
 
   useEffect(() => {
-    // Fetch initial data
     const fetchLeadData = async () => {
       try {
-        // Replace with your current backend origin properly handled by vite
         const res = await fetch(`/api/public/lead-form/${leadId}`);
-        if (!res.ok) {
-          throw new Error('Não foi possível carregar os dados');
-        }
+        if (!res.ok) throw new Error('Não foi possível carregar os dados');
         const data = await res.json();
         setFormData({
           form_nome_completo: data.form_nome_completo || '',
           form_nome_fantasia: data.form_nome_fantasia || '',
           form_telefone_whatsapp: data.form_telefone_whatsapp || '',
+          form_cnpj_cpf: data.form_cnpj_cpf || '',
           form_cep: data.form_cep || '',
           form_cidade: data.form_cidade || '',
           form_estado: data.form_estado || '',
         });
       } catch (err) {
         console.error(err);
-        // Fail silently if not found, we just show empty form
       } finally {
         setLoading(false);
       }
     };
-
     fetchLeadData();
   }, [leadId]);
 
@@ -57,16 +53,13 @@ const PublicForm: React.FC<PublicFormProps> = ({ leadId }) => {
     e.preventDefault();
     setSubmitting(true);
     setError('');
-
     try {
       const res = await fetch(`/api/public/lead-form/${leadId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
       });
-      
       if (!res.ok) throw new Error('Falha ao salvar as informações.');
-      
       setSuccess(true);
     } catch (err: any) {
       setError(err.message || 'Ocorreu um erro inesperado.');
@@ -74,6 +67,9 @@ const PublicForm: React.FC<PublicFormProps> = ({ leadId }) => {
       setSubmitting(false);
     }
   };
+
+  const inputClass = "w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all";
+  const labelClass = "text-xs font-medium text-slate-400 uppercase tracking-wider pl-1";
 
   if (loading) {
     return (
@@ -104,19 +100,21 @@ const PublicForm: React.FC<PublicFormProps> = ({ leadId }) => {
         <div className="absolute -bottom-32 -right-32 w-64 h-64 bg-emerald-600/10 rounded-full blur-3xl pointer-events-none"></div>
 
         <div className="relative z-10 space-y-6">
-          <div className="text-center space-y-2">
-            <h1 className="text-2xl font-bold text-white tracking-tight">Formulário de Contratação</h1>
-            <p className="text-sm text-slate-400">Por favor, preencha os dados abaixo para darmos continuidade ao seu atendimento.</p>
-          </div>
+          {!success && (
+            <div className="text-center space-y-2">
+              <h1 className="text-2xl font-bold text-white tracking-tight">Formulário de Contratação</h1>
+              <p className="text-sm text-slate-400">Por favor, preencha os dados abaixo para darmos inicio ao seu processo de entrada na Grape. 🍇 🚀</p>
+            </div>
+          )}
 
           {success ? (
             <div className="py-8 flex flex-col items-center gap-4 text-center animate-in fade-in zoom-in duration-500">
               <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500 text-3xl shadow-[0_0_30px_rgba(16,185,129,0.2)]">
-                
+                ✓
               </div>
               <div>
                 <h3 className="text-xl font-bold text-white mb-2">Muito Obrigado!</h3>
-                <p className="text-sm text-slate-400">Suas informações foram recebidas com sucesso. Você já pode fechar esta página.</p>
+                <p className="text-sm text-slate-400">Suas informações foram recebidas com sucesso. Nosso time já está processando os dados e em instantes entrará em contato. 👷🏻‍♂️⚙️</p>
               </div>
             </div>
           ) : (
@@ -129,48 +127,47 @@ const PublicForm: React.FC<PublicFormProps> = ({ leadId }) => {
               )}
 
               <div className="space-y-1">
-                <label className="text-xs font-medium text-slate-400 uppercase tracking-wider pl-1">Nome Completo</label>
-                <input required type="text" name="form_nome_completo" value={formData.form_nome_completo} onChange={handleChange} 
-                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all" 
-                  placeholder="Ex: João da Silva" 
-                />
+                <label className={labelClass}>Nome Completo</label>
+                <input required type="text" name="form_nome_completo" value={formData.form_nome_completo} onChange={handleChange}
+                  className={inputClass} placeholder="Ex: João da Silva" />
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-medium text-slate-400 uppercase tracking-wider pl-1">Nome Fantasia / Empresa</label>
-                <input type="text" name="form_nome_fantasia" value={formData.form_nome_fantasia} onChange={handleChange} 
-                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all" 
-                  placeholder="Ex: Minha Empresa Móveis" 
-                />
+                <label className={labelClass}>Nome Fantasia / Empresa</label>
+                <input type="text" name="form_nome_fantasia" value={formData.form_nome_fantasia} onChange={handleChange}
+                  className={inputClass} placeholder="Ex: Minha Empresa Ltda" />
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-medium text-slate-400 uppercase tracking-wider pl-1">Telefone (WhatsApp)</label>
-                <input required type="text" name="form_telefone_whatsapp" value={formData.form_telefone_whatsapp} onChange={handleChange} 
-                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all" 
-                  placeholder="(00) 00000-0000" 
-                />
+                <label className={labelClass}>Telefone (WhatsApp)</label>
+                <input required type="text" name="form_telefone_whatsapp" value={formData.form_telefone_whatsapp} onChange={handleChange}
+                  className={inputClass} placeholder="(00) 00000-0000" />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className={labelClass}>CNPJ / CPF</label>
+                <input type="text" name="form_cnpj_cpf" value={formData.form_cnpj_cpf} onChange={handleChange}
+                  className={inputClass} placeholder="00.000.000/0001-00 ou 000.000.000-00" />
+              </div>
+
+              {/* CEP + Cidade + UF */}
+              <div className="space-y-3">
                 <div className="space-y-1">
-                  <label className="text-xs font-medium text-slate-400 uppercase tracking-wider pl-1">CEP</label>
-                  <input type="text" name="form_cep" value={formData.form_cep} onChange={handleChange} 
-                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all" 
-                    placeholder="00000-000" 
-                  />
+                  <label className={labelClass}>CEP</label>
+                  <input type="text" name="form_cep" value={formData.form_cep} onChange={handleChange}
+                    className={inputClass} placeholder="00000-000" />
                 </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-slate-400 uppercase tracking-wider pl-1">Local / UF</label>
-                  <div className="flex gap-2">
-                    <input type="text" name="form_cidade" value={formData.form_cidade} onChange={handleChange} 
-                      className="w-[70%] bg-black/40 border border-white/10 rounded-xl px-3 py-3 text-sm text-white placeholder-slate-600 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all" 
-                      placeholder="Cidade" 
-                    />
-                    <input type="text" name="form_estado" value={formData.form_estado} onChange={handleChange} 
-                      className="w-[30%] bg-black/40 border border-white/10 rounded-xl px-3 py-3 text-sm text-white placeholder-slate-600 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all uppercase text-center" 
-                      placeholder="UF" maxLength={2} 
-                    />
+
+                <div className="grid grid-cols-[1fr_88px] gap-3">
+                  <div className="space-y-1">
+                    <label className={labelClass}>Cidade</label>
+                    <input type="text" name="form_cidade" value={formData.form_cidade} onChange={handleChange}
+                      className={inputClass} placeholder="São Paulo" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className={labelClass}>UF</label>
+                    <input type="text" name="form_estado" value={formData.form_estado} onChange={handleChange}
+                      className={inputClass + " uppercase text-center"} placeholder="SP" maxLength={2} />
                   </div>
                 </div>
               </div>

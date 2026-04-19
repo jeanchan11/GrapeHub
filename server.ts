@@ -631,6 +631,7 @@ async function startServer() {
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS form_cep TEXT`);
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS form_cidade TEXT`);
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS form_estado TEXT`);
+    await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS form_cnpj_cpf TEXT`);
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS utm_platform TEXT`);
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS utm_campaign TEXT`);
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS utm_set TEXT`);
@@ -639,6 +640,134 @@ async function startServer() {
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS email TEXT`);
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS investimento TEXT`);
     
+    // Tabela de Pessoas (Contacts)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS crm_pessoas (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id TEXT NOT NULL,
+        nome TEXT NOT NULL,
+        email TEXT,
+        telefone TEXT,
+        cargo TEXT,
+        empresa TEXT,
+        responsavel_id TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    
+    try {
+      // Remover duplicatas silenciosas de inserções velhas antes da Constraint entrar
+      await pool.query(`
+        DELETE FROM crm_pessoas 
+        WHERE id IN (
+          SELECT id FROM (
+            SELECT id, ROW_NUMBER() OVER(PARTITION BY user_id, COALESCE(telefone, '') ORDER BY updated_at DESC) as rnum
+            FROM crm_pessoas
+          ) t 
+          WHERE t.rnum > 1
+        )
+      `);
+      await pool.query(`ALTER TABLE crm_pessoas ADD CONSTRAINT crm_pessoas_unique_phone UNIQUE (user_id, telefone)`);
+    } catch (e: any) {
+      if (!e.message.includes('already exists')) {
+         console.warn('Constraint unique add warning:', e.message);
+      }
+    }
+    
+    // Tabela de Empresas (Companies)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS crm_empresas (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id TEXT NOT NULL,
+        nome TEXT NOT NULL,
+        site TEXT,
+        setor TEXT,
+        telefone TEXT,
+        email TEXT,
+        cidade TEXT,
+        responsavel_id TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    
+    // Auto-fix template if user already created page named 'Empresas'
+    await pool.query(`UPDATE menu_pages SET template = 'crm-empresas' WHERE LOWER(label) = 'empresas' AND (template IS NULL OR template = 'blank')`);
+    
+    // Tabela de Metas de Vendas
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS crm_metas (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id TEXT NOT NULL,
+        nome TEXT NOT NULL,
+        tipo TEXT NOT NULL,
+        metrica TEXT NOT NULL DEFAULT 'quantidade',
+        periodo TEXT NOT NULL DEFAULT 'mensal',
+        alvo NUMERIC NOT NULL DEFAULT 10,
+        kanban_id TEXT,
+        coluna_id TEXT,
+        activity_type TEXT,
+        responsavel_id TEXT,
+        data_inicio DATE,
+        data_fim DATE,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    // Garante que coluna_id e activity_type existem em tabelas já criadas
+    await pool.query(`ALTER TABLE crm_metas ADD COLUMN IF NOT EXISTS coluna_id TEXT`);
+    await pool.query(`ALTER TABLE crm_metas ADD COLUMN IF NOT EXISTS activity_type TEXT`);
+    
+    
+    // Auto-fix template for Metas page
+    await pool.query(`UPDATE menu_pages SET template = 'crm-metas' WHERE LOWER(label) LIKE '%metas%' AND (template IS NULL OR template = 'blank')`);
+    // Auto-fix template for Métricas page
+    await pool.query(`UPDATE menu_pages SET template = 'crm-metricas' WHERE LOWER(label) LIKE '%métricas%' OR LOWER(label) LIKE '%metricas%'`);
+    
+    
+    // Auto-fix template if user already created page named 'Pessoas'
+    await pool.query(`UPDATE menu_pages SET template = 'crm-pessoas' WHERE LOWER(label) = 'pessoas'`);
+    
+    // Migração: Inserir Pessoas automaticamente a partir dos Leads existentes (basendo-se no telefone único)
+    try {
+      await pool.query(`
+        INSERT INTO crm_pessoas (user_id, nome, email, telefone, responsavel_id)
+        SELECT 
+          COALESCE(k.user_id, l.responsavel_id, 'admin@dm.com'),
+          COALESCE(MAX(l.nome), 'Desconhecido') as nome,
+          MAX(l.email) as email,
+          l.telefone,
+          MAX(l.responsavel_id) as responsavel_id
+        FROM crm_comercial_leads l
+        JOIN crm_comercial_kanbans k ON k.id = l.kanban_id
+        LEFT JOIN crm_pessoas p ON p.telefone = l.telefone AND p.user_id = k.user_id
+        WHERE p.id IS NULL AND l.telefone IS NOT NULL AND l.telefone != ''
+        GROUP BY k.user_id, l.telefone;
+      `);
+    } catch (migErr) {
+      console.error("Migration error (crm_pessoas):", migErr);
+    }
+    
+    // Inject Ligações Dashboard into menus
+    try {
+      await pool.query(`
+        INSERT INTO menu_pages (id, subsession_id, label, icon, template, order_index)
+        VALUES ('crm-ligacoes', 'comercial', 'Ligações', 'Phone', 'ligacoes-dashboard', 3)
+        ON CONFLICT (id) DO UPDATE SET template = EXCLUDED.template;
+      `);
+    } catch(errMenu) {
+      console.log('Skipping ligacoes menu injection: ', errMenu.message);
+    }
+
+    // Migration: permission to access ligacoes
+    await pool.query(`
+      UPDATE users 
+      SET allowed_pages = allowed_pages || '["crm-ligacoes"]'::jsonb
+      WHERE allowed_pages @> '["crm-comercial"]'::jsonb 
+      AND NOT allowed_pages @> '["crm-ligacoes"]'::jsonb
+    `);
+
     // Tabela global de tags para o Comercial
     await pool.query(`
       CREATE TABLE IF NOT EXISTS crm_comercial_tags (
@@ -3224,6 +3353,420 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
+  // ==========================================
+  // CRM PESSOAS
+  // ==========================================
+  app.get("/api/crm-pessoas/list", async (req, res) => {
+    try {
+      const { user_id } = req.query;
+      if (!user_id) return res.status(400).json({ error: "user_id is required" });
+      
+      const query = `
+        SELECT 
+          p.id, p.nome, p.email, p.telefone, p.cargo, p.empresa, p.created_at, p.responsavel_id,
+          u.name as responsavel_name, u.email as responsavel_email,
+          (
+            SELECT COUNT(1) 
+            FROM crm_comercial_leads l 
+            WHERE l.telefone = p.telefone AND l.telefone IS NOT NULL AND l.telefone != ''
+          ) as negocios_count
+        FROM crm_pessoas p
+        LEFT JOIN users u ON p.responsavel_id = u.email
+        WHERE p.user_id = $1
+        ORDER BY p.created_at DESC
+      `;
+      const result = await pool.query(query, [user_id]);
+      res.json(result.rows);
+    } catch(e: any) {
+      console.error("[crm-pessoas/list] Error:", e.message);
+      res.status(500).json({ error: "Failed to fetch pessoas", details: e.message });
+    }
+  });
+
+  app.post("/api/crm-pessoas", async (req, res) => {
+    try {
+      const { user_id, nome, email, telefone, cargo, empresa, responsavel_id } = req.body;
+      if (!user_id || !nome) return res.status(400).json({ error: "user_id and nome required" });
+      
+      const result = await pool.query(`
+        INSERT INTO crm_pessoas (user_id, nome, email, telefone, cargo, empresa, responsavel_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (user_id, telefone) DO UPDATE 
+        SET nome = EXCLUDED.nome, email = EXCLUDED.email, cargo = EXCLUDED.cargo, empresa = EXCLUDED.empresa
+        RETURNING *
+      `, [user_id, nome, email, telefone, cargo, empresa, responsavel_id]);
+      
+      res.status(201).json(result.rows[0]);
+    } catch(e: any) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to create pessoa", details: e.message || String(e) });
+    }
+  });
+
+  // ==========================================
+  // CRM EMPRESAS
+  // ==========================================
+  app.get("/api/crm-empresas/list", async (req, res) => {
+    try {
+      const { user_id } = req.query;
+      if (!user_id) return res.status(400).json({ error: "user_id is required" });
+      const result = await pool.query(`
+        SELECT 
+          e.id, e.nome, e.site, e.setor, e.telefone, e.email, e.cidade, e.created_at, e.responsavel_id,
+          u.name as responsavel_name, u.email as responsavel_email,
+          (
+            SELECT COUNT(1) FROM crm_pessoas p 
+            WHERE LOWER(TRIM(p.empresa)) = LOWER(TRIM(e.nome)) AND p.user_id = e.user_id
+          ) as pessoas_count,
+          0 as negocios_count
+        FROM crm_empresas e
+        LEFT JOIN users u ON e.responsavel_id = u.email
+        WHERE e.user_id = $1
+        ORDER BY e.created_at DESC
+      `, [user_id]);
+      res.json(result.rows);
+    } catch(e: any) {
+      console.error("[crm-empresas/list] Error:", e.message);
+      res.status(500).json({ error: "Failed to fetch empresas", details: e.message });
+    }
+  });
+
+  app.post("/api/crm-empresas", async (req, res) => {
+    try {
+      const { user_id, nome, site, setor, telefone, email, cidade, responsavel_id } = req.body;
+      if (!user_id || !nome) return res.status(400).json({ error: "user_id and nome required" });
+      const result = await pool.query(`
+        INSERT INTO crm_empresas (user_id, nome, site, setor, telefone, email, cidade, responsavel_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        RETURNING *
+      `, [user_id, nome, site || null, setor || null, telefone || null, email || null, cidade || null, responsavel_id || null]);
+      res.status(201).json(result.rows[0]);
+    } catch(e: any) {
+      console.error("[crm-empresas] Error:", e.message);
+      res.status(500).json({ error: "Failed to create empresa", details: e.message });
+    }
+  });
+
+  // ==========================================
+  // CRM METAS
+  // ==========================================
+  app.get("/api/crm-metas", async (req, res) => {
+    try {
+      const { user_id } = req.query;
+      if (!user_id) return res.status(400).json({ error: "user_id required" });
+
+      const metas = await pool.query(
+        `SELECT * FROM crm_metas WHERE user_id = $1 ORDER BY created_at DESC`,
+        [user_id]
+      );
+
+      const now = new Date();
+
+      const result = await Promise.all(metas.rows.map(async (meta) => {
+        let valorAtual = 0;
+
+        // ── Calcular janela de datas ──────────────────────────────────
+        let dataInicio: Date;
+        let dataFim: Date;
+
+        if (meta.data_inicio) {
+          dataInicio = new Date(meta.data_inicio);
+          dataFim = meta.data_fim ? new Date(meta.data_fim) : new Date(now);
+          dataFim.setHours(23, 59, 59, 999);
+        } else {
+          dataFim = new Date(now);
+          dataFim.setHours(23, 59, 59, 999);
+          dataInicio = new Date(now);
+
+          if (meta.periodo === 'semanal') {
+            const day = now.getDay(); // 0=domingo
+            dataInicio.setDate(now.getDate() - day);
+            dataInicio.setHours(0, 0, 0, 0);
+          } else if (meta.periodo === 'mensal') {
+            dataInicio = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+          } else if (meta.periodo === 'trimestral') {
+            const startMonth = Math.floor(now.getMonth() / 3) * 3;
+            dataInicio = new Date(now.getFullYear(), startMonth, 1, 0, 0, 0, 0);
+          } else if (meta.periodo === 'anual') {
+            dataInicio = new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0);
+          } else {
+            dataInicio = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+          }
+        }
+
+        try {
+          // ──────────────────────────────────────────────────────────────
+          // NEGÓCIOS ADICIONADOS
+          // Leads criados no período. Filtros opcionais: kanban, responsavel.
+          // ──────────────────────────────────────────────────────────────
+          if (meta.tipo === 'negocios_adicionados') {
+            const params: any[] = [dataInicio, dataFim];
+            let where = `WHERE created_at >= $1 AND created_at <= $2`;
+
+            if (meta.kanban_id) {
+              params.push(meta.kanban_id);
+              where += ` AND kanban_id = $${params.length}`;
+            }
+            if (meta.responsavel_id) {
+              params.push(meta.responsavel_id);
+              where += ` AND responsavel_id = $${params.length}`;
+            }
+
+            const agg = meta.metrica === 'valor'
+              ? 'COALESCE(SUM(valor), 0)'
+              : 'COUNT(*)';
+
+            const q = await pool.query(
+              `SELECT ${agg} AS total FROM crm_comercial_leads ${where}`,
+              params
+            );
+            valorAtual = Number(q.rows[0]?.total || 0);
+
+          // ──────────────────────────────────────────────────────────────
+          // NEGÓCIOS EM ANDAMENTO
+          // Conta leads que passaram por uma etapa no período,
+          // mesmo que já tenham saído dela.
+          // Usa crm_comercial_history.to_coluna para rastrear entrada na etapa.
+          // ──────────────────────────────────────────────────────────────
+          } else if (meta.tipo === 'negocios_andamento') {
+            let valorAtualAndamento = 0;
+
+            if (meta.coluna_id) {
+              // ── Etapa específica: usa o HISTÓRICO ──────────────────────
+              // Conta leads DISTINTOS que entraram (to_coluna) nessa etapa no período,
+              // independente de onde o lead está hoje.
+              const params: any[] = [dataInicio, dataFim, meta.coluna_id];
+              let whereHistory = `
+                WHERE h.to_coluna = $3
+                  AND h.created_at >= $1
+                  AND h.created_at <= $2
+              `;
+
+              if (meta.kanban_id || meta.responsavel_id) {
+                whereHistory += ` AND EXISTS (
+                  SELECT 1 FROM crm_comercial_leads l2
+                  WHERE l2.id = h.lead_id
+                `;
+                if (meta.kanban_id) {
+                  params.push(meta.kanban_id);
+                  whereHistory += ` AND l2.kanban_id = $${params.length}`;
+                }
+                if (meta.responsavel_id) {
+                  params.push(meta.responsavel_id);
+                  whereHistory += ` AND l2.responsavel_id = $${params.length}`;
+                }
+                whereHistory += `)`;
+              }
+
+              const agg = meta.metrica === 'valor'
+                ? `COALESCE((SELECT SUM(l3.valor) FROM crm_comercial_leads l3 WHERE l3.id = ANY(ARRAY_AGG(DISTINCT h.lead_id))), 0)`
+                : `COUNT(DISTINCT h.lead_id)`;
+
+              const q = await pool.query(
+                `SELECT ${agg} AS total
+                 FROM crm_comercial_history h
+                 ${whereHistory}`,
+                params
+              );
+              valorAtualAndamento = Number(q.rows[0]?.total || 0);
+
+            } else {
+              // ── Qualquer etapa ativa: usa o HISTÓRICO de todas as etapas não-terminais ──
+              const params: any[] = [dataInicio, dataFim];
+              let whereHistory = `
+                WHERE h.to_coluna IS NOT NULL
+                  AND h.created_at >= $1
+                  AND h.created_at <= $2
+                  AND EXISTS (
+                    SELECT 1 FROM crm_comercial_columns c
+                    WHERE c.id::text = h.to_coluna
+                      AND (c.color NOT IN ('green', 'red'))
+                      AND LOWER(COALESCE(c.title,'')) NOT LIKE '%ganho%'
+                      AND LOWER(COALESCE(c.title,'')) NOT LIKE '%fechado%'
+                      AND LOWER(COALESCE(c.title,'')) NOT LIKE '%perd%'
+                      AND LOWER(COALESCE(c.title,'')) NOT LIKE '%lost%'
+                  )
+              `;
+
+              if (meta.kanban_id || meta.responsavel_id) {
+                whereHistory += ` AND EXISTS (
+                  SELECT 1 FROM crm_comercial_leads l2
+                  WHERE l2.id = h.lead_id
+                `;
+                if (meta.kanban_id) {
+                  params.push(meta.kanban_id);
+                  whereHistory += ` AND l2.kanban_id = $${params.length}`;
+                }
+                if (meta.responsavel_id) {
+                  params.push(meta.responsavel_id);
+                  whereHistory += ` AND l2.responsavel_id = $${params.length}`;
+                }
+                whereHistory += `)`;
+              }
+
+              const q = await pool.query(
+                `SELECT COUNT(DISTINCT h.lead_id) AS total
+                 FROM crm_comercial_history h
+                 ${whereHistory}`,
+                params
+              );
+              valorAtualAndamento = Number(q.rows[0]?.total || 0);
+            }
+
+            valorAtual = valorAtualAndamento;
+
+          // ──────────────────────────────────────────────────────────────
+          // NEGÓCIOS GANHOS
+          // Leads que estão em colunas terminais (color=green / título
+          // contém "fechado" ou "ganho") e foram movidos para lá no período.
+          // Usa etapa_updated_at — quando o lead foi movido para a coluna.
+          // ──────────────────────────────────────────────────────────────
+          } else if (meta.tipo === 'negocios_ganhos') {
+            const params: any[] = [dataInicio, dataFim];
+            // Usa etapa_updated_at (quando moveu para a coluna) ou updated_at como fallback
+            let where = `
+              WHERE (c.color = 'green'
+                     OR LOWER(c.title) LIKE '%fechado%'
+                     OR LOWER(c.title) LIKE '%ganho%')
+                AND COALESCE(l.etapa_updated_at, l.updated_at, l.created_at) >= $1
+                AND COALESCE(l.etapa_updated_at, l.updated_at, l.created_at) <= $2
+            `;
+
+            if (meta.kanban_id) {
+              params.push(meta.kanban_id);
+              where += ` AND l.kanban_id = $${params.length}`;
+            }
+            if (meta.responsavel_id) {
+              params.push(meta.responsavel_id);
+              where += ` AND l.responsavel_id = $${params.length}`;
+            }
+
+            const agg = meta.metrica === 'valor'
+              ? 'COALESCE(SUM(l.valor), 0)'
+              : 'COUNT(*)';
+
+            const q = await pool.query(
+              `SELECT ${agg} AS total
+               FROM crm_comercial_leads l
+               JOIN crm_comercial_columns c ON c.id::text = l.coluna
+               ${where}`,
+              params
+            );
+            valorAtual = Number(q.rows[0]?.total || 0);
+
+          // ──────────────────────────────────────────────────────────────
+          // RECEITA
+          // Soma o valor (R$) dos leads nas colunas terminais no período.
+          // Sempre usa SUM(valor) — sem opção de métrica quantidade.
+          // ──────────────────────────────────────────────────────────────
+          } else if (meta.tipo === 'receita') {
+            const params: any[] = [dataInicio, dataFim];
+            let where = `
+              WHERE (c.color = 'green'
+                     OR LOWER(c.title) LIKE '%fechado%'
+                     OR LOWER(c.title) LIKE '%ganho%')
+                AND COALESCE(l.etapa_updated_at, l.updated_at, l.created_at) >= $1
+                AND COALESCE(l.etapa_updated_at, l.updated_at, l.created_at) <= $2
+            `;
+
+            if (meta.kanban_id) {
+              params.push(meta.kanban_id);
+              where += ` AND l.kanban_id = $${params.length}`;
+            }
+            if (meta.responsavel_id) {
+              params.push(meta.responsavel_id);
+              where += ` AND l.responsavel_id = $${params.length}`;
+            }
+
+            const q = await pool.query(
+              `SELECT COALESCE(SUM(l.valor), 0) AS total
+               FROM crm_comercial_leads l
+               JOIN crm_comercial_columns c ON c.id::text = l.coluna
+               ${where}`,
+              params
+            );
+            valorAtual = Number(q.rows[0]?.total || 0);
+          // ──────────────────────────────────────────────────────────────
+          // ATIVIDADES
+          // Conta tarefas concluídas (completed=true) no período,
+          // usando completed_at como referência de data.
+          // Filtros opcionais: activity_type (tipo) e responsavel_id.
+          // ──────────────────────────────────────────────────────────────
+          } else if (meta.tipo === 'atividades') {
+            const params: any[] = [dataInicio, dataFim];
+            let where = `
+              WHERE t.completed = true
+                AND t.completed_at >= $1
+                AND t.completed_at <= $2
+            `;
+
+            if (meta.activity_type) {
+              params.push(meta.activity_type);
+              where += ` AND t.type = $${params.length}`;
+            }
+            if (meta.responsavel_id) {
+              params.push(meta.responsavel_id);
+              where += ` AND t.responsible_id::text = $${params.length}`;
+            }
+
+            const q = await pool.query(
+              `SELECT COUNT(*) AS total
+               FROM crm_comercial_tasks t
+               ${where}`,
+              params
+            );
+            valorAtual = Number(q.rows[0]?.total || 0);
+          }
+        } catch (err: any) {
+          console.error(`[crm-metas] calc error for tipo=${meta.tipo}:`, err.message);
+          valorAtual = 0;
+        }
+
+        const percentual = meta.alvo > 0
+          ? Math.min(100, Math.round((valorAtual / Number(meta.alvo)) * 100))
+          : 0;
+
+        return { ...meta, valor_atual: valorAtual, percentual };
+      }));
+
+      res.json(result);
+    } catch(e: any) {
+      console.error("[crm-metas] Error:", e.message);
+      res.status(500).json({ error: "Failed to fetch metas", details: e.message });
+    }
+  });
+
+  app.post("/api/crm-metas", async (req, res) => {
+    try {
+      const { user_id, nome, tipo, metrica, periodo, alvo, kanban_id, coluna_id, activity_type, responsavel_id, data_inicio, data_fim } = req.body;
+      if (!user_id || !nome || !tipo) return res.status(400).json({ error: "user_id, nome e tipo são obrigatórios" });
+      const result = await pool.query(
+        `INSERT INTO crm_metas (user_id, nome, tipo, metrica, periodo, alvo, kanban_id, coluna_id, activity_type, responsavel_id, data_inicio, data_fim)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
+        [user_id, nome, tipo, metrica || 'quantidade', periodo || 'mensal', Number(alvo) || 10,
+         kanban_id || null, coluna_id || null, activity_type || null, responsavel_id || null, data_inicio || null, data_fim || null]
+      );
+      res.status(201).json(result.rows[0]);
+    } catch(e: any) {
+      console.error("[crm-metas] POST Error:", e.message);
+      res.status(500).json({ error: "Failed to create meta", details: e.message });
+    }
+  });
+
+
+
+  app.delete("/api/crm-metas/:id", async (req, res) => {
+    try {
+      await pool.query(`DELETE FROM crm_metas WHERE id = $1`, [req.params.id]);
+      res.json({ success: true });
+    } catch(e: any) {
+      res.status(500).json({ error: "Failed to delete meta" });
+    }
+  });
+
+  // ==========================================
+  // CRM COMERCIAL - LEADS
+  // ==========================================
   app.get("/api/crm-comercial/leads", async (req, res) => {
     try {
       const { search, kanban_id } = req.query;
@@ -3273,6 +3816,24 @@ app.get("/api/todos", async (req, res) => {
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
         [nome, telefone, origem || 'Outro', responsavel_id, valor || 0, observacoes, kanban_id, colunaId]
       );
+      
+      // Sincronizar com Pessoas
+      if (telefone && telefone.trim() !== '') {
+        try {
+          const kanbanUserRes = await pool.query("SELECT user_id FROM crm_comercial_kanbans WHERE id = $1", [kanban_id]);
+          if (kanbanUserRes.rows.length > 0) {
+             const tenant_id = kanbanUserRes.rows[0].user_id;
+             await pool.query(`
+               INSERT INTO crm_pessoas (user_id, nome, telefone, responsavel_id)
+               VALUES ($1, $2, $3, $4)
+               ON CONFLICT (user_id, telefone) DO NOTHING
+             `, [tenant_id, nome || 'Desconhecido', telefone, responsavel_id]);
+          }
+        } catch(personErr) {
+          console.error("Error syncing person from lead:", personErr);
+        }
+      }
+
       res.status(201).json(result.rows[0]);
     } catch (err) {
       console.error("Error creating lead:", err);
@@ -3393,6 +3954,57 @@ app.get("/api/todos", async (req, res) => {
             `INSERT INTO crm_comercial_history (lead_id, from_coluna, to_coluna, moved_by) VALUES ($1, $2, $3, $4)`,
             [id, currentColuna, coluna, moved_by || 'Sistema']
           );
+
+          // ── Auto-insert em fechamentos quando lead vai para coluna terminal ──
+          try {
+            // Verifica se a coluna destino é terminal (ganho/fechado)
+            const destColResult = await pool.query(
+              `SELECT title FROM crm_comercial_columns WHERE id = $1`,
+              [coluna]
+            );
+            const destTitle = (destColResult.rows[0]?.title || '').toLowerCase();
+            const isTerminal = destTitle.includes('ganho') || destTitle.includes('fechado');
+
+            if (isTerminal) {
+              // Pega todos os dados necessários do lead
+              const leadFull = await pool.query(
+                `SELECT nome, form_nome_fantasia, valor, origem, faturamento, form_cidade FROM crm_comercial_leads WHERE id = $1`,
+                [id]
+              );
+              const lf = leadFull.rows[0];
+              if (lf) {
+                const nomeInsert     = lf.form_nome_fantasia || lf.nome || '';
+                const valorInsert    = lf.valor != null ? String(Math.round(Number(lf.valor))) : '0';
+                const origemRaw      = (lf.origem || '').toLowerCase();
+                const origemInsert   = origemRaw.includes('indica') ? 'indicação' : 'campanhas';
+                const faturInsert    = lf.faturamento || '';
+                const cidadeInsert   = lf.form_cidade || '';
+                const dayInsert      = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+
+                // Descobre nomes reais das colunas (evita hardcode com acentos)
+                const colInfoRes = await pool.query(
+                  `SELECT column_name FROM information_schema.columns WHERE table_name='fechamentos' ORDER BY ordinal_position`
+                );
+                const fcols = colInfoRes.rows.map((r: any) => r.column_name);
+                const cNome    = fcols.find((c: string) => c.toLowerCase() === 'nome')    || 'Nome';
+                const cValor   = fcols.find((c: string) => c.toLowerCase().includes('valor'))  || 'Valor';
+                const cOrigem  = fcols.find((c: string) => c.toLowerCase().includes('indica') || c.toLowerCase().includes('campa') || c.toLowerCase().includes('origem')) || fcols[4] || 'id';
+                const cFat     = fcols.find((c: string) => c.toLowerCase().includes('fatura')) || fcols[5] || 'id';
+                const cCidade  = fcols.find((c: string) => c.toLowerCase().includes('cidade')) || fcols[6] || 'id';
+
+                await pool.query(
+                  `INSERT INTO fechamentos (day, "${cNome}", "${cValor}", "${cOrigem}", "${cFat}", "${cCidade}")
+                   VALUES ($1, $2, $3, $4, $5, $6)`,
+                  [dayInsert, nomeInsert, valorInsert, origemInsert, faturInsert, cidadeInsert]
+                );
+                console.log(`[FECHAMENTO] Auto-inserted fechamento for lead ${id} → coluna "${destTitle}"`);
+              }
+            }
+          } catch (fErr: any) {
+            // Erro no insert de fechamento não deve quebrar o fluxo principal
+            console.error(`[FECHAMENTO] Erro ao inserir em fechamentos para lead ${id}:`, fErr.message);
+          }
+          // ── Fim do auto-insert ──────────────────────────────────────────
         }
         
         res.json(result.rows[0]);
@@ -3404,6 +4016,7 @@ app.get("/api/todos", async (req, res) => {
       res.status(500).json({ error: "Failed to update lead", details: err instanceof Error ? err.message : String(err) });
     }
   });
+
 
   // --- Tags (Globais do Kanban) ---
   app.get("/api/crm-comercial/tags", async (_req, res) => {
@@ -4584,7 +5197,7 @@ app.get("/api/todos", async (req, res) => {
   // GET /api/api4com/calls — fetch call history from Api4Com API (filtered by phone)
   app.get("/api/api4com/calls", async (req, res) => {
     try {
-      const { user_id, phone, page = '1' } = req.query as Record<string, string>;
+      const { user_id, phone, page = '1', limit = '20', started_after, started_before } = req.query as Record<string, string>;
       if (!user_id) return res.status(400).json({ error: 'user_id required' });
 
       const settingsRes = await pool.query(
@@ -4607,8 +5220,15 @@ app.get("/api/todos", async (req, res) => {
           { to: { like: `%${cleanPhone.slice(-9)}%` } }
         ]};
       }
+
+      if (started_after || started_before) {
+         if (!filter.where) filter.where = {};
+         filter.where.started_at = {};
+         if (started_after) filter.where.started_at.gte = started_after;
+         if (started_before) filter.where.started_at.lte = started_before;
+      }
       filter.order = 'started_at DESC';
-      filter.limit = 20;
+      filter.limit = parseInt(limit, 10);
 
       const filterStr = encodeURIComponent(JSON.stringify(filter));
       const url = `https://api.api4com.com/api/v1/calls?page=${page}&filter=${filterStr}`;
@@ -4619,8 +5239,63 @@ app.get("/api/todos", async (req, res) => {
           'Content-Type': 'application/json'
         }
       });
-      const data = await apiRes.json();
-      // DEBUG: log the raw started_at to diagnose timezone
+      let data = await apiRes.json();
+      
+      // DECODE: Match api4com numbers to internal CRM Leads to extract real owner name
+      let enrichedData = Array.isArray(data) ? data : data.data || [];
+      if (enrichedData.length > 0) {
+        const phonesSet = new Set<string>();
+        enrichedData.forEach((c: any) => {
+          const phone = c.call_type === 'inbound' ? c.caller_id_number : c.to;
+          if (phone) {
+             const clean = String(phone).replace(/\D/g, '');
+             phonesSet.add(clean);
+             if (clean.length > 10) {
+               phonesSet.add(clean.slice(-10));
+               phonesSet.add(clean.slice(-11));
+             }
+          }
+        });
+        
+        const phonesArray = Array.from(phonesSet);
+        if (phonesArray.length > 0) {
+          try {
+            // Find leads with these phones and get their owner's name
+            const leadsRes = await pool.query(
+               `SELECT l.telefone, u.name as responsavel_name, u.email as responsavel_email 
+                FROM crm_comercial_leads l 
+                LEFT JOIN users u ON u.email = l.responsavel_id 
+                WHERE regexp_replace(l.telefone, '\\D', '', 'g') = ANY($1)`,
+               [phonesArray]
+            );
+            
+            const leadMap = new Map();
+            leadsRes.rows.forEach(r => {
+               const clean = String(r.telefone).replace(/\D/g, '');
+               leadMap.set(clean, r.responsavel_name || r.responsavel_email);
+            });
+            
+            enrichedData = enrichedData.map((c: any) => {
+               const phone = c.call_type === 'inbound' ? c.caller_id_number : c.to;
+               const clean = phone ? String(phone).replace(/\D/g, '') : '';
+               const owner = leadMap.get(clean) || leadMap.get('55' + clean) || (clean.length >= 10 ? leadMap.get(clean.slice(-10)) : null) || (clean.length >= 11 ? leadMap.get(clean.slice(-11)) : null);
+               if (owner) {
+                  c.crm_responsavel = owner;
+               }
+               return c;
+            });
+          } catch(errMap) {
+            console.error('Error enriching api4com data:', errMap);
+          }
+        }
+      }
+      
+      if (Array.isArray(data)) {
+        data = enrichedData;
+      } else {
+        data.data = enrichedData;
+      }
+      
       if (Array.isArray(data) && data.length > 0) {
         console.log('[API4COM CALLS DEBUG] first started_at:', data[0].started_at, '| type:', typeof data[0].started_at);
       } else if (data?.data?.length > 0) {
@@ -4639,7 +5314,7 @@ app.get("/api/todos", async (req, res) => {
     try {
       const { id } = req.params;
       const result = await pool.query(
-        "SELECT form_nome_completo, form_nome_fantasia, form_telefone_whatsapp, form_cep, form_cidade, form_estado FROM crm_comercial_leads WHERE id = $1",
+        "SELECT form_nome_completo, form_nome_fantasia, form_telefone_whatsapp, form_cnpj_cpf, form_cep, form_cidade, form_estado FROM crm_comercial_leads WHERE id = $1",
         [id]
       );
       if (result.rows.length === 0) {
@@ -4659,6 +5334,7 @@ app.get("/api/todos", async (req, res) => {
         form_nome_completo, 
         form_nome_fantasia, 
         form_telefone_whatsapp, 
+        form_cnpj_cpf,
         form_cep, 
         form_cidade, 
         form_estado 
@@ -4669,11 +5345,12 @@ app.get("/api/todos", async (req, res) => {
          SET form_nome_completo = $1, 
              form_nome_fantasia = $2, 
              form_telefone_whatsapp = $3, 
-             form_cep = $4, 
-             form_cidade = $5, 
-             form_estado = $6
-         WHERE id = $7 RETURNING *`,
-        [form_nome_completo, form_nome_fantasia, form_telefone_whatsapp, form_cep, form_cidade, form_estado, id]
+             form_cnpj_cpf = $4,
+             form_cep = $5, 
+             form_cidade = $6, 
+             form_estado = $7
+         WHERE id = $8 RETURNING *`,
+        [form_nome_completo, form_nome_fantasia, form_telefone_whatsapp, form_cnpj_cpf, form_cep, form_cidade, form_estado, id]
       );
 
       if (result.rows.length === 0) {
@@ -4741,7 +5418,147 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
+  // ══════════════════════════════════════════════════════════════════
+  // CRM MÉTRICAS DASHBOARD
+  // Agrega dados de fechamentos + reunioes para o dashboard de comercial
+  // ══════════════════════════════════════════════════════════════════
+  app.get("/api/crm-metricas-dashboard", async (req, res) => {
+    try {
+      const { month } = req.query;
+      const selectedMonth = typeof month === 'string' && month ? month : new Date().toISOString().slice(0, 7);
+      const [year, mon] = selectedMonth.split('-').map(Number);
+      const startDate = `${selectedMonth}-01`;
+      const endDate = new Date(year, mon, 0).toISOString().slice(0, 10);
+
+      // Descobrir nomes reais das colunas de fechamentos
+      const fechCols = await pool.query(`
+        SELECT column_name FROM information_schema.columns WHERE table_name='fechamentos' ORDER BY ordinal_position
+      `);
+      const colNames = fechCols.rows.map((r: any) => r.column_name);
+      // Encontrar coluna de origem (INDICAÇÃO/CAMPANHAS)
+      const origemCol = colNames.find((c: string) =>
+        c.toLowerCase().includes('indica') || c.toLowerCase().includes('campa') || c.toLowerCase().includes('origem')
+      ) || colNames[4] || 'id';
+      // Encontrar coluna de valor
+      const valorCol = colNames.find((c: string) =>
+        c.toLowerCase() === 'valor' || c.toLowerCase().includes('valor')
+      ) || colNames[3] || 'id';
+      // Encontrar coluna nome
+      const nomeCol = colNames.find((c: string) => c.toLowerCase() === 'nome') || colNames[2] || 'id';
+      // Encontrar coluna faturamento
+      const fatCol = colNames.find((c: string) => c.toLowerCase().includes('fatura')) || origemCol;
+      // Encontrar coluna cidade
+      const cidadeCol = colNames.find((c: string) => c.toLowerCase().includes('cidade')) || 'id';
+
+      // Fechamentos do mês selecionado
+      const fechamentosMonth = await pool.query(`
+        SELECT id, day, "${nomeCol}" as "Nome", "${valorCol}" as "Valor", "${origemCol}" as origem, "${cidadeCol}" as "Cidade"
+        FROM fechamentos
+        WHERE day >= $1 AND day <= $2
+        ORDER BY day DESC
+      `, [startDate, endDate]);
+
+      // Fechamentos por mês (ano corrente)
+      const fechamentosYear = await pool.query(`
+        SELECT
+          EXTRACT(MONTH FROM day) AS mes,
+          COUNT(*) AS quantidade,
+          SUM(CAST(REPLACE(REPLACE(REPLACE(COALESCE("${valorCol}", '0'), 'R$', ''), ',', '.'), ' ', '') AS NUMERIC)) AS total_valor
+        FROM fechamentos
+        WHERE EXTRACT(YEAR FROM day) = $1
+        GROUP BY EXTRACT(MONTH FROM day)
+        ORDER BY mes ASC
+      `, [year]);
+
+      // Descobrir nomes reais das colunas de reunioes
+      const reunCols = await pool.query(`
+        SELECT column_name FROM information_schema.columns WHERE table_name='reunioes' ORDER BY ordinal_position
+      `);
+      const rCols = reunCols.rows.map((r: any) => r.column_name);
+      const rMarcadas   = rCols.find((c: string) => c.toLowerCase().includes('marca')) || rCols[2] || 'id';
+      const rRealizadas = rCols.find((c: string) => c.toLowerCase().includes('realiz')) || rCols[5] || 'id';
+      const rNoshow     = rCols.find((c: string) => c.toLowerCase().includes('noshow') || c.toLowerCase().includes('no-show') || c.toLowerCase() === 'noshow') || rCols[3] || 'id';
+      const rReagend    = rCols.find((c: string) => c.toLowerCase().includes('reagend')) || rCols[4] || 'id';
+      const rDay        = rCols.find((c: string) => c.toLowerCase() === 'day') || rCols[1] || 'id';
+
+      // Reuniões por mês (ano corrente)
+      const reunioesYear = await pool.query(`
+        SELECT
+          EXTRACT(MONTH FROM TO_DATE("${rDay}", 'YYYY-MM-DD')) AS mes,
+          SUM(CAST(COALESCE(NULLIF("${rMarcadas}",''), '0') AS INTEGER)) AS marcadas,
+          SUM(CAST(COALESCE(NULLIF("${rRealizadas}",''), '0') AS INTEGER)) AS realizadas,
+          SUM(CAST(COALESCE(NULLIF("${rNoshow}",''), '0') AS INTEGER)) AS noshow,
+          SUM(CAST(COALESCE(NULLIF("${rReagend}",''), '0') AS INTEGER)) AS reagendamento
+        FROM reunioes
+        WHERE EXTRACT(YEAR FROM TO_DATE("${rDay}", 'YYYY-MM-DD')) = $1
+        GROUP BY EXTRACT(MONTH FROM TO_DATE("${rDay}", 'YYYY-MM-DD'))
+        ORDER BY mes ASC
+      `, [year]);
+
+      // Totais de reuniões do mês
+      const reunioesMonth = await pool.query(`
+        SELECT
+          SUM(CAST(COALESCE(NULLIF("${rMarcadas}",''), '0') AS INTEGER)) AS marcadas,
+          SUM(CAST(COALESCE(NULLIF("${rRealizadas}",''), '0') AS INTEGER)) AS realizadas,
+          SUM(CAST(COALESCE(NULLIF("${rNoshow}",''), '0') AS INTEGER)) AS noshow,
+          SUM(CAST(COALESCE(NULLIF("${rReagend}",''), '0') AS INTEGER)) AS reagendamento
+        FROM reunioes
+        WHERE "${rDay}" >= $1 AND "${rDay}" <= $2
+      `, [startDate, endDate]);
+
+      // KPIs do mês anterior (para comparativo)
+      const prevDate = new Date(year, mon - 2, 1); // mês anterior
+      const prevYear = prevDate.getFullYear();
+      const prevMon  = prevDate.getMonth() + 1;
+      const prevStart = `${prevYear}-${String(prevMon).padStart(2,'0')}-01`;
+      const prevEnd   = new Date(prevYear, prevMon, 0).toISOString().slice(0, 10);
+
+      const kpisPrev = await pool.query(`
+        SELECT
+          COUNT(*) AS vendas,
+          COALESCE(SUM(CAST(REPLACE(REPLACE(REPLACE(COALESCE("${valorCol}", '0'), 'R$', ''), ',', '.'), ' ', '') AS NUMERIC)), 0) AS receita_total,
+          COALESCE(AVG(CAST(REPLACE(REPLACE(REPLACE(COALESCE("${valorCol}", '0'), 'R$', ''), ',', '.'), ' ', '') AS NUMERIC)), 0) AS ticket_medio,
+          COUNT(*) FILTER (WHERE LOWER(COALESCE("${origemCol}",'')) LIKE '%campa%') AS total_campanhas,
+          COUNT(*) FILTER (WHERE LOWER(COALESCE("${origemCol}",'')) LIKE '%indica%') AS total_indicacao
+        FROM fechamentos
+        WHERE day >= $1 AND day <= $2
+      `, [prevStart, prevEnd]);
+
+      // KPIs do mês atual
+      const kpisMonth = await pool.query(`
+        SELECT
+          COUNT(*) AS vendas,
+          COALESCE(SUM(CAST(REPLACE(REPLACE(REPLACE(COALESCE("${valorCol}", '0'), 'R$', ''), ',', '.'), ' ', '') AS NUMERIC)), 0) AS receita_total,
+          COALESCE(AVG(CAST(REPLACE(REPLACE(REPLACE(COALESCE("${valorCol}", '0'), 'R$', ''), ',', '.'), ' ', '') AS NUMERIC)), 0) AS ticket_medio,
+          COUNT(*) FILTER (WHERE LOWER(COALESCE("${origemCol}",'')) LIKE '%campa%') AS total_campanhas,
+          COUNT(*) FILTER (WHERE LOWER(COALESCE("${origemCol}",'')) LIKE '%indica%') AS total_indicacao,
+          SUM(CAST(REPLACE(REPLACE(REPLACE(COALESCE("${valorCol}", '0'), 'R$', ''), ',', '.'), ' ', '') AS NUMERIC))
+            FILTER (WHERE LOWER(COALESCE("${origemCol}",'')) LIKE '%campa%') AS receita_campanhas,
+          SUM(CAST(REPLACE(REPLACE(REPLACE(COALESCE("${valorCol}", '0'), 'R$', ''), ',', '.'), ' ', '') AS NUMERIC))
+            FILTER (WHERE LOWER(COALESCE("${origemCol}",'')) LIKE '%indica%') AS receita_indicacao
+        FROM fechamentos
+        WHERE day >= $1 AND day <= $2
+      `, [startDate, endDate]);
+
+      res.json({
+        month: selectedMonth,
+        kpis: kpisMonth.rows[0],
+        kpis_prev: kpisPrev.rows[0],
+        fechamentos_list: fechamentosMonth.rows,
+        fechamentos_year: fechamentosYear.rows,
+        reunioes_year: reunioesYear.rows,
+        reunioes_month: reunioesMonth.rows[0],
+        _debug_cols: { fechamentos: colNames, reunioes: rCols },
+      });
+    } catch (err: any) {
+      console.error("[crm-metricas-dashboard] Error:", err.message);
+      res.status(500).json({ error: "Failed to load dashboard", detail: err.message });
+    }
+  });
+
+
   // Vite middleware for development
+
   const isDev = process.env.NODE_ENV === "development";
 
   if (isDev) {

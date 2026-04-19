@@ -664,7 +664,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
     business: true,
     tags: true,
     contact: true,
-    obs: true,
+    obs: false,
     meeting: false,
     utms: false
   });
@@ -2094,15 +2094,15 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
               
               {sectionsOpen.business && (
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 min-w-max">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
                       <DollarSign size={13} /> Valor do negócio
                     </span>
                     <input 
                       type="number"
                       value={lead.valor}
                       onChange={(e) => onUpdateLeadField(lead.id, 'valor', Number(e.target.value))}
-                      className="text-right text-sm font-bold text-emerald-500 bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 w-full ml-4"
+                      className="text-right text-sm font-bold text-emerald-500 bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 min-w-0 flex-1"
                     />
                   </div>
                   <div className="flex items-center justify-between">
@@ -2111,11 +2111,21 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                     </span>
                     <span className="text-sm font-semibold text-gray-900 dark:text-white">{currentColumn?.title || '—'}</span>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
                       <Users size={13} /> Responsável
                     </span>
-                    <span className="text-sm font-semibold text-gray-900 dark:text-white">{responsavel?.name || '—'}</span>
+                    <select
+                      value={lead.responsavel_id || ''}
+                      onChange={(e) => onUpdateLeadField(lead.id, 'responsavel_id', e.target.value)}
+                      style={{ textAlignLast: 'right', border: 'none', background: 'transparent' }}
+                      className="text-sm font-semibold text-gray-900 dark:text-white outline-none focus:ring-0 rounded px-0 -mr-1 min-w-0 flex-1 appearance-none cursor-pointer"
+                    >
+                      <option value="" className="bg-white dark:bg-slate-800">— Sem responsável</option>
+                      {users.map(u => (
+                        <option key={u.id} value={u.id} className="bg-white dark:bg-slate-800">{u.name}</option>
+                      ))}
+                    </select>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5">
@@ -2123,16 +2133,30 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                     </span>
                     <span className="text-sm text-gray-700 dark:text-slate-300">{new Date(lead.created_at).toLocaleDateString('pt-BR')}</span>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 min-w-max">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
                       <Calendar size={13} /> Previsão
                     </span>
-                    <input 
-                      type="date"
-                      value={((lead as any).previsao || '').split('T')[0]}
-                      onChange={(e) => onUpdateLeadField(lead.id, 'previsao', e.target.value || null)}
-                      className="text-sm font-bold text-gray-800 dark:text-slate-200 bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1"
-                    />
+                    <div
+                      className="flex items-center gap-1 cursor-pointer group"
+                      onClick={(e) => {
+                        const inp = (e.currentTarget as HTMLElement).querySelector('input[type="date"]') as HTMLInputElement | null;
+                        try { inp?.showPicker?.(); } catch { inp?.click(); }
+                      }}
+                    >
+                      <span className="text-sm text-gray-700 dark:text-slate-300 group-hover:text-violet-500 transition-colors">
+                        {(lead as any).previsao
+                          ? new Date(((lead as any).previsao as string).split('T')[0] + 'T12:00:00').toLocaleDateString('pt-BR')
+                          : <span className="text-slate-500 text-xs italic">Adicionar...</span>}
+                      </span>
+                      <input
+                        type="date"
+                        value={((lead as any).previsao || '').split('T')[0]}
+                        onChange={(e) => onUpdateLeadField(lead.id, 'previsao', e.target.value || null)}
+                        style={{ colorScheme: 'dark' }}
+                        className="sr-only"
+                      />
+                    </div>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5">
@@ -2301,8 +2325,8 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
 
               {sectionsOpen.contact && (
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 min-w-max">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
                       <Users size={13} /> Nome
                     </span>
                     <input 
@@ -2310,11 +2334,11 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                       value={lead.nome}
                       onChange={(e) => onUpdateLeadField(lead.id, 'nome', e.target.value)}
                       placeholder="Nome do contato"
-                      className="text-right text-sm font-semibold text-gray-900 dark:text-white bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 w-full ml-4"
+                      className="text-right text-sm font-semibold text-gray-900 dark:text-white bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 min-w-0 flex-1"
                     />
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 min-w-max">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
                       <Phone size={13} /> Telefone
                     </span>
                     <input 
@@ -2322,17 +2346,18 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                       value={lead.telefone || ''}
                       onChange={(e) => onUpdateLeadField(lead.id, 'telefone', e.target.value)}
                       placeholder="Adicionar..."
-                      className="text-right text-sm text-gray-700 dark:text-slate-300 bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 w-full ml-4"
+                      className="text-right text-sm text-gray-700 dark:text-slate-300 bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 min-w-0 flex-1"
                     />
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 min-w-max">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
                       <Flame size={13} /> Origem
                     </span>
                     <select 
                       value={lead.origem || 'Outro'}
                       onChange={(e) => onUpdateLeadField(lead.id, 'origem', e.target.value)}
-                      className={`text-right text-sm font-semibold bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 w-full ml-4 appearance-none cursor-pointer text-right [&>option]:text-left ${
+                      style={{ textAlignLast: 'right', border: 'none', background: 'transparent' }}
+                      className={`text-sm font-semibold outline-none focus:ring-0 rounded px-0 -mr-1 min-w-0 flex-1 appearance-none cursor-pointer ${
                         lead.origem === 'Indicação' ? 'text-orange-500' :
                         lead.origem === 'Meta ads' ? 'text-blue-500' :
                         lead.origem === 'Google ads' ? 'text-amber-500' :
@@ -2349,8 +2374,8 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                       <option value="Outro" className="font-semibold text-gray-900 dark:text-white bg-white dark:bg-slate-800">Outro</option>
                     </select>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 min-w-max">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
                       <Instagram size={13} /> Instagram
                     </span>
                     <input 
@@ -2358,11 +2383,11 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                       value={lead.instagram || ''}
                       onChange={(e) => onUpdateLeadField(lead.id, 'instagram', e.target.value)}
                       placeholder="Adicionar..."
-                      className="text-right text-sm font-semibold text-gray-900 dark:text-white bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 w-full ml-4"
+                      className="text-right text-sm font-semibold text-gray-900 dark:text-white bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 min-w-0 flex-1"
                     />
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 min-w-max">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
                       <Briefcase size={13} /> Nicho
                     </span>
                     <input 
@@ -2370,11 +2395,11 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                       value={lead.nicho || ''}
                       onChange={(e) => onUpdateLeadField(lead.id, 'nicho', e.target.value)}
                       placeholder="Adicionar..."
-                      className="text-right text-sm font-semibold text-gray-900 dark:text-white bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 w-full ml-4"
+                      className="text-right text-sm font-semibold text-gray-900 dark:text-white bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 min-w-0 flex-1"
                     />
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 min-w-max">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
                       <Award size={13} /> Tempo de OAB
                     </span>
                     <input 
@@ -2382,11 +2407,11 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                       value={lead.tempo_oab || ''}
                       onChange={(e) => onUpdateLeadField(lead.id, 'tempo_oab', e.target.value)}
                       placeholder="Adicionar..."
-                      className="text-right text-sm font-semibold text-gray-900 dark:text-white bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 w-full ml-4"
+                      className="text-right text-sm font-semibold text-gray-900 dark:text-white bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 min-w-0 flex-1"
                     />
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 min-w-max">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
                       <DollarSign size={13} /> Faturamento
                     </span>
                     <input 
@@ -2394,7 +2419,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                       value={lead.faturamento || ''}
                       onChange={(e) => onUpdateLeadField(lead.id, 'faturamento', e.target.value)}
                       placeholder="Adicionar..."
-                      className="text-right text-sm font-semibold text-gray-900 dark:text-white bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 w-full ml-4"
+                      className="text-right text-sm font-semibold text-gray-900 dark:text-white bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 min-w-0 flex-1"
                     />
                   </div>
                 </div>
@@ -2446,19 +2471,20 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                   {[
                     { label: 'Nome Completo', field: 'form_nome_completo', type: 'text' },
                     { label: 'Nome Fantasia', field: 'form_nome_fantasia', type: 'text' },
-                    { label: 'Telefone (Whatsapp)', field: 'form_telefone_whatsapp', type: 'text' },
+                    { label: 'Telefone (WhatsApp)', field: 'form_telefone_whatsapp', type: 'text' },
+                    { label: 'CNPJ / CPF', field: 'form_cnpj_cpf', type: 'text' },
                     { label: 'CEP', field: 'form_cep', type: 'text' },
                     { label: 'Cidade', field: 'form_cidade', type: 'text' },
-                    { label: 'Estado', field: 'form_estado', type: 'text' },
+                    { label: 'UF', field: 'form_estado', type: 'text' },
                   ].map(({ label, field, type }) => (
                     <div key={label} className="flex items-center justify-between gap-2">
-                      <span className="text-xs text-gray-500 dark:text-slate-400 shrink-0 min-w-max">{label}</span>
+                      <span className="text-xs text-gray-500 dark:text-slate-400 shrink-0">{label}</span>
                       <input 
                         type={type}
                         value={(lead as any)[field] || ''}
                         onChange={(e) => onUpdateLeadField(lead.id, field, e.target.value)}
                         placeholder="Adicionar..."
-                        className="text-right text-xs font-medium text-gray-800 dark:text-slate-200 bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 w-full ml-2 truncate"
+                        className="text-right text-xs font-medium text-gray-800 dark:text-slate-200 bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 min-w-0 flex-1 truncate"
                       />
                     </div>
                   ))}
