@@ -20,6 +20,9 @@ import CrmPessoas from './src/pages/CrmPessoas';
 import CrmEmpresas from './src/pages/CrmEmpresas';
 import CrmMetas from './src/pages/CrmMetas';
 import CrmMetricas from './src/pages/CrmMetricas';
+import Automacoes from './src/pages/Automacoes';
+import MarketingDashboard from './src/pages/MarketingDashboard';
+import MarketingAcoes from './src/pages/MarketingAcoes';
 import Login from './src/components/LoginView';
 import AdminPanel from './src/components/AdminPanel';
 import LoadingSpinner from './src/components/LoadingSpinner';
@@ -236,6 +239,12 @@ const AppContent: React.FC = () => {
         return <CrmMetricas />;
       case 'ligacoes-dashboard':
         return <CrmLigacoes />;
+      case 'automacoes':
+        return <Automacoes />;
+      case 'marketing-dashboard':
+        return <MarketingDashboard />;
+      case 'marketing-acoes':
+        return <MarketingAcoes key={activePage} activePage={activePage} />;
       default:
         return <GestorCalculator />;
     }

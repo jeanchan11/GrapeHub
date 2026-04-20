@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Plus, Trash2, Trophy, TrendingUp, TrendingDown, DollarSign,
   Activity, Target, CheckCircle2, Clock, AlertCircle, X,
-  ChevronRight, ChevronLeft, BarChart3, RefreshCw
+  ChevronRight, ChevronLeft, BarChart3, RefreshCw, Pencil
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -119,6 +119,7 @@ export default function CrmMetas() {
   const [users, setUsers]         = useState<User[]>([]);
   const [columns, setColumns]     = useState<{ id: string; title: string; color: string }[]>([]);
   const [showModal, setShowModal] = useState(false);
+  const [editingMeta, setEditingMeta] = useState<Meta | null>(null);
   const [step, setStep]           = useState(1);
   const [saving, setSaving]       = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -193,6 +194,7 @@ export default function CrmMetas() {
 
   const openModal = () => {
     setForm({ tipo: '', nome: '', metrica: 'quantidade', periodo: 'mensal', alvo: '10', kanban_id: '', coluna_id: '', activity_type: '', responsavel_id: '', data_inicio: '', data_fim: '' });
+    setEditingMeta(null);
     setStep(1);
     setSaveError(null);
     setShowModal(true);
@@ -203,26 +205,48 @@ export default function CrmMetas() {
     setSaveError(null);
     setSaving(true);
     try {
-      const res = await fetch('/api/crm-metas', {
-        method: 'POST',
+      const url = editingMeta ? `/api/crm-metas/${editingMeta.id}` : '/api/crm-metas';
+      const method = editingMeta ? 'PATCH' : 'POST';
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...form, user_id: user.email, alvo: Number(form.alvo) }),
       });
       const data = await res.json();
       if (res.ok) {
         setShowModal(false);
+        setEditingMeta(null);
         fetchMetas();
       } else {
-        setSaveError(data.details || data.error || 'Erro ao criar meta.');
+        setSaveError(data.details || data.error || 'Erro ao salvar meta.');
       }
     } catch { setSaveError('Erro de conexão.'); }
     finally { setSaving(false); }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Tem certeza que deseja excluir esta meta?')) return;
-    await fetch(`/api/crm-metas/${id}`, { method: 'DELETE' });
     setMetas(prev => prev.filter(m => m.id !== id));
+    await fetch(`/api/crm-metas/${id}`, { method: 'DELETE' });
+  };
+
+  const openEdit = (meta: Meta) => {
+    setForm({
+      tipo: meta.tipo,
+      nome: meta.nome,
+      metrica: meta.metrica,
+      periodo: meta.periodo,
+      alvo: String(meta.alvo),
+      kanban_id: meta.kanban_id || '',
+      coluna_id: '',
+      activity_type: '',
+      responsavel_id: meta.responsavel_id || '',
+      data_inicio: meta.data_inicio ? meta.data_inicio.split('T')[0] : '',
+      data_fim: meta.data_fim ? meta.data_fim.split('T')[0] : '',
+    });
+    setEditingMeta(meta);
+    setStep(2);
+    setSaveError(null);
+    setShowModal(true);
   };
 
   const selectedTipo = TIPOS_META.find(t => t.id === form.tipo);
@@ -304,12 +328,22 @@ export default function CrmMetas() {
                       <p className="text-xs text-slate-400">{tipoConfig?.label} | {periodoLabel}</p>
                     </div>
                   </div>
-                  <button
-                    onClick={() => handleDelete(meta.id)}
-                    className="p-1.5 text-slate-300 dark:text-slate-600 hover:text-rose-500 transition-colors rounded-lg"
-                  >
-                    <Trash2 size={14} />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => openEdit(meta)}
+                      className="p-1.5 text-slate-300 dark:text-slate-600 hover:text-violet-500 transition-colors rounded-lg"
+                      title="Editar meta"
+                    >
+                      <Pencil size={14} />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(meta.id)}
+                      className="p-1.5 text-slate-300 dark:text-slate-600 hover:text-rose-500 transition-colors rounded-lg"
+                      title="Excluir meta"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Valor atual */}
@@ -364,8 +398,8 @@ export default function CrmMetas() {
             {/* Header do modal */}
             <div className="flex items-center justify-between px-6 pt-5 pb-4">
               <div>
-                <h2 className="text-lg font-bold">Nova Meta</h2>
-                <p className="text-xs text-slate-400 mt-0.5">Passo {step} de 2</p>
+                <h2 className="text-lg font-bold">{editingMeta ? 'Editar Meta' : 'Nova Meta'}</h2>
+                <p className="text-xs text-slate-400 mt-0.5">{editingMeta ? 'Atualize os dados da meta' : `Passo ${step} de 2`}</p>
               </div>
               <button onClick={() => setShowModal(false)} className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/10 rounded-lg transition-colors">
                 <X size={18} />
@@ -576,8 +610,8 @@ export default function CrmMetas() {
                     className="flex items-center gap-2 px-6 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold rounded-xl transition-colors disabled:opacity-40"
                   >
                     {saving ? (
-                      <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Criando...</>
-                    ) : 'Criar Meta'}
+                      <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> {editingMeta ? 'Salvando...' : 'Criando...'}</>
+                    ) : editingMeta ? 'Salvar Alterações' : 'Criar Meta'}
                   </button>
                 </div>
               </div>

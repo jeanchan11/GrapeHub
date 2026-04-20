@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend, Filler, LineController, BarController } from 'chart.js';
 import { Chart } from 'react-chartjs-2';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend as RechartsLegend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
@@ -222,7 +222,10 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   return null;
 };
 
+const MESES_FULL_FIN = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
 export default function FinanceiroDashboard() {
+  const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [activeTab, setActiveTab] = useState('Visão Geral');
   const [resumo, setResumo] = useState<Resumo | null>(null);
   const [fluxo, setFluxo] = useState<FluxoDiario[]>([]);
@@ -239,14 +242,15 @@ export default function FinanceiroDashboard() {
     const fetchData = async () => {
       try {
         setLoading(true);
+        const m = selectedMonth;
         const [resResumo, resFluxo, resClientes, resInadimplentes, resPrevisto, resDespesas, resReceitas] = await Promise.all([
-          fetch('/api/financeiro/resumo'),
-          fetch('/api/financeiro/fluxo-diario'),
-          fetch('/api/financeiro/clientes-recentes'),
-          fetch('/api/financeiro/inadimplentes'),
-          fetch('/api/financeiro/previsto'),
-          fetch('/api/financeiro/despesas'),
-          fetch('/api/financeiro/receitas')
+          fetch(`/api/financeiro/resumo?month=${m}`),
+          fetch(`/api/financeiro/fluxo-diario?month=${m}`),
+          fetch(`/api/financeiro/clientes-recentes?month=${m}`),
+          fetch(`/api/financeiro/inadimplentes?month=${m}`),
+          fetch(`/api/financeiro/previsto?month=${m}`),
+          fetch(`/api/financeiro/despesas?month=${m}`),
+          fetch(`/api/financeiro/receitas?month=${m}`)
         ]);
 
         if (!resResumo.ok || !resFluxo.ok || !resClientes.ok || !resInadimplentes.ok || !resPrevisto.ok || !resDespesas.ok || !resReceitas.ok) {
@@ -271,7 +275,7 @@ export default function FinanceiroDashboard() {
     };
 
     fetchData();
-  }, []);
+  }, [selectedMonth]);
 
   const formatCurrency = (value: string | number) => {
     const num = typeof value === 'string' ? parseFloat(value) : value;
@@ -498,9 +502,40 @@ export default function FinanceiroDashboard() {
           titleAccent="ceiro" 
           subtitle="Gestão integrada de caixa e indicadores de saúde do negócio"
         >
-          <div className="flex items-center gap-2 px-4 py-2 bg-dark-card border border-white/10 rounded-xl">
-            <Calendar size={16} className="text-gray-500" />
-            <span className="text-sm font-bold text-gray-700 dark:text-gray-300">Abril 2026</span>
+          <div className="flex items-center gap-1">
+            {/* Seta esquerda */}
+            <button
+              onClick={() => {
+                const [y, m] = selectedMonth.split('-').map(Number);
+                let nm = m - 1; let ny = y;
+                if (nm < 1) { nm = 12; ny -= 1; }
+                setSelectedMonth(`${ny}-${String(nm).padStart(2,'0')}`);
+              }}
+              className="w-9 h-9 rounded-xl bg-dark-card border border-white/10 hover:border-violet-500/60 flex items-center justify-center transition-all hover:bg-dark-card-hover"
+              title="Mês anterior"
+            >
+              <ChevronDown size={14} className="text-slate-400 rotate-90" />
+            </button>
+            {/* Label */}
+            <div className="flex items-center gap-2 px-4 py-2 bg-dark-card border border-violet-500/60 rounded-xl">
+              <Calendar size={16} className="text-violet-500" />
+              <span className="text-sm font-bold text-dark-text">
+                {MESES_FULL_FIN[parseInt(selectedMonth.split('-')[1]) - 1]} {selectedMonth.split('-')[0]}
+              </span>
+            </div>
+            {/* Seta direita */}
+            <button
+              onClick={() => {
+                const [y, m] = selectedMonth.split('-').map(Number);
+                let nm = m + 1; let ny = y;
+                if (nm > 12) { nm = 1; ny += 1; }
+                setSelectedMonth(`${ny}-${String(nm).padStart(2,'0')}`);
+              }}
+              className="w-9 h-9 rounded-xl bg-dark-card border border-white/10 hover:border-violet-500/60 flex items-center justify-center transition-all hover:bg-dark-card-hover"
+              title="Próximo mês"
+            >
+              <ChevronDown size={14} className="text-slate-400 -rotate-90" />
+            </button>
           </div>
         </PageHeader>
 

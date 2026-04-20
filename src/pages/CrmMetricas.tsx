@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   BarChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  ComposedChart
+  ComposedChart, PieChart, Pie, Cell
 } from 'recharts';
 import {
   Calendar, TrendingUp, DollarSign, Users, Target, RefreshCw,
@@ -39,6 +39,19 @@ function CustomTooltip({ active, payload, label, prefix = '' }: any) {
   );
 }
 
+// ── Tooltip Motivos de Perda ───────────────────────────────────────────────
+function LossTooltip({ active, payload }: any) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0]?.payload;
+  if (!d) return null;
+  return (
+    <div className="bg-dark-card border border-white/10 rounded-xl px-3 py-2 shadow-2xl text-sm pointer-events-none">
+      <p className="font-bold text-dark-text text-sm">{d.name}</p>
+      <p className="text-red-400 font-semibold mt-0.5">{d.total} {d.total === 1 ? 'perda' : 'perdas'}</p>
+    </div>
+  );
+}
+
 // ── MonthPicker ───────────────────────────────────────────────────────────
 const ANOS = [new Date().getFullYear(), new Date().getFullYear() - 1, new Date().getFullYear() - 2];
 
@@ -67,8 +80,25 @@ function MonthPicker({ month, onChange }: { month: string; onChange: (m: string)
 
   const label = `${MESES_FULL[selMonth - 1]} ${yStr}`;
 
+  function stepMonth(dir: 1 | -1) {
+    let y = selYear;
+    let m = selMonth + dir;
+    if (m > 12) { m = 1; y += 1; }
+    if (m < 1)  { m = 12; y -= 1; }
+    onChange(`${y}-${String(m).padStart(2, '0')}`);
+  }
+
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative flex items-center gap-1">
+      {/* Seta esquerda */}
+      <button
+        onClick={() => stepMonth(-1)}
+        className="w-9 h-9 rounded-xl bg-dark-card border border-white/10 hover:border-violet-500/60 flex items-center justify-center transition-all hover:bg-dark-card-hover"
+        title="Mês anterior"
+      >
+        <ChevronDown size={14} className="text-slate-400 rotate-90" />
+      </button>
+
       {/* Trigger button */}
       <button
         onClick={() => { setPickerYear(selYear); setOpen(o => !o); }}
@@ -77,6 +107,15 @@ function MonthPicker({ month, onChange }: { month: string; onChange: (m: string)
         <Calendar size={14} className="text-violet-500" />
         <span className="text-sm font-bold text-dark-text">{label}</span>
         <ChevronDown size={14} className={`text-slate-400 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {/* Seta direita */}
+      <button
+        onClick={() => stepMonth(1)}
+        className="w-9 h-9 rounded-xl bg-dark-card border border-white/10 hover:border-violet-500/60 flex items-center justify-center transition-all hover:bg-dark-card-hover"
+        title="Próximo mês"
+      >
+        <ChevronDown size={14} className="text-slate-400 -rotate-90" />
       </button>
 
       {/* Dropdown */}
@@ -214,6 +253,8 @@ export default function CrmMetricas() {
   const fechamentosChart  = buildChartData(data?.fechamentos_year || [], 'quantidade');
   const valoresChart      = buildChartData(data?.fechamentos_year || [], 'total_valor');
   const fechamentosList: any[] = data?.fechamentos_list || [];
+  const lossReasonsData: { name: string; total: number }[] = data?.loss_reasons_month || [];
+  const totalPerdas: number = Number(data?.total_perdas) || 0;
 
   // Mês anterior
   const kpPrev          = data?.kpis_prev || {};
@@ -367,84 +408,155 @@ export default function CrmMetricas() {
             </div>
           </div>
 
-          {/* ── Origem + Volume ─────────────────────────────────────────── */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          {/* ── Origem/Volume + Motivos de Perda ──────────────────────── */}
+          <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-5">
 
-            {/* Origem da Receita */}
+            {/* Origem da Receita + Volume de Vendas — card unificado (ESQUERDA) */}
             <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200">
-              <h2 className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-4">Origem da Receita</h2>
-              <div className="space-y-4">
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-xl bg-violet-500/15 flex items-center justify-center shrink-0">
-                    <TrendingUp size={17} className="text-violet-500" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Campanhas</div>
-                    <div className="text-xl font-black text-dark-text">{fmtCurrency(receitaCampanhas)}</div>
-                    <div className="text-xs text-slate-500 mt-0.5">{campanhas} fechamentos · {pct(campanhas, vendas)}</div>
+              <div className="grid grid-cols-2 gap-0 h-full">
+
+                {/* Origem da Receita */}
+                <div className="pr-6">
+                  <h2 className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-4">Origem da Receita</h2>
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-violet-500/15 flex items-center justify-center shrink-0">
+                        <TrendingUp size={17} className="text-violet-500" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Campanhas</div>
+                        <div className="text-lg font-black text-dark-text">{fmtCurrency(receitaCampanhas)}</div>
+                        <div className="text-xs text-slate-500 mt-0.5">{campanhas} fechamentos · {pct(campanhas, vendas)}</div>
+                      </div>
+                    </div>
+                    <div className="h-px" style={{ background: 'rgba(100,100,120,0.15)' }} />
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-pink-500/15 flex items-center justify-center shrink-0">
+                        <Users size={17} className="text-pink-500" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Indicação</div>
+                        <div className="text-lg font-black text-dark-text">{fmtCurrency(receitaIndicacao)}</div>
+                        <div className="text-xs text-slate-500 mt-0.5">{indicacao} fechamentos · {pct(indicacao, vendas)}</div>
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <div className="h-px bg-white/5 dark:bg-white/5" style={{ background: 'rgba(100,100,120,0.15)' }} />
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-xl bg-pink-500/15 flex items-center justify-center shrink-0">
-                    <Users size={17} className="text-pink-500" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Indicação</div>
-                    <div className="text-xl font-black text-dark-text">{fmtCurrency(receitaIndicacao)}</div>
-                    <div className="text-xs text-slate-500 mt-0.5">{indicacao} fechamentos · {pct(indicacao, vendas)}</div>
+
+                {/* Separador vertical */}
+                <div className="relative">
+                  <div className="absolute left-0 top-0 bottom-0 w-px" style={{ background: 'rgba(100,100,120,0.15)' }} />
+                  {/* Volume de Vendas */}
+                  <div className="pl-6">
+                    <h2 className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-4">Volume de Vendas</h2>
+                    <div className="space-y-4">
+                      <div>
+                        <div className="flex items-end justify-between mb-1.5">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-lg bg-violet-500/15 flex items-center justify-center shrink-0">
+                              <Target size={13} className="text-violet-500" />
+                            </div>
+                            <div>
+                              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Campanhas</div>
+                              <div className="text-xl font-black text-dark-text">{campanhas}</div>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-sm font-bold text-violet-500">{pct(campanhas, vendas)}</div>
+                            <div className="text-xs text-slate-500">do total</div>
+                          </div>
+                        </div>
+                        <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(100,100,120,0.15)' }}>
+                          <div className="h-full bg-violet-500 rounded-full transition-all duration-500"
+                            style={{ width: vendas ? `${(campanhas / vendas) * 100}%` : '0%' }} />
+                        </div>
+                      </div>
+                      <div>
+                        <div className="flex items-end justify-between mb-1.5">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-lg bg-pink-500/15 flex items-center justify-center shrink-0">
+                              <Award size={13} className="text-pink-500" />
+                            </div>
+                            <div>
+                              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Indicação</div>
+                              <div className="text-xl font-black text-dark-text">{indicacao}</div>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-sm font-bold text-pink-500">{pct(indicacao, vendas)}</div>
+                            <div className="text-xs text-slate-500">do total</div>
+                          </div>
+                        </div>
+                        <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(100,100,120,0.15)' }}>
+                          <div className="h-full bg-pink-500 rounded-full transition-all duration-500"
+                            style={{ width: vendas ? `${(indicacao / vendas) * 100}%` : '0%' }} />
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
+
               </div>
             </div>
 
-            {/* Volume de Vendas */}
-            <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200">
-              <h2 className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-4">Volume de Vendas</h2>
-              <div className="space-y-5">
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-xl bg-violet-500/15 flex items-center justify-center shrink-0">
-                    <Target size={17} className="text-violet-500" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-end justify-between mb-1.5">
-                      <div>
-                        <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Campanhas</div>
-                        <div className="text-2xl font-black text-dark-text">{campanhas}</div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-sm font-bold text-violet-500">{pct(campanhas, vendas)}</div>
-                        <div className="text-xs text-slate-500">do total</div>
-                      </div>
-                    </div>
-                    <div className="h-2 rounded-full overflow-hidden" style={{ background: 'rgba(100,100,120,0.15)' }}>
-                      <div className="h-full bg-violet-500 rounded-full transition-all duration-500"
-                        style={{ width: vendas ? `${(campanhas / vendas) * 100}%` : '0%' }} />
-                    </div>
-                  </div>
+            {/* Motivos de Perda — donut grande (DIREITA) */}
+            <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200 flex flex-col" style={{ minHeight: 260 }}>
+              <h2 className="text-sm font-bold text-dark-text">Motivos de Perda</h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-4 mt-0.5">Distribuição por motivo — {monthLabel}</p>
+
+              {lossReasonsData.length === 0 ? (
+                <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center">
+                  <span className="text-4xl opacity-30">❌</span>
+                  <p className="text-sm text-slate-500">Nenhuma perda neste período</p>
                 </div>
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-xl bg-pink-500/15 flex items-center justify-center shrink-0">
-                    <Award size={17} className="text-pink-500" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-end justify-between mb-1.5">
-                      <div>
-                        <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Indicação</div>
-                        <div className="text-2xl font-black text-dark-text">{indicacao}</div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-sm font-bold text-pink-500">{pct(indicacao, vendas)}</div>
-                        <div className="text-xs text-slate-500">do total</div>
+              ) : (() => {
+                const RED_SHADES = ['#ef4444','#dc2626','#b91c1c','#991b1b','#7f1d1d','#fca5a5','#fecaca'];
+                // Converte total para number (PostgreSQL retorna BigInt como string)
+                const pieData = lossReasonsData.map(r => ({ ...r, total: Number(r.total) }));
+                const totalNum = pieData.reduce((s, r) => s + r.total, 0);
+                const topMotivo = pieData[0];
+                const topPct = totalNum ? Math.round((topMotivo.total / totalNum) * 100) : 0;
+                
+
+                return (
+                  <div className="flex-1 flex flex-col items-center justify-between gap-4">
+                    {/* Donut centralizado */}
+                    <div className="relative flex items-center justify-center" style={{ width: 200, height: 200 }}>
+                      <PieChart width={200} height={200}>
+                        <Pie
+                          data={pieData}
+                          cx={95} cy={95}
+                          innerRadius={62} outerRadius={92}
+                          dataKey="total"
+                          strokeWidth={0}
+                          paddingAngle={pieData.length > 1 ? 3 : 0}
+                          startAngle={90} endAngle={-270}
+                          isAnimationActive={true}
+                        >
+                          {pieData.map((_: any, idx: number) => (
+                            <Cell key={idx} fill={RED_SHADES[idx % RED_SHADES.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip content={<LossTooltip />} />
+                      </PieChart>
+                      {/* Texto central */}
+                      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                        <span className="text-3xl font-black text-dark-text">{topPct}%</span>
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center leading-tight px-4">{topMotivo.name}</span>
                       </div>
                     </div>
-                    <div className="h-2 rounded-full overflow-hidden" style={{ background: 'rgba(100,100,120,0.15)' }}>
-                      <div className="h-full bg-pink-500 rounded-full transition-all duration-500"
-                        style={{ width: vendas ? `${(indicacao / vendas) * 100}%` : '0%' }} />
+                    {/* Legenda */}
+                    <div className="flex flex-wrap gap-x-4 gap-y-2 justify-center">
+                      {pieData.map((r: any, idx: number) => (
+                        <div key={r.name} className="flex items-center gap-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: RED_SHADES[idx % RED_SHADES.length] }} />
+                          <span className="text-xs text-slate-400">{r.name}</span>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                </div>
-              </div>
+                );
+              })()}
             </div>
           </div>
 

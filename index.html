@@ -253,6 +253,19 @@
         ::selection {
             background: rgba(124, 58, 237, 0.3);
         }
+
+        /* Remove foco/seleção nos gráficos Recharts */
+        .recharts-wrapper,
+        .recharts-wrapper svg,
+        .recharts-surface,
+        .recharts-wrapper:focus,
+        .recharts-wrapper svg:focus,
+        .recharts-surface:focus {
+            outline: none !important;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
         .font-serif {
             font-family: 'Playfair Display', serif;
         }

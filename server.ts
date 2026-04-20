@@ -633,6 +633,8 @@ async function startServer() {
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS form_estado TEXT`);
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS form_cnpj_cpf TEXT`);
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS forma_pagamento TEXT`);
+    await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS is_lost BOOLEAN DEFAULT FALSE`);
+    await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS loss_reason_id INTEGER`);
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS utm_platform TEXT`);
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS utm_campaign TEXT`);
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS utm_set TEXT`);
@@ -695,7 +697,71 @@ async function startServer() {
     
     // Auto-fix template if user already created page named 'Empresas'
     await pool.query(`UPDATE menu_pages SET template = 'crm-empresas' WHERE LOWER(label) = 'empresas' AND (template IS NULL OR template = 'blank')`);
-    
+
+    // ── Sequências de Cadência ──────────────────────────────────────────────
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS crm_sequences (
+        id SERIAL PRIMARY KEY,
+        kanban_id TEXT,
+        name TEXT NOT NULL,
+        description TEXT,
+        skip_weekends BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS crm_sequence_steps (
+        id SERIAL PRIMARY KEY,
+        sequence_id INTEGER REFERENCES crm_sequences(id) ON DELETE CASCADE,
+        order_index INTEGER NOT NULL DEFAULT 0,
+        type TEXT NOT NULL DEFAULT 'Tarefa',
+        title TEXT,
+        observations TEXT,
+        day_offset INTEGER NOT NULL DEFAULT 1
+      );
+    `);
+    // ── Fim Sequências ─────────────────────────────────────────────────────
+
+    // ── Automações ──────────────────────────────────────────────────────────
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS automations (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        active BOOLEAN DEFAULT TRUE,
+        runs INTEGER DEFAULT 0,
+        last_run_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS automation_steps (
+        id SERIAL PRIMARY KEY,
+        automation_id INTEGER REFERENCES automations(id) ON DELETE CASCADE,
+        type TEXT NOT NULL CHECK (type IN ('trigger', 'condition', 'action')),
+        order_index INTEGER NOT NULL DEFAULT 0,
+        config JSONB NOT NULL DEFAULT '{}'
+      );
+    `);
+    // ── Fim Automações ──────────────────────────────────────────────────────
+
+    // Tabela de logs de execução de automações
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS automation_logs (
+        id SERIAL PRIMARY KEY,
+        automation_id INTEGER REFERENCES automations(id) ON DELETE CASCADE,
+        automation_name TEXT,
+        lead_id TEXT,
+        lead_nome TEXT,
+        event TEXT,
+        action_type TEXT,
+        status TEXT DEFAULT 'success',
+        message TEXT,
+        executed_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+
     // Tabela de Metas de Vendas
     await pool.query(`
       CREATE TABLE IF NOT EXISTS crm_metas (
@@ -725,7 +791,12 @@ async function startServer() {
     await pool.query(`UPDATE menu_pages SET template = 'crm-metas' WHERE LOWER(label) LIKE '%metas%' AND (template IS NULL OR template = 'blank')`);
     // Auto-fix template for Métricas page
     await pool.query(`UPDATE menu_pages SET template = 'crm-metricas' WHERE LOWER(label) LIKE '%métricas%' OR LOWER(label) LIKE '%metricas%'`);
-    
+    // Auto-fix template for Dashboard Marketing
+    await pool.query(`UPDATE menu_pages SET template = 'marketing-dashboard' WHERE LOWER(label) LIKE '%dashboard marketing%' AND (template IS NULL OR template = 'blank')`);
+    // Auto-fix template for Ações (Marketing)
+    await pool.query(`UPDATE menu_pages SET template = 'marketing-acoes' WHERE LOWER(label) LIKE '%ações%' AND (template IS NULL OR template = 'blank')`);
+
+
     
     // Auto-fix template if user already created page named 'Pessoas'
     await pool.query(`UPDATE menu_pages SET template = 'crm-pessoas' WHERE LOWER(label) = 'pessoas'`);
@@ -924,6 +995,228 @@ async function startServer() {
     console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
     next();
   });
+  // ── Motor de Automações ─────────────────────────────────────────────────────
+  // Executa todas as automações ativas que correspondem ao evento disparo.
+  // Chamada de forma assíncrona (fire-and-forget) para não bloquear a resposta.
+  async function runAutomations(event: string, lead: Record<string, any>) {
+    try {
+      // 1. Carrega automações ativas com trigger = event
+      const autoRes = await pool.query(`SELECT * FROM automations WHERE active = TRUE`);
+      for (const automation of autoRes.rows) {
+        const stepsRes = await pool.query(
+          `SELECT * FROM automation_steps WHERE automation_id = $1 ORDER BY order_index ASC`,
+          [automation.id]
+        );
+        const steps = stepsRes.rows.map((s: any) => ({
+          ...s,
+          // Garante que config seja sempre objeto (JSONB pode vir como string em alguns drivers)
+          config: typeof s.config === 'string' ? JSON.parse(s.config) : (s.config || {}),
+        }));
+
+        console.log(`[Automação] Verificando "${automation.name}" (${steps.length} passos) para evento "${event}"`);
+
+        // 2. Verifica o trigger
+        const triggerStep = steps.find((s: any) => s.type === 'trigger');
+        if (!triggerStep) { console.log(`[Automação] "${automation.name}": sem trigger, pulando`); continue; }
+        const triggerEvent = triggerStep.config?.event;
+        console.log(`[Automação] "${automation.name}": trigger.config.event = "${triggerEvent}", esperado = "${event}"`);
+        if (triggerEvent !== event) continue;
+
+        // 3. Avalia condições (se existirem)
+        const conditions = steps.filter((s: any) => s.type === 'condition');
+        let conditionsPassed = true;
+        for (const cond of conditions) {
+          const rules = cond.config?.rules || [];
+          for (const rule of rules) {
+            const field = rule.field;
+            const op = rule.op;
+            const value = rule.value;
+            // Campo especial: Kanban compara kanban_id do lead
+            // Campo especial: Etapa do funil compara coluna atual do lead
+            const leadVal = field === 'Kanban'
+              ? String(lead.kanban_id || '').toLowerCase()
+              : field === 'Etapa do funil'
+                ? String(lead.coluna || '').toLowerCase()
+                : String(lead[field] || lead[field?.toLowerCase()] || '').toLowerCase();
+            const ruleVal = String(value || '').toLowerCase();
+            console.log(`[Automação] Condição: field="${field}" op="${op}" leadVal="${leadVal}" ruleVal="${ruleVal}"`);
+            if (op === 'é' && leadVal !== ruleVal) { conditionsPassed = false; break; }
+            if (op === 'mudou para' && leadVal !== ruleVal) { conditionsPassed = false; break; }
+            if (op === 'não é' && leadVal === ruleVal) { conditionsPassed = false; break; }
+            if (op === 'contém' && !leadVal.includes(ruleVal)) { conditionsPassed = false; break; }
+            if (op === 'não contém' && leadVal.includes(ruleVal)) { conditionsPassed = false; break; }
+            if (op === 'maior que' && !(Number(leadVal) > Number(ruleVal))) { conditionsPassed = false; break; }
+            if (op === 'menor que' && !(Number(leadVal) < Number(ruleVal))) { conditionsPassed = false; break; }
+            if (op === 'está preenchido' && !leadVal) { conditionsPassed = false; break; }
+            if (op === 'está vazio' && leadVal) { conditionsPassed = false; break; }
+          }
+          if (!conditionsPassed) break;
+        }
+        console.log(`[Automação] "${automation.name}": condições ${conditionsPassed ? 'PASSARAM ✓' : 'FALHARAM ✗'}`);
+        if (!conditionsPassed) continue;
+
+        // 4. Executa ações em ordem
+        const actions = steps.filter((s: any) => s.type === 'action');
+        console.log(`[Automação] "${automation.name}": ${actions.length} ação(ões) a executar`);
+        for (const action of actions) {
+          const cfg = action.config || {};
+          const actionType = cfg.action_type;
+          const leadId = lead.id;
+          console.log(`[Automação] "${automation.name}": executando ação "${actionType}" cfg=`, JSON.stringify(cfg));
+
+          try {
+            if (actionType === 'create_task') {
+              // Calcula due_date com base em day_offset
+              const dayOffset = cfg.day_offset ?? 1;
+              const dueDate = new Date();
+              dueDate.setDate(dueDate.getDate() + dayOffset);
+              await pool.query(
+                `INSERT INTO crm_comercial_tasks (lead_id, title, type, due_date, observations, responsible_id)
+                 VALUES ($1, $2, $3, $4, $5, $6)`,
+                [leadId, cfg.title || 'Atividade automática', cfg.task_type || 'Ligação',
+                 dueDate.toISOString().slice(0, 10), cfg.observations || null, lead.responsavel_id || null]
+              );
+
+            } else if (actionType === 'create_note') {
+              await pool.query(
+                `INSERT INTO crm_comercial_messages (lead_id, content, user_name, created_at)
+                 VALUES ($1, $2, $3, NOW())`,
+                [leadId, cfg.note || '', 'Automação']
+              );
+
+            } else if (actionType === 'add_tag') {
+              if (cfg.tag) {
+                const currentTags: any = await pool.query(
+                  `SELECT tags FROM crm_comercial_leads WHERE id = $1`, [leadId]
+                );
+                const existingTags: string[] = currentTags.rows[0]?.tags || [];
+                if (!existingTags.includes(cfg.tag)) {
+                  await pool.query(
+                    `UPDATE crm_comercial_leads SET tags = array_append(COALESCE(tags, '{}'), $2) WHERE id = $1`,
+                    [leadId, cfg.tag]
+                  );
+                }
+              }
+
+            } else if (actionType === 'assign_responsible') {
+              if (cfg.responsible_id) {
+                await pool.query(
+                  `UPDATE crm_comercial_leads SET responsavel_id = $2 WHERE id = $1`,
+                  [leadId, cfg.responsible_id]
+                );
+              }
+
+            } else if (actionType === 'mark_won') {
+              // Move para primeira coluna com "ganho" no título
+              const colRes = await pool.query(
+                `SELECT id FROM crm_comercial_columns WHERE kanban_id = $1 AND (LOWER(title) LIKE '%ganho%' OR LOWER(title) LIKE '%fechado%') LIMIT 1`,
+                [lead.kanban_id]
+              );
+              if (colRes.rows.length > 0) {
+                await pool.query(`UPDATE crm_comercial_leads SET coluna = $2 WHERE id = $1`, [leadId, colRes.rows[0].id]);
+              }
+
+            } else if (actionType === 'mark_lost') {
+              await pool.query(`UPDATE crm_comercial_leads SET is_lost = TRUE WHERE id = $1`, [leadId]);
+
+            } else if (actionType === 'move_stage') {
+              if (cfg.column_id) {
+                await pool.query(`UPDATE crm_comercial_leads SET coluna = $2 WHERE id = $1`, [leadId, cfg.column_id]);
+              }
+
+            } else if (actionType === 'create_lead') {
+              // Duplica o lead em outro kanban/coluna
+              if (cfg.kanban_id) {
+                await pool.query(
+                  `INSERT INTO crm_comercial_leads (nome, telefone, origem, responsavel_id, valor, observacoes, kanban_id, coluna)
+                   SELECT nome, telefone, origem, responsavel_id, valor, observacoes, $2, $3 FROM crm_comercial_leads WHERE id = $1`,
+                  [leadId, cfg.kanban_id, cfg.column_id || null]
+                );
+              }
+
+            } else if (actionType === 'duplicate_lead') {
+              await pool.query(
+                `INSERT INTO crm_comercial_leads (nome, telefone, origem, responsavel_id, valor, observacoes, kanban_id, coluna)
+                 SELECT nome, telefone, origem, responsavel_id, valor, observacoes, kanban_id, coluna FROM crm_comercial_leads WHERE id = $1`,
+                [leadId]
+              );
+
+            } else if (actionType === 'send_webhook') {
+              if (cfg.webhook_url) {
+                // Fire-and-forget HTTP POST
+                fetch(cfg.webhook_url, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ event, lead, automation_id: automation.id }),
+                }).catch(e => console.error('[Webhook] Failed:', e.message));
+              }
+
+            } else if (actionType === 'start_sequence') {
+              // Aplica a sequência ao lead (usa a lógica de crm_sequences)
+              if (cfg.sequence_id) {
+                const seqSteps = await pool.query(
+                  `SELECT * FROM crm_sequence_steps WHERE sequence_id = $1 ORDER BY order_index ASC`,
+                  [cfg.sequence_id]
+                );
+                for (const step of seqSteps.rows) {
+                  const dueDate = new Date();
+                  dueDate.setDate(dueDate.getDate() + (step.day_offset || 1));
+                  await pool.query(
+                    `INSERT INTO crm_comercial_tasks (lead_id, title, type, due_date, observations)
+                     VALUES ($1, $2, $3, $4, $5)`,
+                    [leadId, step.title || '', step.type || 'Tarefa', dueDate.toISOString().slice(0, 10), step.observations || null]
+                  );
+                }
+              }
+
+            } else if (actionType === 'clear_open_tasks') {
+              // Apaga todas as atividades em aberto (não concluídas) do lead
+              const deleted = await pool.query(
+                `DELETE FROM crm_comercial_tasks WHERE lead_id = $1 AND completed = FALSE RETURNING id`,
+                [leadId]
+              );
+              console.log(`[Automação] clear_open_tasks: ${deleted.rowCount} atividade(s) removida(s) do lead ${leadId}`);
+            }
+
+            console.log(`[Automação] "${automation.name}" → ação "${actionType}" executada para lead ${leadId}`);
+
+            // Log de sucesso na tabela automation_logs
+            await pool.query(
+              `INSERT INTO automation_logs (automation_id, automation_name, lead_id, lead_nome, event, action_type, status, message)
+               VALUES ($1, $2, $3, $4, $5, $6, 'success', $7)`,
+              [automation.id, automation.name, leadId, lead.nome || lead.id, event, actionType,
+               `Ação "${actionType}" executada com sucesso`]
+            ).catch(() => {});
+
+          } catch (actionErr: any) {
+            console.error(`[Automação] Erro na ação "${actionType}" para lead ${leadId}:`, actionErr.message);
+
+            // Log de falha na tabela automation_logs
+            await pool.query(
+              `INSERT INTO automation_logs (automation_id, automation_name, lead_id, lead_nome, event, action_type, status, message)
+               VALUES ($1, $2, $3, $4, $5, $6, 'error', $7)`,
+              [automation.id, automation.name, leadId, lead.nome || lead.id, event, actionType,
+               actionErr.message || 'Erro desconhecido']
+            ).catch(() => {});
+          }
+        }
+
+        // 5. Incrementa contador de execuções
+        await pool.query(`UPDATE automations SET runs = runs + 1, last_run_at = NOW() WHERE id = $1`, [automation.id]);
+
+        // 6. Escreve no histórico do lead (tab Histórico do card)
+        const actionLabels = actions.map((a: any) => a.config?.action_type || '').filter(Boolean).join(', ');
+        await pool.query(
+          `INSERT INTO crm_comercial_history (lead_id, action_type, description, user_name)
+           VALUES ($1, 'automacao', $2, 'Sistema')`,
+          [lead.id, `⚡ Automação "${automation.name}" executada — Ações: ${actionLabels}`]
+        ).catch(() => {});
+      }
+    } catch (err: any) {
+      console.error('[Motor de Automações] Erro geral:', err.message);
+    }
+  }
+  // ── Fim Motor de Automações ─────────────────────────────────────────────────
 
   // Health Check
   app.get("/api/health", async (req, res) => {
@@ -2845,7 +3138,9 @@ app.get("/api/todos", async (req, res) => {
     try {
       const mes = (req.query.mes as string) || new Date().toISOString().slice(0, 7);
       const inicio = `${mes}-01`;
-      const fim = new Date(new Date(inicio).getFullYear(), new Date(inicio).getMonth() + 1, 1).toISOString().slice(0, 10);
+      const [fy, fm] = mes.split('-').map(Number);
+      const fn = fm === 12 ? 1 : fm + 1; const ny = fm === 12 ? fy + 1 : fy;
+      const fim = `${ny}-${String(fn).padStart(2,'0')}-01`;
 
       const result = await pool.query(`
         WITH movements AS (
@@ -2885,7 +3180,9 @@ app.get("/api/todos", async (req, res) => {
     try {
       const mes = (req.query.mes as string) || new Date().toISOString().slice(0, 7);
       const inicio = `${mes}-01`;
-      const fim = new Date(new Date(inicio).getFullYear(), new Date(inicio).getMonth() + 1, 1).toISOString().slice(0, 10);
+      const [fy2, fm2] = mes.split('-').map(Number);
+      const fn2 = fm2 === 12 ? 1 : fm2 + 1; const ny2 = fm2 === 12 ? fy2 + 1 : fy2;
+      const fim = `${ny2}-${String(fn2).padStart(2,'0')}-01`;
 
       const saldoBase = 70232.04;
 
@@ -2995,7 +3292,9 @@ app.get("/api/todos", async (req, res) => {
     try {
       const mes = (req.query.mes as string) || new Date().toISOString().slice(0, 7);
       const inicio = `${mes}-01`;
-      const fim = new Date(new Date(inicio).getFullYear(), new Date(inicio).getMonth() + 1, 1).toISOString().slice(0, 10);
+      const [fy3, fm3] = mes.split('-').map(Number);
+      const fn3 = fm3 === 12 ? 1 : fm3 + 1; const ny3 = fm3 === 12 ? fy3 + 1 : fy3;
+      const fim = `${ny3}-${String(fn3).padStart(2,'0')}-01`;
 
       const result = await pool.query(`
         SELECT
@@ -3055,7 +3354,9 @@ app.get("/api/todos", async (req, res) => {
     try {
       const mes = (req.query.mes as string) || new Date().toISOString().slice(0, 7);
       const inicio = `${mes}-01`;
-      const fim = new Date(new Date(inicio).getFullYear(), new Date(inicio).getMonth() + 1, 1).toISOString().slice(0, 10);
+      const [fy4, fm4] = mes.split('-').map(Number);
+      const fn4 = fm4 === 12 ? 1 : fm4 + 1; const ny4 = fm4 === 12 ? fy4 + 1 : fy4;
+      const fim = `${ny4}-${String(fn4).padStart(2,'0')}-01`;
 
       const result = await pool.query(`
         SELECT
@@ -3080,7 +3381,9 @@ app.get("/api/todos", async (req, res) => {
     try {
       const mes = (req.query.mes as string) || new Date().toISOString().slice(0, 7);
       const inicio = `${mes}-01`;
-      const fim = new Date(new Date(inicio).getFullYear(), new Date(inicio).getMonth() + 1, 1).toISOString().slice(0, 10);
+      const [fy5, fm5] = mes.split('-').map(Number);
+      const fn5 = fm5 === 12 ? 1 : fm5 + 1; const ny5 = fm5 === 12 ? fy5 + 1 : fy5;
+      const fim = `${ny5}-${String(fn5).padStart(2,'0')}-01`;
 
       const result = await pool.query(`
         SELECT
@@ -3115,7 +3418,9 @@ app.get("/api/todos", async (req, res) => {
     try {
       const mes = (req.query.mes as string) || new Date().toISOString().slice(0, 7);
       const inicio = `${mes}-01`;
-      const fim = new Date(new Date(inicio).getFullYear(), new Date(inicio).getMonth() + 1, 1).toISOString().slice(0, 10);
+      const [fy6, fm6] = mes.split('-').map(Number);
+      const fn6 = fm6 === 12 ? 1 : fm6 + 1; const ny6 = fm6 === 12 ? fy6 + 1 : fy6;
+      const fim = `${ny6}-${String(fn6).padStart(2,'0')}-01`;
 
       const result = await pool.query(`
         SELECT
@@ -3449,7 +3754,211 @@ app.get("/api/todos", async (req, res) => {
   });
 
   // ==========================================
+  // MARKETING DASHBOARD
+  // ==========================================
+  app.get("/api/marketing-dashboard", async (req, res) => {
+    try {
+      const { month, start, end } = req.query;
+
+      // Build a generic WHERE clause usable by facebook & formulario tables
+      // Supports: ?start=YYYY-MM-DD&end=YYYY-MM-DD  OR  legacy ?month=YYYY-MM
+      let dateFilter = '';
+      let dateParams: any[] = [];
+      let startDate = '';
+      let endDate   = '';
+
+      if (start && end) {
+        startDate = start as string;
+        endDate   = end as string;
+        dateFilter = `WHERE day >= $1 AND day <= $2`;
+        dateParams = [startDate, endDate];
+      } else if (month) {
+        const [y, m] = (month as string).split('-');
+        const firstDay = new Date(parseInt(y), parseInt(m) - 1, 1);
+        const lastDay  = new Date(parseInt(y), parseInt(m), 0);
+        startDate = firstDay.toISOString().slice(0, 10);
+        endDate   = lastDay.toISOString().slice(0, 10);
+        dateFilter = `WHERE day >= $1 AND day <= $2`;
+        dateParams = [startDate, endDate];
+      }
+
+      // ── Facebook Ads ──────────────────────────────────────────
+      const fbResult = await pool.query(
+        `SELECT
+          COALESCE(SUM(spend), 0)::float       AS total_spend,
+          COALESCE(SUM(clicks), 0)::int        AS total_clicks,
+          COALESCE(SUM(impressions), 0)::int   AS total_impressions,
+          COUNT(DISTINCT campaign_name)::int   AS total_campaigns
+         FROM facebook
+         ${dateFilter}`,
+        dateParams
+      );
+
+      // Daily spend for chart
+      const fbDailyResult = await pool.query(
+        `SELECT
+          TO_CHAR(day, 'YYYY-MM-DD') AS date,
+          SUM(spend)::float          AS spend
+         FROM facebook
+         ${dateFilter}
+         GROUP BY day ORDER BY day`,
+        dateParams
+      );
+
+      // Per-campaign breakdown
+      const fbCampaignResult = await pool.query(
+        `SELECT
+          campaign_name,
+          SUM(spend)::float      AS spend,
+          SUM(clicks)::int       AS clicks,
+          SUM(impressions)::int  AS impressions
+         FROM facebook
+         ${dateFilter}
+         GROUP BY campaign_name
+         ORDER BY spend DESC`,
+        dateParams
+      );
+
+      // ── Formulario (Leads) ────────────────────────────────────
+      const formResult = await pool.query(
+        `SELECT
+          COUNT(*)::int                                                                        AS total_leads,
+          COUNT(*) FILTER (WHERE TRIM("FATURAMENTO") <> 'Menos de R$ 10 mil' AND "FATURAMENTO" IS NOT NULL AND TRIM("FATURAMENTO") <> '')::int AS leads_qualificados
+         FROM formulario
+         ${dateFilter}`,
+        dateParams
+      );
+
+      // Daily leads for chart
+      const formDailyResult = await pool.query(
+        `SELECT
+          TO_CHAR(day, 'YYYY-MM-DD')    AS date,
+          COUNT(*)::int                  AS leads,
+          COUNT(*) FILTER (WHERE TRIM("FATURAMENTO") <> 'Menos de R$ 10 mil' AND "FATURAMENTO" IS NOT NULL AND TRIM("FATURAMENTO") <> '')::int AS qualificados
+         FROM formulario
+         ${dateFilter}
+         GROUP BY day ORDER BY day`,
+        dateParams
+      );
+
+      // Leads by nicho
+      const nichoResult = await pool.query(
+        `SELECT
+          "NICHO"        AS nicho,
+          COUNT(*)::int  AS total
+         FROM formulario
+         ${dateFilter}
+         GROUP BY "NICHO"
+         ORDER BY total DESC`,
+        dateParams
+      );
+
+      // ── Reuniões (from reunioes table) ────
+      let reunioesTotal = 0;
+      try {
+        const reunCols = await pool.query(
+          `SELECT column_name FROM information_schema.columns WHERE table_name='reunioes' ORDER BY ordinal_position`
+        );
+        const rCols = reunCols.rows.map((r: any) => r.column_name);
+        const rRealizadas = rCols.find((c: string) => c.toLowerCase().includes('realiz')) || rCols[5] || 'id';
+        const rDay        = rCols.find((c: string) => c.toLowerCase() === 'day') || rCols[1] || 'id';
+
+        let reuniaoSQL = `
+          SELECT COALESCE(SUM(CAST(COALESCE(NULLIF("${rRealizadas}",''), '0') AS INTEGER)), 0)::int AS total
+          FROM reunioes`;
+        let reuniaoParams: any[] = [];
+
+        if (startDate && endDate) {
+          reuniaoSQL += ` WHERE "${rDay}" >= $1 AND "${rDay}" <= $2`;
+          reuniaoParams = [startDate, endDate];
+        }
+
+        const reuniaoResult = await pool.query(reuniaoSQL, reuniaoParams);
+        reunioesTotal = reuniaoResult.rows[0]?.total || 0;
+      } catch (e: any) {
+        console.error('[marketing-dashboard] reunioes error:', e.message);
+        reunioesTotal = 0;
+      }
+
+
+      const fb = fbResult.rows[0];
+      const form = formResult.rows[0];
+
+      const totalLeads = form.total_leads || 0;
+      const totalQualificados = form.leads_qualificados || 0;
+      const totalSpend = fb.total_spend || 0;
+
+      res.json({
+        kpis: {
+          total_spend: totalSpend,
+          total_leads: totalLeads,
+          leads_qualificados: totalQualificados,
+          reunioes: reunioesTotal,
+          custo_por_lead: totalLeads > 0 ? totalSpend / totalLeads : 0,
+          custo_por_qualificado: totalQualificados > 0 ? totalSpend / totalQualificados : 0,
+          custo_por_reuniao: reunioesTotal > 0 ? totalSpend / reunioesTotal : 0,
+          taxa_qualificacao: totalLeads > 0 ? (totalQualificados / totalLeads) * 100 : 0,
+          taxa_reuniao: totalQualificados > 0 ? (reunioesTotal / totalQualificados) * 100 : 0,
+          total_clicks: fb.total_clicks || 0,
+          total_impressions: fb.total_impressions || 0,
+          total_campaigns: fb.total_campaigns || 0,
+        },
+        daily_spend: fbDailyResult.rows,
+        daily_leads: formDailyResult.rows,
+        campaigns: fbCampaignResult.rows,
+        nichos: nichoResult.rows,
+      });
+    } catch (e: any) {
+      console.error("[marketing-dashboard]", e.message);
+      res.status(500).json({ error: "Failed to load marketing dashboard", details: e.message });
+    }
+  });
+
+  // ==========================================
+  // MARKETING AÇÕES
+  // ==========================================
+  pool.query(`
+    CREATE TABLE IF NOT EXISTS marketing_acoes (
+      page_id    TEXT PRIMARY KEY,
+      data       JSONB NOT NULL DEFAULT '[]',
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `).catch(console.error);
+
+  app.get("/api/marketing-acoes", async (req, res) => {
+    const { page_id } = req.query;
+    if (!page_id) return res.status(400).json({ error: "page_id required" });
+    try {
+      const result = await pool.query(
+        `SELECT data FROM marketing_acoes WHERE page_id = $1`, [page_id]
+      );
+      res.json({ campaigns: result.rows[0]?.data || [] });
+    } catch (e: any) {
+      console.error("[marketing-acoes GET]", e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/marketing-acoes", async (req, res) => {
+    const { page_id, campaigns } = req.body;
+    if (!page_id) return res.status(400).json({ error: "page_id required" });
+    try {
+      await pool.query(
+        `INSERT INTO marketing_acoes (page_id, data, updated_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (page_id) DO UPDATE SET data = $2, updated_at = NOW()`,
+        [page_id, JSON.stringify(campaigns || [])]
+      );
+      res.json({ ok: true });
+    } catch (e: any) {
+      console.error("[marketing-acoes POST]", e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ==========================================
   // CRM METAS
+
   // ==========================================
   app.get("/api/crm-metas", async (req, res) => {
     try {
@@ -3765,6 +4274,32 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
+  app.patch("/api/crm-metas/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { nome, tipo, metrica, periodo, alvo, kanban_id, coluna_id, activity_type, responsavel_id, data_inicio, data_fim } = req.body;
+      await pool.query(
+        `UPDATE crm_metas SET
+          nome = COALESCE($1, nome),
+          tipo = COALESCE($2, tipo),
+          metrica = COALESCE($3, metrica),
+          periodo = COALESCE($4, periodo),
+          alvo = COALESCE($5, alvo),
+          kanban_id = $6,
+          coluna_id = $7,
+          activity_type = $8,
+          responsavel_id = $9,
+          data_inicio = $10,
+          data_fim = $11
+        WHERE id = $12`,
+        [nome, tipo, metrica, periodo, alvo, kanban_id || null, coluna_id || null, activity_type || null, responsavel_id || null, data_inicio || null, data_fim || null, id]
+      );
+      res.json({ success: true });
+    } catch(e: any) {
+      res.status(500).json({ error: "Failed to update meta", details: e.message });
+    }
+  });
+
   // ==========================================
   // CRM COMERCIAL - LEADS
   // ==========================================
@@ -3834,6 +4369,9 @@ app.get("/api/todos", async (req, res) => {
           console.error("Error syncing person from lead:", personErr);
         }
       }
+
+      // ── Dispara automações de 'lead_created' ──
+      setImmediate(() => runAutomations('lead_created', result.rows[0]));
 
       res.status(201).json(result.rows[0]);
     } catch (err) {
@@ -3937,6 +4475,10 @@ app.get("/api/todos", async (req, res) => {
       if (utm_set !== undefined) { updates.push(`utm_set = $${paramIdx++}`); params.push(utm_set); }
       if (utm_creative !== undefined) { updates.push(`utm_creative = $${paramIdx++}`); params.push(utm_creative); }
       if (utm_position !== undefined) { updates.push(`utm_position = $${paramIdx++}`); params.push(utm_position); }
+
+      const { is_lost, loss_reason_id } = req.body;
+      if (is_lost !== undefined) { updates.push(`is_lost = $${paramIdx++}`); params.push(is_lost); }
+      if (loss_reason_id !== undefined) { updates.push(`loss_reason_id = $${paramIdx++}`); params.push(loss_reason_id); }
       if (nome !== undefined) { updates.push(`nome = $${paramIdx++}`); params.push(nome); }
       if (telefone !== undefined) { updates.push(`telefone = $${paramIdx++}`); params.push(telefone); }
       if (observacoes !== undefined) { updates.push(`observacoes = $${paramIdx++}`); params.push(observacoes); }
@@ -4006,8 +4548,28 @@ app.get("/api/todos", async (req, res) => {
             console.error(`[FECHAMENTO] Erro ao inserir em fechamentos para lead ${id}:`, fErr.message);
           }
           // ── Fim do auto-insert ──────────────────────────────────────────
+
+          // ── Dispara automações de 'stage_changed' ──
+          setImmediate(() => runAutomations('stage_changed', { ...result.rows[0], _previous_coluna: currentColuna }));
+
+          // Se foi para coluna terminal → também dispara 'lead_won'
+          try {
+            const destColCheck = await pool.query(`SELECT title FROM crm_comercial_columns WHERE id = $1`, [coluna]);
+            const dt = (destColCheck.rows[0]?.title || '').toLowerCase();
+            if (dt.includes('ganho') || dt.includes('fechado')) {
+              setImmediate(() => runAutomations('lead_won', result.rows[0]));
+            }
+          } catch (_) {}
         }
-        
+
+        // 'lead_updated' para qualquer atualização de campo
+        if (is_lost === true) {
+          setImmediate(() => runAutomations('lead_lost', result.rows[0]));
+        } else if (coluna === undefined) {
+          // Atualização de campo (não é movimentação de coluna)
+          setImmediate(() => runAutomations('lead_updated', result.rows[0]));
+        }
+
         res.json(result.rows[0]);
       } else {
         res.json({ message: "No updates provided" });
@@ -4015,6 +4577,65 @@ app.get("/api/todos", async (req, res) => {
     } catch (err) {
       console.error("Error updating lead:", err);
       res.status(500).json({ error: "Failed to update lead", details: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // ── Reabrir lead (remove ganho e perda) ──────────────────────────────────
+  app.patch('/api/crm-comercial/leads/:id/reopen', async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { moved_by } = req.body ?? {};
+    try {
+      // 1. Busca dados atuais do lead (coluna atual + nome para remover fechamento)
+      const leadRes = await pool.query(
+        `SELECT l.coluna, l.nome, l.form_nome_fantasia, l.kanban_id, l.is_lost
+         FROM crm_comercial_leads l WHERE l.id = $1`, [id]
+      );
+      if (!leadRes.rows.length) return res.status(404).json({ error: 'Lead not found' });
+      const lead = leadRes.rows[0];
+
+      // 2. Descobre a primeira coluna não-terminal do kanban
+      const colsRes = await pool.query(
+        `SELECT id, title FROM crm_comercial_columns WHERE kanban_id = $1 ORDER BY order_index ASC`,
+        [lead.kanban_id]
+      );
+      const firstNonTerminal = colsRes.rows.find((c: any) => {
+        const t = (c.title || '').toLowerCase();
+        return !t.includes('ganho') && !t.includes('fechado') && !t.includes('perd') && !t.includes('descart');
+      });
+      const targetColuna = firstNonTerminal?.id || colsRes.rows[0]?.id || lead.coluna;
+
+      // 3. Atualiza lead: zera is_lost, loss_reason_id e move para coluna inicial
+      await pool.query(
+        `UPDATE crm_comercial_leads SET is_lost = false, loss_reason_id = NULL, coluna = $2 WHERE id = $1`,
+        [id, targetColuna]
+      );
+
+      // 4. Remove registro da tabela fechamentos (ganho) pelo nome
+      try {
+        const nomeFech = lead.form_nome_fantasia || lead.nome || '';
+        if (nomeFech) {
+          await pool.query(`DELETE FROM fechamentos WHERE "Nome" = $1`, [nomeFech]);
+        }
+      } catch (fErr: any) {
+        console.warn('[REOPEN] Não foi possível remover fechamento:', fErr.message);
+      }
+
+      // 5. Registra no histórico
+      await pool.query(
+        `INSERT INTO crm_comercial_history (lead_id, from_coluna, to_coluna, moved_by)
+         VALUES ($1, $2, $3, $4)`,
+        [id, lead.coluna, targetColuna, moved_by || 'Sistema']
+      );
+      await pool.query(
+        `INSERT INTO crm_comercial_lead_history (lead_id, action_type, description, user_name)
+         VALUES ($1, 'reaberto', '🔄 Lead reaberto e status de perda/ganho removido', $2)`,
+        [id, moved_by || 'Sistema']
+      ).catch(() => {});
+
+      res.json({ ok: true, coluna: targetColuna });
+    } catch (err) {
+      console.error('[REOPEN] Error:', err);
+      res.status(500).json({ error: 'Failed to reopen lead' });
     }
   });
 
@@ -4178,6 +4799,236 @@ app.get("/api/todos", async (req, res) => {
       res.status(500).json({ error: "Failed to delete loss reason" });
     }
   });
+
+  // ── Sequências de Cadência ────────────────────────────────────────────────
+
+  // Todas as sequências (sem filtro de kanban) — usado no builder de automações
+  app.get("/api/crm-comercial/sequences/all", async (req: Request, res: Response) => {
+    try {
+      const seqs = await pool.query(
+        `SELECT * FROM crm_sequences ORDER BY name ASC`
+      );
+      const steps = await pool.query(
+        `SELECT * FROM crm_sequence_steps ORDER BY sequence_id, order_index ASC`
+      );
+
+      const stepsMap: Record<number, any[]> = {};
+      for (const step of steps.rows) {
+        if (!stepsMap[step.sequence_id]) stepsMap[step.sequence_id] = [];
+        stepsMap[step.sequence_id].push(step);
+      }
+
+      const result = seqs.rows.map(seq => ({
+        ...seq,
+        steps: stepsMap[seq.id] || [],
+      }));
+
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch all sequences" });
+    }
+  });
+
+  app.get("/api/crm-comercial/sequences", async (req: Request, res: Response) => {
+    try {
+      const { kanban_id } = req.query;
+      const seqs = await pool.query(
+        `SELECT * FROM crm_sequences WHERE kanban_id = $1 ORDER BY id ASC`, [kanban_id]
+      );
+      const steps = await pool.query(
+        `SELECT s.* FROM crm_sequence_steps s
+         JOIN crm_sequences seq ON seq.id = s.sequence_id
+         WHERE seq.kanban_id = $1
+         ORDER BY s.sequence_id, s.order_index`, [kanban_id]
+      );
+      const stepsBySeq: Record<number, any[]> = {};
+      for (const step of steps.rows) {
+        if (!stepsBySeq[step.sequence_id]) stepsBySeq[step.sequence_id] = [];
+        stepsBySeq[step.sequence_id].push(step);
+      }
+      const result = seqs.rows.map((seq: any) => ({ ...seq, steps: stepsBySeq[seq.id] || [] }));
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch sequences" });
+    }
+  });
+
+  app.post("/api/crm-comercial/sequences", async (req: Request, res: Response) => {
+    try {
+      const { kanban_id, name, description, skip_weekends, steps } = req.body;
+      const seqRes = await pool.query(
+        `INSERT INTO crm_sequences (kanban_id, name, description, skip_weekends) VALUES ($1,$2,$3,$4) RETURNING *`,
+        [kanban_id, name, description || null, skip_weekends ?? true]
+      );
+      const seq = seqRes.rows[0];
+      if (steps?.length) {
+        for (let i = 0; i < steps.length; i++) {
+          const s = steps[i];
+          await pool.query(
+            `INSERT INTO crm_sequence_steps (sequence_id, order_index, type, title, observations, day_offset)
+             VALUES ($1,$2,$3,$4,$5,$6)`,
+            [seq.id, i, s.type, s.title || '', s.observations || '', s.day_offset ?? 1]
+          );
+        }
+      }
+      res.json({ ...seq, steps: steps || [] });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to create sequence" });
+    }
+  });
+
+  app.put("/api/crm-comercial/sequences/:id", async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { name, description, skip_weekends, steps } = req.body;
+      const seqRes = await pool.query(
+        `UPDATE crm_sequences SET name=$1, description=$2, skip_weekends=$3 WHERE id=$4 RETURNING *`,
+        [name, description || null, skip_weekends ?? true, id]
+      );
+      await pool.query(`DELETE FROM crm_sequence_steps WHERE sequence_id = $1`, [id]);
+      if (steps?.length) {
+        for (let i = 0; i < steps.length; i++) {
+          const s = steps[i];
+          await pool.query(
+            `INSERT INTO crm_sequence_steps (sequence_id, order_index, type, title, observations, day_offset)
+             VALUES ($1,$2,$3,$4,$5,$6)`,
+            [id, i, s.type, s.title || '', s.observations || '', s.day_offset ?? 1]
+          );
+        }
+      }
+      res.json({ ...seqRes.rows[0], steps: steps || [] });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to update sequence" });
+    }
+  });
+
+  app.delete("/api/crm-comercial/sequences/:id", async (req: Request, res: Response) => {
+    try {
+      await pool.query(`DELETE FROM crm_sequences WHERE id = $1`, [req.params.id]);
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to delete sequence" });
+    }
+  });
+  // ── Fim Sequências ────────────────────────────────────────────────────────
+
+  // ── Automações ────────────────────────────────────────────────────────────
+
+  // GET /api/automations — list all with steps
+  // Endpoint: buscar logs de execução de automações
+  app.get("/api/automations/logs", async (req: Request, res: Response) => {
+    try {
+      const limit = Number(req.query.limit) || 100;
+      const automation_id = req.query.automation_id;
+      let query = `SELECT * FROM automation_logs`;
+      const params: any[] = [];
+      if (automation_id) {
+        query += ` WHERE automation_id = $1`;
+        params.push(automation_id);
+      }
+      query += ` ORDER BY executed_at DESC LIMIT $${params.length + 1}`;
+      params.push(limit);
+      const result = await pool.query(query, params);
+      res.json(result.rows);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch automation logs" });
+    }
+  });
+
+  app.get("/api/automations", async (req: Request, res: Response) => {
+    try {
+      const aRes = await pool.query(`SELECT * FROM automations ORDER BY created_at DESC`);
+      const automations = await Promise.all(aRes.rows.map(async (a) => {
+        const sRes = await pool.query(
+          `SELECT * FROM automation_steps WHERE automation_id = $1 ORDER BY order_index ASC`,
+          [a.id]
+        );
+        return { ...a, steps: sRes.rows.map(s => ({ ...s, config: s.config })) };
+      }));
+      res.json(automations);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Failed to fetch automations" });
+    }
+  });
+
+  // POST /api/automations — create with steps
+  app.post("/api/automations", async (req: Request, res: Response) => {
+    try {
+      const { name, description, steps = [] } = req.body;
+      const aRes = await pool.query(
+        `INSERT INTO automations (name, description) VALUES ($1, $2) RETURNING *`,
+        [name, description || null]
+      );
+      const automation = aRes.rows[0];
+      for (let i = 0; i < steps.length; i++) {
+        const s = steps[i];
+        await pool.query(
+          `INSERT INTO automation_steps (automation_id, type, order_index, config) VALUES ($1, $2, $3, $4)`,
+          [automation.id, s.type, i, JSON.stringify(s.config || {})]
+        );
+      }
+      // Return with steps
+      const sRes = await pool.query(`SELECT * FROM automation_steps WHERE automation_id = $1 ORDER BY order_index`, [automation.id]);
+      res.json({ ...automation, steps: sRes.rows });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Failed to create automation" });
+    }
+  });
+
+  // PUT /api/automations/:id — update name/description/steps
+  app.put("/api/automations/:id", async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { name, description, steps = [] } = req.body;
+      await pool.query(
+        `UPDATE automations SET name=$1, description=$2, updated_at=NOW() WHERE id=$3`,
+        [name, description || null, id]
+      );
+      // Replace steps
+      await pool.query(`DELETE FROM automation_steps WHERE automation_id = $1`, [id]);
+      for (let i = 0; i < steps.length; i++) {
+        const s = steps[i];
+        await pool.query(
+          `INSERT INTO automation_steps (automation_id, type, order_index, config) VALUES ($1, $2, $3, $4)`,
+          [id, s.type, i, JSON.stringify(s.config || {})]
+        );
+      }
+      const aRes = await pool.query(`SELECT * FROM automations WHERE id = $1`, [id]);
+      const sRes = await pool.query(`SELECT * FROM automation_steps WHERE automation_id = $1 ORDER BY order_index`, [id]);
+      res.json({ ...aRes.rows[0], steps: sRes.rows });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Failed to update automation" });
+    }
+  });
+
+  // PATCH /api/automations/:id/toggle — toggle active
+  app.patch("/api/automations/:id/toggle", async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const result = await pool.query(
+        `UPDATE automations SET active = NOT active, updated_at=NOW() WHERE id=$1 RETURNING *`,
+        [id]
+      );
+      res.json(result.rows[0]);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to toggle automation" });
+    }
+  });
+
+  // DELETE /api/automations/:id
+  app.delete("/api/automations/:id", async (req: Request, res: Response) => {
+    try {
+      await pool.query(`DELETE FROM automations WHERE id = $1`, [req.params.id]);
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to delete automation" });
+    }
+  });
+
+  // ── Fim Automações ────────────────────────────────────────────────────────
 
   app.get("/api/crm-comercial/leads/:id/tasks", async (req, res) => {
     try {
@@ -5583,6 +6434,21 @@ app.get("/api/todos", async (req, res) => {
         WHERE day >= $1 AND day <= $2
       `, [startDate, endDate]);
 
+      // Motivos de Perda do mês
+      const lossReasonsMonth = await pool.query(`
+        SELECT
+          COALESCE(lr.name, 'Sem motivo') AS name,
+          COUNT(cl.id) AS total
+        FROM crm_comercial_leads cl
+        LEFT JOIN crm_comercial_loss_reasons lr ON cl.loss_reason_id = lr.id
+        WHERE cl.is_lost = true
+          AND cl.updated_at >= $1 AND cl.updated_at <= ($2::date + interval '1 day')
+        GROUP BY lr.name
+        ORDER BY total DESC
+      `, [startDate, endDate]);
+
+      const totalPerdas = lossReasonsMonth.rows.reduce((s: number, r: any) => s + Number(r.total), 0);
+
       res.json({
         month: selectedMonth,
         kpis: kpisMonth.rows[0],
@@ -5591,6 +6457,8 @@ app.get("/api/todos", async (req, res) => {
         fechamentos_year: fechamentosYear.rows,
         reunioes_year: reunioesYear.rows,
         reunioes_month: reunioesMonth.rows[0],
+        loss_reasons_month: lossReasonsMonth.rows,
+        total_perdas: totalPerdas,
         _debug_cols: { fechamentos: colNames, reunioes: rCols },
       });
     } catch (err: any) {

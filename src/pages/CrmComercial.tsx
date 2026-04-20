@@ -6,13 +6,15 @@ import {
   TrendingUp, TrendingDown, MoreHorizontal, ArrowRightLeft, Send, History, Phone, Mail,
   ArrowRight, Calendar, CheckSquare, FileText, Paperclip, Trophy, Star, Eye, EyeOff, Settings, PhoneCall, Loader2, Mic, MicOff,
   CheckCircle2, Circle, Video, Tag, Instagram, Briefcase, Award, Copy,
-  Handshake, RefreshCw, XCircle, ClipboardList, Upload, Folder, Download, File, Bot, Zap
+  Handshake, RefreshCw, XCircle, ClipboardList, Upload, Folder, Download, File, Bot, Zap,
+  Volume1, Volume2, VolumeX, GripVertical
 } from 'lucide-react';
 import { storage } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { 
   DndContext, 
-  closestCorners, 
+  closestCorners,
+  closestCenter,
   KeyboardSensor, 
   PointerSensor, 
   useSensor, 
@@ -281,7 +283,8 @@ interface LeadDetailModalProps {
   onMove: (leadId: string, newColumn: string) => void | Promise<void>;
   onDelete: (leadId: string) => void | Promise<void>;
   onWin: (leadId: string) => void;
-  onLose: (leadId: string) => void;
+  onLose: (leadId: string, reasonId?: number, reasonName?: string) => void;
+  lossReasons: { id: number; name: string; description: string | null; color: string }[];
   onMoveToKanban: (leadId: string, kanbanId: string) => void | Promise<void>;
   onAddTask: (task: Partial<CrmTask>) => void | Promise<void>;
   onUpdateTask: (id: number, updates: Partial<CrmTask>) => void | Promise<void>;
@@ -296,6 +299,9 @@ interface LeadDetailModalProps {
   onUpdateLeadField: (leadId: string, field: string, value: any) => void;
   tags: any[];
   onRefreshTags: () => void;
+  onReopen: (leadId: string) => void;
+  sequences: any[];
+  onApplySequence: (leadId: string, sequence: any) => void;
 }
 
 const SortableCard = (props: SortableCardProps) => {
@@ -320,7 +326,8 @@ const SortableCard = (props: SortableCardProps) => {
 
   const responsavel = users.find(u => u.id === lead.responsavel_id);
 
-  const isWon = isWonColumn(columns.find(c => c.id === lead.coluna)?.title);
+  const isWon  = isWonColumn(columns.find(c => c.id === lead.coluna)?.title);
+  const isLost = (lead as any).is_lost || isLostColumn(columns.find(c => c.id === lead.coluna)?.title);
 
   // Próxima atividade pendente
   const leadTasks = tasks.filter(t => t.lead_id === lead.id && !t.completed);
@@ -350,85 +357,100 @@ const SortableCard = (props: SortableCardProps) => {
   return (
     <div
       ref={setNodeRef}
-      style={style}
-      onClick={() => onClick()}
-      className={`rounded-xl p-3 border shadow-sm cursor-pointer relative group transition-all duration-200 ${
-        isDragging ? 'ring-2 ring-violet-500 opacity-30' : 
-        isWon ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-500/30 shadow-[0_4px_15px_rgba(16,185,129,0.1)] hover:border-emerald-500/50 hover:shadow-emerald-500/20' :
-        'bg-white dark:bg-dark-card border-gray-200 dark:border-white/5 hover:border-violet-500/30 hover:shadow-md'
-      }`}
-      {...attributes}
-      {...listeners}
+      style={{ ...style, marginBottom: 12 }}
+      className="relative group"
     >
-      {isWon && (
-        <div className="absolute -top-2.5 -right-2.5 z-20 bg-emerald-500 text-white p-2 rounded-full shadow-lg border-2 border-white dark:border-dark-card animate-pulse">
-          <Trophy size={14} />
-        </div>
-      )}
-      <div className="flex items-start justify-between mb-2">
-        <div className="flex items-center gap-3">
-          {lead.origem === 'Indicação' ? (
-            <img src="https://ui-avatars.com/api/?name=Yandra+Alves&background=random" alt="Avatar" className="w-8 h-8 rounded-full" />
-          ) : lead.origem === 'TCV' ? (
-            <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold text-xs flex-shrink-0">
-              {getInitials(lead.nome)}
-            </div>
-          ) : (
-            <div className="w-8 h-8 rounded-full bg-violet-500 text-white flex items-center justify-center font-bold text-xs flex-shrink-0">
-              {getInitials(lead.nome)}
-            </div>
-          )}
-          <div>
-            <h4 className="font-bold text-sm text-gray-900 dark:text-white line-clamp-1">{lead.nome}</h4>
-            <div className="flex flex-wrap items-center gap-1 mt-1">
-              <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 text-gray-600 dark:text-slate-300">
-                <span className={`w-1.5 h-1.5 rounded-full ${
-                  lead.origem === 'Indicação' ? 'bg-orange-500' : 
-                  lead.origem === 'TCV' ? 'bg-emerald-500' : 
-                  'bg-blue-500'
-                }`}></span>
-                {lead.origem}
-              </span>
-              {((lead as any).tags || []).map((tag: any) => (
-                <span key={tag.name} className="px-1.5 py-0.5 text-[9px] font-bold rounded-full text-white shadow-sm" style={{ backgroundColor: tag.color }}>
-                  {tag.name}
+      {/* ─ Drag handle ─ */}
+      <div
+        {...listeners}
+        className="absolute left-1.5 top-1/2 -translate-y-1/2 z-10 p-1 rounded cursor-grab active:cursor-grabbing text-gray-300 dark:text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity hover:text-violet-400"
+        title="Arrastar"
+        onClick={e => e.stopPropagation()}
+      >
+        <GripVertical size={15} />
+      </div>
+
+      <div
+        onClick={() => onClick()}
+        {...attributes}
+        className={`rounded-xl p-3 pl-6 border shadow-sm cursor-pointer relative transition-all duration-200 ${
+          isDragging ? 'ring-2 ring-violet-500 opacity-30' :
+          isWon  ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-500/30 shadow-[0_4px_15px_rgba(16,185,129,0.1)] hover:border-emerald-500/50 hover:shadow-emerald-500/20' :
+          isLost ? 'bg-red-50 dark:bg-red-500/10 border-red-300/50 shadow-[0_4px_15px_rgba(239,68,68,0.08)] hover:border-red-400/50 hover:shadow-red-500/15' :
+          'bg-white dark:bg-dark-card border-gray-200 dark:border-white/5 hover:border-violet-500/30 hover:shadow-md'
+        }`}
+      >
+        {isWon && (
+          <div className="absolute -top-2.5 -right-2.5 z-20 bg-emerald-500 text-white p-2 rounded-full shadow-lg border-2 border-white dark:border-dark-card animate-pulse">
+            <Trophy size={14} />
+          </div>
+        )}
+        {isLost && (
+          <div className="absolute -top-2.5 -right-2.5 z-20 bg-red-500 text-white p-2 rounded-full shadow-lg border-2 border-white dark:border-dark-card">
+            <X size={14} />
+          </div>
+        )}
+        <div className="flex items-start justify-between mb-2">
+          <div className="flex items-center gap-3">
+            {lead.origem === 'Indicação' ? (
+              <img src="https://ui-avatars.com/api/?name=Yandra+Alves&background=random" alt="Avatar" className="w-8 h-8 rounded-full" />
+            ) : lead.origem === 'TCV' ? (
+              <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold text-xs flex-shrink-0">
+                {getInitials(lead.nome)}
+              </div>
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-violet-500 text-white flex items-center justify-center font-bold text-xs flex-shrink-0">
+                {getInitials(lead.nome)}
+              </div>
+            )}
+            <div>
+              <h4 className="font-bold text-sm text-gray-900 dark:text-white line-clamp-1">{lead.nome}</h4>
+              <div className="flex flex-wrap items-center gap-1 mt-1">
+                <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 text-gray-600 dark:text-slate-300">
+                  <span className={`w-1.5 h-1.5 rounded-full ${
+                    lead.origem === 'Indicação' ? 'bg-orange-500' :
+                    lead.origem === 'TCV'       ? 'bg-emerald-500' :
+                    'bg-blue-500'
+                  }`}></span>
+                  {lead.origem}
                 </span>
-              ))}
+                {((lead as any).tags || []).map((tag: any) => (
+                  <span key={tag.name} className="px-1.5 py-0.5 text-[9px] font-bold rounded-full text-white shadow-sm" style={{ backgroundColor: tag.color }}>
+                    {tag.name}
+                  </span>
+                ))}
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      {responsavel && (
-        <div className="flex items-center gap-2 mb-3">
-          <div className="w-5 h-5 rounded-full bg-gray-200 dark:bg-slate-700 flex items-center justify-center text-[8px] font-bold text-gray-600 dark:text-white overflow-hidden" title={responsavel.name}>
-            {responsavel.picture ? <img src={responsavel.picture} alt={responsavel.name} className="w-full h-full object-cover" /> : getInitials(responsavel.name)}
+        {responsavel && (
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-5 h-5 rounded-full bg-gray-200 dark:bg-slate-700 flex items-center justify-center text-[8px] font-bold text-gray-600 dark:text-white overflow-hidden" title={responsavel.name}>
+              {responsavel.picture ? <img src={responsavel.picture} alt={responsavel.name} className="w-full h-full object-cover" /> : getInitials(responsavel.name)}
+            </div>
+            <span className="text-xs text-gray-500 dark:text-slate-400 font-medium">{responsavel.name}</span>
           </div>
-          <span className="text-xs text-gray-500 dark:text-slate-400 font-medium">{responsavel.name}</span>
-        </div>
-      )}
+        )}
 
-      <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-2 mb-2">
-        <div className="text-sm font-black text-emerald-500">
-          {formatCurrency(lead.valor)}
-        </div>
-      </div>
-
-      {/* Próxima Atividade */}
-      {taskStyle && nextTask && (
-        <div className={`flex items-center justify-between rounded-lg px-2 py-1.5 border text-xs font-semibold mb-2 ${taskStyle.badge}`}>
-          <div className="flex items-center gap-1.5">
-            <Clock size={11} />
-            <span>{taskStyle.label}: {nextTask.type}</span>
+        <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-2 mb-2">
+          <div className="text-sm font-black text-emerald-500">
+            {formatCurrency(lead.valor)}
           </div>
-          {nextTask.start_time && (
-            <span className="font-bold">{nextTask.start_time.slice(0,5)}</span>
-          )}
         </div>
-      )}
 
-
-
+        {taskStyle && nextTask && (
+          <div className={`flex items-center justify-between rounded-lg px-2 py-1.5 border text-xs font-semibold ${taskStyle.badge}`}>
+            <div className="flex items-center gap-1.5">
+              <Clock size={11} />
+              <span>{taskStyle.label}: {nextTask.type}</span>
+            </div>
+            {nextTask.start_time && (
+              <span className="font-bold">{nextTask.start_time.slice(0,5)}</span>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 };
@@ -436,10 +458,10 @@ const SortableCard = (props: SortableCardProps) => {
 const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   lead, users, columns, kanbans, comments, history, tasks, templates, newComment,
   setNewComment, onClose, onAddComment, onDeleteComment,
-  onMove, onDelete, onWin, onLose, onMoveToKanban, 
+  onMove, onDelete, onWin, onLose, onReopen, onMoveToKanban, 
   onAddTask, onUpdateTask, onDeleteTask, onApplyTemplate, onManageTemplates,
   onRefreshTasks, currentKanbanId, api4comSettings, callingLeadId, onCallLead, onUpdateLeadField,
-  tags, onRefreshTags, currentUserEmail, currentUserName
+  tags, onRefreshTags, currentUserEmail, currentUserName, lossReasons, sequences, onApplySequence
 }) => {
   const [activeTab, setActiveTab] = useState<'atividades' | 'histórico' | 'notas' | 'ligações' | 'arquivos'>('atividades');
   const [callLogs, setCallLogs] = useState<any[]>([]);
@@ -448,10 +470,13 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   const [showMoveMenu, setShowMoveMenu] = useState(false);
   const [showKanbanMenu, setShowKanbanMenu] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [showLossDropdown, setShowLossDropdown] = useState(false);
+  const lossDropdownRef = useRef<HTMLDivElement>(null);
   const [creatingWhatsapp, setCreatingWhatsapp] = useState(false);
   const [isAddingTask, setIsAddingTask] = useState(false);
   const [taskToEdit, setTaskToEdit] = useState<CrmTask | null>(null);
   const [isSelectingTemplate, setIsSelectingTemplate] = useState(false);
+  const [isPickingSequence, setIsPickingSequence] = useState(false);
   const [taskForm, setTaskForm] = useState({
     title: '',
     type: 'Tarefa',
@@ -462,6 +487,10 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
     responsible_id: '',
     observations: ''
   });
+
+  // Computed: estado do lead (ganho / perdido)
+  const isWon  = isWonColumn(columns.find(c => c.id === lead?.coluna)?.title);
+  const isLost = !!(lead as any)?.is_lost || isLostColumn(columns.find(c => c.id === lead?.coluna)?.title);
 
   const [meetings, setMeetings] = useState<any[]>([]);
   const [meetingsLoading, setMeetingsLoading] = useState(false);
@@ -848,14 +877,45 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
               Ganhar
             </button>
 
-            {/* Perda */}
-            <button
-              onClick={() => { onLose(lead.id); onClose(); }}
-              className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-red-500/20"
-            >
-              <TrendingDown size={15} />
-              Perda
-            </button>
+            {/* Perda com dropdown de motivos */}
+            <div className="relative" ref={lossDropdownRef}>
+              <button
+                onClick={() => { setShowLossDropdown(v => !v); setShowMoreMenu(false); setShowMoveMenu(false); }}
+                className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-red-500/20"
+              >
+                <TrendingDown size={15} />
+                Perda
+                <ChevronDown size={13} className={`transition-transform ${showLossDropdown ? 'rotate-180' : ''}`} />
+              </button>
+              {showLossDropdown && (
+                <div className="absolute left-0 top-full mt-2 w-56 modal-container rounded-xl py-2 z-50 shadow-2xl border border-white/10">
+                  <p className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-400">Motivo da perda</p>
+                  {lossReasons.length === 0 ? (
+                    <p className="px-3 py-2 text-xs text-gray-400">Nenhum motivo cadastrado.<br/>Configure em ⚙️ Configurações.</p>
+                  ) : (
+                    lossReasons.map(r => (
+                      <button
+                        key={r.id}
+                        onClick={() => { setShowLossDropdown(false); onLose(lead.id, r.id, r.name); onClose(); }}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left text-gray-700 dark:text-gray-200 hover:bg-red-500/10 transition-colors"
+                      >
+                        <span className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0" />
+                        {r.name}
+                      </button>
+                    ))
+                  )}
+                  <div className="border-t border-white/10 mt-1 pt-1">
+                    <button
+                      onClick={() => { setShowLossDropdown(false); onLose(lead.id); onClose(); }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left text-gray-400 hover:bg-white/5 transition-colors"
+                    >
+                      <X size={12} />
+                      Perda sem motivo
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Mais (+ dropdown) */}
             <div className="relative" ref={moreRef}>
@@ -998,6 +1058,20 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                     )}
                     Criar grupo do Whatsapp
                   </button>
+
+                  {/* Reabrir Card — visível apenas para leads ganhos ou perdidos */}
+                  {(isWon || isLost) && (
+                    <>
+                      <div className="h-px bg-gray-100 dark:bg-white/5 my-1" />
+                      <button
+                        onClick={() => { onReopen(lead.id); setShowMoreMenu(false); onClose(); }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-violet-50 dark:hover:bg-violet-500/10 text-sm text-violet-600 dark:text-violet-400 transition-colors"
+                      >
+                        <RefreshCw size={15} />
+                        Reabrir Card
+                      </button>
+                    </>
+                  )}
 
                   <div className="h-px bg-gray-100 dark:bg-white/5 my-1" />
 
@@ -1182,9 +1256,10 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
 
                             const isNoteAction = item.action_type === 'note_created';
                             const isWhatsappTrigger = item.action_type === 'whatsapp_trigger';
+                            const isAutomationAction = item.action_type === 'automacao';
 
                             // Task/meeting/note-specific events get a different style
-                            if (isTaskAction || item.action_type === 'template_applied' || item.action_type === 'meeting_created' || isNoteAction || isWhatsappTrigger) {
+                            if (isTaskAction || item.action_type === 'template_applied' || item.action_type === 'meeting_created' || isNoteAction || isWhatsappTrigger || isAutomationAction) {
                               const iconMap: Record<string, { icon: any; color: string; bg: string }> = {
                                 task_created: { icon: <Plus size={10} />, color: 'text-blue-500', bg: 'bg-blue-500' },
                                 task_completed: { icon: <Check size={10} />, color: 'text-emerald-500', bg: 'bg-emerald-500' },
@@ -1234,6 +1309,10 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                               } else if (item.action_type === 'whatsapp_trigger') {
                                 effectiveTaskType = 'Automação';
                                 title = '';
+                                action = '';
+                              } else if (isAutomationAction) {
+                                effectiveTaskType = 'Automação';
+                                title = item.description || '';
                                 action = '';
                               } else if (!effectiveTaskType || effectiveTaskType === 'Tarefa') {
                                  if (lowerTitle.includes('whatsapp') || lowerTitle.includes('wpp')) effectiveTaskType = 'WhatsApp';
@@ -1342,8 +1421,8 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                                   
                                   <div className="bg-white/50 dark:bg-white/5 border border-gray-100 dark:border-white/10 rounded-2xl p-4 shadow-sm transition-all hover:shadow-md">
                                     <div className="flex items-start gap-3">
-                                      <div className="flex-shrink-0 w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: isWhatsappTrigger ? 'rgba(16,185,129,0.1)' : 'rgba(124,58,237,0.12)' }}>
-                                        {React.cloneElement(taskIcon as React.ReactElement, { size: 18, style: { color: isWhatsappTrigger ? '#10b981' : '#7c3aed' } })}
+                                      <div className="flex-shrink-0 w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: isWhatsappTrigger ? 'rgba(16,185,129,0.1)' : isAutomationAction ? 'rgba(139,92,246,0.12)' : 'rgba(124,58,237,0.12)' }}>
+                                        {React.cloneElement(taskIcon as React.ReactElement, { size: 18, style: { color: isWhatsappTrigger ? '#10b981' : '#8b5cf6' } })}
                                       </div>
                                       
                                       <div className="flex-1 min-w-0">
@@ -1381,6 +1460,14 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                                             style={{ wordBreak: 'break-word', padding: '12px 14px', borderRadius: '12px' }}
                                           >
                                             <span className="flex-1">{item.description || 'Gatilho de WhatsApp acionado ✅'}</span>
+                                          </div>
+                                        )}
+                                        {isAutomationAction && item.description && (
+                                          <div 
+                                            className="mt-3 text-[13px] font-medium text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-500/10 border border-violet-100 dark:border-violet-500/20 shadow-sm flex items-center gap-2"
+                                            style={{ wordBreak: 'break-word', padding: '12px 14px', borderRadius: '12px' }}
+                                          >
+                                            <span className="flex-1">{item.description}</span>
                                           </div>
                                         )}
                                         
@@ -1468,15 +1555,10 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                     <span className="text-[11px] font-bold text-gray-400 dark:text-slate-500 uppercase tracking-widest">Atividades</span>
                     <div className="flex items-center gap-2">
                       <button 
-                        onClick={() => setIsSelectingTemplate(true)}
+                        onClick={() => setIsPickingSequence(true)}
                         className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 rounded-lg text-xs font-bold text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-white/10 transition-all"
                       >
-                        <FileText size={14} /> Usar Modelo
-                      </button>
-                      <button 
-                        className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 rounded-lg text-xs font-bold text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-white/10 transition-all"
-                      >
-                        <CheckSquare size={14} /> Aplicar Sequência
+                        <CheckSquare size={14} /> Sequência
                       </button>
                       <button 
                         onClick={() => { setTaskToEdit(null); setIsAddingTask(true); }}
@@ -1504,7 +1586,69 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                       )}
                     </AnimatePresence>
 
-                    {/* Template Selector Modal */}
+                    {/* Sequence Picker Modal */}
+                    <AnimatePresence>
+                      {isPickingSequence && (
+                        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }}>
+                          <div className="absolute inset-0" onClick={() => setIsPickingSequence(false)} />
+                          <motion.div
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            className="bg-white dark:bg-[#1A1625] border border-gray-200 dark:border-white/10 rounded-2xl p-6 shadow-xl w-full max-w-lg relative z-10"
+                          >
+                            <div className="flex items-center justify-between mb-5">
+                              <div>
+                                <h4 className="text-base font-bold text-gray-900 dark:text-white">Aplicar Sequência</h4>
+                                <p className="text-xs text-gray-500 dark:text-slate-500 mt-0.5">Selecione uma cadência para criar as atividades automaticamente.</p>
+                              </div>
+                              <button onClick={() => setIsPickingSequence(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-xl transition-colors"><X size={18} /></button>
+                            </div>
+                            {sequences.length === 0 ? (
+                              <div className="py-10 text-center">
+                                <p className="text-sm text-gray-400 dark:text-slate-500 mb-3">Nenhuma sequência criada ainda.</p>
+                                <p className="text-xs text-gray-400 dark:text-slate-600">Crie sequências em Configurações → Sequências.</p>
+                              </div>
+                            ) : (
+                              <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+                                {sequences.map(seq => {
+                                  const SEQ_COLOR: Record<string,string> = {
+                                    'Ligação':'bg-blue-500/15 text-blue-400', 'Reunião':'bg-purple-500/15 text-purple-400',
+                                    'Videochamada':'bg-cyan-500/15 text-cyan-400', 'Email':'bg-orange-500/15 text-orange-400',
+                                    'WhatsApp':'bg-emerald-500/15 text-emerald-400', 'Instagram':'bg-pink-500/15 text-pink-400',
+                                    'LinkedIn':'bg-sky-500/15 text-sky-400', 'Outros':'bg-slate-500/15 text-slate-400',
+                                  };
+                                  return (
+                                    <button
+                                      key={seq.id}
+                                      onClick={() => { onApplySequence(lead.id, seq); setIsPickingSequence(false); }}
+                                      className="w-full flex items-start justify-between p-4 bg-gray-50 dark:bg-white/5 border border-gray-100 dark:border-white/10 rounded-xl hover:border-violet-500/60 hover:bg-violet-50 dark:hover:bg-violet-500/5 transition-all group text-left"
+                                    >
+                                      <div className="flex-1 min-w-0">
+                                        <p className="font-bold text-sm text-slate-800 dark:text-slate-100 mb-1">{seq.name}</p>
+                                        <p className="text-xs text-gray-500 dark:text-slate-500 mb-2">{seq.steps?.length || 0} {seq.steps?.length === 1 ? 'passo' : 'passos'} · {seq.skip_weekends ? 'pula fins de semana' : 'todos os dias'}</p>
+                                        {seq.steps?.length > 0 && (
+                                          <div className="flex flex-wrap gap-1">
+                                            {seq.steps.map((s: any, i: number) => (
+                                              <span key={i} className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${SEQ_COLOR[s.type] || 'bg-slate-500/15 text-slate-400'}`}>
+                                                Dia {s.day_offset} · {s.title || s.type}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                      <span className="ml-3 shrink-0 mt-1 text-xs font-bold text-violet-500 group-hover:text-violet-400">Aplicar →</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </motion.div>
+                        </div>
+                      )}
+                    </AnimatePresence>
+
+                    {/* Template Selector Modal (mantido para acesso interno se necessário) */}
                     <AnimatePresence>
                       {isSelectingTemplate && (
                         <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.45)' }}>
@@ -2812,11 +2956,30 @@ const CrmComercial = () => {
   const [savingLossReason, setSavingLossReason] = useState(false);
   const [editingLossReason, setEditingLossReason] = useState<number | null>(null);
   const [editLossReasonForm, setEditLossReasonForm] = useState({ name: '', description: '', color: '' });
+  // Sequences state
+  const [sequences, setSequences] = useState<any[]>([]);
+  const [seqMode, setSeqMode] = useState<'list' | 'form'>('list');
+  const [seqEditId, setSeqEditId] = useState<number | null>(null);
+  const [seqForm, setSeqForm] = useState<{
+    name: string; description: string; skip_weekends: boolean;
+    steps: { type: string; title: string; observations: string; day_offset: number }[];
+  }>({ name: '', description: '', skip_weekends: true, steps: [] });
+  const SEQ_TYPES = ['Ligação','Reunião','Videochamada','Email','WhatsApp','Instagram','LinkedIn','Outros'];
+  const SEQ_TYPE_COLOR: Record<string,string> = {
+    'Ligação':'bg-blue-500/20 text-blue-400', 'Reunião':'bg-purple-500/20 text-purple-400',
+    'Videochamada':'bg-cyan-500/20 text-cyan-400', 'Email':'bg-orange-500/20 text-orange-400',
+    'WhatsApp':'bg-emerald-500/20 text-emerald-400', 'Instagram':'bg-pink-500/20 text-pink-400',
+    'LinkedIn':'bg-sky-500/20 text-sky-400', 'Outros':'bg-slate-500/20 text-slate-400',
+  };
+
   const [callingLeadId, setCallingLeadId] = useState<string | null>(null);
   const [softphoneCall, setSoftphoneCall] = useState<{leadId: string, leadName: string, phone: string, status: 'connecting' | 'active' | 'error', errorMsg?: string, startedAt?: number} | null>(null);
   const [callElapsed, setCallElapsed] = useState(0);
   // JsSIP Softphone hook
   const softphone = useSoftphone();
+  const [phoneShowDialpad, setPhoneShowDialpad] = useState(false);
+  const [phoneShowVolume, setPhoneShowVolume] = useState(false);
+  const [phoneSpeakerVol, setPhoneSpeakerVol] = useState(1);
   // --- End Api4Com state ---
 
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -3056,7 +3219,10 @@ const CrmComercial = () => {
   useEffect(() => {
     fetchKanbans();
     fetchTemplates();
+    fetchLossReasons();
   }, []);
+
+  useEffect(() => { fetchSequences(); }, [activeKanbanId]);
 
   useEffect(() => {
     if (crmWebhookSettings?.inbound_kanban_id) {
@@ -3253,6 +3419,44 @@ const CrmComercial = () => {
     }
   };
 
+  const handleApplySequence = async (leadId: string, sequence: any) => {
+    if (!sequence?.steps?.length) return;
+    const addDays = (date: Date, days: number, skipWeekends: boolean): Date => {
+      let result = new Date(date);
+      let added = 0;
+      while (added < days) {
+        result.setDate(result.getDate() + 1);
+        if (!skipWeekends || (result.getDay() !== 0 && result.getDay() !== 6)) added++;
+      }
+      return result;
+    };
+    const baseDate = new Date();
+    try {
+      for (const step of sequence.steps) {
+        const due = addDays(baseDate, step.day_offset ?? 1, sequence.skip_weekends ?? true);
+        const dueStr = due.toISOString().split('T')[0];
+        await fetch(`/api/crm-comercial/leads/${leadId}/tasks`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: step.title || step.type,
+            type: step.type,
+            priority: 'Normal',
+            due_date: dueStr,
+            start_time: '09:00',
+            end_time: '10:00',
+            observations: step.observations || '',
+            responsible_id: user?.id || '',
+          })
+        });
+      }
+      fetchTasks(leadId);
+      fetchHistory(leadId);
+    } catch (err) {
+      console.error('Error applying sequence:', err);
+    }
+  };
+
   const handleUpdateLeadField = async (leadId: string, field: string, value: any) => {
     try {
       const res = await fetch(`/api/crm-comercial/leads/${leadId}`, {
@@ -3324,7 +3528,7 @@ const CrmComercial = () => {
     }
     
     if (!showLostLeads) {
-      result = result.filter(l => !isLostColumn(columns.find(c => c.id === l.coluna)?.title));
+      result = result.filter(l => !(l as any).is_lost && !isLostColumn(columns.find(c => c.id === l.coluna)?.title));
     }
     
     return result;
@@ -3420,20 +3624,25 @@ const CrmComercial = () => {
 
     setLeads((prev) => {
       const activeIndex = prev.findIndex((l) => l.id === activeId);
-      const overIndex = prev.findIndex((l) => l.id === overId);
-
       if (activeIndex === -1) return prev;
 
       let newLeads = [...prev];
 
-      if (isOverLead && overIndex !== -1 && prev[overIndex].coluna && prev[activeIndex].coluna !== prev[overIndex].coluna) {
-        newLeads[activeIndex].coluna = prev[overIndex].coluna;
+      // Arrastou sobre outro card — muda de coluna se necessário
+      if (isOverLead) {
+        const overIndex = prev.findIndex((l) => l.id === overId);
+        if (overIndex === -1) return prev;
+        const targetColumn = prev[overIndex].coluna;
+        if (prev[activeIndex].coluna !== targetColumn) {
+          newLeads[activeIndex] = { ...newLeads[activeIndex], coluna: targetColumn };
+        }
         return arrayMove(newLeads, activeIndex, overIndex);
       }
 
+      // Arrastou sobre coluna vazia — apenas muda coluna, sem arrayMove para evitar bugs
       if (isOverColumn && prev[activeIndex].coluna !== overId) {
-        newLeads[activeIndex].coluna = overId;
-        return arrayMove(newLeads, activeIndex, newLeads.length - 1);
+        newLeads[activeIndex] = { ...newLeads[activeIndex], coluna: overId };
+        return newLeads;
       }
 
       return prev;
@@ -3696,6 +3905,45 @@ const CrmComercial = () => {
     } catch {}
   };
 
+  const fetchSequences = async () => {
+    try {
+      // Busca todas as sequências (global, sem filtro de kanban)
+      const res = await fetch('/api/crm-comercial/sequences/all');
+      if (res.ok) setSequences(await res.json());
+    } catch {}
+  };
+
+  const handleSaveSequence = async () => {
+    console.log('[SEQ] handleSaveSequence called', { name: seqForm.name, activeKanbanId, seqEditId });
+    if (!seqForm.name.trim()) { console.warn('[SEQ] name is empty, returning'); return; }
+    const body = { ...seqForm, kanban_id: activeKanbanId };
+    const url = seqEditId ? `/api/crm-comercial/sequences/${seqEditId}` : '/api/crm-comercial/sequences';
+    const method = seqEditId ? 'PUT' : 'POST';
+    console.log('[SEQ] Sending', method, url, body);
+    try {
+      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const data = await res.json().catch(() => ({}));
+      console.log('[SEQ] Response', res.status, data);
+      if (res.ok) {
+        fetchSequences();
+        setSeqMode('list');
+        setSeqEditId(null);
+        setSeqForm({ name:'', description:'', skip_weekends:true, steps:[] });
+      } else {
+        alert(`Erro ao salvar sequência: ${data?.error || res.status}`);
+      }
+    } catch(e) {
+      console.error('[SEQ] Fetch error', e);
+      alert('Erro de rede ao salvar sequência');
+    }
+  };
+
+  const handleDeleteSequence = async (id: number) => {
+    if (!confirm('Excluir esta sequência?')) return;
+    await fetch(`/api/crm-comercial/sequences/${id}`, { method: 'DELETE' });
+    fetchSequences();
+  };
+
   const handleCreateLossReason = async () => {
     if (!newLossReason.name.trim()) return;
     setSavingLossReason(true);
@@ -3732,8 +3980,54 @@ const CrmComercial = () => {
     } catch {}
   };
 
-  const handleLoseLead = async (leadId: string) => {
-    await handleMoveLead(leadId, columns.find(c => c.title?.toLowerCase().includes('perd') || c.title?.toLowerCase().includes('descart'))?.id || columns[0]?.id || '');
+  const handleReopenLead = async (leadId: string) => {
+    // Otimista: remove is_lost e move para primeira coluna não-terminal
+    setLeads(prev => prev.map(l =>
+      l.id === leadId ? { ...l, is_lost: false, loss_reason_id: null } as any : l
+    ));
+    try {
+      await fetch(`/api/crm-comercial/leads/${leadId}/reopen`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ moved_by: user?.name || 'Sistema' })
+      });
+      fetchData(); // recarrega para pegar coluna correta
+    } catch (e) {
+      console.error('Erro ao reabrir lead:', e);
+      fetchData();
+    }
+  };
+
+  const handleLoseLead = async (leadId: string, reasonId?: number, reasonName?: string) => {
+    // Atualiza UI otimisticamente (adiciona is_lost: true no lead)
+    setLeads(prev => prev.map(l => l.id === leadId ? { ...l, is_lost: true } as any : l));
+
+    try {
+      // Move para coluna "Perdido" se existir nesse kanban
+      const lostCol = columns.find(c => c.title?.toLowerCase().includes('perd') || c.title?.toLowerCase().includes('descart'));
+      const patchBody: any = { is_lost: true, moved_by: user?.name || 'Sistema' };
+      if (lostCol) patchBody.coluna = lostCol.id;
+      if (reasonId) patchBody.loss_reason_id = reasonId;
+
+      await fetch(`/api/crm-comercial/leads/${leadId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patchBody)
+      });
+
+      // Registra o motivo da perda no histórico
+      const desc = reasonName
+        ? `❌ Lead marcado como perdido — Motivo: ${reasonName}`
+        : '❌ Lead marcado como perdido';
+      await fetch(`/api/crm-comercial/leads/${leadId}/history`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action_type: 'perda', description: desc, user_name: user?.name || 'Sistema' })
+      }).catch(() => {});
+    } catch(e) {
+      console.error('Erro ao marcar perda:', e);
+      fetchData(); // reverte em caso de erro
+    }
   };
 
   const handleMoveToKanban = async (leadId: string, kanbanId: string) => {
@@ -4001,7 +4295,7 @@ const CrmComercial = () => {
 
       <DndContext 
         sensors={sensors}
-        collisionDetection={closestCorners}
+        collisionDetection={closestCenter}
         onDragStart={handleDragStart}
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
@@ -4061,17 +4355,19 @@ const CrmComercial = () => {
                     items={columnLeads.map(l => l.id)}
                     strategy={verticalListSortingStrategy}
                   >
-                    <div className="flex flex-col gap-3 min-h-[100px] flex-1">
+                  <div className="flex flex-col min-h-[100px] flex-1">
                       {columnLeads.length === 0 ? (
-                        <div className="flex-1 border border-dashed border-gray-300 dark:border-white/10 rounded-xl flex flex-col items-center justify-center text-gray-400 dark:text-slate-500 p-8">
-                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mb-2 opacity-50">
-                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-                            <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
-                            <line x1="12" y1="22.08" x2="12" y2="12"></line>
-                          </svg>
-                          <p className="font-medium text-sm">Arraste tickets para cá</p>
-                          <p className="text-xs opacity-50 mt-1">Solte aqui para adicionar</p>
-                        </div>
+                        <div 
+                        className="flex-1 border-2 border-dashed border-gray-200 dark:border-white/10 rounded-xl flex flex-col items-center justify-center text-gray-400 dark:text-slate-500 p-8 min-h-[150px] pointer-events-none"
+                      >
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mb-2 opacity-40">
+                          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                          <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                          <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                        </svg>
+                        <p className="font-medium text-sm">Arraste tickets para cá</p>
+                        <p className="text-xs opacity-50 mt-1">Solte aqui para adicionar</p>
+                      </div>
                       ) : (
                         <>
                           {columnLeads.map(lead => (
@@ -4095,7 +4391,7 @@ const CrmComercial = () => {
                               }}
                             />
                           ))}
-                          <div className="border border-dashed border-gray-300 dark:border-white/10 rounded-xl p-4 text-center text-xs text-gray-500 dark:text-slate-500 mt-2">
+                          <div className="border border-dashed border-gray-300 dark:border-white/10 rounded-xl p-4 text-center text-xs text-gray-500 dark:text-slate-500" style={{ marginTop: 4 }}>
                             Solte aqui para adicionar
                           </div>
                         </>
@@ -4148,6 +4444,10 @@ const CrmComercial = () => {
           onDelete={handleDeleteLead}
           onWin={handleWinLead}
           onLose={handleLoseLead}
+          onReopen={handleReopenLead}
+          lossReasons={lossReasons}
+          sequences={sequences}
+          onApplySequence={handleApplySequence}
           onMoveToKanban={handleMoveToKanban}
           onAddTask={handleAddTask}
           onUpdateTask={handleUpdateTask}
@@ -4878,8 +5178,11 @@ const CrmComercial = () => {
           );
         })()}
 
-        {/* === ACTIVE JSSIP SOFTPHONE === */}
-        {softphone.currentCall && (() => {
+        {/* === ACTIVE JSSIP SOFTPHONE — only when past the pre-dial waiting state === */}
+        {softphone.currentCall && !(
+          (softphone.currentCall.status === 'calling' || softphone.currentCall.status === 'failed') &&
+          !softphone.currentCall.startedAt
+        ) && (() => {
           const call = softphone.currentCall;
           const status = call.status;
           const initials = call.leadName.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
@@ -4966,41 +5269,116 @@ const CrmComercial = () => {
                 )}
               </div>
 
-              {/* Controls */}
+              {/* ── Controls ── */}
               {!isDone && (
-                <div className="flex items-center justify-center gap-4 pb-8 px-6">
-                  {/* Mute */}
-                  <button
-                    onClick={softphone.toggleMute}
-                    title={softphone.isMuted ? 'Ativar microfone' : 'Silenciar'}
-                    className="w-12 h-12 rounded-full flex items-center justify-center transition-all active:scale-90"
-                    style={{
-                      background: softphone.isMuted ? 'rgba(245,158,11,0.2)' : 'rgba(255,255,255,0.1)',
-                      border: `1px solid ${softphone.isMuted ? 'rgba(245,158,11,0.4)' : 'rgba(255,255,255,0.15)'}`,
-                      color: softphone.isMuted ? '#fbbf24' : '#ffffff'
-                    }}
-                  >
-                    {softphone.isMuted ? <MicOff size={18} /> : <Mic size={18} />}
-                  </button>
+                <div className="px-5 pb-2">
+                  {/* Top row: Dialpad | Mute | Volume */}
+                  <div className="flex items-center justify-between mb-3">
+                    {/* Dialpad toggle */}
+                    <button
+                      onClick={() => { setPhoneShowDialpad(v => !v); setPhoneShowVolume(false); }}
+                      title="Teclado"
+                      className="w-12 h-12 rounded-full flex items-center justify-center transition-all active:scale-90"
+                      style={{
+                        background: phoneShowDialpad ? 'rgba(124,58,237,0.25)' : 'rgba(255,255,255,0.1)',
+                        border: `1px solid ${phoneShowDialpad ? 'rgba(124,58,237,0.5)' : 'rgba(255,255,255,0.15)'}`,
+                        color: phoneShowDialpad ? '#a78bfa' : '#fff'
+                      }}
+                    >
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                        <circle cx="5" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="19" cy="5" r="2"/>
+                        <circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/>
+                        <circle cx="5" cy="19" r="2"/><circle cx="12" cy="19" r="2"/><circle cx="19" cy="19" r="2"/>
+                      </svg>
+                    </button>
 
-                  {/* Hang up — big red button */}
-                  <button
-                    onClick={softphone.hangUp}
-                    title="Encerrar chamada"
-                    className="w-16 h-16 rounded-full flex items-center justify-center transition-all active:scale-90"
-                    style={{ background: 'linear-gradient(135deg,#dc2626,#b91c1c)', boxShadow: '0 8px 30px rgba(220,38,38,0.5)', color: '#fff' }}
-                  >
-                    <Phone size={24} style={{ transform: 'rotate(135deg)' }} />
-                  </button>
+                    {/* Hang up — centered */}
+                    <button
+                      onClick={softphone.hangUp}
+                      title="Encerrar chamada"
+                      className="w-16 h-16 rounded-full flex items-center justify-center transition-all active:scale-90"
+                      style={{ background: 'linear-gradient(135deg,#dc2626,#b91c1c)', boxShadow: '0 8px 30px rgba(220,38,38,0.5)', color: '#fff' }}
+                    >
+                      <Phone size={24} style={{ transform: 'rotate(135deg)' }} />
+                    </button>
 
-                  {/* Speaker placeholder (visual balance) */}
-                  <button
-                    title="Volume"
-                    className="w-12 h-12 rounded-full flex items-center justify-center"
-                    style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.15)', color: '#ffffff', opacity: 0.5, cursor: 'default' }}
-                  >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
-                  </button>
+                    {/* Volume toggle */}
+                    <button
+                      onClick={() => { setPhoneShowVolume(v => !v); setPhoneShowDialpad(false); }}
+                      title="Volume"
+                      className="w-12 h-12 rounded-full flex items-center justify-center transition-all active:scale-90"
+                      style={{
+                        background: phoneShowVolume ? 'rgba(34,197,94,0.2)' : 'rgba(255,255,255,0.1)',
+                        border: `1px solid ${phoneShowVolume ? 'rgba(34,197,94,0.4)' : 'rgba(255,255,255,0.15)'}`,
+                        color: phoneShowVolume ? '#4ade80' : '#fff'
+                      }}
+                    >
+                      {phoneSpeakerVol === 0
+                        ? <VolumeX size={18} />
+                        : phoneSpeakerVol < 0.5
+                        ? <Volume1 size={18} />
+                        : <Volume2 size={18} />}
+                    </button>
+                  </div>
+
+                  {/* Mute row */}
+                  <div className="flex justify-center mb-3">
+                    <button
+                      onClick={softphone.toggleMute}
+                      title={softphone.isMuted ? 'Ativar microfone' : 'Silenciar microfone'}
+                      className="flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold transition-all active:scale-95"
+                      style={{
+                        background: softphone.isMuted ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.08)',
+                        border: `1px solid ${softphone.isMuted ? 'rgba(245,158,11,0.4)' : 'rgba(255,255,255,0.12)'}`,
+                        color: softphone.isMuted ? '#fbbf24' : '#9ca3af'
+                      }}
+                    >
+                      {softphone.isMuted ? <MicOff size={14} /> : <Mic size={14} />}
+                      {softphone.isMuted ? 'Microfone mudo' : 'Microfone ativo'}
+                    </button>
+                  </div>
+
+                  {/* Volume slider panel */}
+                  {phoneShowVolume && (
+                    <div className="rounded-2xl p-3 mb-3" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                      <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-2 text-center">Volume do Alto-falante</p>
+                      <div className="flex items-center gap-3">
+                        <VolumeX size={14} className="text-slate-500 shrink-0" />
+                        <input
+                          type="range" min="0" max="1" step="0.05"
+                          value={phoneSpeakerVol}
+                          onChange={e => {
+                            const v = parseFloat(e.target.value);
+                            setPhoneSpeakerVol(v);
+                            softphone.setSpeakerVolume(v);
+                          }}
+                          className="flex-1 h-1.5 rounded-full appearance-none cursor-pointer"
+                          style={{ accentColor: '#22c55e' }}
+                        />
+                        <Volume2 size={14} className="text-slate-500 shrink-0" />
+                      </div>
+                      <p className="text-center text-xs text-slate-400 mt-1">{Math.round(phoneSpeakerVol * 100)}%</p>
+                    </div>
+                  )}
+
+                  {/* Dialpad panel */}
+                  {phoneShowDialpad && (
+                    <div className="rounded-2xl p-3 mb-3" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                      <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-3 text-center">Teclado</p>
+                      <div className="grid grid-cols-3 gap-2">
+                        {['1','2','3','4','5','6','7','8','9','*','0','#'].map(d => (
+                          <button
+                            key={d}
+                            onClick={() => softphone.sendDTMF(d)}
+                            className="py-2.5 rounded-xl text-sm font-bold transition-all active:scale-90 hover:brightness-125"
+                            style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
+                          >
+                            {d}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -5478,17 +5856,164 @@ const CrmComercial = () => {
 
                 {/* ── SEQUÊNCIAS ── */}
                 {settingsTab === 'sequencias' && (
-                  <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
-                    <div className="w-16 h-16 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.2)' }}>
-                      <span className="text-3xl">⚡</span>
-                    </div>
-                    <div>
-                      <p className="font-bold text-white text-lg">Sequências de Cadência</p>
-                      <p className="text-sm mt-1" style={{ color: '#6b7280' }}>Em desenvolvimento — automatize sequências de follow-up para seus leads.</p>
-                    </div>
-                    <span className="px-3 py-1 rounded-full text-xs font-bold" style={{ background: 'rgba(234,179,8,0.1)', border: '1px solid rgba(234,179,8,0.2)', color: '#facc15' }}>Em breve</span>
+                  <div className="space-y-4">
+                    {seqMode === 'list' ? (
+                      <>
+                        {/* Header */}
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h3 className="text-sm font-bold text-gray-900 dark:text-white">Sequências de Cadência</h3>
+                            <p className="text-xs text-gray-500 dark:text-slate-500 mt-0.5">Modelos de atividades automáticas para follow-up.</p>
+                          </div>
+                          <button
+                            onClick={() => { setSeqEditId(null); setSeqForm({ name:'', description:'', skip_weekends:true, steps:[] }); setSeqMode('form'); }}
+                            className="flex items-center gap-1.5 px-3 py-2 bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold rounded-xl transition-all"
+                          >
+                            <Plus size={13} /> Nova Sequência
+                          </button>
+                        </div>
+
+                        {/* List */}
+                        {sequences.length === 0 ? (
+                          <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
+                            <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.2)' }}>
+                              <span className="text-2xl">⚡</span>
+                            </div>
+                            <p className="text-sm text-gray-500 dark:text-slate-500">Nenhuma sequência criada ainda.</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {sequences.map(seq => (
+                              <div key={seq.id} className="rounded-xl p-4 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 hover:border-violet-500/40 transition-all">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="flex-1 min-w-0">
+                                    <p className="font-bold text-gray-900 dark:text-white text-sm truncate">{seq.name}</p>
+                                    <p className="text-xs text-gray-500 dark:text-slate-500 mt-0.5">{seq.steps?.length || 0} {seq.steps?.length === 1 ? 'passo' : 'passos'}</p>
+                                    {seq.steps?.length > 0 && (
+                                      <div className="flex flex-wrap gap-1 mt-2">
+                                        {[...new Set(seq.steps.map((s: any) => s.type))].map((type: any) => (
+                                          <span key={type} className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${SEQ_TYPE_COLOR[type] || 'bg-slate-500/20 text-slate-600 dark:text-slate-400'}`}>{type}</span>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <button
+                                      onClick={() => { setSeqEditId(seq.id); setSeqForm({ name: seq.name, description: seq.description || '', skip_weekends: seq.skip_weekends, steps: seq.steps || [] }); setSeqMode('form'); }}
+                                      className="px-3 py-1.5 rounded-lg text-xs font-bold text-violet-600 dark:text-violet-400 border border-violet-500/30 hover:bg-violet-500/10 transition-all"
+                                    >
+                                      <Edit2 size={12} className="inline mr-1" />Editar
+                                    </button>
+                                    <button onClick={() => handleDeleteSequence(seq.id)} className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 dark:text-slate-500 hover:text-red-500 hover:bg-red-500/10 transition-all">
+                                      <Trash2 size={13} />
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      /* ── FORMULÁRIO ── */
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => { setSeqMode('list'); setSeqEditId(null); }} className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-all">
+                            <ChevronLeft size={16} />
+                          </button>
+                          <h3 className="text-sm font-bold text-gray-900 dark:text-white">{seqEditId ? 'Editar Sequência' : 'Nova Sequência'}</h3>
+                        </div>
+
+                        {/* Nome */}
+                        <div>
+                          <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 dark:text-slate-500 block mb-1">Nome</label>
+                          <input type="text" value={seqForm.name} onChange={e => setSeqForm(f => ({ ...f, name: e.target.value }))}
+                            className="w-full px-3 py-2.5 rounded-xl bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-gray-900 dark:text-white text-sm focus:outline-none focus:border-violet-500/60"
+                            placeholder="Ex: Follow-up SDR 5 dias" />
+                        </div>
+
+                        {/* Descrição */}
+                        <div>
+                          <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 dark:text-slate-500 block mb-1">Descrição</label>
+                          <textarea value={seqForm.description} onChange={e => setSeqForm(f => ({ ...f, description: e.target.value }))}
+                            className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-gray-900 dark:text-white text-sm focus:outline-none focus:border-violet-500/60 resize-none h-16"
+                            placeholder="Opcional" />
+                        </div>
+
+                        {/* Skip weekends */}
+                        <label className="flex items-center gap-3 cursor-pointer select-none">
+                          <div
+                            onClick={() => setSeqForm(f => ({ ...f, skip_weekends: !f.skip_weekends }))}
+                            className={`w-10 h-5 rounded-full relative transition-all ${seqForm.skip_weekends ? 'bg-violet-600' : 'bg-gray-200 dark:bg-white/10'}`}
+                          >
+                            <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${seqForm.skip_weekends ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-gray-900 dark:text-white">Pular finais de semana</p>
+                            <p className="text-xs text-gray-500 dark:text-slate-500">Atividades em sábado/domingo são movidas para segunda.</p>
+                          </div>
+                        </label>
+
+                        {/* Passos */}
+                        <div>
+                          <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 dark:text-slate-500 block mb-2">Passos</label>
+                          <div className="space-y-2">
+                            {seqForm.steps.map((step, idx) => (
+                              <div key={idx} className="rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 p-3 space-y-2">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-xs font-bold text-gray-500 dark:text-slate-400">{idx + 1}.</span>
+                                  {/* Type chips */}
+                                  <div className="flex flex-wrap gap-1 flex-1">
+                                    {SEQ_TYPES.map(t => (
+                                      <button key={t}
+                                        onClick={() => setSeqForm(f => ({ ...f, steps: f.steps.map((s, i) => i === idx ? { ...s, type: t } : s) }))}
+                                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all border ${step.type === t ? (SEQ_TYPE_COLOR[t] || '') + ' border-current' : 'text-gray-500 dark:text-slate-500 border-gray-200 dark:border-white/10 hover:border-gray-300 dark:hover:border-white/20'}`}
+                                      >{t}</button>
+                                    ))}
+                                  </div>
+                                  <button onClick={() => setSeqForm(f => ({ ...f, steps: f.steps.filter((_, i) => i !== idx) }))} className="text-gray-400 dark:text-slate-600 hover:text-red-500 transition-all shrink-0">
+                                    <X size={13} />
+                                  </button>
+                                </div>
+                                <input type="text" value={step.title} onChange={e => setSeqForm(f => ({ ...f, steps: f.steps.map((s, i) => i === idx ? { ...s, title: e.target.value } : s) }))}
+                                  className="w-full px-2.5 py-1.5 rounded-lg bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 text-gray-900 dark:text-white text-sm focus:outline-none focus:border-violet-500/50"
+                                  placeholder={`${step.type || 'Atividade'} ${idx + 1}`} />
+                                <textarea value={step.observations} onChange={e => setSeqForm(f => ({ ...f, steps: f.steps.map((s, i) => i === idx ? { ...s, observations: e.target.value } : s) }))}
+                                  className="w-full px-2.5 py-1.5 rounded-lg bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 text-gray-900 dark:text-white text-xs focus:outline-none focus:border-violet-500/50 resize-none h-12"
+                                  placeholder="Observação (ex: script, instruções...)" />
+                                <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-slate-400">
+                                  <span>em</span>
+                                  <input type="number" min="0" value={step.day_offset}
+                                    onChange={e => setSeqForm(f => ({ ...f, steps: f.steps.map((s, i) => i === idx ? { ...s, day_offset: Number(e.target.value) } : s) }))}
+                                    className="w-14 px-2 py-1 rounded-lg bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 text-gray-900 dark:text-white text-center focus:outline-none" />
+                                  <span>dias</span>
+                                </div>
+
+                              </div>
+                            ))}
+                          </div>
+                          <button
+                            onClick={() => setSeqForm(f => ({ ...f, steps: [...f.steps, { type: 'Ligação', title: '', observations: '', day_offset: 1 }] }))}
+                            className="mt-2 text-violet-400 hover:text-violet-300 text-xs font-bold flex items-center gap-1 transition-all"
+                          >
+                            <Plus size={13} /> Adicionar passo
+                          </button>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex gap-2 pt-2">
+                          <button onClick={handleSaveSequence} className="flex-1 py-2.5 bg-violet-600 hover:bg-violet-700 text-white font-bold text-sm rounded-xl transition-all">
+                            {seqEditId ? 'Salvar alterações' : 'Criar Sequência'}
+                          </button>
+                          <button onClick={() => { setSeqMode('list'); setSeqEditId(null); }} className="px-4 py-2.5 bg-white/5 hover:bg-white/10 text-slate-400 font-bold text-sm rounded-xl border border-white/10 transition-all">
+                            Cancelar
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
+
 
                 {/* ── MOTIVOS DE PERDA ── */}
                 {settingsTab === 'motivos-perda' && (
@@ -5502,13 +6027,6 @@ const CrmComercial = () => {
                     <div className="rounded-xl p-4 space-y-3 bg-gray-50 border border-gray-200 dark:bg-white/5 dark:border-[#2d2b3d]">
                       <p className="text-xs font-semibold text-gray-500 dark:text-[#9ca3af]">Novo Motivo</p>
                       <div className="flex gap-2 items-center">
-                        <input
-                          type="color"
-                          value={newLossReason.color}
-                          onChange={e => setNewLossReason(f => ({ ...f, color: e.target.value }))}
-                          className="w-9 h-9 rounded-lg cursor-pointer p-0.5 bg-white dark:bg-[#0d0b14] border border-gray-200 dark:border-[#2d2b3d]"
-                          title="Cor do motivo"
-                        />
                         <input
                           type="text"
                           value={newLossReason.name}
@@ -5545,23 +6063,21 @@ const CrmComercial = () => {
                     ) : (
                       <div className="space-y-2">
                         {lossReasons.map(reason => (
-                          <div key={reason.id} className="rounded-xl px-4 py-3 flex items-center gap-3 group" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid #2d2b3d' }}>
+                          <div key={reason.id} className="rounded-xl px-4 py-3 flex items-center gap-3 group bg-white dark:bg-white/5 border border-gray-200 dark:border-[#2d2b3d]">
                             {editingLossReason === reason.id ? (
                               <div className="flex-1 flex items-center gap-2">
-                                <input type="color" value={editLossReasonForm.color} onChange={e => setEditLossReasonForm(f => ({ ...f, color: e.target.value }))}
-                                  className="w-8 h-8 rounded cursor-pointer p-0.5" style={{ background: '#0d0b14', border: '1px solid #2d2b3d' }} />
                                 <input type="text" value={editLossReasonForm.name} onChange={e => setEditLossReasonForm(f => ({ ...f, name: e.target.value }))}
-                                  className="flex-1 rounded-lg px-3 py-1.5 text-sm text-white outline-none" style={{ background: '#0d0b14', border: '1px solid #7c3aed' }}
+                                  className="flex-1 rounded-lg px-3 py-1.5 text-sm text-gray-900 dark:text-white outline-none" style={{ background: 'transparent', border: '1px solid #7c3aed' }}
                                   onKeyDown={e => e.key === 'Enter' && handleUpdateLossReason(reason.id)} />
                                 <button onClick={() => handleUpdateLossReason(reason.id)} className="px-3 py-1.5 rounded-lg text-xs font-bold text-white" style={{ background: '#7c3aed' }}>Salvar</button>
-                                <button onClick={() => setEditingLossReason(null)} className="px-3 py-1.5 rounded-lg text-xs" style={{ color: '#6b7280' }}>Cancelar</button>
+                                <button onClick={() => setEditingLossReason(null)} className="px-3 py-1.5 rounded-lg text-xs text-gray-500">Cancelar</button>
                               </div>
                             ) : (
                               <>
-                                <span className="w-3 h-3 rounded-full shrink-0" style={{ background: reason.color }} />
+                                <span className="w-3 h-3 rounded-full shrink-0" style={{ background: '#ef4444' }} />
                                 <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-semibold text-white truncate">{reason.name}</p>
-                                  {reason.description && <p className="text-xs truncate" style={{ color: '#6b7280' }}>{reason.description}</p>}
+                                  <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{reason.name}</p>
+                                  {reason.description && <p className="text-xs truncate text-gray-500 dark:text-gray-400">{reason.description}</p>}
                                 </div>
                                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                   <button onClick={() => { setEditingLossReason(reason.id); setEditLossReasonForm({ name: reason.name, description: reason.description || '', color: reason.color }); }}

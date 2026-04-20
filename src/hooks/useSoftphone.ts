@@ -20,6 +20,8 @@ export interface UseSoftphoneReturn {
   initiateDialerCall: (phone: string, leadName: string, leadId: string, userId: string) => void;
   hangUp: () => void;
   toggleMute: () => void;
+  sendDTMF: (digit: string) => void;
+  setSpeakerVolume: (v: number) => void;
   register: (config: SipConfig) => void;
   unregister: () => void;
 }
@@ -55,6 +57,14 @@ function loadJsSIP(): Promise<any> {
   });
   return jssipLoadPromise;
 }
+
+// DTMF dual-tone frequencies [row Hz, column Hz]
+const DTMF_FREQS: Record<string, [number, number]> = {
+  '1': [697, 1209], '2': [697, 1336], '3': [697, 1477],
+  '4': [770, 1209], '5': [770, 1336], '6': [770, 1477],
+  '7': [852, 1209], '8': [852, 1336], '9': [852, 1477],
+  '*': [941, 1209], '0': [941, 1336], '#': [941, 1477],
+};
 
 export function useSoftphone(): UseSoftphoneReturn {
   const uaRef = useRef<any>(null);
@@ -314,7 +324,6 @@ export function useSoftphone(): UseSoftphoneReturn {
 
     pendingCallRef.current = { phone, leadName };
     setCurrentCall({ phone, leadName, status: 'calling' });
-    startRingback();
 
     try {
       const res = await fetch('/api/api4com/call/initiate', {
@@ -353,6 +362,52 @@ export function useSoftphone(): UseSoftphoneReturn {
     setIsMuted(m => !m);
   }, [isMuted]);
 
+  // ── Send DTMF ──
+  const sendDTMF = useCallback((digit: string) => {
+    // 1. Play local tone feedback (real DTMF dual-tone)
+    try {
+      if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') audioCtxRef.current = new AudioContext();
+      const ctx = audioCtxRef.current;
+      if (ctx.state === 'suspended') ctx.resume();
+      const freqs = DTMF_FREQS[digit];
+      if (freqs) {
+        const [f1, f2] = freqs;
+        const gain = ctx.createGain(); gain.gain.value = 0.12; gain.connect(ctx.destination);
+        const o1 = ctx.createOscillator(); o1.type = 'sine'; o1.frequency.value = f1; o1.connect(gain); o1.start();
+        const o2 = ctx.createOscillator(); o2.type = 'sine'; o2.frequency.value = f2; o2.connect(gain); o2.start();
+        setTimeout(() => {
+          try { gain.gain.setTargetAtTime(0, ctx.currentTime, 0.01); o1.stop(ctx.currentTime + 0.1); o2.stop(ctx.currentTime + 0.1); } catch {}
+        }, 100);
+      }
+    } catch (e) { console.warn('[Softphone] Local DTMF tone error:', e); }
+
+    if (!sessionRef.current) return;
+
+    // 2. RTCDTMFSender — most reliable in WebRTC
+    try {
+      const pc = sessionRef.current.connection as RTCPeerConnection | null;
+      if (pc) {
+        const audioSender = pc.getSenders().find((s: RTCRtpSender) => s.track?.kind === 'audio');
+        if (audioSender?.dtmf) {
+          audioSender.dtmf.insertDTMF(digit, 100, 70);
+          console.log('[Softphone] DTMF sent via RTCDTMFSender:', digit);
+          return; // success — skip fallback
+        }
+      }
+    } catch (e) { console.warn('[Softphone] RTCDTMFSender error:', e); }
+
+    // 3. Fallback: JsSIP SIP INFO
+    try {
+      sessionRef.current.sendDTMF(digit, { duration: 100, interToneGap: 70 });
+      console.log('[Softphone] DTMF sent via SIP INFO:', digit);
+    } catch (e) { console.warn('[Softphone] SIP INFO DTMF error:', e); }
+  }, []);
+
+  // ── Speaker volume ──
+  const setSpeakerVolume = useCallback((v: number) => {
+    if (remoteAudioRef.current) remoteAudioRef.current.volume = Math.max(0, Math.min(1, v));
+  }, []);
+
   // ── Cleanup ──
   useEffect(() => {
     return () => {
@@ -361,5 +416,5 @@ export function useSoftphone(): UseSoftphoneReturn {
     };
   }, [stopElapsedTimer, stopRingback]);
 
-  return { sipStatus, registrationError, currentCall, isMuted, callElapsed, initiateDialerCall, hangUp, toggleMute, register, unregister };
+  return { sipStatus, registrationError, currentCall, isMuted, callElapsed, initiateDialerCall, hangUp, toggleMute, sendDTMF, setSpeakerVolume, register, unregister };
 }

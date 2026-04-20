@@ -4,7 +4,7 @@ import {
   Plus, RefreshCw, ChevronDown, Circle, CheckCircle2,
   Zap, MessageSquare, Video, FileText, ExternalLink,
   List, Instagram, Linkedin, X, Search, User, AlignLeft,
-  SlidersHorizontal, ChevronLeft, ChevronRight
+  SlidersHorizontal, ChevronLeft, ChevronRight, Trash2, Pencil, UserCircle
 } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -334,9 +334,13 @@ export const NovaAtividadeModal: React.FC<NovaAtividadeModalProps> = ({ onClose,
 const ActivityCard = ({
   activity,
   onToggle,
+  onDelete,
+  onEdit,
 }: {
   activity: Activity;
   onToggle: (id: number, completed: boolean) => void;
+  onDelete: (id: number) => void;
+  onEdit: (activity: Activity) => void;
 }) => {
   const cfg = getTypeConfig(activity.type);
   const Icon = cfg.icon;
@@ -385,12 +389,32 @@ const ActivityCard = ({
               {dateLabel}
             </span>
           )}
+          {/* Nome do card/lead vinculado */}
           {activity.lead_name && (
-            <span className="text-xs text-violet-500 dark:text-violet-400 font-medium truncate max-w-[200px]">
+            <span className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400 font-medium truncate max-w-[220px]">
+              <UserCircle size={11} className="shrink-0" />
               {activity.lead_name}{activity.lead_company ? ` · ${activity.lead_company}` : ''}
             </span>
           )}
         </div>
+      </div>
+
+      {/* Botões de ação — visíveis no hover */}
+      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+        <button
+          onClick={() => onEdit(activity)}
+          title="Editar atividade"
+          className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-500/10 transition-all"
+        >
+          <Pencil size={13} />
+        </button>
+        <button
+          onClick={() => onDelete(activity.id)}
+          title="Excluir atividade"
+          className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all"
+        >
+          <Trash2 size={13} />
+        </button>
       </div>
 
       {/* Type badge */}
@@ -591,6 +615,7 @@ const Atividades: React.FC = () => {
   const [typeFilter, setTypeFilter] = useState('all');
   const [showTypeDropdown, setShowTypeDropdown] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
   const typeDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -635,6 +660,19 @@ const Atividades: React.FC = () => {
     } catch {
       fetchActivities();
     }
+  };
+
+  const handleDelete = async (id: number) => {
+    setActivities(prev => prev.filter(a => a.id !== id));
+    try {
+      await fetch(`/api/crm-comercial/tasks/${id}`, { method: 'DELETE' });
+    } catch {
+      fetchActivities();
+    }
+  };
+
+  const handleEdit = (activity: Activity) => {
+    setEditingActivity(activity);
   };
 
   const grouped = groupActivitiesByDate(activities);
@@ -810,6 +848,8 @@ const Atividades: React.FC = () => {
                       key={activity.id}
                       activity={activity}
                       onToggle={handleToggle}
+                      onDelete={handleDelete}
+                      onEdit={handleEdit}
                     />
                   ))}
                 </div>
@@ -824,6 +864,16 @@ const Atividades: React.FC = () => {
         <NovaAtividadeModal
           onClose={() => setShowModal(false)}
           onSave={fetchActivities}
+        />
+      )}
+
+      {/* ── Editar Atividade Modal ── */}
+      {editingActivity && (
+        <NovaAtividadeModal
+          onClose={() => setEditingActivity(null)}
+          onSave={() => { fetchActivities(); setEditingActivity(null); }}
+          initialLead={editingActivity.lead_id ? { id: editingActivity.lead_id, nome: editingActivity.lead_name || editingActivity.lead_id } : undefined}
+          initialTask={editingActivity}
         />
       )}
     </div>
