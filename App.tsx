@@ -1,7 +1,8 @@
 
 // App component for GrapeHub
 // Last updated: 2026-04-02 21:00 UTC
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+
 import Sidebar from './src/components/Sidebar';
 import GestorCalculator from './src/pages/GestorCalculator';
 import CloserCalculator from './src/pages/CloserCalculator';
@@ -13,6 +14,7 @@ import CrmFinanceiro from './src/pages/CrmFinanceiro';
 import CrmComercial from './src/pages/CrmComercial';
 import { GestorDashboard } from './src/pages/GestorDashboard';
 import FinanceiroDashboard from './src/pages/FinanceiroDashboard';
+import Extrato from './src/pages/Extrato';
 import TaskTemplates from './src/pages/TaskTemplates';
 import Atividades from './src/pages/Atividades';
 import CrmLigacoes from './src/pages/CrmLigacoes';
@@ -40,6 +42,7 @@ import {
 
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { MenuProvider, useMenu } from './src/context/MenuContext';
+import { AIChat } from './src/components/AIChat/AIChat';
 
 const AppContent: React.FC = () => {
   const { user, userData, loading } = useAuth();
@@ -56,6 +59,47 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('activePage', activePage);
   }, [activePage]);
+
+  // Resolve o template da página ativa (necessário para detectar páginas financeiras no AIChat)
+  const pageTemplate = useMemo(() => {
+    if (!Array.isArray(menu)) return activePage;
+    let resolved = activePage;
+    let found = false;
+    for (const section of menu) {
+      if (found) break;
+      if (Array.isArray(section.pages)) {
+        const page = section.pages.find((p: any) => p.id === activePage);
+        if (page?.template) { resolved = page.template; found = true; break; }
+      }
+      if (Array.isArray(section.subSubSessions)) {
+        for (const sss of section.subSubSessions) {
+          if (Array.isArray(sss.pages)) {
+            const page = sss.pages.find((p: any) => p.id === activePage);
+            if (page?.template) { resolved = page.template; found = true; break; }
+          }
+        }
+      }
+      if (found) break;
+      if (Array.isArray(section.subSessions)) {
+        for (const ss of section.subSessions) {
+          if (found) break;
+          if (Array.isArray(ss.pages)) {
+            const page = ss.pages.find((p: any) => p.id === activePage);
+            if (page?.template) { resolved = page.template; found = true; break; }
+          }
+          if (Array.isArray(ss.subSubSessions)) {
+            for (const sss of ss.subSubSessions) {
+              if (Array.isArray(sss.pages)) {
+                const page = sss.pages.find((p: any) => p.id === activePage);
+                if (page?.template) { resolved = page.template; found = true; break; }
+              }
+            }
+          }
+        }
+      }
+    }
+    return resolved;
+  }, [activePage, menu]);
 
   if (!isFirebaseConfigValid && import.meta.env.PROD) {
     return (
@@ -96,7 +140,6 @@ const AppContent: React.FC = () => {
     if (activePage === 'admin' && userData?.role === 'superadmin') {
       return <AdminPanel />;
     }
-    // Block any other user from accessing admin directly
     if (activePage === 'admin') {
       return (
         <div className="flex items-center justify-center h-full text-slate-500">
@@ -107,7 +150,6 @@ const AppContent: React.FC = () => {
         </div>
       );
     }
-    
     if (!isAllowed) {
       return (
         <div className="flex items-center justify-center h-full text-slate-500">
@@ -119,71 +161,7 @@ const AppContent: React.FC = () => {
       );
     }
 
-    // Find the page in the menu to get its template
-    let pageTemplate = activePage;
-    let foundTemplate = false;
-    
-    if (Array.isArray(menu)) {
-      for (const section of menu) {
-        if (foundTemplate) break;
-
-        // Check pages directly under section
-        if (Array.isArray(section.pages)) {
-          const page = section.pages.find((p: any) => p.id === activePage);
-          if (page && page.template) {
-            pageTemplate = page.template;
-            foundTemplate = true;
-            break;
-          }
-        }
-
-        // Check pages under section's direct subSubSessions
-        if (Array.isArray(section.subSubSessions)) {
-          for (const subSubSession of section.subSubSessions) {
-            if (Array.isArray(subSubSession.pages)) {
-              const page = subSubSession.pages.find((p: any) => p.id === activePage);
-              if (page && page.template) {
-                pageTemplate = page.template;
-                foundTemplate = true;
-                break;
-              }
-            }
-          }
-        }
-
-        if (Array.isArray(section.subSessions)) {
-          for (const subSession of section.subSessions) {
-            if (foundTemplate) break;
-            
-            // Check pages directly under subSession
-            if (Array.isArray(subSession.pages)) {
-              const page = subSession.pages.find((p: any) => p.id === activePage);
-              if (page && page.template) {
-                pageTemplate = page.template;
-                foundTemplate = true;
-                break;
-              }
-            }
-            
-            // Check pages under subSubSessions
-            if (Array.isArray(subSession.subSubSessions)) {
-              for (const subSubSession of subSession.subSubSessions) {
-                if (Array.isArray(subSubSession.pages)) {
-                  const page = subSubSession.pages.find((p: any) => p.id === activePage);
-                  if (page && page.template) {
-                    pageTemplate = page.template;
-                    foundTemplate = true;
-                    break;
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-
-    console.log("AppContent renderPage - activePage:", activePage, "pageTemplate:", pageTemplate);
+    console.log('AppContent renderPage - activePage:', activePage, 'pageTemplate:', pageTemplate);
 
     switch (pageTemplate) {
       case 'admin':
@@ -219,6 +197,8 @@ const AppContent: React.FC = () => {
         return <SettingsPage onPageChange={setActivePage} isSuperAdmin={userData?.role === 'superadmin'} />;
       case 'financeiro-dashboard':
         return <FinanceiroDashboard />;
+      case 'fin-extrato':
+        return <Extrato />;
       case 'kpis-squad':
         return <div className="p-8 text-center text-slate-500">Página de KPIs do Squad em construção.</div>;
       case 'parceiros-squad':
@@ -287,6 +267,10 @@ const AppContent: React.FC = () => {
       <main className="flex-1 overflow-y-auto scrollbar-hide rounded-tl-[2.5rem] bg-light-bg dark:bg-dark-bg transition-colors duration-300">
         {renderPage()}
       </main>
+      <AIChat
+        activePage={pageTemplate}
+        userName={userData?.nome || userData?.name || user?.displayName || user?.email || undefined}
+      />
     </div>
   );
 };

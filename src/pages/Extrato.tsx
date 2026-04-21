@@ -1,0 +1,1238 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import { Search, ArrowUp, ArrowDown, FileText, Calendar, ChevronDown, ChevronUp, Check, Tag, AlertTriangle, ShieldAlert, Users, TrendingUp, TrendingDown } from 'lucide-react';
+
+// ── Types ──────────────────────────────────────────────
+interface ExtratoItem {
+  id: number;
+  description: string;
+  movement_value: string;
+  value: string;
+  movement_date: string | null;
+  expiration_date: string | null;
+  status: string;
+  type_column: string;
+  source: string;
+  type: number;
+  payment_method: string;
+  document_code: string;
+  grapehub_category: string | null;
+  person_name: string | null;
+  person_fantasy_name: string | null;
+}
+
+interface DateRange { start: string; end: string; }
+
+interface Despesa {
+  description: string;
+  movement_value: string;
+  value: string;
+  movement_date: string;
+  expiration_date: string;
+  status: string;
+  type_column: string;
+  category_l1_ext_id: number;
+  payment_method: string;
+  document_code: string;
+}
+
+interface Inadimplente {
+  name: string;
+  fantasy_name: string;
+  valor: string;
+  payment_method: string;
+  description: string;
+  installment_number: string;
+  expiration_date: string;
+  dias_atraso: number;
+}
+
+interface ClienteRecente {
+  name: string;
+  fantasy_name: string;
+  valor: string;
+  payment_method: string;
+  status: string;
+  installment_number: string;
+  movement_date: string;
+}
+
+interface Previsto {
+  entradas_previstas: string;
+  despesas_previstas: string;
+  saldo_projetado: string;
+}
+
+interface Resumo {
+  caixa_realizado: string;
+  saidas_operacionais: string;
+  distribuicao: string;
+  a_receber: string;
+  despesas_previstas: string;
+  saldo_periodo: string;
+}
+
+// ── Categories ────────────────────────────────────────
+const CATEGORIES = [
+  { name: 'Cartão de Crédito',   icon: '💳' },
+  { name: 'Impostos',            icon: '📊' },
+  { name: 'Salários e Pessoal',  icon: '👥' },
+  { name: 'Prestação de Serviço',icon: '🛠️' },
+  { name: 'Marketing e Vendas',  icon: '📣' },
+  { name: 'Administrativo',      icon: '🏢' },
+  { name: 'Despesas Financeiras',icon: '💳' },
+  { name: 'Distribuição de Lucros', icon: '💰' },
+  { name: 'Não Operacional',     icon: '📦' },
+  { name: 'Receita de Contratos',icon: '📑' },
+  { name: 'Outros',              icon: '📁' },
+];
+
+const KEYWORDS_MAP: { name: string; keywords: string[] }[] = [
+  { name: 'Impostos',            keywords: ['Simples Nacional', 'ISS', 'IRPJ', 'Imposto', 'DAS', 'PIS', 'COFINS', 'CSLL', 'Taxa Municipal', 'Alvará'] },
+  { name: 'Salários e Pessoal',  keywords: ['Remuneração', 'Salário', 'Bonificação', 'Business Partner', 'FGTS', 'IRRF', 'Folha', 'Férias', '13º', 'Rescisão', 'Benefício', 'Vale', 'Plano de Saúde', 'Odonto', 'Seguro de Vida'] },
+  { name: 'Prestação de Serviço',keywords: ['Ferramenta', 'Software', 'VPS', 'Domínio', 'Hospedagem', 'AWS', 'Google Cloud', 'Vercel', 'OpenAI', 'Claude', 'Github', 'Cursor', 'Slack', 'Zoom', 'Canva', 'Adobe', 'Figma', 'Notion', 'Trello', 'Jira'] },
+  { name: 'Marketing e Vendas',  keywords: ['Comissão', 'Tráfego Pago', 'Facebook Ads', 'Google Ads', 'Meta Ads', 'Marketing', 'Publicidade', 'Influenciador', 'RD Station', 'Hubspot', 'ActiveCampaign', 'LinkedIn Ads', 'TikTok Ads'] },
+  { name: 'Administrativo',      keywords: ['Aluguel', 'Condomínio', 'Energia', 'Internet', 'Assessoria Financeira', 'Contabilidade', 'Limpeza', 'Escritório', 'Material', 'Seguro', 'Água', 'Telefone', 'Correios', 'Cartório'] },
+  { name: 'Despesas Financeiras',keywords: ['Taxa', 'Tarifa Asaas', 'Taxa de antecipação', 'Juros', 'IOF', 'Banco', 'Tarifa', 'Anuidade', 'TED', 'Boleto'] },
+  { name: 'Distribuição de Lucros', keywords: ['Pró-labore', 'Dividendo', 'INSS', 'Retirada', 'Lucro', 'Sócio'] },
+  { name: 'Não Operacional',     keywords: ['Compra de cotas', 'Investimento', 'Empréstimo', 'Amortização', 'Aporte', 'Financiamento'] },
+];
+
+function autoCategory(desc: string): { name: string; icon: string } {
+  const d = desc.toLowerCase();
+  if (d.includes('cartão de crédito') || d.includes('cartao de credito') || d.includes('cartão de cred')) {
+    return { name: 'Cartão de Crédito', icon: '💳' };
+  }
+  for (const cat of KEYWORDS_MAP) {
+    if (cat.keywords.some(k => d.includes(k.toLowerCase()))) {
+      const found = CATEGORIES.find(c => c.name === cat.name);
+      return found || { name: cat.name, icon: '📁' };
+    }
+  }
+  return { name: 'Outros', icon: '📁' };
+}
+
+function getCategory(item: ExtratoItem) {
+  if (item.grapehub_category) {
+    const found = CATEGORIES.find(c => c.name === item.grapehub_category);
+    return found || { name: item.grapehub_category, icon: '📁' };
+  }
+  return autoCategory(item.description || '');
+}
+
+const categorizeExpense = (description: string) => {
+  const desc = description.toLowerCase();
+  if (desc.includes('cartão de crédito') || desc.includes('cartao de credito') || desc.includes('cartão de cred') || desc.includes('cartao de cred')) {
+    return { name: 'Cartão de Crédito', icon: '💳' };
+  }
+  for (const cat of KEYWORDS_MAP) {
+    if (cat.keywords.some(k => desc.includes(k.toLowerCase()))) {
+      const found = CATEGORIES.find(c => c.name === cat.name);
+      return found || { name: cat.name, icon: '📁' };
+    }
+  }
+  return { name: 'Outros', icon: '📁' };
+};
+
+const extractCreditCardTool = (description: string) => {
+  if (!description.includes('-')) return description;
+  let tool = description.split('-')[1].trim();
+  if (tool.toLowerCase().includes('google worksp')) return 'Google Workspace';
+  return tool;
+};
+
+// ── CategoryPicker ───────────────────────────────────────
+function CategoryPicker({ item, onSave }: { item: ExtratoItem; onSave: (id: number, category: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [dropPos, setDropPos] = useState<{ top?: number; bottom?: number; left: number }>({ top: 0, left: 0 });
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const cat = getCategory(item);
+  const isManual = !!item.grapehub_category;
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      const target = e.target as Element;
+      if (!target.closest('[data-category-picker]')) setOpen(false);
+    }
+    if (open) document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [open]);
+
+  async function select(name: string) {
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/financeiro/extrato/${item.id}/category`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ category: name }),
+      });
+      if (!res.ok) {
+        const err = await res.text();
+        console.error('[CategoryPicker] Falha ao salvar categoria:', res.status, err);
+        return;
+      }
+      onSave(item.id, name);
+    } catch (err) {
+      console.error('[CategoryPicker] Erro de rede ao salvar categoria:', err);
+    } finally {
+      setSaving(false);
+      setOpen(false);
+    }
+  }
+
+  function toggleOpen() {
+    if (!open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      const MENU_H = 300;
+      const spaceBelow = window.innerHeight - rect.bottom;
+      if (spaceBelow < MENU_H) {
+        setDropPos({ bottom: window.innerHeight - rect.top + 4, left: rect.left });
+      } else {
+        setDropPos({ top: rect.bottom + 4, left: rect.left });
+      }
+    }
+    setOpen(o => !o);
+  }
+
+  const dropdown = open ? (
+    <div
+      data-category-picker
+      style={{
+        position: 'fixed',
+        top: dropPos.top,
+        bottom: dropPos.bottom,
+        left: dropPos.left,
+        zIndex: 9999,
+        minWidth: 210,
+      }}
+      className="bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl py-1.5 max-h-[280px] overflow-y-auto"
+    >
+      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-3 py-1">Escolher categoria</p>
+      {CATEGORIES.map(c => (
+        <button
+          key={c.name}
+          onClick={() => select(c.name)}
+          className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs hover:bg-slate-50 dark:hover:bg-white/5 transition-colors text-left
+            ${(item.grapehub_category || cat.name) === c.name ? 'text-violet-600 dark:text-violet-400 font-bold' : 'text-slate-700 dark:text-slate-300'}`}
+        >
+          <span className="text-base leading-none">{c.icon}</span>
+          <span className="flex-1">{c.name}</span>
+          {(item.grapehub_category || cat.name) === c.name && <Check size={12} className="text-violet-500 shrink-0" />}
+        </button>
+      ))}
+      {item.grapehub_category && (
+        <>
+          <div className="h-px bg-slate-100 dark:bg-white/10 mx-2 my-1" />
+          <button
+            onClick={() => select('')}
+            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-400 hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors text-left"
+          >
+            <Tag size={12} />
+            Resetar para automático
+          </button>
+        </>
+      )}
+    </div>
+  ) : null;
+
+  return (
+    <div data-category-picker className="relative">
+      <button
+        ref={btnRef}
+        onClick={toggleOpen}
+        disabled={saving}
+        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all border
+          ${isManual
+            ? 'bg-violet-500/10 border-violet-500/30 text-violet-600 dark:text-violet-300 hover:bg-violet-500/20'
+            : 'bg-slate-100 dark:bg-white/5 border-transparent text-slate-500 hover:bg-slate-200 dark:hover:bg-white/10'
+          }`}
+        title={isManual ? 'Categoria manual — clique para alterar' : 'Categoria automática — clique para fixar'}
+      >
+        <span>{cat.icon}</span>
+        <span className="max-w-[90px] truncate">{cat.name}</span>
+        <ChevronDown size={10} className={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {typeof document !== 'undefined' && createPortal(dropdown, document.body)}
+    </div>
+  );
+}
+
+// ── SubGroup ─────────────────────────────────────────────
+const SubGroup = ({ label, items, formatCurr }: { label: string; items: any[]; formatCurr: (v: number) => string }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const total = items.reduce((s: number, i: any) => s + i.value, 0);
+  return (
+    <div className="mb-1 border border-white/5 rounded-lg overflow-hidden">
+      <button
+        onClick={() => setIsOpen(v => !v)}
+        className="w-full flex items-center justify-between px-3 py-2 bg-dark-card-hover hover:bg-white/5 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-semibold text-slate-300">{label}</span>
+          <span className="text-[10px] text-slate-500">{items.length} itens</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-[11px] font-bold text-dark-text">{formatCurr(total)}</span>
+          {isOpen ? <ChevronUp size={12} className="text-slate-500" /> : <ChevronDown size={12} className="text-slate-500" />}
+        </div>
+      </button>
+      {isOpen && (
+        <div className="divide-y divide-white/5">
+          {items.map((item: any, idx: number) => (
+            <div key={idx} className="flex items-center justify-between px-4 py-2 hover:bg-dark-card rounded-lg transition-colors">
+              <div className="flex flex-col">
+                <span className="text-xs font-medium text-dark-text">{item.description}</span>
+                <span className="text-[10px] text-slate-500">{item.date}</span>
+              </div>
+              <span className="text-xs font-bold text-dark-text">{formatCurr(item.value)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── CollapsibleGroup ─────────────────────────────────────
+const CollapsibleGroup = ({ category, items, total, icon, formatCurr }: any) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  const isCartao = category === 'Cartão de Crédito';
+  const isFacebook = (desc: string) => /facebook|facebk/i.test(desc ?? '');
+  const facebook   = isCartao ? items.filter((i: any) => isFacebook(i.description)) : [];
+  const aplicativos = isCartao ? items.filter((i: any) => !isFacebook(i.description)) : [];
+
+  return (
+    <div className="mb-2 border border-white/10 rounded-xl overflow-hidden">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between p-4 bg-dark-card hover:bg-dark-card-hover transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          <span className="text-xl">{icon}</span>
+          <span className="text-sm font-bold text-dark-text">{category}</span>
+          <span className="text-[10px] text-slate-500 font-normal ml-2">{items.length} itens</span>
+        </div>
+        <div className="flex items-center gap-4">
+          <span className="text-sm font-bold text-dark-text">{formatCurr(total)}</span>
+          {isOpen ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
+        </div>
+      </button>
+      {isOpen && (
+        <div className="bg-dark-bg p-2 space-y-1 border-t border-white/10">
+          {isCartao ? (
+            <>
+              {facebook.length > 0 && <SubGroup label="Facebook" items={facebook} formatCurr={formatCurr} />}
+              {aplicativos.length > 0 && <SubGroup label="Aplicativos" items={aplicativos} formatCurr={formatCurr} />}
+            </>
+          ) : (
+            items.map((item: any, idx: number) => (
+              <div key={idx} className="flex items-center justify-between p-3 hover:bg-dark-card rounded-lg transition-colors">
+                <div className="flex flex-col">
+                  <span className="text-xs font-medium text-dark-text">{item.description}</span>
+                  <span className="text-[10px] text-slate-500">{item.date}</span>
+                </div>
+                <span className="text-xs font-bold text-dark-text">{formatCurr(item.value)}</span>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── Calendar helpers ────────────────────────────────────
+const MESES_FULL = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+const WEEK_DAYS  = ['D','S','T','Q','Q','S','S'];
+
+function isoDate(y: number, m: number, d: number) {
+  return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+}
+function daysInMonth(y: number, m: number) { return new Date(y, m, 0).getDate(); }
+function firstDayOfMonth(y: number, m: number) { return new Date(y, m - 1, 1).getDay(); }
+function formatDateBR(iso: string) {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+// ── DateRangePicker ──────────────────────────────────────
+function DateRangePicker({ range, onChange }: { range: DateRange; onChange: (r: DateRange) => void }) {
+  const [open, setOpen]           = useState(false);
+  const [hovered, setHovered]     = useState('');
+  const [selecting, setSelecting] = useState<string>('');
+  const ref = useRef<HTMLDivElement>(null);
+
+  const today = new Date();
+  const [viewYear, setViewYear]   = useState(today.getFullYear());
+  const [viewMonth, setViewMonth] = useState(today.getMonth() + 1);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) { setOpen(false); setSelecting(''); }
+    }
+    if (open) document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [open]);
+
+  function stepMonth(dir: 1 | -1) {
+    let m = viewMonth + dir, y = viewYear;
+    if (m > 12) { m = 1; y++; }
+    if (m < 1)  { m = 12; y--; }
+    setViewYear(y); setViewMonth(m);
+  }
+
+  function handleDayClick(iso: string) {
+    if (!selecting) { setSelecting(iso); }
+    else {
+      const s = selecting < iso ? selecting : iso;
+      const e = selecting < iso ? iso : selecting;
+      onChange({ start: s, end: e });
+      setSelecting(''); setOpen(false);
+    }
+  }
+
+  function isInRange(iso: string) {
+    const lo = selecting ? Math.min(...[selecting, hovered || selecting].map(d => +new Date(d))) : +new Date(range.start);
+    const hi = selecting ? Math.max(...[selecting, hovered || selecting].map(d => +new Date(d))) : +new Date(range.end);
+    return +new Date(iso) > lo && +new Date(iso) < hi;
+  }
+  function isStart(iso: string) { return selecting ? iso === selecting : iso === range.start; }
+  function isEnd(iso: string) {
+    if (selecting) return hovered ? iso === (selecting < hovered ? hovered : selecting) : false;
+    return iso === range.end;
+  }
+
+  const days = daysInMonth(viewYear, viewMonth);
+  const firstDay = firstDayOfMonth(viewYear, viewMonth);
+  const cells: (string | null)[] = [
+    ...Array(firstDay).fill(null),
+    ...Array.from({ length: days }, (_, i) => isoDate(viewYear, viewMonth, i + 1)),
+  ];
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  const label = range.start && range.end
+    ? range.start === range.end ? formatDateBR(range.start) : `${formatDateBR(range.start)} → ${formatDateBR(range.end)}`
+    : 'Selecionar período';
+
+  const todayIso = today.toISOString().slice(0, 10);
+  const d7  = new Date(today); d7.setDate(today.getDate() - 6);
+  const d30 = new Date(today); d30.setDate(today.getDate() - 29);
+  const mStart = isoDate(today.getFullYear(), today.getMonth() + 1, 1);
+  const mEnd   = isoDate(today.getFullYear(), today.getMonth() + 1, daysInMonth(today.getFullYear(), today.getMonth() + 1));
+  const pmStart = (() => { const d = new Date(today.getFullYear(), today.getMonth() - 1, 1); return isoDate(d.getFullYear(), d.getMonth() + 1, 1); })();
+  const pmEnd   = new Date(today.getFullYear(), today.getMonth(), 0).toISOString().slice(0, 10);
+
+  function preset(lbl: string, start: string, end: string) {
+    return (
+      <button key={lbl} onClick={() => { onChange({ start, end }); setOpen(false); setSelecting(''); }}
+        className="text-xs text-slate-400 hover:text-violet-400 hover:bg-violet-500/10 px-2 py-1 rounded-lg transition-colors text-left whitespace-nowrap">
+        {lbl}
+      </button>
+    );
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <button onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-2.5 bg-dark-card border border-violet-500/60 rounded-xl px-4 py-2.5 transition-all hover:border-violet-500">
+        <Calendar size={14} className="text-violet-500" />
+        <span className="text-sm font-bold text-dark-text">{label}</span>
+        <ChevronDown size={14} className={`text-slate-400 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-2 z-50 bg-dark-card border border-white/10 rounded-2xl shadow-2xl p-4" style={{ minWidth: 320 }}>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">
+            {selecting ? 'Clique na data final' : 'Selecionar Período'}
+          </p>
+          <div className="flex flex-wrap gap-1 mb-3 pb-3 border-b border-white/10">
+            {preset('Hoje', todayIso, todayIso)}
+            {preset('Últ. 7 dias', d7.toISOString().slice(0,10), todayIso)}
+            {preset('Últ. 30 dias', d30.toISOString().slice(0,10), todayIso)}
+            {preset('Este mês', mStart, mEnd)}
+            {preset('Mês passado', pmStart, pmEnd)}
+          </div>
+          <div className="flex items-center justify-between mb-3">
+            <button onClick={() => stepMonth(-1)} className="w-7 h-7 rounded-lg hover:bg-white/10 flex items-center justify-center transition-colors">
+              <ChevronDown size={13} className="text-slate-400 rotate-90" />
+            </button>
+            <span className="text-sm font-bold text-dark-text">{MESES_FULL[viewMonth - 1]} {viewYear}</span>
+            <button onClick={() => stepMonth(1)} className="w-7 h-7 rounded-lg hover:bg-white/10 flex items-center justify-center transition-colors">
+              <ChevronDown size={13} className="text-slate-400 -rotate-90" />
+            </button>
+          </div>
+          <div className="grid grid-cols-7 mb-1">
+            {WEEK_DAYS.map((d, i) => <div key={i} className="text-center text-[10px] font-bold text-slate-500 pb-1">{d}</div>)}
+          </div>
+          <div className="grid grid-cols-7 gap-y-0.5">
+            {cells.map((iso, idx) => {
+              if (!iso) return <div key={idx} />;
+              const start = isStart(iso), end = isEnd(iso), inRng = isInRange(iso), isToday = iso === todayIso;
+              return (
+                <button key={iso}
+                  onClick={() => handleDayClick(iso)}
+                  onMouseEnter={() => selecting && setHovered(iso)}
+                  onMouseLeave={() => selecting && setHovered('')}
+                  className={`relative h-8 w-full text-xs font-semibold transition-all
+                    ${start || end ? 'text-white z-10' : inRng ? 'text-violet-700 dark:text-violet-200' : 'text-dark-text hover:text-violet-600'}
+                    ${inRng ? 'bg-violet-500/15' : ''}
+                    ${start ? 'rounded-l-full' : ''} ${end ? 'rounded-r-full' : ''} ${!start && !end ? 'rounded-full' : ''}`}
+                >
+                  <span className={`absolute inset-0.5 flex items-center justify-center rounded-full text-xs
+                    ${start || end ? 'bg-violet-600 shadow-md shadow-violet-500/30' : ''}
+                    ${isToday && !start && !end ? 'ring-1 ring-violet-500/60' : ''}`}>
+                    {parseInt(iso.slice(8))}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          {range.start && range.end && (
+            <div className="mt-3 pt-3 border-t border-white/10 flex items-center justify-between text-xs">
+              <span className="text-slate-500">{formatDateBR(range.start)} → {formatDateBR(range.end)}</span>
+              <button onClick={() => { onChange({ start: mStart, end: mEnd }); setSelecting(''); }}
+                className="text-violet-400 hover:text-violet-300 transition-colors">Limpar</button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Helpers ─────────────────────────────────────────────
+const formatCurrency = (value: string | number) => {
+  const num = typeof value === 'string' ? parseFloat(value) : value;
+  return (num || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+};
+
+const fmtDate = (d: string | null) => {
+  if (!d) return '—';
+  return new Date(d).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+};
+
+const getItemDate = (item: ExtratoItem) => item.movement_date || item.expiration_date;
+
+function defaultRange(): DateRange {
+  const today = new Date();
+  const y = today.getFullYear(), m = today.getMonth() + 1;
+  return { start: isoDate(y, m, 1), end: isoDate(y, m, daysInMonth(y, m)) };
+}
+
+const getStatusColor = (status: string) => {
+  if (status === 'Conciliado') return 'bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-400';
+  if (status === 'Pendente') return 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400';
+  if (status === 'Atrasado') return 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400';
+  return 'bg-slate-100 text-slate-700 dark:bg-white/10 dark:text-slate-300';
+};
+
+const getStatusDotColor = (status: string) => {
+  if (status === 'Conciliado') return 'bg-violet-600';
+  if (status === 'Pendente') return 'bg-amber-500';
+  if (status === 'Atrasado') return 'bg-red-600';
+  return 'bg-slate-500';
+};
+
+const TABS = ['Extrato', 'Despesas', 'Inadimplentes', 'Clientes'] as const;
+type TabType = typeof TABS[number];
+
+// ── Component ────────────────────────────────────────────
+export default function Extrato() {
+  const [activeTab, setActiveTab] = useState<TabType>('Extrato');
+
+  // ── Extrato tab state ──
+  const [range, setRange]       = useState<DateRange>(defaultRange);
+  const [extrato, setExtrato]   = useState<ExtratoItem[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [error, setError]       = useState<string | null>(null);
+  const [search, setSearch]     = useState('');
+  const [typeFilter, setTypeFilter] = useState<'todos'|'entradas'|'saidas'|'realizados'|'previstos'>('todos');
+  const [categoryFilter, setCategoryFilter] = useState<string>('');
+
+  // ── Month tabs state ──
+  const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [despesas, setDespesas]           = useState<Despesa[]>([]);
+  const [despesasRefreshKey, setDespesasRefreshKey] = useState(0);
+  const [receitas, setReceitas]           = useState<Despesa[]>([]);
+  const [inadimplentes, setInadimplentes] = useState<Inadimplente[]>([]);
+  const [clientes, setClientes]           = useState<ClienteRecente[]>([]);
+  const [previsto, setPrevisto]           = useState<Previsto | null>(null);
+  const [resumo, setResumo]               = useState<Resumo | null>(null);
+  const [tabLoading, setTabLoading]       = useState(false);
+
+  // ── Fetch extrato ──
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true); setError(null);
+        const res = await fetch(`/api/financeiro/extrato?start=${range.start}&end=${range.end}`);
+        if (!res.ok) throw new Error('Falha ao carregar extrato');
+        setExtrato(await res.json());
+      } catch (err: any) {
+        setError(err.message || 'Erro desconhecido');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, [range]);
+
+  // ── Fetch month-based tabs ──
+  useEffect(() => {
+    if (activeTab === 'Extrato' && despesasRefreshKey === 0) return;
+    const fetchMonthData = async () => {
+      try {
+        setTabLoading(true);
+        const m = selectedMonth;
+        const [resDespesas, resReceitas, resInadimplentes, resClientes, resPrevisto, resResumo] = await Promise.all([
+          fetch(`/api/financeiro/despesas?mes=${m}`),
+          fetch(`/api/financeiro/receitas?mes=${m}`),
+          fetch(`/api/financeiro/inadimplentes?mes=${m}`),
+          fetch(`/api/financeiro/clientes-recentes?mes=${m}`),
+          fetch(`/api/financeiro/previsto?mes=${m}`),
+          fetch(`/api/financeiro/resumo?mes=${m}`),
+        ]);
+        setDespesas(resDespesas.ok ? await resDespesas.json() : []);
+        setReceitas(resReceitas.ok ? await resReceitas.json() : []);
+        setInadimplentes(resInadimplentes.ok ? await resInadimplentes.json() : []);
+        setClientes(resClientes.ok ? await resClientes.json() : []);
+        setPrevisto(resPrevisto.ok ? await resPrevisto.json() : null);
+        setResumo(resResumo.ok ? await resResumo.json() : null);
+      } catch (err) {
+        console.error('Error fetching month data:', err);
+      } finally {
+        setTabLoading(false);
+      }
+    };
+    fetchMonthData();
+  }, [activeTab, selectedMonth, despesasRefreshKey]);
+
+  // ── Extrato local state ──
+  const handleCategorySave = (id: number, category: string) => {
+    setExtrato(prev => prev.map(item =>
+      item.id === id ? { ...item, grapehub_category: category || null } : item
+    ));
+    // Força re-fetch da aba Despesas para refletir a nova categoria
+    setDespesasRefreshKey(k => k + 1);
+  };
+
+  const rangeLabel = range.start && range.end
+    ? range.start === range.end ? formatDateBR(range.start) : `${formatDateBR(range.start)} → ${formatDateBR(range.end)}`
+    : '';
+
+  const filtered = extrato.filter(item => {
+    const descMatch =
+      (item.description || '').toLowerCase().includes(search.toLowerCase()) ||
+      (item.person_fantasy_name || item.person_name || '').toLowerCase().includes(search.toLowerCase());
+    if (!descMatch) return false;
+    if (typeFilter === 'entradas')   return item.type === 1;
+    if (typeFilter === 'saidas')     return item.type === -1;
+    if (typeFilter === 'realizados') return item.type_column === 'realizado';
+    if (typeFilter === 'previstos')  return item.type_column === 'previsto';
+    return true;
+  }).filter(item => {
+    if (!categoryFilter) return true;
+    const itemCat = getCategory(item).name;
+    return itemCat === categoryFilter;
+  });
+
+  // Categorias únicas presentes no extrato atual (para o dropdown)
+  const availableCategories = Array.from(
+    new Set(extrato.map(item => getCategory(item).name))
+  ).sort();
+
+  const totalEntradas = filtered.filter(i => i.type === 1  && i.type_column === 'realizado').reduce((s, i) => s + parseFloat(i.value || i.movement_value || '0'), 0);
+  const totalSaidas   = filtered.filter(i => i.type === -1 && i.type_column === 'realizado').reduce((s, i) => s + parseFloat(i.value || i.movement_value || '0'), 0);
+  const resultado     = totalEntradas - totalSaidas;
+
+  // ── Month tabs computed ──
+  const totalInadimplencia = inadimplentes.reduce((acc, curr) => acc + parseFloat(curr.valor), 0);
+  const maxAtraso = inadimplentes.length > 0 ? Math.max(...inadimplentes.map(i => i.dias_atraso)) : 0;
+
+  // Month picker helpers
+  const [selY, selM] = selectedMonth.split('-').map(Number);
+
+  function prevMonth() {
+    let m = selM - 1, y = selY;
+    if (m < 1) { m = 12; y--; }
+    setSelectedMonth(`${y}-${String(m).padStart(2,'0')}`);
+  }
+  function nextMonth() {
+    let m = selM + 1, y = selY;
+    if (m > 12) { m = 1; y++; }
+    setSelectedMonth(`${y}-${String(m).padStart(2,'0')}`);
+  }
+
+  const monthLabel = `${MESES_FULL[selM - 1]} ${selY}`;
+
+  return (
+    <div className="min-h-screen bg-dark-bg transition-colors duration-300">
+
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between px-6 md:px-8 pt-8 pb-4">
+        <div>
+          <h1 className="text-2xl font-black tracking-tight text-dark-text">
+            Extra<span className="text-violet-500">to</span>
+          </h1>
+          <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5">
+            {activeTab === 'Extrato' ? (rangeLabel || 'Todas as movimentações bancárias') : `Referência: ${monthLabel}`}
+          </p>
+        </div>
+
+        {/* Switcher de data por aba */}
+        {activeTab === 'Extrato' ? (
+          <DateRangePicker range={range} onChange={setRange} />
+        ) : (
+          <div className="flex items-center gap-1">
+            <button onClick={prevMonth}
+              className="w-9 h-9 rounded-xl bg-dark-card border border-white/10 hover:border-violet-500/60 flex items-center justify-center transition-all hover:bg-dark-card-hover">
+              <ChevronDown size={14} className="text-slate-400 rotate-90" />
+            </button>
+            <div className="flex items-center gap-2 px-4 py-2 bg-dark-card border border-violet-500/60 rounded-xl">
+              <Calendar size={16} className="text-violet-500" />
+              <span className="text-sm font-bold text-dark-text">{monthLabel}</span>
+            </div>
+            <button onClick={nextMonth}
+              className="w-9 h-9 rounded-xl bg-dark-card border border-white/10 hover:border-violet-500/60 flex items-center justify-center transition-all hover:bg-dark-card-hover">
+              <ChevronDown size={14} className="text-slate-400 -rotate-90" />
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* ── Tab Navigation ── */}
+      <div className="px-6 md:px-8 mb-6">
+        <div className="inline-flex items-center p-1.5 bg-dark-bg border border-white/10 rounded-full">
+          {TABS.map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`relative flex items-center px-6 py-2.5 text-sm font-bold rounded-full transition-all duration-200 ${
+                activeTab === tab
+                  ? 'bg-dark-card text-dark-text shadow-sm'
+                  : 'text-slate-500 hover:text-dark-text'
+              }`}
+            >
+              {tab}
+              {tab === 'Inadimplentes' && inadimplentes.length > 0 && (
+                <span className="ml-2 px-1.5 py-0.5 bg-rose-500 text-white text-[10px] font-bold rounded-full">
+                  {inadimplentes.length}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Tab: Extrato ── */}
+      {activeTab === 'Extrato' && (
+        <div className="px-6 md:px-8 pb-8 space-y-6">
+          {/* KPI Cards */}
+          <div className="grid grid-cols-3 gap-4">
+            {[
+              { label: 'Total Entradas', value: totalEntradas, color: 'text-emerald-400' },
+              { label: 'Total Saídas',   value: totalSaidas,   color: 'text-rose-400' },
+              { label: 'Resultado',       value: resultado,     color: resultado >= 0 ? 'text-emerald-400' : 'text-rose-400' },
+            ].map(({ label, value, color }) => (
+              <div key={label} className="bg-dark-card border border-white/10 rounded-2xl p-5 transition-colors duration-200">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">{label}</p>
+                {loading
+                  ? <div className="h-8 w-32 bg-white/5 rounded animate-pulse" />
+                  : <p className={`text-2xl font-black ${color}`}>{formatCurrency(value)}</p>
+                }
+              </div>
+            ))}
+          </div>
+
+          {/* Filters */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="relative flex-1 min-w-[220px]">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+              <input
+                type="text" placeholder="Buscar movimentação..."
+                value={search} onChange={e => setSearch(e.target.value)}
+                className="w-full pl-9 pr-4 py-2.5 text-sm bg-dark-card border border-white/10 rounded-xl text-dark-text placeholder:text-slate-600 outline-none focus:ring-2 focus:ring-violet-500/30"
+              />
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              {(['todos','entradas','saidas','realizados','previstos'] as const).map(f => (
+                <button key={f} onClick={() => setTypeFilter(f)}
+                  className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all ${
+                    typeFilter === f
+                      ? 'bg-violet-500 text-white shadow-lg shadow-violet-500/20'
+                      : 'bg-dark-card border border-white/10 text-slate-400 hover:text-white'
+                  }`}>
+                  {f.charAt(0).toUpperCase() + f.slice(1)}
+                </button>
+              ))}
+              {/* Category filter dropdown */}
+              <select
+                value={categoryFilter}
+                onChange={e => setCategoryFilter(e.target.value)}
+                style={{ colorScheme: 'dark', backgroundColor: categoryFilter ? undefined : 'rgb(var(--dark-card))' }}
+                className={`px-3 py-2 text-xs font-bold rounded-xl border transition-all outline-none cursor-pointer ${
+                  categoryFilter
+                    ? 'bg-violet-500/10 border-violet-500/40 text-violet-400'
+                    : 'bg-dark-card border-white/10 text-slate-400'
+                }`}
+              >
+                <option value="">Todas categorias</option>
+                {availableCategories.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+            </div>
+            <span className="text-xs text-slate-500 ml-1">{loading ? '...' : `${filtered.length} registros`}</span>
+          </div>
+
+          {/* Table */}
+          <div className="bg-dark-card border border-white/10 rounded-2xl overflow-visible relative">
+            <div className="grid grid-cols-[1fr_160px_90px_100px_110px_120px] px-5 py-3 border-b border-white/5 sticky top-0 z-10 bg-dark-card">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Descrição / Contraparte</span>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider text-center">Categoria</span>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider text-center px-4">Tipo</span>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider text-center px-4">Status</span>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider text-right px-4">Data</span>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider text-right pl-4">Valor</span>
+            </div>
+            <div className="divide-y divide-white/5 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 320px)' }}>
+              {loading ? (
+                Array.from({ length: 8 }).map((_, i) => (
+                  <div key={i} className="flex items-center gap-4 px-5 py-4">
+                    <div className="flex-1 space-y-1.5">
+                      <div className="h-3 w-48 bg-white/5 rounded animate-pulse" />
+                      <div className="h-2.5 w-32 bg-white/5 rounded animate-pulse" />
+                    </div>
+                    <div className="h-6 w-28 bg-white/5 rounded-lg animate-pulse" />
+                    <div className="h-5 w-16 bg-white/5 rounded-full animate-pulse" />
+                    <div className="h-5 w-16 bg-white/5 rounded-full animate-pulse" />
+                    <div className="h-3 w-20 bg-white/5 rounded animate-pulse" />
+                    <div className="h-4 w-24 bg-white/5 rounded animate-pulse" />
+                  </div>
+                ))
+              ) : error ? (
+                <div className="py-16 text-center">
+                  <p className="text-sm font-bold text-rose-400">{error}</p>
+                </div>
+              ) : filtered.length === 0 ? (
+                <div className="py-16 text-center">
+                  <FileText size={32} className="mx-auto text-slate-600 mb-3" />
+                  <p className="text-sm font-bold text-slate-500">Nenhuma movimentação encontrada</p>
+                  {(search || typeFilter !== 'todos') && (
+                    <button onClick={() => { setSearch(''); setTypeFilter('todos'); }}
+                      className="mt-3 text-xs text-violet-400 hover:text-violet-300 font-bold">
+                      Limpar filtros
+                    </button>
+                  )}
+                </div>
+              ) : (
+                filtered.map((item, idx) => {
+                  const valor     = parseFloat(item.value || item.movement_value || '0');
+                  const isEntrada = item.type === 1;
+                  const isReal    = item.type_column === 'realizado';
+                  const contra    = item.person_fantasy_name || item.person_name;
+                  return (
+                    <div key={item.id || idx}
+                      className="grid grid-cols-[1fr_160px_90px_100px_110px_120px] px-5 py-3.5 hover:bg-white/[0.02] transition-colors items-center">
+                      <div className="min-w-0 pr-4">
+                        <p className="text-sm font-medium text-dark-text truncate">{item.description || '—'}</p>
+                        {contra && <p className="text-[11px] text-slate-500 truncate mt-0.5">{contra}</p>}
+                      </div>
+                      <div className="flex justify-center"><CategoryPicker item={item} onSave={handleCategorySave} /></div>
+                      <div className="flex justify-center px-4">
+                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                          isEntrada ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'
+                        }`}>
+                          {isEntrada ? <ArrowUp size={10} /> : <ArrowDown size={10} />}
+                          {isEntrada ? 'Entrada' : 'Saída'}
+                        </span>
+                      </div>
+                      <div className="flex justify-center px-4">
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                          isReal ? 'bg-violet-500/15 text-violet-400' : 'bg-slate-500/15 text-slate-400'
+                        }`}>
+                          {isReal ? 'Realizado' : 'Previsto'}
+                        </span>
+                      </div>
+                      <div className="text-right px-4">
+                        <span className="text-xs text-slate-400">{fmtDate(getItemDate(item))}</span>
+                      </div>
+                      <div className="text-right pl-4">
+                        <span className={`text-sm font-bold ${isEntrada ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {isEntrada ? '+' : '-'}{formatCurrency(Math.abs(valor))}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Tab: Despesas ── */}
+      {activeTab === 'Despesas' && (
+        <div className="px-6 md:px-8 pb-8 space-y-6">
+          {tabLoading ? (
+            <div className="flex items-center justify-center py-24">
+              <div className="w-8 h-8 border-4 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
+            </div>
+          ) : (
+            <>
+              {/* KPI Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                {(() => {
+                  const totalPrevisto = despesas.filter(d => d.type_column === 'previsto' && d.status === 'Pendente').reduce((acc, curr) => acc + parseFloat(curr.movement_value), 0);
+                  const jaPago = despesas.filter(d => d.type_column === 'realizado' && d.status === 'Conciliado' && parseFloat(d.value) !== 0).reduce((acc, curr) => acc + parseFloat(curr.value), 0);
+                  const operacionalReal = despesas.filter(d => d.type_column === 'realizado' && d.status === 'Conciliado' && parseFloat(d.value) !== 0 && d.category_l1_ext_id !== 176913).reduce((acc, curr) => acc + parseFloat(curr.value), 0);
+                  const today = new Date().toISOString().slice(0, 10);
+                  const tomorrow = (() => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); })();
+                  const venceHojeAmanha = despesas.filter(d => d.status === 'Pendente' && (d.expiration_date?.slice(0, 10) === today || d.expiration_date?.slice(0, 10) === tomorrow)).reduce((acc, curr) => acc + parseFloat(curr.movement_value), 0);
+                  return (
+                    <>
+                      <div className="bg-dark-card border border-white/10 rounded-2xl p-5">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Total Previsto</p>
+                        <div className="flex items-center justify-between mt-1">
+                          <h3 className="text-2xl font-black text-dark-text">{formatCurrency(totalPrevisto)}</h3>
+                          <span className="px-2 py-0.5 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 text-[10px] font-bold rounded-full uppercase tracking-wider">a pagar</span>
+                        </div>
+                      </div>
+                      <div className="bg-dark-card border border-white/10 rounded-2xl p-5">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Já Pago</p>
+                        <div className="flex items-center justify-between mt-1">
+                          <h3 className="text-2xl font-black text-dark-text">{formatCurrency(jaPago)}</h3>
+                          <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-[10px] font-bold rounded-full uppercase tracking-wider">conciliado</span>
+                        </div>
+                      </div>
+                      <div className="bg-dark-card border border-white/10 rounded-2xl p-5">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Operacional Real</p>
+                        <div className="flex items-center justify-between mt-1">
+                          <h3 className="text-2xl font-black text-dark-text">{formatCurrency(operacionalReal)}</h3>
+                          <span className="px-2 py-0.5 bg-dark-bg text-slate-500 text-[10px] font-bold rounded-full uppercase tracking-wider border border-white/10">excl. distribuição</span>
+                        </div>
+                      </div>
+                      <div className="bg-dark-card border-2 border-rose-500/30 rounded-2xl p-5">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Vence Hoje/Amanhã</p>
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-2xl font-black text-rose-500">{formatCurrency(venceHojeAmanha)}</h3>
+                          <span className="px-2 py-0.5 bg-rose-600 text-white text-[10px] font-bold rounded-full uppercase tracking-wider">urgente</span>
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+
+              {/* Panels */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Pagas */}
+                <div className="bg-dark-card border border-white/10 rounded-2xl overflow-hidden flex flex-col">
+                  <div className="p-6 border-b border-white/10 flex justify-between items-center">
+                    <h2 className="text-sm font-bold text-dark-text uppercase tracking-widest">Despesas pagas</h2>
+                    <span className="px-3 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-full uppercase tracking-wider">Conciliado</span>
+                  </div>
+                  <div className="flex-1 overflow-y-auto max-h-[600px] p-4">
+                    {(() => {
+                      const pagas = despesas.filter(d => d.type_column === 'realizado' && d.status === 'Conciliado' && parseFloat(d.value) !== 0);
+                      const grouped = pagas.reduce((acc: any, curr) => {
+                        const cat = curr.grapehub_category
+                          ? (CATEGORIES.find((c: any) => c.name === curr.grapehub_category) || { name: curr.grapehub_category, icon: '🏷️' })
+                          : categorizeExpense(curr.description);
+                        if (!acc[cat.name]) acc[cat.name] = { name: cat.name, icon: cat.icon, total: 0, items: [] };
+                        const valor = parseFloat(curr.value);
+                        acc[cat.name].total += valor;
+                        const displayDesc = cat.name === 'Cartão de Crédito' ? extractCreditCardTool(curr.description) : curr.description;
+                        acc[cat.name].items.push({ description: displayDesc, value: valor, date: curr.movement_date?.slice(0, 10) });
+                        return acc;
+                      }, {});
+                      const sorted = Object.values(grouped).sort((a: any, b: any) => b.total - a.total) as any[];
+                      if (sorted.length === 0) return <p className="text-center py-12 text-slate-500">Nenhuma despesa paga encontrada.</p>;
+                      return sorted.map((cat: any, idx: number) => (
+                        <CollapsibleGroup key={idx} category={cat.name} icon={cat.icon} total={cat.total} items={cat.items} formatCurr={formatCurrency} />
+                      ));
+                    })()}
+                  </div>
+                </div>
+
+                {/* Previstas */}
+                <div className="bg-dark-card border border-white/10 rounded-2xl overflow-hidden flex flex-col">
+                  <div className="p-6 border-b border-white/10 flex justify-between items-center">
+                    <h2 className="text-sm font-bold text-dark-text uppercase tracking-widest">Despesas previstas</h2>
+                    <span className="px-3 py-1 bg-amber-100 text-amber-700 text-[10px] font-bold rounded-full uppercase tracking-wider">Pendente</span>
+                  </div>
+                  <div className="flex-1 overflow-y-auto max-h-[600px] p-4">
+                    {(() => {
+                      const previstas = despesas.filter(d => d.type_column === 'previsto' && ['Pendente', 'Vence Hoje'].includes(d.status));
+                      const grouped = previstas.reduce((acc: any, curr) => {
+                        const cat = curr.grapehub_category
+                          ? (CATEGORIES.find((c: any) => c.name === curr.grapehub_category) || { name: curr.grapehub_category, icon: '🏷️' })
+                          : categorizeExpense(curr.description);
+                        if (!acc[cat.name]) acc[cat.name] = { name: cat.name, icon: cat.icon, total: 0, items: [] };
+                        const valor = parseFloat(curr.movement_value);
+                        acc[cat.name].total += valor;
+                        const displayDesc = cat.name === 'Cartão de Crédito' ? extractCreditCardTool(curr.description) : curr.description;
+                        acc[cat.name].items.push({ description: displayDesc, value: valor, date: curr.expiration_date?.slice(0, 10) });
+                        return acc;
+                      }, {});
+                      const sorted = Object.values(grouped).sort((a: any, b: any) => b.total - a.total) as any[];
+                      if (sorted.length === 0) return <p className="text-center py-12 text-slate-500">Nenhuma despesa prevista encontrada.</p>;
+                      return sorted.map((cat: any, idx: number) => (
+                        <CollapsibleGroup key={idx} category={cat.name} icon={cat.icon} total={cat.total} items={cat.items} formatCurr={formatCurrency} />
+                      ));
+                    })()}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── Tab: Inadimplentes ── */}
+      {activeTab === 'Inadimplentes' && (
+        <div className="px-6 md:px-8 pb-8">
+          {tabLoading ? (
+            <div className="flex items-center justify-center py-24">
+              <div className="w-8 h-8 border-4 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Lista */}
+              <div className="lg:col-span-2 bg-dark-card border border-white/10 rounded-2xl overflow-hidden flex flex-col">
+                <div className="bg-rose-50 dark:bg-rose-500/10 p-4 flex items-start gap-3 border-b border-rose-100 dark:border-rose-500/20">
+                  <AlertTriangle className="text-rose-500 shrink-0 mt-0.5" size={20} />
+                  <div>
+                    <h3 className="text-sm font-bold text-rose-800 dark:text-rose-400">
+                      {inadimplentes.length} clientes com pagamento atrasado — {formatCurrency(totalInadimplencia)} em risco.
+                    </h3>
+                    <p className="text-xs text-rose-600 dark:text-rose-300 mt-1">
+                      Contato imediato recomendado para casos acima de 15 dias.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex-1 overflow-y-auto p-2">
+                  {inadimplentes.map((cliente, index) => {
+                    const dias = cliente.dias_atraso;
+                    let badgeColor = 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400';
+                    if (dias > 10 && dias <= 20) badgeColor = 'bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-400';
+                    if (dias > 20) badgeColor = 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400';
+                    return (
+                      <div key={index} className="flex items-center justify-between p-4 hover:bg-dark-card-hover rounded-2xl transition-colors border-b border-white/5 last:border-0">
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-sm font-bold text-slate-600 dark:text-slate-300 shrink-0">
+                            {(cliente.fantasy_name || cliente.name).substring(0, 2).toUpperCase()}
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-slate-900 dark:text-white">{cliente.fantasy_name || cliente.name}</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                              {cliente.description || 'Contrato'} · Parc. {cliente.installment_number || '1'} · {cliente.payment_method || 'Boleto'}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right flex flex-col items-end gap-2">
+                          <p className="text-sm font-bold text-rose-600 dark:text-rose-400">{formatCurrency(cliente.valor)}</p>
+                          <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full uppercase tracking-wider ${badgeColor}`}>
+                            {dias} dias
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {inadimplentes.length === 0 && (
+                    <div className="p-8 text-center text-slate-500 dark:text-slate-400">
+                      Nenhum cliente inadimplente no momento. 🎉
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Painel Resumo */}
+              <div className="space-y-6">
+                <div className="bg-dark-card border border-white/10 rounded-2xl p-6">
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="p-2.5 bg-rose-100 dark:bg-rose-500/20 rounded-xl">
+                      <ShieldAlert className="text-rose-600 dark:text-rose-400" size={20} />
+                    </div>
+                    <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-widest">Resumo de Risco</h2>
+                  </div>
+                  <div className="space-y-4">
+                    {[
+                      { label: '1-10 dias', color: 'bg-amber-500', filter: (i: Inadimplente) => i.dias_atraso <= 10 },
+                      { label: '11-20 dias', color: 'bg-orange-500', filter: (i: Inadimplente) => i.dias_atraso > 10 && i.dias_atraso <= 20 },
+                      { label: '20+ dias', color: 'bg-rose-600', filter: (i: Inadimplente) => i.dias_atraso > 20 },
+                    ].map(({ label, color, filter }) => {
+                      const group = inadimplentes.filter(filter);
+                      return (
+                        <div key={label} className="flex justify-between items-center p-3 bg-dark-bg border border-white/10 rounded-xl">
+                          <div className="flex items-center gap-2">
+                            <div className={`w-2 h-2 rounded-full ${color}`} />
+                            <span className="text-xs font-bold text-slate-600 dark:text-slate-400">{label}</span>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-bold text-slate-900 dark:text-white">
+                              {formatCurrency(group.reduce((a, c) => a + parseFloat(c.valor), 0))}
+                            </p>
+                            <p className="text-[10px] text-slate-500">{group.length} clientes</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <div className="flex justify-between items-center p-3 bg-rose-50 dark:bg-rose-500/10 rounded-xl border border-rose-100 dark:border-rose-500/20">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-rose-600" />
+                        <span className="text-xs font-bold text-rose-800 dark:text-rose-400">Total em Risco</span>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-bold text-rose-600 dark:text-rose-400">{formatCurrency(totalInadimplencia)}</p>
+                        <p className="text-[10px] text-rose-500">{inadimplentes.length} clientes</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-dark-card border border-white/10 rounded-2xl p-6">
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="p-2.5 bg-slate-100 dark:bg-white/10 rounded-xl">
+                      <Users className="text-slate-600 dark:text-slate-400" size={20} />
+                    </div>
+                    <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-widest">Taxa de Inadimplência</h2>
+                  </div>
+                  {(() => {
+                    const fat = parseFloat(resumo?.caixa_realizado || '0') + parseFloat(previsto?.entradas_previstas || '0');
+                    const taxa = fat > 0 ? (totalInadimplencia / fat) * 100 : 0;
+                    let taxaColor = 'text-emerald-500';
+                    if (taxa >= 5 && taxa <= 10) taxaColor = 'text-orange-500';
+                    if (taxa > 10) taxaColor = 'text-rose-600';
+                    return (
+                      <div className="flex flex-col items-center justify-center py-4">
+                        <div className={`text-5xl font-bold tracking-tight mb-2 ${taxaColor}`}>{taxa.toFixed(1)}%</div>
+                        <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Meta: Abaixo de 5%</p>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Tab: Clientes ── */}
+      {activeTab === 'Clientes' && (
+        <div className="px-6 md:px-8 pb-8">
+          {tabLoading ? (
+            <div className="flex items-center justify-center py-24">
+              <div className="w-8 h-8 border-4 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Lista de Clientes */}
+              <div className="lg:col-span-2 bg-dark-card border border-white/10 rounded-2xl overflow-hidden">
+                <div className="p-6 border-b border-white/10 flex justify-between items-center">
+                  <h2 className="text-sm font-bold text-dark-text uppercase tracking-widest">Clientes Recentes</h2>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{clientes.length} registros</span>
+                </div>
+                <div className="divide-y divide-white/5 max-h-[600px] overflow-y-auto">
+                  {clientes.map((cliente, idx) => (
+                    <div key={idx} className="flex items-center justify-between px-6 py-4 hover:bg-white/[0.02] transition-colors">
+                      <div className="flex items-center gap-4">
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white ${getStatusDotColor(cliente.status)}`}>
+                          {(cliente.fantasy_name || cliente.name || '??').substring(0, 2).toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-slate-900 dark:text-white truncate max-w-[240px]">{cliente.fantasy_name || cliente.name}</p>
+                          <p className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wider mt-0.5">
+                            Parc. {cliente.installment_number || '1'} · {cliente.payment_method || 'N/A'} · {fmtDate(cliente.movement_date)}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-bold text-slate-900 dark:text-white">{formatCurrency(cliente.valor)}</p>
+                        <span className={`inline-block mt-1 px-2 py-0.5 text-[10px] font-bold rounded-full uppercase tracking-wider ${getStatusColor(cliente.status)}`}>
+                          {cliente.status}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                  {clientes.length === 0 && (
+                    <div className="py-16 text-center">
+                      <Users size={32} className="mx-auto text-slate-600 mb-3" />
+                      <p className="text-sm font-bold text-slate-500">Nenhum cliente recente neste mês.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Resumo */}
+              <div className="space-y-6">
+                <div className="bg-dark-card border border-white/10 rounded-2xl p-6">
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="p-2.5 bg-violet-500/15 rounded-xl">
+                      <TrendingUp className="text-violet-500" size={20} />
+                    </div>
+                    <h2 className="text-sm font-bold text-dark-text uppercase tracking-widest">Receitas do Mês</h2>
+                  </div>
+                  <div className="space-y-4">
+                    {(() => {
+                      const recebido = receitas.filter(r => r.type_column === 'realizado' && r.status === 'Conciliado').reduce((a, c) => a + parseFloat(c.value || '0'), 0);
+                      const aReceber = receitas.filter(r => r.type_column === 'previsto' && ['Pendente', 'Vence Hoje'].includes(r.status)).reduce((a, c) => a + parseFloat(c.movement_value || '0'), 0);
+                      const total = recebido + aReceber;
+                      const pct = total > 0 ? Math.round((recebido / total) * 100) : 0;
+                      return (
+                        <>
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs font-bold text-slate-500">Recebido</span>
+                            <span className="text-sm font-bold text-emerald-500">{formatCurrency(recebido)}</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs font-bold text-slate-500">A receber</span>
+                            <span className="text-sm font-bold text-slate-400">{formatCurrency(aReceber)}</span>
+                          </div>
+                          <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                            <div className="h-full bg-emerald-500 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+                          </div>
+                          <div className="pt-2 border-t border-white/10 flex justify-between items-center">
+                            <span className="text-xs font-bold text-slate-500">Total</span>
+                            <span className="text-base font-black text-dark-text">{formatCurrency(total)}</span>
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                <div className="bg-dark-card border border-white/10 rounded-2xl p-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2.5 bg-rose-500/15 rounded-xl">
+                      <AlertTriangle className="text-rose-500" size={20} />
+                    </div>
+                    <h2 className="text-sm font-bold text-dark-text uppercase tracking-widest">Inadimplência</h2>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center p-3 bg-dark-bg border border-white/10 rounded-xl">
+                      <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Clientes atrasados</span>
+                      <span className="text-xl font-black text-dark-text">{inadimplentes.length}</span>
+                    </div>
+                    <div className="flex justify-between items-center p-3 bg-dark-bg border border-white/10 rounded-xl">
+                      <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Valor em risco</span>
+                      <span className="text-xl font-black text-rose-500">{formatCurrency(totalInadimplencia)}</span>
+                    </div>
+                    <div className="flex justify-between items-center p-3 bg-dark-bg border border-white/10 rounded-xl">
+                      <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Maior atraso</span>
+                      <span className="text-xl font-black text-dark-text">{maxAtraso} dias</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

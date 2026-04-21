@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
+import ReactDOM from 'react-dom';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend, Filler, LineController, BarController } from 'chart.js';
 import { Chart } from 'react-chartjs-2';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend as RechartsLegend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { MoreVertical, DollarSign, TrendingUp, TrendingDown, AlertCircle, Wallet, Calendar, AlertTriangle, ArrowUpRight, ShieldAlert, Users, ChevronDown, ChevronUp } from 'lucide-react';
+import { MoreVertical, DollarSign, TrendingUp, TrendingDown, AlertCircle, Wallet, Calendar, AlertTriangle, ArrowUpRight, ShieldAlert, Users, ChevronDown, ChevronUp, X, ArrowUp, ArrowDown } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { designSystem } from '../design-system';
 
@@ -70,8 +71,7 @@ interface Despesa {
   document_code: string;
 }
 
-interface Receita extends Despesa {
-}
+interface Receita extends Despesa {}
 
 const StatCard = ({ icon: Icon, title, value, subtitle, colorClass, isNegative = false }: { 
   icon: any, title: string, value: string, subtitle?: string | React.ReactNode, colorClass: string, isNegative?: boolean
@@ -98,11 +98,11 @@ const StatCard = ({ icon: Icon, title, value, subtitle, colorClass, isNegative =
 
 const CATEGORIES_CONFIG = [
   { name: 'Impostos', icon: '📊', keywords: ['Simples Nacional', 'ISS', 'IRPJ', 'Imposto', 'DAS', 'PIS', 'COFINS', 'CSLL', 'Taxa Municipal', 'Alvará'] },
-  { name: 'Salários e Pessoal', icon: '👥', keywords: ['Salário', 'Bonificação', 'Business Partner', 'FGTS', 'IRRF', 'Folha', 'Férias', '13º', 'Rescisão', 'Benefício', 'Vale', 'Plano de Saúde', 'Odonto', 'Seguro de Vida'] },
-  { name: 'Prestação de Serviço', icon: '🛠️', keywords: ['Ferramenta', 'Software', 'VPS', 'IA', 'Domínio', 'Hospedagem', 'AWS', 'Google Cloud', 'Vercel', 'OpenAI', 'Claude', 'Github', 'Cursor', 'Slack', 'Zoom', 'Canva', 'Adobe', 'Figma', 'Notion', 'Trello', 'Jira'] },
+  { name: 'Salários e Pessoal', icon: '👥', keywords: ['Remuneração', 'Salário', 'Bonificação', 'Business Partner', 'FGTS', 'IRRF', 'Folha', 'Férias', '13º', 'Rescisão', 'Benefício', 'Vale', 'Plano de Saúde', 'Odonto', 'Seguro de Vida'] },
+  { name: 'Prestação de Serviço', icon: '🛠️', keywords: ['Ferramenta', 'Software', 'VPS', 'Domínio', 'Hospedagem', 'AWS', 'Google Cloud', 'Vercel', 'OpenAI', 'Claude', 'Github', 'Cursor', 'Slack', 'Zoom', 'Canva', 'Adobe', 'Figma', 'Notion', 'Trello', 'Jira'] },
   { name: 'Marketing e Vendas', icon: '📣', keywords: ['Comissão', 'Tráfego Pago', 'Facebook Ads', 'Google Ads', 'Meta Ads', 'Marketing', 'Publicidade', 'Influenciador', 'RD Station', 'Hubspot', 'ActiveCampaign', 'LinkedIn Ads', 'TikTok Ads'] },
   { name: 'Administrativo', icon: '🏢', keywords: ['Aluguel', 'Condomínio', 'Energia', 'Internet', 'Assessoria Financeira', 'Contabilidade', 'Limpeza', 'Escritório', 'Material', 'Seguro', 'Água', 'Telefone', 'Correios', 'Cartório'] },
-  { name: 'Despesas Financeiras', icon: '💳', keywords: ['Tarifa Asaas', 'Taxa de antecipação', 'Juros', 'IOF', 'Banco', 'Tarifa', 'Anuidade', 'TED', 'PIX', 'Boleto'] },
+  { name: 'Despesas Financeiras', icon: '💳', keywords: ['Taxa', 'Tarifa Asaas', 'Taxa de antecipação', 'Juros', 'IOF', 'Banco', 'Tarifa', 'Anuidade', 'TED', 'Boleto'] },
   { name: 'Distribuição de Lucros', icon: '💰', keywords: ['Pró-labore', 'Dividendo', 'INSS', 'Retirada', 'Lucro', 'Sócio'] },
   { name: 'Não Operacional', icon: '📦', keywords: ['Compra de cotas', 'Investimento', 'Empréstimo', 'Amortização', 'Aporte', 'Financiamento'] },
 ];
@@ -226,7 +226,6 @@ const MESES_FULL_FIN = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','J
 
 export default function FinanceiroDashboard() {
   const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().slice(0, 7));
-  const [activeTab, setActiveTab] = useState('Visão Geral');
   const [resumo, setResumo] = useState<Resumo | null>(null);
   const [fluxo, setFluxo] = useState<FluxoDiario[]>([]);
   const [saldoAnterior, setSaldoAnterior] = useState<number>(0);
@@ -237,6 +236,8 @@ export default function FinanceiroDashboard() {
   const [previsto, setPrevisto] = useState<Previsto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [dayPopup, setDayPopup] = useState<{ iso: string; label: string; items: any[] } | null>(null);
+  const [dayLoading, setDayLoading] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -244,13 +245,13 @@ export default function FinanceiroDashboard() {
         setLoading(true);
         const m = selectedMonth;
         const [resResumo, resFluxo, resClientes, resInadimplentes, resPrevisto, resDespesas, resReceitas] = await Promise.all([
-          fetch(`/api/financeiro/resumo?month=${m}`),
-          fetch(`/api/financeiro/fluxo-diario?month=${m}`),
-          fetch(`/api/financeiro/clientes-recentes?month=${m}`),
-          fetch(`/api/financeiro/inadimplentes?month=${m}`),
-          fetch(`/api/financeiro/previsto?month=${m}`),
-          fetch(`/api/financeiro/despesas?month=${m}`),
-          fetch(`/api/financeiro/receitas?month=${m}`)
+          fetch(`/api/financeiro/resumo?mes=${m}`),
+          fetch(`/api/financeiro/fluxo-diario?mes=${m}`),
+          fetch(`/api/financeiro/clientes-recentes?mes=${m}`),
+          fetch(`/api/financeiro/inadimplentes?mes=${m}`),
+          fetch(`/api/financeiro/previsto?mes=${m}`),
+          fetch(`/api/financeiro/despesas?mes=${m}`),
+          fetch(`/api/financeiro/receitas?mes=${m}`)
         ]);
 
         if (!resResumo.ok || !resFluxo.ok || !resClientes.ok || !resInadimplentes.ok || !resPrevisto.ok || !resDespesas.ok || !resReceitas.ok) {
@@ -467,6 +468,23 @@ export default function FinanceiroDashboard() {
   const totalInadimplencia = inadimplentes.reduce((acc, curr) => acc + parseFloat(curr.valor), 0);
   const maxAtraso = inadimplentes.length > 0 ? Math.max(...inadimplentes.map(i => i.dias_atraso)) : 0;
   const despesasRealizadas = parseFloat(resumo?.saidas_operacionais || '0') + parseFloat(resumo?.distribuicao || '0');
+
+  // ── Bar click handler ──────────────────────────────────────────────────
+  const handleBarClick = (barData: any) => {
+    if (!barData?.dia) return;
+    const diaStr: string = barData.dia; // "DD/MM"
+    const [dd, mm] = diaStr.split('/');
+    const [year] = selectedMonth.split('-');
+    const iso = `${year}-${mm}-${dd}`;
+    const label = `${dd}/${mm}/${year}`;
+    setDayPopup({ iso, label, items: [] });
+    setDayLoading(true);
+    fetch(`/api/financeiro/extrato?start=${iso}&end=${iso}`)
+      .then(res => res.ok ? res.json() : [])
+      .then(items => setDayPopup({ iso, label, items: Array.isArray(items) ? items : [] }))
+      .catch(() => setDayPopup({ iso, label, items: [] }))
+      .finally(() => setDayLoading(false));
+  };
   const saldoPeriodo = parseFloat(resumo?.saldo_periodo || '0');
   const saldoProjetado = parseFloat(previsto?.saldo_projetado || '0');
 
@@ -494,6 +512,12 @@ export default function FinanceiroDashboard() {
 
   return (
     <div className="min-h-screen bg-dark-bg p-8 font-sans text-dark-text transition-colors duration-300">
+      <style>{`
+        .recharts-surface:focus,
+        .recharts-wrapper:focus,
+        .recharts-wrapper svg:focus,
+        .recharts-surface { outline: none !important; -webkit-tap-highlight-color: transparent; }
+      `}</style>
       <div className="max-w-[1600px] mx-auto space-y-6">
         
         {/* Header */}
@@ -539,34 +563,53 @@ export default function FinanceiroDashboard() {
           </div>
         </PageHeader>
 
-        {/* Tabs */}
-        <div className="flex mb-8">
-          <div className="inline-flex items-center p-1.5 bg-dark-bg border border-white/10 rounded-full">
-            {['Visão Geral', 'Despesas', 'Inadimplentes', 'Clientes'].map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`relative flex items-center px-6 py-2.5 text-sm font-bold rounded-full transition-all duration-200 ${
-                  activeTab === tab 
-                    ? 'bg-dark-card text-dark-text shadow-sm' 
-                    : 'text-slate-500 hover:text-dark-text'
-                }`}
-              >
-                {tab}
-                {tab === 'Inadimplentes' && inadimplentes.length > 0 && (
-                  <span className="ml-2 flex items-center justify-center min-w-[20px] h-[20px] px-1.5 bg-rose-600 text-white text-[10px] font-bold rounded-full">
-                    {inadimplentes.length}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {activeTab === 'Visão Geral' && (
-          <>
+        {/* Visão Geral */}
+        <>
             {/* Linha 1 - KPIs */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard
+            icon={ArrowUpRight}
+            title="Caixa"
+            value={formatCurrency(saldoAncoraHoje)}
+            subtitle={
+              <div className="space-y-3">
+                <div className="flex flex-col gap-2">
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-slate-500">Atual</span>
+                    <span className={`font-semibold ${saldoAncoraHoje >= 0 ? 'text-emerald-500' : 'text-rose-400'}`}>
+                      {formatCurrency(saldoAncoraHoje)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-slate-500">Previsto fim do mês</span>
+                    <span className={`font-semibold ${saldoAcumulado >= 0 ? 'text-violet-400' : 'text-rose-400'}`}>
+                      {formatCurrency(saldoAcumulado)}
+                    </span>
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-1.5 bg-slate-100 dark:bg-white/10 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${
+                          saldoAcumulado >= saldoAncoraHoje ? 'bg-violet-500' : 'bg-rose-400'
+                        }`}
+                        style={{ width: `${Math.min(100, Math.max(0, saldoAncoraHoje > 0 ? (saldoAcumulado / saldoAncoraHoje) * 100 : 0))}%` }}
+                      />
+                    </div>
+                    <span className="text-[10px] font-bold text-slate-400">
+                      {saldoAncoraHoje > 0
+                        ? `${saldoAcumulado >= saldoAncoraHoje ? '+' : ''}${Math.round(((saldoAcumulado - saldoAncoraHoje) / saldoAncoraHoje) * 100)}%`
+                        : '—'
+                      }
+                    </span>
+                  </div>
+                </div>
+              </div>
+            }
+            colorClass="bg-emerald-600"
+            isNegative={saldoAncoraHoje < 0}
+          />
           <StatCard 
             icon={TrendingUp} 
             title="Faturamento do Mês" 
@@ -656,33 +699,38 @@ export default function FinanceiroDashboard() {
               <h2 className="text-lg font-bold text-slate-900 dark:text-white">Movimentação Diária</h2>
               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Entradas (Verde) vs Saídas (Vermelho)</p>
             </div>
-            <div className="h-[300px]">
+            <div className="h-[300px]" style={{ userSelect: 'none' }}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={todosOsDias} barSize={18} barCategoryGap="20%">
+                <BarChart
+                  data={todosOsDias}
+                  barSize={18}
+                  barCategoryGap="20%"
+                  style={{ cursor: 'pointer' }}
+                >
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(150, 150, 150, 0.1)" />
-                  <XAxis 
-                    dataKey="dia" 
+                  <XAxis
+                    dataKey="dia"
                     tickFormatter={(val) => `${val} ABR`}
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{ fill: 'rgba(150, 150, 150, 1)', fontSize: 10, fontFamily: 'Inter' }} 
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: 'rgba(150, 150, 150, 1)', fontSize: 10, fontFamily: 'Inter' }}
                     dy={10}
                   />
-                  <YAxis 
-                    axisLine={false} 
-                    tickLine={false} 
+                  <YAxis
+                    axisLine={false}
+                    tickLine={false}
                     tick={{ fill: 'rgba(150, 150, 150, 1)', fontSize: 10, fontFamily: 'Inter' }}
                     tickFormatter={(val) => 'R$ ' + val.toLocaleString('pt-BR')}
                   />
                   <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0,0,0,0.05)' }} />
-                  <RechartsLegend 
+                  <RechartsLegend
                     wrapperStyle={{ paddingTop: '20px', fontSize: '12px', fontFamily: 'Inter', color: 'rgba(150, 150, 150, 1)' }}
                     iconType="circle"
                   />
-                  <Bar dataKey="entradas_realizadas" name="Entradas" stackId="entradas" fill="#10B981" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="entradas_previstas" name="Entradas Previstas" stackId="entradas" fill="rgba(16, 185, 129, 0.4)" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="saidas_realizadas" name="Saídas" stackId="saidas" fill="#EF4444" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="saidas_previstas" name="Saídas Previstas" stackId="saidas" fill="rgba(239, 68, 68, 0.4)" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="entradas_realizadas" name="Entradas" stackId="entradas" fill="#10B981" radius={[4, 4, 0, 0]} onClick={handleBarClick} style={{ cursor: 'pointer' }} />
+                  <Bar dataKey="entradas_previstas" name="Entradas Previstas" stackId="entradas" fill="rgba(16, 185, 129, 0.4)" radius={[4, 4, 0, 0]} onClick={handleBarClick} style={{ cursor: 'pointer' }} />
+                  <Bar dataKey="saidas_realizadas" name="Saídas" stackId="saidas" fill="#EF4444" radius={[4, 4, 0, 0]} onClick={handleBarClick} style={{ cursor: 'pointer' }} />
+                  <Bar dataKey="saidas_previstas" name="Saídas Previstas" stackId="saidas" fill="rgba(239, 68, 68, 0.4)" radius={[4, 4, 0, 0]} onClick={handleBarClick} style={{ cursor: 'pointer' }} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -763,349 +811,98 @@ export default function FinanceiroDashboard() {
           </div>
         </div>
           </>
-        )}
-
-        {activeTab === 'Despesas' && (
-          <div className="space-y-6">
-            {/* Cards de Resumo */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              {(() => {
-                const totalPrevisto = despesas.filter(d => d.type_column === 'previsto' && d.status === 'Pendente').reduce((acc, curr) => acc + parseFloat(curr.movement_value), 0);
-                const jaPago = despesas.filter(d => d.type_column === 'realizado' && d.status === 'Conciliado' && parseFloat(d.value) !== 0).reduce((acc, curr) => acc + parseFloat(curr.value), 0);
-                const operacionalReal = despesas.filter(d => d.type_column === 'realizado' && d.status === 'Conciliado' && parseFloat(d.value) !== 0 && d.category_l1_ext_id !== 176913).reduce((acc, curr) => acc + parseFloat(curr.value), 0);
-                
-                const today = new Date().toISOString().slice(0, 10);
-                const tomorrowDate = new Date();
-                tomorrowDate.setDate(tomorrowDate.getDate() + 1);
-                const tomorrow = tomorrowDate.toISOString().slice(0, 10);
-                
-                const venceHojeAmanha = despesas.filter(d => d.status === 'Pendente' && (d.expiration_date?.slice(0, 10) === today || d.expiration_date?.slice(0, 10) === tomorrow)).reduce((acc, curr) => acc + parseFloat(curr.movement_value), 0);
-
-                return (
-                  <>
-                    <div className="bg-dark-card border border-white/10 rounded-2xl p-5 transition-colors duration-200">
-                      <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Total Previsto</p>
-                      <div className="flex items-center justify-between mt-1">
-                        <h3 className="text-2xl font-black text-dark-text">{formatCurrency(totalPrevisto)}</h3>
-                        <span className="px-2 py-0.5 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 text-[10px] font-bold rounded-full uppercase tracking-wider">a pagar</span>
-                      </div>
-                    </div>
-                    <div className="bg-dark-card border border-white/10 rounded-2xl p-5 transition-colors duration-200">
-                      <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Já Pago</p>
-                      <div className="flex items-center justify-between mt-1">
-                        <h3 className="text-2xl font-black text-dark-text">{formatCurrency(jaPago)}</h3>
-                        <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-[10px] font-bold rounded-full uppercase tracking-wider">conciliado</span>
-                      </div>
-                    </div>
-                    <div className="bg-dark-card border border-white/10 rounded-2xl p-5 transition-colors duration-200">
-                      <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Operacional Real</p>
-                      <div className="flex items-center justify-between mt-1">
-                        <h3 className="text-2xl font-black text-dark-text">{formatCurrency(operacionalReal)}</h3>
-                        <span className="px-2 py-0.5 bg-dark-bg text-slate-500 text-[10px] font-bold rounded-full uppercase tracking-wider border border-white/10">excl. distribuição</span>
-                      </div>
-                    </div>
-                    <div className="bg-dark-card border-2 border-rose-500/30 rounded-2xl p-5 transition-colors duration-200">
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Vence Hoje/Amanhã</p>
-                      <div className="flex items-center justify-between">
-                        <h3 className="text-2xl font-black text-rose-500">{formatCurrency(venceHojeAmanha)}</h3>
-                        <span className="px-2 py-0.5 bg-rose-600 text-white text-[10px] font-bold rounded-full uppercase tracking-wider">urgente</span>
-                      </div>
-                    </div>
-                  </>
-                );
-              })()}
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Painel Esquerdo - Despesas Pagas Agrupadas */}
-              <div className="bg-dark-card border border-white/10 rounded-2xl overflow-hidden flex flex-col transition-colors duration-200">
-                <div className="p-6 border-b border-white/10 flex justify-between items-center">
-                  <h2 className="text-sm font-bold text-dark-text uppercase tracking-widest">Despesas pagas</h2>
-                  <span className="px-3 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-full uppercase tracking-wider">Conciliado</span>
-                </div>
-                <div className="flex-1 overflow-y-auto max-h-[600px] p-4">
-                  {(() => {
-                    const pagas = despesas.filter(d => d.type_column === 'realizado' && d.status === 'Conciliado' && parseFloat(d.value) !== 0);
-                    
-                    const groupedByCategory = pagas.reduce((acc: any, curr) => {
-                      const cat = categorizeExpense(curr.description);
-                      if (!acc[cat.name]) {
-                        acc[cat.name] = { name: cat.name, icon: cat.icon, total: 0, items: [] };
-                      }
-                      const valor = parseFloat(curr.value);
-                      acc[cat.name].total += valor;
-                      
-                      const displayDescription = cat.name === 'Cartão de Crédito' 
-                        ? extractCreditCardTool(curr.description) 
-                        : curr.description;
-
-                      acc[cat.name].items.push({
-                        description: displayDescription,
-                        value: valor,
-                        date: curr.movement_date?.slice(0, 10),
-                        status: curr.status
-                      });
-                      return acc;
-                    }, {});
-
-                    const sortedCategories = Object.values(groupedByCategory).sort((a: any, b: any) => b.total - a.total) as any[];
-
-                    if (sortedCategories.length === 0) {
-                      return <p className="text-center py-12 text-slate-500">Nenhuma despesa paga encontrada.</p>;
-                    }
-
-                    return sortedCategories.map((cat: any, idx) => (
-                      <CollapsibleGroup 
-                        key={idx}
-                        category={cat.name}
-                        icon={cat.icon}
-                        total={cat.total}
-                        items={cat.items}
-                        formatCurrency={(val: number) => formatCurrency(val)}
-                      />
-                    ));
-                  })()}
-                </div>
-              </div>
-
-              {/* Painel Direito - Despesas Previstas Agrupadas */}
-              <div className="bg-dark-card border border-white/10 rounded-2xl overflow-hidden flex flex-col transition-colors duration-200">
-                <div className="p-6 border-b border-white/10 flex justify-between items-center">
-                  <h2 className="text-sm font-bold text-dark-text uppercase tracking-widest">Despesas previstas</h2>
-                  <span className="px-3 py-1 bg-amber-100 text-amber-700 text-[10px] font-bold rounded-full uppercase tracking-wider">Pendente</span>
-                </div>
-                <div className="flex-1 overflow-y-auto max-h-[600px] p-4">
-                  {(() => {
-                    const previstas = despesas.filter(d => d.type_column === 'previsto' && ['Pendente', 'Vence Hoje'].includes(d.status));
-                    
-                    const groupedByCategory = previstas.reduce((acc: any, curr) => {
-                      const cat = categorizeExpense(curr.description);
-                      if (!acc[cat.name]) {
-                        acc[cat.name] = { name: cat.name, icon: cat.icon, total: 0, items: [] };
-                      }
-                      const valor = parseFloat(curr.movement_value);
-                      acc[cat.name].total += valor;
-
-                      const displayDescription = cat.name === 'Cartão de Crédito' 
-                        ? extractCreditCardTool(curr.description) 
-                        : curr.description;
-
-                      acc[cat.name].items.push({
-                        description: displayDescription,
-                        value: valor,
-                        date: curr.expiration_date?.slice(0, 10),
-                        status: curr.status
-                      });
-                      return acc;
-                    }, {});
-
-                    const sortedCategories = Object.values(groupedByCategory).sort((a: any, b: any) => b.total - a.total) as any[];
-
-                    if (sortedCategories.length === 0) {
-                      return <p className="text-center py-12 text-slate-500">Nenhuma despesa prevista encontrada.</p>;
-                    }
-
-                    return sortedCategories.map((cat: any, idx) => (
-                      <CollapsibleGroup 
-                        key={idx}
-                        category={cat.name}
-                        icon={cat.icon}
-                        total={cat.total}
-                        items={cat.items}
-                        formatCurrency={(val: number) => formatCurrency(val)}
-                      />
-                    ));
-                  })()}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'Inadimplentes' && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Painel Esquerdo - Lista */}
-            <div className="lg:col-span-2 bg-dark-card border border-white/10 rounded-2xl overflow-hidden flex flex-col transition-colors duration-200">
-              {/* Banner de Alerta */}
-              <div className="bg-rose-50 dark:bg-rose-500/10 p-4 flex items-start gap-3 border-b border-rose-100 dark:border-rose-500/20">
-                <AlertTriangle className="text-rose-500 shrink-0 mt-0.5" size={20} />
-                <div>
-                  <h3 className="text-sm font-bold text-rose-800 dark:text-rose-400">
-                    {inadimplentes.length} clientes com pagamento atrasado — {formatCurrency(totalInadimplencia)} em risco.
-                  </h3>
-                  <p className="text-xs text-rose-600 dark:text-rose-300 mt-1">
-                    Contato imediato recomendado para casos acima de 15 dias.
-                  </p>
-                </div>
-              </div>
-
-              {/* Lista */}
-              <div className="flex-1 overflow-y-auto p-2">
-                {inadimplentes.map((cliente, index) => {
-                  const dias = cliente.dias_atraso;
-                  let badgeColor = 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400';
-                  if (dias > 10 && dias <= 20) badgeColor = 'bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-400';
-                  if (dias > 20) badgeColor = 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400';
-
-                  return (
-                    <div key={index} className="flex items-center justify-between p-4 hover:bg-dark-card-hover rounded-2xl transition-colors border-b border-white/5 last:border-0">
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-sm font-bold text-slate-600 dark:text-slate-300 shrink-0">
-                          {cliente.fantasy_name ? cliente.fantasy_name.substring(0, 2).toUpperCase() : cliente.name.substring(0, 2).toUpperCase()}
-                        </div>
-                        <div>
-                          <p className="text-sm font-bold text-slate-900 dark:text-white">{cliente.fantasy_name || cliente.name}</p>
-                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                            {cliente.description || 'Contrato'} · Parc. {cliente.installment_number || '1'} · {cliente.payment_method || 'Boleto'}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="text-right flex flex-col items-end gap-2">
-                        <p className="text-sm font-bold text-rose-600 dark:text-rose-400">{formatCurrency(cliente.valor)}</p>
-                        <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full uppercase tracking-wider ${badgeColor}`}>
-                          {dias} dias
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-                {inadimplentes.length === 0 && (
-                  <div className="p-8 text-center text-slate-500 dark:text-slate-400">
-                    Nenhum cliente inadimplente no momento.
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Painel Direito - Resumo */}
-            <div className="space-y-6">
-              {/* Card 1 - Resumo de Risco */}
-              <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="p-2.5 bg-rose-100 dark:bg-rose-500/20 rounded-xl">
-                    <ShieldAlert className="text-rose-600 dark:text-rose-400" size={20} />
-                  </div>
-                  <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-widest">Resumo de Risco</h2>
-                </div>
-                
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center p-3 bg-dark-bg border border-white/10 rounded-xl">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-amber-500"></div>
-                      <span className="text-xs font-bold text-slate-600 dark:text-slate-400">1-10 dias</span>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-bold text-slate-900 dark:text-white">
-                        {formatCurrency(inadimplentes.filter(i => i.dias_atraso <= 10).reduce((acc, curr) => acc + parseFloat(curr.valor), 0))}
-                      </p>
-                      <p className="text-[10px] text-slate-500">{inadimplentes.filter(i => i.dias_atraso <= 10).length} clientes</p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex justify-between items-center p-3 bg-dark-bg border border-white/10 rounded-xl">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-orange-500"></div>
-                      <span className="text-xs font-bold text-slate-600 dark:text-slate-400">11-20 dias</span>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-bold text-slate-900 dark:text-white">
-                        {formatCurrency(inadimplentes.filter(i => i.dias_atraso > 10 && i.dias_atraso <= 20).reduce((acc, curr) => acc + parseFloat(curr.valor), 0))}
-                      </p>
-                      <p className="text-[10px] text-slate-500">{inadimplentes.filter(i => i.dias_atraso > 10 && i.dias_atraso <= 20).length} clientes</p>
-                    </div>
-                  </div>
-
-                  <div className="flex justify-between items-center p-3 bg-rose-50 dark:bg-rose-500/10 rounded-xl border border-rose-100 dark:border-rose-500/20">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-rose-600"></div>
-                      <span className="text-xs font-bold text-rose-800 dark:text-rose-400">Total em Risco</span>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-bold text-rose-600 dark:text-rose-400">{formatCurrency(totalInadimplencia)}</p>
-                      <p className="text-[10px] text-rose-500">{inadimplentes.length} clientes</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Card 2 - Taxa de Inadimplência */}
-              <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="p-2.5 bg-slate-100 dark:bg-white/10 rounded-xl">
-                    <Users className="text-slate-600 dark:text-slate-400" size={20} />
-                  </div>
-                  <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-widest">Taxa de Inadimplência</h2>
-                </div>
-                
-                {(() => {
-                  const faturamentoMes = parseFloat(resumo?.caixa_realizado || '0') + parseFloat(previsto?.entradas_previstas || '0');
-                  const taxa = faturamentoMes > 0 ? (totalInadimplencia / faturamentoMes) * 100 : 0;
-                  let taxaColor = 'text-emerald-500';
-                  if (taxa >= 5 && taxa <= 10) taxaColor = 'text-orange-500';
-                  if (taxa > 10) taxaColor = 'text-rose-600';
-                  
-                  return (
-                    <div className="flex flex-col items-center justify-center py-4">
-                      <div className={`text-5xl font-bold tracking-tight mb-2 ${taxaColor}`}>
-                        {taxa.toFixed(1)}%
-                      </div>
-                      <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Meta: Abaixo de 5%</p>
-                    </div>
-                  );
-                })()}
-              </div>
-
-              {/* Card 3 - Impacto no Caixa */}
-              <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="p-2.5 bg-emerald-500/15 rounded-xl">
-                    <TrendingUp className="text-emerald-500" size={20} />
-                  </div>
-                  <h2 className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Impacto no Caixa</h2>
-                </div>
-                
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Saldo Atual</p>
-                    <p className="text-lg font-bold text-slate-900 dark:text-white">{formatCurrency(saldoAncoraHoje)}</p>
-                  </div>
-                  
-                  <div>
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Se receber tudo</p>
-                    <p className="text-xl font-bold text-emerald-500">{formatCurrency(saldoAncoraHoje + totalInadimplencia)}</p>
-                  </div>
-                  
-                  <div className="pt-4 border-t border-white/10">
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Runway Atual</p>
-                    {(() => {
-                      const despesasTotaisMes = despesasRealizadas + parseFloat(previsto?.despesas_previstas || '0');
-                      const runway = despesasTotaisMes > 0 ? (saldoAncoraHoje / despesasTotaisMes) : 0;
-                      return (
-                        <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
-                          {runway.toFixed(1)} meses <span className="text-xs font-normal text-slate-500">(base média)</span>
-                        </p>
-                      );
-                    })()}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeTab !== 'Visão Geral' && activeTab !== 'Inadimplentes' && (
-          <div className="bg-dark-card border border-white/10 rounded-2xl p-12 flex flex-col items-center justify-center min-h-[400px] transition-colors duration-200">
-            <div className="p-4 bg-dark-bg rounded-2xl mb-4">
-              <Wallet className="text-gray-400" size={32} />
-            </div>
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Em breve</h2>
-            <p className="text-sm text-gray-500 text-center max-w-md">
-              O módulo de {activeTab.toLowerCase()} está em desenvolvimento e estará disponível em breve.
-            </p>
-          </div>
-        )}
 
       </div>
+
+      {/* ── Day Popup Modal (Portal) ── */}
+      {dayPopup && ReactDOM.createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center">
+          {/* backdrop */}
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setDayPopup(null)} />
+
+          {/* panel */}
+          <div className="relative z-10 bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[85vh] flex flex-col">
+            {/* header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-white/10">
+              <div>
+                <h2 className="text-base font-black text-dark-text">Movimentações de <span className="text-violet-500">{dayPopup.label}</span></h2>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                  {dayLoading ? 'Carregando...' : `${dayPopup.items.length} movimentações`}
+                </p>
+              </div>
+              <button onClick={() => setDayPopup(null)}
+                className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-white/10 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-white/20 transition-colors">
+                <X size={16} className="text-slate-500 dark:text-slate-300" />
+              </button>
+            </div>
+
+            {/* summary cards */}
+            {!dayLoading && dayPopup.items.length > 0 && (() => {
+              const ent = dayPopup.items.filter((i: any) => i.type === 1).reduce((s: number, i: any) => s + parseFloat(i.value || i.movement_value || '0'), 0);
+              const sai = dayPopup.items.filter((i: any) => i.type === -1).reduce((s: number, i: any) => s + parseFloat(i.value || i.movement_value || '0'), 0);
+              return (
+                <div className="grid grid-cols-3 gap-3 px-6 py-4 border-b border-slate-100 dark:border-white/10">
+                  <div>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">↑ Entradas</p>
+                    <p className="text-base font-black text-emerald-500">{formatCurrency(ent)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">↓ Saídas</p>
+                    <p className="text-base font-black text-rose-500">{formatCurrency(sai)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Saldo do dia</p>
+                    <p className={`text-base font-black ${ent - sai >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                      {ent - sai >= 0 ? '+' : ''}{formatCurrency(ent - sai)}
+                    </p>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* list */}
+            <div className="overflow-y-auto flex-1">
+              {dayLoading ? (
+                <div className="flex flex-col items-center justify-center py-16 gap-3">
+                  <div className="w-8 h-8 border-4 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
+                  <p className="text-sm text-slate-400">Carregando movimentações...</p>
+                </div>
+              ) : dayPopup.items.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16">
+                  <p className="text-sm font-bold text-slate-400">Nenhuma movimentação neste dia</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-100 dark:divide-white/5">
+                  {dayPopup.items.map((item: any, idx: number) => {
+                    const valor = parseFloat(item.value || item.movement_value || '0');
+                    const isEntrada = item.type === 1;
+                    const isReal = item.type_column === 'realizado';
+                    const contra = item.person_fantasy_name || item.person_name;
+                    return (
+                      <div key={item.id || idx} className="flex items-center gap-4 px-6 py-3.5 hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors">
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${isEntrada ? 'bg-emerald-500/10' : 'bg-rose-500/10'}`}>
+                          {isEntrada ? <ArrowUp size={14} className="text-emerald-500" /> : <ArrowDown size={14} className="text-rose-500" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-dark-text truncate">{item.description || '—'}</p>
+                          {contra && <p className="text-[11px] text-slate-400 truncate">{contra}</p>}
+                        </div>
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold shrink-0 ${
+                          isReal ? 'bg-violet-500/10 text-violet-500' : 'bg-slate-100 dark:bg-white/5 text-slate-400'
+                        }`}>{isReal ? 'Realizado' : 'Previsto'}</span>
+                        <span className={`text-sm font-bold shrink-0 ${isEntrada ? 'text-emerald-500' : 'text-rose-500'}`}>
+                          {isEntrada ? '+' : '-'}{formatCurrency(Math.abs(valor))}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

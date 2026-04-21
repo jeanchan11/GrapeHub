@@ -33,16 +33,16 @@ export const Modal: React.FC<ModalProps> = ({
     <div className={`${designSystem.modal.overlay} flex items-center justify-center p-4`}>
       <div className={`${designSystem.modal.container} ${maxWidth} animate-in zoom-in-95 duration-200`}>
         <div className={designSystem.modal.header}>
-          <div className="flex items-center gap-3">
-            {icon && <div className="text-purple-500">{icon}</div>}
-            <h2 className={designSystem.modal.title}>{title}</h2>
+          <div className="flex items-center gap-3 min-w-0">
+            {icon && <div className="text-purple-500 flex-shrink-0">{icon}</div>}
+            <h2 className={`${designSystem.modal.title} truncate`}>{title}</h2>
             {headerContent}
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-shrink-0 ml-3">
             {headerActions}
             <button 
               onClick={onClose} 
-              className="p-2 hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-lg text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
+              className="p-2 hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-lg text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors flex-shrink-0"
             >
               <X size={20} />
             </button>

@@ -6,6 +6,8 @@ import https from "https";
 import pg from "pg";
 import dotenv from "dotenv";
 import crypto from "crypto";
+import Anthropic from "@anthropic-ai/sdk";
+
 
 // IMMEDIATE LOGGING TO VERIFY BOOT
 console.log("-----------------------------------------");
@@ -3143,10 +3145,18 @@ app.get("/api/todos", async (req, res) => {
       const fim = `${ny}-${String(fn).padStart(2,'0')}-01`;
 
       const result = await pool.query(`
-        WITH movements AS (
+        WITH crm_excluded AS (
+          SELECT fp.id AS fin_people_id
+          FROM fin_people fp
+          JOIN clients c ON c.id = fp.grapehub_client_id
+          WHERE c.crm_status IS NOT NULL AND c.crm_status != ''
+        ),
+        movements AS (
           SELECT * FROM fin_movements
-          WHERE (movement_date >= $1 AND movement_date < $2)
-             OR (expiration_date >= $1 AND expiration_date < $2)
+          WHERE source NOT IN ('transfer_in', 'transfer_out')
+            AND (fin_people_id IS NULL OR fin_people_id NOT IN (SELECT fin_people_id FROM crm_excluded))
+            AND ((movement_date >= $1 AND movement_date < $2)
+             OR (expiration_date >= $1 AND expiration_date < $2))
         ),
         conciliados_codes AS (
           SELECT DISTINCT document_code FROM movements 
@@ -3192,16 +3202,25 @@ app.get("/api/todos", async (req, res) => {
           COALESCE(SUM(CASE WHEN type = -1 THEN value ELSE 0 END), 0) AS net_anterior
         FROM fin_movements
         WHERE type_column = 'realizado' AND status = 'Conciliado'
+          AND source NOT IN ('transfer_in', 'transfer_out')
           AND COALESCE(movement_date, expiration_date) < $1
       `, [inicio]);
 
       const saldoAnterior = saldoBase + parseFloat(saldoAnteriorResult.rows[0].net_anterior);
 
       const result = await pool.query(`
-        WITH movements AS (
+        WITH crm_excluded AS (
+          SELECT fp.id AS fin_people_id
+          FROM fin_people fp
+          JOIN clients c ON c.id = fp.grapehub_client_id
+          WHERE c.crm_status IS NOT NULL AND c.crm_status != ''
+        ),
+        movements AS (
           SELECT * FROM fin_movements
-          WHERE (movement_date >= $1 AND movement_date < $2)
-             OR (expiration_date >= $1 AND expiration_date < $2)
+          WHERE source NOT IN ('transfer_in', 'transfer_out')
+            AND (fin_people_id IS NULL OR fin_people_id NOT IN (SELECT fin_people_id FROM crm_excluded))
+            AND ((movement_date >= $1 AND movement_date < $2)
+             OR (expiration_date >= $1 AND expiration_date < $2))
         ),
         conciliados_no_mes AS (
           SELECT DISTINCT document_code
@@ -3224,6 +3243,7 @@ app.get("/api/todos", async (req, res) => {
             SUM(CASE WHEN type = -1 THEN movement_value ELSE 0 END) AS saidas_previstas
           FROM movements
           WHERE type_column = 'previsto' AND status IN ('Pendente', 'Vence Hoje')
+            AND expiration_date >= CURRENT_DATE
             AND (document_code IS NULL OR document_code NOT IN (SELECT document_code FROM conciliados_no_mes))
           GROUP BY data_movimento
         )
@@ -3274,8 +3294,9 @@ app.get("/api/todos", async (req, res) => {
           COALESCE(SUM(CASE WHEN type = 1  AND type_column = 'previsto'  THEN movement_value ELSE 0 END), 0) AS entradas_previstas,
           COALESCE(SUM(CASE WHEN type = -1 THEN movement_value ELSE 0 END), 0) AS saidas
         FROM fin_movements
-        WHERE (movement_date >= $1 AND movement_date < $2)
-           OR (expiration_date >= $1 AND expiration_date < $2)
+        WHERE source NOT IN ('transfer_in', 'transfer_out')
+          AND ((movement_date >= $1 AND movement_date < $2)
+           OR (expiration_date >= $1 AND expiration_date < $2))
         GROUP BY semana
         ORDER BY semana
       `, [inicio, fim]);
@@ -3366,6 +3387,12 @@ app.get("/api/todos", async (req, res) => {
         FROM fin_movements
         WHERE type_column = 'previsto'
           AND status IN ('Pendente', 'Vence Hoje')
+          AND source NOT IN ('transfer_in', 'transfer_out')
+          AND (fin_people_id IS NULL OR fin_people_id NOT IN (
+            SELECT fp.id FROM fin_people fp
+            JOIN clients c ON c.id = fp.grapehub_client_id
+            WHERE c.crm_status IS NOT NULL AND c.crm_status != ''
+          ))
           AND expiration_date >= $1 AND expiration_date < $2
       `, [inicio, fim]);
 
@@ -3387,6 +3414,7 @@ app.get("/api/todos", async (req, res) => {
 
       const result = await pool.query(`
         SELECT
+          fm.id,
           fm.description,
           fm.movement_value,
           fm.value,
@@ -3398,7 +3426,8 @@ app.get("/api/todos", async (req, res) => {
           fm.category_l2_ext_id,
           fm.category_l3_ext_id,
           fm.payment_method,
-          fm.document_code
+          fm.document_code,
+          fm.grapehub_category
         FROM fin_movements fm
         WHERE fm.source = 'bills_to_pay'
           AND ((fm.movement_date >= $1 AND fm.movement_date < $2)
@@ -3438,6 +3467,11 @@ app.get("/api/todos", async (req, res) => {
           fm.document_code
         FROM fin_movements fm
         WHERE fm.source = 'bills_to_receive'
+          AND (fm.fin_people_id IS NULL OR fm.fin_people_id NOT IN (
+            SELECT fp.id FROM fin_people fp
+            JOIN clients c ON c.id = fp.grapehub_client_id
+            WHERE c.crm_status IS NOT NULL AND c.crm_status != ''
+          ))
           AND ((fm.movement_date >= $1 AND fm.movement_date < $2)
             OR (fm.expiration_date >= $1 AND expiration_date < $2))
         ORDER BY COALESCE(fm.movement_date, fm.expiration_date) DESC
@@ -3447,6 +3481,90 @@ app.get("/api/todos", async (req, res) => {
     } catch (err) {
       console.error("Error fetching financeiro receitas:", err);
       res.status(500).json({ error: "Failed" });
+    }
+  });
+
+  // Extrato completo do mês (todas as movimentações)
+  app.get("/api/financeiro/extrato", async (req, res) => {
+    try {
+      let inicio: string;
+      let fim: string;
+
+      if (req.query.start && req.query.end) {
+        // Date-range mode: inclusive start, inclusive end (add 1 day to end for < comparison)
+        inicio = req.query.start as string;
+        const endDate = new Date(req.query.end as string);
+        endDate.setDate(endDate.getDate() + 1);
+        fim = endDate.toISOString().slice(0, 10);
+      } else {
+        // Legacy mes mode
+        const mes = (req.query.mes as string) || new Date().toISOString().slice(0, 7);
+        inicio = `${mes}-01`;
+        const [fy, fm] = mes.split('-').map(Number);
+        const fn = fm === 12 ? 1 : fm + 1; const ny = fm === 12 ? fy + 1 : fy;
+        fim = `${ny}-${String(fn).padStart(2,'0')}-01`;
+      }
+
+      const result = await pool.query(`
+        SELECT
+          fm.id,
+          fm.description,
+          fm.movement_value,
+          fm.value,
+          fm.movement_date,
+          fm.expiration_date,
+          fm.status,
+          fm.type_column,
+          fm.source,
+          fm.type,
+          fm.payment_method,
+          fm.document_code,
+          fm.grapehub_category,
+          fp.name AS person_name,
+          fp.fantasy_name AS person_fantasy_name
+        FROM fin_movements fm
+        LEFT JOIN fin_people fp ON fp.id = fm.fin_people_id
+        WHERE fm.source NOT IN ('transfer_in', 'transfer_out')
+          AND (fm.fin_people_id IS NULL OR fm.fin_people_id NOT IN (
+            SELECT fp2.id FROM fin_people fp2
+            JOIN clients c ON c.id = fp2.grapehub_client_id
+            WHERE c.crm_status IS NOT NULL AND c.crm_status != ''
+          ))
+          AND (
+            -- Realizados: usa a data efetiva (movement_date se existir, senão expiration_date)
+            (fm.type_column = 'realizado'
+              AND COALESCE(fm.movement_date, fm.expiration_date) >= $1
+              AND COALESCE(fm.movement_date, fm.expiration_date) < $2)
+            OR
+            -- Previstos e outros: expiration_date é a referência de vencimento
+            (fm.type_column != 'realizado'
+              AND ((fm.movement_date >= $1 AND fm.movement_date < $2)
+                OR (fm.expiration_date >= $1 AND fm.expiration_date < $2)))
+          )
+        ORDER BY COALESCE(fm.movement_date, fm.expiration_date) DESC, fm.id DESC
+      `, [inicio, fim]);
+
+      res.json(result.rows);
+    } catch (err) {
+      console.error("Error fetching financeiro extrato:", err);
+      res.status(500).json({ error: "Failed" });
+    }
+  });
+
+  // PATCH /api/financeiro/extrato/:id/category — atualiza a categoria manual de uma movimentação
+  app.patch("/api/financeiro/extrato/:id/category", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { category } = req.body as { category: string | null };
+      const result = await pool.query(
+        'UPDATE fin_movements SET grapehub_category = $1 WHERE id = $2 RETURNING id, grapehub_category',
+        [category || null, id]
+      );
+      if (result.rowCount === 0) return res.status(404).json({ error: 'Movement not found' });
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error("Error updating category:", err);
+      res.status(500).json({ error: "Failed to update category" });
     }
   });
 
@@ -5517,6 +5635,9 @@ app.get("/api/todos", async (req, res) => {
           ...(bodyStr ? { 'Content-Length': Buffer.byteLength(bodyStr) } : {})
         }
       };
+      const cat = curr.grapehub_category
+        ? (CATEGORIES.find(c => c.name === curr.grapehub_category) || { name: curr.grapehub_category, icon: '🏷️' })
+        : categorizeExpense(curr.description);
       const req = https.request(options, (resp) => {
         let rawData = '';
         resp.on('data', (chunk) => { rawData += chunk; });
@@ -5794,19 +5915,56 @@ app.get("/api/todos", async (req, res) => {
       const webhookUrl = webhookRes.rows[0].whatsapp_webhook_url;
       console.log(`[Webhook Trigger] Webhook URL found: ${webhookUrl}. Proceeding to fetch.`);
 
+      // Busca dados completos do lead para garantir todos os campos
+      const leadFullRes = await pool.query(
+        `SELECT nome, telefone, origem, valor, nicho, instagram, tempo_oab, faturamento, observacoes, tags,
+                form_nome_completo, form_nome_fantasia, form_telefone_whatsapp, form_cnpj_cpf,
+                form_cep, form_cidade, form_estado,
+                utm_platform, utm_campaign, utm_set, utm_creative, utm_position,
+                responsavel_id
+         FROM crm_comercial_leads WHERE id = $1`,
+        [lead.id]
+      );
+      const ld = leadFullRes.rows[0] || lead;
+
       // Fire and keep track
       fetch(webhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           event: 'whatsapp_group_requested',
-          lead_id: lead.id,
-          nome: lead.nome,
-          telefone: lead.telefone,
-          nicho: lead.nicho,
-          responsavel_id: lead.responsavel_id,
-          valor: lead.valor,
-          origem: lead.origem
+          // Dados principais
+          lead_id:        ld.id || lead.id,
+          nome:           ld.nome,
+          telefone:       ld.telefone,
+          valor:          ld.valor,
+          origem:         ld.origem,
+          responsavel_id: ld.responsavel_id,
+          // Informações do contato
+          nicho:          ld.nicho,
+          instagram:      ld.instagram,
+          tempo_oab:      ld.tempo_oab,
+          faturamento:    ld.faturamento,
+          observacoes:    ld.observacoes,
+          tags:           ld.tags,
+          // Dados do formulário
+          formulario: {
+            nome_completo:       ld.form_nome_completo,
+            nome_fantasia:       ld.form_nome_fantasia,
+            telefone_whatsapp:   ld.form_telefone_whatsapp,
+            cnpj_cpf:            ld.form_cnpj_cpf,
+            cep:                 ld.form_cep,
+            cidade:              ld.form_cidade,
+            estado:              ld.form_estado,
+          },
+          // UTMs
+          utms: {
+            platform: ld.utm_platform,
+            campaign: ld.utm_campaign,
+            set:      ld.utm_set,
+            creative: ld.utm_creative,
+            position: ld.utm_position,
+          },
         })
       }).catch(e => console.error("Error firing whatsapp webhook:", e.message));
 
@@ -6467,6 +6625,540 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
+  // ── POST /api/ai/chat — Fred, o Sócio Virtual (Claude AI) ──────────────────
+  app.post('/api/ai/chat', async (req, res) => {
+    try {
+      const anthropicKey = process.env.ANTHROPIC_API_KEY;
+      if (!anthropicKey) {
+        return res.status(503).json({ error: 'ANTHROPIC_API_KEY não configurada no servidor.' });
+      }
+
+      const { messages, pageContext, personalityConfig } = req.body;
+      const activeTheme: string = pageContext?.theme || 'dark';
+
+      if (!Array.isArray(messages) || messages.length === 0) {
+        return res.status(400).json({ error: 'messages é obrigatório.' });
+      }
+
+      // ── Contexto por seção ──
+      const activeSection: string = pageContext?.section || 'general';
+      let sectionContext: any = null;
+
+      // ── CRM ──
+      if (activeSection === 'crm') {
+        try {
+          const [statusRes, inadimRes, leadsRes] = await Promise.all([
+            pool.query(`
+              SELECT crm_status, COUNT(*) AS qtd
+              FROM clients
+              WHERE crm_status IS NOT NULL AND crm_status != ''
+              GROUP BY crm_status ORDER BY qtd DESC
+            `),
+            pool.query(`
+              SELECT
+                c.name,
+                c.crm_status,
+                MAX(CURRENT_DATE - fm.expiration_date::date) AS dias_atraso,
+                SUM(fm.movement_value)::numeric(14,2) AS valor_em_aberto
+              FROM clients c
+              JOIN fin_people fp ON fp.grapehub_client_id = c.id
+              JOIN fin_movements fm ON fm.fin_people_id = fp.id
+              WHERE fm.status = 'Atrasado'
+              GROUP BY c.name, c.crm_status
+              ORDER BY valor_em_aberto DESC LIMIT 10
+            `),
+            pool.query(`
+              SELECT
+                nome, telefone, origem, valor, coluna, tags,
+                created_at::date AS criado_em
+              FROM crm_comercial_leads
+              ORDER BY created_at DESC LIMIT 20
+            `),
+          ]);
+          sectionContext = {
+            secao: 'CRM',
+            clientes_por_status: statusRes.rows,
+            inadimplentes_top10: inadimRes.rows,
+            leads_recentes: leadsRes.rows,
+            gerado_em: new Date().toISOString(),
+          };
+        } catch (e) {
+          console.error('[AI Chat] Erro contexto CRM:', e);
+          sectionContext = { secao: 'CRM', erro: 'Não foi possível carregar dados CRM.' };
+        }
+      }
+
+      // ── Atividades / Pessoas / Empresas ──
+      if (activeSection === 'atividades') {
+        try {
+          const [tarefasRes, pessoasRes] = await Promise.all([
+            pool.query(`
+              SELECT
+                t.title, t.status, t.priority, t.due_date::date AS vencimento,
+                u.name AS responsavel
+              FROM todos t
+              LEFT JOIN users u ON u.id::text = t.assigned_to::text
+              WHERE t.status != 'done'
+              ORDER BY t.due_date ASC NULLS LAST LIMIT 30
+            `),
+            pool.query(`
+              SELECT name, email, phone, company, role
+              FROM crm_pessoas
+              ORDER BY created_at DESC LIMIT 20
+            `),
+          ]);
+          sectionContext = {
+            secao: 'Atividades',
+            tarefas_pendentes: tarefasRes.rows,
+            pessoas_recentes: pessoasRes.rows,
+            gerado_em: new Date().toISOString(),
+          };
+        } catch (e) {
+          console.error('[AI Chat] Erro contexto Atividades:', e);
+          sectionContext = { secao: 'Atividades', erro: 'Não foi possível carregar dados de atividades.' };
+        }
+      }
+
+      // ── Marketing ──
+      if (activeSection === 'marketing') {
+        try {
+          const campanhasRes = await pool.query(`
+            SELECT title, status, type, start_date::date, end_date::date, budget, notes
+            FROM marketing_campaigns
+            ORDER BY start_date DESC LIMIT 20
+          `).catch(() => ({ rows: [] as any[] }));
+          sectionContext = {
+            secao: 'Marketing',
+            campanhas: campanhasRes.rows,
+            gerado_em: new Date().toISOString(),
+          };
+        } catch (e) {
+          sectionContext = { secao: 'Marketing', erro: 'Não foi possível carregar dados de marketing.' };
+        }
+      }
+
+      // ── Operacional (Gestor / Projetos / Tasks) ──
+      if (activeSection === 'operacional') {
+        try {
+          const [projetosRes, tasksRes] = await Promise.all([
+            pool.query(`
+              SELECT name, status, partner, started_at::date, updated_at::date
+              FROM projects
+              WHERE status != 'concluido' AND status != 'cancelado'
+              ORDER BY updated_at DESC LIMIT 15
+            `),
+            pool.query(`
+              SELECT title, status, priority, due_date::date AS vencimento
+              FROM todos
+              WHERE status != 'done' AND (priority = 'high' OR due_date <= NOW() + INTERVAL '7 days')
+              ORDER BY due_date ASC NULLS LAST LIMIT 20
+            `),
+          ]);
+          sectionContext = {
+            secao: 'Operacional',
+            projetos_em_andamento: projetosRes.rows,
+            tarefas_criticas: tasksRes.rows,
+            gerado_em: new Date().toISOString(),
+          };
+        } catch (e) {
+          console.error('[AI Chat] Erro contexto Operacional:', e);
+          sectionContext = { secao: 'Operacional', erro: 'Não foi possível carregar dados operacionais.' };
+        }
+      }
+
+      // ── Contexto financeiro (apenas para páginas financeiras) ──
+      let financialContext: any = null;
+      if (pageContext?.includeFinancial) {
+        try {
+          const mesAtual = `DATE_TRUNC('month', NOW())`;
+          const [receitasRes, despesasRes, aReceberRes, topClientesRes, saldoRes, extratoRes] = await Promise.all([
+            pool.query(`
+              SELECT
+                TO_CHAR(DATE_TRUNC('month', COALESCE(movement_date, expiration_date)), 'YYYY-MM') AS mes,
+                SUM(value)::numeric(14,2) AS total_receita,
+                COUNT(*) AS qtd_recebimentos
+              FROM fin_movements
+              WHERE type = 1
+                AND type_column = 'realizado'
+                AND status = 'Conciliado'
+                AND source NOT IN ('transfer_in', 'transfer_out')
+                AND COALESCE(movement_date, expiration_date) >= NOW() - INTERVAL '6 months'
+              GROUP BY 1 ORDER BY 1 DESC
+            `),
+            pool.query(`
+              SELECT
+                COALESCE(grapehub_category, 'Não categorizado') AS categoria,
+                SUM(value)::numeric(14,2) AS total,
+                COUNT(*) AS qtd
+              FROM fin_movements fm
+              WHERE fm.type = -1
+                AND fm.type_column = 'realizado'
+                AND fm.status = 'Conciliado'
+                AND fm.source NOT IN ('transfer_in', 'transfer_out')
+                AND (fm.fin_people_id IS NULL OR fm.fin_people_id NOT IN (
+                  SELECT fp2.id FROM fin_people fp2
+                  JOIN clients c ON c.id = fp2.grapehub_client_id
+                  WHERE c.crm_status IS NOT NULL AND c.crm_status != ''
+                ))
+                AND DATE_TRUNC('month', COALESCE(fm.movement_date, fm.expiration_date)) = DATE_TRUNC('month', NOW())
+              GROUP BY 1 ORDER BY 2 DESC
+            `),
+            pool.query(`
+              SELECT
+                COUNT(*) AS qtd,
+                SUM(movement_value)::numeric(14,2) AS valor_total
+              FROM fin_movements
+              WHERE type = 1
+                AND type_column = 'previsto'
+                AND status IN ('Pendente', 'Vence Hoje')
+                AND expiration_date <= NOW() + INTERVAL '30 days'
+                AND source NOT IN ('transfer_in', 'transfer_out')
+            `),
+            pool.query(`
+              SELECT
+                COALESCE(fp.fantasy_name, fp.name, 'Desconhecido') AS cliente,
+                SUM(fm.value)::numeric(14,2) AS total_recebido
+              FROM fin_movements fm
+              JOIN fin_people fp ON fp.id = fm.fin_people_id
+              WHERE fm.type = 1
+                AND fm.type_column = 'realizado'
+                AND fm.status = 'Conciliado'
+                AND fm.source NOT IN ('transfer_in', 'transfer_out')
+              GROUP BY fp.fantasy_name, fp.name ORDER BY 2 DESC LIMIT 5
+            `),
+            pool.query(`
+              SELECT
+                SUM(CASE WHEN type = 1  AND type_column = 'realizado' THEN value ELSE 0 END)::numeric(14,2) AS entradas_realizadas,
+                SUM(CASE WHEN type = -1 AND type_column = 'realizado' THEN value ELSE 0 END)::numeric(14,2) AS saidas_realizadas,
+                SUM(CASE WHEN type_column = 'realizado' THEN value * type ELSE 0 END)::numeric(14,2) AS saldo_periodo
+              FROM fin_movements
+              WHERE source NOT IN ('transfer_in', 'transfer_out')
+                AND DATE_TRUNC('month', COALESCE(movement_date, expiration_date)) = DATE_TRUNC('month', NOW())
+            `),
+            pool.query(`
+              SELECT
+                fm.id,
+                fm.description,
+                COALESCE(fp.fantasy_name, fp.name) AS contraparte,
+                fm.grapehub_category AS categoria_manual,
+                fm.type,
+                fm.type_column,
+                fm.status,
+                COALESCE(fm.movement_date, fm.expiration_date)::date AS data,
+                fm.value::numeric(14,2) AS valor,
+                CASE
+                  WHEN fm.grapehub_category IS NOT NULL AND fm.grapehub_category != '' THEN fm.grapehub_category
+                  WHEN lower(fm.description) LIKE '%cartão de crédito%' OR lower(fm.description) LIKE '%cartao de credito%' OR lower(fm.description) LIKE '%cartão de cred%' THEN 'Cartão de Crédito'
+                  WHEN lower(fm.description) LIKE ANY(ARRAY['%simples nacional%','%iss%','%irpj%','%imposto%','%das %','%pis%','%cofins%','%csll%','%taxa municipal%','%alvará%']) THEN 'Impostos'
+                  WHEN lower(fm.description) LIKE ANY(ARRAY['%remuneração%','%salário%','%bonificação%','%business partner%','%fgts%','%irrf%','%folha%','%férias%','%13º%','%rescisão%','%benefício%','%vale %','%plano de saúde%','%odonto%','%seguro de vida%']) THEN 'Salários e Pessoal'
+                  WHEN lower(fm.description) LIKE ANY(ARRAY['%ferramenta%','%software%','%vps%','%domínio%','%hospedagem%','%aws%','%google cloud%','%vercel%','%openai%','%claude%','%github%','%cursor%','%slack%','%zoom%','%canva%','%adobe%','%figma%','%notion%','%trello%','%jira%','%elevenlabs%','%typeform%','%hostinger%','%microsoft%','%gather%','%htm fech%']) THEN 'Cartão de Crédito'
+                  WHEN lower(fm.description) LIKE ANY(ARRAY['%comissão%','%tráfego pago%','%facebook ads%','%google ads%','%meta ads%','%marketing%','%publicidade%','%rd station%','%hubspot%','%activecamp%']) THEN 'Marketing e Vendas'
+                  WHEN lower(fm.description) LIKE ANY(ARRAY['%aluguel%','%condomínio%','%energia%','%internet%','%assessoria%','%contabilidade%','%limpeza%','%escritório%','%material%','%seguro%','%água%','%telefone%','%correios%','%copel%']) THEN 'Administrativo'
+                  WHEN lower(fm.description) LIKE ANY(ARRAY['%taxa%','%tarifa%','%juros%','%iof%','%banco%','%anuidade%','%ted%','%boleto%']) THEN 'Despesas Financeiras'
+                  WHEN lower(fm.description) LIKE ANY(ARRAY['%pró-labore%','%pro-labore%','%dividendo%','%inss%','%retirada%','%lucro%','%sócio%','%distribuição%']) THEN 'Distribuição de Lucros'
+                  WHEN lower(fm.description) LIKE ANY(ARRAY['%facebk%','%facebook%']) THEN 'Cartão de Crédito > Facebook'
+                  ELSE 'Outros'
+                END AS categoria_efetiva
+              FROM fin_movements fm
+              LEFT JOIN fin_people fp ON fp.id = fm.fin_people_id
+              WHERE fm.source NOT IN ('transfer_in', 'transfer_out')
+                AND (fm.fin_people_id IS NULL OR fm.fin_people_id NOT IN (
+                  SELECT fp2.id FROM fin_people fp2
+                  JOIN clients c ON c.id = fp2.grapehub_client_id
+                  WHERE c.crm_status IS NOT NULL AND c.crm_status != ''
+                ))
+                AND (
+                  (fm.type_column = 'realizado'
+                    AND DATE_TRUNC('month', COALESCE(fm.movement_date, fm.expiration_date)) = DATE_TRUNC('month', NOW()))
+                  OR
+                  (fm.type_column != 'realizado'
+                    AND (DATE_TRUNC('month', fm.movement_date) = DATE_TRUNC('month', NOW())
+                      OR DATE_TRUNC('month', fm.expiration_date) = DATE_TRUNC('month', NOW())))
+                )
+              ORDER BY COALESCE(fm.movement_date, fm.expiration_date) DESC
+              LIMIT 300
+            `),
+          ]);
+
+          // Agrupa extrato por categoria usando a categoria efetiva (manual ou auto-detectada)
+          const extratoRows = extratoRes.rows;
+          const categoriaMap: Record<string, { total: number; itens: any[] }> = {};
+          for (const row of extratoRows) {
+            const cat = row.categoria_efetiva || 'Outros';
+            if (!categoriaMap[cat]) categoriaMap[cat] = { total: 0, itens: [] };
+            const val = parseFloat(row.valor) * row.type;
+            categoriaMap[cat].total += val;
+            categoriaMap[cat].itens.push({
+              descricao: row.description,
+              contraparte: row.contraparte,
+              data: row.data,
+              status: row.status,
+              tipo: row.type_column,
+              categoria_manual: row.categoria_manual || null,
+              valor: val,
+            });
+          }
+          // Aplicativos = Cartão de Crédito sem Facebook
+          if (categoriaMap['Cartão de Crédito']) {
+            const isFacebook = (d: string) => /facebook|facebk/i.test(d || '');
+            const cartao = categoriaMap['Cartão de Crédito'].itens;
+            if (!categoriaMap['Cartão de Crédito > Facebook']) {
+              categoriaMap['Cartão de Crédito > Facebook'] = {
+                total: cartao.filter(i => isFacebook(i.descricao)).reduce((s, i) => s + i.valor, 0),
+                itens: cartao.filter(i => isFacebook(i.descricao)),
+              };
+            }
+            categoriaMap['Cartão de Crédito > Aplicativos'] = {
+              total: cartao.filter(i => !isFacebook(i.descricao)).reduce((s, i) => s + i.valor, 0),
+              itens: cartao.filter(i => !isFacebook(i.descricao)),
+            };
+          }
+
+          financialContext = {
+            receitas_6meses: receitasRes.rows,
+            despesas_mes_atual: despesasRes.rows,
+            a_receber_proximos_30_dias: aReceberRes.rows[0],
+            top_5_clientes: topClientesRes.rows,
+            resumo_mes_atual: saldoRes.rows[0],
+            extrato_mes_atual: extratoRows,
+            extrato_por_categoria: Object.entries(categoriaMap).map(([cat, data]) => ({
+              categoria: cat,
+              total: data.total.toFixed(2),
+              qtd_itens: data.itens.length,
+              itens: data.itens.slice(0, 30),
+            })),
+            gerado_em: new Date().toISOString(),
+          };
+        } catch (dbErr) {
+          console.error('[AI Chat] Erro ao buscar contexto financeiro:', dbErr);
+          financialContext = { erro: 'Não foi possível carregar os dados financeiros neste momento.' };
+        }
+      }
+
+      // ── Personalidade ──
+      const p = personalityConfig || {};
+      const nome = p.nome || 'Fred';
+      const humor = p.humor || 'direto e levemente irônico, sem ser grosseiro';
+      const personalidade = p.personalidade || 'sócio conservador que prioriza saúde financeira, mas nunca perde o olhar para crescimento sustentável. Especialista em comercial, operacional e relacionamento com clientes.';
+      const instrucoes_extras = p.instrucoes_extras || '';
+
+      const financialSection = financialContext
+        ? `
+## 📊 DADOS FINANCEIROS EM TEMPO REAL (NeonDB — Grape Mídia)
+> Dados carregados agora do banco de dados. Use como base para análise.
+
+### Receita — Últimos 6 meses
+${JSON.stringify(financialContext.receitas_6meses, null, 2)}
+
+### Despesas do mês atual por categoria
+${JSON.stringify(financialContext.despesas_mes_atual, null, 2)}
+
+### A receber nos próximos 30 dias
+${JSON.stringify(financialContext.a_receber_proximos_30_dias, null, 2)}
+
+### Resumo do mês atual (entradas / saídas / saldo)
+${JSON.stringify(financialContext.resumo_mes_atual, null, 2)}
+
+### Top 5 clientes por valor recebido
+${JSON.stringify(financialContext.top_5_clientes, null, 2)}
+
+### Extrato do mês atual — por categoria e subcategoria
+> Cada item tem: descrição, contraparte, data, status (realizado/previsto), valor (negativo = saída, positivo = entrada)
+> Categoria "Cartão de Crédito > Facebook" = gastos com Facebook/Facebk; "Cartão de Crédito > Aplicativos" = demais apps
+${JSON.stringify(financialContext.extrato_por_categoria, null, 2)}
+
+> Gerado em: ${financialContext.gerado_em}
+`
+        : `
+## ⚠️ Contexto financeiro não disponível nesta página
+Você pode responder perguntas gerais sobre gestão, estratégia e negócios.
+Para análise financeira detalhada, o usuário deve acessar o Dashboard Financeiro ou Extrato.
+`;
+
+      const sectionSection = sectionContext
+        ? (() => {
+          const s = sectionContext;
+          if (s.erro) return `\n## ⚠️ Contexto ${s.secao}: ${s.erro}\n`;
+          if (s.secao === 'CRM') return `
+## 🤝 DADOS DO CRM EM TEMPO REAL
+> Dados carregados agora do banco. Use como base para análise de carteira.
+
+### Clientes por status CRM
+${JSON.stringify(s.clientes_por_status, null, 2)}
+
+### Top inadimplentes
+${JSON.stringify(s.inadimplentes_top10, null, 2)}
+
+### Leads recentes (últimos 20)
+${JSON.stringify(s.leads_recentes, null, 2)}
+
+> Gerado em: ${s.gerado_em}
+`;
+          if (s.secao === 'Atividades') return `
+## 📋 DADOS DE ATIVIDADES EM TEMPO REAL
+> Tarefas pendentes e pessoas cadastradas.
+
+### Tarefas pendentes (próximas 30)
+${JSON.stringify(s.tarefas_pendentes, null, 2)}
+
+### Pessoas recentes no CRM
+${JSON.stringify(s.pessoas_recentes, null, 2)}
+
+> Gerado em: ${s.gerado_em}
+`;
+          if (s.secao === 'Marketing') return `
+## 📣 DADOS DE MARKETING EM TEMPO REAL
+> Campanhas e ações de marketing da Grape Mídia.
+
+### Campanhas (recentes)
+${JSON.stringify(s.campanhas, null, 2)}
+
+> Gerado em: ${s.gerado_em}
+`;
+          if (s.secao === 'Operacional') return `
+## ⚙️ DADOS OPERACIONAIS EM TEMPO REAL
+> Projetos em andamento e tarefas críticas.
+
+### Projetos em andamento
+${JSON.stringify(s.projetos_em_andamento, null, 2)}
+
+### Tarefas críticas / com prazo próximo
+${JSON.stringify(s.tarefas_criticas, null, 2)}
+
+> Gerado em: ${s.gerado_em}
+`;
+          return '';
+        })()
+        : '';
+
+      const fredMode: string = pageContext?.fredMode || 'grape';
+
+      const FRED_IDENTITIES: Record<string, string> = {
+        comercial: `
+Você está operando como **Especialista Comercial** da Grape Mídia.
+Seu foco AGORA é pipeline de vendas, relacionamento com leads, churn, prospecção ativa, upsell e renovações.
+Pense como um Head of Sales experiente: orientado a número, obstinado em conversão, mas respeitoso com o posicionamento boutique da Grape.
+Lembre: o gargalo histórico da Grape é GERAÇÃO DE LEADS, não conversão. Todo conselho deve considerar isso.
+Dados de CRM injetados no contexto representam a carteira e pipeline atual — use-os para análises diretas.`,
+
+        marketing: `
+Você está operando como **Especialista em Marketing** da Grape Mídia.
+Seu foco AGORA é campanhas, tráfego pago, conteúdo, geração de demanda e posicionamento de marca.
+A Grape atua em marketing jurídico — nicho de alta exigência, onde credibilidade supera volume.
+Pense como um CMO criterioso: ROI de campanhas, custo por lead, diferenciação no mercado jurídico.
+Dados de marketing injetados no contexto representam as ações em andamento — use-os para análises diretas.`,
+
+        financeiro: `
+Você está operando como **Especialista Financeiro** da Grape Mídia.
+Seu foco AGORA é caixa, receitas, despesas, inadimplência, margens e projeções.
+Pense como CFO conservador: prefira caixa a crescimento alavancado, questione toda despesa sem retorno claro.
+Dados financeiros injetados no contexto (extrato, receitas, despesas por categoria) são REAIS e carregados agora do banco.`,
+
+        operacional: `
+Você está operando como **Especialista Operacional** da Grape Mídia.
+Seu foco AGORA é processos internos, gestão do time (~9 colaboradores), entregas de projetos e capacidade produtiva.
+Pense como COO que identifica gargalos antes de ser perguntado.
+Dados operacionais injetados representam projetos e tarefas críticas em andamento — use-os.`,
+
+        grape: `
+Você está no modo **Sócio Grape** — visão 360° da empresa.
+Você conhece profundamente a Grape Mídia: agência de marketing jurídico, clientes advogados e escritórios, time enxuto, posicionamento boutique.
+Sua expertise cobre todos os pilares: Financeiro, Comercial, Operacional e Relacionamento.
+Responda com a visão integrada de quem está no negócio junto — não apenas um consultor externo.`,
+      };
+
+      const identidadeAtual = FRED_IDENTITIES[fredMode] || FRED_IDENTITIES.grape;
+
+
+      const systemPrompt = `
+# IDENTIDADE
+
+Você é **${nome}**, o sócio virtual da Grape Mídia dentro do GrapeHub.
+Seu humor é ${humor}.
+Sua personalidade: ${personalidade}
+
+${identidadeAtual}
+
+# PRINCÍPIOS INEGOCIÁVEIS
+1. **Sinceridade absoluta** — Nunca resposta vaga para agradar. Se os números mostram problema, fale. Com respeito, sem rodeios.
+2. **Conservadorismo financeiro** — Prefira caixa a crescimento alavancado. Questione despesas antes de aprová-las mentalmente.
+3. **Visão de crescimento** — Sempre pergunte: o que precisamos fazer para esse número melhorar em 3 meses?
+4. **Fale como sócio** — Use "nosso caixa", "nossa carteira" quando fizer sentido. Você está no negócio junto.
+5. **Nunca invente dados** — Se não souber, diga. Nunca projete sem base explícita.
+
+# FORMATO
+- Respostas curtas para perguntas diretas
+- Respostas estruturadas (seções) para análises complexas
+- Português brasileiro, linguagem de negócios acessível
+- Emojis com moderação — só quando reforçam a mensagem
+- Quando der opinião, deixe claro que é sua leitura dos dados
+
+Tema ativo do GrapeHub: ${activeTheme}
+
+${financialSection}
+${sectionSection}
+
+# GRÁFICOS HTML — REGRAS OBRIGATÓRIAS
+Quando o usuário pedir gráficos, visualizações ou charts, responda SEMPRE com HTML completo e funcional usando Chart.js carregado via CDN (https://cdn.jsdelivr.net/npm/chart.js).
+
+Regras obrigatórias para gráficos:
+- Retorne APENAS o HTML puro, sem markdown, sem explicações antes ou depois, sem blocos de código
+- O HTML deve ser completo (com <html>, <head>, <body>)
+- Use Chart.js via CDN para todos os gráficos
+- O canvas deve ocupar 100% da largura disponível
+- Sempre inclua título descritivo no gráfico
+- Quando tiver dados reais injetados no contexto, use-os. Quando não tiver, deixe claro no título que são dados de exemplo
+- Labels do eixo X sempre horizontais (maxRotation: 0), fonte tamanho 11
+- Container do canvas deve ter height: 300px explícito
+- Após o fechamento do </html>, adicione obrigatoriamente um parágrafo curto de análise em português corrido (máx 3 linhas, sem título markdown)
+
+Temas visuais — o campo "Tema ativo do GrapeHub" indica o tema ativo:
+
+TEMA CLARO (light):
+- body background: #ffffff
+- Texto e labels dos eixos: #1a1a1a
+- Gridlines: rgba(0,0,0,0.08)
+- Título do gráfico: #111111
+
+TEMA ESCURO (dark):
+- body background: #1a1a2e
+- Texto e labels dos eixos: #e2e8f0
+- Gridlines: rgba(255,255,255,0.1)
+- Título do gráfico: #ffffff
+
+TEMA ESCURO PROFUNDO (deep):
+- body background: #0a0a0f
+- Texto e labels dos eixos: #a0aec0
+- Gridlines: rgba(255,255,255,0.05)
+- Título do gráfico: #e2e8f0
+
+Cores dos gráficos (usar em todos os temas):
+- Roxo Grape: #7C3AED
+- Magenta: #D946EF
+- Verde positivo: #10B981
+- Cinza: #6B7280
+
+${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
+`.trim();
+
+      // ── Chama Claude ──
+      const anthropic = new Anthropic({ apiKey: anthropicKey });
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 2048,
+        system: systemPrompt,
+        messages: messages,
+      });
+
+      const firstContent = response.content[0];
+      const reply = firstContent.type === 'text' ? firstContent.text : 'Não consegui gerar uma resposta.';
+
+      res.json({ reply });
+    } catch (err: any) {
+      console.error('[AI Chat] Erro:', err?.message || err);
+      res.status(500).json({ error: err?.message || 'Erro interno ao processar mensagem de IA.' });
+    }
+  });
 
   // Vite middleware for development
 

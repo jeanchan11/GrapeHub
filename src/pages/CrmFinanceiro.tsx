@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Search, Plus, MoreHorizontal, 
   CheckCircle2, AlertCircle, Clock, 
@@ -161,12 +161,12 @@ const SortableCard: React.FC<SortableCardProps> = ({ client, onClick, onMove }) 
       {...attributes}
       {...listeners}
       onClick={() => onClick(client)}
-      className={`relative cursor-grab active:cursor-grabbing mb-3 rounded-xl border transition-all ${
+      className={`relative cursor-grab active:cursor-grabbing rounded-xl border transition-all ${
         isDragging
           ? 'ring-2 ring-violet-500 shadow-2xl border-violet-500/50'
           : 'border-gray-200 dark:border-white/5 darker:border-white/5 hover:border-gray-300 dark:hover:border-white/10 darker:hover:border-white/10'
       } ${client.isArchived ? 'opacity-50 grayscale' : ''} bg-white dark:bg-dark-card p-3`}
-      style={style}
+      style={{ ...style, marginBottom: 12 }}
     >
       {client.isArchived && (
         <div className="absolute -top-2 -right-2 bg-slate-800 text-white text-[9px] font-bold uppercase tracking-widest px-2 py-1 rounded-lg shadow-lg z-10">
@@ -523,28 +523,73 @@ const CrmFinanceiro = () => {
     }
   };
 
+  const originalColumnRef = useRef<string | null>(null);
+
   const handleDragStart = (event: any) => {
     setActiveId(event.active.id);
+    const client = clients.find(c => c.id === event.active.id);
+    if (client) originalColumnRef.current = client.crmStatus || null;
   };
 
-  const handleDragEnd = (event: any) => {
+  const handleDragOver = (event: any) => {
+    const { active, over } = event;
+    if (!over) return;
+
+    const activeId = active.id;
+    const overId = over.id;
+    if (activeId === overId) return;
+
+    const isOverColumn = COLUMNS.some(c => c.id === overId);
+
+    setClients(prev => {
+      const activeIndex = prev.findIndex(c => c.id === activeId);
+      if (activeIndex === -1) return prev;
+
+      const newClients = [...prev];
+
+      if (isOverColumn) {
+        // Dropped on empty column area
+        if (prev[activeIndex].crmStatus !== overId) {
+          newClients[activeIndex] = { ...newClients[activeIndex], crmStatus: overId, displayColumn: overId };
+        }
+        return newClients;
+      }
+
+      // Dragging over another card
+      const overIndex = prev.findIndex(c => c.id === overId);
+      if (overIndex === -1) return prev;
+
+      const targetColumn = prev[overIndex].crmStatus;
+
+      // Update column if moving cross-column
+      if (prev[activeIndex].crmStatus !== targetColumn) {
+        newClients[activeIndex] = { ...newClients[activeIndex], crmStatus: targetColumn, displayColumn: targetColumn };
+      }
+
+      return arrayMove(newClients, activeIndex, overIndex);
+    });
+  };
+
+  const handleDragEnd = async (event: any) => {
     const { active, over } = event;
     setActiveId(null);
-    
+
     if (!over) return;
 
     const clientId = active.id;
     const overId = over.id;
 
-    // Check if dropped over a column or another card
-    let newStatus = overId;
-    if (!COLUMNS.find(c => c.id === overId)) {
-      // Dropped over another card, get its column
+    // Determine final column from over target
+    let newStatus: string;
+    if (COLUMNS.find(c => c.id === overId)) {
+      newStatus = overId;
+    } else {
       const overClient = clients.find(c => c.id === overId);
-      if (overClient) newStatus = overClient.crmStatus || '';
+      newStatus = overClient?.crmStatus || '';
     }
 
-    if (newStatus && newStatus !== active.data.current?.sortable?.containerId) {
+    // Only persist to DB if the column actually changed
+    if (newStatus && newStatus !== originalColumnRef.current) {
       handleMoveClient(clientId, newStatus);
     }
   };
@@ -700,6 +745,7 @@ const CrmFinanceiro = () => {
           sensors={sensors}
           collisionDetection={closestCorners}
           onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
           onDragEnd={handleDragEnd}
         >
         <div className="flex overflow-x-auto pb-4 gap-5 items-start snap-x">
@@ -788,7 +834,7 @@ const CrmFinanceiro = () => {
                     items={columnClients.map(c => c.id)}
                     strategy={verticalListSortingStrategy}
                   >
-                    <div className="space-y-0 min-h-[80px]">
+                    <div className="min-h-[80px]">
                       {columnClients.map(client => (
                         <SortableCard
                           key={client.id}
@@ -942,7 +988,7 @@ const CrmFinanceiro = () => {
         }
         headerActions={
           selectedClient && (
-            <div className="flex items-center gap-4 bg-slate-50/50 dark:bg-white/[0.03] backdrop-brightness-110 py-1.5 px-4 rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm">
+            <div className="flex flex-wrap items-center gap-3 bg-slate-50/50 dark:bg-white/[0.03] backdrop-brightness-110 py-1.5 px-4 rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-xl bg-violet-500/10 flex items-center justify-center text-violet-500">
                   <ShieldCheck size={18} />
@@ -978,19 +1024,6 @@ const CrmFinanceiro = () => {
                   />
                 </div>
               </div>
-
-              {selectedClient.crmStatus === 'processo_saida' && (
-                <>
-                  <div className="h-8 w-px bg-slate-200 dark:bg-white/10 mx-1"></div>
-                  <button
-                    onClick={() => setIsArchiveModalOpen(true)}
-                    className="px-4 py-2 bg-rose-500 text-white hover:bg-rose-600 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-rose-500/20 flex items-center gap-2"
-                  >
-                    <Archive size={14} />
-                    Arquivar
-                  </button>
-                </>
-              )}
             </div>
           )
         }
@@ -1186,8 +1219,19 @@ const CrmFinanceiro = () => {
                 )}
 
                 {activeTab === 'checklist' && selectedClient.crmStatus === 'processo_saida' && (
-                  <CrmChecklist clientId={selectedClient.id} onCompleteExit={handleCompleteExit} />
-                )}
+                  <div>
+                    <div className="flex justify-end mb-4">
+                      <button
+                        onClick={() => setIsArchiveModalOpen(true)}
+                        className="px-5 py-2.5 bg-rose-500 text-white hover:bg-rose-600 rounded-xl text-sm font-bold uppercase tracking-wider transition-all shadow-lg shadow-rose-500/20 flex items-center gap-2"
+                      >
+                        <Archive size={16} />
+                        Arquivar Cliente
+                      </button>
+                    </div>
+                    <CrmChecklist clientId={selectedClient.id} onCompleteExit={handleCompleteExit} />
+                  </div>
+                 )}
           </div>
         )}
       </Modal>
