@@ -5887,33 +5887,49 @@ app.get("/api/todos", async (req, res) => {
         return res.status(400).json({ error: 'Preencha o formulário do lead (Nome Completo e Nome Fantasia devem estar preenchidos) para criar o grupo.' });
       }
 
-      const user_email = req.query.user_email;
+      const user_email = req.query.user_email as string;
       let targetEmail = user_email;
 
-      if (lead.responsavel_id) {
-         const userRes = await pool.query('SELECT email FROM users WHERE id = $1', [lead.responsavel_id]);
-         if (userRes.rows.length > 0) targetEmail = userRes.rows[0].email;
+      // Tenta 1: usuário logado (quem clicou o botão — quem configurou o webhook)
+      // Tenta 2: responsável do lead
+      // Tenta 3: qualquer configuração existente no banco
+      let webhookUrl = '';
+
+      if (user_email) {
+        const r = await pool.query(`SELECT whatsapp_webhook_url FROM crm_webhook_settings WHERE user_id = $1`, [user_email]);
+        if (r.rows[0]?.whatsapp_webhook_url) {
+          webhookUrl = r.rows[0].whatsapp_webhook_url;
+          targetEmail = user_email;
+        }
       }
 
-      if (!targetEmail) {
-        console.log(`[Webhook Trigger] Lead missing responsavel_id and no user_email provided`);
-        return res.status(400).json({ error: 'Lead sem responsável e usuário não identificado.' });
+      if (!webhookUrl && lead.responsavel_id) {
+        const userRes = await pool.query('SELECT email FROM users WHERE id = $1', [lead.responsavel_id]);
+        const respEmail = userRes.rows[0]?.email;
+        if (respEmail) {
+          const r = await pool.query(`SELECT whatsapp_webhook_url FROM crm_webhook_settings WHERE user_id = $1`, [respEmail]);
+          if (r.rows[0]?.whatsapp_webhook_url) {
+            webhookUrl = r.rows[0].whatsapp_webhook_url;
+            targetEmail = respEmail;
+          }
+        }
       }
 
-      console.log(`[Webhook Trigger] Using targetEmail: ${targetEmail}`);
-      const webhookRes = await pool.query(`
-        SELECT whatsapp_webhook_url 
-        FROM crm_webhook_settings 
-        WHERE user_id = $1
-      `, [targetEmail]);
+      if (!webhookUrl) {
+        // Último recurso: qualquer webhook configurado
+        const r = await pool.query(`SELECT user_id, whatsapp_webhook_url FROM crm_webhook_settings WHERE whatsapp_webhook_url IS NOT NULL AND whatsapp_webhook_url != '' LIMIT 1`);
+        if (r.rows[0]?.whatsapp_webhook_url) {
+          webhookUrl = r.rows[0].whatsapp_webhook_url;
+          targetEmail = r.rows[0].user_id;
+        }
+      }
 
-      if (webhookRes.rows.length === 0 || !webhookRes.rows[0].whatsapp_webhook_url) {
-        console.log(`[Webhook Trigger] Webhook settings not found or empty for email: ${targetEmail}`);
+      if (!webhookUrl) {
+        console.log(`[Webhook Trigger] Nenhum webhook configurado para: ${user_email}`);
         return res.status(400).json({ error: 'URL do Webhook do WhatsApp não configurada na aba Webhook.' });
       }
 
-      const webhookUrl = webhookRes.rows[0].whatsapp_webhook_url;
-      console.log(`[Webhook Trigger] Webhook URL found: ${webhookUrl}. Proceeding to fetch.`);
+      console.log(`[Webhook Trigger] Usando webhook de: ${targetEmail} → ${webhookUrl}`);
 
       // Busca dados completos do lead para garantir todos os campos
       const leadFullRes = await pool.query(
