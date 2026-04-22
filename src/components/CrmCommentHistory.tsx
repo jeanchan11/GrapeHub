@@ -80,12 +80,18 @@ const CrmCommentHistory: React.FC<CrmCommentHistoryProps> = ({ clientId }) => {
     
     setIsSubmittingComment(true);
     try {
+      // Upload images separately — if Firebase Storage fails, we still save the note
       const imageUrls: string[] = [];
       for (const image of commentImages) {
-        const storageRef = ref(storage, `users/${auth.currentUser?.uid}/crm_comments/${Date.now()}_${image.name}`);
-        await uploadBytes(storageRef, image);
-        const downloadURL = await getDownloadURL(storageRef);
-        imageUrls.push(downloadURL);
+        try {
+          const storageRef = ref(storage, `users/${auth.currentUser?.uid}/crm_comments/${Date.now()}_${image.name}`);
+          await uploadBytes(storageRef, image);
+          const downloadURL = await getDownloadURL(storageRef);
+          imageUrls.push(downloadURL);
+        } catch (uploadErr) {
+          console.error('Erro ao fazer upload de imagem:', uploadErr);
+          // Continue saving the note without this image
+        }
       }
 
       const res = await fetch('/api/crm-comments', {
@@ -105,13 +111,19 @@ const CrmCommentHistory: React.FC<CrmCommentHistoryProps> = ({ clientId }) => {
         setCommentImages([]);
         setIsAddingNote(false);
         fetchComments();
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        console.error('Erro ao salvar nota:', errData);
+        alert('Erro ao salvar nota: ' + (errData.error || res.status));
       }
     } catch (err) {
       console.error("Error adding comment:", err);
+      alert('Erro inesperado ao salvar nota. Verifique o console.');
     } finally {
       setIsSubmittingComment(false);
     }
   };
+
 
   const handlePaste = (e: React.ClipboardEvent) => {
     const items = e.clipboardData.items;

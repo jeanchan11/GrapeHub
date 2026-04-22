@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Bell, Settings, Shield, User, Palette, Globe, Lock, HelpCircle, Mail, MessageSquare, Zap, AlertCircle } from 'lucide-react';
 

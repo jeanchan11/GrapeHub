@@ -119,6 +119,15 @@ async function startServer() {
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS "group" TEXT;
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS project_result TEXT;
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS files JSONB DEFAULT '[]';
+      ALTER TABLE projects ADD COLUMN IF NOT EXISTS squad TEXT;
+
+      -- Backfill squad from linked client for existing projects
+      UPDATE projects p
+      SET squad = c.squad
+      FROM clients c
+      WHERE p.active_client_id = c.id
+        AND p.squad IS NULL
+        AND c.squad IS NOT NULL;
       
       CREATE TABLE IF NOT EXISTS clients (
         id TEXT PRIMARY KEY,
@@ -985,12 +994,75 @@ async function startServer() {
     } catch (err) {
       console.error("[AUTOREPAIR] Failed to repair leads:", err);
     }
+    // Project Comments Table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS project_comments (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        project_id TEXT NOT NULL,
+        author TEXT NOT NULL,
+        author_photo TEXT,
+        text TEXT NOT NULL,
+        is_internal BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_project_comments_project_id ON project_comments(project_id)`);
+
   } catch (err) {
     console.error("Error initializing database tables:", err);
   }
 
   app.use(express.json({ limit: '100mb' }));
   app.use(express.urlencoded({ limit: '100mb', extended: true }));
+
+  // ── Project Comments ────────────────────────────────────────────────────────
+  app.get('/api/project-comments/:projectId', async (req, res) => {
+    try {
+      const { projectId } = req.params;
+      const result = await pool.query(
+        `SELECT id, project_id, author, author_photo, text, is_internal, created_at
+         FROM project_comments
+         WHERE project_id = $1
+         ORDER BY created_at ASC`,
+        [projectId]
+      );
+      res.json(result.rows);
+    } catch (err) {
+      console.error('Error fetching project comments:', err);
+      res.status(500).json({ error: 'Failed to fetch comments' });
+    }
+  });
+
+  app.post('/api/project-comments/:projectId', async (req, res) => {
+    try {
+      const { projectId } = req.params;
+      const { author, author_photo, text, is_internal } = req.body;
+      if (!author || !text) return res.status(400).json({ error: 'author and text are required' });
+      const result = await pool.query(
+        `INSERT INTO project_comments (project_id, author, author_photo, text, is_internal)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id, project_id, author, author_photo, text, is_internal, created_at`,
+        [projectId, author, author_photo || null, text, is_internal || false]
+      );
+      res.status(201).json(result.rows[0]);
+    } catch (err) {
+      console.error('Error saving project comment:', err);
+      res.status(500).json({ error: 'Failed to save comment' });
+    }
+  });
+
+  app.delete('/api/project-comments/:commentId', async (req, res) => {
+    try {
+      const { commentId } = req.params;
+      await pool.query(`DELETE FROM project_comments WHERE id = $1`, [commentId]);
+      res.json({ success: true });
+    } catch (err) {
+      console.error('Error deleting project comment:', err);
+      res.status(500).json({ error: 'Failed to delete comment' });
+    }
+  });
+
+
 
   // Request Logging Middleware
   app.use((req, res, next) => {
@@ -1345,6 +1417,7 @@ async function startServer() {
           page_id: row.page_id,
           group: row.group,
           projectResult: row.project_result,
+          squad: row.squad,
           files: (() => {
             if (typeof row.files === 'string') {
               try {
@@ -1393,9 +1466,16 @@ async function startServer() {
           
           // 1. Upsert Project
           try {
+            // Resolve squad: use provided value or fetch from linked client
+            let squadValue = p.squad || null;
+            if (!squadValue && p.activeClientId) {
+              const clientRes = await pool.query('SELECT squad FROM clients WHERE id = $1', [p.activeClientId]);
+              squadValue = clientRes.rows[0]?.squad || null;
+            }
+
             await pool.query(
-              `INSERT INTO projects (id, partner, status, roi, investment, responsible, last_update, active_client_id, page_id, "group", project_result, files) 
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+              `INSERT INTO projects (id, partner, status, roi, investment, responsible, last_update, active_client_id, page_id, "group", project_result, files, squad) 
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
                ON CONFLICT (id) DO UPDATE SET
                  partner = EXCLUDED.partner,
                  status = EXCLUDED.status,
@@ -1407,8 +1487,9 @@ async function startServer() {
                  page_id = EXCLUDED.page_id,
                  "group" = EXCLUDED."group",
                  project_result = EXCLUDED.project_result,
-                 files = EXCLUDED.files`,
-              [p.id, p.partner, p.status, p.roi, p.investment, p.responsible, p.lastUpdate, p.activeClientId, p.page_id, p.group, p.projectResult, JSON.stringify(p.files || [])]
+                 files = EXCLUDED.files,
+                 squad = COALESCE(EXCLUDED.squad, projects.squad)`,
+              [p.id, p.partner, p.status, p.roi, p.investment, p.responsible, p.lastUpdate, p.activeClientId, p.page_id, p.group, p.projectResult, JSON.stringify(p.files || []), squadValue]
             );
             console.log(`[SAVE] Projeto ${p.id} salvo.`);
           } catch (err) {
@@ -2128,7 +2209,7 @@ async function startServer() {
   
   app.get("/api/daily-tasks", async (req, res) => {
     try {
-      const { date, group, status } = req.query;
+      const { date, group, status, page_id } = req.query;
       let query = `
         SELECT t.*, p.partner as project_name, p.group as project_group
         FROM todos t
@@ -2136,6 +2217,11 @@ async function startServer() {
         WHERE (t.due_date::date = $1::date OR t.due_date IS NULL)
       `;
       const params: any[] = [date];
+      
+      if (page_id) {
+        params.push(page_id);
+        query += ` AND t.page_id = $${params.length}`;
+      }
       
       if (group) {
         params.push(group);
@@ -2177,7 +2263,7 @@ async function startServer() {
   });
 
   app.post("/api/task-batches", async (req, res) => {
-    const { template_id, client_ids, date, user_id } = req.body;
+    const { template_id, client_ids, date, user_id, page_id } = req.body;
     try {
       await pool.query('BEGIN');
       
@@ -2202,9 +2288,9 @@ async function startServer() {
         for (const item of templateItems) {
           const taskId = Math.random().toString(36).substring(2, 15);
           await pool.query(
-            `INSERT INTO todos (id, title, description, status, created_by, project_id, due_date, created_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
-            [taskId, item.title, item.description || '', 'pending', user_id, projectId, date]
+            `INSERT INTO todos (id, title, description, status, created_by, project_id, due_date, created_at, page_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8)`,
+            [taskId, item.title, item.description || '', 'pending', user_id, projectId, date, page_id]
           );
         }
       }

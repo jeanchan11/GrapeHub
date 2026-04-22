@@ -121,11 +121,46 @@ const getInitialsFromName = (name: string) => {
 
 interface SortableCardProps {
   client: Client;
+  tasks: Task[];
   onClick: (client: Client) => void;
   onMove: (clientId: string, newStatus: string) => void | Promise<void>;
 }
 
-const SortableCard: React.FC<SortableCardProps> = ({ client, onClick, onMove }) => {
+const parseLocalDate = (dateString: string) => {
+  if (!dateString) return new Date();
+  const dateOnly = dateString.split('T')[0];
+  return new Date(dateOnly + 'T12:00:00');
+};
+
+const isToday = (dateString: string) => {
+  if (!dateString) return false;
+  const date = parseLocalDate(dateString);
+  const today = new Date();
+  return date.getDate() === today.getDate() &&
+    date.getMonth() === today.getMonth() &&
+    date.getFullYear() === today.getFullYear();
+};
+
+const isPastDate = (dateString: string) => {
+  if (!dateString) return false;
+  const date = parseLocalDate(dateString);
+  const today = new Date();
+  date.setHours(0, 0, 0, 0);
+  today.setHours(0, 0, 0, 0);
+  return date.getTime() < today.getTime();
+};
+
+const isTomorrowDate = (dateString: string) => {
+  if (!dateString) return false;
+  const date = parseLocalDate(dateString);
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return date.getDate() === tomorrow.getDate() &&
+    date.getMonth() === tomorrow.getMonth() &&
+    date.getFullYear() === tomorrow.getFullYear();
+};
+
+const SortableCard: React.FC<SortableCardProps> = ({ client, tasks, onClick, onMove }) => {
   const [showMenu, setShowMenu] = useState(false);
   const {
     attributes,
@@ -155,19 +190,83 @@ const SortableCard: React.FC<SortableCardProps> = ({ client, onClick, onMove }) 
   const avatar = getAvatarColor(client.name);
   const initials = getInitialsFromName(client.name);
 
+  // Próxima atividade pendente
+  const clientTasks = tasks.filter(t => t.project_id === client.id && t.status !== 'completed');
+  const nextTask = clientTasks.sort((a, b) => {
+    if (!a.dueDate) return 1;
+    if (!b.dueDate) return -1;
+    return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+  })[0] ?? null;
+
+  const getTaskStyle = (task: Task) => {
+    if (!task.dueDate) return null;
+    
+    if (isPastDate(task.dueDate)) {
+      return { 
+        badge: 'text-red-600 bg-red-50 border-red-200 dark:bg-red-500/10 dark:border-red-500/20 dark:text-red-400', 
+        label: 'Atrasada' 
+      };
+    }
+    if (isToday(task.dueDate)) {
+      return { 
+        badge: 'text-emerald-600 bg-emerald-50 border-emerald-200 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:text-emerald-400', 
+        label: 'Hoje' 
+      };
+    }
+    if (isTomorrowDate(task.dueDate)) {
+      return { 
+        badge: 'text-yellow-600 bg-yellow-50 border-yellow-200 dark:bg-yellow-500/10 dark:border-yellow-500/20 dark:text-yellow-400', 
+        label: 'Amanhã' 
+      };
+    }
+    
+    return { 
+      badge: 'text-gray-500 bg-gray-50 border-gray-200 dark:bg-white/5 dark:border-white/10 dark:text-slate-400', 
+      label: parseLocalDate(task.dueDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) 
+    };
+  };
+
+  const taskStyle = nextTask ? getTaskStyle(nextTask) : null;
+
+  // Card-level alert state for border highlight
+  // "no task" = either no task at all, OR task exists but has no dueDate (taskStyle is null)
+  const hasVisibleTask = !!(nextTask && taskStyle);
+  const hasOverdueTask = !!(nextTask && nextTask.dueDate && isPastDate(nextTask.dueDate));
+  const hasNoTask = !hasVisibleTask;
+  const cardAlertState = hasOverdueTask ? 'overdue' : hasNoTask ? 'none' : 'ok';
+
+  const cardBorderClass = isDragging
+    ? 'ring-2 ring-violet-500 shadow-2xl border-violet-500/50'
+    : cardAlertState === 'overdue'
+      ? 'border-red-400 dark:border-red-500/60 shadow-[0_0_0_1px_rgba(239,68,68,0.25)]'
+      : cardAlertState === 'none'
+        ? 'border-amber-400 dark:border-amber-500/60 shadow-[0_0_0_1px_rgba(251,191,36,0.25)]'
+        : 'border-gray-200 dark:border-white/5 hover:border-gray-300 dark:hover:border-white/10';
+
   return (
     <div
       ref={setNodeRef}
       {...attributes}
       {...listeners}
       onClick={() => onClick(client)}
-      className={`relative cursor-grab active:cursor-grabbing rounded-xl border transition-all ${
-        isDragging
-          ? 'ring-2 ring-violet-500 shadow-2xl border-violet-500/50'
-          : 'border-gray-200 dark:border-white/5 darker:border-white/5 hover:border-gray-300 dark:hover:border-white/10 darker:hover:border-white/10'
-      } ${client.isArchived ? 'opacity-50 grayscale' : ''} bg-white dark:bg-dark-card p-3`}
+      className={`relative cursor-grab active:cursor-grabbing rounded-xl border transition-all ${cardBorderClass} ${client.isArchived ? 'opacity-50 grayscale' : ''} overflow-hidden ${
+        !isDragging && cardAlertState === 'overdue'
+          ? 'bg-red-50 dark:bg-red-500/5'
+          : !isDragging && cardAlertState === 'none'
+            ? 'bg-amber-50 dark:bg-amber-500/5'
+            : 'bg-white dark:bg-dark-card'
+      }`}
       style={{ ...style, marginBottom: 12 }}
     >
+      {/* Left stripe indicator */}
+      {!isDragging && cardAlertState !== 'ok' && (
+        <div className={`absolute left-0 top-0 bottom-0 w-[3px] ${
+          cardAlertState === 'overdue'
+            ? 'bg-red-400 dark:bg-red-500'
+            : 'bg-amber-400 dark:bg-amber-500'
+        }`} />
+      )}
+      <div className={`p-3 ${!isDragging && cardAlertState !== 'ok' ? 'pl-[14px]' : 'p-3'}`}>
       {client.isArchived && (
         <div className="absolute -top-2 -right-2 bg-slate-800 text-white text-[9px] font-bold uppercase tracking-widest px-2 py-1 rounded-lg shadow-lg z-10">
           Arquivado
@@ -304,6 +403,29 @@ const SortableCard: React.FC<SortableCardProps> = ({ client, onClick, onMove }) 
             <AlertCircle size={9} /> Pedido Finalização
           </span>
         )}
+      </div>
+
+      {/* Next Task / No Task Alert */}
+      <div className="mt-2 pt-2 border-t border-gray-100 dark:border-white/5">
+        {nextTask && taskStyle ? (
+          <div className={`flex items-center justify-between rounded-lg px-2 py-1.5 border text-[11px] font-bold ${taskStyle.badge}`}>
+            <div className="flex items-center gap-1.5">
+              <Clock size={11} />
+              <span className="truncate max-w-[140px] uppercase tracking-tighter">
+                {taskStyle.label}: {nextTask.title}
+              </span>
+            </div>
+            {nextTask.dueDate && isToday(nextTask.dueDate) && (
+              <span className="font-black text-[10px]">HOJE</span>
+            )}
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 border border-amber-200 bg-amber-50 dark:bg-amber-500/10 dark:border-amber-500/20 text-amber-600 dark:text-amber-400 text-[11px] font-bold uppercase tracking-tighter">
+            <AlertCircle size={11} />
+            <span>Nenhuma tarefa agendada</span>
+          </div>
+        )}
+      </div>
       </div>
     </div>
   );
@@ -837,6 +959,7 @@ const CrmFinanceiro = () => {
                     <div className="min-h-[80px]">
                       {columnClients.map(client => (
                         <SortableCard
+                          tasks={tasks}
                           key={client.id}
                           client={client}
                           onClick={setSelectedClient}
@@ -859,6 +982,7 @@ const CrmFinanceiro = () => {
           {activeId ? (
             <div style={{ transform: 'scale(1.03)', boxShadow: '0 20px 60px rgba(0,0,0,0.5)', borderRadius: 10, opacity: 0.95 }}>
               <SortableCard
+                tasks={tasks}
                 client={clients.find(c => c.id === activeId)!}
                 onClick={() => {}}
                 onMove={() => {}}
@@ -955,7 +1079,7 @@ const CrmFinanceiro = () => {
                                 <span className={`text-[10px] font-medium ${
                                   group === 'Atrasadas' ? 'text-red-500' : 'text-slate-500'
                                 }`}>
-                                  {new Date(task.dueDate).toLocaleDateString('pt-BR')}
+                                  {parseLocalDate(task.dueDate).toLocaleDateString('pt-BR')}
                                 </span>
                               )}
                             </div>
@@ -1188,7 +1312,7 @@ const CrmFinanceiro = () => {
                             <p className="text-sm font-medium text-light-text dark:text-white flex-1 truncate">{task.title}</p>
                             {task.dueDate && (
                               <span className="text-[10px] font-medium text-slate-500 flex-shrink-0">
-                                {new Date(task.dueDate).toLocaleDateString('pt-BR')}
+                                {parseLocalDate(task.dueDate).toLocaleDateString('pt-BR')}
                               </span>
                             )}
                           </div>

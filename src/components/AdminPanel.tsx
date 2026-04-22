@@ -19,7 +19,7 @@ const AdminPanel: React.FC = () => {
   const [dbStatus, setDbStatus] = useState<{ status: string; message: string; time?: string } | null>(null);
   const [isTestingDb, setIsTestingDb] = useState(false);
   const [editingUser, setEditingUser] = useState<UserData | null>(null);
-  const [pendingChanges, setPendingChanges] = useState<Record<string, { allowedPages: string[], role: UserRole, squad?: string }>>({});
+  const [pendingChanges, setPendingChanges] = useState<Record<string, { allowedPages: string[], role: UserRole, squad?: string, name?: string }>>({});
   const [isSaving, setIsSaving] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'users' | 'pages'>('users');
 
@@ -57,7 +57,8 @@ const AdminPanel: React.FC = () => {
         [user.id]: {
           allowedPages: [...(user.allowedPages || [])],
           role: user.role,
-          squad: user.squad
+          squad: user.squad,
+          name: user.name || ''
         }
       }));
     }
@@ -222,6 +223,14 @@ const AdminPanel: React.FC = () => {
     });
   };
 
+  const changeName = (id: string, newName: string) => {
+    setPendingChanges(prev => {
+      const current = prev[id];
+      if (!current) return prev;
+      return { ...prev, [id]: { ...current, name: newName } };
+    });
+  };
+
   const changeSquad = (id: string, newSquad: string) => {
     setPendingChanges(prev => {
       const current = prev[id];
@@ -258,12 +267,18 @@ const AdminPanel: React.FC = () => {
           role: changes.role,
           allowedPages: changes.allowedPages,
           squad: changes.squad,
-          name: user?.name,
+          name: changes.name !== undefined ? changes.name : user?.name,
           picture: user?.picture
         })
       });
       
       if (response.ok) {
+        // Update local users so the list reflects the new name immediately
+        setUsers(prev => prev.map(u =>
+          u.id === id
+            ? { ...u, role: changes.role, allowedPages: changes.allowedPages, squad: changes.squad, name: changes.name !== undefined ? changes.name : u.name }
+            : u
+        ));
         fetchUsers();
         // If editing current user, refresh the context
         if (currentUser && currentUser.id === id) {
@@ -546,6 +561,7 @@ const AdminPanel: React.FC = () => {
               currentData={pendingChanges[editingUser.id] || { allowedPages: editingUser.allowedPages || [], role: editingUser.role, squad: editingUser.squad }}
               isSaving={isSaving === editingUser.id}
               changeRole={changeRole}
+              changeName={changeName}
               changeSquad={changeSquad}
               togglePage={togglePage}
               toggleSection={toggleSection}

@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import ReactDOM from 'react-dom';
 import { auth, storage } from '../firebase';
 import { Modal } from '../components/ui/Modal';
 import { useAuth } from '../contexts/AuthContext';
@@ -240,7 +241,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [activeProductTab, setActiveProductTab] = useState<'resultado' | 'kpis'>('resultado');
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
-  const [activeProjectTab, setActiveProjectTab] = useState<'resultado' | 'reunioes' | 'arquivos' | 'roteiros'>('resultado');
+  const [activeProjectTab, setActiveProjectTab] = useState<'resultado' | 'reunioes' | 'arquivos' | 'roteiros' | 'comentarios' | 'analise'>('resultado');
   const [isEditing, setIsEditing] = useState(false);
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -263,6 +264,16 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
   const [tempProduct, setTempProduct] = useState<Product | null>(null);
   const [isResultDropdownOpen, setIsResultDropdownOpen] = useState(false);
   const [isProjectResultDropdownOpen, setIsProjectResultDropdownOpen] = useState(false);
+  const [isGrupoDropdownOpen, setIsGrupoDropdownOpen] = useState(false);
+  const [editingResponsavel, setEditingResponsavel] = useState(false);
+  const [showResponsavelDropdown, setShowResponsavelDropdown] = useState(false);
+  const [gestores, setGestores] = useState<{id: string; name: string; email: string; picture: string; role: string}[]>([]);
+  const responsavelBtnRef = useRef<HTMLButtonElement>(null);
+  const [responsavelDropdownPos, setResponsavelDropdownPos] = useState({ top: 0, right: 0 });
+  const [projectComments, setProjectComments] = useState<Record<string, {id: string; author: string; author_photo?: string; authorPhoto?: string; text: string; createdAt: string; created_at?: string; isInternal?: boolean; is_internal?: boolean}[]>>({});
+  const [newComment, setNewComment] = useState('');
+  const [isInternalNote, setIsInternalNote] = useState(false);
+  const [commentFilter, setCommentFilter] = useState<'all' | 'comment' | 'internal'>('all');
   const [isAddMetricsModalOpen, setIsAddMetricsModalOpen] = useState(false);
   const [weeklyMetrics, setWeeklyMetrics] = useState([
     { week: '1', investment: '', leads: '', contracts: '' },
@@ -348,6 +359,16 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
   const [filterPerson, setFilterPerson] = useState('Pessoa');
   const [filterType, setFilterType] = useState('Tipo');
 
+  // Fetch gestores de tráfego para o dropdown de responsável
+  useEffect(() => {
+    fetch('/api/users')
+      .then(r => r.json())
+      .then((users: any[]) => {
+        setGestores(users.filter(u => u.role === 'gestor-trafego'));
+      })
+      .catch(console.error);
+  }, []);
+
   const timelineItems = useMemo(() => {
     if (!selectedProject) return [];
     const optimizations = selectedProject.products?.flatMap(p => (p.optimizations || []).map(opt => ({ 
@@ -392,6 +413,26 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
       fetchMeetings();
     }
   }, [selectedProject]);
+
+  // Fetch project comments from DB when a project is opened
+  useEffect(() => {
+    if (selectedProject) {
+      fetch(`/api/project-comments/${encodeURIComponent(selectedProject.id)}`)
+        .then(r => r.ok ? r.json() : [])
+        .then((data: any[]) => {
+          const normalized = data.map(c => ({
+            id: c.id,
+            author: c.author,
+            authorPhoto: c.author_photo,
+            text: c.text,
+            createdAt: c.created_at,
+            isInternal: c.is_internal,
+          }));
+          setProjectComments(prev => ({ ...prev, [selectedProject.id]: normalized }));
+        })
+        .catch(err => console.error('Failed to fetch comments:', err));
+    }
+  }, [selectedProject?.id]);
 
   // Fetch projects from Neon DB via API
   useEffect(() => {
@@ -2537,44 +2578,11 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
           }}
           title={selectedProject.partner || 'Detalhes do Projeto'}
           maxWidth="max-w-6xl"
-          footer={
-            <>
-              <button 
-                onClick={() => {
-                  setIsProjectModalOpen(false);
-                  setIsEditing(false);
-                }}
-                className={designSystem.button.secondary}
-              >
-                Fechar
-              </button>
-              {!isEditing ? (
-                <button 
-                  onClick={() => setIsEditing(true)}
-                  className={designSystem.button.primary}
-                >
-                  Editar
-                </button>
-              ) : (
-                <button 
-                  onClick={() => {
-                    const updatedProjects = projects.map(p => p.id === selectedProject.id ? selectedProject : p);
-                    setProjects(updatedProjects);
-                    saveProjects(updatedProjects);
-                    setIsEditing(false);
-                  }}
-                  className={designSystem.button.primary}
-                >
-                  Salvar
-                </button>
-              )}
-            </>
-          }
         >
         <div className="flex flex-col h-full">
           {/* Tabs */}
           <div className="flex items-center gap-6 mb-6 border-b modal-divider shrink-0">
-            {(['resultado', 'reunioes', 'arquivos', 'roteiros'] as const).map((tab) => (
+            {(['resultado', 'reunioes', 'comentarios', 'analise', 'arquivos', 'roteiros'] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveProjectTab(tab as any)}
@@ -2584,7 +2592,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
                     : 'text-slate-500 hover:text-gray-900 dark:hover:text-white'
                 }`}
               >
-                {tab === 'resultado' ? 'Resultado do projeto' : tab === 'reunioes' ? 'Reuniões' : tab === 'arquivos' ? 'Arquivos do projeto' : 'Roteiros'}
+                {tab === 'resultado' ? 'Resultado do projeto' : tab === 'reunioes' ? 'Reuniões' : tab === 'arquivos' ? 'Arquivos do projeto' : tab === 'roteiros' ? 'Roteiros' : tab === 'comentarios' ? 'Comentários' : 'Análise de Leads'}
               </button>
             ))}
           </div>
@@ -2606,35 +2614,47 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
                     </div>
 
                     {/* Status and Result Cards */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-8">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-8 items-start">
                       <div className="p-6 bg-slate-50 dark:bg-dark-card/60 backdrop-blur-md rounded-3xl border border-slate-200 dark:border-white/10">
                         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Status do Projeto</p>
                         {getStatusBadge(selectedProject.status)}
                       </div>
+                      {/* Resultado do Projeto — select nativo */}
                       <div className="p-6 bg-slate-50 dark:bg-dark-card/60 backdrop-blur-md rounded-3xl border border-slate-200 dark:border-white/10">
                         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Resultado do Projeto</p>
                         <div className="flex items-center gap-2">
-                          <div className={`w-2 h-2 rounded-full ${projectResults.find(r => r.label === selectedProject.projectResult)?.color || 'bg-slate-500'}`} />
-                          <span className="text-sm font-bold text-slate-900 dark:text-white">{selectedProject.projectResult || 'Sem resultado'}</span>
+                          <div className={`w-2 h-2 rounded-full flex-shrink-0 ${projectResults.find(r => r.label === selectedProject.projectResult)?.color || 'bg-slate-500'}`} />
+                          <select
+                            value={selectedProject.projectResult || ''}
+                            onChange={(e) => handleUpdateProjectResult(e.target.value)}
+                            className="text-sm font-bold text-slate-900 dark:text-white bg-transparent outline-none cursor-pointer border-none appearance-none w-full"
+                          >
+                            <option value="">Sem resultado</option>
+                            {projectResults.map((res) => (
+                              <option key={res.label} value={res.label}>{res.label}</option>
+                            ))}
+                          </select>
                         </div>
                       </div>
                     </div>
 
                     {/* Product Previews */}
                     {selectedProject.products && selectedProject.products.length > 0 && (
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-8">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-8">
                         {selectedProject.products.map((prod) => (
-                          <div key={prod.id} className="bg-slate-50 dark:bg-white/5 rounded-xl p-4 border border-slate-200 dark:border-white/5 flex items-center gap-4">
-                            <div className="p-2 bg-violet-600/20 rounded-lg text-violet-500">
+                          <div
+                            key={prod.id}
+                            onClick={() => handleProductClick(prod)}
+                            className="flex items-center gap-4 p-4 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 hover:border-violet-500/30 hover:bg-violet-500/5 cursor-pointer transition-all group"
+                          >
+                            <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-to-br from-violet-600/30 to-violet-900/20 border border-violet-500/20 text-violet-500 flex-shrink-0">
                               {getProductIcon(prod.icon)}
                             </div>
-                            <div>
-                              <h5 className="text-xs font-bold text-slate-900 dark:text-white">{prod.name}</h5>
-                              <p className="text-[10px] text-slate-500">{prod.status}</p>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-bold text-slate-900 dark:text-white truncate group-hover:text-violet-400 transition-colors">{prod.name}</p>
+                              <span className={`inline-block mt-0.5 px-2 py-0.5 text-[10px] font-bold rounded-full bg-slate-200/70 dark:bg-white/10 text-slate-500 dark:text-slate-400`}>{prod.status}</span>
                             </div>
-                            <div className="ml-auto text-right">
-                              <p className="text-[10px] font-bold text-emerald-500">{prod.cac}</p>
-                            </div>
+                            <p className="text-sm font-bold text-emerald-500 flex-shrink-0">{prod.budget}</p>
                           </div>
                         ))}
                       </div>
@@ -2694,49 +2714,145 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
                 )}
                 
                 {activeProjectTab === 'resultado' && (
-                  <div className="space-y-4">
+                  <div className="space-y-4 mt-8">
                     <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Informações Gerais</h4>
                     <div className="space-y-3">
+                      {/* Responsável — dropdown com gestores de tráfego */}
                       <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-dark-card/60 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-white/10">
                         <div className="flex items-center gap-3 text-slate-400">
                           <User size={16} />
                           <span className="text-sm">Responsável</span>
                         </div>
-                        {isEditing ? (
-                          <input 
-                            type="text"
-                            value={selectedProject.responsible || ''}
-                            onChange={(e) => setSelectedProject({...selectedProject, responsible: e.target.value})}
-                            className="text-sm font-bold text-slate-900 dark:text-white bg-transparent border border-slate-300 dark:border-white/20 rounded px-2 py-1 outline-none focus:border-violet-500"
-                          />
-                        ) : (
-                          <span className="text-sm font-bold text-slate-900 dark:text-white">{selectedProject.responsible}</span>
-                        )}
+                        <div className="relative">
+                          {/* Trigger button */}
+                          <button
+                            ref={responsavelBtnRef}
+                            onClick={() => {
+                              if (!showResponsavelDropdown && responsavelBtnRef.current) {
+                                const rect = responsavelBtnRef.current.getBoundingClientRect();
+                                setResponsavelDropdownPos({
+                                  top: rect.bottom + 6,
+                                  right: window.innerWidth - rect.right,
+                                });
+                              }
+                              setShowResponsavelDropdown(!showResponsavelDropdown);
+                            }}
+                            className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+                          >
+                            {(() => {
+                              const gestor = gestores.find(g => g.name === selectedProject.responsible);
+                              return gestor?.picture ? (
+                                <img src={gestor.picture} alt={gestor.name} className="w-6 h-6 rounded-full object-cover border border-white/20" />
+                              ) : selectedProject.responsible ? (
+                                <div className="w-6 h-6 rounded-full bg-violet-500/20 flex items-center justify-center text-violet-400 text-[10px] font-black">
+                                  {selectedProject.responsible.charAt(0)}
+                                </div>
+                              ) : null;
+                            })()}
+                            <span className="text-sm font-bold text-slate-900 dark:text-white">
+                              {selectedProject.responsible || 'Selecionar...'}
+                            </span>
+                            <svg width={12} height={12} viewBox="0 0 12 12" fill="none" className="text-slate-400">
+                              <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          </button>
+
+                          {/* Dropdown — renderizado via portal para escapar do overflow:hidden do modal */}
+                          {showResponsavelDropdown && ReactDOM.createPortal(
+                            <>
+                              {/* Overlay to close */}
+                              <div className="fixed inset-0 z-[9998]" onClick={() => setShowResponsavelDropdown(false)} />
+                              <div
+                                className="fixed z-[9999] w-[320px] bg-[#0f1119] border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
+                                style={{ top: responsavelDropdownPos.top, right: responsavelDropdownPos.right }}
+                              >
+                                <div className="px-4 py-3 border-b border-white/5 flex items-center gap-2">
+                                  <div className="w-1.5 h-1.5 rounded-full bg-violet-500" />
+                                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Gestores de Tráfego</span>
+                                </div>
+                                {gestores.length === 0 ? (
+                                  <div className="px-4 py-3 text-xs text-slate-500">Nenhum gestor encontrado</div>
+                                ) : (
+                                   <div className="py-2 space-y-1">
+                                    {gestores.map(g => (
+                                      <button
+                                        key={g.id}
+                                        onClick={() => {
+                                          const updated = { ...selectedProject, responsible: g.name };
+                                          setSelectedProject(updated);
+                                          const updatedProjects = projects.map(p => p.id === selectedProject.id ? updated : p);
+                                          setProjects(updatedProjects);
+                                          saveProjects(updatedProjects);
+                                          setShowResponsavelDropdown(false);
+                                        }}
+                                        className={`w-full flex items-center gap-4 px-4 py-3 hover:bg-white/5 transition-all text-left rounded-xl mx-2 ${
+                                          selectedProject.responsible === g.name ? 'bg-violet-500/10 border border-violet-500/20' : 'border border-transparent'
+                                        }`}
+                                        style={{ width: 'calc(100% - 16px)' }}
+                                      >
+                                        {/* Avatar grande */}
+                                        {g.picture ? (
+                                          <img
+                                            src={g.picture}
+                                            alt={g.name || ''}
+                                            className="w-12 h-12 rounded-full object-cover flex-shrink-0"
+                                            style={{ border: `2px solid ${selectedProject.responsible === g.name ? '#7c3aed' : 'rgba(255,255,255,0.1)'}` }}
+                                          />
+                                        ) : (
+                                          <div className="w-12 h-12 rounded-full bg-violet-500/20 flex items-center justify-center text-violet-400 text-lg font-black flex-shrink-0">
+                                            {(g.name || '?').charAt(0).toUpperCase()}
+                                          </div>
+                                        )}
+                                        {/* Info */}
+                                        <div className="flex-1 min-w-0">
+                                          <p className="text-sm font-bold text-white truncate">{g.name || '—'}</p>
+                                          <p className="text-xs text-slate-500 truncate mt-0.5">{g.email || ''}</p>
+                                          <span className="inline-flex items-center mt-1 text-[9px] font-bold text-violet-400 bg-violet-500/10 px-2 py-0.5 rounded-full uppercase tracking-wide">Gestor de Tráfego</span>
+                                        </div>
+                                        {/* Checkmark */}
+                                        {selectedProject.responsible === g.name && (
+                                          <div className="w-6 h-6 rounded-full bg-violet-500 flex items-center justify-center flex-shrink-0">
+                                            <svg width={12} height={12} viewBox="0 0 14 14" fill="none">
+                                              <path d="M2 7l3.5 3.5L12 3" stroke="white" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                                            </svg>
+                                          </div>
+                                        )}
+                                      </button>
+                                    ))}
+                                  </div>
+
+                                )}
+                              </div>
+                            </>,
+                            document.body
+                          )}
+                        </div>
                       </div>
+                      {/* Grupo — select nativo */}
                       <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-dark-card/60 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-white/10">
-                        <div className="flex items-center gap-3 text-slate-500">
+                        <div className="flex items-center gap-3 text-slate-400">
                           <span className="text-sm">Grupo</span>
                         </div>
-                        {isEditing ? (
-                          <select
-                            value={selectedProject.group || ''}
-                            onChange={(e) => setSelectedProject({...selectedProject, group: e.target.value})}
-                            className="text-sm font-bold text-slate-900 dark:text-white bg-transparent border border-slate-300 dark:border-white/20 rounded px-2 py-1 outline-none focus:border-violet-500"
-                          >
-                            <option value="" className="text-slate-500">Sem Grupo</option>
-                            <option value="Grupo 1" className="text-blue-600">Grupo 1</option>
-                            <option value="Grupo 2" className="text-green-600">Grupo 2</option>
-                            <option value="Quarentena" className="text-red-600">Quarentena</option>
-                          </select>
-                        ) : (
-                          <span className={`text-sm font-bold ${
-                            selectedProject.group === 'Grupo 1' ? 'text-blue-600' : 
-                            selectedProject.group === 'Grupo 2' ? 'text-green-600' : 
-                            selectedProject.group === 'Quarentena' ? 'text-red-600' : 'text-slate-900 dark:text-white'
-                          }`}>
-                            {selectedProject.group || 'Sem grupo'}
-                          </span>
-                        )}
+                        <select
+                          value={selectedProject.group || ''}
+                          onChange={(e) => {
+                            const updated = { ...selectedProject, group: e.target.value };
+                            setSelectedProject(updated);
+                            const updatedProjects = projects.map(p => p.id === selectedProject.id ? updated : p);
+                            setProjects(updatedProjects);
+                            saveProjects(updatedProjects);
+                          }}
+                          className={`text-sm font-bold bg-transparent outline-none cursor-pointer border-none appearance-none ${
+                            selectedProject.group === 'Grupo 1' ? 'text-blue-500' :
+                            selectedProject.group === 'Grupo 2' ? 'text-green-500' :
+                            selectedProject.group === 'Quarentena' ? 'text-red-500' : 'text-slate-400'
+                          }`}
+                        >
+                          <option value="">Sem grupo</option>
+                          <option value="Grupo 1">Grupo 1</option>
+                          <option value="Grupo 2">Grupo 2</option>
+                          <option value="Quarentena">Quarentena</option>
+                        </select>
                       </div>
                       <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-dark-card/60 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-white/10">
                         <div className="flex items-center gap-3 text-slate-500">
@@ -2750,30 +2866,25 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
                           <Calendar size={16} />
                           <span className="text-sm">Última Atualização</span>
                         </div>
-                        <span className="text-sm font-bold text-slate-900 dark:text-white">{selectedProject.lastUpdate}</span>
+                        <span className="text-sm font-bold text-slate-900 dark:text-white">
+                          {timelineItems.length > 0
+                            ? (() => {
+                                const d = new Date(timelineItems[0].createdAt);
+                                return isNaN(d.getTime())
+                                  ? selectedProject.lastUpdate
+                                  : `${d.toLocaleDateString('pt-BR')} às ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+                              })()
+                            : selectedProject.lastUpdate || '—'}
+                        </span>
                       </div>
                     </div>
                   </div>
                 )}
 
                 {activeProjectTab === 'resultado' && (
-                  <div className="space-y-4">
+                  <div className="space-y-4 mt-8">
                     <div className="flex items-center justify-between">
                       <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Histórico Consolidado</h4>
-                      <div className="flex gap-2">
-                        <button 
-                          onClick={() => {/* TODO: Implementar Notas */}}
-                          className="px-3 py-1.5 text-[10px] font-bold text-slate-500 hover:text-violet-500 bg-slate-100 dark:bg-white/5 rounded-lg transition-all"
-                        >
-                          Notas
-                        </button>
-                        <button 
-                          onClick={() => setIsMeetingModalOpen(true)}
-                          className="px-3 py-1.5 text-[10px] font-bold text-slate-900 dark:text-white bg-violet-600 hover:bg-violet-700 rounded-lg transition-all"
-                        >
-                          Reunião
-                        </button>
-                      </div>
                     </div>
                     
                     {/* Timeline */}
@@ -2892,7 +3003,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
                     </div>
                     
                     {/* Timeline */}
-                    <div className="relative max-h-[900px] overflow-y-auto custom-scrollbar pr-2">
+                    <div className="relative pr-2">
                       <div className="relative space-y-12 py-4">
                         {/* Vertical Line */}
                         <div className="absolute left-1/2 top-0 bottom-0 w-px bg-slate-200 dark:bg-white/10 -translate-x-1/2" />
@@ -3039,11 +3150,193 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
                   </div>
                 )}
 
+                {activeProjectTab === 'analise' && (
+                  <div className="flex flex-col items-center justify-center py-20 gap-4 text-slate-400">
+                    <div className="w-16 h-16 rounded-2xl bg-violet-500/10 flex items-center justify-center">
+                      <BarChart3 size={32} className="text-violet-500/50" />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm font-bold text-slate-500">Análise de Leads</p>
+                      <p className="text-xs text-slate-400 mt-1">Em breve.</p>
+                    </div>
+                  </div>
+                )}
+
                 {activeProjectTab === 'roteiros' && (
                   <div className="p-8 text-center text-slate-500">
                     Roteiros em breve.
                   </div>
                 )}
+
+                {activeProjectTab === 'comentarios' && (() => {
+                  const allComments = projectComments[selectedProject.id] || [];
+                  const filteredComments = commentFilter === 'all' ? allComments
+                    : commentFilter === 'comment' ? allComments.filter(c => !c.isInternal)
+                    : allComments.filter(c => c.isInternal);
+
+                  const submitComment = async () => {
+                    if (!newComment.trim()) return;
+                    const body = {
+                      author: userData?.name || 'Você',
+                      author_photo: userData?.picture || auth.currentUser?.photoURL || null,
+                      text: newComment.trim(),
+                      is_internal: isInternalNote,
+                    };
+                    setNewComment('');
+                    try {
+                      const res = await fetch(`/api/project-comments/${encodeURIComponent(selectedProject.id)}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body),
+                      });
+                      if (res.ok) {
+                        const saved = await res.json();
+                        const normalized = { id: saved.id, author: saved.author, authorPhoto: saved.author_photo, text: saved.text, createdAt: saved.created_at, isInternal: saved.is_internal };
+                        setProjectComments(prev => ({ ...prev, [selectedProject.id]: [...(prev[selectedProject.id] || []), normalized] }));
+                      }
+                    } catch (err) {
+                      console.error('Failed to save comment:', err);
+                    }
+                  };
+
+                  return (
+                    <div className="space-y-5">
+                      {/* Header + Filter */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="w-1.5 h-5 bg-violet-600 rounded-full" />
+                          <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Comentários</h4>
+                          {allComments.length > 0 && (
+                            <span className="px-2 py-0.5 rounded-md bg-violet-500/10 text-violet-500 text-[10px] font-bold">{allComments.length}</span>
+                          )}
+                        </div>
+                        {/* Filter pills */}
+                        <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-white/5 rounded-xl">
+                          {(['all', 'comment', 'internal'] as const).map((f) => (
+                            <button
+                              key={f}
+                              onClick={() => setCommentFilter(f)}
+                              className={`px-3 py-1 text-[10px] font-bold rounded-lg transition-all ${
+                                commentFilter === f
+                                  ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm'
+                                  : 'text-slate-400 hover:text-slate-600 dark:hover:text-white'
+                              }`}
+                            >
+                              {f === 'all' ? 'Todos' : f === 'comment' ? 'Comentários' : '🔒 Internas'}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Feed */}
+                      <div className="space-y-3">
+                        {filteredComments.length === 0 && (
+                          <div className="flex flex-col items-center gap-3 py-10 text-slate-400">
+                            <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-white/5 flex items-center justify-center">
+                              <MessageSquare size={22} className="text-slate-400" />
+                            </div>
+                            <p className="text-sm">
+                              {commentFilter === 'internal' ? 'Nenhuma nota interna.' : commentFilter === 'comment' ? 'Nenhum comentário.' : 'Nenhum comentário ainda.'}
+                            </p>
+                          </div>
+                        )}
+                        {filteredComments.map((c) => (
+                          <div
+                            key={c.id}
+                            className={`group flex gap-3 p-4 rounded-2xl border transition-all ${
+                              c.isInternal
+                                ? 'bg-amber-950/20 border-amber-500/30 hover:border-amber-500/50'
+                                : 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/10 hover:border-violet-500/20'
+                            }`}
+                          >
+                            <div className="flex-shrink-0">
+                              {c.authorPhoto ? (
+                                <img src={c.authorPhoto} alt={c.author} className="w-8 h-8 rounded-full object-cover" referrerPolicy="no-referrer" />
+                              ) : (
+                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
+                                  c.isInternal ? 'bg-amber-500/20 text-amber-400' : 'bg-violet-500/20 text-violet-500'
+                                }`}>
+                                  {c.author.charAt(0).toUpperCase()}
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className={`text-sm font-bold ${c.isInternal ? 'text-amber-400' : 'text-slate-900 dark:text-white'}`}>{c.author}</span>
+                                <span className="text-[10px] text-slate-400">
+                                  {new Date(c.createdAt).toLocaleDateString('pt-BR')} às {new Date(c.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              </div>
+                              {c.isInternal && (
+                                <span className="inline-block mb-2 text-[10px] font-bold text-amber-400 uppercase tracking-wider">🔒 Nota Interna</span>
+                              )}
+                              <p className={`text-sm leading-relaxed whitespace-pre-wrap ${c.isInternal ? 'text-amber-100/80' : 'text-slate-600 dark:text-slate-300'}`}>{c.text}</p>
+                            </div>
+                            <button
+                              onClick={async () => {
+                                // Optimistic UI
+                                setProjectComments(prev => ({ ...prev, [selectedProject.id]: allComments.filter(x => x.id !== c.id) }));
+                                try { await fetch(`/api/project-comments/${c.id}`, { method: 'DELETE' }); } catch(e) {}
+                              }}
+                              className="flex-shrink-0 text-slate-400 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100 self-start mt-0.5"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Input */}
+                      <div className={`rounded-2xl border transition-all ${
+                        isInternalNote
+                          ? 'bg-amber-950/20 border-amber-500/30'
+                          : 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/10'
+                      }`}>
+                        <div className="flex gap-3 p-3">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
+                            isInternalNote ? 'bg-amber-500/20 text-amber-400' : 'bg-violet-500/20 text-violet-500'
+                          }`}>
+                            {(userData?.name || 'U').charAt(0).toUpperCase()}
+                          </div>
+                          <textarea
+                            value={newComment}
+                            onChange={(e) => setNewComment(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitComment(); } }}
+                            placeholder={isInternalNote ? '🔒 Nota interna (só visível para a equipe)...' : 'Escreva um comentário... (Enter para enviar)'}
+                            rows={2}
+                            className="flex-1 bg-transparent text-sm text-slate-900 dark:text-white placeholder-slate-400 resize-none outline-none"
+                          />
+                        </div>
+                        {/* Footer do input */}
+                        <div className={`flex items-center justify-between px-4 py-2.5 border-t ${
+                          isInternalNote ? 'border-amber-500/20' : 'border-slate-200 dark:border-white/10'
+                        }`}>
+                          <button
+                            onClick={() => setIsInternalNote(!isInternalNote)}
+                            className={`flex items-center gap-2 text-xs font-bold transition-all ${
+                              isInternalNote ? 'text-amber-400' : 'text-slate-400 hover:text-slate-600 dark:hover:text-white'
+                            }`}
+                          >
+                            <div className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-all ${
+                              isInternalNote ? 'bg-amber-500 border-amber-500' : 'border-slate-400'
+                            }`}>
+                              {isInternalNote && <Check size={10} className="text-white" />}
+                            </div>
+                            Nota Interna
+                          </button>
+                          <button
+                            onClick={submitComment}
+                            className={`px-4 py-1.5 text-xs font-bold rounded-xl transition-all text-white ${
+                              isInternalNote ? 'bg-amber-600 hover:bg-amber-700' : 'bg-violet-600 hover:bg-violet-700'
+                            }`}
+                          >
+                            Enviar
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
           </div>
         </div>
         </Modal>

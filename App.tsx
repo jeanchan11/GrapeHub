@@ -25,6 +25,8 @@ import CrmMetricas from './src/pages/CrmMetricas';
 import Automacoes from './src/pages/Automacoes';
 import MarketingDashboard from './src/pages/MarketingDashboard';
 import MarketingAcoes from './src/pages/MarketingAcoes';
+import DashboardOperacional from './src/pages/DashboardOperacional';
+import ParceirosSquad from './src/pages/ParceirosSquad';
 import Login from './src/components/LoginView';
 import AdminPanel from './src/components/AdminPanel';
 import LoadingSpinner from './src/components/LoadingSpinner';
@@ -178,7 +180,7 @@ const AppContent: React.FC = () => {
         console.log("AppContent: Rendering ProjectsModule with activePage:", activePage);
         return <ProjectsModule key={activePage} activePage={activePage} />;
       case 'todo':
-        return <TodoPage key={activePage} activePage={activePage} />;
+        return <TodoPage key={activePage} activePage={activePage} onPageChange={setActivePage} />;
       case 'gestor-dashboard':
         return <GestorDashboard />;
       case 'closer':
@@ -202,7 +204,7 @@ const AppContent: React.FC = () => {
       case 'kpis-squad':
         return <div className="p-8 text-center text-slate-500">Página de KPIs do Squad em construção.</div>;
       case 'parceiros-squad':
-        return <div className="p-8 text-center text-slate-500">Página de Parceiros do Squad em construção.</div>;
+        return <ParceirosSquad />;
       case 'blank':
         return <div className="p-8 text-center text-slate-500">Esta é uma página em branco.</div>;
       case 'task-templates':
@@ -225,6 +227,8 @@ const AppContent: React.FC = () => {
         return <MarketingDashboard />;
       case 'marketing-acoes':
         return <MarketingAcoes key={activePage} activePage={activePage} />;
+      case 'dashboard-operacional':
+        return <DashboardOperacional />;
       default:
         return <GestorCalculator />;
     }

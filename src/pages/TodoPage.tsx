@@ -37,7 +37,7 @@ interface Task {
   subtasks_list?: TaskSubtask[];
 }
 
-const TodoPage: React.FC<{ activePage: string }> = ({ activePage }) => {
+const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => void }> = ({ activePage, onPageChange }) => {
   const { userData: authUser } = useAuth();
   
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
@@ -84,7 +84,7 @@ const TodoPage: React.FC<{ activePage: string }> = ({ activePage }) => {
     try {
       const dateStr = currentDate.toISOString().split('T')[0];
       const [tasksRes, projectsRes, templatesRes] = await Promise.all([
-        fetch(`/api/daily-tasks?date=${dateStr}`),
+        fetch(`/api/daily-tasks?date=${dateStr}&page_id=${activePage}`),
         fetch('/api/projects'),
         fetch('/api/task-templates')
       ]);
@@ -153,7 +153,8 @@ const TodoPage: React.FC<{ activePage: string }> = ({ activePage }) => {
           template_id: batchTemplateId,
           client_ids: batchClientIds,
           date: batchDate,
-          user_id: authUser?.id
+          user_id: authUser?.id,
+          page_id: activePage
         })
       });
       if (res.ok) {
@@ -186,7 +187,8 @@ const TodoPage: React.FC<{ activePage: string }> = ({ activePage }) => {
           createdAt: new Date().toISOString(),
           dueDate: currentDate.toISOString().split('T')[0],
           subtasks: [],
-          project_id: projectId
+          project_id: projectId,
+          page_id: activePage
         })
       });
       if (res.ok) {
@@ -292,27 +294,27 @@ const TodoPage: React.FC<{ activePage: string }> = ({ activePage }) => {
           <p className="text-slate-500 text-sm">Controle diário de campanhas e tarefas</p>
         </div>
         
-        <div className="flex items-center gap-4 bg-white/5 p-1 rounded-xl border border-white/10">
-          <button onClick={() => changeDate(-1)} className="p-2 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition-colors">
+        <div className="flex items-center gap-4 bg-white dark:bg-white/5 p-1 rounded-xl border border-slate-200 dark:border-white/10">
+          <button onClick={() => changeDate(-1)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-lg text-slate-500 dark:text-gray-400 hover:text-slate-800 dark:hover:text-white transition-colors">
             <ChevronLeft size={20} />
           </button>
-          <div className="flex items-center gap-2 px-4 font-medium text-white min-w-[140px] justify-center">
-            <Calendar size={16} className="text-purple-400" />
+          <div className="flex items-center gap-2 px-4 font-medium text-slate-800 dark:text-white min-w-[140px] justify-center">
+            <Calendar size={16} className="text-purple-500 dark:text-purple-400" />
             {formatDate(currentDate)}
           </div>
-          <button onClick={() => changeDate(1)} className="p-2 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition-colors">
+          <button onClick={() => changeDate(1)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-lg text-slate-500 dark:text-gray-400 hover:text-slate-800 dark:hover:text-white transition-colors">
             <ChevronRight size={20} />
           </button>
         </div>
 
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-3 text-sm font-medium bg-white/5 px-4 py-2 rounded-xl border border-white/10">
-            <span className="flex items-center gap-1.5 text-green-400">
+          <div className="flex items-center gap-3 text-sm font-medium bg-white dark:bg-white/5 px-4 py-2 rounded-xl border border-slate-200 dark:border-white/10">
+            <span className="flex items-center gap-1.5 text-green-600 dark:text-green-400">
               <CheckCircle2 size={16} />
               {totalOptimized} Otimizados
             </span>
-            <span className="text-gray-600">〜</span>
-            <span className="flex items-center gap-1.5 text-gray-400">
+            <span className="text-slate-300 dark:text-gray-600">〜</span>
+            <span className="flex items-center gap-1.5 text-slate-500 dark:text-gray-400">
               <Circle size={16} />
               {totalPending} Pendentes
             </span>
@@ -332,7 +334,7 @@ const TodoPage: React.FC<{ activePage: string }> = ({ activePage }) => {
         <select
           value={selectedGroup}
           onChange={(e) => setSelectedGroup(e.target.value)}
-          className="bg-white/5 border border-white/10 text-white rounded-xl px-4 py-2 focus:outline-none focus:border-purple-500"
+          className="bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-800 dark:text-white rounded-xl px-4 py-2 focus:outline-none focus:border-purple-500"
         >
           <option value="all">Todos os Grupos</option>
           {uniqueGroups.map(g => (
@@ -342,7 +344,7 @@ const TodoPage: React.FC<{ activePage: string }> = ({ activePage }) => {
         <select
           value={selectedStatus}
           onChange={(e) => setSelectedStatus(e.target.value)}
-          className="bg-white/5 border border-white/10 text-white rounded-xl px-4 py-2 focus:outline-none focus:border-purple-500"
+          className="bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-800 dark:text-white rounded-xl px-4 py-2 focus:outline-none focus:border-purple-500"
         >
           <option value="all">Todos os Status</option>
           <option value="OTIMIZADO">Otimizado</option>
@@ -365,11 +367,11 @@ const TodoPage: React.FC<{ activePage: string }> = ({ activePage }) => {
               <div key={groupName} className="space-y-3">
                 <button 
                   onClick={() => setExpandedGroups(prev => ({ ...prev, [groupName]: !isGroupExpanded }))}
-                  className="flex items-center gap-2 text-lg font-semibold text-white/90 hover:text-white transition-colors"
+                  className="flex items-center gap-2 text-lg font-semibold text-slate-800 dark:text-white/90 hover:text-slate-900 dark:hover:text-white transition-colors"
                 >
                   {isGroupExpanded ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
                   {groupName}
-                  <span className="text-sm font-normal text-gray-500 bg-white/5 px-2 py-0.5 rounded-full">
+                  <span className="text-sm font-normal text-slate-500 dark:text-gray-500 bg-slate-100 dark:bg-white/5 px-2 py-0.5 rounded-full border border-slate-200 dark:border-transparent">
                     {Object.keys(clients).length} clientes
                   </span>
                 </button>
@@ -392,26 +394,26 @@ const TodoPage: React.FC<{ activePage: string }> = ({ activePage }) => {
                         const projectName = clientTasks[0]?.project_name || 'Projeto Desconhecido';
 
                         return (
-                          <div key={projectId} className="bg-[#11111b] border border-white/5 rounded-xl overflow-hidden">
+                          <div key={projectId} className="bg-white dark:bg-[#11111b] border border-slate-200 dark:border-white/5 shadow-sm dark:shadow-none rounded-xl overflow-hidden">
                             {/* Client Card Header */}
                             <div 
-                              className="flex items-center justify-between p-4 cursor-pointer hover:bg-white/[0.02] transition-colors"
+                              className="flex items-center justify-between p-4 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors"
                               onClick={() => setExpandedClients(prev => ({ ...prev, [projectId]: !isClientExpanded }))}
                             >
                               <div className="flex items-center gap-4">
-                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500/20 to-blue-500/20 border border-purple-500/30 flex items-center justify-center text-purple-400 font-bold">
+                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-100 to-blue-100 dark:from-purple-500/20 dark:to-blue-500/20 border border-purple-200 dark:border-purple-500/30 flex items-center justify-center text-purple-600 dark:text-purple-400 font-bold">
                                   {projectName.substring(0, 2).toUpperCase()}
                                 </div>
                                 <div>
-                                  <h3 className="text-white font-medium flex items-center gap-2">
+                                  <h3 className="text-slate-800 dark:text-white font-medium flex items-center gap-2">
                                     {projectName}
-                                    <span className="text-xs px-2 py-0.5 rounded-full bg-white/5 text-gray-400 border border-white/10">
+                                    <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-gray-400 border border-slate-200 dark:border-white/10">
                                       {groupName}
                                     </span>
                                   </h3>
                                   <div className="flex items-center gap-3 mt-1">
-                                    <div className="text-xs text-gray-500">{completedCount}/{clientTasks.length} concluídas</div>
-                                    <div className="w-32 h-1.5 bg-white/5 rounded-full overflow-hidden">
+                                    <div className="text-xs text-slate-500 dark:text-gray-500">{completedCount}/{clientTasks.length} concluídas</div>
+                                    <div className="w-32 h-1.5 bg-slate-200 dark:bg-white/5 rounded-full overflow-hidden">
                                       <div className="h-full bg-purple-500 rounded-full" style={{ width: `${progress}%` }} />
                                     </div>
                                   </div>
@@ -433,7 +435,7 @@ const TodoPage: React.FC<{ activePage: string }> = ({ activePage }) => {
                                   initial={{ height: 0 }}
                                   animate={{ height: 'auto' }}
                                   exit={{ height: 0 }}
-                                  className="border-t border-white/5 bg-black/20"
+                                  className="border-t border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-black/20"
                                 >
                                   <div className="p-2 space-y-1">
                                     {clientTasks.map(task => {
@@ -441,28 +443,28 @@ const TodoPage: React.FC<{ activePage: string }> = ({ activePage }) => {
                                       const isTaskExpanded = expandedTasks[task.id] || false;
                                       
                                       return (
-                                        <div key={task.id} className={`rounded-lg transition-colors ${isCompleted ? 'bg-green-500/5' : 'hover:bg-white/5'}`}>
+                                        <div key={task.id} className={`rounded-lg transition-colors ${isCompleted ? 'bg-green-500/5' : 'hover:bg-slate-100 dark:hover:bg-white/5'}`}>
                                           <div className="flex items-center gap-3 p-3">
                                             <button 
                                               onClick={() => toggleTaskStatus(task)}
-                                              className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${isCompleted ? 'bg-green-500 border-green-500 text-white' : 'border-gray-500 text-transparent hover:border-purple-500'}`}
+                                              className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${isCompleted ? 'bg-green-500 border-green-500 text-white' : 'border-slate-300 dark:border-gray-500 text-transparent hover:border-purple-500 dark:hover:border-purple-500 bg-white dark:bg-transparent'}`}
                                             >
                                               <Check size={14} />
                                             </button>
                                             
                                             <div className="flex-1 flex flex-col">
                                               <div className="flex items-center justify-between">
-                                                <span className={`text-sm ${isCompleted ? 'text-gray-500 line-through' : 'text-gray-200'}`}>
+                                                <span className={`text-sm ${isCompleted ? 'text-slate-400 dark:text-gray-500 line-through' : 'text-slate-700 dark:text-gray-200'}`}>
                                                   {task.title}
                                                 </span>
                                                 <div className="flex items-center gap-2">
-                                                  <button className="text-xs text-gray-500 hover:text-purple-400 flex items-center gap-1 p-1">
+                                                  <button className="text-xs text-slate-500 dark:text-gray-500 hover:text-purple-600 dark:hover:text-purple-400 flex items-center gap-1 p-1">
                                                     <ImageIcon size={14} /> Ver print da campanha
                                                   </button>
                                                   <select 
                                                     value={task.priority || 'Média'}
                                                     onChange={(e) => updateTaskField(task.id, 'priority', e.target.value)}
-                                                    className="text-xs bg-transparent border-none text-gray-500 focus:ring-0 cursor-pointer"
+                                                    className="text-xs bg-transparent border-none text-slate-500 dark:text-gray-500 focus:ring-0 cursor-pointer"
                                                   >
                                                     <option value="Baixa">Baixa</option>
                                                     <option value="Média">Média</option>
@@ -471,7 +473,7 @@ const TodoPage: React.FC<{ activePage: string }> = ({ activePage }) => {
                                                   </select>
                                                   <button 
                                                     onClick={() => setExpandedTasks(prev => ({ ...prev, [task.id]: !isTaskExpanded }))}
-                                                    className="text-gray-500 hover:text-white p-1"
+                                                    className="text-slate-500 dark:text-gray-500 hover:text-slate-800 dark:hover:text-white p-1"
                                                   >
                                                     <ListTodo size={16} />
                                                   </button>
@@ -493,11 +495,11 @@ const TodoPage: React.FC<{ activePage: string }> = ({ activePage }) => {
                                                   <div key={subtask.id} className="flex items-center gap-3 group">
                                                     <button 
                                                       onClick={() => toggleSubtaskStatus(subtask, task.id)}
-                                                      className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${subtask.completed ? 'bg-green-500 border-green-500 text-white' : 'border-gray-600 text-transparent group-hover:border-purple-500'}`}
+                                                      className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${subtask.completed ? 'bg-green-500 border-green-500 text-white' : 'border-slate-400 dark:border-gray-600 text-transparent group-hover:border-purple-500 dark:group-hover:border-purple-500 bg-white dark:bg-transparent'}`}
                                                     >
                                                       <Check size={12} />
                                                     </button>
-                                                    <span className={`text-xs ${subtask.completed ? 'text-gray-600 line-through' : 'text-gray-400'}`}>
+                                                    <span className={`text-xs ${subtask.completed ? 'text-slate-400 dark:text-gray-600 line-through' : 'text-slate-600 dark:text-gray-400'}`}>
                                                       {subtask.title}
                                                     </span>
                                                   </div>
@@ -510,17 +512,17 @@ const TodoPage: React.FC<{ activePage: string }> = ({ activePage }) => {
                                                       value={newSubtaskTitle}
                                                       onChange={(e) => setNewSubtaskTitle(e.target.value)}
                                                       placeholder="Título da subtarefa..."
-                                                      className="flex-1 bg-white/5 border border-white/10 rounded px-3 py-1 text-xs text-white focus:outline-none focus:border-purple-500"
+                                                      className="flex-1 bg-white dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded px-3 py-1 text-xs text-slate-800 dark:text-white focus:outline-none focus:border-purple-500"
                                                       onKeyDown={(e) => e.key === 'Enter' && handleAddSubtask(task.id)}
                                                       autoFocus
                                                     />
-                                                    <button onClick={() => handleAddSubtask(task.id)} className="text-purple-400 hover:text-purple-300 text-xs font-medium">Salvar</button>
-                                                    <button onClick={() => setAddingSubtaskToTask(null)} className="text-gray-500 hover:text-gray-400"><X size={14} /></button>
+                                                    <button onClick={() => handleAddSubtask(task.id)} className="text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 text-xs font-medium">Salvar</button>
+                                                    <button onClick={() => setAddingSubtaskToTask(null)} className="text-slate-500 dark:text-gray-500 hover:text-slate-700 dark:hover:text-gray-400"><X size={14} /></button>
                                                   </div>
                                                 ) : (
                                                   <button 
                                                     onClick={() => setAddingSubtaskToTask(task.id)}
-                                                    className="text-xs text-gray-500 hover:text-purple-400 flex items-center gap-1 mt-2"
+                                                    className="text-xs text-slate-500 dark:text-gray-500 hover:text-purple-600 dark:hover:text-purple-400 flex items-center gap-1 mt-2"
                                                   >
                                                     <Plus size={12} /> Adicionar subtarefa
                                                   </button>
@@ -541,17 +543,17 @@ const TodoPage: React.FC<{ activePage: string }> = ({ activePage }) => {
                                             value={newTaskTitle}
                                             onChange={(e) => setNewTaskTitle(e.target.value)}
                                             placeholder="Título da tarefa..."
-                                            className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500"
+                                            className="flex-1 bg-white dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-purple-500"
                                             onKeyDown={(e) => e.key === 'Enter' && handleAddTask(projectId)}
                                             autoFocus
                                           />
                                           <button onClick={() => handleAddTask(projectId)} className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-lg text-sm font-medium">Salvar</button>
-                                          <button onClick={() => setAddingTaskToClient(null)} className="text-gray-500 hover:text-gray-400 p-2"><X size={18} /></button>
+                                          <button onClick={() => setAddingTaskToClient(null)} className="text-slate-500 dark:text-gray-500 hover:text-slate-700 dark:hover:text-gray-400 p-2"><X size={18} /></button>
                                         </div>
                                       ) : (
                                         <button 
                                           onClick={() => setAddingTaskToClient(projectId)}
-                                          className="text-sm text-gray-500 hover:text-purple-400 flex items-center gap-2 font-medium"
+                                          className="text-sm text-slate-500 dark:text-gray-500 hover:text-purple-600 dark:hover:text-purple-400 flex items-center gap-2 font-medium"
                                         >
                                           <Plus size={16} /> ADICIONAR ITEM
                                         </button>
@@ -572,7 +574,7 @@ const TodoPage: React.FC<{ activePage: string }> = ({ activePage }) => {
           })}
           
           {Object.keys(groupedTasks).length === 0 && Object.keys(noDateTasks).length === 0 && (
-            <div className="text-center py-12 text-gray-500">
+            <div className="text-center py-12 text-slate-500 dark:text-gray-500">
               Nenhuma tarefa encontrada para esta data.
             </div>
           )}
@@ -581,11 +583,11 @@ const TodoPage: React.FC<{ activePage: string }> = ({ activePage }) => {
             <div className="space-y-3 mt-8">
               <button 
                 onClick={() => setExpandedGroups(prev => ({ ...prev, 'Sem Data': prev['Sem Data'] !== false ? false : true }))}
-                className="flex items-center gap-2 text-lg font-semibold text-white/90 hover:text-white transition-colors"
+                className="flex items-center gap-2 text-lg font-semibold text-slate-800 dark:text-white/90 hover:text-slate-900 dark:hover:text-white transition-colors"
               >
                 {expandedGroups['Sem Data'] !== false ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
                 Sem Data
-                <span className="text-sm font-normal text-gray-500 bg-white/5 px-2 py-0.5 rounded-full">
+                <span className="text-sm font-normal text-slate-500 dark:text-gray-500 bg-slate-100 dark:bg-white/5 px-2 py-0.5 rounded-full border border-slate-200 dark:border-transparent">
                   {Object.keys(noDateTasks).length} clientes
                 </span>
               </button>
@@ -609,27 +611,27 @@ const TodoPage: React.FC<{ activePage: string }> = ({ activePage }) => {
                       const groupName = clientTasks[0]?.project_group || 'Sem Grupo';
 
                       return (
-                        <div key={`nodate-${projectId}`} className="bg-[#11111b] border border-white/5 rounded-xl overflow-hidden opacity-80">
+                        <div key={`nodate-${projectId}`} className="bg-white dark:bg-[#11111b] border border-slate-200 dark:border-white/5 shadow-sm dark:shadow-none rounded-xl overflow-hidden opacity-90 dark:opacity-80">
                           {/* Client Card Header */}
                           <div 
-                            className="flex items-center justify-between p-4 cursor-pointer hover:bg-white/[0.02] transition-colors"
+                            className="flex items-center justify-between p-4 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors"
                             onClick={() => setExpandedClients(prev => ({ ...prev, [`nodate-${projectId}`]: !isClientExpanded }))}
                           >
                             <div className="flex items-center gap-4">
-                              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-gray-500/20 to-gray-600/20 border border-gray-500/30 flex items-center justify-center text-gray-400 font-bold">
+                              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-500/20 dark:to-gray-600/20 border border-gray-200 dark:border-gray-500/30 flex items-center justify-center text-gray-500 dark:text-gray-400 font-bold">
                                 {projectName.substring(0, 2).toUpperCase()}
                               </div>
                               <div>
-                                <h3 className="text-white font-medium flex items-center gap-2">
+                                <h3 className="text-slate-800 dark:text-white font-medium flex items-center gap-2">
                                   {projectName}
-                                  <span className="text-xs px-2 py-0.5 rounded-full bg-white/5 text-gray-400 border border-white/10">
+                                  <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-gray-400 border border-slate-200 dark:border-white/10">
                                     {groupName}
                                   </span>
                                 </h3>
                                 <div className="flex items-center gap-3 mt-1">
-                                  <div className="text-xs text-gray-500">{completedCount}/{clientTasks.length} concluídas</div>
-                                  <div className="w-32 h-1.5 bg-white/5 rounded-full overflow-hidden">
-                                    <div className="h-full bg-gray-500 rounded-full" style={{ width: `${progress}%` }} />
+                                  <div className="text-xs text-slate-500 dark:text-gray-500">{completedCount}/{clientTasks.length} concluídas</div>
+                                  <div className="w-32 h-1.5 bg-slate-200 dark:bg-white/5 rounded-full overflow-hidden">
+                                    <div className="h-full bg-gray-400 dark:bg-gray-500 rounded-full" style={{ width: `${progress}%` }} />
                                   </div>
                                 </div>
                               </div>
@@ -650,7 +652,7 @@ const TodoPage: React.FC<{ activePage: string }> = ({ activePage }) => {
                                 initial={{ height: 0 }}
                                 animate={{ height: 'auto' }}
                                 exit={{ height: 0 }}
-                                className="border-t border-white/5 bg-black/20"
+                                className="border-t border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-black/20"
                               >
                                 <div className="p-2 space-y-1">
                                   {clientTasks.map(task => {
@@ -658,28 +660,28 @@ const TodoPage: React.FC<{ activePage: string }> = ({ activePage }) => {
                                     const isTaskExpanded = expandedTasks[task.id] || false;
                                     
                                     return (
-                                      <div key={task.id} className={`rounded-lg transition-colors ${isCompleted ? 'bg-green-500/5' : 'hover:bg-white/5'}`}>
+                                      <div key={task.id} className={`rounded-lg transition-colors ${isCompleted ? 'bg-green-500/5' : 'hover:bg-slate-100 dark:hover:bg-white/5'}`}>
                                         <div className="flex items-center gap-3 p-3">
                                           <button 
                                             onClick={() => toggleTaskStatus(task)}
-                                            className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${isCompleted ? 'bg-green-500 border-green-500 text-white' : 'border-gray-500 text-transparent hover:border-purple-500'}`}
+                                            className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${isCompleted ? 'bg-green-500 border-green-500 text-white' : 'border-slate-300 dark:border-gray-500 text-transparent hover:border-purple-500 dark:hover:border-purple-500 bg-white dark:bg-transparent'}`}
                                           >
                                             <Check size={14} />
                                           </button>
                                           
                                           <div className="flex-1 flex flex-col">
                                             <div className="flex items-center justify-between">
-                                              <span className={`text-sm ${isCompleted ? 'text-gray-500 line-through' : 'text-gray-200'}`}>
+                                              <span className={`text-sm ${isCompleted ? 'text-slate-400 dark:text-gray-500 line-through' : 'text-slate-700 dark:text-gray-200'}`}>
                                                 {task.title}
                                               </span>
                                               <div className="flex items-center gap-2">
-                                                <button className="text-xs text-gray-500 hover:text-purple-400 flex items-center gap-1 p-1">
+                                                <button className="text-xs text-slate-500 dark:text-gray-500 hover:text-purple-600 dark:hover:text-purple-400 flex items-center gap-1 p-1">
                                                   <ImageIcon size={14} /> Ver print da campanha
                                                 </button>
                                                 <select 
                                                   value={task.priority || 'Média'}
                                                   onChange={(e) => updateTaskField(task.id, 'priority', e.target.value)}
-                                                  className="text-xs bg-transparent border-none text-gray-500 focus:ring-0 cursor-pointer"
+                                                  className="text-xs bg-transparent border-none text-slate-500 dark:text-gray-500 focus:ring-0 cursor-pointer"
                                                 >
                                                   <option value="Baixa">Baixa</option>
                                                   <option value="Média">Média</option>
@@ -688,7 +690,7 @@ const TodoPage: React.FC<{ activePage: string }> = ({ activePage }) => {
                                                 </select>
                                                 <button 
                                                   onClick={() => setExpandedTasks(prev => ({ ...prev, [task.id]: !isTaskExpanded }))}
-                                                  className="text-gray-500 hover:text-white p-1"
+                                                  className="text-slate-500 dark:text-gray-500 hover:text-slate-800 dark:hover:text-white p-1"
                                                 >
                                                   <ListTodo size={16} />
                                                 </button>
@@ -710,11 +712,11 @@ const TodoPage: React.FC<{ activePage: string }> = ({ activePage }) => {
                                                 <div key={subtask.id} className="flex items-center gap-3 group">
                                                   <button 
                                                     onClick={() => toggleSubtaskStatus(subtask, task.id)}
-                                                    className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${subtask.completed ? 'bg-green-500 border-green-500 text-white' : 'border-gray-600 text-transparent group-hover:border-purple-500'}`}
+                                                    className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${subtask.completed ? 'bg-green-500 border-green-500 text-white' : 'border-slate-400 dark:border-gray-600 text-transparent group-hover:border-purple-500 dark:group-hover:border-purple-500 bg-white dark:bg-transparent'}`}
                                                   >
                                                     <Check size={12} />
                                                   </button>
-                                                  <span className={`text-xs ${subtask.completed ? 'text-gray-600 line-through' : 'text-gray-400'}`}>
+                                                  <span className={`text-xs ${subtask.completed ? 'text-slate-400 dark:text-gray-600 line-through' : 'text-slate-600 dark:text-gray-400'}`}>
                                                     {subtask.title}
                                                   </span>
                                                 </div>
@@ -727,17 +729,17 @@ const TodoPage: React.FC<{ activePage: string }> = ({ activePage }) => {
                                                     value={newSubtaskTitle}
                                                     onChange={(e) => setNewSubtaskTitle(e.target.value)}
                                                     placeholder="Título da subtarefa..."
-                                                    className="flex-1 bg-white/5 border border-white/10 rounded px-3 py-1 text-xs text-white focus:outline-none focus:border-purple-500"
+                                                    className="flex-1 bg-white dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded px-3 py-1 text-xs text-slate-800 dark:text-white focus:outline-none focus:border-purple-500"
                                                     onKeyDown={(e) => e.key === 'Enter' && handleAddSubtask(task.id)}
                                                     autoFocus
                                                   />
-                                                  <button onClick={() => handleAddSubtask(task.id)} className="text-purple-400 hover:text-purple-300 text-xs font-medium">Salvar</button>
-                                                  <button onClick={() => setAddingSubtaskToTask(null)} className="text-gray-500 hover:text-gray-400"><X size={14} /></button>
+                                                  <button onClick={() => handleAddSubtask(task.id)} className="text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 text-xs font-medium">Salvar</button>
+                                                  <button onClick={() => setAddingSubtaskToTask(null)} className="text-slate-500 dark:text-gray-500 hover:text-slate-700 dark:hover:text-gray-400"><X size={14} /></button>
                                                 </div>
                                               ) : (
                                                 <button 
                                                   onClick={() => setAddingSubtaskToTask(task.id)}
-                                                  className="text-xs text-gray-500 hover:text-purple-400 flex items-center gap-1 mt-2"
+                                                  className="text-xs text-slate-500 dark:text-gray-500 hover:text-purple-600 dark:hover:text-purple-400 flex items-center gap-1 mt-2"
                                                 >
                                                   <Plus size={12} /> Adicionar subtarefa
                                                 </button>
@@ -758,17 +760,17 @@ const TodoPage: React.FC<{ activePage: string }> = ({ activePage }) => {
                                           value={newTaskTitle}
                                           onChange={(e) => setNewTaskTitle(e.target.value)}
                                           placeholder="Título da tarefa..."
-                                          className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500"
+                                          className="flex-1 bg-white dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-purple-500"
                                           onKeyDown={(e) => e.key === 'Enter' && handleAddTask(projectId)}
                                           autoFocus
                                         />
                                         <button onClick={() => handleAddTask(projectId)} className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-lg text-sm font-medium">Salvar</button>
-                                        <button onClick={() => setAddingTaskToClient(null)} className="text-gray-500 hover:text-gray-400 p-2"><X size={18} /></button>
+                                        <button onClick={() => setAddingTaskToClient(null)} className="text-slate-500 dark:text-gray-500 hover:text-slate-700 dark:hover:text-gray-400 p-2"><X size={18} /></button>
                                       </div>
                                     ) : (
                                       <button 
                                         onClick={() => setAddingTaskToClient(`nodate-${projectId}`)}
-                                        className="text-sm text-gray-500 hover:text-purple-400 flex items-center gap-2 font-medium"
+                                        className="text-sm text-slate-500 dark:text-gray-500 hover:text-purple-600 dark:hover:text-purple-400 flex items-center gap-2 font-medium"
                                       >
                                         <Plus size={16} /> ADICIONAR ITEM
                                       </button>
@@ -817,16 +819,29 @@ const TodoPage: React.FC<{ activePage: string }> = ({ activePage }) => {
         <div className="space-y-5">
           <div>
             <label className={designSystem.input.label}>Modelo de Tarefas</label>
-            <select 
-              value={batchTemplateId}
-              onChange={(e) => setBatchTemplateId(e.target.value)}
-              className={designSystem.input.field}
-            >
-              <option value="">Selecione um modelo...</option>
-              {templates.map(t => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
-            </select>
+            <div className="flex gap-2">
+              <select 
+                value={batchTemplateId}
+                onChange={(e) => setBatchTemplateId(e.target.value)}
+                className={`flex-1 ${designSystem.input.field}`}
+              >
+                <option value="">Selecione um modelo...</option>
+                {templates.map(t => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsBatchModalOpen(false);
+                  if (onPageChange) onPageChange('task-templates');
+                }}
+                className="flex items-center justify-center min-w-[42px] bg-violet-600 hover:bg-violet-700 text-white rounded-xl transition-colors shrink-0 shadow-lg shadow-violet-500/20 border border-violet-500"
+                title="Criar novo modelo"
+              >
+                <Plus size={20} />
+              </button>
+            </div>
           </div>
           
           <div>

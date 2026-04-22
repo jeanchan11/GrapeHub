@@ -23,11 +23,12 @@ interface Props {
   savePermissions: (id: string) => Promise<void>;
   discardChanges: (id: string) => void;
   refreshMenu: () => Promise<void>;
+  changeName: (id: string, newName: string) => void;
 }
 
 export const UserPermissionsModal: React.FC<Props> = ({
   isOpen, onClose, user, menu, roles, currentData, isSaving,
-  changeRole, changeSquad, togglePage, toggleSection, toggleSubSession, toggleMenuSection, savePermissions, discardChanges, refreshMenu
+  changeRole, changeName, changeSquad, togglePage, toggleSection, toggleSubSession, toggleMenuSection, savePermissions, discardChanges, refreshMenu
 }) => {
   console.log('UserPermissionsModal rendering, isOpen:', isOpen);
   const [activeTab, setActiveTab] = useState<'perfil' | 'permissoes'>('perfil');
@@ -92,7 +93,13 @@ export const UserPermissionsModal: React.FC<Props> = ({
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className={designSystem.input.label}>Nome *</label>
-                  <input type="text" defaultValue={user.name || ''} className={designSystem.input.field} />
+                  <input
+                    type="text"
+                    value={(currentData as any).name ?? user.name ?? ''}
+                    onChange={(e) => changeName(user.id, e.target.value)}
+                    placeholder="Nome completo..."
+                    className={designSystem.input.field}
+                  />
                 </div>
                 <div>
                   <label className={designSystem.input.label}>Email</label>
