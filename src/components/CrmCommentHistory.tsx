@@ -2,8 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Plus, CheckCircle2, Image as ImageIcon, X, RefreshCw, Send } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../contexts/AuthContext';
-import { auth, storage } from '../firebase';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 export const COMMENT_TYPES = [
   { id: 'Observação', label: 'Observação', color: 'bg-slate-500' },
@@ -80,18 +78,26 @@ const CrmCommentHistory: React.FC<CrmCommentHistoryProps> = ({ clientId }) => {
     
     setIsSubmittingComment(true);
     try {
-      // Upload images separately — if Firebase Storage fails, we still save the note
-      const imageUrls: string[] = [];
+      // Convert images to base64 — works in any environment, no external storage needed
+      const imageDataUrls: string[] = [];
       for (const image of commentImages) {
         try {
-          const storageRef = ref(storage, `users/${auth.currentUser?.uid}/crm_comments/${Date.now()}_${image.name}`);
-          await uploadBytes(storageRef, image);
-          const downloadURL = await getDownloadURL(storageRef);
-          imageUrls.push(downloadURL);
-        } catch (uploadErr) {
-          console.error('Erro ao fazer upload de imagem:', uploadErr);
-          // Continue saving the note without this image
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target?.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(image);
+          });
+          imageDataUrls.push(dataUrl);
+        } catch (readErr) {
+          console.error('Erro ao ler imagem:', readErr);
         }
+      }
+
+      // Don't save if no text and all images failed to read
+      if (!newComment.trim() && imageDataUrls.length === 0) {
+        alert('Não foi possível carregar as imagens. Tente novamente.');
+        return;
       }
 
       const res = await fetch('/api/crm-comments', {
@@ -102,7 +108,7 @@ const CrmCommentHistory: React.FC<CrmCommentHistoryProps> = ({ clientId }) => {
           user_id: user.email,
           type: commentType,
           content: newComment,
-          images: imageUrls
+          images: imageDataUrls
         })
       });
 
