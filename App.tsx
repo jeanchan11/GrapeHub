@@ -27,6 +27,9 @@ import MarketingDashboard from './src/pages/MarketingDashboard';
 import MarketingAcoes from './src/pages/MarketingAcoes';
 import DashboardOperacional from './src/pages/DashboardOperacional';
 import ParceirosSquad from './src/pages/ParceirosSquad';
+import TodoStaff from './src/pages/TodoStaff';
+import ContratacaoPage from './src/pages/ContratacaoPage';
+import CandidateApplicationForm from './src/pages/CandidateApplicationForm';
 import Login from './src/components/LoginView';
 import AdminPanel from './src/components/AdminPanel';
 import LoadingSpinner from './src/components/LoadingSpinner';
@@ -229,6 +232,10 @@ const AppContent: React.FC = () => {
         return <MarketingAcoes key={activePage} activePage={activePage} />;
       case 'dashboard-operacional':
         return <DashboardOperacional />;
+      case 'todo-staff':
+        return <TodoStaff />;
+      case 'contratacao':
+        return <ContratacaoPage />;
       default:
         return <GestorCalculator />;
     }
@@ -280,6 +287,10 @@ const AppContent: React.FC = () => {
 };
 
 const App: React.FC = () => {
+  if (window.location.search.includes('?apply=')) {
+    return <CandidateApplicationForm />;
+  }
+
   return (
     <AuthProvider>
       <MenuProvider>

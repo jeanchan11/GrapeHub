@@ -1,0 +1,133 @@
+
+> grapehub@0.0.0 lint
+> tsc --noEmit
+
+App.tsx(231,32): error TS2322: Type '{ key: any; activePage: any; }' is not assignable to type 'Props'.
+  Property 'key' does not exist on type 'Props'.
+server.ts(4844,52): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '(req: Request, res: Response) => Promise<any>' is not assignable to parameter of type 'Application<Record<string, any>>'.
+      Type '(req: Request, res: Response) => Promise<any>' is missing the following properties from type 'Application<Record<string, any>>': init, defaultConfiguration, engine, set, and 63 more.
+server.ts(4845,24): error TS2339: Property 'params' does not exist on type 'Request'.
+server.ts(4846,13): error TS2339: Property 'moved_by' does not exist on type 'ReadableStream<Uint8Array<ArrayBufferLike>> | {}'.
+server.ts(4853,44): error TS2349: This expression is not callable.
+  Type 'Number' has no call signatures.
+server.ts(4895,16): error TS2554: Expected 0 arguments, but got 1.
+server.ts(4898,11): error TS2349: This expression is not callable.
+  Type 'Number' has no call signatures.
+server.ts(5066,47): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '(req: Request, res: Response) => Promise<void>' is not assignable to parameter of type 'Application<Record<string, any>>'.
+      Type '(req: Request, res: Response) => Promise<void>' is missing the following properties from type 'Application<Record<string, any>>': init, defaultConfiguration, engine, set, and 63 more.
+server.ts(5086,16): error TS2554: Expected 0 arguments, but got 1.
+server.ts(5088,11): error TS2349: This expression is not callable.
+  Type 'Number' has no call signatures.
+server.ts(5092,43): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '(req: Request, res: Response) => Promise<void>' is not assignable to parameter of type 'Application<Record<string, any>>'.
+      Type '(req: Request, res: Response) => Promise<void>' is missing the following properties from type 'Application<Record<string, any>>': init, defaultConfiguration, engine, set, and 63 more.
+server.ts(5094,33): error TS2339: Property 'query' does not exist on type 'Request'.
+server.ts(5110,16): error TS2554: Expected 0 arguments, but got 1.
+server.ts(5112,11): error TS2349: This expression is not callable.
+  Type 'Number' has no call signatures.
+server.ts(5116,44): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '(req: Request, res: Response) => Promise<void>' is not assignable to parameter of type 'Application<Record<string, any>>'.
+      Type '(req: Request, res: Response) => Promise<void>' is missing the following properties from type 'Application<Record<string, any>>': init, defaultConfiguration, engine, set, and 63 more.
+server.ts(5118,15): error TS2339: Property 'kanban_id' does not exist on type 'ReadableStream<Uint8Array<ArrayBufferLike>>'.
+server.ts(5118,26): error TS2339: Property 'name' does not exist on type 'ReadableStream<Uint8Array<ArrayBufferLike>>'.
+server.ts(5118,32): error TS2339: Property 'description' does not exist on type 'ReadableStream<Uint8Array<ArrayBufferLike>>'.
+server.ts(5118,45): error TS2339: Property 'skip_weekends' does not exist on type 'ReadableStream<Uint8Array<ArrayBufferLike>>'.
+server.ts(5118,60): error TS2339: Property 'steps' does not exist on type 'ReadableStream<Uint8Array<ArrayBufferLike>>'.
+server.ts(5134,16): error TS2554: Expected 0 arguments, but got 1.
+server.ts(5136,11): error TS2349: This expression is not callable.
+  Type 'Number' has no call signatures.
+server.ts(5140,47): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '(req: Request, res: Response) => Promise<void>' is not assignable to parameter of type 'Application<Record<string, any>>'.
+      Type '(req: Request, res: Response) => Promise<void>' is missing the following properties from type 'Application<Record<string, any>>': init, defaultConfiguration, engine, set, and 63 more.
+server.ts(5142,26): error TS2339: Property 'params' does not exist on type 'Request'.
+server.ts(5143,15): error TS2339: Property 'name' does not exist on type 'ReadableStream<Uint8Array<ArrayBufferLike>>'.
+server.ts(5143,21): error TS2339: Property 'description' does not exist on type 'ReadableStream<Uint8Array<ArrayBufferLike>>'.
+server.ts(5143,34): error TS2339: Property 'skip_weekends' does not exist on type 'ReadableStream<Uint8Array<ArrayBufferLike>>'.
+server.ts(5143,49): error TS2339: Property 'steps' does not exist on type 'ReadableStream<Uint8Array<ArrayBufferLike>>'.
+server.ts(5159,16): error TS2554: Expected 0 arguments, but got 1.
+server.ts(5161,11): error TS2349: This expression is not callable.
+  Type 'Number' has no call signatures.
+server.ts(5165,50): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '(req: Request, res: Response) => Promise<void>' is not assignable to parameter of type 'Application<Record<string, any>>'.
+      Type '(req: Request, res: Response) => Promise<void>' is missing the following properties from type 'Application<Record<string, any>>': init, defaultConfiguration, engine, set, and 63 more.
+server.ts(5167,72): error TS2339: Property 'params' does not exist on type 'Request'.
+server.ts(5168,16): error TS2554: Expected 0 arguments, but got 1.
+server.ts(5170,11): error TS2349: This expression is not callable.
+  Type 'Number' has no call signatures.
+server.ts(5179,36): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '(req: Request, res: Response) => Promise<void>' is not assignable to parameter of type 'Application<Record<string, any>>'.
+      Type '(req: Request, res: Response) => Promise<void>' is missing the following properties from type 'Application<Record<string, any>>': init, defaultConfiguration, engine, set, and 63 more.
+server.ts(5181,32): error TS2339: Property 'query' does not exist on type 'Request'.
+server.ts(5182,33): error TS2339: Property 'query' does not exist on type 'Request'.
+server.ts(5192,16): error TS2554: Expected 0 arguments, but got 1.
+server.ts(5194,11): error TS2349: This expression is not callable.
+  Type 'Number' has no call signatures.
+server.ts(5198,31): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '(req: Request, res: Response) => Promise<void>' is not assignable to parameter of type 'Application<Record<string, any>>'.
+      Type '(req: Request, res: Response) => Promise<void>' is missing the following properties from type 'Application<Record<string, any>>': init, defaultConfiguration, engine, set, and 63 more.
+server.ts(5208,16): error TS2554: Expected 0 arguments, but got 1.
+server.ts(5211,11): error TS2349: This expression is not callable.
+  Type 'Number' has no call signatures.
+server.ts(5216,32): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '(req: Request, res: Response) => Promise<void>' is not assignable to parameter of type 'Application<Record<string, any>>'.
+      Type '(req: Request, res: Response) => Promise<void>' is missing the following properties from type 'Application<Record<string, any>>': init, defaultConfiguration, engine, set, and 63 more.
+server.ts(5218,15): error TS2339: Property 'name' does not exist on type 'ReadableStream<Uint8Array<ArrayBufferLike>>'.
+server.ts(5218,21): error TS2339: Property 'description' does not exist on type 'ReadableStream<Uint8Array<ArrayBufferLike>>'.
+server.ts(5218,34): error TS2339: Property 'steps' does not exist on type 'ReadableStream<Uint8Array<ArrayBufferLike>>'.
+server.ts(5233,16): error TS2554: Expected 0 arguments, but got 1.
+server.ts(5236,11): error TS2349: This expression is not callable.
+  Type 'Number' has no call signatures.
+server.ts(5241,35): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '(req: Request, res: Response) => Promise<void>' is not assignable to parameter of type 'Application<Record<string, any>>'.
+      Type '(req: Request, res: Response) => Promise<void>' is missing the following properties from type 'Application<Record<string, any>>': init, defaultConfiguration, engine, set, and 63 more.
+server.ts(5243,26): error TS2339: Property 'params' does not exist on type 'Request'.
+server.ts(5244,15): error TS2339: Property 'name' does not exist on type 'ReadableStream<Uint8Array<ArrayBufferLike>>'.
+server.ts(5244,21): error TS2339: Property 'description' does not exist on type 'ReadableStream<Uint8Array<ArrayBufferLike>>'.
+server.ts(5244,34): error TS2339: Property 'steps' does not exist on type 'ReadableStream<Uint8Array<ArrayBufferLike>>'.
+server.ts(5260,16): error TS2554: Expected 0 arguments, but got 1.
+server.ts(5263,11): error TS2349: This expression is not callable.
+  Type 'Number' has no call signatures.
+server.ts(5268,44): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '(req: Request, res: Response) => Promise<void>' is not assignable to parameter of type 'Application<Record<string, any>>'.
+      Type '(req: Request, res: Response) => Promise<void>' is missing the following properties from type 'Application<Record<string, any>>': init, defaultConfiguration, engine, set, and 63 more.
+server.ts(5270,26): error TS2339: Property 'params' does not exist on type 'Request'.
+server.ts(5275,16): error TS2554: Expected 0 arguments, but got 1.
+server.ts(5277,11): error TS2349: This expression is not callable.
+  Type 'Number' has no call signatures.
+server.ts(5282,38): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '(req: Request, res: Response) => Promise<void>' is not assignable to parameter of type 'Application<Record<string, any>>'.
+      Type '(req: Request, res: Response) => Promise<void>' is missing the following properties from type 'Application<Record<string, any>>': init, defaultConfiguration, engine, set, and 63 more.
+server.ts(5284,70): error TS2339: Property 'params' does not exist on type 'Request'.
+server.ts(5285,16): error TS2554: Expected 0 arguments, but got 1.
+server.ts(5287,11): error TS2349: This expression is not callable.
+  Type 'Number' has no call signatures.
+src/pages/Atividades.tsx(600,31): error TS2322: Type '{ key: number; activity: Activity; onToggle: any; }' is not assignable to type '{ activity: Activity; onToggle: (id: number, completed: boolean) => void; onDelete: (id: number) => void; onEdit: (activity: Activity) => void; }'.
+  Property 'key' does not exist on type '{ activity: Activity; onToggle: (id: number, completed: boolean) => void; onDelete: (id: number) => void; onEdit: (activity: Activity) => void; }'.
+src/pages/Atividades.tsx(848,23): error TS2322: Type '{ key: number; activity: Activity; onToggle: (id: number, completed: boolean) => Promise<void>; onDelete: (id: number) => Promise<void>; onEdit: (activity: Activity) => void; }' is not assignable to type '{ activity: Activity; onToggle: (id: number, completed: boolean) => void; onDelete: (id: number) => void; onEdit: (activity: Activity) => void; }'.
+  Property 'key' does not exist on type '{ activity: Activity; onToggle: (id: number, completed: boolean) => void; onDelete: (id: number) => void; onEdit: (activity: Activity) => void; }'.
+src/pages/CrmComercial.tsx(4036,32): error TS2304: Cannot find name 'setTestResult'.
+src/pages/MarketingAcoes.tsx(641,44): error TS2339: Property 'kind' does not exist on type 'unknown'.
+src/pages/MarketingAcoes.tsx(641,65): error TS2339: Property 'type' does not exist on type 'unknown'.
+src/pages/MarketingAcoes.tsx(644,41): error TS2339: Property 'getAsFile' does not exist on type 'unknown'.
+src/pages/MarketingDashboard.tsx(154,12): error TS2365: Operator '>' cannot be applied to types 'string' and 'number'.
+src/pages/MarketingDashboard.tsx(154,30): error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.
+src/pages/TodoStaff.tsx(399,39): error TS2322: Type '{ key: any; label: any; onRemove: () => any; }' is not assignable to type '{ label: string; onRemove?: () => void; }'.
+  Property 'key' does not exist on type '{ label: string; onRemove?: () => void; }'.
+src/pages/TodoStaff.tsx(807,78): error TS2322: Type '{ key: any; label: any; onRemove: () => any; }' is not assignable to type '{ label: string; onRemove?: () => void; }'.
+  Property 'key' does not exist on type '{ label: string; onRemove?: () => void; }'.
+src/pages/TodoStaff.tsx(899,39): error TS2322: Type '{ key: any; label: any; onRemove: () => any; }' is not assignable to type '{ label: string; onRemove?: () => void; }'.
+  Property 'key' does not exist on type '{ label: string; onRemove?: () => void; }'.

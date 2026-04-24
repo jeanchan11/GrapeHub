@@ -1008,6 +1008,98 @@ async function startServer() {
     `);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_project_comments_project_id ON project_comments(project_id)`);
 
+    // ── Hiring / Contratação tables ──────────────────────────────────────────
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS hiring_folders (
+        id SERIAL PRIMARY KEY,
+        nome TEXT NOT NULL,
+        cargo TEXT,
+        cols JSONB NOT NULL DEFAULT '[]',
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS hiring_candidates (
+        id SERIAL PRIMARY KEY,
+        folder_id INTEGER REFERENCES hiring_folders(id) ON DELETE CASCADE,
+        nome TEXT NOT NULL,
+        contato TEXT,
+        acao TEXT,
+        data_acao DATE,
+        col TEXT NOT NULL,
+        form_data JSONB DEFAULT '{}'::jsonb,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_hiring_candidates_folder ON hiring_candidates(folder_id)`);
+
+    // Migration
+    await pool.query(`
+      ALTER TABLE hiring_candidates ADD COLUMN IF NOT EXISTS form_data JSONB DEFAULT '{}'::jsonb;
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS hiring_candidate_notes (
+        id SERIAL PRIMARY KEY,
+        candidate_id INTEGER REFERENCES hiring_candidates(id) ON DELETE CASCADE,
+        content TEXT NOT NULL,
+        user_name TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_hiring_candidate_notes_cand ON hiring_candidate_notes(candidate_id)`);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS hiring_candidate_history (
+        id SERIAL PRIMARY KEY,
+        candidate_id INTEGER REFERENCES hiring_candidates(id) ON DELETE CASCADE,
+        action TEXT NOT NULL,
+        details TEXT,
+        user_name TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_hiring_candidate_history_cand ON hiring_candidate_history(candidate_id)`);
+
+    // Hiring documents table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS hiring_documents (
+        id SERIAL PRIMARY KEY,
+        title TEXT NOT NULL DEFAULT 'Sem título',
+        content TEXT DEFAULT '',
+        section TEXT DEFAULT '',
+        created_by TEXT,
+        updated_at TIMESTAMP DEFAULT NOW(),
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await pool.query(`ALTER TABLE hiring_documents ADD COLUMN IF NOT EXISTS section TEXT DEFAULT '';`);
+
+    // Hiring contracts table (for contract templates / attachments)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS hiring_contracts (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT DEFAULT '',
+        file_name TEXT NOT NULL,
+        file_data TEXT NOT NULL,
+        file_type TEXT NOT NULL,
+        file_size INTEGER NOT NULL DEFAULT 0,
+        uploaded_by TEXT,
+        updated_at TIMESTAMP DEFAULT NOW(),
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+
+    // Inject Contratação page into sidebar (OPERACIONAL section)
+    try {
+      await pool.query(`
+        INSERT INTO menu_pages (id, section_id, label, icon, template, order_index)
+        VALUES ('contratacao', 'operacional', 'Contratação', 'Users', 'contratacao', 10)
+        ON CONFLICT (id) DO NOTHING;
+      `);
+    } catch (e: any) { console.log('Skipping contratacao menu injection:', e.message); }
+
   } catch (err) {
     console.error("Error initializing database tables:", err);
   }
@@ -5721,9 +5813,6 @@ app.get("/api/todos", async (req, res) => {
           ...(bodyStr ? { 'Content-Length': Buffer.byteLength(bodyStr) } : {})
         }
       };
-      const cat = curr.grapehub_category
-        ? (CATEGORIES.find(c => c.name === curr.grapehub_category) || { name: curr.grapehub_category, icon: '🏷️' })
-        : categorizeExpense(curr.description);
       const req = https.request(options, (resp) => {
         let rawData = '';
         resp.on('data', (chunk) => { rawData += chunk; });
@@ -7259,6 +7348,325 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
     } catch (err: any) {
       console.error('[AI Chat] Erro:', err?.message || err);
       res.status(500).json({ error: err?.message || 'Erro interno ao processar mensagem de IA.' });
+    }
+  });
+
+  // ── Hiring / Contratação API ────────────────────────────────────────────────
+
+  // GET all folders
+  app.get("/api/hiring/folders", async (_req, res) => {
+    try {
+      const { rows } = await pool.query("SELECT * FROM hiring_folders ORDER BY created_at DESC");
+      res.json(rows);
+    } catch (err: any) {
+      console.error("[hiring] GET folders error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST create folder
+  app.post("/api/hiring/folders", async (req, res) => {
+    try {
+      const { nome, cargo, cols } = req.body;
+      const { rows } = await pool.query(
+        "INSERT INTO hiring_folders (nome, cargo, cols) VALUES ($1, $2, $3) RETURNING *",
+        [nome, cargo || null, JSON.stringify(cols || [])]
+      );
+      res.json(rows[0]);
+    } catch (err: any) {
+      console.error("[hiring] POST folder error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // PUT update folder
+  app.put("/api/hiring/folders/:id", async (req, res) => {
+    try {
+      const { nome, cargo, cols } = req.body;
+      const { rows } = await pool.query(
+        "UPDATE hiring_folders SET nome = $1, cargo = $2, cols = $3 WHERE id = $4 RETURNING *",
+        [nome, cargo || null, JSON.stringify(cols || []), req.params.id]
+      );
+      if (rows.length === 0) return res.status(404).json({ error: "Folder not found" });
+      res.json(rows[0]);
+    } catch (err: any) {
+      console.error("[hiring] PUT folder error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // DELETE folder (cascade deletes candidates)
+  app.delete("/api/hiring/folders/:id", async (req, res) => {
+    try {
+      await pool.query("DELETE FROM hiring_folders WHERE id = $1", [req.params.id]);
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error("[hiring] DELETE folder error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET candidates for a folder
+  app.get("/api/hiring/candidates", async (req, res) => {
+    try {
+      const folderId = req.query.folder_id;
+      if (!folderId) return res.status(400).json({ error: "folder_id required" });
+      const { rows } = await pool.query(
+        "SELECT * FROM hiring_candidates WHERE folder_id = $1 ORDER BY created_at ASC",
+        [folderId]
+      );
+      res.json(rows);
+    } catch (err: any) {
+      console.error("[hiring] GET candidates error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST create candidate
+  app.post("/api/hiring/candidates", async (req, res) => {
+    try {
+      const { folder_id, nome, contato, acao, data_acao, col } = req.body;
+      const { rows } = await pool.query(
+        "INSERT INTO hiring_candidates (folder_id, nome, contato, acao, data_acao, col, form_data) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *",
+        [folder_id, nome, contato || null, acao || null, data_acao || null, col, req.body.form_data || '{}']
+      );
+      res.json(rows[0]);
+    } catch (err: any) {
+      console.error("[hiring] POST candidate error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Public candidate application routes (no auth required)
+  app.get("/api/hiring/public/folders/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { rows } = await pool.query("SELECT id, nome, cargo, cols FROM hiring_folders WHERE id = $1", [id]);
+      if (rows.length === 0) return res.status(404).json({ error: "Vaga não encontrada" });
+      res.json(rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/hiring/public/apply", async (req, res) => {
+    try {
+      const { folder_id, nome, contato, form_data } = req.body;
+      // Get the default column for this folder (the first column)
+      const folderRes = await pool.query("SELECT cols FROM hiring_folders WHERE id = $1", [folder_id]);
+      if (folderRes.rows.length === 0) return res.status(404).json({ error: "Folder not found" });
+      
+      const cols = folderRes.rows[0].cols || [];
+      const col = cols.length > 0 ? cols[0] : 'Inscritos'; // Default fallback
+
+      const { rows } = await pool.query(
+        "INSERT INTO hiring_candidates (folder_id, nome, contato, col, form_data) VALUES ($1, $2, $3, $4, $5) RETURNING *",
+        [folder_id, nome, contato, col, form_data]
+      );
+      res.json(rows[0]);
+    } catch (err: any) {
+      console.error("[hiring] POST public apply error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // PUT update candidate (also used for column moves via drag & drop)
+  app.put("/api/hiring/candidates/:id", async (req, res) => {
+    try {
+      const { nome, contato, acao, data_acao, col } = req.body;
+      const { rows } = await pool.query(
+        "UPDATE hiring_candidates SET nome = COALESCE($1, nome), contato = COALESCE($2, contato), acao = $3, data_acao = $4, col = COALESCE($5, col) WHERE id = $6 RETURNING *",
+        [nome, contato, acao !== undefined ? acao : null, data_acao !== undefined ? data_acao : null, col, req.params.id]
+      );
+      if (rows.length === 0) return res.status(404).json({ error: "Candidate not found" });
+      res.json(rows[0]);
+    } catch (err: any) {
+      console.error("[hiring] PUT candidate error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // DELETE candidate
+  app.delete("/api/hiring/candidates/:id", async (req, res) => {
+    try {
+      await pool.query("DELETE FROM hiring_candidates WHERE id = $1", [req.params.id]);
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error("[hiring] DELETE candidate error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Hiring Documents CRUD ───────────────────────────────────────────────────
+  app.get("/api/hiring/documents", async (req, res) => {
+    try {
+      const { rows } = await pool.query("SELECT * FROM hiring_documents ORDER BY updated_at DESC");
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/hiring/documents", async (req, res) => {
+    try {
+      const { title, content, created_by, section } = req.body;
+      const { rows } = await pool.query(
+        "INSERT INTO hiring_documents (title, content, created_by, section) VALUES ($1, $2, $3, $4) RETURNING *",
+        [title || 'Sem título', content || '', created_by || 'Sistema', section || '']
+      );
+      res.json(rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put("/api/hiring/documents/:id", async (req, res) => {
+    try {
+      const { title, content, section } = req.body;
+      const { rows } = await pool.query(
+        "UPDATE hiring_documents SET title = COALESCE($1, title), content = COALESCE($2, content), section = COALESCE($3, section), updated_at = NOW() WHERE id = $4 RETURNING *",
+        [title, content, section, req.params.id]
+      );
+      if (rows.length === 0) return res.status(404).json({ error: "Document not found" });
+      res.json(rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/hiring/documents/:id", async (req, res) => {
+    try {
+      await pool.query("DELETE FROM hiring_documents WHERE id = $1", [req.params.id]);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Hiring Contracts CRUD ─────────────────────────────────────────────────
+
+  app.get("/api/hiring/contracts", async (_req, res) => {
+    try {
+      const { rows } = await pool.query(
+        "SELECT id, name, description, file_name, file_type, file_size, uploaded_by, updated_at, created_at FROM hiring_contracts ORDER BY created_at DESC"
+      );
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/hiring/contracts", express.json({ limit: '50mb' }), async (req, res) => {
+    try {
+      const { name, description, file_name, file_data, file_type, file_size, uploaded_by } = req.body;
+      if (!file_data || !file_name) return res.status(400).json({ error: "file_data and file_name are required" });
+      const { rows } = await pool.query(
+        "INSERT INTO hiring_contracts (name, description, file_name, file_data, file_type, file_size, uploaded_by) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, name, description, file_name, file_type, file_size, uploaded_by, updated_at, created_at",
+        [name || file_name, description || '', file_name, file_data, file_type || 'application/octet-stream', file_size || 0, uploaded_by || 'Sistema']
+      );
+      res.json(rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/hiring/contracts/:id/download", async (req, res) => {
+    try {
+      const { rows } = await pool.query("SELECT file_name, file_data, file_type FROM hiring_contracts WHERE id = $1", [req.params.id]);
+      if (rows.length === 0) return res.status(404).json({ error: "Contract not found" });
+      const { file_name, file_data, file_type } = rows[0];
+      const buffer = Buffer.from(file_data, 'base64');
+      res.setHeader('Content-Type', file_type);
+      res.setHeader('Content-Disposition', `attachment; filename="${file_name}"`);
+      res.send(buffer);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put("/api/hiring/contracts/:id", async (req, res) => {
+    try {
+      const { name, description } = req.body;
+      const { rows } = await pool.query(
+        "UPDATE hiring_contracts SET name = COALESCE($1, name), description = COALESCE($2, description), updated_at = NOW() WHERE id = $3 RETURNING id, name, description, file_name, file_type, file_size, uploaded_by, updated_at, created_at",
+        [name, description, req.params.id]
+      );
+      if (rows.length === 0) return res.status(404).json({ error: "Contract not found" });
+      res.json(rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/hiring/contracts/:id", async (req, res) => {
+    try {
+      await pool.query("DELETE FROM hiring_contracts WHERE id = $1", [req.params.id]);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Hiring Candidate Notes ──────────────────────────────────────────────────
+
+  app.get("/api/hiring/candidates/:id/notes", async (req, res) => {
+    try {
+      const { rows } = await pool.query(
+        "SELECT * FROM hiring_candidate_notes WHERE candidate_id = $1 ORDER BY created_at DESC",
+        [req.params.id]
+      );
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/hiring/candidates/:id/notes", async (req, res) => {
+    try {
+      const { content, user_name } = req.body;
+      const { rows } = await pool.query(
+        "INSERT INTO hiring_candidate_notes (candidate_id, content, user_name) VALUES ($1, $2, $3) RETURNING *",
+        [req.params.id, content, user_name || 'Sistema']
+      );
+      res.json(rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/hiring/candidates/notes/:noteId", async (req, res) => {
+    try {
+      await pool.query("DELETE FROM hiring_candidate_notes WHERE id = $1", [req.params.noteId]);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Hiring Candidate History ────────────────────────────────────────────────
+
+  app.get("/api/hiring/candidates/:id/history", async (req, res) => {
+    try {
+      const { rows } = await pool.query(
+        "SELECT * FROM hiring_candidate_history WHERE candidate_id = $1 ORDER BY created_at DESC",
+        [req.params.id]
+      );
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/hiring/candidates/:id/history", async (req, res) => {
+    try {
+      const { action, details, user_name } = req.body;
+      const { rows } = await pool.query(
+        "INSERT INTO hiring_candidate_history (candidate_id, action, details, user_name) VALUES ($1, $2, $3, $4) RETURNING *",
+        [req.params.id, action, details, user_name || 'Sistema']
+      );
+      res.json(rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   });
 
