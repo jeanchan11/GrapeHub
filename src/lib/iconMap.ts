@@ -23,6 +23,7 @@ import {
   CalendarDays, CalendarCheck, CalendarRange, CalendarClock, Clock, Timer, AlarmClock, Hourglass,
   // Commerce & Finance
   ShoppingBag, Receipt, Banknote, Coins, Wallet, PiggyBank, BadgeDollarSign, TrendingUpIcon, CircleDollarSign,
+  HandCoins, WalletCards, BadgeCent, BadgePercent, ArrowDownLeft, ArrowUpRight, Vault, Fuel, ReceiptText, FileSpreadsheet, FileClock, FileCheck, FileWarning, FileMinus, FilePlus2, Scale, Gavel, BriefcaseBusiness, CirclePercent, ChartNoAxesCombined, ChartPie,
   // Security
   ShieldCheck, ShieldAlert, ShieldX, Key, KeyRound, Fingerprint, Eye, EyeOff,
   // Technology
@@ -70,6 +71,7 @@ export const iconMap: Record<string, any> = {
   CalendarDays, CalendarCheck, CalendarRange, CalendarClock, Clock, Timer, AlarmClock, Hourglass,
   // Commerce & Finance
   ShoppingBag, Receipt, Banknote, Coins, Wallet, PiggyBank, BadgeDollarSign, TrendingUpIcon, CircleDollarSign,
+  HandCoins, WalletCards, BadgeCent, BadgePercent, ArrowDownLeft, ArrowUpRight, Vault, Fuel, ReceiptText, FileSpreadsheet, FileClock, FileCheck, FileWarning, FileMinus, FilePlus2, Scale, Gavel, BriefcaseBusiness, CirclePercent, ChartNoAxesCombined, ChartPie,
   // Security
   ShieldCheck, ShieldAlert, ShieldX, Key, KeyRound, Fingerprint, Eye, EyeOff,
   // Technology

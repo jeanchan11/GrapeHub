@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react';
+import { Calendar, ChevronDown, ChevronUp, ChevronRight, AlertTriangle } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────
 interface BillItem {
@@ -19,6 +19,7 @@ interface BillItem {
   category_l1_desc: string | null;
   category_l2_desc: string | null;
   category_l3_desc: string | null;
+  category_structure?: string | null;
 }
 
 interface Summary {
@@ -43,15 +44,17 @@ const fmtDate = (d: string | null) => {
 };
 
 const CATEGORY_ICONS: Record<string, string> = {
-  'Despesas Fixas': '🏠',
-  'Despesas Variáveis': '📊',
-  'Impostos': '📋',
-  'Salários e Pessoal': '👥',
-  'Fornecedores': '🏭',
-  'Serviços': '🛠️',
-  'Marketing e Vendas': '📣',
   'Despesas Financeiras': '💳',
+  'Despesas Operacionais': '📋',
   'Distribuição de Lucros': '💰',
+  'Antecipação Débito': '⚡',
+  'Estorno': '🔄',
+  'Transferência': '🏦',
+  'Receitas Operacionais': '📈',
+  'Receitas Não Operacionais': '📊',
+  'Despesas Não Operacionais': '📉',
+  'Salários e Pessoal': '👥',
+  'Salários, Encargos e Pessoal': '👥',
   'Outros': '📁',
 };
 
@@ -63,15 +66,95 @@ const getCategoryIcon = (cat: string | null) => {
   return '📁';
 };
 
-// ── CollapsibleGroup ─────────────────────────────────
-const CollapsibleGroup = ({ category, items, total, icon }: {
+// ── Sub-category item type ──────────────────────────
+interface SubCatGroup {
+  name: string;
+  total: number;
+  items: ItemRow[];
+}
+
+interface ItemRow {
+  description: string;
+  date: string;
+  person: string | null;
+  value: number;
+  status: string;
+  l3?: string | null;
+}
+
+// ── Level 3 item row ──────────────────────────────────
+const ItemRowComponent = ({ item }: { item: ItemRow }) => {
+  const isAtrasado = item.status === 'Atrasado';
+  const isVenceHoje = item.status === 'Vence Hoje';
+
+  return (
+    <div className="flex items-center justify-between p-3 hover:bg-dark-card rounded-lg transition-colors">
+      <div className="flex flex-col flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-dark-text truncate">{item.description}</span>
+          {isVenceHoje && (
+            <span className="flex items-center gap-1 px-1.5 py-0.5 bg-amber-500/15 text-amber-400 text-[9px] font-bold rounded-full shrink-0">
+              <AlertTriangle size={9} /> Vence Hoje
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-3 mt-0.5">
+          <span className={`text-[10px] ${isAtrasado ? 'text-rose-400 font-semibold' : 'text-slate-500'}`}>{fmtDate(item.date)}</span>
+          {item.person && <span className="text-[10px] text-slate-500 truncate max-w-[180px]">{item.person}</span>}
+          {item.l3 && (
+            <span className="text-[9px] text-emerald-400/60 font-medium">
+              {item.l3}
+            </span>
+          )}
+        </div>
+      </div>
+      <span className="text-xs font-bold text-dark-text ml-4 shrink-0">{formatCurrency(item.value)}</span>
+    </div>
+  );
+};
+
+// ── Collapsible Level 2 Sub-Group ────────────────────
+const SubGroupCollapsible = ({ group }: { group: SubCatGroup }) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <div className="ml-4 mb-1">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between px-3 py-2 rounded-lg hover:bg-white/[0.03] transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <div className="w-1.5 h-1.5 rounded-full bg-sky-500 shrink-0" />
+          <span className="text-[11px] font-semibold text-sky-400/80">{group.name}</span>
+          <span className="text-[9px] text-slate-600 font-normal">{group.items.length} itens</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-[11px] font-bold text-dark-text/70">{formatCurrency(group.total)}</span>
+          {isOpen ? <ChevronUp size={12} className="text-slate-500" /> : <ChevronRight size={12} className="text-slate-500" />}
+        </div>
+      </button>
+      {isOpen && (
+        <div className="ml-3 pl-3 border-l-2 border-sky-500/10 space-y-0.5 pb-1">
+          {group.items.map((item, idx) => (
+            <ItemRowComponent key={idx} item={item} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── Collapsible Level 1 Group ────────────────────────
+const CollapsibleGroup = ({ category, directItems, subGroups, total, icon }: {
   category: string;
-  items: { description: string; date: string; person: string | null; value: number; status: string }[];
+  directItems: ItemRow[];
+  subGroups: SubCatGroup[];
   total: number;
   icon: string;
 }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const today = new Date().toISOString().slice(0, 10);
+  const hasSubGroups = subGroups.length > 0;
+  const totalItems = directItems.length + subGroups.reduce((s, g) => s + g.items.length, 0);
 
   return (
     <div className="mb-2 border border-white/10 rounded-xl overflow-hidden">
@@ -81,8 +164,15 @@ const CollapsibleGroup = ({ category, items, total, icon }: {
       >
         <div className="flex items-center gap-3">
           <span className="text-xl">{icon}</span>
-          <span className="text-sm font-bold text-dark-text">{category}</span>
-          <span className="text-[10px] text-slate-500 font-normal ml-2">{items.length} itens</span>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-bold text-dark-text">{category}</span>
+            {hasSubGroups && (
+              <span className="px-1.5 py-0.5 bg-violet-500/10 text-violet-400 text-[8px] font-bold rounded-full uppercase tracking-wider">
+                {subGroups.length} sub
+              </span>
+            )}
+          </div>
+          <span className="text-[10px] text-slate-500 font-normal">{totalItems} itens</span>
         </div>
         <div className="flex items-center gap-4">
           <span className="text-sm font-bold text-dark-text">{formatCurrency(total)}</span>
@@ -90,32 +180,28 @@ const CollapsibleGroup = ({ category, items, total, icon }: {
         </div>
       </button>
       {isOpen && (
-        <div className="bg-dark-bg p-2 space-y-1 border-t border-white/10">
-          {items.map((item, idx) => {
-            const isAtrasado = item.status === 'Atrasado';
-            const isVenceHoje = item.status === 'Vence Hoje';
-            const expDate = item.date;
-
-            return (
-              <div key={idx} className="flex items-center justify-between p-3 hover:bg-dark-card rounded-lg transition-colors">
-                <div className="flex flex-col flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-medium text-dark-text truncate">{item.description}</span>
-                    {isVenceHoje && (
-                      <span className="flex items-center gap-1 px-1.5 py-0.5 bg-amber-500/15 text-amber-400 text-[9px] font-bold rounded-full shrink-0">
-                        <AlertTriangle size={9} /> Vence Hoje
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-3 mt-0.5">
-                    <span className={`text-[10px] ${isAtrasado ? 'text-rose-400 font-semibold' : 'text-slate-500'}`}>{fmtDate(expDate)}</span>
-                    {item.person && <span className="text-[10px] text-slate-500 truncate max-w-[180px]">{item.person}</span>}
-                  </div>
+        <div className="bg-dark-bg border-t border-white/10">
+          {/* Sub-groups (L2) */}
+          {subGroups.length > 0 && (
+            <div className="py-2">
+              {subGroups.map((sg, idx) => (
+                <SubGroupCollapsible key={idx} group={sg} />
+              ))}
+            </div>
+          )}
+          {/* Direct items (no L2) */}
+          {directItems.length > 0 && (
+            <div className="p-2 space-y-1">
+              {subGroups.length > 0 && directItems.length > 0 && (
+                <div className="px-3 py-1">
+                  <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Sem subcategoria</span>
                 </div>
-                <span className="text-xs font-bold text-dark-text ml-4 shrink-0">{formatCurrency(item.value)}</span>
-              </div>
-            );
-          })}
+              )}
+              {directItems.map((item, idx) => (
+                <ItemRowComponent key={idx} item={item} />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -161,34 +247,67 @@ export default function ContasAPagar() {
     fetchData();
   }, [selectedMonth]);
 
-  // Group items by category
-  const groupByCategory = (filteredItems: BillItem[]) => {
-    const grouped: Record<string, { name: string; icon: string; total: number; items: { description: string; date: string; person: string | null; value: number; status: string }[] }> = {};
-    
+  // Group items hierarchically: L1 → L2 → items
+  const groupHierarchical = (filteredItems: BillItem[]) => {
+    const l1Groups: Record<string, {
+      name: string;
+      icon: string;
+      total: number;
+      directItems: ItemRow[];
+      subGroups: Record<string, SubCatGroup>;
+    }> = {};
+
     for (const item of filteredItems) {
-      const catName = item.category_l1_desc || item.grapehub_category || 'Outros';
-      if (!grouped[catName]) {
-        grouped[catName] = { name: catName, icon: getCategoryIcon(catName), total: 0, items: [] };
+      const l1Name = item.category_l1_desc || item.grapehub_category || 'Outros';
+      const l2Name = item.category_l2_desc;
+      const l3Name = item.category_l3_desc;
+
+      if (!l1Groups[l1Name]) {
+        l1Groups[l1Name] = {
+          name: l1Name,
+          icon: getCategoryIcon(l1Name),
+          total: 0,
+          directItems: [],
+          subGroups: {},
+        };
       }
+
       const valor = Math.abs(parseFloat(item.movement_value || item.original_value || '0'));
-      grouped[catName].total += valor;
-      grouped[catName].items.push({
+      l1Groups[l1Name].total += valor;
+
+      const row: ItemRow = {
         description: item.doc_description,
         date: item.expiration_date || '',
         person: item.people_name,
         value: valor,
         status: item.status,
-      });
+        l3: l3Name,
+      };
+
+      if (l2Name) {
+        if (!l1Groups[l1Name].subGroups[l2Name]) {
+          l1Groups[l1Name].subGroups[l2Name] = { name: l2Name, total: 0, items: [] };
+        }
+        l1Groups[l1Name].subGroups[l2Name].total += valor;
+        l1Groups[l1Name].subGroups[l2Name].items.push(row);
+      } else {
+        l1Groups[l1Name].directItems.push(row);
+      }
     }
 
-    return Object.values(grouped).sort((a, b) => b.total - a.total);
+    return Object.values(l1Groups)
+      .map(g => ({
+        ...g,
+        subGroupsList: Object.values(g.subGroups).sort((a, b) => b.total - a.total),
+      }))
+      .sort((a, b) => b.total - a.total);
   };
 
   const pagas = items.filter(d => ['Conciliado', 'Quitado'].includes(d.status));
   const previstas = items.filter(d => ['Pendente', 'Atrasado', 'Vence Hoje'].includes(d.status));
 
-  const pagasGrouped = groupByCategory(pagas);
-  const previstasGrouped = groupByCategory(previstas);
+  const pagasGrouped = groupHierarchical(pagas);
+  const previstasGrouped = groupHierarchical(previstas);
 
   return (
     <div className="min-h-screen bg-dark-bg transition-colors duration-300">
@@ -267,12 +386,19 @@ export default function ContasAPagar() {
                   <h2 className="text-sm font-bold text-dark-text uppercase tracking-widest">Despesas pagas</h2>
                   <span className="px-3 py-1 bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-[10px] font-bold rounded-full uppercase tracking-wider">Conciliado</span>
                 </div>
-                <div className="flex-1 overflow-y-auto max-h-[600px] p-4">
+                <div className="flex-1 overflow-y-auto max-h-[700px] p-4">
                   {pagasGrouped.length === 0 ? (
                     <p className="text-center py-12 text-slate-500">Nenhuma despesa paga encontrada.</p>
                   ) : (
                     pagasGrouped.map((cat, idx) => (
-                      <CollapsibleGroup key={idx} category={cat.name} icon={cat.icon} total={cat.total} items={cat.items} />
+                      <CollapsibleGroup
+                        key={idx}
+                        category={cat.name}
+                        icon={cat.icon}
+                        total={cat.total}
+                        directItems={cat.directItems}
+                        subGroups={cat.subGroupsList}
+                      />
                     ))
                   )}
                 </div>
@@ -284,12 +410,19 @@ export default function ContasAPagar() {
                   <h2 className="text-sm font-bold text-dark-text uppercase tracking-widest">Despesas previstas</h2>
                   <span className="px-3 py-1 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 text-[10px] font-bold rounded-full uppercase tracking-wider">Pendente</span>
                 </div>
-                <div className="flex-1 overflow-y-auto max-h-[600px] p-4">
+                <div className="flex-1 overflow-y-auto max-h-[700px] p-4">
                   {previstasGrouped.length === 0 ? (
                     <p className="text-center py-12 text-slate-500">Nenhuma despesa prevista encontrada.</p>
                   ) : (
                     previstasGrouped.map((cat, idx) => (
-                      <CollapsibleGroup key={idx} category={cat.name} icon={cat.icon} total={cat.total} items={cat.items} />
+                      <CollapsibleGroup
+                        key={idx}
+                        category={cat.name}
+                        icon={cat.icon}
+                        total={cat.total}
+                        directItems={cat.directItems}
+                        subGroups={cat.subGroupsList}
+                      />
                     ))
                   )}
                 </div>

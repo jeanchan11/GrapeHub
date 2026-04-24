@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, ChevronDown, ChevronUp } from 'lucide-react';
+import { Calendar, ChevronDown, ChevronUp, Clock, CreditCard, FileText } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────
 interface ReceivableItem {
@@ -12,9 +12,25 @@ interface ReceivableItem {
   payment_id: string | null;
 }
 
+interface InvoiceItem {
+  id: number;
+  asaas_id: string;
+  customer_name: string | null;
+  customer_cpfcnpj: string | null;
+  billing_type: string;
+  status: string;
+  value: string;
+  net_value: string | null;
+  due_date: string;
+  payment_date: string | null;
+  description: string | null;
+}
+
 interface Summary {
   total_recebido: number;
   total_antecipacoes: number;
+  total_a_receber: number;
+  total_recebido_invoices: number;
   total_mes: number;
   saldo_final: number;
 }
@@ -32,26 +48,38 @@ const fmtDate = (d: string | null) => {
   return new Date(d).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 };
 
-/** Extracts client name from descriptions like:
- *  "Cobrança recebida - fatura nr. 685291183 Thiago Paixao Barbosa"
- *  Returns the text after the last number sequence */
 const extractClientName = (desc: string): string => {
   if (!desc) return '';
-  // Match text after the last number block (e.g. invoice number)
   const match = desc.match(/\d+\s+(.+)$/);
   if (match) return match[1].trim();
-  // Fallback: text after " - "
   const dashIdx = desc.lastIndexOf(' - ');
   if (dashIdx >= 0) return desc.slice(dashIdx + 3).trim();
   return desc;
 };
 
+const BILLING_LABELS: Record<string, { label: string; icon: string }> = {
+  'PIX': { label: 'Pix', icon: '⚡' },
+  'BOLETO': { label: 'Boleto', icon: '📄' },
+  'CREDIT_CARD': { label: 'Cartão', icon: '💳' },
+  'DEBIT_CARD': { label: 'Débito', icon: '💳' },
+  'TRANSFER': { label: 'Transferência', icon: '🏦' },
+  'DEPOSIT': { label: 'Depósito', icon: '🏦' },
+  'UNDEFINED': { label: 'Outros', icon: '📁' },
+};
+
+const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }> = {
+  'Pendente': { bg: 'bg-amber-500/15', text: 'text-amber-400', label: 'Pendente' },
+  'Confirmado': { bg: 'bg-blue-500/15', text: 'text-blue-400', label: 'Confirmado' },
+  'Recebido': { bg: 'bg-emerald-500/15', text: 'text-emerald-400', label: 'Recebido' },
+};
+
 // ── CollapsibleGroup ─────────────────────────────────
-const CollapsibleGroup = ({ title, icon, items, total }: {
+const CollapsibleGroup = ({ title, icon, items, total, valueColor }: {
   title: string;
   icon: string;
-  items: { description: string; clientName: string; date: string; value: number }[];
+  items: { label: string; sublabel?: string; date: string; value: number; badge?: { text: string; bg: string; color: string } }[];
   total: number;
+  valueColor?: string;
 }) => {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -67,7 +95,7 @@ const CollapsibleGroup = ({ title, icon, items, total }: {
           <span className="text-[10px] text-slate-500 font-normal ml-2">{items.length} itens</span>
         </div>
         <div className="flex items-center gap-4">
-          <span className="text-sm font-bold text-dark-text">{formatCurrency(total)}</span>
+          <span className={`text-sm font-bold ${valueColor || 'text-dark-text'}`}>{formatCurrency(total)}</span>
           {isOpen ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
         </div>
       </button>
@@ -76,15 +104,22 @@ const CollapsibleGroup = ({ title, icon, items, total }: {
           {items.map((item, idx) => (
             <div key={idx} className="flex items-center justify-between p-3 hover:bg-dark-card rounded-lg transition-colors">
               <div className="flex flex-col flex-1 min-w-0">
-                <span className="text-xs font-medium text-dark-text truncate">{item.clientName || item.description}</span>
-                <div className="flex items-center gap-3 mt-0.5">
-                  <span className="text-[10px] text-slate-500">{fmtDate(item.date)}</span>
-                  {item.clientName && item.clientName !== item.description && (
-                    <span className="text-[10px] text-slate-500 truncate max-w-[280px]" title={item.description}>{item.description}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-dark-text truncate">{item.label}</span>
+                  {item.badge && (
+                    <span className={`px-1.5 py-0.5 ${item.badge.bg} ${item.badge.color} text-[9px] font-bold rounded-full shrink-0`}>
+                      {item.badge.text}
+                    </span>
                   )}
                 </div>
+                <div className="flex items-center gap-3 mt-0.5">
+                  <span className="text-[10px] text-slate-500">{fmtDate(item.date)}</span>
+                  {item.sublabel && <span className="text-[10px] text-slate-500 truncate max-w-[280px]">{item.sublabel}</span>}
+                </div>
               </div>
-              <span className="text-xs font-bold text-emerald-400 ml-4 shrink-0">+{formatCurrency(item.value)}</span>
+              <span className={`text-xs font-bold ${valueColor || 'text-emerald-400'} ml-4 shrink-0`}>
+                {valueColor?.includes('amber') ? '' : '+'}{formatCurrency(item.value)}
+              </span>
             </div>
           ))}
         </div>
@@ -97,9 +132,12 @@ const CollapsibleGroup = ({ title, icon, items, total }: {
 export default function ContasAReceber() {
   const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [loading, setLoading] = useState(true);
-  const [summary, setSummary] = useState<Summary>({ total_recebido: 0, total_antecipacoes: 0, total_mes: 0, saldo_final: 0 });
+  const [summary, setSummary] = useState<Summary>({ total_recebido: 0, total_antecipacoes: 0, total_a_receber: 0, total_recebido_invoices: 0, total_mes: 0, saldo_final: 0 });
   const [cobracoes, setCobracoes] = useState<ReceivableItem[]>([]);
   const [antecipacoes, setAntecipacoes] = useState<ReceivableItem[]>([]);
+  const [invoicesPendentes, setInvoicesPendentes] = useState<InvoiceItem[]>([]);
+  const [invoicesConfirmados, setInvoicesConfirmados] = useState<InvoiceItem[]>([]);
+  const [invoicesRecebidos, setInvoicesRecebidos] = useState<InvoiceItem[]>([]);
 
   const [selY, selM] = selectedMonth.split('-').map(Number);
   const monthLabel = `${MESES_FULL[selM - 1]} ${selY}`;
@@ -125,6 +163,9 @@ export default function ContasAReceber() {
         setSummary(data.summary);
         setCobracoes(data.cobracoes_recebidas || []);
         setAntecipacoes(data.antecipacoes || []);
+        setInvoicesPendentes(data.invoices?.pendentes || []);
+        setInvoicesConfirmados(data.invoices?.confirmados || []);
+        setInvoicesRecebidos(data.invoices?.recebidos || []);
       } catch (err) {
         console.error('Error fetching contas a receber:', err);
       } finally {
@@ -134,19 +175,50 @@ export default function ContasAReceber() {
     fetchData();
   }, [selectedMonth]);
 
-  const mapItems = (items: ReceivableItem[]) =>
+  // Map movements into collapsible items
+  const mapMovItems = (items: ReceivableItem[]) =>
     items.map(item => ({
-      description: item.description,
-      clientName: extractClientName(item.description),
+      label: extractClientName(item.description),
+      sublabel: item.description !== extractClientName(item.description) ? item.description : undefined,
       date: item.transaction_date,
       value: Math.abs(parseFloat(item.value || '0')),
     }));
 
-  const cobracoesItems = mapItems(cobracoes);
-  const antecipItems = mapItems(antecipacoes);
+  // Map invoices into collapsible items grouped by billing_type
+  const groupInvoicesByType = (items: InvoiceItem[]) => {
+    const grouped: Record<string, { label: string; icon: string; total: number; items: { label: string; sublabel?: string; date: string; value: number; badge?: { text: string; bg: string; color: string } }[] }> = {};
 
+    for (const inv of items) {
+      const bt = inv.billing_type || 'UNDEFINED';
+      const meta = BILLING_LABELS[bt] || BILLING_LABELS['UNDEFINED'];
+      if (!grouped[bt]) {
+        grouped[bt] = { label: meta.label, icon: meta.icon, total: 0, items: [] };
+      }
+      const valor = parseFloat(inv.value || '0');
+      grouped[bt].total += valor;
+      grouped[bt].items.push({
+        label: inv.customer_name || inv.description || 'Cobrança',
+        sublabel: inv.description || undefined,
+        date: inv.due_date,
+        value: valor,
+        badge: inv.billing_type ? { text: meta.label, bg: 'bg-slate-500/15', color: 'text-slate-400' } : undefined,
+      });
+    }
+    return Object.values(grouped).sort((a, b) => b.total - a.total);
+  };
+
+  const cobracoesItems = mapMovItems(cobracoes);
+  const antecipItems = mapMovItems(antecipacoes);
   const cobracoesTotal = cobracoesItems.reduce((s, i) => s + i.value, 0);
   const antecipTotal = antecipItems.reduce((s, i) => s + i.value, 0);
+
+  const pendentesGrouped = groupInvoicesByType(invoicesPendentes);
+  const confirmadosGrouped = groupInvoicesByType(invoicesConfirmados);
+  const recebidosGrouped = groupInvoicesByType(invoicesRecebidos);
+
+  const pendentesTotal = invoicesPendentes.reduce((s, i) => s + parseFloat(i.value || '0'), 0);
+  const confirmadosTotal = invoicesConfirmados.reduce((s, i) => s + parseFloat(i.value || '0'), 0);
+  const recebidosTotal = invoicesRecebidos.reduce((s, i) => s + parseFloat(i.value || '0'), 0);
 
   return (
     <div className="min-h-screen bg-dark-bg transition-colors duration-300">
@@ -185,79 +257,112 @@ export default function ContasAReceber() {
           </div>
         ) : (
           <>
-            {/* KPI Cards */}
+            {/* KPI Cards — row 1: summary */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="bg-dark-card border border-white/10 rounded-2xl p-5">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Total Recebido</p>
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Já Recebido</p>
                 <div className="flex items-center justify-between mt-1">
                   <h3 className="text-2xl font-black text-dark-text">{formatCurrency(summary.total_recebido)}</h3>
-                  <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-[10px] font-bold rounded-full uppercase tracking-wider">recebido</span>
+                  <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 text-[10px] font-bold rounded-full uppercase tracking-wider">recebido</span>
+                </div>
+              </div>
+              <div className="bg-dark-card border-2 border-amber-500/30 rounded-2xl p-5">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">A Receber</p>
+                <div className="flex items-center justify-between mt-1">
+                  <h3 className="text-2xl font-black text-amber-400">{formatCurrency(summary.total_a_receber)}</h3>
+                  <span className="px-2 py-0.5 bg-amber-500/20 text-amber-400 text-[10px] font-bold rounded-full uppercase tracking-wider">pendente</span>
                 </div>
               </div>
               <div className="bg-dark-card border border-white/10 rounded-2xl p-5">
                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Antecipações</p>
                 <div className="flex items-center justify-between mt-1">
                   <h3 className="text-2xl font-black text-dark-text">{formatCurrency(summary.total_antecipacoes)}</h3>
-                  <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-[10px] font-bold rounded-full uppercase tracking-wider">antecipado</span>
-                </div>
-              </div>
-              <div className="bg-dark-card border border-white/10 rounded-2xl p-5">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Total do Mês</p>
-                <div className="flex items-center justify-between mt-1">
-                  <h3 className="text-2xl font-black text-emerald-400">{formatCurrency(summary.total_mes)}</h3>
-                  <span className="px-2 py-0.5 bg-dark-bg text-slate-500 text-[10px] font-bold rounded-full uppercase tracking-wider border border-white/10">geral</span>
+                  <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 text-[10px] font-bold rounded-full uppercase tracking-wider">antecipado</span>
                 </div>
               </div>
               <div className="bg-dark-card border border-violet-500/30 rounded-2xl p-5">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Saldo Final</p>
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Total do Mês</p>
                 <div className="flex items-center justify-between">
-                  <h3 className="text-2xl font-black text-violet-400">{formatCurrency(summary.saldo_final)}</h3>
-                  <span className="px-2 py-0.5 bg-violet-500/20 text-violet-400 text-[10px] font-bold rounded-full uppercase tracking-wider">saldo</span>
+                  <h3 className="text-2xl font-black text-violet-400">{formatCurrency(summary.total_mes)}</h3>
+                  <span className="px-2 py-0.5 bg-violet-500/20 text-violet-400 text-[10px] font-bold rounded-full uppercase tracking-wider">geral</span>
                 </div>
               </div>
             </div>
 
-            {/* Groups */}
-            <div className="space-y-4">
-              {cobracoesItems.length > 0 && (
-                <div className="bg-dark-card border border-white/10 rounded-2xl overflow-hidden">
-                  <div className="p-6 border-b border-white/10 flex justify-between items-center">
-                    <h2 className="text-sm font-bold text-dark-text uppercase tracking-widest">Cobranças Recebidas</h2>
-                    <span className="px-3 py-1 bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-[10px] font-bold rounded-full uppercase tracking-wider">Recebido</span>
-                  </div>
-                  <div className="p-4 max-h-[600px] overflow-y-auto">
-                    <CollapsibleGroup
-                      title="Cobranças Recebidas"
-                      icon="💰"
-                      items={cobracoesItems}
-                      total={cobracoesTotal}
-                    />
-                  </div>
-                </div>
-              )}
+            {/* ── Two-column layout ── */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-              {antecipItems.length > 0 && (
-                <div className="bg-dark-card border border-white/10 rounded-2xl overflow-hidden">
-                  <div className="p-6 border-b border-white/10 flex justify-between items-center">
-                    <h2 className="text-sm font-bold text-dark-text uppercase tracking-widest">Antecipações</h2>
-                    <span className="px-3 py-1 bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-[10px] font-bold rounded-full uppercase tracking-wider">Antecipado</span>
+              {/* LEFT COLUMN — A Receber (Pendentes + Confirmados) */}
+              <div className="bg-dark-card border border-white/10 rounded-2xl overflow-hidden flex flex-col">
+                <div className="p-6 border-b border-white/10 flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <Clock size={16} className="text-amber-400" />
+                    <h2 className="text-sm font-bold text-dark-text uppercase tracking-widest">A Receber</h2>
                   </div>
-                  <div className="p-4 max-h-[600px] overflow-y-auto">
-                    <CollapsibleGroup
-                      title="Antecipações Recebíveis"
-                      icon="⚡"
-                      items={antecipItems}
-                      total={antecipTotal}
-                    />
-                  </div>
+                  <span className="px-3 py-1 bg-amber-500/20 text-amber-400 text-[10px] font-bold rounded-full uppercase tracking-wider">
+                    {invoicesPendentes.length + invoicesConfirmados.length} cobranças
+                  </span>
                 </div>
-              )}
+                <div className="flex-1 overflow-y-auto max-h-[600px] p-4">
+                  {pendentesGrouped.length === 0 && confirmadosGrouped.length === 0 ? (
+                    <p className="text-center py-12 text-slate-500">Nenhuma cobrança pendente neste mês.</p>
+                  ) : (
+                    <>
+                      {pendentesGrouped.length > 0 && (
+                        <div className="mb-4">
+                          <p className="text-[10px] font-bold text-amber-400 uppercase tracking-widest mb-2 px-2">Pendentes — {formatCurrency(pendentesTotal)}</p>
+                          {pendentesGrouped.map((group, idx) => (
+                            <CollapsibleGroup key={`p-${idx}`} title={group.label} icon={group.icon} items={group.items} total={group.total} valueColor="text-amber-400" />
+                          ))}
+                        </div>
+                      )}
+                      {confirmadosGrouped.length > 0 && (
+                        <div>
+                          <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest mb-2 px-2">Confirmados — {formatCurrency(confirmadosTotal)}</p>
+                          {confirmadosGrouped.map((group, idx) => (
+                            <CollapsibleGroup key={`c-${idx}`} title={group.label} icon={group.icon} items={group.items} total={group.total} valueColor="text-blue-400" />
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
 
-              {cobracoesItems.length === 0 && antecipItems.length === 0 && (
-                <div className="bg-dark-card border border-white/10 rounded-2xl p-12 text-center">
-                  <p className="text-slate-500">Nenhum recebimento encontrado neste mês.</p>
+              {/* RIGHT COLUMN — Já Recebido (Cobranças + Antecipações + Invoices recebidos) */}
+              <div className="bg-dark-card border border-white/10 rounded-2xl overflow-hidden flex flex-col">
+                <div className="p-6 border-b border-white/10 flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <CreditCard size={16} className="text-emerald-400" />
+                    <h2 className="text-sm font-bold text-dark-text uppercase tracking-widest">Já Recebido</h2>
+                  </div>
+                  <span className="px-3 py-1 bg-emerald-500/20 text-emerald-400 text-[10px] font-bold rounded-full uppercase tracking-wider">
+                    Conciliado
+                  </span>
                 </div>
-              )}
+                <div className="flex-1 overflow-y-auto max-h-[600px] p-4">
+                  {cobracoesItems.length === 0 && antecipItems.length === 0 && recebidosGrouped.length === 0 ? (
+                    <p className="text-center py-12 text-slate-500">Nenhum recebimento neste mês.</p>
+                  ) : (
+                    <>
+                      {cobracoesItems.length > 0 && (
+                        <CollapsibleGroup title="Cobranças Recebidas" icon="💰" items={cobracoesItems} total={cobracoesTotal} valueColor="text-emerald-400" />
+                      )}
+                      {antecipItems.length > 0 && (
+                        <CollapsibleGroup title="Antecipações" icon="⚡" items={antecipItems} total={antecipTotal} valueColor="text-emerald-400" />
+                      )}
+                      {recebidosGrouped.length > 0 && (
+                        <div className="mt-2">
+                          <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest mb-2 px-2">Cobranças Recebidas (Asaas) — {formatCurrency(recebidosTotal)}</p>
+                          {recebidosGrouped.map((group, idx) => (
+                            <CollapsibleGroup key={`r-${idx}`} title={group.label} icon={group.icon} items={group.items} total={group.total} valueColor="text-emerald-400" />
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
           </>
         )}

@@ -3709,7 +3709,7 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
-  // Contas a Pagar (bills_to_pay full view)
+  // Contas a Pagar (fin_movements_asaas — outgoing)
   app.get("/api/financeiro/contas-a-pagar", async (req, res) => {
     try {
       const mes = (req.query.month as string) || new Date().toISOString().slice(0, 7);
@@ -3718,56 +3718,127 @@ app.get("/api/todos", async (req, res) => {
       const fn = fm === 12 ? 1 : fm + 1; const ny = fm === 12 ? fy + 1 : fy;
       const fim = `${ny}-${String(fn).padStart(2,'0')}-01`;
 
+      const TRANSACTION_LABELS: Record<string, string> = {
+        'PAYMENT_FEE': 'Despesas Financeiras',
+        'TRANSFER': 'Distribuição de Lucros',
+        'BILL_PAYMENT': 'Despesas Operacionais',
+        'RECEIVABLE_ANTICIPATION_DEBIT': 'Antecipação Débito',
+        'PAYMENT_REVERSAL': 'Estorno',
+      };
+
       const result = await pool.query(`
         SELECT
-          fm.id,
-          fm.description AS doc_description,
-          fm.movement_value,
-          fm.value AS original_value,
-          fm.movement_date AS payment_date,
-          fm.expiration_date,
-          fm.status,
-          fm.type_column,
-          fm.payment_method,
-          fm.document_code,
-          fm.grapehub_category,
-          fp.name AS people_name,
-          fp.cnpjcpf AS people_cnpjcpf,
-          fc1.description AS category_l1_desc,
-          fc2.description AS category_l2_desc,
-          fc3.description AS category_l3_desc
-        FROM fin_movements fm
-        LEFT JOIN fin_people fp ON fp.id = fm.fin_people_id
-        LEFT JOIN fin_categories fc1 ON fc1.external_id = fm.category_l1_ext_id
-        LEFT JOIN fin_categories fc2 ON fc2.external_id = fm.category_l2_ext_id
-        LEFT JOIN fin_categories fc3 ON fc3.external_id = fm.category_l3_ext_id
-        WHERE fm.source = 'bills_to_pay'
-          AND (
-            (fm.expiration_date >= $1 AND fm.expiration_date < $2)
-            OR (fm.movement_date >= $1 AND fm.movement_date < $2)
-          )
-        ORDER BY fm.expiration_date ASC
+          id,
+          asaas_id,
+          type,
+          transaction_type,
+          value,
+          transaction_date,
+          description,
+          balance,
+          payment_id,
+          custom_description,
+          custom_category,
+          COALESCE(custom_description, description) AS display_description,
+          COALESCE(custom_category, grapehub_category) AS display_category
+        FROM fin_movements_asaas
+        WHERE type = -1
+          AND transaction_date >= $1
+          AND transaction_date < $2
+        ORDER BY transaction_date DESC, id DESC
       `, [inicio, fim]);
 
-      const rows = result.rows;
-      const today = new Date().toISOString().slice(0, 10);
-      const tomorrow = (() => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); })();
+      // Map to BillItem format expected by frontend
+      const rows = result.rows.map((r: any) => {
+        const val = Math.abs(parseFloat(r.value || '0'));
+        const catLabel = r.display_category || TRANSACTION_LABELS[r.transaction_type] || 'Outros';
+
+        // Extract person name from display_description
+        const desc = r.display_description || '';
+        let personName: string | null = null;
+        if (desc) {
+          const match = desc.match(/\d+\s+(.+)$/);
+          if (match) personName = match[1].trim();
+          else {
+            const dashIdx = desc.lastIndexOf(' - ');
+            if (dashIdx >= 0) {
+              const after = desc.slice(dashIdx + 3).trim();
+              if (after && !/^fatura|^rec|^Taxa/i.test(after)) personName = after;
+            }
+          }
+        }
+        if (r.transaction_type === 'TRANSFER' && desc) {
+          const transferMatch = desc.match(/para\s+(.+)/i);
+          if (transferMatch) personName = transferMatch[1].trim();
+        }
+
+        return {
+          id: r.id,
+          doc_description: r.display_description || catLabel,
+          movement_value: (-val).toFixed(2),
+          original_value: val.toFixed(2),
+          payment_date: r.transaction_date,
+          expiration_date: r.transaction_date,
+          status: 'Conciliado',
+          type_column: 'realizado',
+          payment_method: r.transaction_type === 'TRANSFER' ? 'transferência' :
+                          r.transaction_type === 'BILL_PAYMENT' ? 'pagamento' :
+                          r.transaction_type === 'PAYMENT_FEE' ? 'taxa' : 'outros',
+          document_code: r.asaas_id || '',
+          grapehub_category: catLabel,
+          people_name: personName,
+          people_cnpjcpf: null,
+          category_l1_desc: null as string | null,
+          category_l2_desc: null as string | null,
+          category_l3_desc: null as string | null,
+          category_structure: null as string | null,
+          is_edited: !!(r.custom_description || r.custom_category),
+        };
+      });
+
+      // ── Enrich with fin_categories hierarchy ──
+      const catResult = await pool.query('SELECT id, structure, description, level FROM fin_categories ORDER BY structure');
+      const allCats = catResult.rows;
+      // Build lookup: description (lowercase) → category record
+      const catByName: Record<string, any> = {};
+      const catByStructure: Record<string, any> = {};
+      for (const c of allCats) {
+        catByName[c.description.toLowerCase()] = c;
+        catByStructure[c.structure] = c;
+      }
+
+      for (const row of rows) {
+        const catName = (row.grapehub_category || '').toLowerCase();
+        const found = catByName[catName];
+        if (found) {
+          const parts = found.structure.split('.');
+          row.category_structure = found.structure;
+          if (found.level === 3) {
+            row.category_l3_desc = found.description;
+            const l2Key = `${parts[0]}.${parts[1]}`;
+            const l1Key = parts[0];
+            row.category_l2_desc = catByStructure[l2Key]?.description || null;
+            row.category_l1_desc = catByStructure[l1Key]?.description || null;
+          } else if (found.level === 2) {
+            row.category_l2_desc = found.description;
+            const l1Key = parts[0];
+            row.category_l1_desc = catByStructure[l1Key]?.description || null;
+          } else if (found.level === 1) {
+            row.category_l1_desc = found.description;
+          }
+        } else {
+          // Fallback: use transaction type label as L1
+          row.category_l1_desc = row.grapehub_category || 'Outros';
+        }
+      }
+
+      const ja_pago = rows.reduce((s: number, r: any) => s + parseFloat(r.original_value || '0'), 0);
 
       const summary = {
-        total_previsto: rows
-          .filter((r: any) => ['Pendente', 'Atrasado', 'Vence Hoje'].includes(r.status))
-          .reduce((s: number, r: any) => s + parseFloat(r.original_value || '0'), 0),
-        ja_pago: rows
-          .filter((r: any) => ['Conciliado', 'Quitado'].includes(r.status))
-          .reduce((s: number, r: any) => s + Math.abs(parseFloat(r.movement_value || '0')), 0),
-        total_mes: rows
-          .reduce((s: number, r: any) => s + parseFloat(r.original_value || '0'), 0),
-        vence_hoje_amanha: rows
-          .filter((r: any) => {
-            const exp = r.expiration_date?.toISOString?.()?.slice(0, 10) || r.expiration_date?.slice?.(0, 10);
-            return ['Pendente', 'Vence Hoje'].includes(r.status) && (exp === today || exp === tomorrow);
-          })
-          .reduce((s: number, r: any) => s + parseFloat(r.original_value || '0'), 0),
+        total_previsto: 0,
+        ja_pago,
+        total_mes: ja_pago,
+        vence_hoje_amanha: 0,
       };
 
       res.json({ summary, items: rows });
@@ -3777,7 +3848,7 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
-  // Contas a Receber (fin_movements_asaas — incoming payments)
+  // Contas a Receber (fin_movements_asaas + fin_receivables)
   app.get("/api/fin-receivables", async (req, res) => {
     try {
       const mes = (req.query.month as string) || new Date().toISOString().slice(0, 7);
@@ -3786,7 +3857,8 @@ app.get("/api/todos", async (req, res) => {
       const fn = fm === 12 ? 1 : fm + 1; const ny = fm === 12 ? fy + 1 : fy;
       const fim = `${ny}-${String(fn).padStart(2, '0')}-01`;
 
-      const result = await pool.query(`
+      // 1) Bank movements (already received)
+      const movResult = await pool.query(`
         SELECT
           asaas_id,
           transaction_type,
@@ -3803,23 +3875,63 @@ app.get("/api/todos", async (req, res) => {
         ORDER BY transaction_date DESC
       `, [inicio, fim]);
 
-      const rows = result.rows;
-
-      const cobracoes = rows.filter((r: any) => r.transaction_type === 'PAYMENT_RECEIVED');
-      const antecipacoes = rows.filter((r: any) => r.transaction_type === 'RECEIVABLE_ANTICIPATION_GROSS_CREDIT');
+      const movRows = movResult.rows;
+      const cobracoes = movRows.filter((r: any) => r.transaction_type === 'PAYMENT_RECEIVED');
+      const antecipacoes = movRows.filter((r: any) => r.transaction_type === 'RECEIVABLE_ANTICIPATION_GROSS_CREDIT');
 
       const total_recebido = cobracoes.reduce((s: number, r: any) => s + parseFloat(r.value || '0'), 0);
       const total_antecipacoes = antecipacoes.reduce((s: number, r: any) => s + parseFloat(r.value || '0'), 0);
-      const total_mes = total_recebido + total_antecipacoes;
 
-      // Saldo final = balance do último registro do mês (cronologicamente)
-      const lastRow = rows.length > 0 ? rows[0] : null; // already sorted DESC
+      const lastRow = movRows.length > 0 ? movRows[0] : null;
       const saldo_final = lastRow ? parseFloat(lastRow.balance || '0') : 0;
 
+      // 2) Invoices / Receivables (pending + confirmed + received)
+      const recResult = await pool.query(`
+        SELECT
+          id,
+          asaas_id,
+          customer_name,
+          customer_cpfcnpj,
+          billing_type,
+          status,
+          value,
+          net_value,
+          due_date,
+          payment_date,
+          description
+        FROM fin_receivables
+        WHERE due_date >= $1 AND due_date < $2
+        ORDER BY due_date ASC
+      `, [inicio, fim]);
+
+      const invoices = recResult.rows;
+      const pendentes = invoices.filter((r: any) => r.status === 'Pendente');
+      const confirmados = invoices.filter((r: any) => r.status === 'Confirmado');
+      const recebidos = invoices.filter((r: any) => r.status === 'Recebido');
+
+      const total_pendente = pendentes.reduce((s: number, r: any) => s + parseFloat(r.value || '0'), 0);
+      const total_confirmado = confirmados.reduce((s: number, r: any) => s + parseFloat(r.value || '0'), 0);
+      const total_recebido_invoices = recebidos.reduce((s: number, r: any) => s + parseFloat(r.value || '0'), 0);
+      const total_a_receber = total_pendente + total_confirmado;
+
+      const total_mes = total_recebido + total_antecipacoes + total_a_receber + total_recebido_invoices;
+
       res.json({
-        summary: { total_recebido, total_antecipacoes, total_mes, saldo_final },
+        summary: {
+          total_recebido,
+          total_antecipacoes,
+          total_a_receber,
+          total_recebido_invoices,
+          total_mes,
+          saldo_final,
+        },
         cobracoes_recebidas: cobracoes,
         antecipacoes,
+        invoices: {
+          pendentes,
+          confirmados,
+          recebidos,
+        },
       });
     } catch (err) {
       console.error("Error fetching fin-receivables:", err);
@@ -3869,20 +3981,18 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
-  // Extrato completo do mês (todas as movimentações)
+  // Extrato completo do mês (fin_movements_asaas)
   app.get("/api/financeiro/extrato", async (req, res) => {
     try {
       let inicio: string;
       let fim: string;
 
       if (req.query.start && req.query.end) {
-        // Date-range mode: inclusive start, inclusive end (add 1 day to end for < comparison)
         inicio = req.query.start as string;
         const endDate = new Date(req.query.end as string);
         endDate.setDate(endDate.getDate() + 1);
         fim = endDate.toISOString().slice(0, 10);
       } else {
-        // Legacy mes mode
         const mes = (req.query.mes as string) || new Date().toISOString().slice(0, 7);
         inicio = `${mes}-01`;
         const [fy, fm] = mes.split('-').map(Number);
@@ -3890,59 +4000,175 @@ app.get("/api/todos", async (req, res) => {
         fim = `${ny}-${String(fn).padStart(2,'0')}-01`;
       }
 
+      // Transaction type labels for categories
+      const TRANSACTION_LABELS: Record<string, string> = {
+        'PAYMENT_RECEIVED': 'Cobrança Recebida',
+        'PAYMENT_FEE': 'Despesas Financeiras',
+        'TRANSFER': 'Transferência',
+        'BILL_PAYMENT': 'Pagamento de Conta',
+        'RECEIVABLE_ANTICIPATION_GROSS_CREDIT': 'Antecipação Recebível',
+        'RECEIVABLE_ANTICIPATION_DEBIT': 'Antecipação Débito',
+        'PAYMENT_REVERSAL': 'Estorno',
+      };
+
       const result = await pool.query(`
         SELECT
-          fm.id,
-          fm.description,
-          fm.movement_value,
-          fm.value,
-          fm.movement_date,
-          fm.expiration_date,
-          fm.status,
-          fm.type_column,
-          fm.source,
-          fm.type,
-          fm.payment_method,
-          fm.document_code,
-          fm.grapehub_category,
-          fp.name AS person_name,
-          fp.fantasy_name AS person_fantasy_name
-        FROM fin_movements fm
-        LEFT JOIN fin_people fp ON fp.id = fm.fin_people_id
-        WHERE fm.source NOT IN ('transfer_in', 'transfer_out')
-          AND (fm.fin_people_id IS NULL OR fm.fin_people_id NOT IN (
-            SELECT fp2.id FROM fin_people fp2
-            JOIN clients c ON c.id = fp2.grapehub_client_id
-            WHERE c.crm_status IS NOT NULL AND c.crm_status != ''
-          ))
-          AND (
-            -- Realizados: usa a data efetiva (movement_date se existir, senão expiration_date)
-            (fm.type_column = 'realizado'
-              AND COALESCE(fm.movement_date, fm.expiration_date) >= $1
-              AND COALESCE(fm.movement_date, fm.expiration_date) < $2)
-            OR
-            -- Previstos e outros: expiration_date é a referência de vencimento
-            (fm.type_column != 'realizado'
-              AND ((fm.movement_date >= $1 AND fm.movement_date < $2)
-                OR (fm.expiration_date >= $1 AND fm.expiration_date < $2)))
-          )
-        ORDER BY COALESCE(fm.movement_date, fm.expiration_date) DESC, fm.id DESC
+          id,
+          asaas_id,
+          type,
+          transaction_type,
+          value,
+          transaction_date,
+          description,
+          balance,
+          payment_id,
+          custom_description,
+          custom_category,
+          custom_category_id,
+          user_comment,
+          edited_at,
+          edited_by,
+          COALESCE(custom_description, description) AS display_description,
+          COALESCE(custom_category, grapehub_category) AS display_category
+        FROM fin_movements_asaas
+        WHERE transaction_date >= $1
+          AND transaction_date < $2
+        ORDER BY transaction_date DESC, id DESC
       `, [inicio, fim]);
 
-      res.json(result.rows);
+      // Map to ExtratoItem format expected by frontend
+      const rows = result.rows.map((r: any) => {
+        const val = Math.abs(parseFloat(r.value || '0'));
+        const isEntrada = r.type === 1;
+        const autoCategory = TRANSACTION_LABELS[r.transaction_type] || r.transaction_type;
+        const catLabel = r.display_category || autoCategory;
+
+        // Extract person name from display_description (which is custom or original)
+        const desc = r.display_description || '';
+        let personName: string | null = null;
+        if (desc) {
+          const match = desc.match(/\d+\s+(.+)$/);
+          if (match) personName = match[1].trim();
+          else {
+            const dashIdx = desc.lastIndexOf(' - ');
+            if (dashIdx >= 0) {
+              const after = desc.slice(dashIdx + 3).trim();
+              if (after && !/^fatura|^rec|^Taxa/i.test(after)) personName = after;
+            }
+          }
+        }
+        // For TRANSFER type, extract name from description
+        if (r.transaction_type === 'TRANSFER' && desc) {
+          const transferMatch = desc.match(/para\s+(.+)/i) || desc.match(/chave\s+para\s+(.+)/i);
+          if (transferMatch) personName = transferMatch[1].trim();
+        }
+
+        const isEdited = !!(r.custom_description || r.custom_category);
+
+        return {
+          id: r.id,
+          description: r.display_description || catLabel,
+          original_description: r.description,
+          custom_description: r.custom_description || null,
+          movement_value: isEntrada ? val.toFixed(2) : (-val).toFixed(2),
+          value: val.toFixed(2),
+          movement_date: r.transaction_date,
+          expiration_date: r.transaction_date,
+          status: 'Realizado',
+          type_column: 'realizado',
+          source: r.transaction_type === 'PAYMENT_RECEIVED' ? 'bills_to_receive' :
+                  r.transaction_type === 'BILL_PAYMENT' ? 'bills_to_pay' :
+                  r.transaction_type === 'TRANSFER' ? (isEntrada ? 'transfer_in' : 'transfer_out') :
+                  r.transaction_type,
+          type: isEntrada ? 1 : -1,
+          payment_method: r.transaction_type === 'PAYMENT_RECEIVED' ? 'cobrança' :
+                          r.transaction_type === 'TRANSFER' ? 'transferência' :
+                          r.transaction_type === 'BILL_PAYMENT' ? 'pagamento' :
+                          r.transaction_type === 'PAYMENT_FEE' ? 'taxa' : 'outros',
+          document_code: r.asaas_id || '',
+          grapehub_category: catLabel,
+          custom_category: r.custom_category || null,
+          custom_category_id: r.custom_category_id || null,
+          person_name: personName,
+          person_fantasy_name: null,
+          comments: r.user_comment || null,
+          is_edited: isEdited,
+          edited_at: r.edited_at || null,
+          edited_by: r.edited_by || null,
+        };
+      });
+
+      res.json(rows);
     } catch (err) {
       console.error("Error fetching financeiro extrato:", err);
       res.status(500).json({ error: "Failed" });
     }
   });
 
-  // PATCH /api/financeiro/extrato/:id/category — atualiza a categoria manual de uma movimentação
+  // PATCH /api/financeiro/extrato/:id — unified edit endpoint for fin_movements_asaas
+  app.patch("/api/financeiro/extrato/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { custom_description, custom_category, custom_category_id, user_comment, edited_by } = req.body;
+
+      const setClauses: string[] = [];
+      const values: any[] = [];
+      let paramIdx = 1;
+
+      if (custom_description !== undefined) {
+        setClauses.push(`custom_description = $${paramIdx++}`);
+        values.push(custom_description || null);
+      }
+      if (custom_category !== undefined) {
+        setClauses.push(`custom_category = $${paramIdx++}`);
+        values.push(custom_category || null);
+        // Also sync grapehub_category for backward compat
+        setClauses.push(`grapehub_category = $${paramIdx++}`);
+        values.push(custom_category || null);
+      }
+      if (custom_category_id !== undefined) {
+        setClauses.push(`custom_category_id = $${paramIdx++}`);
+        values.push(custom_category_id || null);
+      }
+      if (user_comment !== undefined) {
+        setClauses.push(`user_comment = $${paramIdx++}`);
+        values.push(user_comment || null);
+        // Also sync comments for backward compat
+        setClauses.push(`comments = $${paramIdx++}`);
+        values.push(user_comment || null);
+      }
+
+      if (setClauses.length === 0) {
+        return res.status(400).json({ error: 'No fields to update' });
+      }
+
+      setClauses.push(`edited_at = NOW()`);
+      if (edited_by) {
+        setClauses.push(`edited_by = $${paramIdx++}`);
+        values.push(edited_by);
+      }
+
+      values.push(id);
+      const result = await pool.query(
+        `UPDATE fin_movements_asaas SET ${setClauses.join(', ')} WHERE id = $${paramIdx} RETURNING id, custom_description, custom_category, custom_category_id, user_comment, edited_at, edited_by`,
+        values
+      );
+
+      if (result.rowCount === 0) return res.status(404).json({ error: 'Movement not found' });
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error("Error updating movement:", err);
+      res.status(500).json({ error: "Failed to update" });
+    }
+  });
+
+  // Backward compat: PATCH /api/financeiro/extrato/:id/category
   app.patch("/api/financeiro/extrato/:id/category", async (req, res) => {
     try {
       const { id } = req.params;
       const { category } = req.body as { category: string | null };
       const result = await pool.query(
-        'UPDATE fin_movements SET grapehub_category = $1 WHERE id = $2 RETURNING id, grapehub_category',
+        'UPDATE fin_movements_asaas SET custom_category = $1, grapehub_category = $1, edited_at = NOW() WHERE id = $2 RETURNING id, custom_category',
         [category || null, id]
       );
       if (result.rowCount === 0) return res.status(404).json({ error: 'Movement not found' });
@@ -3950,6 +4176,309 @@ app.get("/api/todos", async (req, res) => {
     } catch (err) {
       console.error("Error updating category:", err);
       res.status(500).json({ error: "Failed to update category" });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════
+  // Financial Categories CRUD
+  // ═══════════════════════════════════════════════════════
+
+  // GET /api/fin-categories — returns the full category tree
+  app.get("/api/fin-categories", async (req, res) => {
+    try {
+      const result = await pool.query(
+        'SELECT id, external_id, structure, description, level FROM fin_categories ORDER BY structure ASC'
+      );
+      const all = result.rows;
+
+      // Build tree: level 1 → children (level 2) → children (level 3)
+      const tree: any[] = [];
+      const mapL1: Record<string, any> = {};
+      const mapL2: Record<string, any> = {};
+
+      for (const row of all) {
+        const node = { ...row, children: [] };
+        const parts = row.structure.split('.');
+
+        if (row.level === 1) {
+          mapL1[parts[0]] = node;
+          tree.push(node);
+        } else if (row.level === 2) {
+          mapL2[`${parts[0]}.${parts[1]}`] = node;
+          const parent = mapL1[parts[0]];
+          if (parent) parent.children.push(node);
+          else tree.push(node);
+        } else if (row.level === 3) {
+          const parent = mapL2[`${parts[0]}.${parts[1]}`];
+          if (parent) parent.children.push(node);
+          else {
+            const grandparent = mapL1[parts[0]];
+            if (grandparent) grandparent.children.push(node);
+            else tree.push(node);
+          }
+        }
+      }
+
+      res.json({ tree, flat: all });
+    } catch (err) {
+      console.error("Error fetching fin-categories:", err);
+      res.status(500).json({ error: "Failed" });
+    }
+  });
+
+  // POST /api/fin-categories — add a new subcategory
+  app.post("/api/fin-categories", async (req, res) => {
+    try {
+      const { parent_structure, description } = req.body;
+      if (!parent_structure || !description) {
+        return res.status(400).json({ error: 'parent_structure and description required' });
+      }
+
+      // Determine the level and next structure code
+      const parentParts = parent_structure.split('.');
+      const newLevel = parentParts.length + 1;
+      if (newLevel > 3) {
+        return res.status(400).json({ error: 'Maximum 3 levels allowed' });
+      }
+
+      // Find existing children to determine next code
+      const siblings = await pool.query(
+        `SELECT structure FROM fin_categories WHERE structure LIKE $1 AND level = $2 ORDER BY structure DESC LIMIT 1`,
+        [`${parent_structure}.%`, newLevel]
+      );
+
+      let nextCode: string;
+      if (siblings.rowCount && siblings.rowCount > 0) {
+        const lastStructure = siblings.rows[0].structure;
+        const lastParts = lastStructure.split('.');
+        const lastNum = parseInt(lastParts[lastParts.length - 1], 10);
+        nextCode = String(lastNum + 1).padStart(2, '0');
+      } else {
+        nextCode = '01';
+      }
+
+      const newStructure = `${parent_structure}.${nextCode}`;
+      const maxId = await pool.query('SELECT COALESCE(MAX(external_id), 900000) + 1 AS next FROM fin_categories');
+      const nextExternalId = maxId.rows[0].next;
+
+      const result = await pool.query(
+        `INSERT INTO fin_categories (external_id, structure, description, level) VALUES ($1, $2, $3, $4) RETURNING *`,
+        [nextExternalId, newStructure, description, newLevel]
+      );
+
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error("Error creating fin-category:", err);
+      res.status(500).json({ error: "Failed to create" });
+    }
+  });
+
+  // PATCH /api/fin-categories/:id — update description
+  app.patch("/api/fin-categories/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { description } = req.body;
+      if (!description) return res.status(400).json({ error: 'description required' });
+
+      const result = await pool.query(
+        'UPDATE fin_categories SET description = $1 WHERE id = $2 RETURNING *',
+        [description, id]
+      );
+
+      if (result.rowCount === 0) return res.status(404).json({ error: 'Category not found' });
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error("Error updating fin-category:", err);
+      res.status(500).json({ error: "Failed to update" });
+    }
+  });
+
+  // POST /api/fin-categories/root — add a new root-level (level 1) category
+  app.post("/api/fin-categories/root", async (req, res) => {
+    try {
+      const { description } = req.body;
+      if (!description) return res.status(400).json({ error: 'description required' });
+
+      // Find the next root structure code
+      const lastRoot = await pool.query(
+        `SELECT structure FROM fin_categories WHERE level = 1 ORDER BY structure DESC LIMIT 1`
+      );
+      let nextCode: string;
+      if (lastRoot.rowCount && lastRoot.rowCount > 0) {
+        const lastNum = parseInt(lastRoot.rows[0].structure, 10);
+        nextCode = String(lastNum + 1).padStart(2, '0');
+      } else {
+        nextCode = '01';
+      }
+
+      const maxId = await pool.query('SELECT COALESCE(MAX(external_id), 900000) + 1 AS next FROM fin_categories');
+      const nextExternalId = maxId.rows[0].next;
+
+      const result = await pool.query(
+        `INSERT INTO fin_categories (external_id, structure, description, level) VALUES ($1, $2, $3, 1) RETURNING *`,
+        [nextExternalId, nextCode, description]
+      );
+
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error("Error creating root fin-category:", err);
+      res.status(500).json({ error: "Failed to create" });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════
+  // Reconciliation Rules Engine
+  // ═══════════════════════════════════════════════════════
+
+  // GET /api/fin-reconciliation-rules — list all rules
+  app.get("/api/fin-reconciliation-rules", async (req, res) => {
+    try {
+      const result = await pool.query(
+        'SELECT r.*, c.structure AS category_structure FROM fin_reconciliation_rules r LEFT JOIN fin_categories c ON r.category_id = c.id ORDER BY r.priority ASC, r.created_at ASC'
+      );
+      res.json(result.rows);
+    } catch (err) {
+      console.error("Error fetching reconciliation rules:", err);
+      res.status(500).json({ error: "Failed" });
+    }
+  });
+
+  // GET /api/fin-reconciliation-rules/stats — pending count
+  app.get("/api/fin-reconciliation-rules/stats", async (req, res) => {
+    try {
+      const result = await pool.query(
+        "SELECT COUNT(*) AS pending FROM fin_movements_asaas WHERE custom_category IS NULL AND (grapehub_category IS NULL OR grapehub_category = '')"
+      );
+      res.json({ pending: parseInt(result.rows[0].pending, 10) });
+    } catch (err) {
+      console.error("Error fetching reconciliation stats:", err);
+      res.status(500).json({ error: "Failed" });
+    }
+  });
+
+  // POST /api/fin-reconciliation-rules — create rule
+  app.post("/api/fin-reconciliation-rules", async (req, res) => {
+    try {
+      const { name, match_text, match_type, category_id, category_name, priority, created_by } = req.body;
+      if (!name || !match_text) return res.status(400).json({ error: 'name and match_text required' });
+
+      const result = await pool.query(
+        `INSERT INTO fin_reconciliation_rules (name, match_text, match_type, category_id, category_name, priority, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+        [name, match_text, match_type || 'contains', category_id || null, category_name || null, priority || 0, created_by || null]
+      );
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error("Error creating reconciliation rule:", err);
+      res.status(500).json({ error: "Failed to create" });
+    }
+  });
+
+  // PUT /api/fin-reconciliation-rules/:id — update rule
+  app.put("/api/fin-reconciliation-rules/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { name, match_text, match_type, category_id, category_name, is_active, priority } = req.body;
+
+      const result = await pool.query(
+        `UPDATE fin_reconciliation_rules 
+         SET name = COALESCE($1, name), 
+             match_text = COALESCE($2, match_text), 
+             match_type = COALESCE($3, match_type),
+             category_id = $4,
+             category_name = $5,
+             is_active = COALESCE($6, is_active),
+             priority = COALESCE($7, priority)
+         WHERE id = $8 RETURNING *`,
+        [name, match_text, match_type, category_id ?? null, category_name ?? null, is_active, priority, id]
+      );
+
+      if (result.rowCount === 0) return res.status(404).json({ error: 'Rule not found' });
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error("Error updating reconciliation rule:", err);
+      res.status(500).json({ error: "Failed to update" });
+    }
+  });
+
+  // DELETE /api/fin-reconciliation-rules/:id — delete rule
+  app.delete("/api/fin-reconciliation-rules/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const result = await pool.query('DELETE FROM fin_reconciliation_rules WHERE id = $1 RETURNING id', [id]);
+      if (result.rowCount === 0) return res.status(404).json({ error: 'Rule not found' });
+      res.json({ deleted: true, id: parseInt(id) });
+    } catch (err) {
+      console.error("Error deleting reconciliation rule:", err);
+      res.status(500).json({ error: "Failed to delete" });
+    }
+  });
+
+  // POST /api/fin-reconciliation-rules/apply — apply all active rules
+  app.post("/api/fin-reconciliation-rules/apply", async (req, res) => {
+    try {
+      // Fetch active rules in priority order
+      const rulesResult = await pool.query(
+        "SELECT * FROM fin_reconciliation_rules WHERE is_active = true ORDER BY priority ASC, created_at ASC"
+      );
+      const rules = rulesResult.rows;
+      let totalApplied = 0;
+      const details: { rule: string; applied: number }[] = [];
+
+      for (const rule of rules) {
+        let whereClause: string;
+        const matchText = rule.match_text;
+
+        switch (rule.match_type) {
+          case 'starts_with':
+            whereClause = `description ILIKE $1`;
+            break;
+          case 'exact':
+            whereClause = `description ILIKE $1`;
+            break;
+          default: // 'contains'
+            whereClause = `description ILIKE $1`;
+            break;
+        }
+
+        let pattern: string;
+        switch (rule.match_type) {
+          case 'starts_with':
+            pattern = `${matchText}%`;
+            break;
+          case 'exact':
+            pattern = matchText;
+            break;
+          default:
+            pattern = `%${matchText}%`;
+            break;
+        }
+
+        const updateResult = await pool.query(
+          `UPDATE fin_movements_asaas
+           SET custom_category = $2,
+               custom_category_id = $3,
+               grapehub_category = $2,
+               edited_at = NOW(),
+               edited_by = 'regra-auto'
+           WHERE custom_category IS NULL
+             AND (grapehub_category IS NULL OR grapehub_category = '')
+             AND ${whereClause}
+           RETURNING id`,
+          [pattern, rule.category_name, rule.category_id]
+        );
+
+        const count = updateResult.rowCount || 0;
+        if (count > 0) {
+          totalApplied += count;
+          details.push({ rule: rule.name, applied: count });
+        }
+      }
+
+      res.json({ applied: totalApplied, details });
+    } catch (err) {
+      console.error("Error applying reconciliation rules:", err);
+      res.status(500).json({ error: "Failed to apply rules" });
     }
   });
 

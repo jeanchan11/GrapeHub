@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Bell, Settings, Shield, User, Palette, Globe, Lock, HelpCircle, Mail, MessageSquare, Zap, AlertCircle } from 'lucide-react';
+import { Bell, Settings, Shield, User, Palette, Globe, Lock, HelpCircle, Mail, MessageSquare, Zap, AlertCircle, FolderTree } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSoftphone } from '../hooks/useSoftphone';
 
@@ -61,7 +61,7 @@ export const NotificationsPage = () => {
 export const SettingsPage = ({ onPageChange, isSuperAdmin }: { onPageChange?: (page: string) => void, isSuperAdmin?: boolean }) => {
   const { user } = useAuth();
   const softphone = useSoftphone();
-  const [activeSection, setActiveSection] = useState<'main' | 'integrations'>('main');
+  const [activeSection, setActiveSection] = useState<'main' | 'integrations' | 'categories'>('main');
 
   // Telefonia form state
   const [settingsForm, setSettingsForm] = useState({ api4com_token: '', api4com_domain: '', sip_extension: '', sip_password: '', sip_server: '' });
@@ -211,6 +211,7 @@ export const SettingsPage = ({ onPageChange, isSuperAdmin }: { onPageChange?: (p
 
   const sistemaItems: { label: string; description: string; icon?: any; action?: () => void }[] = [
     { label: 'Integrações', description: 'Telefonia Api4Com e outras ferramentas', action: () => setActiveSection('integrations') },
+    { label: 'Categorias Financeiras', description: 'Plano de contas hierárquico da empresa', icon: FolderTree, action: () => setActiveSection('categories') },
     { label: 'Logs de Atividade', description: 'Histórico de ações no sistema' },
     ...(isSuperAdmin ? [{
       label: 'Painel Admin',
@@ -220,7 +221,23 @@ export const SettingsPage = ({ onPageChange, isSuperAdmin }: { onPageChange?: (p
     }] : [])
   ];
 
-  // ═══════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════
+  // CATEGORIES SUB-VIEW
+  // ═══════════════════════════════════════════════════════
+  if (activeSection === 'categories') {
+    const FinCategories = React.lazy(() => import('./FinCategories'));
+    return (
+      <React.Suspense fallback={
+        <div className="flex items-center justify-center py-20">
+          <div className="w-8 h-8 border-3 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
+        </div>
+      }>
+        <FinCategories onBack={() => setActiveSection('main')} />
+      </React.Suspense>
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════
   // INTEGRATIONS SUB-VIEW
   // ═══════════════════════════════════════════════
   if (activeSection === 'integrations') {
