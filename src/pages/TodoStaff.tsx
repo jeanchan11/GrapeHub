@@ -1328,10 +1328,10 @@ const EmptyCol = ({ onAdd, label }: { onAdd: () => void; label: string }) => (
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 const TodoStaff: React.FC = () => {
-  const [todos,      setTodos]      = useState<TodoItem[]>(()    => load<TodoItem>(STORAGE_KEY));
-  const [recurring,  setRecurring]  = useState<RecurringItem[]>(() => load<RecurringItem>(STORAGE_REC));
-  const [ideas,      setIdeas]      = useState<IdeaItem[]>(()    => load<IdeaItem>(STORAGE_IDEAS));
-  const [globalTags, setGlobalTags] = useState<string[]>(loadGlobalTags);
+  const [todos,      setTodos]      = useState<TodoItem[]>([]);
+  const [recurring,  setRecurring]  = useState<RecurringItem[]>([]);
+  const [ideas,      setIdeas]      = useState<IdeaItem[]>([]);
+  const [globalTags, setGlobalTags] = useState<string[]>([...AVAILABLE_TAGS]);
   const [activeTab,  setActiveTab]  = useState<'tarefas' | 'ideias'>('tarefas');
   const [todoModal,  setTodoModal]  = useState(false);
   const [recModal,   setRecModal]   = useState(false);
@@ -1347,6 +1347,27 @@ const TodoStaff: React.FC = () => {
   const [defaultStatus, setDefaultStatus] = useState<Status>('todo');
   const [tagFilterOpen, setTagFilterOpen] = useState(false);
   const tagFilterRef = useRef<HTMLDivElement>(null);
+  const [dbLoaded, setDbLoaded] = useState(false);
+
+  // ── Load data from API on mount ──
+  useEffect(() => {
+    Promise.all([
+      fetch('/api/todo-staff/tasks').then(r => r.ok ? r.json() : []),
+      fetch('/api/todo-staff/recurring').then(r => r.ok ? r.json() : []),
+      fetch('/api/todo-staff/ideas').then(r => r.ok ? r.json() : []),
+    ]).then(([tasks, recs, ideasData]) => {
+      setTodos(tasks);
+      setRecurring(recs);
+      setIdeas(ideasData);
+      // Merge tags from tasks
+      const allUsedTags = new Set<string>([...AVAILABLE_TAGS, ...tasks.flatMap((t: TodoItem) => t.tags)]);
+      setGlobalTags(Array.from(allUsedTags));
+      setDbLoaded(true);
+    }).catch(err => {
+      console.error('[TodoStaff] Failed to load from DB:', err);
+      setDbLoaded(true);
+    });
+  }, []);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -1361,29 +1382,50 @@ const TodoStaff: React.FC = () => {
 
   // Handler to create a new global tag
   const handleTagCreated = (tag: string) => {
-    setGlobalTags(prev => {
-      const updated = [...prev, tag];
-      saveGlobalTags(updated);
-      return updated;
-    });
+    setGlobalTags(prev => prev.includes(tag) ? prev : [...prev, tag]);
   };
 
-  useEffect(() => { save(STORAGE_KEY, todos); },     [todos]);
-  useEffect(() => { save(STORAGE_REC, recurring); }, [recurring]);
-  useEffect(() => { save(STORAGE_IDEAS, ideas); },   [ideas]);
+  // ── API helper ──
+  const apiCall = async (method: string, url: string, body?: any) => {
+    try {
+      await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+    } catch (err) { console.error('[TodoStaff] API error:', err); }
+  };
+
+  const todoToApi = (t: TodoItem) => ({
+    id: t.id, title: t.title, description: t.description, priority: t.priority,
+    status: t.status, tags: t.tags, assignee: t.assignee, dueDate: t.dueDate,
+    subtasks: t.subtasks, comments: t.comments, doneAt: t.doneAt,
+  });
 
   // Handlers — todos
   const createTodo = (data: Omit<TodoItem, 'id' | 'createdAt'>) => {
     const now = new Date().toISOString();
-    setTodos(p => [{ ...data, subtasks: data.subtasks ?? [], comments: data.comments ?? [], id: uid(), createdAt: now, doneAt: data.status === 'done' ? now : undefined }, ...p]);
+    const item: TodoItem = { ...data, subtasks: data.subtasks ?? [], comments: data.comments ?? [], id: uid(), createdAt: now, doneAt: data.status === 'done' ? now : undefined };
+    setTodos(p => [item, ...p]);
+    apiCall('POST', '/api/todo-staff/tasks', todoToApi(item));
   };
   const updateTodo = (data: Omit<TodoItem, 'id' | 'createdAt'>) => {
     if (!editing) return;
-    setTodos(p => p.map(t => t.id === editing.id ? { ...t, ...data } : t));
+    const updated = { ...editing, ...data };
+    setTodos(p => p.map(t => t.id === editing.id ? updated : t));
     setEditing(undefined);
+    apiCall('PUT', `/api/todo-staff/tasks/${editing.id}`, todoToApi(updated));
   };
-  const deleteTodo = (id: string) => setTodos(p => p.filter(t => t.id !== id));
-  const changeStatus = (id: string, status: Status) => setTodos(p => p.map(t => t.id === id ? { ...t, status, doneAt: status === 'done' ? new Date().toISOString() : t.doneAt } : t));
+  const deleteTodo = (id: string) => {
+    setTodos(p => p.filter(t => t.id !== id));
+    apiCall('DELETE', `/api/todo-staff/tasks/${id}`);
+  };
+  const changeStatus = (id: string, status: Status) => {
+    const doneAt = status === 'done' ? new Date().toISOString() : undefined;
+    setTodos(p => p.map(t => t.id === id ? { ...t, status, doneAt: doneAt ?? t.doneAt } : t));
+    const item = todos.find(t => t.id === id);
+    if (item) apiCall('PUT', `/api/todo-staff/tasks/${id}`, todoToApi({ ...item, status, doneAt: doneAt ?? item.doneAt }));
+  };
 
   // drag-and-drop state for task rows
   const dragFromId = useRef<string | null>(null);
@@ -1413,6 +1455,8 @@ const TodoStaff: React.FC = () => {
   const reorderSubtasks = (taskId: string, newSubtasks: Subtask[]) => {
     setTodos(p => p.map(t => t.id === taskId ? { ...t, subtasks: newSubtasks } : t));
     setViewingTodo(prev => prev?.id === taskId ? { ...prev, subtasks: newSubtasks } : prev);
+    const item = todos.find(t => t.id === taskId);
+    if (item) apiCall('PUT', `/api/todo-staff/tasks/${taskId}`, todoToApi({ ...item, subtasks: newSubtasks }));
   };
 
   const toggleSubtask = (taskId: string, subtaskId: string) => {
@@ -1420,42 +1464,71 @@ const TodoStaff: React.FC = () => {
       ? { ...t, subtasks: t.subtasks.map(s => s.id === subtaskId ? { ...s, done: !s.done } : s) }
       : t
     ));
-    // keep viewingTodo in sync
     setViewingTodo(prev => prev?.id === taskId
       ? { ...prev, subtasks: prev.subtasks.map(s => s.id === subtaskId ? { ...s, done: !s.done } : s) }
       : prev
     );
+    const item = todos.find(t => t.id === taskId);
+    if (item) {
+      const updatedSubs = item.subtasks.map(s => s.id === subtaskId ? { ...s, done: !s.done } : s);
+      apiCall('PUT', `/api/todo-staff/tasks/${taskId}`, todoToApi({ ...item, subtasks: updatedSubs }));
+    }
   };
 
   const addComment = (taskId: string, text: string) => {
     const comment: Comment = { id: uid(), text, createdAt: new Date().toISOString() };
     setTodos(p => p.map(t => t.id === taskId ? { ...t, comments: [...t.comments, comment] } : t));
     setViewingTodo(prev => prev?.id === taskId ? { ...prev, comments: [...prev.comments, comment] } : prev);
+    const item = todos.find(t => t.id === taskId);
+    if (item) apiCall('PUT', `/api/todo-staff/tasks/${taskId}`, todoToApi({ ...item, comments: [...item.comments, comment] }));
   };
 
   // Handlers — recurring
-  const createRec = (data: Omit<RecurringItem, 'id' | 'createdAt'>) => setRecurring(p => [{ ...data, id: uid(), createdAt: new Date().toISOString() }, ...p]);
+  const createRec = (data: Omit<RecurringItem, 'id' | 'createdAt'>) => {
+    const item: RecurringItem = { ...data, id: uid(), createdAt: new Date().toISOString() };
+    setRecurring(p => [item, ...p]);
+    apiCall('POST', '/api/todo-staff/recurring', item);
+  };
   const updateRec = (data: Omit<RecurringItem, 'id' | 'createdAt'>) => {
     if (!editingRec) return;
-    setRecurring(p => p.map(r => r.id === editingRec.id ? { ...r, ...data } : r));
+    const updated = { ...editingRec, ...data };
+    setRecurring(p => p.map(r => r.id === editingRec.id ? updated : r));
     setEditingRec(undefined);
+    apiCall('PUT', `/api/todo-staff/recurring/${editingRec.id}`, updated);
   };
-  const deleteRec = (id: string) => setRecurring(p => p.filter(r => r.id !== id));
+  const deleteRec = (id: string) => {
+    setRecurring(p => p.filter(r => r.id !== id));
+    apiCall('DELETE', `/api/todo-staff/recurring/${id}`);
+  };
 
   // Handlers — ideas
-  const createIdea = (data: Omit<IdeaItem, 'id' | 'createdAt'>) =>
-    setIdeas(p => [{ ...data, comments: data.comments ?? [], id: uid(), createdAt: new Date().toISOString() }, ...p]);
+  const createIdea = (data: Omit<IdeaItem, 'id' | 'createdAt'>) => {
+    const item: IdeaItem = { ...data, comments: data.comments ?? [], id: uid(), createdAt: new Date().toISOString() };
+    setIdeas(p => [item, ...p]);
+    apiCall('POST', '/api/todo-staff/ideas', item);
+  };
   const updateIdea = (data: Omit<IdeaItem, 'id' | 'createdAt'>) => {
     if (!editingIdea) return;
-    setIdeas(p => p.map(i => i.id === editingIdea.id ? { ...i, ...data } : i));
+    const updated = { ...editingIdea, ...data };
+    setIdeas(p => p.map(i => i.id === editingIdea.id ? updated : i));
     setEditingIdea(undefined);
+    apiCall('PUT', `/api/todo-staff/ideas/${editingIdea.id}`, updated);
   };
-  const deleteIdea = (id: string) => setIdeas(p => p.filter(i => i.id !== id));
-  const changeIdeaStatus = (id: string, status: IdeaStatus) => setIdeas(p => p.map(i => i.id === id ? { ...i, status } : i));
+  const deleteIdea = (id: string) => {
+    setIdeas(p => p.filter(i => i.id !== id));
+    apiCall('DELETE', `/api/todo-staff/ideas/${id}`);
+  };
+  const changeIdeaStatus = (id: string, status: IdeaStatus) => {
+    setIdeas(p => p.map(i => i.id === id ? { ...i, status } : i));
+    const item = ideas.find(i => i.id === id);
+    if (item) apiCall('PUT', `/api/todo-staff/ideas/${id}`, { ...item, status });
+  };
   const addIdeaComment = (ideaId: string, text: string) => {
     const comment: Comment = { id: uid(), text, createdAt: new Date().toISOString() };
     setIdeas(p => p.map(i => i.id === ideaId ? { ...i, comments: [...i.comments, comment] } : i));
     setViewingIdea(prev => prev?.id === ideaId ? { ...prev, comments: [...prev.comments, comment] } : prev);
+    const item = ideas.find(i => i.id === ideaId);
+    if (item) apiCall('PUT', `/api/todo-staff/ideas/${ideaId}`, { ...item, comments: [...item.comments, comment] });
   };
 
   const openNewTodo = (status: Status) => { setDefaultStatus(status); setEditing(undefined); setTodoModal(true); };

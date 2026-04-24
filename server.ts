@@ -356,6 +356,41 @@ async function startServer() {
         page_id TEXT
       );
 
+      CREATE TABLE IF NOT EXISTS to_do_staff (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        description TEXT,
+        priority TEXT NOT NULL DEFAULT 'medium',
+        status TEXT NOT NULL DEFAULT 'todo',
+        tags JSONB DEFAULT '[]',
+        assignee TEXT,
+        due_date TEXT,
+        subtasks JSONB DEFAULT '[]',
+        comments JSONB DEFAULT '[]',
+        created_at TIMESTAMP DEFAULT NOW(),
+        done_at TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS to_do_staff_recurring (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        assignee TEXT,
+        tags JSONB DEFAULT '[]',
+        frequency TEXT NOT NULL DEFAULT 'semanal',
+        day_of_week TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS to_do_staff_ideas (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        description TEXT,
+        status TEXT NOT NULL DEFAULT 'nova',
+        tags JSONB DEFAULT '[]',
+        comments JSONB DEFAULT '[]',
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+
       CREATE TABLE IF NOT EXISTS crm_comercial_tasks (
         id SERIAL PRIMARY KEY,
         lead_id TEXT,
@@ -7381,6 +7416,144 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
       console.error('[AI Chat] Erro:', err?.message || err);
       res.status(500).json({ error: err?.message || 'Erro interno ao processar mensagem de IA.' });
     }
+  });
+
+  // ── TODO Staff API ─────────────────────────────────────────────────────────
+
+  // Tasks CRUD
+  app.get("/api/todo-staff/tasks", async (_req, res) => {
+    try {
+      const { rows } = await pool.query("SELECT * FROM to_do_staff ORDER BY created_at DESC");
+      const items = rows.map(r => ({
+        id: r.id, title: r.title, description: r.description || undefined,
+        priority: r.priority, status: r.status, tags: r.tags || [],
+        assignee: r.assignee || undefined, dueDate: r.due_date || undefined,
+        subtasks: r.subtasks || [], comments: r.comments || [],
+        createdAt: r.created_at?.toISOString(), doneAt: r.done_at?.toISOString() || undefined,
+      }));
+      res.json(items);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.post("/api/todo-staff/tasks", async (req, res) => {
+    try {
+      const { id, title, description, priority, status, tags, assignee, dueDate, subtasks, comments, doneAt } = req.body;
+      await pool.query(
+        `INSERT INTO to_do_staff (id, title, description, priority, status, tags, assignee, due_date, subtasks, comments, done_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        [id, title, description || null, priority || 'medium', status || 'todo',
+         JSON.stringify(tags || []), assignee || null, dueDate || null,
+         JSON.stringify(subtasks || []), JSON.stringify(comments || []),
+         doneAt || null]
+      );
+      res.json({ ok: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.put("/api/todo-staff/tasks/:id", async (req, res) => {
+    try {
+      const { title, description, priority, status, tags, assignee, dueDate, subtasks, comments, doneAt } = req.body;
+      await pool.query(
+        `UPDATE to_do_staff SET title=$1, description=$2, priority=$3, status=$4, tags=$5,
+         assignee=$6, due_date=$7, subtasks=$8, comments=$9, done_at=$10 WHERE id=$11`,
+        [title, description || null, priority, status,
+         JSON.stringify(tags || []), assignee || null, dueDate || null,
+         JSON.stringify(subtasks || []), JSON.stringify(comments || []),
+         doneAt || null, req.params.id]
+      );
+      res.json({ ok: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.delete("/api/todo-staff/tasks/:id", async (req, res) => {
+    try {
+      await pool.query("DELETE FROM to_do_staff WHERE id=$1", [req.params.id]);
+      res.json({ ok: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // Recurring CRUD
+  app.get("/api/todo-staff/recurring", async (_req, res) => {
+    try {
+      const { rows } = await pool.query("SELECT * FROM to_do_staff_recurring ORDER BY created_at DESC");
+      const items = rows.map(r => ({
+        id: r.id, title: r.title, assignee: r.assignee || undefined,
+        tags: r.tags || [], frequency: r.frequency,
+        dayOfWeek: r.day_of_week || undefined, createdAt: r.created_at?.toISOString(),
+      }));
+      res.json(items);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.post("/api/todo-staff/recurring", async (req, res) => {
+    try {
+      const { id, title, assignee, tags, frequency, dayOfWeek } = req.body;
+      await pool.query(
+        `INSERT INTO to_do_staff_recurring (id, title, assignee, tags, frequency, day_of_week) VALUES ($1,$2,$3,$4,$5,$6)`,
+        [id, title, assignee || null, JSON.stringify(tags || []), frequency, dayOfWeek || null]
+      );
+      res.json({ ok: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.put("/api/todo-staff/recurring/:id", async (req, res) => {
+    try {
+      const { title, assignee, tags, frequency, dayOfWeek } = req.body;
+      await pool.query(
+        `UPDATE to_do_staff_recurring SET title=$1, assignee=$2, tags=$3, frequency=$4, day_of_week=$5 WHERE id=$6`,
+        [title, assignee || null, JSON.stringify(tags || []), frequency, dayOfWeek || null, req.params.id]
+      );
+      res.json({ ok: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.delete("/api/todo-staff/recurring/:id", async (req, res) => {
+    try {
+      await pool.query("DELETE FROM to_do_staff_recurring WHERE id=$1", [req.params.id]);
+      res.json({ ok: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // Ideas CRUD
+  app.get("/api/todo-staff/ideas", async (_req, res) => {
+    try {
+      const { rows } = await pool.query("SELECT * FROM to_do_staff_ideas ORDER BY created_at DESC");
+      const items = rows.map(r => ({
+        id: r.id, title: r.title, description: r.description || undefined,
+        status: r.status, tags: r.tags || [], comments: r.comments || [],
+        createdAt: r.created_at?.toISOString(),
+      }));
+      res.json(items);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.post("/api/todo-staff/ideas", async (req, res) => {
+    try {
+      const { id, title, description, status, tags, comments } = req.body;
+      await pool.query(
+        `INSERT INTO to_do_staff_ideas (id, title, description, status, tags, comments) VALUES ($1,$2,$3,$4,$5,$6)`,
+        [id, title, description || null, status || 'nova', JSON.stringify(tags || []), JSON.stringify(comments || [])]
+      );
+      res.json({ ok: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.put("/api/todo-staff/ideas/:id", async (req, res) => {
+    try {
+      const { title, description, status, tags, comments } = req.body;
+      await pool.query(
+        `UPDATE to_do_staff_ideas SET title=$1, description=$2, status=$3, tags=$4, comments=$5 WHERE id=$6`,
+        [title, description || null, status, JSON.stringify(tags || []), JSON.stringify(comments || []), req.params.id]
+      );
+      res.json({ ok: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.delete("/api/todo-staff/ideas/:id", async (req, res) => {
+    try {
+      await pool.query("DELETE FROM to_do_staff_ideas WHERE id=$1", [req.params.id]);
+      res.json({ ok: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
   });
 
   // ── Hiring / Contratação API ────────────────────────────────────────────────
