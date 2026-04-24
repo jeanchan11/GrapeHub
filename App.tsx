@@ -30,6 +30,8 @@ import ParceirosSquad from './src/pages/ParceirosSquad';
 import TodoStaff from './src/pages/TodoStaff';
 import ContratacaoPage from './src/pages/ContratacaoPage';
 import CandidateApplicationForm from './src/pages/CandidateApplicationForm';
+import SaboteurTestPage from './src/pages/SaboteurTestPage';
+import DiscTestPage from './src/pages/DiscTestPage';
 import Login from './src/components/LoginView';
 import AdminPanel from './src/components/AdminPanel';
 import LoadingSpinner from './src/components/LoadingSpinner';
@@ -287,6 +289,14 @@ const AppContent: React.FC = () => {
 };
 
 const App: React.FC = () => {
+  if (window.location.search.includes('?disc-test=')) {
+    return <DiscTestPage />;
+  }
+
+  if (window.location.search.includes('?saboteur-test=')) {
+    return <SaboteurTestPage />;
+  }
+
   if (window.location.search.includes('?apply=')) {
     return <CandidateApplicationForm />;
   }

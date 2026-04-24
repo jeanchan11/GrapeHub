@@ -15,7 +15,17 @@ interface HiringFolder {
   nome: string;
   cargo: string | null;
   cols: string[];
+  form_fields?: FormFieldDef[] | null;
   created_at: string;
+}
+
+interface FormFieldDef {
+  key: string;
+  label: string;
+  type: 'text' | 'number' | 'textarea' | 'select' | 'tel';
+  placeholder?: string;
+  required?: boolean;
+  options?: string[];
 }
 
 interface HiringCandidate {
@@ -49,10 +59,10 @@ function getActionBadge(acao: string | null, dataAcao: string | null): { label: 
 
 function ModalOverlay({ onClose, title, children }: { onClose: () => void; title: string; children: React.ReactNode }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 outline-none"
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-md bg-light-card dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl p-6 max-h-[90vh] overflow-y-auto">
+      <div className="relative z-10 w-full max-w-md bg-white dark:bg-[#1e1e2e] border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl p-6 max-h-[90vh] overflow-y-auto outline-none">
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-base font-black text-light-text dark:text-dark-text">{title}</h2>
           <button onClick={onClose} className="w-8 h-8 rounded-lg hover:bg-slate-200 dark:hover:bg-white/10 flex items-center justify-center text-slate-400 transition-colors"><X size={15} /></button>
@@ -62,6 +72,28 @@ function ModalOverlay({ onClose, title, children }: { onClose: () => void; title
     </div>
   );
 }
+
+// ── Default Form Fields ──────────────────────────────────────────────────────
+
+const DEFAULT_FORM_FIELDS: FormFieldDef[] = [
+  { key: 'nome', label: 'Qual é o seu nome completo?', type: 'text', placeholder: 'Digite seu nome completo', required: true },
+  { key: 'idade', label: 'Qual é a sua idade?', type: 'number', placeholder: 'Ex: 25', required: true },
+  { key: 'telefone', label: 'Qual é o seu telefone com DDD?', type: 'tel', placeholder: '(11) 99999-9999', required: true },
+  { key: 'whatsapp', label: 'Qual é o seu WhatsApp?', type: 'tel', placeholder: '(11) 99999-9999', required: true },
+  { key: 'cidade_estado', label: 'Qual é a sua CIDADE e ESTADO?', type: 'text', placeholder: 'Ex: São Paulo, SP', required: true },
+  { key: 'estado_civil', label: 'Qual seu estado civil? Conte mais sobre você', type: 'textarea', placeholder: 'Ex: Solteiro, moro independente...' },
+  { key: 'social_media', label: 'Qual seu Instagram (@) e LinkedIn (link)?', type: 'text', placeholder: '@seuinsta / linkedin.com/in/...' },
+  { key: 'tempo_experiencia', label: 'Quanto tempo de experiência e quantos projetos ao todo?', type: 'textarea', placeholder: 'Ex: 2 anos de experiência...', required: true },
+  { key: 'projetos_atuais', label: 'Quantos projetos você está atendendo atualmente?', type: 'text', placeholder: 'Ex: Estou com 4 clientes ativos', required: true },
+  { key: 'exp_agencia', label: 'Já trabalhou em Agência? Conte sobre a experiência.', type: 'textarea', placeholder: 'Descreva sua experiência...' },
+  { key: 'facebook_ads', label: 'Qual o seu nível de prática no Facebook Ads?', type: 'select', options: ['Iniciante', 'Intermediário', 'Avançado'], required: true },
+  { key: 'google_ads', label: 'Qual o seu nível de prática no Google Ads?', type: 'select', options: ['Iniciante', 'Intermediário', 'Avançado'], required: true },
+  { key: 'frentes_dominantes', label: 'Quais frentes de tráfego você mais domina?', type: 'text', placeholder: 'Lançamentos, Negócios Locais...', required: true },
+  { key: 'pretensao_salarial', label: 'Qual é a sua pretensão salarial inicial?', type: 'text', placeholder: 'R$ 0.000,00', required: true },
+  { key: 'treinamentos', label: 'Quais cursos e treinamentos você já fez?', type: 'textarea', placeholder: 'Descreva os treinamentos...' },
+  { key: 'motivo_contratar', label: 'Por que devemos te contratar? Qual o seu diferencial?', type: 'textarea', placeholder: 'Mostre seu diferencial!', required: true },
+  { key: 'canal_vaga', label: 'Por qual canal você encontrou esta vaga?', type: 'text', placeholder: 'Ex: Infojobs, Telegram...' },
+];
 
 // ── Documents Editor (Notion-like with Sections) ─────────────────────────────
 
@@ -629,6 +661,11 @@ export default function ContratacaoPage() {
   // Folder form
   const [folderForm, setFolderForm] = useState({ nome: '', cargo: '', cols: ['Inscritos', 'Entrevista', 'Teste Técnico', 'Aprovados'] });
   const [newColInput, setNewColInput] = useState('');
+  // Form editor modal
+  const [formEditorFolder, setFormEditorFolder] = useState<HiringFolder | null>(null);
+  const [formEditorFields, setFormEditorFields] = useState<FormFieldDef[]>([]);
+  const [formEditorSaving, setFormEditorSaving] = useState(false);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
 
   // Candidate form
   const [candidateForm, setCandidateForm] = useState({ nome: '', contato: '', acao: '', data_acao: '', col: '' });
@@ -1473,6 +1510,19 @@ export default function ContratacaoPage() {
                             <Trash2 size={13} />
                             Excluir seleção
                           </button>
+                          <button onClick={() => {
+                            setFormEditorFolder(folder);
+                            setFormEditorFields(
+                              folder.form_fields && folder.form_fields.length > 0
+                                ? [...folder.form_fields]
+                                : [...DEFAULT_FORM_FIELDS]
+                            );
+                            setFolderMenuOpen(null);
+                          }}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-300 hover:bg-white/5 hover:text-white transition-colors border-t border-white/5">
+                            <FileText size={13} className="text-blue-400" />
+                            Editar formulário
+                          </button>
                         </div>
                       )}
                     </div>
@@ -1538,6 +1588,140 @@ export default function ContratacaoPage() {
             </button>
           </div>
         </ModalOverlay>
+      )}
+
+      {/* Form Editor Modal */}
+      {formEditorFolder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 outline-none">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setFormEditorFolder(null)} />
+          <div className="relative z-10 w-full max-w-2xl bg-white dark:bg-[#1e1e2e] border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl max-h-[90vh] overflow-hidden flex flex-col outline-none">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-white/10 shrink-0">
+              <div>
+                <h2 className="text-base font-black text-slate-800 dark:text-white">Editar Formulário</h2>
+                <p className="text-[10px] text-slate-400 uppercase tracking-widest">{formEditorFolder.nome} · {formEditorFields.length} perguntas</p>
+              </div>
+              <button onClick={() => setFormEditorFolder(null)} className="w-8 h-8 rounded-lg hover:bg-slate-200 dark:hover:bg-white/10 flex items-center justify-center text-slate-400"><X size={15} /></button>
+            </div>
+
+            {/* Fields list */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-2">
+              {formEditorFields.map((field, idx) => (
+                <div
+                  key={idx}
+                  draggable
+                  onDragStart={() => setDragIdx(idx)}
+                  onDragOver={e => { e.preventDefault(); }}
+                  onDrop={() => {
+                    if (dragIdx === null || dragIdx === idx) return;
+                    const arr = [...formEditorFields];
+                    const [moved] = arr.splice(dragIdx, 1);
+                    arr.splice(idx, 0, moved);
+                    setFormEditorFields(arr);
+                    setDragIdx(null);
+                  }}
+                  onDragEnd={() => setDragIdx(null)}
+                  className={`flex items-start gap-2 p-3 rounded-xl border transition-all ${
+                    dragIdx === idx ? 'opacity-50 border-violet-500 bg-violet-500/5' : 'border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5'
+                  }`}
+                >
+                  <div className="cursor-grab active:cursor-grabbing pt-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 shrink-0">
+                    <GripVertical size={14} />
+                  </div>
+                  <div className="flex-1 min-w-0 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold text-violet-400 bg-violet-500/10 px-1.5 py-0.5 rounded shrink-0">{idx + 1}</span>
+                      <input
+                        value={field.label}
+                        onChange={e => { const arr = [...formEditorFields]; arr[idx] = { ...arr[idx], label: e.target.value }; setFormEditorFields(arr); }}
+                        className="flex-1 text-sm font-medium bg-transparent border-none outline-none text-slate-800 dark:text-white placeholder:text-slate-400"
+                        placeholder="Texto da pergunta..."
+                      />
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <select
+                        value={field.type}
+                        onChange={e => { const arr = [...formEditorFields]; arr[idx] = { ...arr[idx], type: e.target.value as any }; setFormEditorFields(arr); }}
+                        className="text-[11px] font-bold bg-white dark:bg-white/10 border border-slate-200 dark:border-white/10 rounded-lg px-2 py-1 text-slate-600 dark:text-slate-300 outline-none"
+                      >
+                        <option value="text">Texto</option>
+                        <option value="textarea">Texto longo</option>
+                        <option value="number">Número</option>
+                        <option value="tel">Telefone</option>
+                        <option value="select">Seleção</option>
+                      </select>
+                      <input
+                        value={field.placeholder || ''}
+                        onChange={e => { const arr = [...formEditorFields]; arr[idx] = { ...arr[idx], placeholder: e.target.value }; setFormEditorFields(arr); }}
+                        className="flex-1 text-[11px] bg-white dark:bg-white/10 border border-slate-200 dark:border-white/10 rounded-lg px-2 py-1 text-slate-500 dark:text-slate-400 outline-none"
+                        placeholder="Placeholder..."
+                      />
+                      <label className="flex items-center gap-1 text-[11px] text-slate-500 cursor-pointer shrink-0">
+                        <input
+                          type="checkbox" checked={field.required || false}
+                          onChange={e => { const arr = [...formEditorFields]; arr[idx] = { ...arr[idx], required: e.target.checked }; setFormEditorFields(arr); }}
+                          className="w-3.5 h-3.5 accent-violet-500"
+                        />
+                        Obrigatório
+                      </label>
+                      <button
+                        onClick={() => setFormEditorFields(prev => prev.filter((_, i) => i !== idx))}
+                        className="w-6 h-6 rounded-md flex items-center justify-center text-slate-400 hover:bg-rose-500/10 hover:text-rose-400 transition-colors shrink-0"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                    {field.type === 'select' && (
+                      <input
+                        value={(field.options || []).join(', ')}
+                        onChange={e => { const arr = [...formEditorFields]; arr[idx] = { ...arr[idx], options: e.target.value.split(',').map(s => s.trim()).filter(Boolean) }; setFormEditorFields(arr); }}
+                        className="w-full text-[11px] bg-white dark:bg-white/10 border border-slate-200 dark:border-white/10 rounded-lg px-2 py-1 text-slate-500 dark:text-slate-400 outline-none"
+                        placeholder="Opções separadas por vírgula: Opção 1, Opção 2, Opção 3"
+                      />
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-slate-200 dark:border-white/10 flex items-center justify-between shrink-0">
+              <button
+                onClick={() => {
+                  const newKey = `campo_${Date.now()}`;
+                  setFormEditorFields(prev => [...prev, { key: newKey, label: '', type: 'text', placeholder: '', required: false }]);
+                }}
+                className="flex items-center gap-2 text-xs font-bold text-violet-500 hover:text-violet-400 transition-colors"
+              >
+                <Plus size={14} /> Adicionar pergunta
+              </button>
+              <div className="flex gap-2">
+                <button onClick={() => setFormEditorFolder(null)}
+                  className="px-4 py-2 rounded-xl text-sm font-bold text-slate-400 border border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors">Cancelar</button>
+                <button
+                  disabled={formEditorSaving}
+                  onClick={async () => {
+                    setFormEditorSaving(true);
+                    try {
+                      const fieldsWithKeys = formEditorFields.map((f, i) => ({ ...f, key: f.key || `campo_${i}` }));
+                      await fetch(`/api/hiring/folders/${formEditorFolder.id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ nome: formEditorFolder.nome, cargo: formEditorFolder.cargo, cols: formEditorFolder.cols, form_fields: fieldsWithKeys })
+                      });
+                      loadFolders();
+                      setFormEditorFolder(null);
+                    } catch (e) { console.error(e); }
+                    setFormEditorSaving(false);
+                  }}
+                  className="px-5 py-2 rounded-xl text-sm font-bold text-white bg-violet-600 hover:bg-violet-700 disabled:opacity-50 transition-colors"
+                >
+                  {formEditorSaving ? 'Salvando...' : 'Salvar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* End of Formulários tab content */}

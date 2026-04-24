@@ -1,4 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
+} from 'recharts';
+import { Users as UsersIcon } from 'lucide-react';
 import { 
   X, 
   User, 
@@ -14,8 +18,26 @@ import {
   Phone,
   Mail,
   Plus,
-  Send
+  Send,
+  Brain,
+  Copy,
+  Check,
+  ExternalLink,
+  Save
 } from 'lucide-react';
+
+const SABOTEURS = [
+  { key: 'critico', name: 'Crítico', emoji: '🔨', color: 'from-rose-500 to-red-600' },
+  { key: 'insistente', name: 'Insistente', emoji: '📏', color: 'from-amber-500 to-orange-600' },
+  { key: 'prestativo', name: 'Prestativo', emoji: '🤝', color: 'from-pink-500 to-rose-600' },
+  { key: 'hiper_realizador', name: 'Hiper-Realizador', emoji: '🏆', color: 'from-yellow-500 to-amber-600' },
+  { key: 'hiper_racional', name: 'Hiper-Racional', emoji: '🧠', color: 'from-cyan-500 to-teal-600' },
+  { key: 'hiper_vigilante', name: 'Hiper-Vigilante', emoji: '👁️', color: 'from-violet-500 to-purple-600' },
+  { key: 'inquieto', name: 'Inquieto', emoji: '🦋', color: 'from-emerald-500 to-green-600' },
+  { key: 'controlador', name: 'Controlador', emoji: '🎯', color: 'from-red-500 to-rose-700' },
+  { key: 'vitima', name: 'Vítima', emoji: '😢', color: 'from-blue-500 to-indigo-600' },
+  { key: 'esquivo', name: 'Esquivo', emoji: '🏃', color: 'from-slate-500 to-gray-600' },
+] as const;
 
 interface Candidate {
   id: number;
@@ -63,7 +85,49 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
   onMoveCandidate,
   onUpdateCandidate
 }) => {
-  const [activeTab, setActiveTab] = useState<'historico' | 'formulario'>('historico');
+  const [activeTab, setActiveTab] = useState<'historico' | 'formulario' | 'sabotadores' | 'disc'>('historico');
+  const [sabScores, setSabScores] = useState<Record<string, number>>({});
+  const [sabLoading, setSabLoading] = useState(false);
+  const [sabSaving, setSabSaving] = useState(false);
+  const [sabSaved, setSabSaved] = useState(false);
+  const [sabHasData, setSabHasData] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const [discLinkCopied, setDiscLinkCopied] = useState(false);
+  const [discData, setDiscData] = useState<{d_score:number;i_score:number;s_score:number;c_score:number}>({ d_score:0, i_score:0, s_score:0, c_score:0 });
+  const [discLoading, setDiscLoading] = useState(false);
+  const [discHasData, setDiscHasData] = useState(false);
+
+  const fetchSaboteurs = useCallback(async () => {
+    setSabLoading(true);
+    try {
+      const res = await fetch(`/api/hiring/candidates/${candidate.id}/saboteurs`);
+      if (res.ok) {
+        const data = await res.json();
+        const scores: Record<string, number> = {};
+        data.forEach((r: any) => { scores[r.saboteur_key] = r.score; });
+        setSabScores(scores);
+        setSabHasData(data.length > 0);
+      }
+    } catch (e) { console.error(e); }
+    setSabLoading(false);
+  }, [candidate.id]);
+
+  useEffect(() => { fetchSaboteurs(); }, [fetchSaboteurs]);
+
+  const fetchDisc = useCallback(async () => {
+    setDiscLoading(true);
+    try {
+      const res = await fetch(`/api/hiring/candidates/${candidate.id}/disc`);
+      if (res.ok) {
+        const data = await res.json();
+        setDiscData({ d_score: Number(data.d_score)||0, i_score: Number(data.i_score)||0, s_score: Number(data.s_score)||0, c_score: Number(data.c_score)||0 });
+        setDiscHasData(Number(data.d_score)>0 || Number(data.i_score)>0 || Number(data.s_score)>0 || Number(data.c_score)>0);
+      }
+    } catch (e) { console.error(e); }
+    setDiscLoading(false);
+  }, [candidate.id]);
+  useEffect(() => { fetchDisc(); }, [fetchDisc]);
+
   const [notes, setNotes] = useState<Note[]>([]);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [newNote, setNewNote] = useState('');
@@ -189,7 +253,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
       <div className="relative w-full max-w-6xl h-[90vh] bg-light-card dark:bg-dark-card rounded-2xl shadow-2xl overflow-hidden flex flex-col border border-slate-200 dark:border-white/10 animate-in fade-in zoom-in-95 duration-200">
         
         {/* Header */}
-        <div className="flex justify-between items-center px-6 py-4 border-b border-slate-200 dark:border-white/10 bg-slate-50/50 dark:bg-white/5 shrink-0">
+        <div className="flex justify-between items-center px-6 py-4 border-b border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-dark-card shrink-0">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-full bg-violet-600 text-white flex items-center justify-center font-bold text-xl shadow-md">
               {candidate.nome.charAt(0).toUpperCase()}
@@ -231,7 +295,7 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
           
           {/* Main Area (Left) */}
           <div className="flex-1 flex flex-col bg-white dark:bg-dark-bg">
-            <div className="flex items-center gap-6 px-6 border-b border-slate-200 dark:border-white/10 overflow-x-auto shrink-0 bg-slate-50/50 dark:bg-white/5 pt-2">
+            <div className="flex items-center gap-6 px-6 border-b border-slate-200 dark:border-white/10 overflow-x-auto shrink-0 bg-slate-50 dark:bg-dark-card pt-2">
 
               <button
                 className={`pb-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap px-1 ${activeTab === 'historico' ? 'border-violet-500 text-violet-600 dark:text-violet-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
@@ -247,6 +311,20 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                   Formulário Submetido
                 </button>
               )}
+              <button
+                className={`pb-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap px-1 ${activeTab === 'sabotadores' ? 'border-violet-500 text-violet-600 dark:text-violet-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                onClick={() => setActiveTab('sabotadores')}
+              >
+                <Brain size={14} className="inline mr-1.5 -mt-0.5" />
+                Sabotadores
+              </button>
+              <button
+                className={`pb-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap px-1 ${activeTab === 'disc' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                onClick={() => setActiveTab('disc')}
+              >
+                <UsersIcon size={14} className="inline mr-1.5 -mt-0.5" />
+                Perfil DISC
+              </button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-6">
@@ -424,6 +502,172 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                   </div>
                 </div>
               )}
+
+              {/* Sabotadores Tab */}
+              {activeTab === 'sabotadores' && (
+                <div className="max-w-3xl mx-auto">
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-lg bg-violet-500/10 flex items-center justify-center">
+                        <Brain className="text-violet-500" size={16} />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-800 dark:text-white">Avaliação dos Sabotadores</h3>
+                        <p className="text-[10px] text-slate-400 uppercase tracking-wider">Inteligência Positiva — Shirzad Chamine</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {sabLoading ? (
+                    <div className="flex justify-center py-12"><div className="w-8 h-8 border-4 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" /></div>
+                  ) : (
+                    <>
+                      {/* Bar Chart */}
+                      <div className="bg-light-card dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl p-5 mb-5">
+                        <ResponsiveContainer width="100%" height={260}>
+                          <BarChart
+                            data={SABOTEURS.map(s => ({ name: s.name, emoji: s.emoji, score: sabScores[s.key] || 0, key: s.key }))}
+                            margin={{ top: 12, right: 0, left: -24, bottom: 4 }}
+                          >
+                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(100,100,120,0.15)" vertical={false} />
+                            <XAxis
+                              dataKey="name" tick={{ fill: '#94a3b8', fontSize: 10 }}
+                              axisLine={false} tickLine={false} interval={0}
+                              angle={-35} textAnchor="end" height={60}
+                            />
+                            <YAxis
+                              domain={[0, 10]} tick={{ fill: '#94a3b8', fontSize: 11 }}
+                              axisLine={false} tickLine={false} allowDecimals={false}
+                            />
+                            <Tooltip
+                              content={({ active, payload }: any) => {
+                                if (!active || !payload?.length) return null;
+                                const d = payload[0].payload;
+                                return (
+                                  <div className="bg-dark-card border border-white/10 rounded-xl px-3 py-2 shadow-xl text-sm">
+                                    <p className="text-slate-400 text-xs mb-1">{d.emoji} {d.name}</p>
+                                    <p className="font-bold text-dark-text">{d.score}/10</p>
+                                  </div>
+                                );
+                              }}
+                            />
+                            <Bar dataKey="score" radius={[6, 6, 0, 0]} maxBarSize={40}>
+                              {SABOTEURS.map((s, i) => {
+                                const score = sabScores[s.key] || 0;
+                                const fill = score >= 7 ? '#f43f5e' : score >= 4 ? '#f59e0b' : '#10b981';
+                                return <Cell key={s.key} fill={fill} opacity={0.85} />;
+                              })}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+
+                      {/* Editable Score Grid */}
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                        {SABOTEURS.map(sab => {
+                          const score = sabScores[sab.key] || 0;
+                          return (
+                            <div key={sab.key} className="bg-light-card dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl p-3 text-center hover:border-violet-500/30 transition-all">
+                              <span className="text-lg">{sab.emoji}</span>
+                              <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-1 truncate">{sab.name}</p>
+                              <input
+                                type="number" min={0} max={10} step={0.5}
+                                value={score}
+                                onChange={e => {
+                                  let v = parseFloat(e.target.value);
+                                  if (isNaN(v)) v = 0;
+                                  if (v > 10) v = 10;
+                                  if (v < 0) v = 0;
+                                  setSabScores(p => ({ ...p, [sab.key]: v }));
+                                }}
+                                className={`w-full mt-1.5 text-center text-lg font-black bg-transparent border-b-2 outline-none transition-colors ${
+                                  score >= 7 ? 'text-rose-400 border-rose-500/40 focus:border-rose-500' : score >= 4 ? 'text-amber-400 border-amber-500/40 focus:border-amber-500' : 'text-emerald-400 border-emerald-500/40 focus:border-emerald-500'
+                                }`}
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Perfil DISC Tab */}
+              {activeTab === 'disc' && (
+                <div className="max-w-3xl mx-auto">
+                  <div className="flex items-center gap-2 mb-6">
+                    <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                      <UsersIcon className="text-blue-500" size={16} />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-800 dark:text-white">Perfil Comportamental DISC</h3>
+                      <p className="text-[10px] text-slate-400 uppercase tracking-wider">Dominância • Influência • Estabilidade • Conformidade</p>
+                    </div>
+                  </div>
+
+                  {discLoading ? (
+                    <div className="flex justify-center py-12"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" /></div>
+                  ) : !discHasData ? (
+                    <div className="text-center py-16">
+                      <UsersIcon size={40} className="mx-auto mb-4 text-slate-300 dark:text-slate-600" />
+                      <p className="text-slate-500 dark:text-slate-400 text-sm font-medium">Avaliação DISC ainda não realizada</p>
+                      <p className="text-slate-400 dark:text-slate-500 text-xs mt-1">Envie o link do teste ao candidato pela sidebar</p>
+                    </div>
+                  ) : (
+                    <>
+                      {/* DISC Chart */}
+                      <div className="bg-light-card dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl p-5 mb-5">
+                        <ResponsiveContainer width="100%" height={260}>
+                          <BarChart
+                            data={[
+                              { name: 'Dominância', label: 'D', score: discData.d_score, color: '#ef4444' },
+                              { name: 'Influência', label: 'I', score: discData.i_score, color: '#f59e0b' },
+                              { name: 'Estabilidade', label: 'S', score: discData.s_score, color: '#10b981' },
+                              { name: 'Conformidade', label: 'C', score: discData.c_score, color: '#3b82f6' },
+                            ]}
+                            margin={{ top: 12, right: 0, left: -16, bottom: 4 }}
+                          >
+                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(100,100,120,0.15)" vertical={false} />
+                            <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={false} tickLine={false} />
+                            <YAxis domain={[0, 100]} tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `${v}%`} />
+                            <Tooltip content={({ active, payload }: any) => {
+                              if (!active || !payload?.length) return null;
+                              const d = payload[0].payload;
+                              return (
+                                <div className="bg-dark-card border border-white/10 rounded-xl px-3 py-2 shadow-xl text-sm">
+                                  <p className="text-slate-400 text-xs mb-1">{d.name}</p>
+                                  <p className="font-bold text-dark-text">{d.score}%</p>
+                                </div>
+                              );
+                            }} />
+                            <Bar dataKey="score" radius={[8, 8, 0, 0]} maxBarSize={60}>
+                              {['#ef4444','#f59e0b','#10b981','#3b82f6'].map((c, i) => <Cell key={i} fill={c} opacity={0.85} />)}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+
+                      {/* DISC Profile Cards */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        {[
+                          { key: 'D', name: 'Dominância', color: '#ef4444', score: discData.d_score, desc: 'Resultado-orientado' },
+                          { key: 'I', name: 'Influência', color: '#f59e0b', score: discData.i_score, desc: 'Comunicativo' },
+                          { key: 'S', name: 'Estabilidade', color: '#10b981', score: discData.s_score, desc: 'Colaborativo' },
+                          { key: 'C', name: 'Conformidade', color: '#3b82f6', score: discData.c_score, desc: 'Analítico' },
+                        ].map(p => (
+                          <div key={p.key} className="bg-light-card dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl p-4 text-center">
+                            <div className="w-10 h-10 rounded-xl mx-auto mb-2 flex items-center justify-center text-white text-lg font-black" style={{ background: p.color }}>{p.key}</div>
+                            <p className="text-xs font-bold text-slate-700 dark:text-slate-300">{p.name}</p>
+                            <p className="text-2xl font-black mt-1" style={{ color: p.color }}>{p.score}%</p>
+                            <p className="text-[10px] text-slate-400 mt-0.5">{p.desc}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -452,6 +696,56 @@ export const CandidateDetailModal: React.FC<CandidateDetailModalProps> = ({
                     <Calendar size={12} className="text-slate-400"/>
                     {new Date(candidate.created_at).toLocaleDateString('pt-BR')}
                   </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="h-px bg-slate-200 dark:bg-white/10 w-full my-6"></div>
+
+            <div className="mb-6">
+              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                <Brain size={14} /> Teste de Sabotadores
+              </h3>
+              <div className="space-y-3">
+                <button
+                  onClick={() => { const baseUrl = window.location.origin; navigator.clipboard.writeText(`${baseUrl}/?saboteur-test=${candidate.id}`); setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2000); }}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-bold rounded-xl transition-all border border-slate-200 dark:border-white/10 hover:border-violet-500/30 bg-white dark:bg-dark-bg hover:bg-violet-500/5 text-slate-600 dark:text-slate-300"
+                >
+                  {linkCopied ? <><Check size={13} className="text-emerald-400" /> Link Copiado!</> : <><Copy size={13} className="text-violet-400" /> Copiar Link do Teste</>}
+                </button>
+                <a
+                  href={`/?saboteur-test=${candidate.id}`} target="_blank" rel="noopener noreferrer"
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-medium rounded-xl transition-all border border-slate-200 dark:border-white/10 hover:border-violet-500/30 bg-white dark:bg-dark-bg hover:bg-violet-500/5 text-slate-500 dark:text-slate-400"
+                >
+                  <ExternalLink size={13} /> Abrir Teste
+                </a>
+                <div className={`flex items-center gap-2 px-3 py-2 text-xs font-bold rounded-lg ${sabHasData ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}>
+                  {sabHasData ? <><CheckCircle2 size={13} /> Resultado Preenchido</> : <><Clock size={13} /> Pendente</>}
+                </div>
+              </div>
+            </div>
+
+            <div className="h-px bg-slate-200 dark:bg-white/10 w-full my-6"></div>
+
+            <div className="mb-6">
+              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                <UsersIcon size={14} /> Teste DISC
+              </h3>
+              <div className="space-y-3">
+                <button
+                  onClick={() => { const baseUrl = window.location.origin; navigator.clipboard.writeText(`${baseUrl}/?disc-test=${candidate.id}`); setDiscLinkCopied(true); setTimeout(() => setDiscLinkCopied(false), 2000); }}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-bold rounded-xl transition-all border border-slate-200 dark:border-white/10 hover:border-blue-500/30 bg-white dark:bg-dark-bg hover:bg-blue-500/5 text-slate-600 dark:text-slate-300"
+                >
+                  {discLinkCopied ? <><Check size={13} className="text-emerald-400" /> Link Copiado!</> : <><Copy size={13} className="text-blue-400" /> Copiar Link DISC</>}
+                </button>
+                <a
+                  href={`/?disc-test=${candidate.id}`} target="_blank" rel="noopener noreferrer"
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-medium rounded-xl transition-all border border-slate-200 dark:border-white/10 hover:border-blue-500/30 bg-white dark:bg-dark-bg hover:bg-blue-500/5 text-slate-500 dark:text-slate-400"
+                >
+                  <ExternalLink size={13} /> Abrir Teste
+                </a>
+                <div className={`flex items-center gap-2 px-3 py-2 text-xs font-bold rounded-lg ${discHasData ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}>
+                  {discHasData ? <><CheckCircle2 size={13} /> Resultado Preenchido</> : <><Clock size={13} /> Pendente</>}
                 </div>
               </div>
             </div>

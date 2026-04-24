@@ -1015,9 +1015,11 @@ async function startServer() {
         nome TEXT NOT NULL,
         cargo TEXT,
         cols JSONB NOT NULL DEFAULT '[]',
+        form_fields JSONB DEFAULT NULL,
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
+    await pool.query(`ALTER TABLE hiring_folders ADD COLUMN IF NOT EXISTS form_fields JSONB DEFAULT NULL`);
     await pool.query(`
       CREATE TABLE IF NOT EXISTS hiring_candidates (
         id SERIAL PRIMARY KEY,
@@ -1060,6 +1062,36 @@ async function startServer() {
       )
     `);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_hiring_candidate_history_cand ON hiring_candidate_history(candidate_id)`);
+
+    // Saboteur results table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS hiring_saboteur_results (
+        id SERIAL PRIMARY KEY,
+        candidate_id INTEGER REFERENCES hiring_candidates(id) ON DELETE CASCADE,
+        saboteur_key TEXT NOT NULL,
+        score NUMERIC(4,1) DEFAULT 0,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(candidate_id, saboteur_key)
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_hiring_saboteur_cand ON hiring_saboteur_results(candidate_id)`);
+    // Migration: score INTEGER → NUMERIC
+    await pool.query(`ALTER TABLE hiring_saboteur_results ALTER COLUMN score TYPE NUMERIC(4,1)`);
+
+    // DISC profile results table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS hiring_disc_results (
+        id SERIAL PRIMARY KEY,
+        candidate_id INTEGER REFERENCES hiring_candidates(id) ON DELETE CASCADE UNIQUE,
+        d_score NUMERIC(5,1) DEFAULT 0,
+        i_score NUMERIC(5,1) DEFAULT 0,
+        s_score NUMERIC(5,1) DEFAULT 0,
+        c_score NUMERIC(5,1) DEFAULT 0,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
 
     // Hiring documents table
     await pool.query(`
@@ -7382,10 +7414,10 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
   // PUT update folder
   app.put("/api/hiring/folders/:id", async (req, res) => {
     try {
-      const { nome, cargo, cols } = req.body;
+      const { nome, cargo, cols, form_fields } = req.body;
       const { rows } = await pool.query(
-        "UPDATE hiring_folders SET nome = $1, cargo = $2, cols = $3 WHERE id = $4 RETURNING *",
-        [nome, cargo || null, JSON.stringify(cols || []), req.params.id]
+        "UPDATE hiring_folders SET nome = $1, cargo = $2, cols = $3, form_fields = $4 WHERE id = $5 RETURNING *",
+        [nome, cargo || null, JSON.stringify(cols || []), form_fields !== undefined ? JSON.stringify(form_fields) : null, req.params.id]
       );
       if (rows.length === 0) return res.status(404).json({ error: "Folder not found" });
       res.json(rows[0]);
@@ -7441,7 +7473,7 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
   app.get("/api/hiring/public/folders/:id", async (req, res) => {
     try {
       const { id } = req.params;
-      const { rows } = await pool.query("SELECT id, nome, cargo, cols FROM hiring_folders WHERE id = $1", [id]);
+      const { rows } = await pool.query("SELECT id, nome, cargo, cols, form_fields FROM hiring_folders WHERE id = $1", [id]);
       if (rows.length === 0) return res.status(404).json({ error: "Vaga não encontrada" });
       res.json(rows[0]);
     } catch (err: any) {
@@ -7462,6 +7494,11 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
       const { rows } = await pool.query(
         "INSERT INTO hiring_candidates (folder_id, nome, contato, col, form_data) VALUES ($1, $2, $3, $4, $5) RETURNING *",
         [folder_id, nome, contato, col, form_data]
+      );
+      // Auto history entry
+      await pool.query(
+        "INSERT INTO hiring_candidate_history (candidate_id, action, details, user_name) VALUES ($1, $2, $3, $4)",
+        [rows[0].id, 'Formulário preenchido', 'Candidato preencheu o formulário de inscrição da vaga.', nome]
       );
       res.json(rows[0]);
     } catch (err: any) {
@@ -7493,6 +7530,85 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
       res.json({ ok: true });
     } catch (err: any) {
       console.error("[hiring] DELETE candidate error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Saboteur Results ────────────────────────────────────────────────────────
+
+  app.get("/api/hiring/candidates/:id/saboteurs", async (req, res) => {
+    try {
+      const { rows } = await pool.query(
+        "SELECT saboteur_key, score FROM hiring_saboteur_results WHERE candidate_id = $1 ORDER BY saboteur_key",
+        [req.params.id]
+      );
+      res.json(rows);
+    } catch (err: any) {
+      console.error("[hiring] GET saboteurs error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put("/api/hiring/candidates/:id/saboteurs", async (req, res) => {
+    try {
+      const { results } = req.body; // Array of { saboteur_key, score }
+      if (!Array.isArray(results)) return res.status(400).json({ error: "results must be an array" });
+      for (const r of results) {
+        await pool.query(
+          `INSERT INTO hiring_saboteur_results (candidate_id, saboteur_key, score)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (candidate_id, saboteur_key)
+           DO UPDATE SET score = $3, updated_at = NOW()`,
+          [req.params.id, r.saboteur_key, r.score || 0]
+        );
+      }
+      const { rows } = await pool.query(
+        "SELECT saboteur_key, score FROM hiring_saboteur_results WHERE candidate_id = $1 ORDER BY saboteur_key",
+        [req.params.id]
+      );
+      res.json(rows);
+      // Auto history entry
+      await pool.query(
+        "INSERT INTO hiring_candidate_history (candidate_id, action, details, user_name) VALUES ($1, $2, $3, $4)",
+        [req.params.id, 'Teste de Sabotadores concluído', 'Candidato completou a avaliação de Sabotadores (Inteligência Positiva).', 'Sistema']
+      );
+    } catch (err: any) {
+      console.error("[hiring] PUT saboteurs error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── DISC Profile Results ──────────────────────────────────────────────────
+  app.get("/api/hiring/candidates/:id/disc", async (req, res) => {
+    try {
+      const { rows } = await pool.query(
+        "SELECT d_score, i_score, s_score, c_score FROM hiring_disc_results WHERE candidate_id = $1",
+        [req.params.id]
+      );
+      res.json(rows[0] || { d_score: 0, i_score: 0, s_score: 0, c_score: 0 });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put("/api/hiring/candidates/:id/disc", async (req, res) => {
+    try {
+      const { d_score, i_score, s_score, c_score } = req.body;
+      const { rows } = await pool.query(
+        `INSERT INTO hiring_disc_results (candidate_id, d_score, i_score, s_score, c_score)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (candidate_id) DO UPDATE SET d_score=$2, i_score=$3, s_score=$4, c_score=$5, updated_at=NOW()
+         RETURNING *`,
+        [req.params.id, d_score || 0, i_score || 0, s_score || 0, c_score || 0]
+      );
+      // Auto history entry
+      await pool.query(
+        "INSERT INTO hiring_candidate_history (candidate_id, action, details, user_name) VALUES ($1, $2, $3, $4)",
+        [req.params.id, 'Teste DISC concluído', 'Candidato completou a avaliação de Perfil Comportamental DISC.', 'Sistema']
+      );
+      res.json(rows[0]);
+    } catch (err: any) {
+      console.error("[hiring] PUT disc error:", err);
       res.status(500).json({ error: err.message });
     }
   });

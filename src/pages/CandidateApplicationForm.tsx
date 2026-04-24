@@ -5,6 +5,7 @@ interface FolderData {
   id: number;
   nome: string;
   cargo: string | null;
+  form_fields?: FormField[] | null;
 }
 
 interface FormField {
@@ -53,14 +54,20 @@ export default function CandidateApplicationForm() {
 
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(null);
 
-  const [formData, setFormData] = useState<Record<string, string>>(() => {
+  // Dynamic steps: use folder's custom fields or fall back to default
+  const steps = React.useMemo(() => {
+    if (folder?.form_fields && folder.form_fields.length > 0) return folder.form_fields;
+    return FORM_STEPS;
+  }, [folder]);
+
+  const [formData, setFormData] = useState<Record<string, string>>({});
+
+  // Re-initialize formData when steps change
+  React.useEffect(() => {
     const init: Record<string, string> = {};
-    FORM_STEPS.forEach(f => {
-      if (f.type === 'select' && f.options) init[f.key] = '';
-      else init[f.key] = '';
-    });
-    return init;
-  });
+    steps.forEach(f => { init[f.key] = ''; });
+    setFormData(init);
+  }, [steps]);
 
   useEffect(() => {
     if (!folderId) { setLoading(false); return; }
@@ -78,8 +85,8 @@ export default function CandidateApplicationForm() {
     }
   }, [currentStep]);
 
-  const currentField = currentStep >= 0 ? FORM_STEPS[currentStep] : null;
-  const totalSteps = FORM_STEPS.length;
+  const currentField = currentStep >= 0 ? steps[currentStep] : null;
+  const totalSteps = steps.length;
   const progress = currentStep >= 0 ? ((currentStep + 1) / totalSteps) * 100 : 0;
 
   const canAdvance = () => {
@@ -218,8 +225,8 @@ export default function CandidateApplicationForm() {
               <img src="/logobranca.png" alt="Grape Mídia" className="w-10 h-10 object-contain" referrerPolicy="no-referrer" />
             </div>
 
-            <h1 className="text-4xl sm:text-5xl font-extrabold text-white mb-4 tracking-tight leading-tight">
-              Formulário de<br />
+            <h1 className="text-3xl sm:text-5xl font-extrabold text-white mb-4 tracking-tight leading-tight">
+              Formulário de{' '}
               <span className="bg-gradient-to-r from-violet-400 to-indigo-400 bg-clip-text text-transparent">Inscrição</span>
             </h1>
 
@@ -252,7 +259,7 @@ export default function CandidateApplicationForm() {
   // ── Question Steps ──
   const stepNumber = currentStep + 1;
   const isLastStep = currentStep === totalSteps - 1;
-  const field = FORM_STEPS[currentStep];
+  const field = steps[currentStep];
   const value = formData[field.key];
 
   return (
