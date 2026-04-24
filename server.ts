@@ -1167,6 +1167,28 @@ async function startServer() {
       `);
     } catch (e: any) { console.log('Skipping contratacao menu injection:', e.message); }
 
+    // Inject Contas a Pagar page into sidebar (FINANCEIRO section)
+    try {
+      await pool.query(`
+        INSERT INTO menu_pages (id, section_id, label, icon, template, order_index)
+        VALUES ('contas-a-pagar', 'financeiro', 'Contas a Pagar', 'FileText', 'contas-a-pagar', 2)
+        ON CONFLICT (id) DO NOTHING;
+      `);
+      // Bump CRM Financeiro order to 3 to keep it after Contas a Pagar
+      await pool.query(`UPDATE menu_pages SET order_index = 3 WHERE id = 'crm-financeiro' AND section_id = 'financeiro'`);
+    } catch (e: any) { console.log('Skipping contas-a-pagar menu injection:', e.message); }
+
+    // Inject Contas a Receber page into sidebar (FINANCEIRO section)
+    try {
+      await pool.query(`
+        INSERT INTO menu_pages (id, section_id, label, icon, template, order_index)
+        VALUES ('contas-a-receber', 'financeiro', 'Contas a Receber', 'ArrowDownLeft', 'contas-a-receber', 3)
+        ON CONFLICT (id) DO NOTHING;
+      `);
+      // Bump CRM Financeiro order to 4
+      await pool.query(`UPDATE menu_pages SET order_index = 4 WHERE id = 'crm-financeiro' AND section_id = 'financeiro'`);
+    } catch (e: any) { console.log('Skipping contas-a-receber menu injection:', e.message); }
+
   } catch (err) {
     console.error("Error initializing database tables:", err);
   }
@@ -3683,6 +3705,124 @@ app.get("/api/todos", async (req, res) => {
       res.json(result.rows);
     } catch (err) {
       console.error("Error fetching financeiro despesas:", err);
+      res.status(500).json({ error: "Failed" });
+    }
+  });
+
+  // Contas a Pagar (bills_to_pay full view)
+  app.get("/api/financeiro/contas-a-pagar", async (req, res) => {
+    try {
+      const mes = (req.query.month as string) || new Date().toISOString().slice(0, 7);
+      const inicio = `${mes}-01`;
+      const [fy, fm] = mes.split('-').map(Number);
+      const fn = fm === 12 ? 1 : fm + 1; const ny = fm === 12 ? fy + 1 : fy;
+      const fim = `${ny}-${String(fn).padStart(2,'0')}-01`;
+
+      const result = await pool.query(`
+        SELECT
+          fm.id,
+          fm.description AS doc_description,
+          fm.movement_value,
+          fm.value AS original_value,
+          fm.movement_date AS payment_date,
+          fm.expiration_date,
+          fm.status,
+          fm.type_column,
+          fm.payment_method,
+          fm.document_code,
+          fm.grapehub_category,
+          fp.name AS people_name,
+          fp.cnpjcpf AS people_cnpjcpf,
+          fc1.description AS category_l1_desc,
+          fc2.description AS category_l2_desc,
+          fc3.description AS category_l3_desc
+        FROM fin_movements fm
+        LEFT JOIN fin_people fp ON fp.id = fm.fin_people_id
+        LEFT JOIN fin_categories fc1 ON fc1.external_id = fm.category_l1_ext_id
+        LEFT JOIN fin_categories fc2 ON fc2.external_id = fm.category_l2_ext_id
+        LEFT JOIN fin_categories fc3 ON fc3.external_id = fm.category_l3_ext_id
+        WHERE fm.source = 'bills_to_pay'
+          AND (
+            (fm.expiration_date >= $1 AND fm.expiration_date < $2)
+            OR (fm.movement_date >= $1 AND fm.movement_date < $2)
+          )
+        ORDER BY fm.expiration_date ASC
+      `, [inicio, fim]);
+
+      const rows = result.rows;
+      const today = new Date().toISOString().slice(0, 10);
+      const tomorrow = (() => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); })();
+
+      const summary = {
+        total_previsto: rows
+          .filter((r: any) => ['Pendente', 'Atrasado', 'Vence Hoje'].includes(r.status))
+          .reduce((s: number, r: any) => s + parseFloat(r.original_value || '0'), 0),
+        ja_pago: rows
+          .filter((r: any) => ['Conciliado', 'Quitado'].includes(r.status))
+          .reduce((s: number, r: any) => s + Math.abs(parseFloat(r.movement_value || '0')), 0),
+        total_mes: rows
+          .reduce((s: number, r: any) => s + parseFloat(r.original_value || '0'), 0),
+        vence_hoje_amanha: rows
+          .filter((r: any) => {
+            const exp = r.expiration_date?.toISOString?.()?.slice(0, 10) || r.expiration_date?.slice?.(0, 10);
+            return ['Pendente', 'Vence Hoje'].includes(r.status) && (exp === today || exp === tomorrow);
+          })
+          .reduce((s: number, r: any) => s + parseFloat(r.original_value || '0'), 0),
+      };
+
+      res.json({ summary, items: rows });
+    } catch (err) {
+      console.error("Error fetching contas a pagar:", err);
+      res.status(500).json({ error: "Failed" });
+    }
+  });
+
+  // Contas a Receber (fin_movements_asaas — incoming payments)
+  app.get("/api/fin-receivables", async (req, res) => {
+    try {
+      const mes = (req.query.month as string) || new Date().toISOString().slice(0, 7);
+      const inicio = `${mes}-01`;
+      const [fy, fm] = mes.split('-').map(Number);
+      const fn = fm === 12 ? 1 : fm + 1; const ny = fm === 12 ? fy + 1 : fy;
+      const fim = `${ny}-${String(fn).padStart(2, '0')}-01`;
+
+      const result = await pool.query(`
+        SELECT
+          asaas_id,
+          transaction_type,
+          value,
+          transaction_date,
+          description,
+          balance,
+          payment_id
+        FROM fin_movements_asaas
+        WHERE type = 1
+          AND transaction_type IN ('PAYMENT_RECEIVED', 'RECEIVABLE_ANTICIPATION_GROSS_CREDIT')
+          AND transaction_date >= $1
+          AND transaction_date < $2
+        ORDER BY transaction_date DESC
+      `, [inicio, fim]);
+
+      const rows = result.rows;
+
+      const cobracoes = rows.filter((r: any) => r.transaction_type === 'PAYMENT_RECEIVED');
+      const antecipacoes = rows.filter((r: any) => r.transaction_type === 'RECEIVABLE_ANTICIPATION_GROSS_CREDIT');
+
+      const total_recebido = cobracoes.reduce((s: number, r: any) => s + parseFloat(r.value || '0'), 0);
+      const total_antecipacoes = antecipacoes.reduce((s: number, r: any) => s + parseFloat(r.value || '0'), 0);
+      const total_mes = total_recebido + total_antecipacoes;
+
+      // Saldo final = balance do último registro do mês (cronologicamente)
+      const lastRow = rows.length > 0 ? rows[0] : null; // already sorted DESC
+      const saldo_final = lastRow ? parseFloat(lastRow.balance || '0') : 0;
+
+      res.json({
+        summary: { total_recebido, total_antecipacoes, total_mes, saldo_final },
+        cobracoes_recebidas: cobracoes,
+        antecipacoes,
+      });
+    } catch (err) {
+      console.error("Error fetching fin-receivables:", err);
       res.status(500).json({ error: "Failed" });
     }
   });

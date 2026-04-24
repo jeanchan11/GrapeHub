@@ -29,6 +29,8 @@ import DashboardOperacional from './src/pages/DashboardOperacional';
 import ParceirosSquad from './src/pages/ParceirosSquad';
 import TodoStaff from './src/pages/TodoStaff';
 import ContratacaoPage from './src/pages/ContratacaoPage';
+import ContasAPagar from './src/pages/ContasAPagar';
+import ContasAReceber from './src/pages/ContasAReceber';
 import CandidateApplicationForm from './src/pages/CandidateApplicationForm';
 import SaboteurTestPage from './src/pages/SaboteurTestPage';
 import DiscTestPage from './src/pages/DiscTestPage';
@@ -144,6 +146,7 @@ const AppContent: React.FC = () => {
     const isAdmin = userData?.role === 'superadmin' || userData?.role === 'gerente-operacional';
     const isAllowed = isAdmin || userData?.allowedPages?.includes(activePage);
     
+    // Admin panel — superadmin only
     if (activePage === 'admin' && userData?.role === 'superadmin') {
       return <AdminPanel />;
     }
@@ -157,7 +160,10 @@ const AppContent: React.FC = () => {
         </div>
       );
     }
-    if (!isAllowed) {
+    // Settings and notifications — accessible to ALL logged-in users
+    if (activePage === 'settings' || activePage === 'notifications') {
+      // fall through to switch below
+    } else if (!isAllowed) {
       return (
         <div className="flex items-center justify-center h-full text-slate-500">
           <div className="text-center">
@@ -238,6 +244,10 @@ const AppContent: React.FC = () => {
         return <TodoStaff />;
       case 'contratacao':
         return <ContratacaoPage />;
+      case 'contas-a-pagar':
+        return <ContasAPagar />;
+      case 'contas-a-receber':
+        return <ContasAReceber />;
       default:
         return <GestorCalculator />;
     }
