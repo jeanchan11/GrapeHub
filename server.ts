@@ -29,14 +29,22 @@ process.on("unhandledRejection", (reason, promise) => {
 dotenv.config();
 
 // ── Asaas API helper ──────────────────────────────────────
-async function asaasFetch(endpoint: string) {
+async function asaasFetch(endpoint: string): Promise<any | null> {
   const key = process.env.ASAAS_API_KEY;
-  if (!key) throw new Error('ASAAS_API_KEY não configurada no .env');
-  const res = await fetch(`https://api.asaas.com/v3${endpoint}`, {
-    headers: { 'access_token': key }
-  });
-  if (!res.ok) throw new Error(`Asaas API error: ${res.status} ${res.statusText}`);
-  return res.json();
+  if (!key) return null;
+  try {
+    const res = await fetch(`https://api.asaas.com/v3${endpoint}`, {
+      headers: { 'access_token': key }
+    });
+    if (!res.ok) {
+      console.warn(`Asaas API error: ${res.status} ${res.statusText}`);
+      return null;
+    }
+    return res.json();
+  } catch (err: any) {
+    console.warn('Asaas API network error:', err.message);
+    return null;
+  }
 }
 
 const { Pool } = pg;
@@ -3429,11 +3437,10 @@ app.get("/api/todos", async (req, res) => {
 
       // 1) Saldo do caixa — API real do Asaas (com fallback para cálculo via banco)
       let saldo_caixa = 0;
-      try {
-        const balanceData = await asaasFetch('/finance/balance');
-        saldo_caixa = parseFloat(balanceData.balance || '0');
-      } catch (apiErr: any) {
-        console.warn('Asaas API fallback (resumo):', apiErr.message);
+      const balanceData = await asaasFetch('/finance/balance');
+      if (balanceData?.balance !== undefined) {
+        saldo_caixa = parseFloat(balanceData.balance);
+      } else {
         const saldoRes = await pool.query(`
           SELECT
             COALESCE(SUM(CASE WHEN type = 1 THEN value ELSE 0 END), 0) -
@@ -3518,11 +3525,10 @@ app.get("/api/todos", async (req, res) => {
 
       // 1) Buscar saldo atual real via API Asaas
       let saldoAtual = 0;
-      try {
-        const balanceData = await asaasFetch('/finance/balance');
-        saldoAtual = parseFloat(balanceData.balance || '0');
-      } catch (apiErr: any) {
-        console.warn('Asaas API fallback (fluxo):', apiErr.message);
+      const balData = await asaasFetch('/finance/balance');
+      if (balData?.balance !== undefined) {
+        saldoAtual = parseFloat(balData.balance);
+      } else {
         const saldoRes = await pool.query(`
           SELECT
             COALESCE(SUM(CASE WHEN type = 1 THEN value ELSE 0 END), 0) -
