@@ -30,8 +30,10 @@ dotenv.config();
 
 // ── Asaas API helper (usa https nativo para compatibilidade) ──
 function asaasFetch(endpoint: string): Promise<any | null> {
-  const key = process.env.ASAAS_API_KEY;
+  let key = process.env.ASAAS_API_KEY;
   if (!key) return Promise.resolve(null);
+  // Hostinger escapa $ com \ — limpar
+  key = key.replace(/\\\$/g, '$');
   return new Promise((resolve) => {
     const req = https.request(`https://api.asaas.com/v3${endpoint}`, {
       method: 'GET',
