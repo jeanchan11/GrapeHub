@@ -7,6 +7,7 @@ import pg from "pg";
 import dotenv from "dotenv";
 import crypto from "crypto";
 import Anthropic from "@anthropic-ai/sdk";
+import multer from "multer";
 
 
 // IMMEDIATE LOGGING TO VERIFY BOOT
@@ -26,6 +27,17 @@ process.on("unhandledRejection", (reason, promise) => {
 });
 
 dotenv.config();
+
+// ── Asaas API helper ──────────────────────────────────────
+async function asaasFetch(endpoint: string) {
+  const key = process.env.ASAAS_API_KEY;
+  if (!key) throw new Error('ASAAS_API_KEY não configurada no .env');
+  const res = await fetch(`https://api.asaas.com/v3${endpoint}`, {
+    headers: { 'access_token': key }
+  });
+  if (!res.ok) throw new Error(`Asaas API error: ${res.status} ${res.statusText}`);
+  return res.json();
+}
 
 const { Pool } = pg;
 const __filename = fileURLToPath(import.meta.url);
@@ -586,6 +598,10 @@ async function startServer() {
       ALTER TABLE menu_pages ADD COLUMN IF NOT EXISTS template TEXT DEFAULT 'default';
       ALTER TABLE menu_pages ADD COLUMN IF NOT EXISTS icon_color TEXT;
       ALTER TABLE menu_pages ADD COLUMN IF NOT EXISTS section_id TEXT REFERENCES menu_sections(id) ON DELETE CASCADE;
+
+      -- Migration: Add status/type_column to fin_movements_asaas for Sicredi payment tracking
+      ALTER TABLE fin_movements_asaas ADD COLUMN IF NOT EXISTS sicredi_status VARCHAR(30) DEFAULT 'realizado';
+      ALTER TABLE fin_movements_asaas ADD COLUMN IF NOT EXISTS billing_month VARCHAR(7);
     `);
     console.log("Database tables initialized successfully.");
     
@@ -3411,48 +3427,87 @@ app.get("/api/todos", async (req, res) => {
       const fn = fm === 12 ? 1 : fm + 1; const ny = fm === 12 ? fy + 1 : fy;
       const fim = `${ny}-${String(fn).padStart(2,'0')}-01`;
 
-      const result = await pool.query(`
-        WITH crm_excluded AS (
-          SELECT fp.id AS fin_people_id
-          FROM fin_people fp
-          JOIN clients c ON c.id = fp.grapehub_client_id
-          WHERE c.crm_status IS NOT NULL AND c.crm_status != ''
-        ),
-        movements AS (
-          SELECT * FROM fin_movements
-          WHERE source NOT IN ('transfer_in', 'transfer_out')
-            AND (fin_people_id IS NULL OR fin_people_id NOT IN (SELECT fin_people_id FROM crm_excluded))
-            AND ((movement_date >= $1 AND movement_date < $2)
-             OR (expiration_date >= $1 AND expiration_date < $2))
-        ),
-        conciliados_codes AS (
-          SELECT DISTINCT document_code FROM movements 
-          WHERE type_column = 'realizado' AND status = 'Conciliado' AND document_code IS NOT NULL
-        )
-        SELECT
-          COALESCE(SUM(CASE WHEN type = 1  AND type_column = 'realizado' THEN value ELSE 0 END), 0) AS caixa_realizado,
-          COALESCE(SUM(CASE WHEN type = -1 AND type_column = 'realizado' 
-                            AND category_l1_ext_id != 176913 THEN value ELSE 0 END), 0) AS saidas_operacionais,
-          COALESCE(SUM(CASE WHEN type = -1 AND type_column = 'realizado' 
-                            AND category_l1_ext_id = 176913 THEN value ELSE 0 END), 0) AS distribuicao,
-          COALESCE(SUM(CASE WHEN type = 1  AND type_column = 'previsto' 
-                            AND (document_code IS NULL OR document_code NOT IN (SELECT document_code FROM conciliados_codes))
-                            THEN movement_value ELSE 0 END), 0) AS a_receber,
-          COALESCE(SUM(CASE WHEN type = -1 AND type_column = 'previsto' 
-                            AND (document_code IS NULL OR document_code NOT IN (SELECT document_code FROM conciliados_codes))
-                            THEN movement_value ELSE 0 END), 0) AS despesas_previstas,
-          COALESCE(SUM(CASE WHEN type_column = 'realizado' THEN value * type ELSE 0 END), 0) AS saldo_periodo
-        FROM movements
-      `, [inicio, fim]);
+      // 1) Saldo do caixa — API real do Asaas (com fallback para cálculo via banco)
+      let saldo_caixa = 0;
+      try {
+        const balanceData = await asaasFetch('/finance/balance');
+        saldo_caixa = parseFloat(balanceData.balance || '0');
+      } catch (apiErr: any) {
+        console.warn('Asaas API fallback (resumo):', apiErr.message);
+        const saldoRes = await pool.query(`
+          SELECT
+            COALESCE(SUM(CASE WHEN type = 1 THEN value ELSE 0 END), 0) -
+            COALESCE(SUM(CASE WHEN type = -1 THEN value ELSE 0 END), 0) AS saldo
+          FROM fin_movements_asaas WHERE account = 'asaas'
+        `);
+        saldo_caixa = parseFloat(saldoRes.rows[0].saldo);
+      }
 
-      res.json(result.rows[0]);
+      // 2) Entradas realizadas (recebido)
+      const entradasRes = await pool.query(`
+        SELECT COALESCE(SUM(value), 0) AS total
+        FROM fin_movements_asaas
+        WHERE transaction_date >= $1 AND transaction_date < $2
+          AND type = 1 AND account = 'asaas' AND is_anticipation_pair = false
+      `, [inicio, fim]);
+      const recebido = parseFloat(entradasRes.rows[0].total);
+
+      // 3) Saídas realizadas (pago)
+      const saidasRes = await pool.query(`
+        SELECT COALESCE(SUM(value), 0) AS total
+        FROM fin_movements_asaas
+        WHERE transaction_date >= $1 AND transaction_date < $2
+          AND type = -1 AND account = 'asaas' AND is_anticipation_pair = false
+      `, [inicio, fim]);
+      const pago = parseFloat(saidasRes.rows[0].total);
+
+      // 4) A receber (pendentes em fin_receivables)
+      const aReceberRes = await pool.query(`
+        SELECT COALESCE(SUM(value), 0) AS total
+        FROM fin_receivables
+        WHERE due_date >= $1 AND due_date < $2
+          AND status IN ('Pendente', 'Confirmado', 'PENDING', 'OVERDUE')
+      `, [inicio, fim]);
+      const a_receber = parseFloat(aReceberRes.rows[0].total);
+
+      // 5) A pagar (provisões pendentes)
+      const aPagarRes = await pool.query(`
+        SELECT COALESCE(SUM(expected_value), 0) AS total
+        FROM fin_recurring_bill_entries
+        WHERE reference_month = $1::date AND status = 'pending'
+      `, [inicio]);
+      const a_pagar = parseFloat(aPagarRes.rows[0].total);
+
+      // Calculados
+      const faturamento_total = recebido + a_receber;
+      const despesas_total = pago + a_pagar;
+      const saldo_periodo = recebido - pago;
+      const previsto_fim_mes = saldo_caixa + a_receber - a_pagar;
+
+      res.json({
+        // Novos campos
+        saldo_caixa,
+        previsto_fim_mes,
+        recebido,
+        a_receber,
+        faturamento_total,
+        pago,
+        a_pagar,
+        despesas_total,
+        saldo_periodo,
+        // Retrocompatibilidade com Extrato
+        caixa_realizado: String(recebido),
+        saidas_operacionais: String(pago),
+        distribuicao: '0',
+        despesas_previstas: String(a_pagar),
+      });
     } catch (err) {
       console.error("Error fetching financeiro resumo:", err);
       res.status(500).json({ error: "Failed" });
     }
   });
 
-  // Fluxo semanal do mês (agrupado por semana)
+  // Fluxo diário do mês
   app.get("/api/financeiro/fluxo-diario", async (req, res) => {
     try {
       const mes = (req.query.mes as string) || new Date().toISOString().slice(0, 7);
@@ -3461,82 +3516,94 @@ app.get("/api/todos", async (req, res) => {
       const fn2 = fm2 === 12 ? 1 : fm2 + 1; const ny2 = fm2 === 12 ? fy2 + 1 : fy2;
       const fim = `${ny2}-${String(fn2).padStart(2,'0')}-01`;
 
-      const saldoBase = 70232.04;
+      // 1) Buscar saldo atual real via API Asaas
+      let saldoAtual = 0;
+      try {
+        const balanceData = await asaasFetch('/finance/balance');
+        saldoAtual = parseFloat(balanceData.balance || '0');
+      } catch (apiErr: any) {
+        console.warn('Asaas API fallback (fluxo):', apiErr.message);
+        const saldoRes = await pool.query(`
+          SELECT
+            COALESCE(SUM(CASE WHEN type = 1 THEN value ELSE 0 END), 0) -
+            COALESCE(SUM(CASE WHEN type = -1 THEN value ELSE 0 END), 0) AS saldo
+          FROM fin_movements_asaas WHERE account = 'asaas'
+        `);
+        saldoAtual = parseFloat(saldoRes.rows[0].saldo);
+      }
 
-      const saldoAnteriorResult = await pool.query(`
+      // 2) Buscar net de movimentações APÓS o mês de referência (para meses passados)
+      const netAposRes = await pool.query(`
         SELECT
           COALESCE(SUM(CASE WHEN type = 1 THEN value ELSE 0 END), 0) -
-          COALESCE(SUM(CASE WHEN type = -1 THEN value ELSE 0 END), 0) AS net_anterior
-        FROM fin_movements
-        WHERE type_column = 'realizado' AND status = 'Conciliado'
-          AND source NOT IN ('transfer_in', 'transfer_out')
-          AND COALESCE(movement_date, expiration_date) < $1
-      `, [inicio]);
+          COALESCE(SUM(CASE WHEN type = -1 THEN value ELSE 0 END), 0) AS net
+        FROM fin_movements_asaas
+        WHERE account = 'asaas' AND transaction_date >= $1
+      `, [fim]);
+      const netAposMes = parseFloat(netAposRes.rows[0].net);
 
-      const saldoAnterior = saldoBase + parseFloat(saldoAnteriorResult.rows[0].net_anterior);
-
-      const result = await pool.query(`
-        WITH crm_excluded AS (
-          SELECT fp.id AS fin_people_id
-          FROM fin_people fp
-          JOIN clients c ON c.id = fp.grapehub_client_id
-          WHERE c.crm_status IS NOT NULL AND c.crm_status != ''
-        ),
-        movements AS (
-          SELECT * FROM fin_movements
-          WHERE source NOT IN ('transfer_in', 'transfer_out')
-            AND (fin_people_id IS NULL OR fin_people_id NOT IN (SELECT fin_people_id FROM crm_excluded))
-            AND ((movement_date >= $1 AND movement_date < $2)
-             OR (expiration_date >= $1 AND expiration_date < $2))
-        ),
-        conciliados_no_mes AS (
-          SELECT DISTINCT document_code
-          FROM movements
-          WHERE type_column = 'realizado' AND status = 'Conciliado' AND document_code IS NOT NULL
-        ),
-        realizado_diario AS (
-          SELECT
-            COALESCE(movement_date, expiration_date) AS data_movimento,
-            SUM(CASE WHEN type = 1 THEN value ELSE 0 END) AS entradas_realizadas,
-            SUM(CASE WHEN type = -1 THEN value ELSE 0 END) AS saidas_realizadas
-          FROM movements
-          WHERE type_column = 'realizado' AND status = 'Conciliado'
-          GROUP BY data_movimento
-        ),
-        previsto_diario AS (
-          SELECT
-            expiration_date AS data_movimento,
-            SUM(CASE WHEN type = 1 THEN movement_value ELSE 0 END) AS entradas_previstas,
-            SUM(CASE WHEN type = -1 THEN movement_value ELSE 0 END) AS saidas_previstas
-          FROM movements
-          WHERE type_column = 'previsto' AND status IN ('Pendente', 'Vence Hoje')
-            AND expiration_date >= CURRENT_DATE
-            AND (document_code IS NULL OR document_code NOT IN (SELECT document_code FROM conciliados_no_mes))
-          GROUP BY data_movimento
-        )
+      // 3) Net do mês de referência (todas as movimentações, incluindo pares de antecipação)
+      const netMesRes = await pool.query(`
         SELECT
-          TO_CHAR(d.data_movimento, 'DD/MM') AS dia,
-          EXTRACT(DAY FROM d.data_movimento) AS dia_numero,
-          COALESCE(r.entradas_realizadas, 0) AS entradas_realizadas,
-          COALESCE(r.saidas_realizadas, 0) AS saidas_realizadas,
-          COALESCE(p.entradas_previstas, 0) AS entradas_previstas,
-          COALESCE(p.saidas_previstas, 0) AS saidas_previstas,
-          CASE WHEN r.data_movimento IS NOT NULL THEN true ELSE false END as tem_realizado
-        FROM (
-          SELECT data_movimento FROM realizado_diario
-          UNION
-          SELECT data_movimento FROM previsto_diario
-        ) d
-        LEFT JOIN realizado_diario r ON r.data_movimento = d.data_movimento
-        LEFT JOIN previsto_diario p ON p.data_movimento = d.data_movimento
-        WHERE d.data_movimento >= $1 AND d.data_movimento < $2
-        ORDER BY d.data_movimento
+          COALESCE(SUM(CASE WHEN type = 1 THEN value ELSE 0 END), 0) -
+          COALESCE(SUM(CASE WHEN type = -1 THEN value ELSE 0 END), 0) AS net
+        FROM fin_movements_asaas
+        WHERE account = 'asaas' AND transaction_date >= $1 AND transaction_date < $2
+      `, [inicio, fim]);
+      const netMes = parseFloat(netMesRes.rows[0].net);
+
+      // 4) Saldo no início do mês = saldo atual - movimentos do mês - movimentos após o mês
+      const saldoAnterior = saldoAtual - netMes - netAposMes;
+
+      // 5) Realizado diário — fin_movements_asaas (sem is_anticipation_pair para exibição)
+      const realizadoRes = await pool.query(`
+        SELECT
+          TO_CHAR(transaction_date, 'DD/MM') AS dia,
+          EXTRACT(DAY FROM transaction_date) AS dia_numero,
+          COALESCE(SUM(CASE WHEN type = 1 AND is_anticipation_pair = false THEN value ELSE 0 END), 0) AS entradas_realizadas,
+          COALESCE(SUM(CASE WHEN type = -1 AND is_anticipation_pair = false THEN value ELSE 0 END), 0) AS saidas_realizadas
+        FROM fin_movements_asaas
+        WHERE transaction_date >= $1 AND transaction_date < $2 AND account = 'asaas'
+        GROUP BY transaction_date
+        ORDER BY transaction_date
       `, [inicio, fim]);
 
-      res.json({
-        saldo_anterior: saldoAnterior,
-        diario: result.rows
-      });
+      // 6) Previsto entradas — fin_receivables pendentes por due_date
+      const prevEntRes = await pool.query(`
+        SELECT TO_CHAR(due_date, 'DD/MM') AS dia,
+               COALESCE(SUM(value), 0) AS entradas_previstas
+        FROM fin_receivables
+        WHERE due_date >= $1 AND due_date < $2
+          AND status IN ('Pendente', 'Confirmado', 'PENDING', 'OVERDUE')
+        GROUP BY due_date
+      `, [inicio, fim]);
+
+      // 7) Previsto saídas — fin_recurring_bill_entries pendentes por due_date
+      const prevSaiRes = await pool.query(`
+        SELECT TO_CHAR(due_date, 'DD/MM') AS dia,
+               COALESCE(SUM(expected_value), 0) AS saidas_previstas
+        FROM fin_recurring_bill_entries
+        WHERE reference_month = $1::date AND status = 'pending'
+        GROUP BY due_date
+      `, [inicio]);
+
+      // Merge all days
+      const dayMap: Record<string, any> = {};
+      for (const r of realizadoRes.rows) {
+        dayMap[r.dia] = { dia: r.dia, dia_numero: parseInt(r.dia_numero), entradas_realizadas: parseFloat(r.entradas_realizadas), saidas_realizadas: parseFloat(r.saidas_realizadas), entradas_previstas: 0, saidas_previstas: 0, tem_realizado: true };
+      }
+      for (const p of prevEntRes.rows) {
+        if (!dayMap[p.dia]) dayMap[p.dia] = { dia: p.dia, dia_numero: parseInt(p.dia.split('/')[0]), entradas_realizadas: 0, saidas_realizadas: 0, entradas_previstas: 0, saidas_previstas: 0, tem_realizado: false };
+        dayMap[p.dia].entradas_previstas = parseFloat(p.entradas_previstas);
+      }
+      for (const p of prevSaiRes.rows) {
+        if (!dayMap[p.dia]) dayMap[p.dia] = { dia: p.dia, dia_numero: parseInt(p.dia.split('/')[0]), entradas_realizadas: 0, saidas_realizadas: 0, entradas_previstas: 0, saidas_previstas: 0, tem_realizado: false };
+        dayMap[p.dia].saidas_previstas = parseFloat(p.saidas_previstas);
+      }
+
+      const diario = Object.values(dayMap).sort((a: any, b: any) => a.dia_numero - b.dia_numero);
+
+      res.json({ saldo_anterior: saldoAnterior, diario });
     } catch (err) {
       console.error("Error fetching fluxo diario:", err);
       res.status(500).json({ error: "Failed" });
@@ -3575,7 +3642,7 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
-  // Clientes recentes (últimos pagamentos do mês)
+  // Clientes recentes (últimos pagamentos recebidos no mês)
   app.get("/api/financeiro/clientes-recentes", async (req, res) => {
     try {
       const mes = (req.query.mes as string) || new Date().toISOString().slice(0, 7);
@@ -3586,20 +3653,18 @@ app.get("/api/todos", async (req, res) => {
 
       const result = await pool.query(`
         SELECT
-          fp.name,
-          fp.fantasy_name,
-          fm.movement_value AS valor,
-          fm.payment_method,
-          fm.status,
-          fm.installment_number,
-          fm.movement_date
-        FROM fin_movements fm
-        LEFT JOIN fin_people fp ON fp.id = fm.fin_people_id
-        WHERE fm.type = 1
-          AND fm.category_l1_ext_id = 176790
-          AND ((fm.movement_date >= $1 AND fm.movement_date < $2)
-            OR (fm.expiration_date >= $1 AND fm.expiration_date < $2))
-        ORDER BY COALESCE(fm.movement_date, fm.expiration_date) DESC
+          COALESCE(p.name, r.customer_name, r.description) AS name,
+          p.name AS fantasy_name,
+          r.value AS valor,
+          r.billing_type AS payment_method,
+          r.status,
+          '' AS installment_number,
+          r.payment_date AS movement_date
+        FROM fin_receivables r
+        LEFT JOIN fin_people p ON p.asaas_id = r.customer_id
+        WHERE r.status = 'Recebido'
+          AND r.payment_date >= $1 AND r.payment_date < $2
+        ORDER BY r.payment_date DESC
         LIMIT 10
       `, [inicio, fim]);
 
@@ -3610,23 +3675,23 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
-  // Inadimplentes
+  // Inadimplentes (cobranças vencidas não pagas)
   app.get("/api/financeiro/inadimplentes", async (req, res) => {
     try {
       const result = await pool.query(`
         SELECT
-          fp.name,
-          fp.fantasy_name,
-          fm.movement_value AS valor,
-          fm.payment_method,
-          fm.description,
-          fm.installment_number,
-          fm.expiration_date,
-          CURRENT_DATE - fm.expiration_date::date AS dias_atraso
-        FROM fin_movements fm
-        LEFT JOIN fin_people fp ON fp.id = fm.fin_people_id
-        WHERE fm.status = 'Atrasado'
-          AND fm.type = 1
+          COALESCE(p.name, r.customer_name) AS name,
+          p.name AS fantasy_name,
+          r.value AS valor,
+          r.billing_type AS payment_method,
+          r.description,
+          '' AS installment_number,
+          r.due_date AS expiration_date,
+          CURRENT_DATE - r.due_date::date AS dias_atraso
+        FROM fin_receivables r
+        LEFT JOIN fin_people p ON p.asaas_id = r.customer_id
+        WHERE r.status IN ('Confirmado', 'OVERDUE')
+          AND r.due_date < CURRENT_DATE
         ORDER BY dias_atraso DESC
       `);
 
@@ -3646,24 +3711,28 @@ app.get("/api/todos", async (req, res) => {
       const fn4 = fm4 === 12 ? 1 : fm4 + 1; const ny4 = fm4 === 12 ? fy4 + 1 : fy4;
       const fim = `${ny4}-${String(fn4).padStart(2,'0')}-01`;
 
-      const result = await pool.query(`
-        SELECT
-          COALESCE(SUM(CASE WHEN type = 1  THEN movement_value ELSE 0 END), 0) AS entradas_previstas,
-          COALESCE(SUM(CASE WHEN type = -1 THEN movement_value ELSE 0 END), 0) AS despesas_previstas,
-          COALESCE(SUM(movement_value * type), 0) AS saldo_projetado
-        FROM fin_movements
-        WHERE type_column = 'previsto'
-          AND status IN ('Pendente', 'Vence Hoje')
-          AND source NOT IN ('transfer_in', 'transfer_out')
-          AND (fin_people_id IS NULL OR fin_people_id NOT IN (
-            SELECT fp.id FROM fin_people fp
-            JOIN clients c ON c.id = fp.grapehub_client_id
-            WHERE c.crm_status IS NOT NULL AND c.crm_status != ''
-          ))
-          AND expiration_date >= $1 AND expiration_date < $2
+      // A receber
+      const recRes = await pool.query(`
+        SELECT COALESCE(SUM(value), 0) AS total
+        FROM fin_receivables
+        WHERE due_date >= $1 AND due_date < $2
+          AND status IN ('Pendente', 'Confirmado', 'PENDING', 'OVERDUE')
       `, [inicio, fim]);
+      const entradas_previstas = parseFloat(recRes.rows[0].total);
 
-      res.json(result.rows[0]);
+      // A pagar
+      const pagRes = await pool.query(`
+        SELECT COALESCE(SUM(expected_value), 0) AS total
+        FROM fin_recurring_bill_entries
+        WHERE reference_month = $1::date AND status = 'pending'
+      `, [inicio]);
+      const despesas_previstas = parseFloat(pagRes.rows[0].total);
+
+      res.json({
+        entradas_previstas: String(entradas_previstas),
+        despesas_previstas: String(despesas_previstas),
+        saldo_projetado: String(entradas_previstas - despesas_previstas),
+      });
     } catch (err) {
       console.error("Error fetching previsto:", err);
       res.status(500).json({ error: "Failed" });
@@ -3709,6 +3778,186 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
+  // ── DRE (Demonstração do Resultado do Exercício) ──────────
+  app.get("/api/financeiro/dre", async (req, res) => {
+    try {
+      const year = parseInt(req.query.year as string) || new Date().getFullYear();
+      const inicio = `${year}-01-01`;
+      const fim = `${year}-12-31`;
+
+      // Get all movements for the year with month info
+      const movRes = await pool.query(
+        `SELECT id, description, value, type, transaction_type,
+                grapehub_category, custom_category, custom_category_id,
+                is_anticipation_pair,
+                EXTRACT(MONTH FROM transaction_date)::int AS mes
+         FROM fin_movements_asaas
+         WHERE transaction_date BETWEEN $1 AND $2
+           AND COALESCE(is_anticipation_pair, false) = false
+         ORDER BY transaction_date`,
+        [inicio, fim]
+      );
+
+      // Get all categories
+      const catRes = await pool.query('SELECT id, external_id, structure, description, level FROM fin_categories ORDER BY structure');
+      const categories = catRes.rows;
+      const catByName: Record<string, any> = {};
+      for (const c of categories) {
+        catByName[c.description.toLowerCase()] = c;
+      }
+
+      // DRE node: monthly values array [0..11] for Jan..Dec
+      const emptyMonths = () => [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+
+      // Build tree: code -> { values: number[12], children }
+      const nodeMap: Record<string, { code: string; name: string; level: number; type: string; values: number[]; childCodes: string[] }> = {};
+
+      for (const cat of categories) {
+        const isReceita = cat.structure.startsWith('01') || cat.structure.startsWith('03');
+        nodeMap[cat.structure] = {
+          code: cat.structure,
+          name: cat.description,
+          level: cat.level,
+          type: isReceita ? 'receita' : 'despesa',
+          values: emptyMonths(),
+          childCodes: [],
+        };
+      }
+
+      // Link children
+      for (const cat of categories) {
+        if (cat.level === 2) {
+          const l1Key = cat.structure.split('.')[0];
+          if (nodeMap[l1Key]) nodeMap[l1Key].childCodes.push(cat.structure);
+        }
+        if (cat.level === 3) {
+          const parts = cat.structure.split('.');
+          const l2Key = `${parts[0]}.${parts[1]}`;
+          if (nodeMap[l2Key]) nodeMap[l2Key].childCodes.push(cat.structure);
+        }
+      }
+
+      // Map movements to leaf categories
+      for (const mov of movRes.rows) {
+        const catName = (mov.custom_category || mov.grapehub_category || '').toLowerCase().trim();
+        if (catName === 'transferencia entre contas') continue;
+
+        const found = catByName[catName];
+        if (!found || !nodeMap[found.structure]) continue;
+
+        const valor = Math.abs(parseFloat(mov.value || '0'));
+        const mi = (mov.mes || 1) - 1; // 0-indexed month
+        const parts = found.structure.split('.');
+
+        // Add to the matched level
+        nodeMap[found.structure].values[mi] += valor;
+
+        // Bubble up to parents
+        if (found.level === 3) {
+          const l2Key = `${parts[0]}.${parts[1]}`;
+          const l1Key = parts[0];
+          if (nodeMap[l2Key]) nodeMap[l2Key].values[mi] += valor;
+          if (nodeMap[l1Key]) nodeMap[l1Key].values[mi] += valor;
+        } else if (found.level === 2) {
+          const l1Key = parts[0];
+          if (nodeMap[l1Key]) nodeMap[l1Key].values[mi] += valor;
+        }
+      }
+
+      // Build flat rows (only categories that have data somewhere in the year)
+      const hasData = (code: string): boolean => {
+        const n = nodeMap[code];
+        if (!n) return false;
+        if (n.values.some(v => v > 0)) return true;
+        return n.childCodes.some(cc => hasData(cc));
+      };
+
+      const rows: Array<{
+        code: string;
+        name: string;
+        level: number;
+        values: number[];
+        total: number;
+        type: string;
+        isGroup: boolean;
+      }> = [];
+
+      // L1 sorted by code
+      const l1Codes = categories.filter(c => c.level === 1).map(c => c.structure).sort();
+      for (const l1Code of l1Codes) {
+        const l1 = nodeMap[l1Code];
+        if (!l1 || !hasData(l1Code)) continue;
+
+        const l1Total = l1.values.reduce((s, v) => s + v, 0);
+        rows.push({ code: l1.code, name: l1.name, level: 1, values: [...l1.values], total: l1Total, type: l1.type, isGroup: true });
+
+        // L2 sorted by code
+        const l2Codes = [...l1.childCodes].sort();
+        for (const l2Code of l2Codes) {
+          const l2 = nodeMap[l2Code];
+          if (!l2 || !hasData(l2Code)) continue;
+
+          const l2Total = l2.values.reduce((s, v) => s + v, 0);
+          rows.push({ code: l2.code, name: l2.name, level: 2, values: [...l2.values], total: l2Total, type: l2.type, isGroup: l2.childCodes.length > 0 });
+
+          // L3 sorted by code
+          const l3Codes = [...l2.childCodes].sort();
+          for (const l3Code of l3Codes) {
+            const l3 = nodeMap[l3Code];
+            if (!l3 || !l3.values.some(v => v > 0)) continue;
+
+            const l3Total = l3.values.reduce((s, v) => s + v, 0);
+            rows.push({ code: l3.code, name: l3.name, level: 3, values: [...l3.values], total: l3Total, type: l3.type, isGroup: false });
+          }
+        }
+      }
+
+      // Monthly summaries
+      const monthlyReceitas = emptyMonths();
+      const monthlyDespesas = emptyMonths();
+      const monthlyDistribuicao = emptyMonths();
+      for (let m = 0; m < 12; m++) {
+        monthlyReceitas[m] = (nodeMap['01']?.values[m] || 0) + (nodeMap['03']?.values[m] || 0);
+        monthlyDespesas[m] = (nodeMap['02']?.values[m] || 0) + (nodeMap['04']?.values[m] || 0);
+        monthlyDistribuicao[m] = nodeMap['05']?.values[m] || 0;
+      }
+
+      const totalReceitas = monthlyReceitas.reduce((s, v) => s + v, 0);
+      const totalDespesas = monthlyDespesas.reduce((s, v) => s + v, 0);
+      const totalDistribuicao = monthlyDistribuicao.reduce((s, v) => s + v, 0);
+      const geracaoCaixa = totalReceitas - totalDespesas;
+      const saldoFinal = geracaoCaixa - totalDistribuicao;
+
+      // Geração de caixa per month
+      const monthlyGeracaoCaixa = emptyMonths();
+      const monthlySaldoFinal = emptyMonths();
+      for (let m = 0; m < 12; m++) {
+        monthlyGeracaoCaixa[m] = monthlyReceitas[m] - monthlyDespesas[m];
+        monthlySaldoFinal[m] = monthlyGeracaoCaixa[m] - monthlyDistribuicao[m];
+      }
+
+      res.json({
+        year,
+        rows,
+        summary: {
+          monthly_receitas: monthlyReceitas,
+          monthly_despesas: monthlyDespesas,
+          monthly_distribuicao: monthlyDistribuicao,
+          monthly_geracao_caixa: monthlyGeracaoCaixa,
+          monthly_saldo_final: monthlySaldoFinal,
+          total_receitas: totalReceitas,
+          total_despesas: totalDespesas,
+          geracao_caixa: geracaoCaixa,
+          distribuicao_lucros: totalDistribuicao,
+          saldo_final: saldoFinal,
+        },
+      });
+    } catch (err) {
+      console.error("Error fetching DRE:", err);
+      res.status(500).json({ error: "Failed to fetch DRE data" });
+    }
+  });
+
   // Contas a Pagar (fin_movements_asaas — outgoing)
   app.get("/api/financeiro/contas-a-pagar", async (req, res) => {
     try {
@@ -3743,6 +3992,7 @@ app.get("/api/todos", async (req, res) => {
           COALESCE(custom_category, grapehub_category) AS display_category
         FROM fin_movements_asaas
         WHERE type = -1
+          AND LOWER(COALESCE(custom_category, grapehub_category, '')) NOT IN ('transferencia entre contas', 'transferência entre contas', 'transferência')
           AND transaction_date >= $1
           AND transaction_date < $2
         ORDER BY transaction_date DESC, id DESC
@@ -3751,7 +4001,10 @@ app.get("/api/todos", async (req, res) => {
       // Map to BillItem format expected by frontend
       const rows = result.rows.map((r: any) => {
         const val = Math.abs(parseFloat(r.value || '0'));
-        const catLabel = r.display_category || TRANSACTION_LABELS[r.transaction_type] || 'Outros';
+        // display_category = COALESCE(custom_category, grapehub_category) from DB
+        // Only use it for grapehub_category if the user explicitly set it
+        const userCategory = r.display_category || null;
+        const fallbackLabel = TRANSACTION_LABELS[r.transaction_type] || 'Outros';
 
         // Extract person name from display_description
         const desc = r.display_description || '';
@@ -3774,7 +4027,7 @@ app.get("/api/todos", async (req, res) => {
 
         return {
           id: r.id,
-          doc_description: r.display_description || catLabel,
+          doc_description: r.display_description || fallbackLabel,
           movement_value: (-val).toFixed(2),
           original_value: val.toFixed(2),
           payment_date: r.transaction_date,
@@ -3785,7 +4038,7 @@ app.get("/api/todos", async (req, res) => {
                           r.transaction_type === 'BILL_PAYMENT' ? 'pagamento' :
                           r.transaction_type === 'PAYMENT_FEE' ? 'taxa' : 'outros',
           document_code: r.asaas_id || '',
-          grapehub_category: catLabel,
+          grapehub_category: userCategory,
           people_name: personName,
           people_cnpjcpf: null,
           category_l1_desc: null as string | null,
@@ -3808,8 +4061,18 @@ app.get("/api/todos", async (req, res) => {
       }
 
       for (const row of rows) {
-        const catName = (row.grapehub_category || '').toLowerCase();
-        const found = catByName[catName];
+        const catName = (row.grapehub_category || '').toLowerCase().trim();
+        let found = catByName[catName];
+
+        // If no match from grapehub_category, try fallback based on transaction_type
+        if (!found && !catName) {
+          // Try to match the TRANSACTION_LABELS fallback against fin_categories
+          const fallback = TRANSACTION_LABELS[row.payment_method === 'taxa' ? 'PAYMENT_FEE' : ''] || '';
+          if (fallback) {
+            found = catByName[fallback.toLowerCase()];
+          }
+        }
+
         if (found) {
           const parts = found.structure.split('.');
           row.category_structure = found.structure;
@@ -3827,17 +4090,76 @@ app.get("/api/todos", async (req, res) => {
             row.category_l1_desc = found.description;
           }
         } else {
-          // Fallback: use transaction type label as L1
+          // Fallback: use grapehub_category as L1 if set, otherwise 'Outros'
           row.category_l1_desc = row.grapehub_category || 'Outros';
         }
       }
+      // ── Inject individual Sicredi items as previstas/pagas ──
+      const sicrediRes = await pool.query(`
+        SELECT id, value, transaction_date, description, custom_description,
+               custom_category, grapehub_category, sicredi_status,
+               COALESCE(custom_description, description) AS display_description,
+               COALESCE(custom_category, grapehub_category) AS display_category
+        FROM fin_movements_asaas
+        WHERE account = 'sicredi' AND billing_month = $1
+        ORDER BY transaction_date DESC, id DESC
+      `, [mes]);
 
-      const ja_pago = rows.reduce((s: number, r: any) => s + parseFloat(r.original_value || '0'), 0);
+      for (const si of sicrediRes.rows) {
+        const val = Math.abs(parseFloat(si.value || '0'));
+        const isPaid = si.sicredi_status === 'realizado';
+        const catName = si.display_category || null;
+
+        // Find category hierarchy
+        let cat_l1 = 'Despesas Operacionais', cat_l2 = null as string | null, cat_l3 = null as string | null, cat_structure = null as string | null;
+        if (catName) {
+          const found = catByName[catName.toLowerCase()];
+          if (found) {
+            cat_structure = found.structure;
+            const parts = found.structure.split('.');
+            if (found.level >= 3) {
+              cat_l3 = found.description;
+              cat_l2 = catByStructure[`${parts[0]}.${parts[1]}`]?.description || null;
+              cat_l1 = catByStructure[parts[0]]?.description || 'Despesas Operacionais';
+            } else if (found.level >= 2) {
+              cat_l2 = found.description;
+              cat_l1 = catByStructure[parts[0]]?.description || 'Despesas Operacionais';
+            } else {
+              cat_l1 = found.description;
+            }
+          }
+        }
+
+        rows.push({
+          id: si.id,
+          doc_description: si.display_description || si.description,
+          movement_value: (-val).toFixed(2),
+          original_value: val.toFixed(2),
+          payment_date: isPaid ? si.transaction_date : null,
+          expiration_date: si.transaction_date,
+          status: isPaid ? 'Conciliado' : 'Pendente',
+          type_column: isPaid ? 'realizado' : 'previsto',
+          payment_method: 'cartão de crédito',
+          document_code: '',
+          grapehub_category: catName,
+          people_name: null,
+          people_cnpjcpf: null,
+          category_l1_desc: cat_l1,
+          category_l2_desc: cat_l2,
+          category_l3_desc: cat_l3,
+          category_structure: cat_structure,
+          is_edited: false,
+          _source: 'sicredi',
+        });
+      }
+
+      const ja_pago = rows.filter((r: any) => ['Conciliado', 'Quitado'].includes(r.status)).reduce((s: number, r: any) => s + parseFloat(r.original_value || '0'), 0);
+      const total_previsto = rows.filter((r: any) => ['Pendente', 'Atrasado', 'Vence Hoje'].includes(r.status)).reduce((s: number, r: any) => s + parseFloat(r.original_value || '0'), 0);
 
       const summary = {
-        total_previsto: 0,
+        total_previsto,
         ja_pago,
-        total_mes: ja_pago,
+        total_mes: ja_pago + total_previsto,
         vence_hoje_amanha: 0,
       };
 
@@ -3848,7 +4170,413 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
-  // Contas a Receber (fin_movements_asaas + fin_receivables)
+  // ── Contas a Pagar — Sicredi ───────────────────────────
+
+  // GET /api/financeiro/contas-a-pagar/sicredi — get Sicredi card items for a month
+  app.get("/api/financeiro/contas-a-pagar/sicredi", async (req, res) => {
+    try {
+      const mes = (req.query.month as string) || new Date().toISOString().slice(0, 7);
+
+      const result = await pool.query(`
+        SELECT id, asaas_id, type, transaction_type, value, transaction_date, description,
+               custom_description, custom_category, custom_category_id, sicredi_status, grapehub_category,
+               COALESCE(custom_description, description) AS display_description,
+               COALESCE(custom_category, grapehub_category) AS display_category
+        FROM fin_movements_asaas
+        WHERE account = 'sicredi'
+          AND billing_month = $1
+        ORDER BY transaction_date DESC, id DESC
+      `, [mes]);
+
+      // Enrich with categories
+      const catResult = await pool.query('SELECT id, structure, description, level FROM fin_categories ORDER BY structure');
+      const catByName: Record<string, any> = {};
+      const catByStructure: Record<string, any> = {};
+      for (const c of catResult.rows) {
+        catByName[c.description.toLowerCase()] = c;
+        catByStructure[c.structure] = c;
+      }
+
+      const items = result.rows.map((r: any) => {
+        const val = Math.abs(parseFloat(r.value || '0'));
+        const catName = (r.display_category || '').toLowerCase().trim();
+        const found = catByName[catName];
+
+        let category_l1_desc = null, category_l2_desc = null, category_structure = null;
+        if (found) {
+          category_structure = found.structure;
+          const parts = found.structure.split('.');
+          if (found.level >= 2) {
+            category_l2_desc = found.description;
+            category_l1_desc = catByStructure[parts[0]]?.description || null;
+          } else if (found.level === 1) {
+            category_l1_desc = found.description;
+          }
+        }
+
+        return {
+          id: r.id,
+          description: r.display_description || r.description,
+          original_description: r.description,
+          custom_category: r.custom_category || null,
+          custom_category_id: r.custom_category_id || null,
+          value: val,
+          date: r.transaction_date,
+          status: r.sicredi_status || 'pendente',
+          category_l1_desc,
+          category_l2_desc,
+          category_structure,
+          grapehub_category: r.display_category || null,
+        };
+      });
+
+      const totalFatura = items.reduce((s: number, i: any) => s + i.value, 0);
+      const categorized = items.filter((i: any) => i.custom_category).length;
+      const allPaid = items.length > 0 && items.every((i: any) => i.status === 'realizado');
+
+      res.json({ items, summary: { total: totalFatura, count: items.length, categorized, allPaid } });
+    } catch (err) {
+      console.error("Error fetching sicredi contas:", err);
+      res.status(500).json({ error: "Failed" });
+    }
+  });
+
+  // POST /api/financeiro/contas-a-pagar/sicredi/pagar — mark all Sicredi items in month as paid
+  app.post("/api/financeiro/contas-a-pagar/sicredi/pagar", async (req, res) => {
+    try {
+      const mes = (req.body.month as string) || new Date().toISOString().slice(0, 7);
+
+      const result = await pool.query(`
+        UPDATE fin_movements_asaas
+        SET sicredi_status = 'realizado'
+        WHERE account = 'sicredi'
+          AND billing_month = $1
+          AND sicredi_status = 'pendente'
+      `, [mes]);
+
+      // ── Also mark the Sicredi provision entry as paid ──
+      try {
+        const billRes = await pool.query(
+          `SELECT id FROM fin_recurring_bills WHERE LOWER(name) LIKE '%sicredi%' AND LOWER(name) LIKE '%cart%' LIMIT 1`
+        );
+        if (billRes.rows.length > 0) {
+          const billId = billRes.rows[0].id;
+          const refMonth = mes + '-01';
+
+          // Get the actual total paid
+          const totalRes = await pool.query(
+            `SELECT COALESCE(SUM(ABS(value::numeric)), 0) AS total
+             FROM fin_movements_asaas
+             WHERE account = 'sicredi' AND billing_month = $1`,
+            [mes]
+          );
+          const faturaTotal = parseFloat(totalRes.rows[0].total) || 0;
+
+          await pool.query(
+            `UPDATE fin_recurring_bill_entries
+             SET status = 'paid', actual_value = $1, updated_at = NOW()
+             WHERE recurring_bill_id = $2 AND reference_month = $3`,
+            [faturaTotal, billId, refMonth]
+          );
+        }
+      } catch (provErr: any) {
+        console.error('Provision update on pay (non-fatal):', provErr.message);
+      }
+
+      res.json({ updated: result.rowCount });
+    } catch (err) {
+      console.error("Error paying sicredi:", err);
+      res.status(500).json({ error: "Failed" });
+    }
+  });
+
+  // ── Contas Recorrentes ──────────────────────────────────
+
+  // --- Bills (cadastro master) ---
+
+  app.get("/api/financeiro/recorrentes/bills", async (_req, res) => {
+    try {
+      const r = await pool.query(`
+        SELECT b.*, c.description AS category_name, c.structure AS category_structure
+        FROM fin_recurring_bills b
+        LEFT JOIN fin_categories c ON c.id = b.category_id
+        ORDER BY b.is_active DESC, b.name
+      `);
+      res.json(r.rows);
+    } catch (err) { console.error(err); res.status(500).json({ error: "Failed" }); }
+  });
+
+  app.post("/api/financeiro/recorrentes/bills", async (req, res) => {
+    try {
+      const { name, description, due_day, category_id, account_name, default_value } = req.body;
+      const r = await pool.query(
+        `INSERT INTO fin_recurring_bills (name, description, due_day, category_id, account_name, is_active, default_value)
+         VALUES ($1, $2, $3, $4, $5, true, $6) RETURNING *`,
+        [name, description || null, due_day || null, category_id || null, account_name || null, parseFloat(default_value) || 0]
+      );
+      const bill = r.rows[0];
+      const expectedVal = parseFloat(default_value) || 0;
+
+      // Auto-provision entries from current month through Dec of current year
+      const now = new Date();
+      const curYear = now.getFullYear();
+      const curMonth = now.getMonth(); // 0-indexed
+      for (let m = curMonth; m <= 11; m++) {
+        const refMonth = `${curYear}-${String(m + 1).padStart(2, '0')}-01`;
+        const dueDate = bill.due_day ? `${curYear}-${String(m + 1).padStart(2, '0')}-${String(bill.due_day).padStart(2, '0')}` : null;
+        const source = (account_name || '').toLowerCase().includes('asaas') ? 'asaas' : 'manual';
+        await pool.query(
+          `INSERT INTO fin_recurring_bill_entries (recurring_bill_id, reference_month, expected_value, actual_value, due_date, source, status)
+           VALUES ($1, $2, $3, 0, $4, $5, 'pending')
+           ON CONFLICT DO NOTHING`,
+          [bill.id, refMonth, expectedVal, dueDate, source]
+        );
+      }
+
+      res.json(bill);
+    } catch (err) { console.error(err); res.status(500).json({ error: "Failed" }); }
+  });
+
+  app.put("/api/financeiro/recorrentes/bills/:id", async (req, res) => {
+    try {
+      const { name, description, due_day, category_id, account_name, is_active, default_value } = req.body;
+      const r = await pool.query(
+        `UPDATE fin_recurring_bills SET name=$1, description=$2, due_day=$3, category_id=$4, account_name=$5, is_active=$6, default_value=$7, updated_at=NOW()
+         WHERE id=$8 RETURNING *`,
+        [name, description || null, due_day || null, category_id || null, account_name || null, is_active ?? true, parseFloat(default_value) || 0, req.params.id]
+      );
+      res.json(r.rows[0]);
+    } catch (err) { console.error(err); res.status(500).json({ error: "Failed" }); }
+  });
+
+  app.delete("/api/financeiro/recorrentes/bills/:id", async (req, res) => {
+    try {
+      const hard = req.query.hard === 'true';
+      if (hard) {
+        // Hard delete: remove items → entries → bill
+        await pool.query(`DELETE FROM fin_recurring_bill_items WHERE entry_id IN (SELECT id FROM fin_recurring_bill_entries WHERE recurring_bill_id = $1)`, [req.params.id]);
+        await pool.query(`DELETE FROM fin_recurring_bill_entries WHERE recurring_bill_id = $1`, [req.params.id]);
+        await pool.query(`DELETE FROM fin_recurring_bills WHERE id = $1`, [req.params.id]);
+      } else {
+        // Soft delete (inactivate)
+        await pool.query(`UPDATE fin_recurring_bills SET is_active=false, updated_at=NOW() WHERE id=$1`, [req.params.id]);
+        // Remove pending future entries (keep paid ones)
+        const today = new Date().toISOString().slice(0, 7) + '-01';
+        await pool.query(
+          `DELETE FROM fin_recurring_bill_entries WHERE recurring_bill_id = $1 AND status = 'pending' AND reference_month >= $2`,
+          [req.params.id, today]
+        );
+      }
+      res.json({ ok: true });
+    } catch (err) { console.error(err); res.status(500).json({ error: "Failed" }); }
+  });
+
+  // --- Entries (provisões mensais) ---
+
+  app.get("/api/financeiro/recorrentes/entries", async (req, res) => {
+    try {
+      const month = (req.query.month as string) || new Date().toISOString().slice(0, 7);
+      const refMonth = `${month}-01`;
+      const [ym, mm] = month.split('-').map(Number);
+
+      // Auto-provision: create missing entries for active bills
+      const activeBills = await pool.query(`SELECT * FROM fin_recurring_bills WHERE is_active = true`);
+      for (const bill of activeBills.rows) {
+        const exists = await pool.query(
+          `SELECT id FROM fin_recurring_bill_entries WHERE recurring_bill_id = $1 AND reference_month = $2`,
+          [bill.id, refMonth]
+        );
+        if (exists.rows.length === 0) {
+          const dueDate = bill.due_day ? `${ym}-${String(mm).padStart(2, '0')}-${String(bill.due_day).padStart(2, '0')}` : null;
+          const source = (bill.account_name || '').toLowerCase().includes('asaas') ? 'asaas' : 'manual';
+          await pool.query(
+            `INSERT INTO fin_recurring_bill_entries (recurring_bill_id, reference_month, expected_value, actual_value, due_date, source, status)
+             VALUES ($1, $2, 0, 0, $3, $4, 'pending')`,
+            [bill.id, refMonth, dueDate, source]
+          );
+        }
+      }
+
+      // Now fetch all entries for the month
+      const r = await pool.query(`
+        SELECT e.*, b.name AS bill_name, b.account_name, b.due_day,
+               c.description AS category_name, c.structure AS category_structure
+        FROM fin_recurring_bill_entries e
+        JOIN fin_recurring_bills b ON b.id = e.recurring_bill_id
+        LEFT JOIN fin_categories c ON c.id = b.category_id
+        WHERE e.reference_month = $1
+        ORDER BY e.due_date, b.name
+      `, [refMonth]);
+      res.json(r.rows);
+    } catch (err) { console.error(err); res.status(500).json({ error: "Failed" }); }
+  });
+
+  app.post("/api/financeiro/recorrentes/entries", async (req, res) => {
+    try {
+      const { recurring_bill_id, reference_month, expected_value, due_date, source, notes } = req.body;
+      // Normalize reference_month to day 01
+      const refMonth = reference_month ? reference_month.slice(0, 7) + '-01' : new Date().toISOString().slice(0, 7) + '-01';
+      const r = await pool.query(
+        `INSERT INTO fin_recurring_bill_entries (recurring_bill_id, reference_month, expected_value, actual_value, due_date, source, status, notes)
+         VALUES ($1, $2, $3, 0, $4, $5, 'pending', $6) RETURNING *`,
+        [recurring_bill_id, refMonth, expected_value || 0, due_date || null, source || 'manual', notes || null]
+      );
+      res.json(r.rows[0]);
+    } catch (err) { console.error(err); res.status(500).json({ error: "Failed" }); }
+  });
+
+  app.put("/api/financeiro/recorrentes/entries/:id", async (req, res) => {
+    try {
+      const { expected_value, actual_value, status, due_date, notes } = req.body;
+      const r = await pool.query(
+        `UPDATE fin_recurring_bill_entries SET expected_value=COALESCE($1, expected_value), actual_value=COALESCE($2, actual_value),
+         status=COALESCE($3, status), due_date=COALESCE($4, due_date), notes=COALESCE($5, notes), updated_at=NOW()
+         WHERE id=$6 RETURNING *`,
+        [expected_value, actual_value, status, due_date, notes, req.params.id]
+      );
+      res.json(r.rows[0]);
+    } catch (err) { console.error(err); res.status(500).json({ error: "Failed" }); }
+  });
+
+  app.put("/api/financeiro/recorrentes/entries/:id/vincular", async (req, res) => {
+    try {
+      const { movement_asaas_id } = req.body;
+      const movId = parseInt(movement_asaas_id);
+      // Get the movement value and asaas_id (the FK references asaas_id, not id)
+      const movRes = await pool.query(`SELECT asaas_id, value FROM fin_movements_asaas WHERE id = $1`, [movId]);
+      if (movRes.rows.length === 0) return res.status(404).json({ error: "Movement not found" });
+      const asaasId = movRes.rows[0].asaas_id;
+      const actualValue = Math.abs(parseFloat(movRes.rows[0].value || '0'));
+
+      // Update the entry
+      const r = await pool.query(
+        `UPDATE fin_recurring_bill_entries SET movement_asaas_id=$1, actual_value=$2, status='paid', updated_at=NOW()
+         WHERE id=$3 RETURNING *`,
+        [asaasId, actualValue, req.params.id]
+      );
+      const entry = r.rows[0];
+
+      // Get the bill name and category to update the extrato
+      const billRes = await pool.query(
+        `SELECT b.name, c.description AS category_name, b.category_id
+         FROM fin_recurring_bills b
+         LEFT JOIN fin_categories c ON c.id = b.category_id
+         WHERE b.id = $1`,
+        [entry.recurring_bill_id]
+      );
+      if (billRes.rows.length > 0) {
+        const bill = billRes.rows[0];
+        await pool.query(
+          `UPDATE fin_movements_asaas SET custom_description = $1, custom_category = $2, custom_category_id = $3, edited_at = NOW()
+           WHERE id = $4`,
+          [bill.name, bill.category_name || null, bill.category_id || null, movId]
+        );
+      }
+
+      res.json(entry);
+    } catch (err: any) { console.error("Vincular error:", err.message); res.status(500).json({ error: "Failed", detail: err.message }); }
+  });
+
+  // Desvincular — revert entry to pending and clear extrato customizations
+  app.put("/api/financeiro/recorrentes/entries/:id/desvincular", async (req, res) => {
+    try {
+      // Get the current entry to find the linked movement
+      const entryRes = await pool.query(`SELECT movement_asaas_id FROM fin_recurring_bill_entries WHERE id = $1`, [req.params.id]);
+      if (entryRes.rows.length === 0) return res.status(404).json({ error: "Entry not found" });
+      const asaasId = entryRes.rows[0].movement_asaas_id;
+
+      // Revert the extrato movement (clear custom fields)
+      if (asaasId) {
+        await pool.query(
+          `UPDATE fin_movements_asaas SET custom_description = NULL, custom_category = NULL, custom_category_id = NULL, edited_at = NOW()
+           WHERE asaas_id = $1`,
+          [asaasId]
+        );
+      }
+
+      // Reset the entry
+      const r = await pool.query(
+        `UPDATE fin_recurring_bill_entries SET movement_asaas_id = NULL, actual_value = 0, status = 'pending', updated_at = NOW()
+         WHERE id = $1 RETURNING *`,
+        [req.params.id]
+      );
+      res.json(r.rows[0]);
+    } catch (err: any) { console.error("Desvincular error:", err.message); res.status(500).json({ error: "Failed", detail: err.message }); }
+  });
+
+  // --- Items (itens de fatura manual) ---
+
+  app.get("/api/financeiro/recorrentes/entries/:id/items", async (req, res) => {
+    try {
+      const r = await pool.query(
+        `SELECT i.*, c.description AS category_name
+         FROM fin_recurring_bill_items i
+         LEFT JOIN fin_categories c ON c.id = i.category_id
+         WHERE i.entry_id = $1 ORDER BY i.id`,
+        [req.params.id]
+      );
+      res.json(r.rows);
+    } catch (err) { console.error(err); res.status(500).json({ error: "Failed" }); }
+  });
+
+  app.post("/api/financeiro/recorrentes/entries/:id/items", async (req, res) => {
+    try {
+      const { name, category_id, expected_value, notes } = req.body;
+      const r = await pool.query(
+        `INSERT INTO fin_recurring_bill_items (entry_id, name, category_id, expected_value, actual_value, status, notes)
+         VALUES ($1, $2, $3, $4, 0, 'pending', $5) RETURNING *`,
+        [req.params.id, name, category_id || null, expected_value || 0, notes || null]
+      );
+      // Recalculate entry expected_value from items
+      await pool.query(
+        `UPDATE fin_recurring_bill_entries SET expected_value = (SELECT COALESCE(SUM(expected_value), 0) FROM fin_recurring_bill_items WHERE entry_id = $1), updated_at=NOW() WHERE id = $1`,
+        [req.params.id]
+      );
+      res.json(r.rows[0]);
+    } catch (err) { console.error(err); res.status(500).json({ error: "Failed" }); }
+  });
+
+  app.put("/api/financeiro/recorrentes/items/:id", async (req, res) => {
+    try {
+      const { name, category_id, expected_value, actual_value, status, notes } = req.body;
+      const r = await pool.query(
+        `UPDATE fin_recurring_bill_items SET name=COALESCE($1,name), category_id=COALESCE($2,category_id),
+         expected_value=COALESCE($3,expected_value), actual_value=COALESCE($4,actual_value),
+         status=COALESCE($5,status), notes=COALESCE($6,notes), updated_at=NOW()
+         WHERE id=$7 RETURNING *`,
+        [name, category_id, expected_value, actual_value, status, notes, req.params.id]
+      );
+      // Recalculate parent entry actual_value
+      if (r.rows[0]) {
+        const entryId = r.rows[0].entry_id;
+        await pool.query(
+          `UPDATE fin_recurring_bill_entries SET actual_value = (SELECT COALESCE(SUM(actual_value), 0) FROM fin_recurring_bill_items WHERE entry_id = $1), updated_at=NOW() WHERE id = $1`,
+          [entryId]
+        );
+      }
+      res.json(r.rows[0]);
+    } catch (err) { console.error(err); res.status(500).json({ error: "Failed" }); }
+  });
+
+  app.delete("/api/financeiro/recorrentes/items/:id", async (req, res) => {
+    try {
+      // Get entry_id before deleting
+      const item = await pool.query(`SELECT entry_id FROM fin_recurring_bill_items WHERE id = $1`, [req.params.id]);
+      await pool.query(`DELETE FROM fin_recurring_bill_items WHERE id = $1`, [req.params.id]);
+      // Recalculate parent entry
+      if (item.rows[0]) {
+        const entryId = item.rows[0].entry_id;
+        await pool.query(
+          `UPDATE fin_recurring_bill_entries SET expected_value = (SELECT COALESCE(SUM(expected_value), 0) FROM fin_recurring_bill_items WHERE entry_id = $1),
+           actual_value = (SELECT COALESCE(SUM(actual_value), 0) FROM fin_recurring_bill_items WHERE entry_id = $1), updated_at=NOW() WHERE id = $1`,
+          [entryId]
+        );
+      }
+      res.json({ ok: true });
+    } catch (err) { console.error(err); res.status(500).json({ error: "Failed" }); }
+  });
+
+  // Contas a Receber (fin_receivables + fin_movements_asaas)
   app.get("/api/fin-receivables", async (req, res) => {
     try {
       const mes = (req.query.month as string) || new Date().toISOString().slice(0, 7);
@@ -3857,81 +4585,92 @@ app.get("/api/todos", async (req, res) => {
       const fn = fm === 12 ? 1 : fm + 1; const ny = fm === 12 ? fy + 1 : fy;
       const fim = `${ny}-${String(fn).padStart(2, '0')}-01`;
 
-      // 1) Bank movements (already received)
-      const movResult = await pool.query(`
+      // 1) A Receber — fin_receivables com status Pendente ou Confirmado (não pagos)
+      const aReceberResult = await pool.query(`
+        SELECT
+          r.id,
+          r.asaas_id,
+          COALESCE(p.name, r.customer_name) AS customer_name,
+          COALESCE(p.cnpjcpf, r.customer_cpfcnpj) AS customer_cpfcnpj,
+          r.billing_type,
+          r.status,
+          r.value,
+          r.net_value,
+          r.due_date,
+          r.payment_date,
+          r.description,
+          r.customer_id,
+          r.invoice_url
+        FROM fin_receivables r
+        LEFT JOIN fin_people p ON p.asaas_id = r.customer_id
+        WHERE r.due_date >= $1 AND r.due_date < $2
+          AND r.status IN ('Pendente', 'Confirmado', 'PENDING', 'OVERDUE')
+        ORDER BY r.due_date ASC
+      `, [inicio, fim]);
+
+      const aReceber = aReceberResult.rows;
+      const pendentes = aReceber.filter((r: any) => r.status === 'Pendente' || r.status === 'PENDING');
+      const vencidos = aReceber.filter((r: any) => r.status === 'Confirmado' || r.status === 'OVERDUE');
+      const total_a_receber = aReceber.reduce((s: number, r: any) => s + parseFloat(r.value || '0'), 0);
+
+      // 2) Já Recebido — fin_movements_asaas (entradas, excluindo pares de antecipação e antecipações)
+      const recebidoResult = await pool.query(`
         SELECT
           asaas_id,
           transaction_type,
           value,
           transaction_date,
           description,
-          balance,
           payment_id
         FROM fin_movements_asaas
         WHERE type = 1
-          AND transaction_type IN ('PAYMENT_RECEIVED', 'RECEIVABLE_ANTICIPATION_GROSS_CREDIT')
           AND transaction_date >= $1
           AND transaction_date < $2
+          AND is_anticipation_pair = false
+          AND transaction_type NOT IN ('RECEIVABLE_ANTICIPATION', 'RECEIVABLE_ANTICIPATION_GROSS_CREDIT')
+          AND account = 'asaas'
         ORDER BY transaction_date DESC
       `, [inicio, fim]);
 
-      const movRows = movResult.rows;
-      const cobracoes = movRows.filter((r: any) => r.transaction_type === 'PAYMENT_RECEIVED');
-      const antecipacoes = movRows.filter((r: any) => r.transaction_type === 'RECEIVABLE_ANTICIPATION_GROSS_CREDIT');
+      const recebidos = recebidoResult.rows;
+      const total_recebido = recebidos.reduce((s: number, r: any) => s + parseFloat(r.value || '0'), 0);
 
-      const total_recebido = cobracoes.reduce((s: number, r: any) => s + parseFloat(r.value || '0'), 0);
-      const total_antecipacoes = antecipacoes.reduce((s: number, r: any) => s + parseFloat(r.value || '0'), 0);
-
-      const lastRow = movRows.length > 0 ? movRows[0] : null;
-      const saldo_final = lastRow ? parseFloat(lastRow.balance || '0') : 0;
-
-      // 2) Invoices / Receivables (pending + confirmed + received)
-      const recResult = await pool.query(`
+      // 3) Antecipações — fin_movements_asaas (RECEIVABLE_ANTICIPATION_GROSS_CREDIT = crédito real do adiantamento)
+      const antecipResult = await pool.query(`
         SELECT
-          id,
           asaas_id,
-          customer_name,
-          customer_cpfcnpj,
-          billing_type,
-          status,
+          transaction_type,
           value,
-          net_value,
-          due_date,
-          payment_date,
-          description
-        FROM fin_receivables
-        WHERE due_date >= $1 AND due_date < $2
-        ORDER BY due_date ASC
+          transaction_date,
+          description,
+          payment_id
+        FROM fin_movements_asaas
+        WHERE transaction_type = 'RECEIVABLE_ANTICIPATION_GROSS_CREDIT'
+          AND transaction_date >= $1
+          AND transaction_date < $2
+          AND account = 'asaas'
+        ORDER BY transaction_date DESC
       `, [inicio, fim]);
 
-      const invoices = recResult.rows;
-      const pendentes = invoices.filter((r: any) => r.status === 'Pendente');
-      const confirmados = invoices.filter((r: any) => r.status === 'Confirmado');
-      const recebidos = invoices.filter((r: any) => r.status === 'Recebido');
+      const antecipacoes = antecipResult.rows;
+      const total_antecipacoes = antecipacoes.reduce((s: number, r: any) => s + parseFloat(r.value || '0'), 0);
 
-      const total_pendente = pendentes.reduce((s: number, r: any) => s + parseFloat(r.value || '0'), 0);
-      const total_confirmado = confirmados.reduce((s: number, r: any) => s + parseFloat(r.value || '0'), 0);
-      const total_recebido_invoices = recebidos.reduce((s: number, r: any) => s + parseFloat(r.value || '0'), 0);
-      const total_a_receber = total_pendente + total_confirmado;
-
-      const total_mes = total_recebido + total_antecipacoes + total_a_receber + total_recebido_invoices;
+      // 4) Total do mês = Já Recebido + Antecipações
+      const total_mes = total_recebido + total_antecipacoes;
 
       res.json({
         summary: {
           total_recebido,
           total_antecipacoes,
           total_a_receber,
-          total_recebido_invoices,
           total_mes,
-          saldo_final,
         },
-        cobracoes_recebidas: cobracoes,
-        antecipacoes,
-        invoices: {
+        a_receber: {
           pendentes,
-          confirmados,
-          recebidos,
+          vencidos,
         },
+        recebidos,
+        antecipacoes,
       });
     } catch (err) {
       console.error("Error fetching fin-receivables:", err);
@@ -4011,6 +4750,13 @@ app.get("/api/todos", async (req, res) => {
         'PAYMENT_REVERSAL': 'Estorno',
       };
 
+      // Account filter
+      const accountParam = (req.query.account as string) || 'all';
+      let accountClause = '';
+      const queryParams: any[] = [inicio, fim];
+      if (accountParam === 'asaas') { accountClause = ` AND account = $3`; queryParams.push('asaas'); }
+      else if (accountParam === 'sicredi') { accountClause = ` AND account = $3`; queryParams.push('sicredi'); }
+
       const result = await pool.query(`
         SELECT
           id,
@@ -4028,13 +4774,20 @@ app.get("/api/todos", async (req, res) => {
           user_comment,
           edited_at,
           edited_by,
+          is_anticipation_pair,
+          account,
+          sicredi_status,
           COALESCE(custom_description, description) AS display_description,
           COALESCE(custom_category, grapehub_category) AS display_category
         FROM fin_movements_asaas
-        WHERE transaction_date >= $1
-          AND transaction_date < $2
+        WHERE (
+          (account != 'sicredi' AND transaction_date >= $1 AND transaction_date < $2)
+          OR
+          (account = 'sicredi' AND billing_month = $${queryParams.length + 1} AND sicredi_status = 'realizado')
+        )
+          ${accountClause}
         ORDER BY transaction_date DESC, id DESC
-      `, [inicio, fim]);
+      `, [...queryParams, inicio.slice(0, 7)]);
 
       // Map to ExtratoItem format expected by frontend
       const rows = result.rows.map((r: any) => {
@@ -4064,6 +4817,8 @@ app.get("/api/todos", async (req, res) => {
         }
 
         const isEdited = !!(r.custom_description || r.custom_category);
+        const isSicredi = r.account === 'sicredi';
+        const sicrediPending = isSicredi && (r.sicredi_status === 'pendente');
 
         return {
           id: r.id,
@@ -4074,8 +4829,8 @@ app.get("/api/todos", async (req, res) => {
           value: val.toFixed(2),
           movement_date: r.transaction_date,
           expiration_date: r.transaction_date,
-          status: 'Realizado',
-          type_column: 'realizado',
+          status: sicrediPending ? 'Pendente' : 'Realizado',
+          type_column: sicrediPending ? 'previsto' : 'realizado',
           source: r.transaction_type === 'PAYMENT_RECEIVED' ? 'bills_to_receive' :
                   r.transaction_type === 'BILL_PAYMENT' ? 'bills_to_pay' :
                   r.transaction_type === 'TRANSFER' ? (isEntrada ? 'transfer_in' : 'transfer_out') :
@@ -4095,6 +4850,8 @@ app.get("/api/todos", async (req, res) => {
           is_edited: isEdited,
           edited_at: r.edited_at || null,
           edited_by: r.edited_by || null,
+          is_anticipation_pair: r.is_anticipation_pair || false,
+          account: r.account || 'asaas',
         };
       });
 
@@ -4102,6 +4859,273 @@ app.get("/api/todos", async (req, res) => {
     } catch (err) {
       console.error("Error fetching financeiro extrato:", err);
       res.status(500).json({ error: "Failed" });
+    }
+  });
+
+  // GET /api/financeiro/extrato/last-import — get last import date for an account
+  app.get("/api/financeiro/extrato/last-import", async (req, res) => {
+    try {
+      const account = (req.query.account as string) || 'sicredi';
+      const r = await pool.query(`SELECT MAX(synced_at) AS last_import FROM fin_movements_asaas WHERE account = $1`, [account]);
+      res.json({ last_import: r.rows[0]?.last_import || null });
+    } catch (err) { console.error(err); res.status(500).json({ error: "Failed" }); }
+  });
+
+  // POST /api/financeiro/extrato/importar — import OFX or CSV file
+  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+  app.post("/api/financeiro/extrato/importar-ofx", upload.single('file'), async (req: any, res) => {
+    try {
+      const account = (req.body.account as string) || 'sicredi';
+      const billingMonth = (req.body.billing_month as string) || null;
+      const fileBuffer = req.file?.buffer;
+      if (!fileBuffer) return res.status(400).json({ error: 'No file uploaded' });
+
+      const content = fileBuffer.toString('utf-8');
+      const fileName = (req.file?.originalname || '').toLowerCase();
+      const isCSV = fileName.endsWith('.csv') || (!fileName.endsWith('.ofx') && content.includes(';'));
+
+      const transactions: { fitid: string; trntype: string; trnamt: number; dtposted: string; memo: string }[] = [];
+
+      if (isCSV) {
+        // ── CSV Parser — Sicredi credit card statement format ──
+        // The file has metadata at the top, then one or more card sections.
+        // Each card section starts with a "Cartão" row, then a header row:
+        //   Data | Descrição | Parcela | Valor | Valor em Dólar
+        // Followed by transaction rows until the next blank or "Cartão" row.
+
+        const lines = content.split(/\r?\n/);
+        if (lines.length < 2) return res.status(400).json({ error: 'CSV vazio ou inválido' });
+
+        // Detect delimiter
+        const semiCount = (content.match(/;/g) || []).length;
+        const commaCount = (content.match(/,/g) || []).length;
+        const tabCount = (content.match(/\t/g) || []).length;
+        const delimiter = tabCount > semiCount && tabCount > commaCount ? '\t' : semiCount > commaCount ? ';' : ',';
+
+        const normalize = (s: string) => s.trim().replace(/^["']|["']$/g, '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+        const parseBRValue = (str: string): number => {
+          if (!str) return 0;
+          let s = str.replace(/["']/g, '').trim();
+          if (!s || s === '-') return 0;
+          // Remove R$, U$, etc prefix
+          s = s.replace(/^-?\s*[RU]\$\s*/i, (match) => match.startsWith('-') ? '-' : '');
+          // If it was negative: -R$ 22.941,65
+          if (str.trim().startsWith('-')) s = '-' + s.replace('-', '');
+          // Brazilian format: 1.234,56
+          if (s.includes(',')) {
+            s = s.replace(/\./g, '').replace(',', '.');
+          }
+          return parseFloat(s) || 0;
+        };
+
+        const parseBRDate = (str: string): string | null => {
+          if (!str) return null;
+          const s = str.replace(/["']/g, '').trim();
+          const brMatch = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
+          if (brMatch) return `${brMatch[3]}-${brMatch[2].padStart(2, '0')}-${brMatch[1].padStart(2, '0')}`;
+          const isoMatch = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+          if (isoMatch) return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+          const brShort = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2})$/);
+          if (brShort) {
+            const yr = parseInt(brShort[3]) > 50 ? `19${brShort[3]}` : `20${brShort[3]}`;
+            return `${yr}-${brShort[2].padStart(2, '0')}-${brShort[1].padStart(2, '0')}`;
+          }
+          return null;
+        };
+
+        let currentCardLabel = '';
+        let inTransactions = false;
+        let dateCol = -1, descCol = -1, parcelaCol = -1, valorCol = -1;
+        let rowIdx = 0;
+
+        for (let i = 0; i < lines.length; i++) {
+          const raw = lines[i];
+          if (!raw.trim()) { inTransactions = false; continue; }
+
+          const cols = raw.split(delimiter).map((c: string) => c.trim().replace(/^["']|["']$/g, ''));
+
+          // Detect "Cartão" row — marks a new card section
+          if (normalize(cols[0]) === 'cartao') {
+            currentCardLabel = cols[1] || '';
+            inTransactions = false;
+            continue;
+          }
+
+          // Detect header row: first col is "Data", second is "Descrição"
+          if (normalize(cols[0]) === 'data' && cols.length >= 3) {
+            dateCol = 0;
+            descCol = -1; parcelaCol = -1; valorCol = -1;
+            for (let c = 1; c < cols.length; c++) {
+              const h = normalize(cols[c]);
+              if (h.includes('descricao') || h.includes('historico')) descCol = c;
+              else if (h.includes('parcela')) parcelaCol = c;
+              else if (h === 'valor' || h.includes('valor') && !h.includes('dolar')) valorCol = c;
+            }
+            if (descCol === -1) descCol = 1; // fallback
+            if (valorCol === -1) valorCol = cols.length >= 4 ? 3 : 2; // fallback
+            inTransactions = true;
+            continue;
+          }
+
+          // Parse transaction rows
+          if (!inTransactions || dateCol === -1) continue;
+
+          const dateStr = parseBRDate(cols[dateCol] || '');
+          if (!dateStr) continue; // Skip rows that don't start with a valid date
+
+          const description = (descCol >= 0 ? cols[descCol] : '') || 'Sem descrição';
+          const parcela = parcelaCol >= 0 ? cols[parcelaCol] || '' : '';
+          const amount = valorCol >= 0 ? parseBRValue(cols[valorCol]) : 0;
+
+          if (amount === 0) continue;
+
+          // Skip payment items ("Pag Fat Deb Cc" etc.) — these are credit card bill payments
+          const descLower = description.toLowerCase();
+          if (descLower.startsWith('pag fat') || descLower.startsWith('pagamento fatura') || descLower.includes('pag fat deb')) continue;
+
+          // Build full description with parcela info
+          const fullDesc = parcela ? `${description} ${parcela}` : description;
+
+          // Generate unique ID from date + description + value + card + row
+          const rawId = `${dateStr}_${fullDesc}_${amount.toFixed(2)}_${currentCardLabel}_${rowIdx}`;
+          const fitid = crypto.createHash('md5').update(rawId).digest('hex').slice(0, 16);
+          rowIdx++;
+
+          // Credit card items are all expenses (negative) except payments (which are negative in the CSV = credit)
+          const isPayment = amount < 0; // Negative values like "Pag Fat Deb Cc" = payment
+          transactions.push({
+            fitid,
+            trntype: isPayment ? 'CREDIT' : 'DEBIT',
+            trnamt: isPayment ? Math.abs(amount) : -Math.abs(amount), // expenses = negative, payments = positive
+            dtposted: dateStr,
+            memo: fullDesc,
+          });
+        }
+      } else {
+        // ── OFX Parser ──
+        const trnRegex = /<STMTTRN>[\s\S]*?<\/STMTTRN>/gi;
+        const matches = content.match(trnRegex) || [];
+
+        for (const block of matches) {
+          const getTag = (tag: string) => {
+            const xmlMatch = block.match(new RegExp(`<${tag}>([^<]+)</${tag}>`, 'i'));
+            if (xmlMatch) return xmlMatch[1].trim();
+            const sgmlMatch = block.match(new RegExp(`<${tag}>(.+)`, 'i'));
+            return sgmlMatch ? sgmlMatch[1].trim() : '';
+          };
+
+          const fitid = getTag('FITID');
+          const trntype = getTag('TRNTYPE');
+          const trnamtStr = getTag('TRNAMT');
+          const dtposted = getTag('DTPOSTED');
+          const memo = getTag('MEMO') || getTag('NAME') || 'Sem descrição';
+
+          if (!fitid || !trnamtStr) continue;
+
+          const trnamt = parseFloat(trnamtStr.replace(',', '.'));
+          const dateStr = dtposted.length >= 8 ? `${dtposted.slice(0,4)}-${dtposted.slice(4,6)}-${dtposted.slice(6,8)}` : new Date().toISOString().slice(0,10);
+
+          transactions.push({ fitid, trntype, trnamt, dtposted: dateStr, memo });
+        }
+      }
+
+      if (transactions.length === 0) {
+        return res.status(400).json({ error: 'Nenhuma transação encontrada no arquivo. Verifique o formato.' });
+      }
+
+      let inserted = 0;
+      let skipped = 0;
+
+      for (const tx of transactions) {
+        const asaasId = `${account}_${tx.fitid}`;
+        const type = tx.trnamt >= 0 ? 1 : -1;
+        const value = Math.abs(tx.trnamt);
+        const txType = tx.trntype || (type === 1 ? 'CREDIT' : 'DEBIT');
+
+        const r = await pool.query(
+          `INSERT INTO fin_movements_asaas (asaas_id, type, transaction_type, value, transaction_date, description, account, sicredi_status, billing_month, synced_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+           ON CONFLICT (asaas_id) DO UPDATE SET billing_month = COALESCE(EXCLUDED.billing_month, fin_movements_asaas.billing_month)
+           RETURNING id, (xmax = 0) AS was_inserted`,
+          [asaasId, type, txType, value, tx.dtposted, tx.memo, account, account === 'sicredi' ? 'pendente' : 'realizado', billingMonth]
+        );
+        if (r.rows.length > 0 && r.rows[0].was_inserted) inserted++;
+        else skipped++;
+      }
+
+      // ── Auto-provision: create/update recurring bill entry for Sicredi card ──
+      if (account === 'sicredi' && billingMonth) {
+        try {
+          // Find or create the "Cartão Sicredi" recurring bill
+          let billRes = await pool.query(
+            `SELECT id FROM fin_recurring_bills WHERE LOWER(name) LIKE '%sicredi%' AND LOWER(name) LIKE '%cart%' LIMIT 1`
+          );
+          let billId: number;
+          if (billRes.rows.length === 0) {
+            // Auto-create the bill
+            const newBill = await pool.query(
+              `INSERT INTO fin_recurring_bills (name, description, due_day, is_active, default_value)
+               VALUES ('Cartão Sicredi', 'Fatura do cartão de crédito Sicredi', 18, true, 0) RETURNING id`
+            );
+            billId = newBill.rows[0].id;
+          } else {
+            billId = billRes.rows[0].id;
+          }
+
+          // Calculate total of Sicredi items for this billing month
+          const totalRes = await pool.query(
+            `SELECT COALESCE(SUM(ABS(value::numeric)), 0) AS total
+             FROM fin_movements_asaas
+             WHERE account = 'sicredi' AND billing_month = $1`,
+            [billingMonth]
+          );
+          const faturaTotal = parseFloat(totalRes.rows[0].total) || 0;
+
+          // Check current status of Sicredi items
+          const statusRes = await pool.query(
+            `SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE sicredi_status = 'realizado') AS paid
+             FROM fin_movements_asaas WHERE account = 'sicredi' AND billing_month = $1`,
+            [billingMonth]
+          );
+          const allPaid = statusRes.rows[0].total > 0 && statusRes.rows[0].total === statusRes.rows[0].paid;
+
+          const refMonth = billingMonth + '-01';
+          const [bY, bM] = billingMonth.split('-').map(Number);
+          const dueDate = `${bY}-${String(bM).padStart(2, '0')}-18`;
+
+          // Check if entry already exists
+          const existingEntry = await pool.query(
+            `SELECT id, status FROM fin_recurring_bill_entries WHERE recurring_bill_id = $1 AND reference_month = $2`,
+            [billId, refMonth]
+          );
+
+          if (existingEntry.rows.length > 0) {
+            // Update existing — but don't overwrite if already paid
+            const entry = existingEntry.rows[0];
+            if (entry.status !== 'paid') {
+              await pool.query(
+                `UPDATE fin_recurring_bill_entries SET expected_value = $1, updated_at = NOW() WHERE id = $2`,
+                [faturaTotal, entry.id]
+              );
+            }
+          } else {
+            // Create new entry
+            await pool.query(
+              `INSERT INTO fin_recurring_bill_entries (recurring_bill_id, reference_month, expected_value, actual_value, due_date, source, status)
+               VALUES ($1, $2, $3, 0, $4, 'manual', 'pending')`,
+              [billId, refMonth, faturaTotal, dueDate]
+            );
+          }
+        } catch (provErr: any) {
+          console.error('Auto-provision Sicredi error (non-fatal):', provErr.message);
+        }
+      }
+
+      res.json({ inserted, skipped, total: transactions.length });
+    } catch (err: any) {
+      console.error('Import error:', err.message);
+      res.status(500).json({ error: 'Failed to import file', detail: err.message });
     }
   });
 
@@ -4243,16 +5267,22 @@ app.get("/api/todos", async (req, res) => {
 
       // Find existing children to determine next code
       const siblings = await pool.query(
-        `SELECT structure FROM fin_categories WHERE structure LIKE $1 AND level = $2 ORDER BY structure DESC LIMIT 1`,
+        `SELECT structure FROM fin_categories WHERE structure LIKE $1 AND level = $2`,
         [`${parent_structure}.%`, newLevel]
       );
 
       let nextCode: string;
       if (siblings.rowCount && siblings.rowCount > 0) {
-        const lastStructure = siblings.rows[0].structure;
-        const lastParts = lastStructure.split('.');
-        const lastNum = parseInt(lastParts[lastParts.length - 1], 10);
-        nextCode = String(lastNum + 1).padStart(2, '0');
+        // Extract the numeric suffix from each sibling and find the max
+        let maxNum = 0;
+        for (const row of siblings.rows) {
+          const parts = row.structure.split('.');
+          const num = parseInt(parts[parts.length - 1], 10);
+          if (!isNaN(num) && num > maxNum) maxNum = num;
+        }
+        // Skip 99 (reserved for "Outros/Outras") — place before it
+        const next = maxNum >= 99 ? maxNum + 1 : maxNum + 1;
+        nextCode = next < 10 ? `0${next}` : String(next);
       } else {
         nextCode = '01';
       }
@@ -4414,33 +5444,159 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
-  // POST /api/fin-reconciliation-rules/apply — apply all active rules
+  // ── Helper: apply anticipation pairing logic ──
+  async function applyAnticipationPairing(): Promise<{ pairsFound: number; updated: number; reset: number }> {
+    // Step 1: Reset ALL is_anticipation_pair to false (clean slate)
+    const resetResult = await pool.query(`
+      UPDATE fin_movements_asaas
+      SET is_anticipation_pair = false
+      WHERE is_anticipation_pair = true
+      RETURNING id
+    `);
+    const reset = resetResult.rowCount || 0;
+
+    // Step 2: Match pairs by invoice number ("fatura nr. XXXXX") in description
+    // 'Cobranca recebida' + 'Baixa da antecipacao' with same invoice number → both marked as pair
+    // ONLY protect RECEIVABLE_ANTICIPATION itself (the real cash advance entry that should always show)
+    // RECEIVABLE_ANTICIPATION_DEBIT = "Baixa da antecipacao" → SHOULD be marked as pair
+    const pairsResult = await pool.query(`
+      SELECT
+        cr.id as cobranca_id,
+        ba.id as baixa_id
+      FROM fin_movements_asaas cr
+      JOIN fin_movements_asaas ba
+        ON ba.description ILIKE 'Baixa da antecipacao%'
+        AND SUBSTRING(ba.description FROM 'fatura nr[.] ?([0-9]+)')
+          = SUBSTRING(cr.description FROM 'fatura nr[.] ?([0-9]+)')
+      WHERE cr.description ILIKE 'Cobranca recebida%'
+        AND SUBSTRING(cr.description FROM 'fatura nr[.] ?([0-9]+)') IS NOT NULL
+        AND cr.transaction_type != 'RECEIVABLE_ANTICIPATION'
+    `);
+
+    const pairs = pairsResult.rows;
+    let updated = 0;
+
+    for (const pair of pairs) {
+      const result = await pool.query(`
+        UPDATE fin_movements_asaas
+        SET is_anticipation_pair = true,
+            custom_category = 'Baixa da antecipação Asaas',
+            custom_category_id = 92,
+            grapehub_category = 'Baixa da antecipação Asaas',
+            edited_at = NOW(),
+            edited_by = 'conciliacao-auto'
+        WHERE id IN ($1, $2)
+          AND transaction_type != 'RECEIVABLE_ANTICIPATION'
+        RETURNING id
+      `, [pair.cobranca_id, pair.baixa_id]);
+      updated += result.rowCount || 0;
+    }
+
+    // Step 3: Also mark any standalone 'Baixa da antecipacao' that didn't match a pair
+    // These are always anticipation-related and should be hidden
+    const standaloneResult = await pool.query(`
+      UPDATE fin_movements_asaas
+      SET is_anticipation_pair = true,
+          custom_category = 'Baixa da antecipação Asaas',
+          custom_category_id = 92,
+          grapehub_category = 'Baixa da antecipação Asaas',
+          edited_at = NOW(),
+          edited_by = 'conciliacao-auto'
+      WHERE description ILIKE 'Baixa da antecipacao%'
+        AND is_anticipation_pair = false
+        AND transaction_type != 'RECEIVABLE_ANTICIPATION'
+      RETURNING id
+    `);
+    updated += standaloneResult.rowCount || 0;
+
+    return { pairsFound: pairs.length, updated, reset };
+  }
+
+  // POST /api/fin-reconciliation-rules/apply-anticipation — only apply anticipation pairing
+  app.post("/api/fin-reconciliation-rules/apply-anticipation", async (_req, res) => {
+    try {
+      const result = await applyAnticipationPairing();
+      res.json(result);
+    } catch (err) {
+      console.error("Error applying anticipation pairing:", err);
+      res.status(500).json({ error: "Failed to apply anticipation pairing" });
+    }
+  });
+
+  // GET /api/financeiro/extrato/anticipation-stats — anticipation summary for a period
+  app.get("/api/financeiro/extrato/anticipation-stats", async (req, res) => {
+    try {
+      const start = req.query.start as string;
+      const end = req.query.end as string;
+      if (!start || !end) return res.status(400).json({ error: 'start and end required' });
+
+      const endDate = new Date(end);
+      endDate.setDate(endDate.getDate() + 1);
+      const fim = endDate.toISOString().slice(0, 10);
+
+      // Total antecipado bruto (Antecipacao entries = credit type=1)
+      const brutoResult = await pool.query(`
+        SELECT COALESCE(SUM(ABS(value::numeric)), 0) as total, COUNT(*) as count
+        FROM fin_movements_asaas
+        WHERE description ILIKE 'Antecipacao%'
+          AND type = 1
+          AND transaction_date >= $1 AND transaction_date < $2
+      `, [start, fim]);
+
+      // Total taxas de antecipação
+      const taxasResult = await pool.query(`
+        SELECT COALESCE(SUM(ABS(value::numeric)), 0) as total, COUNT(*) as count
+        FROM fin_movements_asaas
+        WHERE description ILIKE 'Taxa de antecipacao%'
+          AND transaction_date >= $1 AND transaction_date < $2
+      `, [start, fim]);
+
+      // Pairs count
+      const pairsResult = await pool.query(`
+        SELECT COUNT(*) as count
+        FROM fin_movements_asaas
+        WHERE is_anticipation_pair = true
+          AND transaction_date >= $1 AND transaction_date < $2
+      `, [start, fim]);
+
+      const bruto = parseFloat(brutoResult.rows[0].total);
+      const taxas = parseFloat(taxasResult.rows[0].total);
+
+      res.json({
+        antecipado_bruto: bruto,
+        taxas_antecipacao: taxas,
+        liquido: bruto - taxas,
+        count_antecipacoes: parseInt(brutoResult.rows[0].count),
+        count_taxas: parseInt(taxasResult.rows[0].count),
+        count_pares: parseInt(pairsResult.rows[0].count),
+      });
+    } catch (err) {
+      console.error("Error fetching anticipation stats:", err);
+      res.status(500).json({ error: "Failed" });
+    }
+  });
+
+  // POST /api/fin-reconciliation-rules/apply — apply anticipation + text rules
   app.post("/api/fin-reconciliation-rules/apply", async (req, res) => {
     try {
-      // Fetch active rules in priority order
+      const details: { rule: string; applied: number }[] = [];
+      let totalApplied = 0;
+
+      // ── Step 1: Apply anticipation pairing first ──
+      const anticipation = await applyAnticipationPairing();
+      if (anticipation.updated > 0) {
+        totalApplied += anticipation.updated;
+        details.push({ rule: '🔗 Pares de Antecipação', applied: anticipation.updated });
+      }
+
+      // ── Step 2: Apply text-matching rules on uncategorized items ──
       const rulesResult = await pool.query(
         "SELECT * FROM fin_reconciliation_rules WHERE is_active = true ORDER BY priority ASC, created_at ASC"
       );
       const rules = rulesResult.rows;
-      let totalApplied = 0;
-      const details: { rule: string; applied: number }[] = [];
 
       for (const rule of rules) {
-        let whereClause: string;
         const matchText = rule.match_text;
-
-        switch (rule.match_type) {
-          case 'starts_with':
-            whereClause = `description ILIKE $1`;
-            break;
-          case 'exact':
-            whereClause = `description ILIKE $1`;
-            break;
-          default: // 'contains'
-            whereClause = `description ILIKE $1`;
-            break;
-        }
-
         let pattern: string;
         switch (rule.match_type) {
           case 'starts_with':
@@ -4463,7 +5619,8 @@ app.get("/api/todos", async (req, res) => {
                edited_by = 'regra-auto'
            WHERE custom_category IS NULL
              AND (grapehub_category IS NULL OR grapehub_category = '')
-             AND ${whereClause}
+             AND is_anticipation_pair = false
+             AND description ILIKE $1
            RETURNING id`,
           [pattern, rule.category_name, rule.category_id]
         );
@@ -4475,7 +5632,7 @@ app.get("/api/todos", async (req, res) => {
         }
       }
 
-      res.json({ applied: totalApplied, details });
+      res.json({ applied: totalApplied, details, anticipation });
     } catch (err) {
       console.error("Error applying reconciliation rules:", err);
       res.status(500).json({ error: "Failed to apply rules" });

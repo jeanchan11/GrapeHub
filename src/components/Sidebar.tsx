@@ -1,7 +1,7 @@
 
 // Sidebar component for GrapeHub
 // Last updated: 2026-04-19
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth } from '../firebase';
 import { signOut, User as FirebaseUser } from 'firebase/auth';
@@ -26,9 +26,26 @@ interface SidebarProps {
 type FlyoutItem = { id: string; label: string; icon: string; icon_color?: string; indent: number };
 
 const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userData, theme, toggleTheme }) => {
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    try { return localStorage.getItem('sidebar-collapsed') === 'true'; } catch { return false; }
+  });
   const [searchQuery, setSearchQuery] = useState('');
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem('sidebar-expanded');
+      return saved ? JSON.parse(saved) : {};
+    } catch { return {}; }
+  });
+
+  // Persist expanded state
+  useEffect(() => {
+    try { localStorage.setItem('sidebar-expanded', JSON.stringify(expanded)); } catch {}
+  }, [expanded]);
+
+  // Persist collapsed state
+  useEffect(() => {
+    try { localStorage.setItem('sidebar-collapsed', String(isCollapsed)); } catch {}
+  }, [isCollapsed]);
 
   // Flyout state — rendered outside sidebar via fixed position
   const [flyoutSection, setFlyoutSection] = useState<string | null>(null);

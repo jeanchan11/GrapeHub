@@ -1,17 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, ChevronDown, ChevronUp, Clock, CreditCard, FileText } from 'lucide-react';
+import { Calendar, ChevronDown, ChevronUp, Clock, CreditCard, Zap, FileText, ExternalLink } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────
-interface ReceivableItem {
-  asaas_id: string;
-  transaction_type: string;
-  value: string;
-  transaction_date: string;
-  description: string;
-  balance: string;
-  payment_id: string | null;
-}
-
 interface InvoiceItem {
   id: number;
   asaas_id: string;
@@ -24,15 +14,23 @@ interface InvoiceItem {
   due_date: string;
   payment_date: string | null;
   description: string | null;
+  invoice_url: string | null;
+}
+
+interface MovementItem {
+  asaas_id: string;
+  transaction_type: string;
+  value: string;
+  transaction_date: string;
+  description: string;
+  payment_id: string | null;
 }
 
 interface Summary {
   total_recebido: number;
   total_antecipacoes: number;
   total_a_receber: number;
-  total_recebido_invoices: number;
   total_mes: number;
-  saldo_final: number;
 }
 
 // ── Helpers ────────────────────────────────────────────
@@ -67,21 +65,24 @@ const BILLING_LABELS: Record<string, { label: string; icon: string }> = {
   'UNDEFINED': { label: 'Outros', icon: '📁' },
 };
 
-const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }> = {
-  'Pendente': { bg: 'bg-amber-500/15', text: 'text-amber-400', label: 'Pendente' },
-  'Confirmado': { bg: 'bg-blue-500/15', text: 'text-blue-400', label: 'Confirmado' },
-  'Recebido': { bg: 'bg-emerald-500/15', text: 'text-emerald-400', label: 'Recebido' },
+const TRANSACTION_LABELS: Record<string, string> = {
+  'PAYMENT_RECEIVED': 'Cobranças Recebidas',
+  'TRANSFER': 'Transferências',
+  'RECEIVABLE_ANTICIPATION_GROSS_CREDIT': 'Crédito Antecipação',
+  'PAYMENT_FEE_REFUND': 'Reembolso de Taxas',
+  'REFUND_RECEIVED': 'Reembolsos',
 };
 
 // ── CollapsibleGroup ─────────────────────────────────
-const CollapsibleGroup = ({ title, icon, items, total, valueColor }: {
+const CollapsibleGroup = ({ title, icon, items, total, valueColor, defaultOpen }: {
   title: string;
   icon: string;
-  items: { label: string; sublabel?: string; date: string; value: number; badge?: { text: string; bg: string; color: string } }[];
+  items: { label: string; sublabel?: string; date: string; value: number; badge?: { text: string; bg: string; color: string }; url?: string | null }[];
   total: number;
   valueColor?: string;
+  defaultOpen?: boolean;
 }) => {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(defaultOpen || false);
 
   return (
     <div className="mb-2 border border-white/10 rounded-xl overflow-hidden">
@@ -111,6 +112,11 @@ const CollapsibleGroup = ({ title, icon, items, total, valueColor }: {
                       {item.badge.text}
                     </span>
                   )}
+                  {item.url && (
+                    <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-violet-400 hover:text-violet-300 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <ExternalLink size={12} />
+                    </a>
+                  )}
                 </div>
                 <div className="flex items-center gap-3 mt-0.5">
                   <span className="text-[10px] text-slate-500">{fmtDate(item.date)}</span>
@@ -118,7 +124,7 @@ const CollapsibleGroup = ({ title, icon, items, total, valueColor }: {
                 </div>
               </div>
               <span className={`text-xs font-bold ${valueColor || 'text-emerald-400'} ml-4 shrink-0`}>
-                {valueColor?.includes('amber') ? '' : '+'}{formatCurrency(item.value)}
+                {formatCurrency(item.value)}
               </span>
             </div>
           ))}
@@ -132,12 +138,11 @@ const CollapsibleGroup = ({ title, icon, items, total, valueColor }: {
 export default function ContasAReceber() {
   const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [loading, setLoading] = useState(true);
-  const [summary, setSummary] = useState<Summary>({ total_recebido: 0, total_antecipacoes: 0, total_a_receber: 0, total_recebido_invoices: 0, total_mes: 0, saldo_final: 0 });
-  const [cobracoes, setCobracoes] = useState<ReceivableItem[]>([]);
-  const [antecipacoes, setAntecipacoes] = useState<ReceivableItem[]>([]);
-  const [invoicesPendentes, setInvoicesPendentes] = useState<InvoiceItem[]>([]);
-  const [invoicesConfirmados, setInvoicesConfirmados] = useState<InvoiceItem[]>([]);
-  const [invoicesRecebidos, setInvoicesRecebidos] = useState<InvoiceItem[]>([]);
+  const [summary, setSummary] = useState<Summary>({ total_recebido: 0, total_antecipacoes: 0, total_a_receber: 0, total_mes: 0 });
+  const [pendentes, setPendentes] = useState<InvoiceItem[]>([]);
+  const [vencidos, setVencidos] = useState<InvoiceItem[]>([]);
+  const [recebidos, setRecebidos] = useState<MovementItem[]>([]);
+  const [antecipacoes, setAntecipacoes] = useState<MovementItem[]>([]);
 
   const [selY, selM] = selectedMonth.split('-').map(Number);
   const monthLabel = `${MESES_FULL[selM - 1]} ${selY}`;
@@ -161,11 +166,10 @@ export default function ContasAReceber() {
         if (!res.ok) throw new Error('Falha ao carregar');
         const data = await res.json();
         setSummary(data.summary);
-        setCobracoes(data.cobracoes_recebidas || []);
+        setPendentes(data.a_receber?.pendentes || []);
+        setVencidos(data.a_receber?.vencidos || []);
+        setRecebidos(data.recebidos || []);
         setAntecipacoes(data.antecipacoes || []);
-        setInvoicesPendentes(data.invoices?.pendentes || []);
-        setInvoicesConfirmados(data.invoices?.confirmados || []);
-        setInvoicesRecebidos(data.invoices?.recebidos || []);
       } catch (err) {
         console.error('Error fetching contas a receber:', err);
       } finally {
@@ -175,18 +179,9 @@ export default function ContasAReceber() {
     fetchData();
   }, [selectedMonth]);
 
-  // Map movements into collapsible items
-  const mapMovItems = (items: ReceivableItem[]) =>
-    items.map(item => ({
-      label: extractClientName(item.description),
-      sublabel: item.description !== extractClientName(item.description) ? item.description : undefined,
-      date: item.transaction_date,
-      value: Math.abs(parseFloat(item.value || '0')),
-    }));
-
-  // Map invoices into collapsible items grouped by billing_type
+  // Group invoices (A Receber) by billing_type
   const groupInvoicesByType = (items: InvoiceItem[]) => {
-    const grouped: Record<string, { label: string; icon: string; total: number; items: { label: string; sublabel?: string; date: string; value: number; badge?: { text: string; bg: string; color: string } }[] }> = {};
+    const grouped: Record<string, { label: string; icon: string; total: number; items: { label: string; sublabel?: string; date: string; value: number; badge?: { text: string; bg: string; color: string }; url?: string | null }[] }> = {};
 
     for (const inv of items) {
       const bt = inv.billing_type || 'UNDEFINED';
@@ -201,24 +196,50 @@ export default function ContasAReceber() {
         sublabel: inv.description || undefined,
         date: inv.due_date,
         value: valor,
-        badge: inv.billing_type ? { text: meta.label, bg: 'bg-slate-500/15', color: 'text-slate-400' } : undefined,
+        badge: { text: meta.label, bg: 'bg-slate-500/15', color: 'text-slate-400' },
+        url: inv.invoice_url,
       });
     }
     return Object.values(grouped).sort((a, b) => b.total - a.total);
   };
 
-  const cobracoesItems = mapMovItems(cobracoes);
-  const antecipItems = mapMovItems(antecipacoes);
-  const cobracoesTotal = cobracoesItems.reduce((s, i) => s + i.value, 0);
-  const antecipTotal = antecipItems.reduce((s, i) => s + i.value, 0);
+  // Group movements (Já Recebido) by transaction_type
+  const groupMovementsByType = (items: MovementItem[]) => {
+    const grouped: Record<string, { label: string; icon: string; total: number; items: { label: string; sublabel?: string; date: string; value: number }[] }> = {};
 
-  const pendentesGrouped = groupInvoicesByType(invoicesPendentes);
-  const confirmadosGrouped = groupInvoicesByType(invoicesConfirmados);
-  const recebidosGrouped = groupInvoicesByType(invoicesRecebidos);
+    for (const mov of items) {
+      const tt = mov.transaction_type || 'OTHER';
+      const label = TRANSACTION_LABELS[tt] || tt;
+      if (!grouped[tt]) {
+        grouped[tt] = { label, icon: '💰', total: 0, items: [] };
+      }
+      const valor = Math.abs(parseFloat(mov.value || '0'));
+      grouped[tt].total += valor;
+      grouped[tt].items.push({
+        label: extractClientName(mov.description),
+        sublabel: mov.description !== extractClientName(mov.description) ? mov.description : undefined,
+        date: mov.transaction_date,
+        value: valor,
+      });
+    }
+    return Object.values(grouped).sort((a, b) => b.total - a.total);
+  };
 
-  const pendentesTotal = invoicesPendentes.reduce((s, i) => s + parseFloat(i.value || '0'), 0);
-  const confirmadosTotal = invoicesConfirmados.reduce((s, i) => s + parseFloat(i.value || '0'), 0);
-  const recebidosTotal = invoicesRecebidos.reduce((s, i) => s + parseFloat(i.value || '0'), 0);
+  const pendentesGrouped = groupInvoicesByType(pendentes);
+  const vencidosGrouped = groupInvoicesByType(vencidos);
+  const recebidosGrouped = groupMovementsByType(recebidos);
+
+  const pendentesTotal = pendentes.reduce((s, i) => s + parseFloat(i.value || '0'), 0);
+  const vencidosTotal = vencidos.reduce((s, i) => s + parseFloat(i.value || '0'), 0);
+  const antecipTotal = antecipacoes.reduce((s, i) => s + Math.abs(parseFloat(i.value || '0')), 0);
+
+  // Map antecipações into collapsible items
+  const antecipItems = antecipacoes.map(item => ({
+    label: extractClientName(item.description),
+    sublabel: item.description !== extractClientName(item.description) ? item.description : undefined,
+    date: item.transaction_date,
+    value: Math.abs(parseFloat(item.value || '0')),
+  }));
 
   return (
     <div className="min-h-screen bg-dark-bg transition-colors duration-300">
@@ -257,34 +278,40 @@ export default function ContasAReceber() {
           </div>
         ) : (
           <>
-            {/* KPI Cards — row 1: summary */}
+            {/* KPI Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="bg-dark-card border border-white/10 rounded-2xl p-5">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Já Recebido</p>
-                <div className="flex items-center justify-between mt-1">
-                  <h3 className="text-2xl font-black text-dark-text">{formatCurrency(summary.total_recebido)}</h3>
-                  <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 text-[10px] font-bold rounded-full uppercase tracking-wider">recebido</span>
-                </div>
-              </div>
               <div className="bg-dark-card border-2 border-amber-500/30 rounded-2xl p-5">
                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">A Receber</p>
                 <div className="flex items-center justify-between mt-1">
                   <h3 className="text-2xl font-black text-amber-400">{formatCurrency(summary.total_a_receber)}</h3>
-                  <span className="px-2 py-0.5 bg-amber-500/20 text-amber-400 text-[10px] font-bold rounded-full uppercase tracking-wider">pendente</span>
+                  <span className="px-2 py-0.5 bg-amber-500/20 text-amber-400 text-[10px] font-bold rounded-full uppercase tracking-wider">
+                    {pendentes.length + vencidos.length} cobranças
+                  </span>
+                </div>
+              </div>
+              <div className="bg-dark-card border border-white/10 rounded-2xl p-5">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Já Recebido</p>
+                <div className="flex items-center justify-between mt-1">
+                  <h3 className="text-2xl font-black text-emerald-400">{formatCurrency(summary.total_recebido)}</h3>
+                  <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 text-[10px] font-bold rounded-full uppercase tracking-wider">
+                    {recebidos.length} entradas
+                  </span>
                 </div>
               </div>
               <div className="bg-dark-card border border-white/10 rounded-2xl p-5">
                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Antecipações</p>
                 <div className="flex items-center justify-between mt-1">
-                  <h3 className="text-2xl font-black text-dark-text">{formatCurrency(summary.total_antecipacoes)}</h3>
-                  <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 text-[10px] font-bold rounded-full uppercase tracking-wider">antecipado</span>
+                  <h3 className="text-2xl font-black text-blue-400">{formatCurrency(summary.total_antecipacoes)}</h3>
+                  <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 text-[10px] font-bold rounded-full uppercase tracking-wider">
+                    {antecipacoes.length} antecipado
+                  </span>
                 </div>
               </div>
               <div className="bg-dark-card border border-violet-500/30 rounded-2xl p-5">
                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Total do Mês</p>
                 <div className="flex items-center justify-between">
                   <h3 className="text-2xl font-black text-violet-400">{formatCurrency(summary.total_mes)}</h3>
-                  <span className="px-2 py-0.5 bg-violet-500/20 text-violet-400 text-[10px] font-bold rounded-full uppercase tracking-wider">geral</span>
+                  <span className="px-2 py-0.5 bg-violet-500/20 text-violet-400 text-[10px] font-bold rounded-full uppercase tracking-wider">recebido + antecipado</span>
                 </div>
               </div>
             </div>
@@ -292,7 +319,7 @@ export default function ContasAReceber() {
             {/* ── Two-column layout ── */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-              {/* LEFT COLUMN — A Receber (Pendentes + Confirmados) */}
+              {/* LEFT COLUMN — A Receber (Pendentes + Vencidos) */}
               <div className="bg-dark-card border border-white/10 rounded-2xl overflow-hidden flex flex-col">
                 <div className="p-6 border-b border-white/10 flex justify-between items-center">
                   <div className="flex items-center gap-2">
@@ -300,11 +327,11 @@ export default function ContasAReceber() {
                     <h2 className="text-sm font-bold text-dark-text uppercase tracking-widest">A Receber</h2>
                   </div>
                   <span className="px-3 py-1 bg-amber-500/20 text-amber-400 text-[10px] font-bold rounded-full uppercase tracking-wider">
-                    {invoicesPendentes.length + invoicesConfirmados.length} cobranças
+                    {pendentes.length + vencidos.length} cobranças
                   </span>
                 </div>
                 <div className="flex-1 overflow-y-auto max-h-[600px] p-4">
-                  {pendentesGrouped.length === 0 && confirmadosGrouped.length === 0 ? (
+                  {pendentesGrouped.length === 0 && vencidosGrouped.length === 0 ? (
                     <p className="text-center py-12 text-slate-500">Nenhuma cobrança pendente neste mês.</p>
                   ) : (
                     <>
@@ -316,11 +343,11 @@ export default function ContasAReceber() {
                           ))}
                         </div>
                       )}
-                      {confirmadosGrouped.length > 0 && (
+                      {vencidosGrouped.length > 0 && (
                         <div>
-                          <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest mb-2 px-2">Confirmados — {formatCurrency(confirmadosTotal)}</p>
-                          {confirmadosGrouped.map((group, idx) => (
-                            <CollapsibleGroup key={`c-${idx}`} title={group.label} icon={group.icon} items={group.items} total={group.total} valueColor="text-blue-400" />
+                          <p className="text-[10px] font-bold text-rose-400 uppercase tracking-widest mb-2 px-2">Vencidos — {formatCurrency(vencidosTotal)}</p>
+                          {vencidosGrouped.map((group, idx) => (
+                            <CollapsibleGroup key={`v-${idx}`} title={group.label} icon={group.icon} items={group.items} total={group.total} valueColor="text-rose-400" />
                           ))}
                         </div>
                       )}
@@ -329,7 +356,7 @@ export default function ContasAReceber() {
                 </div>
               </div>
 
-              {/* RIGHT COLUMN — Já Recebido (Cobranças + Antecipações + Invoices recebidos) */}
+              {/* RIGHT COLUMN — Já Recebido + Antecipações */}
               <div className="bg-dark-card border border-white/10 rounded-2xl overflow-hidden flex flex-col">
                 <div className="p-6 border-b border-white/10 flex justify-between items-center">
                   <div className="flex items-center gap-2">
@@ -337,26 +364,26 @@ export default function ContasAReceber() {
                     <h2 className="text-sm font-bold text-dark-text uppercase tracking-widest">Já Recebido</h2>
                   </div>
                   <span className="px-3 py-1 bg-emerald-500/20 text-emerald-400 text-[10px] font-bold rounded-full uppercase tracking-wider">
-                    Conciliado
+                    {recebidos.length + antecipacoes.length} entradas
                   </span>
                 </div>
                 <div className="flex-1 overflow-y-auto max-h-[600px] p-4">
-                  {cobracoesItems.length === 0 && antecipItems.length === 0 && recebidosGrouped.length === 0 ? (
+                  {recebidosGrouped.length === 0 && antecipItems.length === 0 ? (
                     <p className="text-center py-12 text-slate-500">Nenhum recebimento neste mês.</p>
                   ) : (
                     <>
-                      {cobracoesItems.length > 0 && (
-                        <CollapsibleGroup title="Cobranças Recebidas" icon="💰" items={cobracoesItems} total={cobracoesTotal} valueColor="text-emerald-400" />
-                      )}
-                      {antecipItems.length > 0 && (
-                        <CollapsibleGroup title="Antecipações" icon="⚡" items={antecipItems} total={antecipTotal} valueColor="text-emerald-400" />
-                      )}
                       {recebidosGrouped.length > 0 && (
-                        <div className="mt-2">
-                          <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest mb-2 px-2">Cobranças Recebidas (Asaas) — {formatCurrency(recebidosTotal)}</p>
+                        <div className="mb-4">
+                          <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest mb-2 px-2">Recebidos — {formatCurrency(summary.total_recebido)}</p>
                           {recebidosGrouped.map((group, idx) => (
                             <CollapsibleGroup key={`r-${idx}`} title={group.label} icon={group.icon} items={group.items} total={group.total} valueColor="text-emerald-400" />
                           ))}
+                        </div>
+                      )}
+                      {antecipItems.length > 0 && (
+                        <div>
+                          <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest mb-2 px-2">Antecipações — {formatCurrency(antecipTotal)}</p>
+                          <CollapsibleGroup title="Antecipações Asaas" icon="⚡" items={antecipItems} total={antecipTotal} valueColor="text-blue-400" />
                         </div>
                       )}
                     </>

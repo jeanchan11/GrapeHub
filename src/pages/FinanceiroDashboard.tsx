@@ -10,12 +10,15 @@ import { designSystem } from '../design-system';
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend, Filler, LineController, BarController);
 
 interface Resumo {
-  caixa_realizado: string;
-  saidas_operacionais: string;
-  distribuicao: string;
-  a_receber: string;
-  despesas_previstas: string;
-  saldo_periodo: string;
+  saldo_caixa: number;
+  previsto_fim_mes: number;
+  recebido: number;
+  a_receber: number;
+  faturamento_total: number;
+  pago: number;
+  a_pagar: number;
+  despesas_total: number;
+  saldo_periodo: number;
 }
 
 interface FluxoDiario {
@@ -231,8 +234,6 @@ export default function FinanceiroDashboard() {
   const [saldoAnterior, setSaldoAnterior] = useState<number>(0);
   const [clientes, setClientes] = useState<ClienteRecente[]>([]);
   const [inadimplentes, setInadimplentes] = useState<Inadimplente[]>([]);
-  const [despesas, setDespesas] = useState<Despesa[]>([]);
-  const [receitas, setReceitas] = useState<Receita[]>([]);
   const [previsto, setPrevisto] = useState<Previsto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -244,17 +245,15 @@ export default function FinanceiroDashboard() {
       try {
         setLoading(true);
         const m = selectedMonth;
-        const [resResumo, resFluxo, resClientes, resInadimplentes, resPrevisto, resDespesas, resReceitas] = await Promise.all([
+        const [resResumo, resFluxo, resClientes, resInadimplentes, resPrevisto] = await Promise.all([
           fetch(`/api/financeiro/resumo?mes=${m}`),
           fetch(`/api/financeiro/fluxo-diario?mes=${m}`),
           fetch(`/api/financeiro/clientes-recentes?mes=${m}`),
           fetch(`/api/financeiro/inadimplentes?mes=${m}`),
           fetch(`/api/financeiro/previsto?mes=${m}`),
-          fetch(`/api/financeiro/despesas?mes=${m}`),
-          fetch(`/api/financeiro/receitas?mes=${m}`)
         ]);
 
-        if (!resResumo.ok || !resFluxo.ok || !resClientes.ok || !resInadimplentes.ok || !resPrevisto.ok || !resDespesas.ok || !resReceitas.ok) {
+        if (!resResumo.ok || !resFluxo.ok || !resClientes.ok || !resInadimplentes.ok || !resPrevisto.ok) {
           throw new Error('Falha ao carregar dados financeiros');
         }
 
@@ -266,8 +265,6 @@ export default function FinanceiroDashboard() {
         setClientes(await resClientes.json());
         setInadimplentes(await resInadimplentes.json());
         setPrevisto(await resPrevisto.json());
-        setDespesas(await resDespesas.json());
-        setReceitas(await resReceitas.json());
       } catch (err: any) {
         setError(err.message || 'Erro desconhecido');
       } finally {
@@ -327,10 +324,11 @@ export default function FinanceiroDashboard() {
     };
   });
 
-  const labels = todosOsDias.map(f => `${f.dia} ABR`);
+  const mesRef = selectedMonth.split('-').map(Number);
+  const mesAbrev = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'][mesRef[1]-1];
+  const labels = todosOsDias.map(f => `${f.dia} ${mesAbrev}`);
 
-  // O saldo inicial é o saldo anterior calculado pelo backend (base 70232.04 + histórico conciliado)
-  const saldoAncoraHoje = 26538.35; // Saldo real atual do Asaas
+  const saldoCaixa = resumo?.saldo_caixa ?? 0;
   
   let ultimoIndiceRealizado = -1;
   for (let i = todosOsDias.length - 1; i >= 0; i--) {
@@ -349,31 +347,27 @@ export default function FinanceiroDashboard() {
     const f = todosOsDias[i];
     
     if (i <= ultimoIndiceRealizado) {
-      if (i === ultimoIndiceRealizado) {
-        saldoRealizadoAtual = saldoAncoraHoje;
-      } else {
-        const entradasDoDia = f.entradas_realizadas;
-        const saidasDoDia = f.saidas_realizadas;
-        saldoRealizadoAtual += (entradasDoDia - saidasDoDia);
-      }
+      const entradasDoDia = f.entradas_realizadas;
+      const saidasDoDia = f.saidas_realizadas;
+      saldoRealizadoAtual += (entradasDoDia - saidasDoDia);
       saldoRealizadoData.push(saldoRealizadoAtual);
       
       if (i === ultimoIndiceRealizado) {
-        saldoPrevistoData.push(saldoRealizadoAtual); // Conecta as linhas
+        saldoPrevistoData.push(saldoRealizadoAtual);
       } else {
         saldoPrevistoData.push(null);
       }
     } else {
       saldoRealizadoData.push(null);
       
-      let saldoPrevistoAnterior = i > 0 && saldoPrevistoData[i - 1] !== null ? saldoPrevistoData[i - 1]! : saldoAncoraHoje;
+      let saldoPrevistoAnterior = i > 0 && saldoPrevistoData[i - 1] !== null ? saldoPrevistoData[i - 1]! : saldoRealizadoAtual;
       const entradasDoDia = f.entradas_previstas;
       const saidasDoDia = f.saidas_previstas;
       saldoPrevistoData.push(saldoPrevistoAnterior + (entradasDoDia - saidasDoDia));
     }
   }
 
-  const saldoAcumulado = saldoPrevistoData[saldoPrevistoData.length - 1] ?? saldoRealizadoData[saldoRealizadoData.length - 1] ?? 0;
+  const saldoAcumulado = resumo?.previsto_fim_mes ?? saldoPrevistoData[saldoPrevistoData.length - 1] ?? saldoRealizadoData[saldoRealizadoData.length - 1] ?? 0;
 
   const chartSaudeData = {
     labels,
@@ -449,7 +443,7 @@ export default function FinanceiroDashboard() {
     }
   };
 
-  const getInitials = (name: string) => name.substring(0, 2).toUpperCase();
+  const getInitials = (name: string) => (name || '??').substring(0, 2).toUpperCase();
 
   const getStatusColor = (status: string) => {
     if (status === 'Conciliado') return 'bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-400';
@@ -467,12 +461,11 @@ export default function FinanceiroDashboard() {
 
   const totalInadimplencia = inadimplentes.reduce((acc, curr) => acc + parseFloat(curr.valor), 0);
   const maxAtraso = inadimplentes.length > 0 ? Math.max(...inadimplentes.map(i => i.dias_atraso)) : 0;
-  const despesasRealizadas = parseFloat(resumo?.saidas_operacionais || '0') + parseFloat(resumo?.distribuicao || '0');
 
   // ── Bar click handler ──────────────────────────────────────────────────
   const handleBarClick = (barData: any) => {
     if (!barData?.dia) return;
-    const diaStr: string = barData.dia; // "DD/MM"
+    const diaStr: string = barData.dia;
     const [dd, mm] = diaStr.split('/');
     const [year] = selectedMonth.split('-');
     const iso = `${year}-${mm}-${dd}`;
@@ -485,30 +478,15 @@ export default function FinanceiroDashboard() {
       .catch(() => setDayPopup({ iso, label, items: [] }))
       .finally(() => setDayLoading(false));
   };
-  const saldoPeriodo = parseFloat(resumo?.saldo_periodo || '0');
-  const saldoProjetado = parseFloat(previsto?.saldo_projetado || '0');
 
-  const receitasRealizadas = receitas.filter(r => r.type_column === 'realizado' && r.status === 'Conciliado');
-  const valorRecebido = receitasRealizadas.reduce((acc, curr) => acc + parseFloat(curr.value || '0'), 0);
-  const conciliadosCodes = new Set(receitasRealizadas.map(r => r.document_code).filter(Boolean));
-  const receitasPrevistas = receitas.filter(r => 
-    r.type_column === 'previsto' && 
-    ['Pendente', 'Vence Hoje'].includes(r.status) &&
-    (!r.document_code || !conciliadosCodes.has(r.document_code))
-  );
-  const valorAReceber = receitasPrevistas.reduce((acc, curr) => acc + parseFloat(curr.movement_value || '0'), 0);
-  const faturamentoTotal = valorRecebido + valorAReceber;
-
-  const despesasPagasItems = despesas.filter(d => d.type_column === 'realizado' && d.status === 'Conciliado');
-  const valorPago = despesasPagasItems.reduce((acc, curr) => acc + parseFloat(curr.value || '0'), 0);
-  const despesasConciliadasCodes = new Set(despesasPagasItems.map(d => d.document_code).filter(Boolean));
-  const despesasPrevistasItems = despesas.filter(d => 
-    d.type_column === 'previsto' && 
-    ['Pendente', 'Vence Hoje'].includes(d.status) &&
-    (!d.document_code || !despesasConciliadasCodes.has(d.document_code))
-  );
-  const valorAPagar = despesasPrevistasItems.reduce((acc, curr) => acc + parseFloat(curr.movement_value || '0'), 0);
-  const totalDespesasMes = valorPago + valorAPagar;
+  // Valores do resumo (agora vêm direto do backend)
+  const saldoPeriodo = resumo?.saldo_periodo ?? 0;
+  const valorRecebido = resumo?.recebido ?? 0;
+  const valorAReceber = resumo?.a_receber ?? 0;
+  const faturamentoTotal = resumo?.faturamento_total ?? 0;
+  const valorPago = resumo?.pago ?? 0;
+  const valorAPagar = resumo?.a_pagar ?? 0;
+  const totalDespesasMes = resumo?.despesas_total ?? 0;
 
   return (
     <div className="min-h-screen bg-dark-bg p-8 font-sans text-dark-text transition-colors duration-300">
@@ -570,14 +548,14 @@ export default function FinanceiroDashboard() {
           <StatCard
             icon={ArrowUpRight}
             title="Caixa"
-            value={formatCurrency(saldoAncoraHoje)}
+            value={formatCurrency(saldoCaixa)}
             subtitle={
               <div className="space-y-3">
                 <div className="flex flex-col gap-2">
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-slate-500">Atual</span>
-                    <span className={`font-semibold ${saldoAncoraHoje >= 0 ? 'text-emerald-500' : 'text-rose-400'}`}>
-                      {formatCurrency(saldoAncoraHoje)}
+                    <span className={`font-semibold ${saldoCaixa >= 0 ? 'text-emerald-500' : 'text-rose-400'}`}>
+                      {formatCurrency(saldoCaixa)}
                     </span>
                   </div>
                   <div className="flex justify-between items-center text-sm">
@@ -592,14 +570,14 @@ export default function FinanceiroDashboard() {
                     <div className="flex-1 h-1.5 bg-slate-100 dark:bg-white/10 rounded-full overflow-hidden">
                       <div
                         className={`h-full rounded-full transition-all duration-500 ${
-                          saldoAcumulado >= saldoAncoraHoje ? 'bg-violet-500' : 'bg-rose-400'
+                          saldoAcumulado >= saldoCaixa ? 'bg-violet-500' : 'bg-rose-400'
                         }`}
-                        style={{ width: `${Math.min(100, Math.max(0, saldoAncoraHoje > 0 ? (saldoAcumulado / saldoAncoraHoje) * 100 : 0))}%` }}
+                        style={{ width: `${Math.min(100, Math.max(0, saldoCaixa > 0 ? (saldoAcumulado / saldoCaixa) * 100 : 0))}%` }}
                       />
                     </div>
                     <span className="text-[10px] font-bold text-slate-400">
-                      {saldoAncoraHoje > 0
-                        ? `${saldoAcumulado >= saldoAncoraHoje ? '+' : ''}${Math.round(((saldoAcumulado - saldoAncoraHoje) / saldoAncoraHoje) * 100)}%`
+                      {saldoCaixa > 0
+                        ? `${saldoAcumulado >= saldoCaixa ? '+' : ''}${Math.round(((saldoAcumulado - saldoCaixa) / saldoCaixa) * 100)}%`
                         : '—'
                       }
                     </span>
@@ -608,7 +586,7 @@ export default function FinanceiroDashboard() {
               </div>
             }
             colorClass="bg-emerald-600"
-            isNegative={saldoAncoraHoje < 0}
+            isNegative={saldoCaixa < 0}
           />
           <StatCard 
             icon={TrendingUp} 

@@ -31,6 +31,7 @@ import TodoStaff from './src/pages/TodoStaff';
 import ContratacaoPage from './src/pages/ContratacaoPage';
 import ContasAPagar from './src/pages/ContasAPagar';
 import ContasAReceber from './src/pages/ContasAReceber';
+import DRE from './src/pages/DRE';
 import CandidateApplicationForm from './src/pages/CandidateApplicationForm';
 import SaboteurTestPage from './src/pages/SaboteurTestPage';
 import DiscTestPage from './src/pages/DiscTestPage';
@@ -248,6 +249,8 @@ const AppContent: React.FC = () => {
         return <ContasAPagar />;
       case 'contas-a-receber':
         return <ContasAReceber />;
+      case 'dre':
+        return <DRE />;
       default:
         return <GestorCalculator />;
     }

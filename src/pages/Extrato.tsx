@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, ArrowUp, ArrowDown, FileText, Calendar, ChevronDown, ChevronUp, Check, Tag, AlertTriangle, ShieldAlert, Users, TrendingUp, TrendingDown, X, MessageSquare, Copy, ExternalLink, Pencil, Zap, ToggleLeft, ToggleRight, Trash2, Plus, Loader2, Wand2 } from 'lucide-react';
+import { Search, ArrowUp, ArrowDown, FileText, Calendar, ChevronDown, ChevronUp, Check, Tag, AlertTriangle, ShieldAlert, Users, TrendingUp, TrendingDown, X, MessageSquare, Copy, ExternalLink, Pencil, Zap, ToggleLeft, ToggleRight, Trash2, Plus, Loader2, Wand2, Link2, EyeOff, Eye, Upload } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────
 interface ExtratoItem {
@@ -27,6 +27,8 @@ interface ExtratoItem {
   is_edited: boolean;
   edited_at: string | null;
   edited_by: string | null;
+  is_anticipation_pair: boolean;
+  account?: string;
 }
 
 interface DateRange { start: string; end: string; }
@@ -90,20 +92,21 @@ const CATEGORIES = [
   { name: 'Administrativo',      icon: '🏢' },
   { name: 'Despesas Financeiras',icon: '💳' },
   { name: 'Distribuição de Lucros', icon: '💰' },
+  { name: 'transferencia entre contas', icon: '🏦' },
   { name: 'Não Operacional',     icon: '📦' },
   { name: 'Receita de Contratos',icon: '📑' },
   { name: 'Outros',              icon: '📁' },
 ];
 
 const KEYWORDS_MAP: { name: string; keywords: string[] }[] = [
-  { name: 'Impostos',            keywords: ['Simples Nacional', 'ISS', 'IRPJ', 'Imposto', 'DAS', 'PIS', 'COFINS', 'CSLL', 'Taxa Municipal', 'Alvará'] },
-  { name: 'Salários e Pessoal',  keywords: ['Remuneração', 'Salário', 'Bonificação', 'Business Partner', 'FGTS', 'IRRF', 'Folha', 'Férias', '13º', 'Rescisão', 'Benefício', 'Vale', 'Plano de Saúde', 'Odonto', 'Seguro de Vida'] },
-  { name: 'Prestação de Serviço',keywords: ['Ferramenta', 'Software', 'VPS', 'Domínio', 'Hospedagem', 'AWS', 'Google Cloud', 'Vercel', 'OpenAI', 'Claude', 'Github', 'Cursor', 'Slack', 'Zoom', 'Canva', 'Adobe', 'Figma', 'Notion', 'Trello', 'Jira'] },
-  { name: 'Marketing e Vendas',  keywords: ['Comissão', 'Tráfego Pago', 'Facebook Ads', 'Google Ads', 'Meta Ads', 'Marketing', 'Publicidade', 'Influenciador', 'RD Station', 'Hubspot', 'ActiveCampaign', 'LinkedIn Ads', 'TikTok Ads'] },
-  { name: 'Administrativo',      keywords: ['Aluguel', 'Condomínio', 'Energia', 'Internet', 'Assessoria Financeira', 'Contabilidade', 'Limpeza', 'Escritório', 'Material', 'Seguro', 'Água', 'Telefone', 'Correios', 'Cartório'] },
-  { name: 'Despesas Financeiras',keywords: ['Taxa', 'Tarifa Asaas', 'Taxa de antecipação', 'Juros', 'IOF', 'Banco', 'Tarifa', 'Anuidade', 'TED', 'Boleto'] },
-  { name: 'Distribuição de Lucros', keywords: ['Pró-labore', 'Dividendo', 'INSS', 'Retirada', 'Lucro', 'Sócio'] },
-  { name: 'Não Operacional',     keywords: ['Compra de cotas', 'Investimento', 'Empréstimo', 'Amortização', 'Aporte', 'Financiamento'] },
+  { name: 'Impostos',            keywords: ['Simples Nacional', 'ISS', 'IRPJ', 'Imposto', 'DAS', 'PIS', 'COFINS', 'CSLL', 'Taxa Municipal', 'Alvará', 'Alvara'] },
+  { name: 'Salários e Pessoal',  keywords: ['Remuneração', 'Remuneracao', 'Salário', 'Salario', 'Bonificação', 'Bonificacao', 'Business Partner', 'FGTS', 'IRRF', 'Folha', 'Férias', 'Ferias', '13º', 'Rescisão', 'Rescisao', 'Benefício', 'Beneficio', 'Vale', 'Plano de Saúde', 'Plano de Saude', 'Odonto', 'Seguro de Vida'] },
+  { name: 'Prestação de Serviço',keywords: ['Ferramenta', 'Software', 'VPS', 'Domínio', 'Dominio', 'Hospedagem', 'AWS', 'Google Cloud', 'Vercel', 'OpenAI', 'Claude', 'Github', 'Cursor', 'Slack', 'Zoom', 'Canva', 'Adobe', 'Figma', 'Notion', 'Trello', 'Jira'] },
+  { name: 'Marketing e Vendas',  keywords: ['Comissão', 'Comissao', 'Tráfego Pago', 'Trafego Pago', 'Facebook Ads', 'Google Ads', 'Meta Ads', 'Marketing', 'Publicidade', 'Influenciador', 'RD Station', 'Hubspot', 'ActiveCampaign', 'LinkedIn Ads', 'TikTok Ads'] },
+  { name: 'Administrativo',      keywords: ['Aluguel', 'Condomínio', 'Condominio', 'Energia', 'Internet', 'Assessoria Financeira', 'Contabilidade', 'Limpeza', 'Escritório', 'Escritorio', 'Material', 'Seguro', 'Água', 'Agua', 'Telefone', 'Correios', 'Cartório', 'Cartorio', 'TIM S A'] },
+  { name: 'Despesas Financeiras',keywords: ['Taxa', 'Tarifa Asaas', 'Taxa de antecipação', 'Taxa de antecipacao', 'Baixa da antecipacao', 'Baixa da antecipação', 'Juros', 'IOF', 'Banco', 'Tarifa', 'Anuidade', 'TED', 'Boleto'] },
+  { name: 'Distribuição de Lucros', keywords: ['Pró-labore', 'Pro-labore', 'Dividendo', 'INSS', 'Retirada', 'Lucro', 'Sócio', 'Socio', 'GRAPE MIDIA'] },
+  { name: 'Não Operacional',     keywords: ['Compra de cotas', 'Pagamento de cotas', 'Investimento', 'Empréstimo', 'Emprestimo', 'Amortização', 'Amortizacao', 'Aporte', 'Financiamento'] },
 ];
 
 function autoCategory(desc: string): { name: string; icon: string } {
@@ -661,7 +664,7 @@ const getStatusDotColor = (status: string) => {
   return 'bg-slate-500';
 };
 
-const TABS = ['Extrato', 'Despesas', 'Inadimplentes', 'Clientes'] as const;
+const TABS = ['Extrato', 'Clientes'] as const;
 type TabType = typeof TABS[number];
 
 // ── Reconciliation Rule Types ────────────────────────────
@@ -698,6 +701,7 @@ function ReconciliationModal({ open, onClose, onApplied }: { open: boolean; onCl
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({ name: '', match_text: '', match_type: 'contains', category_id: null as number | null, category_name: '', priority: 0 });
   const [saving, setSaving] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   // Category tree for picker
   const [catTree, setCatTree] = useState<any[]>([]);
   const [catSearch, setCatSearch] = useState('');
@@ -738,9 +742,14 @@ function ReconciliationModal({ open, onClose, onApplied }: { open: boolean; onCl
     fetchRules();
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm('Excluir esta regra?')) return;
-    await fetch(`/api/fin-reconciliation-rules/${id}`, { method: 'DELETE' });
+  const handleDelete = (id: number) => {
+    setConfirmDeleteId(id);
+  };
+
+  const confirmDelete = async () => {
+    if (confirmDeleteId === null) return;
+    await fetch(`/api/fin-reconciliation-rules/${confirmDeleteId}`, { method: 'DELETE' });
+    setConfirmDeleteId(null);
     fetchRules();
   };
 
@@ -860,12 +869,26 @@ function ReconciliationModal({ open, onClose, onApplied }: { open: boolean; onCl
                       </div>
                     </div>
                     {/* Actions */}
-                    <button onClick={() => openEditForm(rule)} className="w-7 h-7 rounded-lg bg-dark-text/5 hover:bg-violet-500/15 flex items-center justify-center transition-colors" title="Editar">
-                      <Pencil size={11} className="text-dark-text/40" />
-                    </button>
-                    <button onClick={() => handleDelete(rule.id)} className="w-7 h-7 rounded-lg bg-dark-text/5 hover:bg-rose-500/15 flex items-center justify-center transition-colors" title="Excluir">
-                      <Trash2 size={11} className="text-dark-text/40" />
-                    </button>
+                    {confirmDeleteId === rule.id ? (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] text-rose-400 font-semibold whitespace-nowrap">Excluir?</span>
+                        <button onClick={confirmDelete} className="w-7 h-7 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 flex items-center justify-center transition-colors" title="Confirmar exclusão">
+                          <Check size={12} className="text-rose-400" />
+                        </button>
+                        <button onClick={() => setConfirmDeleteId(null)} className="w-7 h-7 rounded-lg bg-dark-text/5 hover:bg-dark-text/10 flex items-center justify-center transition-colors" title="Cancelar">
+                          <X size={12} className="text-dark-text/40" />
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <button onClick={() => openEditForm(rule)} className="w-7 h-7 rounded-lg bg-dark-text/5 hover:bg-violet-500/15 flex items-center justify-center transition-colors" title="Editar">
+                          <Pencil size={11} className="text-dark-text/40" />
+                        </button>
+                        <button onClick={() => handleDelete(rule.id)} className="w-7 h-7 rounded-lg bg-dark-text/5 hover:bg-rose-500/15 flex items-center justify-center transition-colors" title="Excluir">
+                          <Trash2 size={11} className="text-dark-text/40" />
+                        </button>
+                      </>
+                    )}
                   </div>
                 ))
               )}
@@ -1077,6 +1100,16 @@ export default function Extrato() {
   const [search, setSearch]     = useState('');
   const [typeFilter, setTypeFilter] = useState<'todos'|'entradas'|'saidas'|'realizados'|'previstos'>('todos');
   const [categoryFilter, setCategoryFilter] = useState<string>('');
+  const [hideAnticipation, setHideAnticipation] = useState(false);
+  const [anticipationStats, setAnticipationStats] = useState<{ antecipado_bruto: number; taxas_antecipacao: number; liquido: number; count_pares: number } | null>(null);
+
+  // ── Account filter state ──
+  const [accountFilter, setAccountFilter] = useState<'all' | 'asaas' | 'sicredi'>('all');
+  const [lastImport, setLastImport] = useState<string | null>(null);
+  const [showOfxModal, setShowOfxModal] = useState(false);
+  const [ofxFile, setOfxFile] = useState<File | null>(null);
+  const [ofxUploading, setOfxUploading] = useState(false);
+  const [ofxResult, setOfxResult] = useState<{ inserted: number; skipped: number } | null>(null);
 
   // ── Transaction detail modal state ──
   const [selectedTransaction, setSelectedTransaction] = useState<ExtratoItem | null>(null);
@@ -1103,7 +1136,7 @@ export default function Extrato() {
     const fetchData = async () => {
       try {
         setLoading(true); setError(null);
-        const res = await fetch(`/api/financeiro/extrato?start=${range.start}&end=${range.end}`);
+        const res = await fetch(`/api/financeiro/extrato?start=${range.start}&end=${range.end}&account=${accountFilter}`);
         if (!res.ok) throw new Error('Falha ao carregar extrato');
         setExtrato(await res.json());
       } catch (err: any) {
@@ -1112,8 +1145,45 @@ export default function Extrato() {
         setLoading(false);
       }
     };
+    const fetchAnticipationStats = async () => {
+      try {
+        const res = await fetch(`/api/financeiro/extrato/anticipation-stats?start=${range.start}&end=${range.end}`);
+        if (res.ok) setAnticipationStats(await res.json());
+      } catch {}
+    };
     fetchData();
-  }, [range]);
+    fetchAnticipationStats();
+  }, [range, accountFilter]);
+
+  // ── Fetch last import date for sicredi ──
+  useEffect(() => {
+    if (accountFilter === 'sicredi') {
+      fetch('/api/financeiro/extrato/last-import?account=sicredi')
+        .then(r => r.json())
+        .then(d => setLastImport(d.last_import))
+        .catch(() => setLastImport(null));
+    }
+  }, [accountFilter, ofxResult]);
+
+  const handleOfxUpload = async () => {
+    if (!ofxFile) return;
+    setOfxUploading(true); setOfxResult(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', ofxFile);
+      fd.append('account', 'sicredi');
+      const res = await fetch('/api/financeiro/extrato/importar-ofx', { method: 'POST', body: fd });
+      if (!res.ok) throw new Error('Erro na importação');
+      const data = await res.json();
+      setOfxResult(data);
+      // Reload extrato
+      setLoading(true);
+      const exRes = await fetch(`/api/financeiro/extrato?start=${range.start}&end=${range.end}&account=${accountFilter}`);
+      if (exRes.ok) setExtrato(await exRes.json());
+      setLoading(false);
+    } catch (err) { console.error(err); }
+    finally { setOfxUploading(false); }
+  };
 
   // ── Fetch pending count ──
   const fetchPendingCount = async () => {
@@ -1169,6 +1239,8 @@ export default function Extrato() {
     : '';
 
   const filtered = extrato.filter(item => {
+    // Hide anticipation pairs if toggle is on
+    if (hideAnticipation && item.is_anticipation_pair) return false;
     const descMatch =
       (item.description || '').toLowerCase().includes(search.toLowerCase()) ||
       (item.person_fantasy_name || item.person_name || '').toLowerCase().includes(search.toLowerCase());
@@ -1279,11 +1351,6 @@ export default function Extrato() {
               }`}
             >
               {tab}
-              {tab === 'Inadimplentes' && inadimplentes.length > 0 && (
-                <span className="ml-2 px-1.5 py-0.5 bg-rose-500 text-white text-[10px] font-bold rounded-full">
-                  {inadimplentes.length}
-                </span>
-              )}
             </button>
           ))}
         </div>
@@ -1293,7 +1360,7 @@ export default function Extrato() {
       {activeTab === 'Extrato' && (
         <div className="px-6 md:px-8 pb-8 space-y-6">
           {/* KPI Cards */}
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-3 lg:grid-cols-4 gap-4">
             {[
               { label: 'Total Entradas', value: totalEntradas, color: 'text-emerald-400' },
               { label: 'Total Saídas',   value: totalSaidas,   color: 'text-rose-400' },
@@ -1307,6 +1374,27 @@ export default function Extrato() {
                 }
               </div>
             ))}
+            {/* Anticipation KPI Card */}
+            <div className="bg-dark-card border border-white/10 rounded-2xl p-5 transition-colors duration-200">
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Antecipações no Mês</p>
+              {loading || !anticipationStats
+                ? <div className="h-8 w-32 bg-white/5 rounded animate-pulse" />
+                : (
+                  <>
+                    <p className="text-2xl font-black text-violet-400">{formatCurrency(anticipationStats.liquido)}</p>
+                    <div className="flex items-center gap-3 mt-1.5">
+                      <span className="text-[9px] text-slate-500">Bruto: {formatCurrency(anticipationStats.antecipado_bruto)}</span>
+                      <span className="text-[9px] text-rose-400">Taxas: -{formatCurrency(anticipationStats.taxas_antecipacao)}</span>
+                    </div>
+                    {anticipationStats.count_pares > 0 && (
+                      <span className="inline-flex items-center gap-1 mt-1.5 text-[9px] font-bold text-slate-500">
+                        <Link2 size={8} />{anticipationStats.count_pares} pares identificados
+                      </span>
+                    )}
+                  </>
+                )
+              }
+            </div>
           </div>
 
           {/* Filters */}
@@ -1346,15 +1434,48 @@ export default function Extrato() {
                   <option key={cat} value={cat}>{cat}</option>
                 ))}
               </select>
+              {/* Account filter */}
+              <div className="flex items-center gap-1 ml-1 bg-dark-card border border-white/10 rounded-xl p-0.5">
+                {([['all', 'Todas'], ['asaas', 'Asaas'], ['sicredi', 'Sicredi']] as const).map(([val, label]) => (
+                  <button key={val} onClick={() => setAccountFilter(val as any)}
+                    className={`px-2.5 py-1.5 text-[10px] font-bold rounded-lg transition-all ${
+                      accountFilter === val ? 'bg-violet-500 text-white' : 'text-slate-400 hover:text-white'
+                    }`}>{label}</button>
+                ))}
+              </div>
+              {accountFilter === 'sicredi' && (
+                <>
+                  <span className="text-[10px] text-slate-500">
+                    {lastImport ? `Última importação: ${new Date(lastImport).toLocaleDateString('pt-BR')}` : 'Nenhuma importação ainda'}
+                  </span>
+                  <button onClick={() => { setOfxFile(null); setOfxResult(null); setShowOfxModal(true); }}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-blue-500/15 border border-blue-500/30 text-blue-400 text-xs font-bold rounded-xl hover:bg-blue-500/25 transition-all">
+                    <Upload size={12} /> Importar OFX
+                  </button>
+                </>
+              )}
             </div>
+            {/* Hide anticipation toggle */}
+            <button
+              onClick={() => setHideAnticipation(!hideAnticipation)}
+              className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-xl transition-all ${
+                hideAnticipation
+                  ? 'bg-violet-500/15 border border-violet-500/40 text-violet-400'
+                  : 'bg-dark-card border border-white/10 text-slate-400 hover:text-white'
+              }`}
+            >
+              {hideAnticipation ? <EyeOff size={12} /> : <Eye size={12} />}
+              {hideAnticipation ? 'Antecipações ocultas' : 'Ocultar antecipações'}
+            </button>
             <span className="text-xs text-slate-500 ml-1">{loading ? '...' : `${filtered.length} registros`}</span>
           </div>
 
           {/* Table */}
           <div className="bg-dark-card border border-white/10 rounded-2xl overflow-visible relative">
-            <div className="grid grid-cols-[1fr_160px_90px_100px_110px_120px] px-5 py-3 border-b border-white/5 sticky top-0 z-10 bg-dark-card">
+            <div className={`grid ${accountFilter === 'all' ? 'grid-cols-[1fr_160px_80px_90px_100px_110px_120px]' : 'grid-cols-[1fr_160px_90px_100px_110px_120px]'} px-5 py-3 border-b border-white/5 sticky top-0 z-10 bg-dark-card`}>
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Descrição / Contraparte</span>
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider text-center">Categoria</span>
+              {accountFilter === 'all' && <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider text-center">Conta</span>}
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider text-center px-4">Tipo</span>
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider text-center px-4">Status</span>
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider text-right px-4">Data</span>
@@ -1405,11 +1526,16 @@ export default function Extrato() {
                         setModalDescription(item.custom_description || item.description || '');
                         setModalSaved(false);
                       }}
-                      className="grid grid-cols-[1fr_160px_90px_100px_110px_120px] px-5 py-3.5 hover:bg-white/[0.02] transition-colors items-center cursor-pointer">
+                      className={`grid ${accountFilter === 'all' ? 'grid-cols-[1fr_160px_80px_90px_100px_110px_120px]' : 'grid-cols-[1fr_160px_90px_100px_110px_120px]'} px-5 py-3.5 hover:bg-white/[0.02] transition-colors items-center cursor-pointer`}>
                       <div className="min-w-0 pr-4">
                         <div className="flex items-center gap-1.5">
-                          <p className="text-sm font-medium text-dark-text truncate">{item.description || '—'}</p>
-                          {item.is_edited && (
+                          <p className={`text-sm font-medium truncate ${item.is_anticipation_pair ? 'text-slate-500' : 'text-dark-text'}`}>{item.description || '—'}</p>
+                          {item.is_anticipation_pair && (
+                            <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-slate-500/10 text-slate-400 text-[9px] font-bold rounded-full">
+                              <Link2 size={8} /> Antecipação
+                            </span>
+                          )}
+                          {item.is_edited && !item.is_anticipation_pair && (
                             <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-500/10 text-amber-400 text-[9px] font-bold rounded-full">
                               <Pencil size={8} /> Editado
                             </span>
@@ -1418,6 +1544,13 @@ export default function Extrato() {
                         {contra && <p className="text-[11px] text-slate-500 truncate mt-0.5">{contra}</p>}
                       </div>
                       <div className="flex justify-center" data-category-picker><CategoryPicker item={item} onSave={handleCategorySave} /></div>
+                      {accountFilter === 'all' && (
+                        <div className="flex justify-center">
+                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                            (item.account || 'asaas') === 'sicredi' ? 'bg-blue-500/15 text-blue-400' : 'bg-violet-500/15 text-violet-400'
+                          }`}>{(item.account || 'asaas') === 'sicredi' ? 'Sicredi' : 'Asaas'}</span>
+                        </div>
+                      )}
                       <div className="flex justify-center px-4">
                         <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold ${
                           isEntrada ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'
@@ -1437,7 +1570,7 @@ export default function Extrato() {
                         <span className="text-xs text-slate-400">{fmtDate(getItemDate(item))}</span>
                       </div>
                       <div className="text-right pl-4">
-                        <span className={`text-sm font-bold ${isEntrada ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        <span className={`text-sm font-bold ${item.is_anticipation_pair ? 'text-slate-500 line-through' : isEntrada ? 'text-emerald-400' : 'text-rose-400'}`}>
                           {isEntrada ? '+' : '-'}{formatCurrency(Math.abs(valor))}
                         </span>
                       </div>
@@ -1447,253 +1580,6 @@ export default function Extrato() {
               )}
             </div>
           </div>
-        </div>
-      )}
-
-      {/* ── Tab: Despesas ── */}
-      {activeTab === 'Despesas' && (
-        <div className="px-6 md:px-8 pb-8 space-y-6">
-          {tabLoading ? (
-            <div className="flex items-center justify-center py-24">
-              <div className="w-8 h-8 border-4 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
-            </div>
-          ) : (
-            <>
-              {/* KPI Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                {(() => {
-                  const totalPrevisto = despesas.filter(d => d.type_column === 'previsto' && d.status === 'Pendente').reduce((acc, curr) => acc + parseFloat(curr.movement_value), 0);
-                  const jaPago = despesas.filter(d => d.type_column === 'realizado' && d.status === 'Conciliado' && parseFloat(d.value) !== 0).reduce((acc, curr) => acc + parseFloat(curr.value), 0);
-                  const operacionalReal = despesas.filter(d => d.type_column === 'realizado' && d.status === 'Conciliado' && parseFloat(d.value) !== 0 && d.category_l1_ext_id !== 176913).reduce((acc, curr) => acc + parseFloat(curr.value), 0);
-                  const today = new Date().toISOString().slice(0, 10);
-                  const tomorrow = (() => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); })();
-                  const venceHojeAmanha = despesas.filter(d => d.status === 'Pendente' && (d.expiration_date?.slice(0, 10) === today || d.expiration_date?.slice(0, 10) === tomorrow)).reduce((acc, curr) => acc + parseFloat(curr.movement_value), 0);
-                  return (
-                    <>
-                      <div className="bg-dark-card border border-white/10 rounded-2xl p-5">
-                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Total Previsto</p>
-                        <div className="flex items-center justify-between mt-1">
-                          <h3 className="text-2xl font-black text-dark-text">{formatCurrency(totalPrevisto)}</h3>
-                          <span className="px-2 py-0.5 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 text-[10px] font-bold rounded-full uppercase tracking-wider">a pagar</span>
-                        </div>
-                      </div>
-                      <div className="bg-dark-card border border-white/10 rounded-2xl p-5">
-                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Já Pago</p>
-                        <div className="flex items-center justify-between mt-1">
-                          <h3 className="text-2xl font-black text-dark-text">{formatCurrency(jaPago)}</h3>
-                          <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-[10px] font-bold rounded-full uppercase tracking-wider">conciliado</span>
-                        </div>
-                      </div>
-                      <div className="bg-dark-card border border-white/10 rounded-2xl p-5">
-                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Operacional Real</p>
-                        <div className="flex items-center justify-between mt-1">
-                          <h3 className="text-2xl font-black text-dark-text">{formatCurrency(operacionalReal)}</h3>
-                          <span className="px-2 py-0.5 bg-dark-bg text-slate-500 text-[10px] font-bold rounded-full uppercase tracking-wider border border-white/10">excl. distribuição</span>
-                        </div>
-                      </div>
-                      <div className="bg-dark-card border-2 border-rose-500/30 rounded-2xl p-5">
-                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Vence Hoje/Amanhã</p>
-                        <div className="flex items-center justify-between">
-                          <h3 className="text-2xl font-black text-rose-500">{formatCurrency(venceHojeAmanha)}</h3>
-                          <span className="px-2 py-0.5 bg-rose-600 text-white text-[10px] font-bold rounded-full uppercase tracking-wider">urgente</span>
-                        </div>
-                      </div>
-                    </>
-                  );
-                })()}
-              </div>
-
-              {/* Panels */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Pagas */}
-                <div className="bg-dark-card border border-white/10 rounded-2xl overflow-hidden flex flex-col">
-                  <div className="p-6 border-b border-white/10 flex justify-between items-center">
-                    <h2 className="text-sm font-bold text-dark-text uppercase tracking-widest">Despesas pagas</h2>
-                    <span className="px-3 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-full uppercase tracking-wider">Conciliado</span>
-                  </div>
-                  <div className="flex-1 overflow-y-auto max-h-[600px] p-4">
-                    {(() => {
-                      const pagas = despesas.filter(d => d.type_column === 'realizado' && d.status === 'Conciliado' && parseFloat(d.value) !== 0);
-                      const grouped = pagas.reduce((acc: any, curr) => {
-                        const cat = curr.grapehub_category
-                          ? (CATEGORIES.find((c: any) => c.name === curr.grapehub_category) || { name: curr.grapehub_category, icon: '🏷️' })
-                          : categorizeExpense(curr.description);
-                        if (!acc[cat.name]) acc[cat.name] = { name: cat.name, icon: cat.icon, total: 0, items: [] };
-                        const valor = parseFloat(curr.value);
-                        acc[cat.name].total += valor;
-                        const displayDesc = cat.name === 'Cartão de Crédito' ? extractCreditCardTool(curr.description) : curr.description;
-                        acc[cat.name].items.push({ description: displayDesc, value: valor, date: curr.movement_date?.slice(0, 10) });
-                        return acc;
-                      }, {});
-                      const sorted = Object.values(grouped).sort((a: any, b: any) => b.total - a.total) as any[];
-                      if (sorted.length === 0) return <p className="text-center py-12 text-slate-500">Nenhuma despesa paga encontrada.</p>;
-                      return sorted.map((cat: any, idx: number) => (
-                        <CollapsibleGroup key={idx} category={cat.name} icon={cat.icon} total={cat.total} items={cat.items} formatCurr={formatCurrency} />
-                      ));
-                    })()}
-                  </div>
-                </div>
-
-                {/* Previstas */}
-                <div className="bg-dark-card border border-white/10 rounded-2xl overflow-hidden flex flex-col">
-                  <div className="p-6 border-b border-white/10 flex justify-between items-center">
-                    <h2 className="text-sm font-bold text-dark-text uppercase tracking-widest">Despesas previstas</h2>
-                    <span className="px-3 py-1 bg-amber-100 text-amber-700 text-[10px] font-bold rounded-full uppercase tracking-wider">Pendente</span>
-                  </div>
-                  <div className="flex-1 overflow-y-auto max-h-[600px] p-4">
-                    {(() => {
-                      const previstas = despesas.filter(d => d.type_column === 'previsto' && ['Pendente', 'Vence Hoje'].includes(d.status));
-                      const grouped = previstas.reduce((acc: any, curr) => {
-                        const cat = curr.grapehub_category
-                          ? (CATEGORIES.find((c: any) => c.name === curr.grapehub_category) || { name: curr.grapehub_category, icon: '🏷️' })
-                          : categorizeExpense(curr.description);
-                        if (!acc[cat.name]) acc[cat.name] = { name: cat.name, icon: cat.icon, total: 0, items: [] };
-                        const valor = parseFloat(curr.movement_value);
-                        acc[cat.name].total += valor;
-                        const displayDesc = cat.name === 'Cartão de Crédito' ? extractCreditCardTool(curr.description) : curr.description;
-                        acc[cat.name].items.push({ description: displayDesc, value: valor, date: curr.expiration_date?.slice(0, 10) });
-                        return acc;
-                      }, {});
-                      const sorted = Object.values(grouped).sort((a: any, b: any) => b.total - a.total) as any[];
-                      if (sorted.length === 0) return <p className="text-center py-12 text-slate-500">Nenhuma despesa prevista encontrada.</p>;
-                      return sorted.map((cat: any, idx: number) => (
-                        <CollapsibleGroup key={idx} category={cat.name} icon={cat.icon} total={cat.total} items={cat.items} formatCurr={formatCurrency} />
-                      ));
-                    })()}
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* ── Tab: Inadimplentes ── */}
-      {activeTab === 'Inadimplentes' && (
-        <div className="px-6 md:px-8 pb-8">
-          {tabLoading ? (
-            <div className="flex items-center justify-center py-24">
-              <div className="w-8 h-8 border-4 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Lista */}
-              <div className="lg:col-span-2 bg-dark-card border border-white/10 rounded-2xl overflow-hidden flex flex-col">
-                <div className="bg-rose-50 dark:bg-rose-500/10 p-4 flex items-start gap-3 border-b border-rose-100 dark:border-rose-500/20">
-                  <AlertTriangle className="text-rose-500 shrink-0 mt-0.5" size={20} />
-                  <div>
-                    <h3 className="text-sm font-bold text-rose-800 dark:text-rose-400">
-                      {inadimplentes.length} clientes com pagamento atrasado — {formatCurrency(totalInadimplencia)} em risco.
-                    </h3>
-                    <p className="text-xs text-rose-600 dark:text-rose-300 mt-1">
-                      Contato imediato recomendado para casos acima de 15 dias.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex-1 overflow-y-auto p-2">
-                  {inadimplentes.map((cliente, index) => {
-                    const dias = cliente.dias_atraso;
-                    let badgeColor = 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400';
-                    if (dias > 10 && dias <= 20) badgeColor = 'bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-400';
-                    if (dias > 20) badgeColor = 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400';
-                    return (
-                      <div key={index} className="flex items-center justify-between p-4 hover:bg-dark-card-hover rounded-2xl transition-colors border-b border-white/5 last:border-0">
-                        <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-sm font-bold text-slate-600 dark:text-slate-300 shrink-0">
-                            {(cliente.fantasy_name || cliente.name).substring(0, 2).toUpperCase()}
-                          </div>
-                          <div>
-                            <p className="text-sm font-bold text-slate-900 dark:text-white">{cliente.fantasy_name || cliente.name}</p>
-                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                              {cliente.description || 'Contrato'} · Parc. {cliente.installment_number || '1'} · {cliente.payment_method || 'Boleto'}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="text-right flex flex-col items-end gap-2">
-                          <p className="text-sm font-bold text-rose-600 dark:text-rose-400">{formatCurrency(cliente.valor)}</p>
-                          <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full uppercase tracking-wider ${badgeColor}`}>
-                            {dias} dias
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {inadimplentes.length === 0 && (
-                    <div className="p-8 text-center text-slate-500 dark:text-slate-400">
-                      Nenhum cliente inadimplente no momento. 🎉
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Painel Resumo */}
-              <div className="space-y-6">
-                <div className="bg-dark-card border border-white/10 rounded-2xl p-6">
-                  <div className="flex items-center gap-3 mb-6">
-                    <div className="p-2.5 bg-rose-100 dark:bg-rose-500/20 rounded-xl">
-                      <ShieldAlert className="text-rose-600 dark:text-rose-400" size={20} />
-                    </div>
-                    <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-widest">Resumo de Risco</h2>
-                  </div>
-                  <div className="space-y-4">
-                    {[
-                      { label: '1-10 dias', color: 'bg-amber-500', filter: (i: Inadimplente) => i.dias_atraso <= 10 },
-                      { label: '11-20 dias', color: 'bg-orange-500', filter: (i: Inadimplente) => i.dias_atraso > 10 && i.dias_atraso <= 20 },
-                      { label: '20+ dias', color: 'bg-rose-600', filter: (i: Inadimplente) => i.dias_atraso > 20 },
-                    ].map(({ label, color, filter }) => {
-                      const group = inadimplentes.filter(filter);
-                      return (
-                        <div key={label} className="flex justify-between items-center p-3 bg-dark-bg border border-white/10 rounded-xl">
-                          <div className="flex items-center gap-2">
-                            <div className={`w-2 h-2 rounded-full ${color}`} />
-                            <span className="text-xs font-bold text-slate-600 dark:text-slate-400">{label}</span>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-sm font-bold text-slate-900 dark:text-white">
-                              {formatCurrency(group.reduce((a, c) => a + parseFloat(c.valor), 0))}
-                            </p>
-                            <p className="text-[10px] text-slate-500">{group.length} clientes</p>
-                          </div>
-                        </div>
-                      );
-                    })}
-                    <div className="flex justify-between items-center p-3 bg-rose-50 dark:bg-rose-500/10 rounded-xl border border-rose-100 dark:border-rose-500/20">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-rose-600" />
-                        <span className="text-xs font-bold text-rose-800 dark:text-rose-400">Total em Risco</span>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm font-bold text-rose-600 dark:text-rose-400">{formatCurrency(totalInadimplencia)}</p>
-                        <p className="text-[10px] text-rose-500">{inadimplentes.length} clientes</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-dark-card border border-white/10 rounded-2xl p-6">
-                  <div className="flex items-center gap-3 mb-6">
-                    <div className="p-2.5 bg-slate-100 dark:bg-white/10 rounded-xl">
-                      <Users className="text-slate-600 dark:text-slate-400" size={20} />
-                    </div>
-                    <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-widest">Taxa de Inadimplência</h2>
-                  </div>
-                  {(() => {
-                    const fat = parseFloat(resumo?.caixa_realizado || '0') + parseFloat(previsto?.entradas_previstas || '0');
-                    const taxa = fat > 0 ? (totalInadimplencia / fat) * 100 : 0;
-                    let taxaColor = 'text-emerald-500';
-                    if (taxa >= 5 && taxa <= 10) taxaColor = 'text-orange-500';
-                    if (taxa > 10) taxaColor = 'text-rose-600';
-                    return (
-                      <div className="flex flex-col items-center justify-center py-4">
-                        <div className={`text-5xl font-bold tracking-tight mb-2 ${taxaColor}`}>{taxa.toFixed(1)}%</div>
-                        <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Meta: Abaixo de 5%</p>
-                      </div>
-                    );
-                  })()}
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       )}
 
@@ -2019,7 +1905,7 @@ export default function Extrato() {
       onApplied={async () => {
         // Refresh extrato and pending count
         try {
-          const res = await fetch(`/api/financeiro/extrato?start=${range.start}&end=${range.end}`);
+          const res = await fetch(`/api/financeiro/extrato?start=${range.start}&end=${range.end}&account=${accountFilter}`);
           if (res.ok) setExtrato(await res.json());
         } catch {}
         fetchPendingCount();
@@ -2027,6 +1913,63 @@ export default function Extrato() {
         _cachedCatTree = null;
       }}
     />
+
+    {/* OFX Import Modal */}
+    {showOfxModal && createPortal(
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={() => setShowOfxModal(false)}>
+        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+        <div className="relative bg-dark-bg border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-between mb-5">
+            <h3 className="text-sm font-bold text-dark-text">Importar Extrato <span className="text-blue-400">Sicredi</span></h3>
+            <button onClick={() => setShowOfxModal(false)} className="p-1.5 hover:bg-white/10 rounded-lg"><X size={14} className="text-slate-400" /></button>
+          </div>
+
+          {ofxResult ? (
+            <div className="space-y-4">
+              <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-5 text-center">
+                <p className="text-2xl font-black text-emerald-400">{ofxResult.inserted}</p>
+                <p className="text-xs text-emerald-400/70 mt-1">registros importados</p>
+              </div>
+              {ofxResult.skipped > 0 && (
+                <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4 text-center">
+                  <p className="text-sm font-bold text-amber-400">{ofxResult.skipped} já existiam</p>
+                </div>
+              )}
+              <button onClick={() => setShowOfxModal(false)} className="w-full py-2.5 bg-violet-500 hover:bg-violet-600 rounded-xl text-xs font-bold text-white transition-all">Fechar</button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="border-2 border-dashed border-white/10 rounded-xl p-8 text-center hover:border-blue-500/30 transition-colors">
+                <Upload size={28} className="mx-auto text-slate-500 mb-3" />
+                <p className="text-xs text-slate-400 mb-3">Selecione o arquivo CSV ou OFX do Sicredi</p>
+                <input
+                  type="file"
+                  accept=".csv,.CSV,.ofx,.OFX"
+                  onChange={e => setOfxFile(e.target.files?.[0] || null)}
+                  className="block mx-auto text-xs text-slate-400 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-blue-500/15 file:text-blue-400 hover:file:bg-blue-500/25 file:cursor-pointer file:transition-all"
+                />
+              </div>
+              {ofxFile && (
+                <div className="flex items-center gap-2 px-3 py-2 bg-blue-500/5 border border-blue-500/20 rounded-xl">
+                  <FileText size={14} className="text-blue-400" />
+                  <span className="text-xs text-blue-400 font-medium flex-1 truncate">{ofxFile.name}</span>
+                  <span className="text-[10px] text-slate-500">{(ofxFile.size / 1024).toFixed(1)} KB</span>
+                </div>
+              )}
+              <button
+                onClick={handleOfxUpload}
+                disabled={!ofxFile || ofxUploading}
+                className="w-full flex items-center justify-center gap-2 py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl text-xs font-bold text-white transition-all"
+              >
+                {ofxUploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                {ofxUploading ? 'Importando...' : 'Importar'}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>,
+      document.body
+    )}
     </>
   );
 }

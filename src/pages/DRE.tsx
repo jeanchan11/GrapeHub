@@ -1,0 +1,490 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Calendar, ChevronDown, ChevronLeft, ChevronRight, Download, TrendingUp, TrendingDown, Minus, SlidersHorizontal, Eye, EyeOff } from 'lucide-react';
+
+// ── Types ──────────────────────────────────────────────
+interface DRERow {
+  code: string;
+  name: string;
+  level: number;
+  values: number[];   // [0..11] Jan..Dec
+  total: number;
+  type: string;
+  isGroup: boolean;
+}
+
+interface DRESummary {
+  monthly_receitas: number[];
+  monthly_despesas: number[];
+  monthly_distribuicao: number[];
+  monthly_geracao_caixa: number[];
+  monthly_saldo_final: number[];
+  total_receitas: number;
+  total_despesas: number;
+  geracao_caixa: number;
+  distribuicao_lucros: number;
+  saldo_final: number;
+}
+
+// ── Helpers ────────────────────────────────────────────
+const MESES_SHORT = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+const MESES_FULL = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+const ALL_COLUMNS = [0,1,2,3,4,5,6,7,8,9,10,11]; // month indices
+
+const fmtCur = (v: number) => {
+  if (v === 0) return 'R$ 0,00';
+  return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+};
+
+const fmtCell = (v: number, type: string) => {
+  if (v === 0) return <span className="text-dark-text/25">R$ 0,00</span>;
+  const prefix = type === 'despesa' ? '-' : '';
+  const color = type === 'despesa' ? 'text-rose-500' : 'text-emerald-500';
+  return <span className={color}>{prefix}{fmtCur(v)}</span>;
+};
+
+const fmtCellBold = (v: number, type: string) => {
+  if (v === 0) return <span className="text-dark-text/25 font-bold">R$ 0,00</span>;
+  const prefix = type === 'despesa' ? '-' : '';
+  const color = type === 'despesa' ? 'text-rose-500' : 'text-emerald-500';
+  return <span className={`${color} font-bold`}>{prefix}{fmtCur(v)}</span>;
+};
+
+// ── Main Component ───────────────────────────────────
+export default function DRE() {
+  const [year, setYear] = useState(() => new Date().getFullYear());
+  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<DRERow[]>([]);
+  const [summary, setSummary] = useState<DRESummary | null>(null);
+  const [expandedL2, setExpandedL2] = useState<Set<string>>(new Set());
+  const [visibleCols, setVisibleCols] = useState<Set<number>>(new Set(ALL_COLUMNS));
+  const [showColFilter, setShowColFilter] = useState(false);
+  const filterRef = useRef<HTMLDivElement>(null);
+
+  // Close popup on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (filterRef.current && !filterRef.current.contains(e.target as Node)) {
+        setShowColFilter(false);
+      }
+    };
+    if (showColFilter) document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showColFilter]);
+
+  const toggleCol = (mi: number) => {
+    setVisibleCols(prev => {
+      const next = new Set(prev);
+      if (next.has(mi)) { if (next.size > 1) next.delete(mi); } // keep at least 1
+      else next.add(mi);
+      return next;
+    });
+  };
+
+  const showAllCols = () => setVisibleCols(new Set(ALL_COLUMNS));
+  const allVisible = visibleCols.size === 12;
+
+  useEffect(() => {
+    const fetchDRE = async () => {
+      try {
+        setLoading(true);
+        const res = await fetch(`/api/financeiro/dre?year=${year}`);
+        if (!res.ok) throw new Error('Falha ao carregar');
+        const data = await res.json();
+        setRows(data.rows);
+        setSummary(data.summary);
+      } catch (err) {
+        console.error('Error fetching DRE:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchDRE();
+  }, [year]);
+
+  const toggleL2 = (code: string) => {
+    setExpandedL2(prev => {
+      const next = new Set(prev);
+      if (next.has(code)) next.delete(code);
+      else next.add(code);
+      return next;
+    });
+  };
+
+  // Build renderable rows
+  const renderRows = () => {
+    const elements: JSX.Element[] = [];
+    let i = 0;
+
+    while (i < rows.length) {
+      const row = rows[i];
+
+      if (row.level === 1) {
+        // L1 header row — green tinted
+        const l1Bg = row.type === 'despesa' ? 'bg-rose-500/10' : 'bg-emerald-500/10';
+        const l1Border = row.type === 'despesa' ? 'border-rose-500/30' : 'border-emerald-500/30';
+        const l1Text = row.type === 'despesa' ? 'text-rose-500' : 'text-emerald-500';
+        elements.push(
+          <tr key={row.code} className={`${l1Bg} border-t-2 ${l1Border}`}>
+            <td className={`px-3 py-2.5 font-bold ${l1Text} text-[11px] whitespace-nowrap sticky left-0 ${l1Bg} z-10`}>
+              <span className={`${l1Text} opacity-60 font-mono text-[10px] mr-1.5`}>{row.code}</span>
+              - {row.name}
+            </td>
+            {row.values.map((v, mi) => (
+              visibleCols.has(mi) && (
+                <td key={mi} className="px-2 py-2.5 text-right text-[10px] font-bold whitespace-nowrap">
+                  {fmtCellBold(v, row.type)}
+                </td>
+              )
+            ))}
+            <td className={`px-3 py-2.5 text-right text-[11px] font-black whitespace-nowrap ${l1Bg} opacity-90`}>
+              {fmtCellBold(row.total, row.type)}
+            </td>
+          </tr>
+        );
+        i++;
+        continue;
+      }
+
+      if (row.level === 2) {
+        const hasChildren = row.isGroup;
+        const isExpanded = expandedL2.has(row.code);
+
+        elements.push(
+          <tr
+            key={row.code}
+            className={`border-b border-dark-text/5 transition-colors ${hasChildren ? 'cursor-pointer hover:bg-dark-card-hover' : ''}`}
+            onClick={() => hasChildren && toggleL2(row.code)}
+          >
+            <td className="px-3 py-2 pl-6 whitespace-nowrap sticky left-0 bg-dark-card z-10">
+              <div className="flex items-center gap-1.5">
+                {hasChildren && (
+                  <ChevronDown
+                    size={10}
+                    className={`text-dark-text/40 transition-transform shrink-0 ${isExpanded ? 'rotate-180' : ''}`}
+                  />
+                )}
+                <span className="text-violet-500/60 font-mono text-[9px]">{row.code}</span>
+                <span className="text-[10px] font-semibold text-dark-text/80 truncate max-w-[200px]">{row.name}</span>
+              </div>
+            </td>
+            {row.values.map((v, mi) => (
+              visibleCols.has(mi) && (
+                <td key={mi} className="px-2 py-2 text-right text-[10px] whitespace-nowrap">
+                  {fmtCell(v, row.type)}
+                </td>
+              )
+            ))}
+            <td className="px-3 py-2 text-right text-[10px] font-bold whitespace-nowrap bg-dark-text/[0.03]">
+              {fmtCellBold(row.total, row.type)}
+            </td>
+          </tr>
+        );
+
+        // L3 children
+        if (isExpanded) {
+          i++;
+          while (i < rows.length && rows[i].level === 3) {
+            const l3 = rows[i];
+            elements.push(
+              <tr key={l3.code} className="border-b border-dark-text/[0.03] bg-dark-text/[0.02]">
+                <td className="px-3 py-1.5 pl-10 whitespace-nowrap sticky left-0 bg-dark-card z-10">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-dark-text/30 font-mono text-[9px]">{l3.code}</span>
+                    <span className="text-[9px] text-dark-text/50 truncate max-w-[180px]">{l3.name}</span>
+                  </div>
+                </td>
+                {l3.values.map((v, mi) => (
+                  visibleCols.has(mi) && (
+                    <td key={mi} className="px-2 py-1.5 text-right text-[9px] whitespace-nowrap">
+                      {v === 0
+                        ? <span className="text-dark-text/15">R$ 0,00</span>
+                        : <span className={l3.type === 'despesa' ? 'text-rose-500/60' : 'text-emerald-500/60'}>
+                            {l3.type === 'despesa' ? '-' : ''}{fmtCur(v)}
+                          </span>
+                      }
+                    </td>
+                  )
+                ))}
+                <td className="px-3 py-1.5 text-right text-[9px] font-semibold whitespace-nowrap bg-dark-text/[0.03]">
+                  {l3.total === 0
+                    ? <span className="text-dark-text/15">R$ 0,00</span>
+                    : <span className={l3.type === 'despesa' ? 'text-rose-500/70' : 'text-emerald-500/70'}>
+                        {l3.type === 'despesa' ? '-' : ''}{fmtCur(l3.total)}
+                      </span>
+                  }
+                </td>
+              </tr>
+            );
+            i++;
+          }
+          continue;
+        }
+
+        // Skip L3 if collapsed
+        i++;
+        while (i < rows.length && rows[i].level === 3) i++;
+        continue;
+      }
+
+      i++;
+    }
+
+    return elements;
+  };
+
+  // Summary row helper
+  const SummaryRow = ({ label, monthlyValues, total, variant }: {
+    label: string;
+    monthlyValues: number[];
+    total: number;
+    variant: 'geracao' | 'saldo';
+  }) => {
+    const bgClass = variant === 'geracao'
+      ? 'bg-violet-500/10 border-t-2 border-violet-500/30'
+      : 'bg-emerald-500/10 border-t-2 border-emerald-500/30';
+    const labelClass = variant === 'geracao' ? 'text-violet-500' : 'text-dark-text';
+
+    return (
+      <tr className={bgClass}>
+        <td className={`px-3 py-2.5 font-bold text-[11px] ${labelClass} whitespace-nowrap sticky left-0 z-10 ${variant === 'geracao' ? 'bg-violet-500/10' : 'bg-emerald-500/10'}`}>
+          {label}
+        </td>
+        {monthlyValues.map((v, mi) => (
+          visibleCols.has(mi) && (
+            <td key={mi} className="px-2 py-2.5 text-right text-[10px] font-bold whitespace-nowrap">
+              {v === 0
+                ? <span className="text-dark-text/25">R$ 0,00</span>
+                : <span className={v >= 0 ? 'text-emerald-500' : 'text-rose-500'}>{fmtCur(v)}</span>
+              }
+            </td>
+          )
+        ))}
+        <td className={`px-3 py-2.5 text-right font-black text-[11px] whitespace-nowrap ${variant === 'geracao' ? 'bg-violet-500/10' : 'bg-emerald-500/10'}`}>
+          <span className={total >= 0 ? 'text-emerald-500' : 'text-rose-500'}>
+            {fmtCur(total)}
+          </span>
+        </td>
+      </tr>
+    );
+  };
+
+  return (
+    <div className="min-h-screen bg-dark-bg transition-colors duration-300">
+
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between px-6 md:px-8 pt-8 pb-4">
+        <div>
+          <h1 className="text-2xl font-black tracking-tight text-dark-text">
+            Fluxo de <span className="text-violet-500">Caixa</span>
+          </h1>
+          <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5">
+            Demonstração do resultado do exercício · {year}
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          {/* Export */}
+          <button className="flex items-center gap-2 px-4 py-2.5 bg-dark-card border border-white/10 hover:border-violet-500/40 rounded-xl transition-all hover:bg-dark-card-hover group">
+            <Download size={14} className="text-violet-400" />
+            <span className="text-xs font-bold text-dark-text/70 group-hover:text-dark-text">Exportar</span>
+          </button>
+
+          {/* Year picker */}
+          <div className="flex items-center gap-1">
+            <button onClick={() => setYear(y => y - 1)}
+              className="w-9 h-9 rounded-xl bg-dark-card border border-white/10 hover:border-violet-500/60 flex items-center justify-center transition-all hover:bg-dark-card-hover">
+              <ChevronLeft size={14} className="text-slate-400" />
+            </button>
+            <div className="flex items-center gap-2 px-4 py-2 bg-dark-card border border-violet-500/60 rounded-xl">
+              <Calendar size={16} className="text-violet-500" />
+              <span className="text-sm font-bold text-dark-text">{year}</span>
+            </div>
+            <button onClick={() => setYear(y => y + 1)}
+              className="w-9 h-9 rounded-xl bg-dark-card border border-white/10 hover:border-violet-500/60 flex items-center justify-center transition-all hover:bg-dark-card-hover">
+              <ChevronRight size={14} className="text-slate-400" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="px-6 md:px-8 pb-8 space-y-6">
+        {loading ? (
+          <div className="flex items-center justify-center py-24">
+            <div className="w-8 h-8 border-4 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
+          </div>
+        ) : (
+          <>
+            {/* KPI Summary Cards */}
+            {summary && (
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+                <div className="bg-dark-card border border-white/10 rounded-2xl p-5 transition-colors duration-200">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total Receitas</p>
+                    <div className="w-8 h-8 rounded-xl bg-emerald-500/15 flex items-center justify-center">
+                      <TrendingUp size={16} className="text-emerald-500" />
+                    </div>
+                  </div>
+                  <p className="text-xl font-black text-emerald-500">{fmtCur(summary.total_receitas)}</p>
+                </div>
+                <div className="bg-dark-card border border-white/10 rounded-2xl p-5 transition-colors duration-200">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total Despesas</p>
+                    <div className="w-8 h-8 rounded-xl bg-rose-500/15 flex items-center justify-center">
+                      <TrendingDown size={16} className="text-rose-500" />
+                    </div>
+                  </div>
+                  <p className="text-xl font-black text-rose-500">{fmtCur(summary.total_despesas)}</p>
+                </div>
+                <div className="bg-dark-card border border-white/10 rounded-2xl p-5 transition-colors duration-200">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Geração de Caixa</p>
+                    <div className="w-8 h-8 rounded-xl bg-violet-500/15 flex items-center justify-center">
+                      <Minus size={16} className="text-violet-500" />
+                    </div>
+                  </div>
+                  <p className={`text-xl font-black ${summary.geracao_caixa >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                    {fmtCur(summary.geracao_caixa)}
+                  </p>
+                </div>
+                <div className="bg-dark-card border border-white/10 rounded-2xl p-5 transition-colors duration-200">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Distribuição</p>
+                    <div className="w-8 h-8 rounded-xl bg-amber-500/15 flex items-center justify-center">
+                      <TrendingDown size={16} className="text-amber-500" />
+                    </div>
+                  </div>
+                  <p className="text-xl font-black text-amber-500">{fmtCur(summary.distribuicao_lucros)}</p>
+                </div>
+                <div className={`bg-dark-card border-2 rounded-2xl p-5 transition-colors duration-200 ${summary.saldo_final >= 0 ? 'border-emerald-500/30' : 'border-rose-500/30'}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Saldo Final</p>
+                  </div>
+                  <p className={`text-xl font-black ${summary.saldo_final >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                    {fmtCur(summary.saldo_final)}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* DRE Table */}
+            <div className="bg-dark-card border border-white/10 rounded-2xl overflow-hidden">
+              {/* Column filter button */}
+              <div className="flex items-center justify-between px-4 py-3 border-b border-dark-text/10">
+                <div className="relative" ref={filterRef}>
+                  <button
+                    onClick={() => setShowColFilter(v => !v)}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-xl border transition-all text-xs font-bold ${
+                      showColFilter || !allVisible
+                        ? 'bg-violet-500/15 border-violet-500/40 text-violet-500'
+                        : 'bg-dark-bg border-dark-text/10 text-dark-text/50 hover:border-violet-500/30 hover:text-violet-500'
+                    }`}
+                  >
+                    <SlidersHorizontal size={13} />
+                    Colunas
+                    {!allVisible && (
+                      <span className="w-5 h-5 flex items-center justify-center rounded-full bg-violet-500 text-white text-[9px] font-black">
+                        {visibleCols.size}
+                      </span>
+                    )}
+                  </button>
+
+                  {/* Popup */}
+                  {showColFilter && (
+                    <div className="absolute top-full left-0 mt-2 w-56 bg-dark-card backdrop-blur-xl border border-dark-text/10 rounded-2xl shadow-2xl z-50 overflow-hidden">
+                      <div className="px-4 pt-4 pb-2">
+                        <p className="text-[10px] font-bold text-dark-text/40 uppercase tracking-widest">Localizar coluna</p>
+                      </div>
+                      <div className="px-2 pb-2 max-h-[360px] overflow-y-auto">
+                        {MESES_FULL.map((nome, mi) => {
+                          const active = visibleCols.has(mi);
+                          return (
+                            <button
+                              key={mi}
+                              onClick={() => toggleCol(mi)}
+                              className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-dark-card-hover transition-colors"
+                            >
+                              <div className={`w-8 h-4 rounded-full relative transition-colors ${
+                                active ? 'bg-violet-500' : 'bg-dark-text/20'
+                              }`}>
+                                <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow-sm transition-all ${
+                                  active ? 'left-[18px]' : 'left-[2px]'
+                                }`} />
+                              </div>
+                              <span className={`text-xs font-medium ${
+                                active ? 'text-dark-text' : 'text-dark-text/40'
+                              }`}>{nome}</span>
+                              {active
+                                ? <Eye size={12} className="text-violet-500 ml-auto" />
+                                : <EyeOff size={12} className="text-dark-text/20 ml-auto" />
+                              }
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div className="px-3 pb-3 pt-1 border-t border-dark-text/5">
+                        <button
+                          onClick={showAllCols}
+                          className={`w-full py-2 rounded-xl text-[11px] font-bold uppercase tracking-wider transition-all ${
+                            allVisible
+                              ? 'bg-dark-text/5 text-dark-text/30 cursor-default'
+                              : 'bg-violet-500/15 text-violet-500 hover:bg-violet-500/25'
+                          }`}
+                          disabled={allVisible}
+                        >
+                          Mostrar Todas
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-dark-text/10">
+                      <th className="px-3 py-3 text-left text-[10px] font-bold text-violet-500 uppercase tracking-wider sticky left-0 bg-dark-card z-20 min-w-[260px]">
+                        Categoria
+                      </th>
+                      {MESES_SHORT.map((m, mi) => (
+                        visibleCols.has(mi) && (
+                          <th key={mi} className="px-2 py-3 text-right text-[10px] font-bold text-dark-text/40 uppercase tracking-wider min-w-[90px]">
+                            {m}
+                          </th>
+                        )
+                      ))}
+                      <th className="px-3 py-3 text-right text-[10px] font-bold text-violet-500 uppercase tracking-wider min-w-[110px] bg-dark-text/[0.03]">
+                        Total
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {renderRows()}
+
+                    {/* Summary rows */}
+                    {summary && (
+                      <>
+                        <SummaryRow
+                          label="Geração de Caixa do Período"
+                          monthlyValues={summary.monthly_geracao_caixa}
+                          total={summary.geracao_caixa}
+                          variant="geracao"
+                        />
+                        <SummaryRow
+                          label="Saldo Final"
+                          monthlyValues={summary.monthly_saldo_final}
+                          total={summary.saldo_final}
+                          variant="saldo"
+                        />
+                      </>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
