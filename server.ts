@@ -28,23 +28,37 @@ process.on("unhandledRejection", (reason, promise) => {
 
 dotenv.config();
 
-// ── Asaas API helper ──────────────────────────────────────
-async function asaasFetch(endpoint: string): Promise<any | null> {
+// ── Asaas API helper (usa https nativo para compatibilidade) ──
+function asaasFetch(endpoint: string): Promise<any | null> {
   const key = process.env.ASAAS_API_KEY;
-  if (!key) return null;
-  try {
-    const res = await fetch(`https://api.asaas.com/v3${endpoint}`, {
+  if (!key) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const req = https.request(`https://api.asaas.com/v3${endpoint}`, {
+      method: 'GET',
       headers: { 'access_token': key }
+    }, (res) => {
+      let data = '';
+      res.on('data', (chunk: string) => data += chunk);
+      res.on('end', () => {
+        try {
+          resolve(JSON.parse(data));
+        } catch {
+          console.warn('Asaas API parse error:', data.substring(0, 100));
+          resolve(null);
+        }
+      });
     });
-    if (!res.ok) {
-      console.warn(`Asaas API error: ${res.status} ${res.statusText}`);
-      return null;
-    }
-    return res.json();
-  } catch (err: any) {
-    console.warn('Asaas API network error:', err.message);
-    return null;
-  }
+    req.on('error', (err: any) => {
+      console.warn('Asaas API network error:', err.message);
+      resolve(null);
+    });
+    req.setTimeout(10000, () => {
+      req.destroy();
+      console.warn('Asaas API timeout');
+      resolve(null);
+    });
+    req.end();
+  });
 }
 
 const { Pool } = pg;
