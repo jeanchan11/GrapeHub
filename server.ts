@@ -3440,6 +3440,31 @@ app.get("/api/todos", async (req, res) => {
   });
   // ------------------------------
 
+  // ── Diagnóstico Asaas (temporário) ──
+  app.get("/api/financeiro/debug-asaas", async (_req, res) => {
+    const key = process.env.ASAAS_API_KEY;
+    const hasKey = !!key;
+    const keyPreview = key ? `${key.substring(0, 12)}...${key.substring(key.length - 4)}` : 'EMPTY';
+    
+    let apiResult: any = null;
+    let apiError: string | null = null;
+    
+    try {
+      apiResult = await asaasFetch('/finance/balance');
+    } catch (err: any) {
+      apiError = err.message;
+    }
+    
+    res.json({
+      has_key: hasKey,
+      key_preview: keyPreview,
+      key_length: key?.length || 0,
+      api_result: apiResult,
+      api_error: apiError,
+      node_version: process.version,
+    });
+  });
+
   // Resumo financeiro do mês
   app.get("/api/financeiro/resumo", async (req, res) => {
     try {
