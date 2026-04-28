@@ -456,6 +456,7 @@ const CrmFinanceiro = () => {
   const [allClients, setAllClients] = useState<Client[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [squadFilter, setSquadFilter] = useState<string>('Todos');
   const [isAddDropdownOpen, setIsAddDropdownOpen] = useState<string | null>(null);
   const [clientSearch, setClientSearch] = useState('');
   
@@ -738,10 +739,11 @@ const CrmFinanceiro = () => {
   const filteredClients = useMemo(() => {
     return clients.filter(c => {
       const matchesSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesSquad = squadFilter === 'Todos' || c.squad === squadFilter;
       const isArchived = c.crmStatus === 'arquivado';
       
       if (isArchived && !showArchived) return false;
-      return matchesSearch;
+      return matchesSearch && matchesSquad;
     }).map(c => {
       // Map archived clients to 'processo_saida' column for display
       if (c.crmStatus === 'arquivado') {
@@ -749,7 +751,7 @@ const CrmFinanceiro = () => {
       }
       return { ...c, displayColumn: c.crmStatus, isArchived: false };
     });
-  }, [clients, searchQuery, showArchived]);
+  }, [clients, searchQuery, showArchived, squadFilter]);
 
   const availableClients = useMemo(() => {
     const activeColumns = COLUMNS.map(c => c.id);
@@ -831,6 +833,25 @@ const CrmFinanceiro = () => {
         <button className="p-3 bg-white dark:bg-[#1a1a1a] darker:bg-[#0d0d0d] border border-gray-100 dark:border-neutral-800 darker:border-neutral-900 rounded-2xl text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors">
           <Download size={18} />
         </button>
+        <div className="flex items-center bg-white dark:bg-[#1a1a1a] darker:bg-[#0d0d0d] border border-gray-100 dark:border-neutral-800 darker:border-neutral-900 rounded-2xl p-1 gap-0.5">
+          {['Todos', 'Able', 'Baker'].map((s) => (
+            <button
+              key={s}
+              onClick={() => setSquadFilter(s)}
+              className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${
+                squadFilter === s
+                  ? s === 'Able'
+                    ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20'
+                    : s === 'Baker'
+                      ? 'bg-blue-500 text-white shadow-md shadow-blue-500/20'
+                      : 'bg-violet-500 text-white shadow-md shadow-violet-500/20'
+                  : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'
+              }`}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
       </PageHeader>
 
       <div className="flex items-center gap-4 mb-8 border-b border-gray-200 dark:border-neutral-800 darker:border-neutral-900">

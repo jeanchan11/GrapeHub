@@ -13,6 +13,8 @@ interface Activity {
   lead_id: string;
   lead_name?: string;
   lead_company?: string;
+  kanban_id?: string;
+  kanban_name?: string;
   title: string;
   type: string;
   priority?: string;
@@ -389,15 +391,23 @@ const ActivityCard = ({
               {dateLabel}
             </span>
           )}
-          {/* Nome do card/lead vinculado */}
-          {activity.lead_name && (
-            <span className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400 font-medium truncate max-w-[220px]">
-              <UserCircle size={11} className="shrink-0" />
-              {activity.lead_name}{activity.lead_company ? ` · ${activity.lead_company}` : ''}
+         </div>
+      </div>
+
+      {/* Lead name + Kanban — right side */}
+      {activity.lead_name && (
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-violet-500/10 border border-violet-500/20 text-xs font-bold text-violet-500 dark:text-violet-400 truncate max-w-[180px]">
+            <UserCircle size={11} className="shrink-0" />
+            {activity.lead_name}
+          </span>
+          {activity.kanban_name && (
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide">
+              {activity.kanban_name}
             </span>
           )}
         </div>
-      </div>
+      )}
 
       {/* Botões de ação — visíveis no hover */}
       <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
@@ -617,7 +627,11 @@ const Atividades: React.FC = () => {
   const [showModal, setShowModal] = useState(false);
   const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
+  const [kanbanFilter, setKanbanFilter] = useState('all');
+  const [kanbans, setKanbans] = useState<{id: string; nome: string}[]>([]);
+  const [showKanbanDropdown, setShowKanbanDropdown] = useState(false);
   const typeDropdownRef = useRef<HTMLDivElement>(null);
+  const kanbanDropdownRef = useRef<HTMLDivElement>(null);
 
   const allTypes = ['all', ...Object.keys(TYPE_CONFIG)];
 
@@ -638,11 +652,22 @@ const Atividades: React.FC = () => {
 
   useEffect(() => { fetchActivities(); }, [fetchActivities]);
 
+  // Fetch kanbans for filter
+  useEffect(() => {
+    fetch('/api/crm-comercial/kanbans')
+      .then(r => r.json())
+      .then(data => setKanbans(data))
+      .catch(() => {});
+  }, []);
+
   // Close type dropdown on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (typeDropdownRef.current && !typeDropdownRef.current.contains(e.target as Node)) {
         setShowTypeDropdown(false);
+      }
+      if (kanbanDropdownRef.current && !kanbanDropdownRef.current.contains(e.target as Node)) {
+        setShowKanbanDropdown(false);
       }
     };
     document.addEventListener('mousedown', handler);
@@ -675,15 +700,18 @@ const Atividades: React.FC = () => {
     setEditingActivity(activity);
   };
 
-  const grouped = groupActivitiesByDate(activities);
-  const totalCount = activities.length;
+  const filteredByKanban = kanbanFilter === 'all' 
+    ? activities 
+    : activities.filter(a => a.kanban_id === kanbanFilter);
+  const grouped = groupActivitiesByDate(filteredByKanban);
+  const totalCount = filteredByKanban.length;
 
   return (
     <div className="min-h-screen bg-light-bg dark:bg-dark-bg transition-colors duration-300">
 
       {/* ── Top Bar ── */}
       <div className="sticky top-0 z-30 bg-white/80 dark:bg-dark-bg/95 border-b border-slate-200/70 dark:border-white/[0.06] backdrop-blur-sm">
-        <div className="max-w-5xl mx-auto px-6 py-3 flex items-center justify-between gap-4 flex-wrap">
+        <div className="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between gap-3">
 
           {/* Left — título */}
           <div>
@@ -696,7 +724,7 @@ const Atividades: React.FC = () => {
           </div>
 
           {/* Right — controles */}
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2">
 
             {/* View toggle: Lista / Calendário */}
             <div className="flex items-center bg-slate-100 dark:bg-white/5 rounded-xl p-0.5 gap-0.5 border border-slate-200/80 dark:border-white/[0.06]">
@@ -776,7 +804,47 @@ const Atividades: React.FC = () => {
               )}
             </div>
 
-            {/* Refresh */}
+            {/* Kanban filter */}
+            <div className="relative" ref={kanbanDropdownRef}>
+              <button
+                onClick={() => setShowKanbanDropdown(v => !v)}
+                className={`flex items-center gap-2 px-3.5 py-2 text-sm font-medium bg-white dark:bg-white/5 border rounded-xl transition-all ${
+                  kanbanFilter !== 'all' 
+                    ? 'text-emerald-600 dark:text-emerald-400 border-emerald-300/60 dark:border-emerald-500/30' 
+                    : 'text-slate-600 dark:text-slate-300 border-slate-200 dark:border-white/[0.06] hover:border-violet-300/60 dark:hover:border-violet-500/30'
+                }`}
+              >
+                <Filter size={13} />
+                {kanbanFilter === 'all' ? 'Funil' : kanbans.find(k => k.id === kanbanFilter)?.nome || 'Funil'}
+                <ChevronDown size={12} />
+              </button>
+              {showKanbanDropdown && (
+                <div className="absolute top-full right-0 mt-2 w-52 bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl shadow-xl z-50 py-1 overflow-hidden">
+                  <button
+                    onClick={() => { setKanbanFilter('all'); setShowKanbanDropdown(false); }}
+                    className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-violet-50 dark:hover:bg-violet-500/10 ${
+                      kanbanFilter === 'all' ? 'text-violet-600 dark:text-violet-400 font-semibold' : 'text-slate-600 dark:text-slate-300'
+                    }`}
+                  >
+                    <Filter size={14} />
+                    Todos os funis
+                  </button>
+                  {kanbans.map(k => (
+                    <button
+                      key={k.id}
+                      onClick={() => { setKanbanFilter(k.id); setShowKanbanDropdown(false); }}
+                      className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-violet-50 dark:hover:bg-violet-500/10 ${
+                        kanbanFilter === k.id ? 'text-violet-600 dark:text-violet-400 font-semibold' : 'text-slate-600 dark:text-slate-300'
+                      }`}
+                    >
+                      <ExternalLink size={14} />
+                      {k.nome}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <button
               onClick={fetchActivities}
               className="flex items-center justify-center w-9 h-9 rounded-xl text-slate-400 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/[0.06] hover:text-violet-500 hover:border-violet-300/60 transition-all"
@@ -798,7 +866,7 @@ const Atividades: React.FC = () => {
       </div>
 
       {/* ── Content ── */}
-      <div className="max-w-5xl mx-auto px-6 py-8">
+      <div className="max-w-6xl mx-auto px-6 py-8">
         {loading ? (
           <div className="flex flex-col items-center justify-center py-24 gap-4">
             <div className="w-10 h-10 border-4 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />

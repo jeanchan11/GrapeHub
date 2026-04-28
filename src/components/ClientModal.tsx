@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   X, UserPlus, CheckCircle2, AlertCircle, Link as LinkIcon, 
-  ChevronDown, Search, Check, Unlink, FileText, MessageSquare
+  ChevronDown, Search, Check, Unlink, FileText, MessageSquare,
+  ShieldAlert, AlertTriangle, Calendar, Clock, User, Edit2,
+  CreditCard
 } from 'lucide-react';
 import { Modal } from './ui/Modal';
 import { designSystem } from '../design-system';
@@ -20,13 +22,23 @@ interface Client {
   status: 'Ativo' | 'Inativo';
   createdAt: string;
   crmStatus?: string;
+  product?: string;
+  contracts?: string;
+  hasActiveSubscription?: boolean;
+  subscriptionValue?: number;
+  subscriptionNextDue?: string;
+  subscriptionBillingType?: string;
+  subscriptionCycle?: string;
+  finPeopleGuid?: string;
 }
 
 interface FinPerson {
   id: string;
+  guid: string;
   name: string;
   cnpjcpf: string;
   grapehub_client_id: string | null;
+  asaas_id: string | null;
 }
 
 interface FinMovement {
@@ -45,8 +57,15 @@ interface ClientModalProps {
 }
 
 const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientModalProps) => {
-  const [activeTab, setActiveTab] = useState<'client' | 'finance'>('client');
+  const [activeTab, setActiveTab] = useState<'client' | 'finance' | 'churn'>('client');
   const [isSaving, setIsSaving] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [isEditingChurn, setIsEditingChurn] = useState(false);
+  const [churnData, setChurnData] = useState<any>(null);
+  const [isLoadingChurn, setIsLoadingChurn] = useState(false);
+  const [editChurnType, setEditChurnType] = useState('');
+  const [editChurnReasons, setEditChurnReasons] = useState<string[]>([]);
+  const [editChurnComment, setEditChurnComment] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     startDate: '',
@@ -56,7 +75,8 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
     email: '',
     phone: '',
     status: 'Ativo' as 'Ativo' | 'Inativo',
-    crmStatus: ''
+    crmStatus: '',
+    product: ''
   });
 
   // Finance state
@@ -66,6 +86,11 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
   const [isFinDropdownOpen, setIsFinDropdownOpen] = useState(false);
   const [finMovements, setFinMovements] = useState<FinMovement[]>([]);
   const [isFetchingMovements, setIsFetchingMovements] = useState(false);
+
+  // Asaas linking state
+  const [asaasSearchQuery, setAsaasSearchQuery] = useState('');
+  const [asaasResults, setAsaasResults] = useState<{guid: string, name: string, cnpjcpf: string, asaas_id: string}[]>([]);
+  const [isLinkingAsaas, setIsLinkingAsaas] = useState(false);
 
   useEffect(() => {
     if (editingClient) {
@@ -78,7 +103,8 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
         email: editingClient.email || '',
         phone: editingClient.phone || '',
         status: editingClient.status || 'Ativo',
-        crmStatus: editingClient.crmStatus || ''
+        crmStatus: editingClient.crmStatus || '',
+        product: editingClient.product || ''
       });
     } else {
       setFormData({
@@ -90,11 +116,38 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
         email: '',
         phone: '',
         status: 'Ativo',
-        crmStatus: ''
+        crmStatus: '',
+        product: ''
       });
     }
     setActiveTab('client');
+    setChurnData(null);
+    setIsEditing(!editingClient);
+    setIsEditingChurn(false);
+    setAsaasSearchQuery('');
+    setAsaasResults([]);
   }, [editingClient, isOpen]);
+
+  // Fetch churn data when switching to churn tab
+  useEffect(() => {
+    if (isOpen && activeTab === 'churn' && editingClient && editingClient.status === 'Inativo') {
+      const fetchChurnData = async () => {
+        setIsLoadingChurn(true);
+        try {
+          const res = await fetch(`/api/churn/${encodeURIComponent(editingClient.name)}`);
+          if (res.ok) {
+            const data = await res.json();
+            setChurnData(data);
+          }
+        } catch (err) {
+          console.error('Failed to fetch churn data:', err);
+        } finally {
+          setIsLoadingChurn(false);
+        }
+      };
+      fetchChurnData();
+    }
+  }, [isOpen, activeTab, editingClient]);
 
   useEffect(() => {
     if (isOpen) {
@@ -139,6 +192,7 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
     const clientData = {
       id: editingClient?.id || Math.random().toString(36).substr(2, 9),
       ...formData,
+      contracts: editingClient?.contracts || '[]',
       createdAt: editingClient?.createdAt || new Date().toISOString()
     };
 
@@ -180,21 +234,54 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
     }
   };
 
+  const saveFinLink = async (newPersonId: string | null) => {
+    if (!editingClient) return;
+    const currentLinked = finPeople.find(p => p.grapehub_client_id === editingClient.id);
+    if (currentLinked && currentLinked.id !== newPersonId) {
+      await fetch(`/api/fin-people/${currentLinked.id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ grapehub_client_id: null })
+      });
+    }
+    if (newPersonId) {
+      const person = finPeople.find(p => p.id === newPersonId);
+      await fetch(`/api/fin-people/${newPersonId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ grapehub_client_id: editingClient.id })
+      });
+      // Also set fin_people_guid on the client for subscription linking
+      if (person?.guid) {
+        await fetch(`/api/clients/${editingClient.id}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fin_people_guid: person.guid })
+        });
+      }
+    } else {
+      // Unlinking - clear fin_people_guid too
+      await fetch(`/api/clients/${editingClient.id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fin_people_guid: null })
+      });
+    }
+    setSelectedFinPersonId(newPersonId);
+    onSaveSuccess();
+  };
+
   const squads = ['Able', 'Baker', 'Charlie', 'Delta'];
 
   return (
     <Modal
       isOpen={isOpen}
-      onClose={onClose}
-      title={editingClient ? 'Editar Cliente' : 'Novo Cliente'}
+      onClose={() => { setIsEditing(false); onClose(); }}
+      title={editingClient ? (isEditing ? 'Editar Cliente' : editingClient.name) : 'Novo Cliente'}
       icon={<UserPlus size={24} />}
       maxWidth="max-w-2xl"
       footer={
-        activeTab === 'client' ? (
+        activeTab === 'client' && isEditing ? (
           <>
             <button 
               type="button"
-              onClick={onClose}
+              onClick={() => { if (editingClient) { setIsEditing(false); } else { onClose(); } }}
               className={designSystem.button.secondary}
             >
               Cancelar
@@ -225,10 +312,19 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
           >
             Financeiro
           </button>
+          {editingClient && editingClient.status === 'Inativo' && (
+            <button 
+              onClick={() => setActiveTab('churn')}
+              className={`px-8 py-4 text-sm font-bold transition-all ${activeTab === 'churn' ? 'modal-tab-active' : 'text-slate-500 hover:text-gray-900 dark:hover:text-white'}`}
+            >
+              Motivo de Saída
+            </button>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {activeTab === 'client' ? (
+          {activeTab === 'client' && (
+            isEditing ? (
             <form id="client-form" onSubmit={handleSave} className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
@@ -273,6 +369,18 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
                     className={designSystem.input.field}
                   >
                     {squads.map(s => <option key={s} value={s} className="bg-light-sidebar dark:bg-dark-sidebar">{s}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className={designSystem.input.label}>Produto</label>
+                  <select 
+                    value={formData.product}
+                    onChange={(e) => setFormData({ ...formData, product: e.target.value })}
+                    className={designSystem.input.field}
+                  >
+                    <option value="" className="bg-light-sidebar dark:bg-dark-sidebar">Selecionar...</option>
+                    <option value="TCV" className="bg-light-sidebar dark:bg-dark-sidebar">TCV</option>
+                    <option value="Recorrência Mensal" className="bg-light-sidebar dark:bg-dark-sidebar">Recorrência Mensal</option>
                   </select>
                 </div>
                 <div className="space-y-2">
@@ -330,7 +438,70 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
                 </div>
               </div>
             </form>
-                ) : (
+            ) : (
+            <div className="space-y-5">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Nome do Cliente</p>
+                  <p className="text-sm font-bold text-light-text dark:text-white">{formData.name || '-'}</p>
+                </div>
+                <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Data Inicial</p>
+                  <p className="text-sm font-bold text-light-text dark:text-white">{formData.startDate ? new Date(formData.startDate + 'T12:00:00').toLocaleDateString('pt-BR') : '-'}</p>
+                </div>
+              </div>
+              <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Local do Escritório</p>
+                <p className="text-sm font-bold text-light-text dark:text-white">{formData.location || '-'}</p>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Squad</p>
+                  <span className={`inline-flex px-3 py-1 rounded-lg text-xs font-bold ${
+                    formData.squad === 'Able' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-blue-500/10 text-blue-500'
+                  }`}>{formData.squad}</span>
+                </div>
+                <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Produto</p>
+                  {formData.product ? (
+                    <span className={`inline-flex px-3 py-1 rounded-lg text-xs font-bold ${
+                      formData.product === 'TCV' ? 'bg-cyan-500/10 text-cyan-500' : 'bg-violet-500/10 text-violet-500'
+                    }`}>{formData.product}</span>
+                  ) : (
+                    <p className="text-sm text-slate-400 italic">Não definido</p>
+                  )}
+                </div>
+                <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Tags</p>
+                  <p className="text-sm text-light-text dark:text-white">{formData.tags || '-'}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Email</p>
+                  <p className="text-sm text-light-text dark:text-white">{formData.email || '-'}</p>
+                </div>
+                <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Telefone</p>
+                  <p className="text-sm text-light-text dark:text-white">{formData.phone || '-'}</p>
+                </div>
+              </div>
+              <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Status</p>
+                <span className={`inline-flex px-3 py-1 rounded-lg text-xs font-bold ${
+                  formData.status === 'Ativo' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'
+                }`}>{formData.status}</span>
+              </div>
+              <button
+                onClick={() => setIsEditing(true)}
+                className="w-full py-3 rounded-xl text-sm font-bold text-violet-500 bg-violet-500/10 hover:bg-violet-500/20 border border-violet-500/20 transition-all flex items-center justify-center gap-2"
+              >
+                <Edit2 size={14} /> Editar Cliente
+              </button>
+            </div>
+            )
+          )}
+          {activeTab === 'finance' && (
                   <div className="space-y-8">
                     {/* Seção 1 - Vínculo Financeiro */}
                     <div className="space-y-4">
@@ -339,7 +510,7 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
                         <h3 className="text-sm font-bold text-light-text dark:text-white uppercase tracking-widest">Vínculo Financeiro</h3>
                       </div>
                       
-                      <div className="space-y-2 relative">
+                      <div className={`space-y-2 relative ${isFinDropdownOpen ? 'pb-[320px]' : ''}`}>
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block ml-1">Vincular ao Financeiro (Marvee/Asaas)</label>
                         <div className="flex gap-2">
                           <div className="relative flex-1">
@@ -374,7 +545,7 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
                                       placeholder="Buscar por nome..."
                                       value={finSearchQuery}
                                       onChange={(e) => setFinSearchQuery(e.target.value)}
-                                      className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-lg pl-10 pr-4 py-2 text-sm outline-none focus:border-violet-500 transition-all"
+                                      className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-lg pl-10 pr-4 py-2 text-sm text-light-text dark:text-white outline-none focus:border-violet-500 transition-all"
                                     />
                                   </div>
                                 </div>
@@ -385,8 +556,8 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
                                       <button
                                         key={person.id}
                                         type="button"
-                                        onClick={() => {
-                                          setSelectedFinPersonId(person.id);
+                                        onClick={async () => {
+                                          await saveFinLink(person.id);
                                           setIsFinDropdownOpen(false);
                                         }}
                                         className={`w-full text-left p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-white/5 transition-all flex flex-col gap-0.5 ${selectedFinPersonId === person.id ? 'bg-violet-500/10' : ''}`}
@@ -413,7 +584,7 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
                           {selectedFinPersonId && (
                             <button
                               type="button"
-                              onClick={() => setSelectedFinPersonId(null)}
+                              onClick={() => saveFinLink(null)}
                               className="px-4 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-xl transition-all flex items-center justify-center gap-2 border border-rose-500/20"
                               title="Desvincular"
                             >
@@ -429,7 +600,7 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
                       <div className="p-8 bg-amber-500/5 border border-amber-500/20 rounded-2xl flex flex-col items-center gap-3 text-center">
                         <AlertCircle className="text-amber-500" size={32} />
                         <p className="text-sm font-medium text-amber-600 dark:text-amber-400">
-                          Vincule este cliente ao financeiro para visualizar os dados abaixo
+                          Vincule este cliente ao financeiro para visualizar dados de pagamento e assinatura
                         </p>
                       </div>
                     ) : isFetchingMovements ? (
@@ -464,6 +635,46 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
                               return <p className="text-sm font-bold text-amber-500">Pendente</p>;
                             })()}
                           </div>
+                        </div>
+
+                        {/* Card Assinatura Asaas */}
+                        <div className="space-y-4">
+                          <div className="flex items-center gap-2">
+                            <CreditCard size={16} className="text-violet-500" />
+                            <h3 className="text-sm font-bold text-light-text dark:text-white uppercase tracking-widest">Assinatura Asaas</h3>
+                          </div>
+                          {editingClient?.hasActiveSubscription ? (
+                            <div className="p-5 bg-emerald-500/5 border border-emerald-500/20 rounded-2xl space-y-3">
+                              <div className="flex items-center justify-between">
+                                <span className="px-2.5 py-0.5 bg-emerald-500/10 text-emerald-500 text-[9px] font-bold rounded-md uppercase tracking-widest">Ativa</span>
+                                <span className="text-xs text-slate-500">
+                                  {editingClient.subscriptionCycle === 'MONTHLY' ? 'Mensal' : editingClient.subscriptionCycle === 'YEARLY' ? 'Anual' : editingClient.subscriptionCycle || 'Mensal'}
+                                </span>
+                              </div>
+                              <p className="text-2xl font-bold text-light-text dark:text-white">
+                                {editingClient.subscriptionValue ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(editingClient.subscriptionValue) : 'R$ 0,00'}
+                              </p>
+                              <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Próximo Vencimento</p>
+                                  <p className="text-xs font-bold text-light-text dark:text-white">
+                                    {editingClient.subscriptionNextDue ? new Date(editingClient.subscriptionNextDue + 'T12:00:00').toLocaleDateString('pt-BR') : '-'}
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Tipo de Cobrança</p>
+                                  <p className="text-xs font-bold text-light-text dark:text-white">
+                                    {editingClient.subscriptionBillingType === 'BOLETO' ? 'Boleto' : editingClient.subscriptionBillingType === 'CREDIT_CARD' ? 'Cartão' : editingClient.subscriptionBillingType === 'PIX' ? 'Pix' : editingClient.subscriptionBillingType || '-'}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="p-5 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5 flex items-center gap-3">
+                              <CreditCard size={20} className="text-slate-300 dark:text-slate-600" />
+                              <p className="text-sm text-slate-400">Sem assinatura ativa no Asaas</p>
+                            </div>
+                          )}
                         </div>
 
                         {/* Seção 3 - Histórico de Pagamentos */}
@@ -521,10 +732,213 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
                       </>
                     )}
                   </div>
-                )}
-              </div>
-            </div>
-          </Modal>
+          )}
+          {activeTab === 'churn' && (
+                  <div className="space-y-6">
+                    {isLoadingChurn ? (
+                      <div className="py-20 flex flex-col items-center gap-3">
+                        <div className="w-8 h-8 border-4 border-violet-500/20 border-t-violet-500 rounded-full animate-spin"></div>
+                        <p className="text-slate-500 text-sm font-medium">Carregando dados de churn...</p>
+                      </div>
+                    ) : !churnData ? (
+                      <div className="p-8 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl flex flex-col items-center gap-3 text-center">
+                        <AlertCircle className="text-slate-400" size={32} />
+                        <p className="text-sm font-medium text-slate-500">
+                          Nenhum registro de churn encontrado para este cliente.
+                        </p>
+                      </div>
+                    ) : (
+                      <>
+                        {!isEditingChurn ? (
+                        <>
+                        {/* View Mode */}
+                        <div className="space-y-3">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">Como foi</label>
+                          <div>
+                            {churnData['Evitavel - inevitavel'] === 'INEVITÁVEL' ? (
+                              <span className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-rose-500 text-white shadow-md shadow-rose-500/20">
+                                <ShieldAlert size={14} /> INEVITÁVEL
+                              </span>
+                            ) : churnData['Evitavel - inevitavel'] === 'EVITÁVEL' ? (
+                              <span className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-amber-500 text-white shadow-md shadow-amber-500/20">
+                                <AlertTriangle size={14} /> EVITÁVEL
+                              </span>
+                            ) : (
+                              <span className="text-sm text-slate-400 italic">Não informado</span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="space-y-3">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">Motivo de Saída</label>
+                          <div className="flex flex-wrap gap-2">
+                            {churnData['Motivo de saída'] ? (
+                              churnData['Motivo de saída'].split(',').map((reason: string, idx: number) => {
+                                const r = reason.trim();
+                                const colorMap: Record<string, string> = {
+                                  'Motivo Pessoal': 'bg-blue-500 text-white border-blue-500',
+                                  'Falta de Relacionamento': 'bg-rose-500 text-white border-rose-500',
+                                  'inadimplência': 'bg-orange-500 text-white border-orange-500',
+                                  'Inadimplência': 'bg-orange-500 text-white border-orange-500',
+                                  'Resultado Comercial': 'bg-red-600 text-white border-red-600',
+                                  'Motivo Financeiro': 'bg-purple-500 text-white border-purple-500',
+                                  'CRM e IA': 'bg-cyan-500 text-white border-cyan-500',
+                                  'Outros': 'bg-slate-600 text-white border-slate-600',
+                                  'Resultado Campanha': 'bg-red-600 text-white border-red-600',
+                                };
+                                const cls = colorMap[r] || 'bg-slate-500 text-white border-slate-500';
+                                return (
+                                  <span key={idx} className={`px-3 py-1.5 rounded-lg text-[11px] font-bold border ${cls}`}>
+                                    {r}
+                                  </span>
+                                );
+                              })
+                            ) : (
+                              <span className="text-sm text-slate-400 italic">Nenhum motivo registrado</span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
+                            <div className="flex items-center gap-1.5 mb-2">
+                              <Calendar size={12} className="text-violet-500" />
+                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Data de Saída</p>
+                            </div>
+                            <p className="text-sm font-bold text-light-text dark:text-white">
+                              {churnData.day_exit ? new Date(churnData.day_exit).toLocaleDateString('pt-BR') : '-'}
+                            </p>
+                          </div>
+                          <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
+                            <div className="flex items-center gap-1.5 mb-2">
+                              <Clock size={12} className="text-violet-500" />
+                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">LTV (dias)</p>
+                            </div>
+                            <p className="text-sm font-bold text-light-text dark:text-white">
+                              {churnData.LTV ? `${churnData.LTV} dias` : '-'}
+                            </p>
+                          </div>
+                          <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
+                            <div className="flex items-center gap-1.5 mb-2">
+                              <User size={12} className="text-violet-500" />
+                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Gestor</p>
+                            </div>
+                            <p className="text-sm font-bold text-light-text dark:text-white">
+                              {churnData.gestor || '-'}
+                            </p>
+                          </div>
+                          <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
+                            <div className="flex items-center gap-1.5 mb-2">
+                              <Calendar size={12} className="text-violet-500" />
+                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Data de Entrada</p>
+                            </div>
+                            <p className="text-sm font-bold text-light-text dark:text-white">
+                              {churnData.day ? new Date(churnData.day).toLocaleDateString('pt-BR') : '-'}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="space-y-3">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                            <MessageSquare size={12} /> Comentários
+                          </label>
+                          <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
+                            <p className="text-sm text-light-text dark:text-white whitespace-pre-wrap">
+                              {churnData.comments || <span className="text-slate-400 italic">Sem comentários</span>}
+                            </p>
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={() => {
+                            setEditChurnType(churnData['Evitavel - inevitavel'] || '');
+                            setEditChurnReasons(churnData['Motivo de saída'] ? churnData['Motivo de saída'].split(',').map((r: string) => r.trim()) : []);
+                            setEditChurnComment(churnData.comments || '');
+                            setIsEditingChurn(true);
+                          }}
+                          className="w-full py-3 rounded-xl text-sm font-bold text-violet-500 bg-violet-500/10 hover:bg-violet-500/20 border border-violet-500/20 transition-all flex items-center justify-center gap-2"
+                        >
+                          <Edit2 size={14} /> Editar Motivo de Saída
+                        </button>
+                        </>
+                        ) : (
+                        <>
+                        {/* Edit Mode */}
+                        <div className="space-y-3">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">Tipo de Churn</label>
+                          <div className="flex gap-3">
+                            <button type="button" onClick={() => setEditChurnType('INEVITÁVEL')}
+                              className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                                editChurnType === 'INEVITÁVEL' ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/20' : 'bg-slate-100 dark:bg-white/5 text-slate-500 hover:bg-slate-200 dark:hover:bg-white/10'
+                              }`}>
+                              <ShieldAlert size={14} /> INEVITÁVEL
+                            </button>
+                            <button type="button" onClick={() => setEditChurnType('EVITÁVEL')}
+                              className={`flex-1 py-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                                editChurnType === 'EVITÁVEL' ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/20' : 'bg-slate-100 dark:bg-white/5 text-slate-500 hover:bg-slate-200 dark:hover:bg-white/10'
+                              }`}>
+                              <AlertTriangle size={14} /> EVITÁVEL
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="space-y-3">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">Motivos de Saída</label>
+                          <div className="flex flex-wrap gap-2">
+                            {['Motivo Pessoal','Falta de Relacionamento','Inadimplência','Resultado Comercial','Motivo Financeiro','CRM e IA','Outros'].map(reason => (
+                              <button key={reason} type="button"
+                                onClick={() => setEditChurnReasons(prev => prev.includes(reason) ? prev.filter(r => r !== reason) : [...prev, reason])}
+                                className={`px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-all ${
+                                  editChurnReasons.includes(reason)
+                                    ? 'bg-violet-500 text-white border-violet-500'
+                                    : 'bg-slate-100 dark:bg-white/5 text-slate-500 border-slate-200 dark:border-white/10 hover:border-violet-500/50'
+                                }`}>
+                                {reason}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="space-y-3">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">Comentários</label>
+                          <textarea
+                            value={editChurnComment}
+                            onChange={(e) => setEditChurnComment(e.target.value)}
+                            rows={3}
+                            className={designSystem.input.field + ' resize-none'}
+                            placeholder="Observações sobre o churn..."
+                          />
+                        </div>
+
+                        <div className="flex gap-3">
+                          <button onClick={() => setIsEditingChurn(false)}
+                            className="flex-1 py-3 rounded-xl text-sm font-bold text-slate-500 bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 transition-all">
+                            Cancelar
+                          </button>
+                          <button onClick={async () => {
+                            try {
+                              await fetch(`/api/churn/${churnData.id}`, {
+                                method: 'PATCH',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ churn_type: editChurnType, exit_reasons: editChurnReasons, comments: editChurnComment })
+                              });
+                              setChurnData({ ...churnData, 'Evitavel - inevitavel': editChurnType, 'Motivo de saída': editChurnReasons.join(', '), comments: editChurnComment });
+                              setIsEditingChurn(false);
+                            } catch (err) { console.error(err); }
+                          }}
+                            className="flex-1 py-3 rounded-xl text-sm font-bold text-white bg-violet-600 hover:bg-violet-700 shadow-lg shadow-violet-500/20 transition-all">
+                            Salvar Alterações
+                          </button>
+                        </div>
+                        </>
+                        )}
+                      </>
+                    )}
+                  </div>
+          )}
+        </div>
+      </div>
+    </Modal>
   );
 };
 

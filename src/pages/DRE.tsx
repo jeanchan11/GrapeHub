@@ -1,5 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Calendar, ChevronDown, ChevronLeft, ChevronRight, Download, TrendingUp, TrendingDown, Minus, SlidersHorizontal, Eye, EyeOff } from 'lucide-react';
+import { Calendar, ChevronDown, ChevronLeft, ChevronRight, Download, TrendingUp, TrendingDown, Minus, SlidersHorizontal, Eye, EyeOff, X, Loader2 } from 'lucide-react';
+
+interface DetailItem {
+  id: number;
+  date: string;
+  description: string;
+  value: number;
+  type: number;
+  transaction_type: string;
+}
 
 // ── Types ──────────────────────────────────────────────
 interface DRERow {
@@ -59,6 +68,40 @@ export default function DRE() {
   const [visibleCols, setVisibleCols] = useState<Set<number>>(new Set(ALL_COLUMNS));
   const [showColFilter, setShowColFilter] = useState(false);
   const filterRef = useRef<HTMLDivElement>(null);
+
+  // L3 detail modal state
+  const [detailModal, setDetailModal] = useState<{
+    code: string;
+    name: string;
+    month: number;
+    type: string;
+  } | null>(null);
+  const [detailItems, setDetailItems] = useState<DetailItem[]>([]);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailTotal, setDetailTotal] = useState(0);
+
+  const openDetail = async (code: string, name: string, month: number, type: string) => {
+    // For legacy months (Jan-Mar 2026), show info message
+    const isLegacy = year === 2026 && month < 3;
+    setDetailModal({ code, name, month, type });
+    setDetailItems([]);
+    setDetailTotal(0);
+    if (isLegacy) {
+      setDetailLoading(false);
+      return;
+    }
+    setDetailLoading(true);
+    try {
+      const res = await fetch(`/api/financeiro/dre/detalhes?category=${code}&month=${month + 1}&year=${year}`);
+      const data = await res.json();
+      setDetailItems(data.items || []);
+      setDetailTotal(data.total || 0);
+    } catch (err) {
+      console.error('Error loading details:', err);
+    } finally {
+      setDetailLoading(false);
+    }
+  };
 
   // Close popup on outside click
   useEffect(() => {
@@ -186,7 +229,7 @@ export default function DRE() {
           while (i < rows.length && rows[i].level === 3) {
             const l3 = rows[i];
             elements.push(
-              <tr key={l3.code} className="border-b border-dark-text/[0.03] bg-dark-text/[0.02]">
+              <tr key={l3.code} className="border-b border-dark-text/[0.03] bg-dark-text/[0.02] cursor-pointer hover:bg-violet-500/5 transition-colors">
                 <td className="px-3 py-1.5 pl-10 whitespace-nowrap sticky left-0 bg-dark-card z-10">
                   <div className="flex items-center gap-1.5">
                     <span className="text-dark-text/30 font-mono text-[9px]">{l3.code}</span>
@@ -195,10 +238,11 @@ export default function DRE() {
                 </td>
                 {l3.values.map((v, mi) => (
                   visibleCols.has(mi) && (
-                    <td key={mi} className="px-2 py-1.5 text-right text-[9px] whitespace-nowrap">
+                    <td key={mi} className="px-2 py-1.5 text-right text-[9px] whitespace-nowrap"
+                        onClick={() => v > 0 && openDetail(l3.code, l3.name, mi, l3.type)}>
                       {v === 0
                         ? <span className="text-dark-text/15">R$ 0,00</span>
-                        : <span className={l3.type === 'despesa' ? 'text-rose-500/60' : 'text-emerald-500/60'}>
+                        : <span className={`${l3.type === 'despesa' ? 'text-rose-500/60' : 'text-emerald-500/60'} hover:underline`}>
                             {l3.type === 'despesa' ? '-' : ''}{fmtCur(v)}
                           </span>
                       }
@@ -278,7 +322,7 @@ export default function DRE() {
             Fluxo de <span className="text-violet-500">Caixa</span>
           </h1>
           <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5">
-            Demonstração do resultado do exercício · {year}
+            Demonstração do fluxo de caixa · {year}
           </p>
         </div>
 
@@ -366,7 +410,7 @@ export default function DRE() {
               </div>
             )}
 
-            {/* DRE Table */}
+            {/* DFC Table */}
             <div className="bg-dark-card border border-white/10 rounded-2xl overflow-hidden">
               {/* Column filter button */}
               <div className="flex items-center justify-between px-4 py-3 border-b border-dark-text/10">
@@ -485,6 +529,80 @@ export default function DRE() {
           </>
         )}
       </div>
+      {/* ── Detail Modal ── */}
+      {detailModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setDetailModal(null)}>
+          <div className="bg-dark-card border border-white/10 rounded-2xl shadow-2xl w-[90%] max-w-[640px] max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
+              <div>
+                <p className="text-[10px] font-bold text-violet-500 uppercase tracking-widest">
+                  {detailModal.code} · {MESES_FULL[detailModal.month]} {year}
+                </p>
+                <h3 className="text-sm font-bold text-dark-text mt-0.5">{detailModal.name}</h3>
+              </div>
+              <button onClick={() => setDetailModal(null)} className="w-8 h-8 rounded-xl bg-dark-bg border border-white/10 flex items-center justify-center hover:border-rose-500/40 transition-all">
+                <X size={14} className="text-dark-text/60" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              {detailLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 size={24} className="text-violet-500 animate-spin" />
+                </div>
+              ) : year === 2026 && detailModal.month < 3 ? (
+                <div className="text-center py-12">
+                  <p className="text-dark-text/40 text-sm">Dados do sistema legado</p>
+                  <p className="text-dark-text/25 text-xs mt-1">Os lançamentos de Jan-Mar 2026 foram importados do sistema anterior e não possuem detalhamento individual.</p>
+                </div>
+              ) : detailItems.length === 0 ? (
+                <div className="text-center py-12">
+                  <p className="text-dark-text/40 text-sm">Nenhum lançamento encontrado</p>
+                </div>
+              ) : (
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-white/5">
+                      <th className="text-left text-[9px] font-bold text-dark-text/40 uppercase tracking-wider py-2 pr-2">Data</th>
+                      <th className="text-left text-[9px] font-bold text-dark-text/40 uppercase tracking-wider py-2">Descrição</th>
+                      <th className="text-right text-[9px] font-bold text-dark-text/40 uppercase tracking-wider py-2 pl-2">Valor</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detailItems.map((item) => (
+                      <tr key={item.id} className="border-b border-white/[0.03] hover:bg-dark-card-hover transition-colors">
+                        <td className="py-2 pr-2 text-[10px] text-dark-text/50 whitespace-nowrap">
+                          {(() => {
+                            const d = item.date ? new Date(item.date) : null;
+                            if (!d || isNaN(d.getTime())) return '—';
+                            return `${String(d.getUTCDate()).padStart(2,'0')}/${String(d.getUTCMonth()+1).padStart(2,'0')}`;
+                          })()}
+                        </td>
+                        <td className="py-2 text-[10px] text-dark-text/70 truncate max-w-[320px]">{item.description}</td>
+                        <td className={`py-2 pl-2 text-[10px] font-semibold text-right whitespace-nowrap ${detailModal.type === 'despesa' ? 'text-rose-500/70' : 'text-emerald-500/70'}`}>
+                          {detailModal.type === 'despesa' ? '-' : ''}{fmtCur(item.value)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {/* Footer */}
+            {detailItems.length > 0 && (
+              <div className="px-6 py-3 border-t border-white/10 flex items-center justify-between">
+                <span className="text-[10px] text-dark-text/40">{detailItems.length} lançamento{detailItems.length !== 1 ? 's' : ''}</span>
+                <span className={`text-xs font-bold ${detailModal.type === 'despesa' ? 'text-rose-500' : 'text-emerald-500'}`}>
+                  Total: {detailModal.type === 'despesa' ? '-' : ''}{fmtCur(detailTotal)}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

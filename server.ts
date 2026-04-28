@@ -181,6 +181,8 @@ async function startServer() {
       
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS aviso_previo_date TEXT;
 
+      ALTER TABLE churn ADD COLUMN IF NOT EXISTS comments TEXT;
+
       CREATE TABLE IF NOT EXISTS products (
         id TEXT PRIMARY KEY,
         project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
@@ -248,6 +250,7 @@ async function startServer() {
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS tags TEXT;
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS contracts TEXT;
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS crm_status TEXT;
+      ALTER TABLE clients ADD COLUMN IF NOT EXISTS product TEXT;
 
       CREATE TABLE IF NOT EXISTS crm_comments (
         id SERIAL PRIMARY KEY,
@@ -2946,14 +2949,13 @@ app.get("/api/todos", async (req, res) => {
       const result = await pool.query(`
         SELECT 
           c.*,
-          EXISTS(SELECT 1 FROM fin_people fp WHERE fp.grapehub_client_id = c.id) as has_financial_link,
+          c.fin_people_guid IS NOT NULL as has_financial_link,
           EXISTS(SELECT 1 FROM projects p WHERE p.active_client_id = c.id) as has_project_link,
           (SELECT p.partner FROM projects p WHERE p.active_client_id = c.id LIMIT 1) as project_name,
           (
             SELECT fm.movement_value 
             FROM fin_movements fm 
-            JOIN fin_people fp ON fp.id = fm.fin_people_id 
-            WHERE fp.grapehub_client_id = c.id 
+            WHERE fm.fin_people_id = fp_link.id 
             AND fm.type = 1 
             AND fm.category_l1_ext_id = 176790 
             ORDER BY fm.expiration_date DESC 
@@ -2962,15 +2964,13 @@ app.get("/api/todos", async (req, res) => {
           (
             SELECT MAX(CURRENT_DATE - fm.expiration_date::date)
             FROM fin_movements fm 
-            JOIN fin_people fp ON fp.id = fm.fin_people_id 
-            WHERE fp.grapehub_client_id = c.id 
+            WHERE fm.fin_people_id = fp_link.id 
             AND fm.status = 'Atrasado'
           ) as days_in_arrears,
           (
             SELECT SUM(fm.movement_value)
             FROM fin_movements fm
-            JOIN fin_people fp ON fp.id = fm.fin_people_id
-            WHERE fp.grapehub_client_id = c.id
+            WHERE fm.fin_people_id = fp_link.id
             AND fm.status = 'Conciliado'
             AND fm.type = 1
             AND EXTRACT(MONTH FROM fm.expiration_date) = EXTRACT(MONTH FROM CURRENT_DATE)
@@ -2981,15 +2981,21 @@ app.get("/api/todos", async (req, res) => {
             FROM (
               SELECT fm2.expiration_date, fm2.status
               FROM fin_movements fm2
-              JOIN fin_people fp2 ON fp2.id = fm2.fin_people_id
-              WHERE fp2.grapehub_client_id = c.id
+              WHERE fm2.fin_people_id = fp_link.id
               AND fm2.type = 1
               AND fm2.category_l1_ext_id = 176790
               ORDER BY fm2.expiration_date DESC
               LIMIT 6
             ) fm
-          ) as payment_history
-        FROM clients c 
+          ) as payment_history,
+          CASE WHEN fs.id IS NOT NULL THEN true ELSE false END as has_active_subscription,
+          fs.value as subscription_value,
+          fs.next_due_date as subscription_next_due,
+          fs.billing_type as subscription_billing_type,
+          fs.cycle as subscription_cycle
+        FROM clients c
+        LEFT JOIN fin_people fp_link ON fp_link.guid = c.fin_people_guid
+        LEFT JOIN fin_subscriptions fs ON fs.customer_id = fp_link.asaas_id AND fs.status = 'ACTIVE'
         ${whereClause}
         ORDER BY c.name ASC
       `, params);
@@ -3028,12 +3034,19 @@ app.get("/api/todos", async (req, res) => {
           hasProjectLink: row.has_project_link,
           projectName: row.project_name,
           crmStatus: row.crm_status,
+          product: row.product,
           monthlyFee: row.monthly_fee,
           daysInArrears: row.days_in_arrears,
           paidThisMonth: row.paid_this_month,
           paymentHistory: row.payment_history,
           recurringDelay: recurringDelay,
-          aviso_previo_date: row.aviso_previo_date
+          aviso_previo_date: row.aviso_previo_date,
+          hasActiveSubscription: row.has_active_subscription,
+          subscriptionValue: row.subscription_value ? parseFloat(row.subscription_value) : null,
+          subscriptionNextDue: row.subscription_next_due,
+          subscriptionBillingType: row.subscription_billing_type,
+          subscriptionCycle: row.subscription_cycle,
+          finPeopleGuid: row.fin_people_guid
         };
       });
       res.json(clients);
@@ -3154,8 +3167,8 @@ app.get("/api/todos", async (req, res) => {
       await pool.query("BEGIN");
       for (const c of clients) {
         await pool.query(
-          `INSERT INTO clients (id, name, email, phone, status, start_date, location, squad, tags, contracts, crm_status) 
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          `INSERT INTO clients (id, name, email, phone, status, start_date, location, squad, tags, contracts, crm_status, product) 
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
            ON CONFLICT (id) DO UPDATE SET
              name = EXCLUDED.name,
              email = EXCLUDED.email,
@@ -3166,8 +3179,9 @@ app.get("/api/todos", async (req, res) => {
              squad = EXCLUDED.squad,
              tags = EXCLUDED.tags,
              contracts = EXCLUDED.contracts,
-             crm_status = EXCLUDED.crm_status`,
-          [c.id, c.name, c.email, c.phone, c.status, c.startDate, c.location, c.squad, c.tags, c.contracts, c.crmStatus]
+             crm_status = EXCLUDED.crm_status,
+             product = EXCLUDED.product`,
+          [c.id, c.name, c.email, c.phone, c.status, c.startDate, c.location, c.squad, c.tags, c.contracts, c.crmStatus, c.product]
         );
       }
       await pool.query("COMMIT");
@@ -3192,7 +3206,7 @@ app.get("/api/todos", async (req, res) => {
 
   app.patch("/api/clients/:id", async (req, res) => {
     const { id } = req.params;
-    const { crm_status, status, aviso_previo_date } = req.body;
+    const { crm_status, status, aviso_previo_date, contracts, product, fin_people_guid } = req.body;
     try {
       console.log(`[CLIENT PATCH] ID: ${id}, Body:`, req.body);
       // Check if crm_status is changing to 'processo_saida'
@@ -3235,6 +3249,18 @@ app.get("/api/todos", async (req, res) => {
         values.push(aviso_previo_date);
         console.log(`[CLIENT PATCH] Updating aviso_previo_date to: ${aviso_previo_date}`);
       }
+      if (contracts !== undefined) {
+        updates.push(`contracts = $${i++}`);
+        values.push(contracts);
+      }
+      if (product !== undefined) {
+        updates.push(`product = $${i++}`);
+        values.push(product);
+      }
+      if (fin_people_guid !== undefined) {
+        updates.push(`fin_people_guid = $${i++}`);
+        values.push(fin_people_guid);
+      }
 
       if (updates.length > 0) {
         values.push(id);
@@ -3248,6 +3274,89 @@ app.get("/api/todos", async (req, res) => {
     } catch (err) {
       console.error("[CLIENT PATCH ERROR] Error updating client:", err);
       res.status(500).json({ error: "Failed to update client", details: String(err) });
+    }
+  });
+
+  // Search fin_people with asaas_id for subscription linking
+  app.get("/api/fin-people/asaas-search", async (req, res) => {
+    const { q } = req.query;
+    try {
+      const result = await pool.query(
+        `SELECT guid, name, cnpjcpf, asaas_id
+         FROM fin_people
+         WHERE LOWER(name) LIKE LOWER('%' || $1 || '%')
+         AND asaas_id IS NOT NULL
+         ORDER BY name
+         LIMIT 10`,
+        [q || '']
+      );
+      res.json(result.rows);
+    } catch (err) {
+      console.error("Error searching fin_people:", err);
+      res.status(500).json({ error: "Failed to search" });
+    }
+  });
+
+  // --- Churn Table Insert ---
+  app.post("/api/churn", async (req, res) => {
+    const { client_id, client_name, churn_type, exit_reasons, squad, start_date, gestor, comments } = req.body;
+    try {
+      // Calculate LTV in days
+      const startD = start_date ? new Date(start_date) : null;
+      const exitD = new Date();
+      let ltv = '';
+      if (startD) {
+        const diffDays = Math.round((exitD.getTime() - startD.getTime()) / (1000 * 60 * 60 * 24));
+        ltv = String(diffDays);
+      }
+
+      const exitDateStr = exitD.toISOString().split('T')[0];
+      const startDateStr = startD ? startD.toISOString().split('T')[0] : null;
+      const reasonsStr = Array.isArray(exit_reasons) ? exit_reasons.join(', ') : (exit_reasons || '');
+
+      await pool.query(
+        `INSERT INTO churn ("CLIENTE", "day_exit", "Evitavel - inevitavel", "gestor", "LTV", "SQUAD", "Motivo de saída", "day", "comments")
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [client_name, exitDateStr, churn_type || null, gestor || null, ltv, squad || null, reasonsStr || null, startDateStr, comments || null]
+      );
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Error inserting into churn table:", err);
+      res.status(500).json({ error: "Failed to insert churn record", details: String(err) });
+    }
+  });
+
+  app.get("/api/churn/:clientName", async (req, res) => {
+    const { clientName } = req.params;
+    try {
+      const result = await pool.query(
+        `SELECT * FROM churn WHERE "CLIENTE" = $1 ORDER BY day_exit DESC LIMIT 1`,
+        [clientName]
+      );
+      if (result.rows.length > 0) {
+        res.json(result.rows[0]);
+      } else {
+        res.json(null);
+      }
+    } catch (err) {
+      console.error("Error fetching churn data:", err);
+      res.status(500).json({ error: "Failed to fetch churn data" });
+    }
+  });
+
+  app.patch("/api/churn/:id", async (req, res) => {
+    const { id } = req.params;
+    const { churn_type, exit_reasons, comments } = req.body;
+    try {
+      const reasonsStr = Array.isArray(exit_reasons) ? exit_reasons.join(', ') : (exit_reasons || '');
+      await pool.query(
+        `UPDATE churn SET "Evitavel - inevitavel" = $1, "Motivo de saída" = $2, "comments" = $3 WHERE id = $4`,
+        [churn_type || null, reasonsStr || null, comments || null, id]
+      );
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Error updating churn:", err);
+      res.status(500).json({ error: "Failed to update churn" });
     }
   });
 
@@ -3514,7 +3623,7 @@ app.get("/api/todos", async (req, res) => {
         SELECT COALESCE(SUM(value), 0) AS total
         FROM fin_receivables
         WHERE due_date >= $1 AND due_date < $2
-          AND status IN ('Pendente', 'Confirmado', 'PENDING', 'OVERDUE')
+          AND status IN ('Pendente', 'PENDING')
       `, [inicio, fim]);
       const a_receber = parseFloat(aReceberRes.rows[0].total);
 
@@ -3621,7 +3730,7 @@ app.get("/api/todos", async (req, res) => {
                COALESCE(SUM(value), 0) AS entradas_previstas
         FROM fin_receivables
         WHERE due_date >= $1 AND due_date < $2
-          AND status IN ('Pendente', 'Confirmado', 'PENDING', 'OVERDUE')
+          AND status IN ('Pendente', 'PENDING')
         GROUP BY due_date
       `, [inicio, fim]);
 
@@ -3763,7 +3872,7 @@ app.get("/api/todos", async (req, res) => {
         SELECT COALESCE(SUM(value), 0) AS total
         FROM fin_receivables
         WHERE due_date >= $1 AND due_date < $2
-          AND status IN ('Pendente', 'Confirmado', 'PENDING', 'OVERDUE')
+          AND status IN ('Pendente', 'PENDING')
       `, [inicio, fim]);
       const entradas_previstas = parseFloat(recRes.rows[0].total);
 
@@ -3826,14 +3935,67 @@ app.get("/api/todos", async (req, res) => {
   });
 
   // ── DRE (Demonstração do Resultado do Exercício) ──────────
+  // GET /api/financeiro/dre/detalhes — individual movements for a category/month
+  app.get("/api/financeiro/dre/detalhes", async (req, res) => {
+    try {
+      const category = req.query.category as string;
+      const month = parseInt(req.query.month as string);
+      const year = parseInt(req.query.year as string) || new Date().getFullYear();
+      if (!category || isNaN(month)) return res.status(400).json({ error: 'category and month required' });
+
+      const mesStr = `${year}-${String(month).padStart(2, '0')}`;
+      const inicio = `${mesStr}-01`;
+      const [fy, fm] = [year, month];
+      const fn = fm === 12 ? 1 : fm + 1;
+      const ny = fm === 12 ? fy + 1 : fy;
+      const fim = `${ny}-${String(fn).padStart(2, '0')}-01`;
+
+      // Find category name from fin_categories by structure code
+      const catRes = await pool.query('SELECT id, description FROM fin_categories WHERE structure = $1', [category]);
+      const catName = catRes.rows[0]?.description || '';
+
+      // Get movements matching this category for the month
+      const result = await pool.query(`
+        SELECT id, description, value, type, transaction_type, transaction_date,
+               custom_description, custom_category, grapehub_category,
+               COALESCE(custom_description, description) AS display_description
+        FROM fin_movements_asaas
+        WHERE (
+          (account = 'asaas' AND transaction_date >= $1 AND transaction_date < $2)
+          OR (account = 'sicredi' AND sicredi_status = 'realizado' AND billing_month = $3)
+        )
+          AND COALESCE(is_anticipation_pair, false) = false
+          AND (
+            LOWER(COALESCE(custom_category, '')) = LOWER($4)
+            OR LOWER(COALESCE(grapehub_category, '')) = LOWER($4)
+          )
+        ORDER BY transaction_date ASC, id ASC
+      `, [inicio, fim, mesStr, catName]);
+
+      const items = result.rows.map((r: any) => ({
+        id: r.id,
+        date: r.transaction_date,
+        description: r.display_description || r.description,
+        value: Math.abs(parseFloat(r.value || '0')),
+        type: r.type,
+        transaction_type: r.transaction_type,
+      }));
+
+      res.json({ category, category_name: catName, month, year, items, total: items.reduce((s: number, i: any) => s + i.value, 0) });
+    } catch (err) {
+      console.error("Error fetching DFC details:", err);
+      res.status(500).json({ error: "Failed" });
+    }
+  });
+
   app.get("/api/financeiro/dre", async (req, res) => {
     try {
       const year = parseInt(req.query.year as string) || new Date().getFullYear();
       const inicio = `${year}-01-01`;
       const fim = `${year}-12-31`;
 
-      // Get all movements for the year with month info
-      const movRes = await pool.query(
+      // Get Asaas movements for the year (by transaction_date)
+      const asaasMovRes = await pool.query(
         `SELECT id, description, value, type, transaction_type,
                 grapehub_category, custom_category, custom_category_id,
                 is_anticipation_pair,
@@ -3841,9 +4003,26 @@ app.get("/api/todos", async (req, res) => {
          FROM fin_movements_asaas
          WHERE transaction_date BETWEEN $1 AND $2
            AND COALESCE(is_anticipation_pair, false) = false
+           AND account = 'asaas'
          ORDER BY transaction_date`,
         [inicio, fim]
       );
+
+      // Get Sicredi paid items for the year (by billing_month — regime de caixa)
+      const sicrediMovRes = await pool.query(
+        `SELECT id, description, value, type, transaction_type,
+                grapehub_category, custom_category, custom_category_id,
+                is_anticipation_pair,
+                EXTRACT(MONTH FROM (billing_month || '-01')::date)::int AS mes
+         FROM fin_movements_asaas
+         WHERE billing_month >= $1 AND billing_month <= $2
+           AND account = 'sicredi'
+           AND sicredi_status = 'realizado'
+         ORDER BY billing_month`,
+        [`${year}-01`, `${year}-12`]
+      );
+
+      const movRes = { rows: [...asaasMovRes.rows, ...sicrediMovRes.rows] };
 
       // Get all categories
       const catRes = await pool.query('SELECT id, external_id, structure, description, level FROM fin_categories ORDER BY structure');
@@ -3908,6 +4087,101 @@ app.get("/api/todos", async (req, res) => {
         } else if (found.level === 2) {
           const l1Key = parts[0];
           if (nodeMap[l1Key]) nodeMap[l1Key].values[mi] += valor;
+        }
+      }
+
+      // ── Override Jan/Fev/Mar 2026 com dados do sistema legado ──
+      if (year === 2026) {
+        // Dados exatos do sistema anterior (código → [Jan, Fev, Mar])
+        const legacyData: Record<string, [number, number, number]> = {
+          // 01 - Receitas
+          '01.01.01': [89512.95, 85891.54, 96901.76],
+          '01.01.02': [0, 0, 0],
+          // 02.01 - Impostos
+          '02.01.01': [10271.69, 10699.98, 11147.28],
+          // 02.02 - Prestação de Serviço
+          '02.02.06': [5793.38, 4674.35, 5252.32],
+          '02.02.07': [80.00, 40.00, 280.00],
+          '02.02.09': [1084.93, 1021.75, 2699.90],
+          '02.02.10': [435.19, 1753.25, 987.55],
+          '02.02.99': [1247.44, 1191.30, 0],
+          // 02.03 - Salários
+          '02.03.03': [23960.91, 23483.91, 26794.57],
+          '02.03.04': [1944.26, 1463.23, 2795.00],
+          '02.03.09': [765.92, 789.90, 799.99],
+          '02.03.11': [1658.21, 1658.21, 1658.21],
+          '02.03.12': [556.40, 0, 0],
+          // 02.05 - Marketing
+          '02.05.01': [0, 0, 0],
+          '02.05.02': [0, 0, 0],
+          '02.05.08': [14917.52, 18309.73, 14730.47],
+          // 02.06 - Administrativas
+          '02.06.02': [0, 0, 4000.00],
+          '02.06.05': [2384.81, 2384.81, 2389.79],
+          '02.06.06': [182.27, 176.41, 259.54],
+          '02.06.07': [159.90, 139.90, 139.90],
+          '02.06.08': [0, 0, 0],
+          '02.06.10': [340.71, 0, 1474.15],
+          '02.06.12': [350.00, 380.00, 380.00],
+          '02.06.14': [283.73, 866.30, 284.86],
+          '02.06.15': [0, 128.30, 0],
+          '02.06.16': [180.00, 180.00, 205.00],
+          '02.06.17': [128.00, 0, 0],
+          '02.06.99': [0, 2464.94, 60.00],
+          // 02.07 - Financeiras
+          '02.07.02': [212.74, 265.03, 259.29],
+          '02.07.03': [311.86, 278.80, 517.58],
+          '02.07.04': [119.97, 89.60, 302.89],
+          // 03 - Receitas Não Operacionais
+          '03.04.07': [0, 250.00, 0],
+          // 04 - Despesas Não Operacionais
+          '04.01.01': [2172.29, 2125.96, 0],
+          '04.04.06': [0, 0, 5000.00],
+          '04.04.99': [0, 250.00, 0],
+          // 05 - Distribuição de Lucros
+          '05.01.03': [13997.96, 22404.62, 21457.31],
+          '05.01.04': [2702.04, 2885.38, 1442.69],
+          '05.01.05': [333.96, 356.62, 178.31],
+        };
+
+        // 1) Limpar meses 0-2 de todos os nós
+        for (const code in nodeMap) {
+          for (let m = 0; m < 3; m++) {
+            nodeMap[code].values[m] = 0;
+          }
+        }
+
+        // 2) Setar valores legados nos nós folha
+        for (const [code, vals] of Object.entries(legacyData)) {
+          if (!nodeMap[code]) continue;
+          for (let m = 0; m < 3; m++) {
+            nodeMap[code].values[m] = vals[m];
+          }
+        }
+
+        // 3) Re-calcular pais (L2 e L1) para meses 0-2
+        for (const cat of categories) {
+          if (cat.level !== 3) continue;
+          const parts = cat.structure.split('.');
+          const l2Key = `${parts[0]}.${parts[1]}`;
+          const l1Key = parts[0];
+          for (let m = 0; m < 3; m++) {
+            const val = nodeMap[cat.structure]?.values[m] || 0;
+            if (nodeMap[l2Key]) nodeMap[l2Key].values[m] += val;
+            if (nodeMap[l1Key]) nodeMap[l1Key].values[m] += val;
+          }
+        }
+        // L2 nodes that don't have L3 children (standalone L2)
+        for (const cat of categories) {
+          if (cat.level !== 2) continue;
+          if (nodeMap[cat.structure]?.childCodes?.length === 0) {
+            const parts = cat.structure.split('.');
+            const l1Key = parts[0];
+            for (let m = 0; m < 3; m++) {
+              const val = nodeMap[cat.structure]?.values[m] || 0;
+              if (nodeMap[l1Key]) nodeMap[l1Key].values[m] += val;
+            }
+          }
         }
       }
 
@@ -4039,6 +4313,7 @@ app.get("/api/todos", async (req, res) => {
           COALESCE(custom_category, grapehub_category) AS display_category
         FROM fin_movements_asaas
         WHERE type = -1
+          AND is_anticipation_pair = false
           AND LOWER(COALESCE(custom_category, grapehub_category, '')) NOT IN ('transferencia entre contas', 'transferência entre contas', 'transferência')
           AND transaction_date >= $1
           AND transaction_date < $2
@@ -4651,7 +4926,7 @@ app.get("/api/todos", async (req, res) => {
         FROM fin_receivables r
         LEFT JOIN fin_people p ON p.asaas_id = r.customer_id
         WHERE r.due_date >= $1 AND r.due_date < $2
-          AND r.status IN ('Pendente', 'Confirmado', 'PENDING', 'OVERDUE')
+          AND r.status IN ('Pendente', 'PENDING')
         ORDER BY r.due_date ASC
       `, [inicio, fim]);
 
@@ -5686,14 +5961,80 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
+  // ── Auto-apply: roda as regras de conciliação automaticamente ──
+  let isAutoApplying = false;
+  async function autoApplyReconciliationRules() {
+    if (isAutoApplying) return;
+    isAutoApplying = true;
+    try {
+      // Verifica se existem itens não categorizados
+      const pendingCheck = await pool.query(`
+        SELECT COUNT(*) as count FROM fin_movements_asaas
+        WHERE custom_category IS NULL
+          AND (grapehub_category IS NULL OR grapehub_category = '')
+          AND is_anticipation_pair = false
+      `);
+      const pending = parseInt(pendingCheck.rows[0].count);
+      if (pending === 0) {
+        isAutoApplying = false;
+        return;
+      }
+
+      // 1) Anticipation pairing
+      await applyAnticipationPairing();
+
+      // 2) Text-matching rules
+      const rulesResult = await pool.query(
+        "SELECT * FROM fin_reconciliation_rules WHERE is_active = true ORDER BY priority ASC, created_at ASC"
+      );
+      let totalApplied = 0;
+      for (const rule of rulesResult.rows) {
+        const matchText = rule.match_text;
+        let pattern: string;
+        switch (rule.match_type) {
+          case 'starts_with': pattern = `${matchText}%`; break;
+          case 'exact': pattern = matchText; break;
+          default: pattern = `%${matchText}%`; break;
+        }
+        const updateResult = await pool.query(
+          `UPDATE fin_movements_asaas
+           SET custom_category = $2,
+               custom_category_id = $3,
+               grapehub_category = $2,
+               edited_at = NOW(),
+               edited_by = 'regra-auto'
+           WHERE custom_category IS NULL
+             AND (grapehub_category IS NULL OR grapehub_category = '')
+             AND is_anticipation_pair = false
+             AND description ILIKE $1
+           RETURNING id`,
+          [pattern, rule.category_name, rule.category_id]
+        );
+        totalApplied += updateResult.rowCount || 0;
+      }
+      if (totalApplied > 0) {
+        console.log(`[Auto-Reconciliation] Applied ${totalApplied} rules to ${pending} pending items`);
+      }
+    } catch (err) {
+      console.error("[Auto-Reconciliation] Error:", err);
+    } finally {
+      isAutoApplying = false;
+    }
+  }
+
+  // Rodar na inicialização e a cada 5 minutos
+  setTimeout(() => autoApplyReconciliationRules(), 5000);
+  setInterval(() => autoApplyReconciliationRules(), 5 * 60 * 1000);
+
   // GET /api/fin-people - retorna todos os registros de fin_people onde is_client = true
   app.get("/api/fin-people", async (req, res) => {
     try {
       const result = await pool.query(`
-        SELECT id, name, cnpjcpf, grapehub_client_id 
+        SELECT DISTINCT ON (UPPER(TRIM(REGEXP_REPLACE(name, '^[^a-zA-ZÀ-ÿ]+', '', 'g'))))
+          id, guid, name, cnpjcpf, grapehub_client_id, asaas_id 
         FROM fin_people 
-        WHERE is_client = true 
-        ORDER BY name ASC
+        WHERE is_client = true AND asaas_id IS NOT NULL
+        ORDER BY UPPER(TRIM(REGEXP_REPLACE(name, '^[^a-zA-ZÀ-ÿ]+', '', 'g'))), LENGTH(cnpjcpf) DESC
       `);
       res.json(result.rows);
     } catch (err) {
@@ -6917,6 +7258,10 @@ app.get("/api/todos", async (req, res) => {
   app.delete("/api/crm-comercial/leads/:id", async (req, res) => {
     try {
       const { id } = req.params;
+      // Delete related data first (cascade)
+      await pool.query("DELETE FROM crm_comercial_tasks WHERE lead_id = $1", [id]);
+      await pool.query("DELETE FROM crm_comercial_comments WHERE lead_id = $1", [id]);
+      await pool.query("DELETE FROM crm_comercial_files WHERE lead_id = $1", [id]);
       await pool.query("DELETE FROM crm_comercial_leads WHERE id = $1", [id]);
       res.json({ message: "Lead deleted" });
     } catch (err) {
@@ -6952,9 +7297,12 @@ app.get("/api/todos", async (req, res) => {
         `SELECT 
            t.id, t.lead_id, t.title, t.type, t.priority, t.due_date, t.start_time,
            t.end_time, t.responsible_id, t.observations, t.completed, t.completed_at, t.created_at,
-           k.nome as lead_name
+           k.nome as lead_name,
+           kb.id as kanban_id,
+           kb.nome as kanban_name
          FROM crm_comercial_tasks t
          LEFT JOIN crm_comercial_leads k ON t.lead_id::text = k.id::text
+         LEFT JOIN crm_comercial_kanbans kb ON k.kanban_id::text = kb.id::text
          ${whereClause}
          ORDER BY 
            CASE WHEN t.due_date IS NULL THEN 1 ELSE 0 END,

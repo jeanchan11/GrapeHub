@@ -1,12 +1,14 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Users, Plus, Search, Mail, Phone, 
   MoreVertical, Edit2, Trash2, X, 
   CheckCircle2, AlertCircle, Filter,
   Download, UserPlus, ArrowUpDown, FileText,
-  Link as LinkIcon, Unlink, Check, ChevronDown
+  Link as LinkIcon, Unlink, Check, ChevronDown,
+  UserMinus, MessageSquare, AlertTriangle, ShieldAlert,
+  CreditCard
 } from 'lucide-react';
 
 import { PageHeader } from '../components/ui/PageHeader';
@@ -27,6 +29,13 @@ interface Client {
   hasFinancialLink?: boolean;
   hasProjectLink?: boolean;
   projectName?: string;
+  product?: string;
+  hasActiveSubscription?: boolean;
+  subscriptionValue?: number;
+  subscriptionNextDue?: string;
+  subscriptionBillingType?: string;
+  subscriptionCycle?: string;
+  finPeopleGuid?: string;
 }
 
 interface FinPerson {
@@ -43,6 +52,20 @@ const ActiveClients: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'ativos' | 'churn'>('ativos');
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [menuPos, setMenuPos] = useState<{top: number, left: number}>({top: 0, left: 0});
+  const [contractPreview, setContractPreview] = useState<{name: string, url: string} | null>(null);
+  const contractInputRef = useRef<HTMLInputElement>(null);
+  const [contractUploadClientId, setContractUploadClientId] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<string>('name');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+
+  // Churn modal state
+  const [churnClient, setChurnClient] = useState<Client | null>(null);
+  const [churnType, setChurnType] = useState<'INEVITÁVEL' | 'EVITÁVEL' | ''>('');
+  const [churnReasons, setChurnReasons] = useState<string[]>([]);
+  const [churnComment, setChurnComment] = useState('');
   
   // Financial link states (needed for table indicators)
   const [finPeople, setFinPeople] = useState<FinPerson[]>([]);
@@ -260,17 +283,168 @@ const ActiveClients: React.FC = () => {
     }
   };
 
-  const filteredClients = clients.filter(client => 
+  const handleContractUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !contractUploadClientId) return;
+    
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const base64 = reader.result as string;
+      const client = clients.find(c => c.id === contractUploadClientId);
+      const existing: {name: string, url: string}[] = (() => { try { return JSON.parse(client?.contracts || '[]'); } catch { return []; } })();
+      existing.push({ name: file.name, url: base64 });
+      
+      try {
+        await fetch(`/api/clients/${contractUploadClientId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contracts: JSON.stringify(existing) })
+        });
+        fetchClients();
+      } catch (err) {
+        console.error('Failed to upload contract:', err);
+      }
+      setContractUploadClientId(null);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleToggleStatus = async (client: Client) => {
+    if (client.status === 'Ativo') {
+      // Open churn modal
+      setChurnClient(client);
+      setChurnType('');
+      setChurnReasons([]);
+      setChurnComment('');
+      return;
+    }
+    // Reactivate directly
+    try {
+      await fetch(`/api/clients/${client.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'Ativo' })
+      });
+      setClients(prev => prev.map(c => c.id === client.id ? { ...c, status: 'Ativo' } : c));
+    } catch (err) {
+      console.error('Failed to reactivate:', err);
+    }
+  };
+
+  const CHURN_REASONS = [
+    'Motivo Pessoal',
+    'Falta de Relacionamento',
+    'Inadimplência',
+    'Resultado Comercial',
+    'Motivo Financeiro',
+    'CRM e IA',
+    'Outros',
+  ];
+
+  const toggleChurnReason = (reason: string) => {
+    setChurnReasons(prev =>
+      prev.includes(reason) ? prev.filter(r => r !== reason) : [...prev, reason]
+    );
+  };
+
+  const handleConfirmChurn = async () => {
+    if (!churnClient || !churnType) return;
+    try {
+      // Insert into churn table
+      await fetch('/api/churn', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: churnClient.id,
+          client_name: churnClient.name,
+          churn_type: churnType,
+          exit_reasons: churnReasons,
+          squad: churnClient.squad,
+          start_date: churnClient.startDate,
+          comments: churnComment,
+        })
+      });
+      // Move to Inativo
+      await fetch(`/api/clients/${churnClient.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'Inativo' })
+      });
+      setClients(prev => prev.map(c => c.id === churnClient.id ? { ...c, status: 'Inativo' } : c));
+      setChurnClient(null);
+    } catch (err) {
+      console.error('Failed to churn client:', err);
+    }
+  };
+
+  const activeClients = clients.filter(c => c.status === 'Ativo');
+  const churnClients = clients.filter(c => c.status === 'Inativo');
+
+  const baseList = activeTab === 'ativos' ? activeClients : churnClients;
+  const filteredClients = baseList.filter(client => 
     (client.name || '').toLowerCase().includes((searchQuery || '').toLowerCase()) ||
     (client.email || '').toLowerCase().includes((searchQuery || '').toLowerCase()) ||
     (client.location || '').toLowerCase().includes((searchQuery || '').toLowerCase()) ||
     (client.squad || '').toLowerCase().includes((searchQuery || '').toLowerCase())
+  ).sort((a, b) => {
+    const dir = sortDir === 'asc' ? 1 : -1;
+    switch (sortBy) {
+      case 'name': return dir * (a.name || '').localeCompare(b.name || '');
+      case 'startDate': return dir * ((a.startDate || '').localeCompare(b.startDate || ''));
+      case 'squad': return dir * ((a.squad || '').localeCompare(b.squad || ''));
+      case 'product': return dir * ((a.product || '').localeCompare(b.product || ''));
+      case 'financial': {
+        const av = a.hasFinancialLink ? 1 : 0;
+        const bv = b.hasFinancialLink ? 1 : 0;
+        return dir * (av - bv);
+      }
+      case 'project': {
+        const av = a.hasProjectLink ? 1 : 0;
+        const bv = b.hasProjectLink ? 1 : 0;
+        return dir * (av - bv);
+      }
+      case 'contracts': {
+        const ac = (() => { try { return JSON.parse(a.contracts || '[]').length; } catch { return 0; } })();
+        const bc = (() => { try { return JSON.parse(b.contracts || '[]').length; } catch { return 0; } })();
+        return dir * (ac - bc);
+      }
+      case 'subscription': {
+        const av = a.hasActiveSubscription ? 1 : 0;
+        const bv = b.hasActiveSubscription ? 1 : 0;
+        return dir * (av - bv);
+      }
+      default: return 0;
+    }
+  });
+
+  const toggleSort = (col: string) => {
+    if (sortBy === col) {
+      setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(col);
+      setSortDir('asc');
+    }
+  };
+
+  const SortHeader = ({ col, label, className = '' }: { col: string; label: string; className?: string }) => (
+    <th
+      className={`px-4 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest cursor-pointer select-none hover:text-violet-500 transition-colors ${className}`}
+      onClick={() => toggleSort(col)}
+    >
+      <div className={`flex items-center gap-1 ${className.includes('text-center') ? 'justify-center' : ''} ${className.includes('text-right') ? 'justify-end' : ''}`}>
+        {label}
+        <span className="text-[8px]">
+          {sortBy === col ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}
+        </span>
+      </div>
+    </th>
   );
 
   const squads = ['Able', 'Baker', 'Charlie', 'Delta'];
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
+    <div className="p-8 max-w-[1600px] mx-auto">
       {/* Header */}
       <PageHeader 
         title="Clientes" 
@@ -287,7 +461,7 @@ const ActiveClients: React.FC = () => {
       </PageHeader>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
         <div className="bg-white dark:bg-dark-card/60 backdrop-blur-md p-6 rounded-3xl border border-slate-200 dark:border-white/10 hover:border-violet-500/30 transition-all group shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <div className="p-3 rounded-xl bg-blue-500/10">
@@ -310,6 +484,9 @@ const ActiveClients: React.FC = () => {
           <h3 className="text-3xl font-bold text-light-text dark:text-white">
             {clients.filter(c => c.status === 'Ativo').length}
           </h3>
+          <p className="text-[10px] text-emerald-500 mt-1">
+            {clients.filter(c => c.status === 'Ativo' && c.hasActiveSubscription).length} com assinatura ativa no Asaas
+          </p>
         </div>
 
         <div className="bg-white dark:bg-dark-card/60 backdrop-blur-md p-6 rounded-3xl border border-slate-200 dark:border-white/10 hover:border-violet-500/30 transition-all group shadow-sm">
@@ -326,6 +503,19 @@ const ActiveClients: React.FC = () => {
               const now = new Date();
               return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
             }).length}
+          </h3>
+        </div>
+
+        <div className="bg-white dark:bg-dark-card/60 backdrop-blur-md p-6 rounded-3xl border border-slate-200 dark:border-white/10 hover:border-violet-500/30 transition-all group shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-3 rounded-xl bg-rose-500/10">
+              <UserMinus size={20} className="text-rose-500" />
+            </div>
+            <ArrowUpDown size={16} className="text-slate-400 dark:text-slate-600 group-hover:text-violet-500 transition-colors" />
+          </div>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Churn</p>
+          <h3 className="text-3xl font-bold text-light-text dark:text-white">
+            {churnClients.length}
           </h3>
         </div>
       </div>
@@ -353,26 +543,64 @@ const ActiveClients: React.FC = () => {
         </div>
       </div>
 
+      {/* Tabs */}
+      <div className="flex items-center gap-1 mb-6 bg-white dark:bg-dark-card/60 backdrop-blur-md p-1.5 rounded-2xl border border-slate-200 dark:border-white/10 w-fit shadow-sm">
+        <button
+          onClick={() => setActiveTab('ativos')}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all ${
+            activeTab === 'ativos'
+              ? 'bg-violet-500 text-white shadow-lg shadow-violet-500/25'
+              : 'text-slate-500 hover:text-light-text dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5'
+          }`}
+        >
+          <CheckCircle2 size={14} />
+          Ativos
+          <span className={`min-w-[22px] h-[22px] flex items-center justify-center rounded-full text-[10px] font-black ${
+            activeTab === 'ativos' ? 'bg-white/20 text-white' : 'bg-emerald-500/10 text-emerald-500'
+          }`}>
+            {activeClients.length}
+          </span>
+        </button>
+        <button
+          onClick={() => setActiveTab('churn')}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all ${
+            activeTab === 'churn'
+              ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/25'
+              : 'text-slate-500 hover:text-light-text dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5'
+          }`}
+        >
+          <UserMinus size={14} />
+          Churn
+          <span className={`min-w-[22px] h-[22px] flex items-center justify-center rounded-full text-[10px] font-black ${
+            activeTab === 'churn' ? 'bg-white/20 text-white' : 'bg-rose-500/10 text-rose-500'
+          }`}>
+            {churnClients.length}
+          </span>
+        </button>
+      </div>
+
       {/* Table Section */}
       <div className="bg-white dark:bg-dark-card/60 backdrop-blur-md rounded-3xl border border-slate-200 dark:border-white/10 overflow-hidden shadow-2xl transition-colors duration-300">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50/50 dark:bg-white/5 border-b border-slate-200 dark:border-white/5">
-                <th className="px-8 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Nome</th>
-                <th className="px-8 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Data Inicial</th>
+                <SortHeader col="name" label="Nome" className="px-8" />
+                <SortHeader col="startDate" label="Data Inicial" />
                 <th className="px-8 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Local do Escritório</th>
-                <th className="px-8 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Squad</th>
-                <th className="px-4 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center">Financeiro</th>
-                <th className="px-4 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center">Projeto</th>
-                <th className="px-8 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Contratos</th>
+                <SortHeader col="squad" label="Squad" />
+                <SortHeader col="product" label="Produto" />
+                <SortHeader col="financial" label="Financeiro" className="text-center" />
+                <SortHeader col="subscription" label="Assinatura" className="text-center" />
+                <SortHeader col="project" label="Projeto" className="text-center" />
+                <SortHeader col="contracts" label="Contratos" />
                 <th className="px-8 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-white/5">
               {isLoading ? (
                 <tr>
-                  <td colSpan={6} className="px-8 py-20 text-center">
+                  <td colSpan={10} className="px-8 py-20 text-center">
                     <div className="flex flex-col items-center gap-3">
                       <div className="w-10 h-10 border-4 border-violet-500/20 border-t-violet-500 rounded-full animate-spin"></div>
                       <p className="text-slate-500 font-medium">Carregando clientes...</p>
@@ -381,7 +609,7 @@ const ActiveClients: React.FC = () => {
                 </tr>
               ) : filteredClients.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-8 py-20 text-center">
+                  <td colSpan={10} className="px-8 py-20 text-center">
                     <div className="flex flex-col items-center gap-4">
                       <div className="w-16 h-16 bg-slate-100 dark:bg-white/5 rounded-full flex items-center justify-center text-slate-400">
                         <Users size={32} />
@@ -424,12 +652,48 @@ const ActiveClients: React.FC = () => {
                         {client.squad || 'Able'}
                       </div>
                     </td>
+                    <td className="px-4 py-3">
+                      {client.product ? (
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-widest ${
+                          client.product === 'TCV' ? 'bg-cyan-500/10 text-cyan-500' : 'bg-violet-500/10 text-violet-500'
+                        }`}>
+                          {client.product}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-slate-400 italic">-</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-center">
                       <div className="flex justify-center" title={client.hasFinancialLink ? "Vinculado ao financeiro" : "Sem vínculo financeiro"}>
                         {client.hasFinancialLink ? (
                           <CheckCircle2 size={16} className="text-emerald-500" />
                         ) : (
                           <AlertCircle size={16} className="text-slate-300 dark:text-slate-600" />
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <div className="flex justify-center relative group/sub">
+                        {client.hasActiveSubscription ? (
+                          <>
+                            <CreditCard size={16} className="text-emerald-500" />
+                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover/sub:block z-50">
+                              <div className="bg-slate-900 dark:bg-slate-800 text-white text-[10px] rounded-xl px-3 py-2 whitespace-nowrap shadow-xl border border-white/10">
+                                <p className="font-bold text-emerald-400 mb-0.5">
+                                  R$ {client.subscriptionValue?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} / {client.subscriptionCycle === 'MONTHLY' ? 'mês' : client.subscriptionCycle === 'YEARLY' ? 'ano' : client.subscriptionCycle?.toLowerCase() || 'mês'}
+                                </p>
+                                {client.subscriptionNextDue && (
+                                  <p className="text-slate-300">Vence em {new Date(client.subscriptionNextDue + 'T12:00:00').toLocaleDateString('pt-BR')}</p>
+                                )}
+                                <p className="text-slate-400">
+                                  {client.subscriptionBillingType === 'BOLETO' ? 'Boleto' : client.subscriptionBillingType === 'CREDIT_CARD' ? 'Cartão' : client.subscriptionBillingType === 'PIX' ? 'Pix' : client.subscriptionBillingType || '-'}
+                                </p>
+                                <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-900 dark:border-t-slate-800" />
+                              </div>
+                            </div>
+                          </>
+                        ) : (
+                          <CreditCard size={16} className="text-slate-300 dark:text-slate-600" />
                         )}
                       </div>
                     </td>
@@ -442,31 +706,46 @@ const ActiveClients: React.FC = () => {
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-1">
-                        <div className="w-7 h-7 rounded-lg bg-rose-500/10 flex items-center justify-center text-rose-500">
-                          <FileText size={14} />
-                        </div>
-                        <button className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-white/5 flex items-center justify-center text-slate-400 hover:text-violet-500 transition-colors">
+                        {(() => {
+                          const contracts: {name: string, url: string}[] = (() => { try { return JSON.parse(client.contracts || '[]'); } catch { return []; } })();
+                          return contracts.length > 0 ? (
+                            <button onClick={() => setContractPreview(contracts[0])} className="w-7 h-7 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-500 hover:bg-emerald-500/20 transition-colors" title={contracts[0].name || 'Ver contrato'}>
+                              <FileText size={14} />
+                            </button>
+                          ) : (
+                            <div className="w-7 h-7 rounded-lg bg-slate-500/10 flex items-center justify-center text-slate-400" title="Nenhum contrato">
+                              <FileText size={14} />
+                            </div>
+                          );
+                        })()}
+                        <button
+                          onClick={() => {
+                            setContractUploadClientId(client.id);
+                            contractInputRef.current?.click();
+                          }}
+                          className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-white/5 flex items-center justify-center text-slate-400 hover:text-violet-500 hover:bg-violet-500/10 transition-colors"
+                          title="Adicionar contrato"
+                        >
                           <Plus size={14} />
                         </button>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); handleOpenModal(client); }}
-                          className="p-1.5 rounded-lg hover:bg-violet-500/10 text-slate-400 hover:text-violet-500 transition-colors"
-                        >
-                          <Edit2 size={14} />
-                        </button>
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); handleDelete(client.id); }}
-                          className="p-1.5 rounded-lg hover:bg-rose-500/10 text-slate-400 hover:text-rose-500 transition-colors"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
+                    <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={(e) => {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const spaceBelow = window.innerHeight - rect.bottom;
+                          const menuH = 140;
+                          const top = spaceBelow < menuH ? rect.top - menuH : rect.bottom + 4;
+                          setMenuPos({ top, left: rect.right - 192 });
+                          setOpenMenuId(openMenuId === client.id ? null : client.id);
+                        }}
+                        className="p-2 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-all"
+                      >
+                        <MoreVertical size={16} />
+                      </button>
                     </td>
                   </tr>
                 ))
@@ -475,6 +754,54 @@ const ActiveClients: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* Hidden file input for contract upload */}
+      <input
+        ref={contractInputRef}
+        type="file"
+        accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
+        className="hidden"
+        onChange={handleContractUpload}
+      />
+
+      {/* Actions Dropdown Menu (portal) */}
+      {openMenuId && (() => {
+        const client = clients.find(c => c.id === openMenuId);
+        if (!client) return null;
+        return (
+          <>
+            <div className="fixed inset-0 z-[100]" onClick={() => setOpenMenuId(null)} />
+            <div
+              className="fixed z-[101] w-48 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl overflow-hidden"
+              style={{ top: `${menuPos.top}px`, left: `${menuPos.left}px` }}
+            >
+              <button
+                onClick={() => { setOpenMenuId(null); handleOpenModal(client); }}
+                className="w-full px-4 py-2.5 text-left text-xs font-medium text-light-text dark:text-white hover:bg-slate-50 dark:hover:bg-white/5 flex items-center gap-2.5 transition-colors"
+              >
+                <Edit2 size={13} className="text-violet-500" /> Editar Cliente
+              </button>
+              <button
+                onClick={() => { setOpenMenuId(null); handleToggleStatus(client); }}
+                className="w-full px-4 py-2.5 text-left text-xs font-medium text-light-text dark:text-white hover:bg-slate-50 dark:hover:bg-white/5 flex items-center gap-2.5 transition-colors"
+              >
+                {client.status === 'Ativo' ? (
+                  <><UserMinus size={13} className="text-amber-500" /> Mover para Churn</>
+                ) : (
+                  <><UserPlus size={13} className="text-emerald-500" /> Reativar Cliente</>
+                )}
+              </button>
+              <div className="border-t border-slate-100 dark:border-white/5" />
+              <button
+                onClick={() => { setOpenMenuId(null); handleDelete(client.id); }}
+                className="w-full px-4 py-2.5 text-left text-xs font-medium text-rose-500 hover:bg-rose-500/5 flex items-center gap-2.5 transition-colors"
+              >
+                <Trash2 size={13} /> Excluir Cliente
+              </button>
+            </div>
+          </>
+        );
+      })()}
 
       {/* Modal */}
       <ClientModal 
@@ -504,6 +831,204 @@ const ActiveClients: React.FC = () => {
               className="relative max-w-[90vw] max-h-[90vh] rounded-xl shadow-2xl"
               referrerPolicy="no-referrer"
             />
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Contract Preview Modal */}
+      <AnimatePresence>
+        {contractPreview && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setContractPreview(null)}
+              className="fixed inset-0 bg-slate-900/20 dark:bg-black/40 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden"
+            >
+              <div className="flex items-center justify-between p-5 border-b border-slate-200 dark:border-white/5">
+                <div className="flex items-center gap-2">
+                  <FileText size={18} className="text-violet-500" />
+                  <h3 className="text-sm font-bold text-light-text dark:text-white">{contractPreview.name || 'Contrato'}</h3>
+                </div>
+                <div className="flex items-center gap-2">
+                  <a href={contractPreview.url} target="_blank" rel="noopener noreferrer"
+                    className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest bg-violet-500/10 text-violet-500 hover:bg-violet-500/20 rounded-lg transition-colors">
+                    Abrir em nova aba
+                  </a>
+                  <button onClick={() => setContractPreview(null)} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors">
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+              <div className="flex-1 min-h-[500px]">
+                {(() => {
+                  const url = contractPreview.url || '';
+                  const isPdf = url.startsWith('data:application/pdf') || url.toLowerCase().endsWith('.pdf');
+                  const isImage = url.startsWith('data:image/') || /\.(png|jpg|jpeg|gif|webp)$/i.test(url);
+                  if (isPdf) return <iframe src={url} className="w-full h-full min-h-[500px]" title="Contrato" />;
+                  if (isImage) return <img src={url} alt="Contrato" className="max-w-full max-h-[500px] object-contain mx-auto p-4" />;
+                  if (url) return (
+                    <div className="flex flex-col items-center justify-center h-full gap-4 p-8 min-h-[300px]">
+                      <FileText size={48} className="text-slate-300 dark:text-slate-600" />
+                      <p className="text-sm text-slate-500">Preview não disponível para este formato.</p>
+                      <a href={url} download={contractPreview.name}
+                        className="px-5 py-2.5 bg-violet-600 text-white text-sm font-bold rounded-xl hover:bg-violet-700 transition-colors shadow-lg shadow-violet-500/20">
+                        Baixar Contrato
+                      </a>
+                    </div>
+                  );
+                  return (
+                    <div className="flex flex-col items-center justify-center h-full gap-3 p-8 min-h-[300px]">
+                      <AlertCircle size={48} className="text-slate-300 dark:text-slate-600" />
+                      <p className="text-sm text-slate-500">Nenhum arquivo vinculado a este contrato.</p>
+                    </div>
+                  );
+                })()}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Churn Modal */}
+      <AnimatePresence>
+        {churnClient && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setChurnClient(null)}
+              className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="relative bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden"
+            >
+              {/* Header */}
+              <div className="px-6 py-5 border-b border-slate-200 dark:border-white/10">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-rose-500/10 flex items-center justify-center">
+                      <UserMinus size={20} className="text-rose-500" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-light-text dark:text-white">Mover para Churn</h3>
+                      <p className="text-[11px] text-slate-500 mt-0.5 truncate max-w-[280px]">{churnClient.name}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setChurnClient(null)}
+                    className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-white/5 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-white/10 transition-colors"
+                  >
+                    <X size={14} className="text-slate-500" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Body */}
+              <div className="px-6 py-5 space-y-5">
+                {/* Como foi */}
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Como foi</label>
+                  <div className="flex gap-2">
+                    {(['INEVITÁVEL', 'EVITÁVEL'] as const).map((type) => (
+                      <button
+                        key={type}
+                        onClick={() => setChurnType(type)}
+                        className={`flex-1 px-4 py-2.5 rounded-xl text-xs font-bold transition-all border ${
+                          churnType === type
+                            ? type === 'INEVITÁVEL'
+                              ? 'bg-rose-500 text-white border-rose-500 shadow-lg shadow-rose-500/20'
+                              : 'bg-amber-500 text-white border-amber-500 shadow-lg shadow-amber-500/20'
+                            : 'border-slate-200 dark:border-white/10 text-slate-500 hover:border-slate-300 dark:hover:border-white/20'
+                        }`}
+                      >
+                        {type === 'INEVITÁVEL' ? (
+                          <span className="flex items-center justify-center gap-1.5"><ShieldAlert size={13} />{type}</span>
+                        ) : (
+                          <span className="flex items-center justify-center gap-1.5"><AlertTriangle size={13} />{type}</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Motivo de Saída */}
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Motivo de Saída</label>
+                  <div className="flex flex-wrap gap-2">
+                    {CHURN_REASONS.map((reason) => {
+                      const selected = churnReasons.includes(reason);
+                      const colorMap: Record<string, string> = {
+                        'Motivo Pessoal': selected ? 'bg-blue-500 text-white border-blue-500' : 'border-slate-200 dark:border-white/10 text-slate-500',
+                        'Falta de Relacionamento': selected ? 'bg-rose-500 text-white border-rose-500' : 'border-slate-200 dark:border-white/10 text-slate-500',
+                        'Inadimplência': selected ? 'bg-orange-500 text-white border-orange-500' : 'border-slate-200 dark:border-white/10 text-slate-500',
+                        'Resultado Comercial': selected ? 'bg-red-600 text-white border-red-600' : 'border-slate-200 dark:border-white/10 text-slate-500',
+                        'Motivo Financeiro': selected ? 'bg-purple-500 text-white border-purple-500' : 'border-slate-200 dark:border-white/10 text-slate-500',
+                        'CRM e IA': selected ? 'bg-cyan-500 text-white border-cyan-500' : 'border-slate-200 dark:border-white/10 text-slate-500',
+                        'Outros': selected ? 'bg-slate-600 text-white border-slate-600' : 'border-slate-200 dark:border-white/10 text-slate-500',
+                      };
+                      return (
+                        <button
+                          key={reason}
+                          onClick={() => toggleChurnReason(reason)}
+                          className={`px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-all ${colorMap[reason] || (selected ? 'bg-violet-500 text-white border-violet-500' : 'border-slate-200 dark:border-white/10 text-slate-500')}`}
+                        >
+                          {reason}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Comentários */}
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                    <MessageSquare size={12} />
+                    Comentários
+                  </label>
+                  <textarea
+                    value={churnComment}
+                    onChange={(e) => setChurnComment(e.target.value)}
+                    placeholder="Observações sobre o cancelamento..."
+                    rows={3}
+                    className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-light-text dark:text-white placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-rose-500/20 resize-none transition-all"
+                  />
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-4 border-t border-slate-200 dark:border-white/10 flex items-center justify-end gap-3">
+                <button
+                  onClick={() => setChurnClient(null)}
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleConfirmChurn}
+                  disabled={!churnType}
+                  className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                    churnType
+                      ? 'bg-rose-500 text-white hover:bg-rose-600 shadow-lg shadow-rose-500/20'
+                      : 'bg-slate-200 dark:bg-white/10 text-slate-400 cursor-not-allowed'
+                  }`}
+                >
+                  <UserMinus size={14} />
+                  Confirmar Churn
+                </button>
+              </div>
+            </motion.div>
           </div>
         )}
       </AnimatePresence>
