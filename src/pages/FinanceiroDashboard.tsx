@@ -192,7 +192,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
     
     return (
       <div className="bg-white rounded-[8px] shadow-[0_4px_12px_rgba(0,0,0,0.1)] p-3 border border-slate-100 font-sans text-[13px] min-w-[220px]">
-        <div className="font-bold text-slate-700 mb-2">{label} ABR</div>
+        <div className="font-bold text-slate-700 mb-2">{label}</div>
         <hr className="border-slate-200 mb-2" />
         
         <div className="flex justify-between items-center mb-1">
@@ -300,15 +300,14 @@ export default function FinanceiroDashboard() {
 
   const safeFluxo = Array.isArray(fluxo) ? fluxo : [];
   
-  const hoje = new Date();
-  const mesAtual = hoje.getMonth() + 1;
-  const anoAtual = hoje.getFullYear();
-  const diasNoMes = new Date(anoAtual, mesAtual, 0).getDate();
+  // Usar o mês SELECIONADO, não o mês atual do calendário
+  const [anoSel, mesSel] = selectedMonth.split('-').map(Number);
+  const diasNoMes = new Date(anoSel, mesSel, 0).getDate();
   
   const todosOsDias = Array.from({ length: diasNoMes }, (_, i) => {
     const dia = i + 1;
     const diaStr = dia.toString().padStart(2, '0');
-    const mesStr = mesAtual.toString().padStart(2, '0');
+    const mesStr = String(mesSel).padStart(2, '0');
     const dataFormatada = `${diaStr}/${mesStr}`;
     
     const fluxoDoDia = safeFluxo.find(f => f.dia === dataFormatada);
@@ -688,7 +687,7 @@ export default function FinanceiroDashboard() {
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(150, 150, 150, 0.1)" />
                   <XAxis
                     dataKey="dia"
-                    tickFormatter={(val) => `${val} ABR`}
+                    tickFormatter={(val) => `${val} ${mesAbrev}`}
                     axisLine={false}
                     tickLine={false}
                     tick={{ fill: 'rgba(150, 150, 150, 1)', fontSize: 10, fontFamily: 'Inter' }}

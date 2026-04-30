@@ -8,7 +8,7 @@ import {
   Download, UserPlus, ArrowUpDown, FileText,
   Link as LinkIcon, Unlink, Check, ChevronDown,
   UserMinus, MessageSquare, AlertTriangle, ShieldAlert,
-  CreditCard
+  CreditCard, Package, RefreshCcw
 } from 'lucide-react';
 
 import { PageHeader } from '../components/ui/PageHeader';
@@ -52,7 +52,7 @@ const ActiveClients: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'ativos' | 'churn'>('ativos');
+  const [activeTab, setActiveTab] = useState<'ativos' | 'tcv' | 'recorrente' | 'quarentena' | 'churn'>('ativos');
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [menuPos, setMenuPos] = useState<{top: number, left: number}>({top: 0, left: 0});
   const [contractPreview, setContractPreview] = useState<{name: string, url: string} | null>(null);
@@ -71,6 +71,8 @@ const ActiveClients: React.FC = () => {
   const [finPeople, setFinPeople] = useState<FinPerson[]>([]);
   const [isFetchingFin, setIsFetchingFin] = useState(false);
   const [projects, setProjects] = useState<any[]>([]);
+  const [stats, setStats] = useState({ ativos: 0, tcv: 0, fee: 0, entradas: 0, churn: 0 });
+  const [statsLoading, setStatsLoading] = useState(true);
 
   // Fetch clients
   const fetchClients = async () => {
@@ -260,6 +262,20 @@ const ActiveClients: React.FC = () => {
       }
     };
     fetchFinPeople();
+
+    // Fetch KPI stats
+    const fetchStats = async () => {
+      setStatsLoading(true);
+      try {
+        const res = await fetch('/api/clients/stats');
+        if (res.ok) setStats(await res.json());
+      } catch (err) {
+        console.error('Failed to fetch stats:', err);
+      } finally {
+        setStatsLoading(false);
+      }
+    };
+    fetchStats();
   }, []);
 
   const handleOpenModal = (client: Client | null = null) => {
@@ -378,10 +394,60 @@ const ActiveClients: React.FC = () => {
     }
   };
 
+  const handleSetProduct = async (client: Client, newProduct: string) => {
+    try {
+      const response = await fetch(`/api/clients/${client.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ product: newProduct }),
+      });
+      if (response.ok) {
+        setClients(prev => prev.map(c => c.id === client.id ? { ...c, product: newProduct } : c));
+      }
+    } catch (err) {
+      console.error('Failed to set product:', err);
+    }
+  };
+
+  const handleToggleQuarantine = async (client: Client) => {
+    try {
+      const currentTags = client.tags || '[]';
+      let parsedTags: string[] = [];
+      try { parsedTags = JSON.parse(currentTags); } catch(e) { /* ignore */ }
+      
+      const isQuarantine = parsedTags.includes('quarentena');
+      if (isQuarantine) {
+        parsedTags = parsedTags.filter(t => t !== 'quarentena');
+      } else {
+        parsedTags.push('quarentena');
+      }
+      const newTagsStr = JSON.stringify(parsedTags);
+
+      const response = await fetch(`/api/clients/${client.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tags: newTagsStr }),
+      });
+      if (response.ok) {
+        setClients(prev => prev.map(c => c.id === client.id ? { ...c, tags: newTagsStr } : c));
+      }
+    } catch (err) {
+      console.error('Failed to toggle quarantine:', err);
+    }
+  };
+
   const activeClients = clients.filter(c => c.status === 'Ativo');
   const churnClients = clients.filter(c => c.status === 'Inativo');
+  const tcvClients = activeClients.filter(c => c.product === 'TCV' && !c.tags?.includes('quarentena'));
+  const recorrenteClients = activeClients.filter(c => c.product === 'Recorrência Mensal' && !c.tags?.includes('quarentena'));
+  const quarentenaClients = activeClients.filter(c => c.tags?.includes('quarentena'));
 
-  const baseList = activeTab === 'ativos' ? activeClients : churnClients;
+  const baseList = 
+    activeTab === 'ativos' ? activeClients :
+    activeTab === 'tcv' ? tcvClients :
+    activeTab === 'recorrente' ? recorrenteClients :
+    activeTab === 'quarentena' ? quarentenaClients :
+    churnClients;
   const filteredClients = baseList.filter(client => 
     (client.name || '').toLowerCase().includes((searchQuery || '').toLowerCase()) ||
     (client.email || '').toLowerCase().includes((searchQuery || '').toLowerCase()) ||
@@ -461,62 +527,72 @@ const ActiveClients: React.FC = () => {
       </PageHeader>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
-        <div className="bg-white dark:bg-dark-card/60 backdrop-blur-md p-6 rounded-3xl border border-slate-200 dark:border-white/10 hover:border-violet-500/30 transition-all group shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-3 rounded-xl bg-blue-500/10">
-              <Users size={20} className="text-blue-500" />
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-10">
+        {/* 1. Clientes Ativos */}
+        <div className="bg-white dark:bg-dark-card/60 backdrop-blur-md p-5 rounded-3xl border border-slate-200 dark:border-white/10 hover:border-emerald-500/30 transition-all group shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <div className="p-2.5 rounded-xl bg-emerald-500/10">
+              <CheckCircle2 size={18} className="text-emerald-500" />
             </div>
-            <ArrowUpDown size={16} className="text-slate-400 dark:text-slate-600 group-hover:text-violet-500 transition-colors" />
-          </div>
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Total de Clientes</p>
-          <h3 className="text-3xl font-bold text-light-text dark:text-white">{clients.length}</h3>
-        </div>
-
-        <div className="bg-white dark:bg-dark-card/60 backdrop-blur-md p-6 rounded-3xl border border-slate-200 dark:border-white/10 hover:border-violet-500/30 transition-all group shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-3 rounded-xl bg-emerald-500/10">
-              <CheckCircle2 size={20} className="text-emerald-500" />
-            </div>
-            <ArrowUpDown size={16} className="text-slate-400 dark:text-slate-600 group-hover:text-violet-500 transition-colors" />
+            {statsLoading && <div className="w-3 h-3 border-2 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />}
           </div>
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Clientes Ativos</p>
-          <h3 className="text-3xl font-bold text-light-text dark:text-white">
-            {clients.filter(c => c.status === 'Ativo').length}
-          </h3>
+          <h3 className="text-3xl font-bold text-light-text dark:text-white">{stats.ativos}</h3>
           <p className="text-[10px] text-emerald-500 mt-1">
-            {clients.filter(c => c.status === 'Ativo' && c.hasActiveSubscription).length} com assinatura ativa no Asaas
+            {clients.filter(c => c.status === 'Ativo' && c.hasActiveSubscription).length} com assinatura Asaas
           </p>
         </div>
 
-        <div className="bg-white dark:bg-dark-card/60 backdrop-blur-md p-6 rounded-3xl border border-slate-200 dark:border-white/10 hover:border-violet-500/30 transition-all group shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-3 rounded-xl bg-violet-500/10">
-              <Plus size={20} className="text-violet-500" />
+        {/* 2. TCV */}
+        <div className="bg-white dark:bg-dark-card/60 backdrop-blur-md p-5 rounded-3xl border border-slate-200 dark:border-white/10 hover:border-cyan-500/30 transition-all group shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <div className="p-2.5 rounded-xl bg-cyan-500/10">
+              <Package size={18} className="text-cyan-500" />
             </div>
-            <ArrowUpDown size={16} className="text-slate-400 dark:text-slate-600 group-hover:text-violet-500 transition-colors" />
+            {statsLoading && <div className="w-3 h-3 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin" />}
           </div>
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Novos (Este Mês)</p>
-          <h3 className="text-3xl font-bold text-light-text dark:text-white">
-            {clients.filter(c => {
-              const date = new Date(c.createdAt);
-              const now = new Date();
-              return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
-            }).length}
-          </h3>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">TCV</p>
+          <h3 className="text-3xl font-bold text-light-text dark:text-white">{stats.tcv}</h3>
+          <p className="text-[10px] text-cyan-500 mt-1">Clientes em TCV</p>
         </div>
 
-        <div className="bg-white dark:bg-dark-card/60 backdrop-blur-md p-6 rounded-3xl border border-slate-200 dark:border-white/10 hover:border-violet-500/30 transition-all group shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-3 rounded-xl bg-rose-500/10">
-              <UserMinus size={20} className="text-rose-500" />
+        {/* 3. FEE */}
+        <div className="bg-white dark:bg-dark-card/60 backdrop-blur-md p-5 rounded-3xl border border-slate-200 dark:border-white/10 hover:border-violet-500/30 transition-all group shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <div className="p-2.5 rounded-xl bg-violet-500/10">
+              <RefreshCcw size={18} className="text-violet-500" />
             </div>
-            <ArrowUpDown size={16} className="text-slate-400 dark:text-slate-600 group-hover:text-violet-500 transition-colors" />
+            {statsLoading && <div className="w-3 h-3 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />}
+          </div>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">FEE</p>
+          <h3 className="text-3xl font-bold text-light-text dark:text-white">{stats.fee}</h3>
+          <p className="text-[10px] text-violet-500 mt-1">Recorrência mensal</p>
+        </div>
+
+        {/* 4. Entradas do Mês */}
+        <div className="bg-white dark:bg-dark-card/60 backdrop-blur-md p-5 rounded-3xl border border-slate-200 dark:border-white/10 hover:border-blue-500/30 transition-all group shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <div className="p-2.5 rounded-xl bg-blue-500/10">
+              <UserPlus size={18} className="text-blue-500" />
+            </div>
+            {statsLoading && <div className="w-3 h-3 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />}
+          </div>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Entradas</p>
+          <h3 className="text-3xl font-bold text-light-text dark:text-white">{stats.entradas}</h3>
+          <p className="text-[10px] text-blue-500 mt-1">Fechamentos este mês</p>
+        </div>
+
+        {/* 5. Churn do Mês */}
+        <div className="bg-white dark:bg-dark-card/60 backdrop-blur-md p-5 rounded-3xl border border-slate-200 dark:border-white/10 hover:border-rose-500/30 transition-all group shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <div className="p-2.5 rounded-xl bg-rose-500/10">
+              <UserMinus size={18} className="text-rose-500" />
+            </div>
+            {statsLoading && <div className="w-3 h-3 border-2 border-rose-500/30 border-t-rose-500 rounded-full animate-spin" />}
           </div>
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Churn</p>
-          <h3 className="text-3xl font-bold text-light-text dark:text-white">
-            {churnClients.length}
-          </h3>
+          <h3 className="text-3xl font-bold text-light-text dark:text-white">{stats.churn}</h3>
+          <p className="text-[10px] text-rose-500 mt-1">Saídas este mês</p>
         </div>
       </div>
 
@@ -544,10 +620,10 @@ const ActiveClients: React.FC = () => {
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-1 mb-6 bg-white dark:bg-dark-card/60 backdrop-blur-md p-1.5 rounded-2xl border border-slate-200 dark:border-white/10 w-fit shadow-sm">
+      <div className="flex items-center gap-1 mb-6 bg-white dark:bg-dark-card/60 backdrop-blur-md p-1.5 rounded-2xl border border-slate-200 dark:border-white/10 w-fit shadow-sm overflow-x-auto max-w-full">
         <button
           onClick={() => setActiveTab('ativos')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all ${
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
             activeTab === 'ativos'
               ? 'bg-violet-500 text-white shadow-lg shadow-violet-500/25'
               : 'text-slate-500 hover:text-light-text dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5'
@@ -562,8 +638,56 @@ const ActiveClients: React.FC = () => {
           </span>
         </button>
         <button
+          onClick={() => setActiveTab('tcv')}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+            activeTab === 'tcv'
+              ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/25'
+              : 'text-slate-500 hover:text-light-text dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5'
+          }`}
+        >
+          <Package size={14} />
+          TCV
+          <span className={`min-w-[22px] h-[22px] flex items-center justify-center rounded-full text-[10px] font-black ${
+            activeTab === 'tcv' ? 'bg-white/20 text-white' : 'bg-blue-500/10 text-blue-500'
+          }`}>
+            {tcvClients.length}
+          </span>
+        </button>
+        <button
+          onClick={() => setActiveTab('recorrente')}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+            activeTab === 'recorrente'
+              ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/25'
+              : 'text-slate-500 hover:text-light-text dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5'
+          }`}
+        >
+          <RefreshCcw size={14} />
+          Recorrente
+          <span className={`min-w-[22px] h-[22px] flex items-center justify-center rounded-full text-[10px] font-black ${
+            activeTab === 'recorrente' ? 'bg-white/20 text-white' : 'bg-emerald-500/10 text-emerald-500'
+          }`}>
+            {recorrenteClients.length}
+          </span>
+        </button>
+        <button
+          onClick={() => setActiveTab('quarentena')}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+            activeTab === 'quarentena'
+              ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/25'
+              : 'text-slate-500 hover:text-light-text dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5'
+          }`}
+        >
+          <ShieldAlert size={14} />
+          Quarentena
+          <span className={`min-w-[22px] h-[22px] flex items-center justify-center rounded-full text-[10px] font-black ${
+            activeTab === 'quarentena' ? 'bg-white/20 text-white' : 'bg-amber-500/10 text-amber-500'
+          }`}>
+            {quarentenaClients.length}
+          </span>
+        </button>
+        <button
           onClick={() => setActiveTab('churn')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all ${
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
             activeTab === 'churn'
               ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/25'
               : 'text-slate-500 hover:text-light-text dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5'
@@ -781,6 +905,41 @@ const ActiveClients: React.FC = () => {
               >
                 <Edit2 size={13} className="text-violet-500" /> Editar Cliente
               </button>
+              
+              {client.product !== 'TCV' && (
+                <button
+                  onClick={() => { setOpenMenuId(null); handleSetProduct(client, 'TCV'); }}
+                  className="w-full px-4 py-2.5 text-left text-xs font-medium text-light-text dark:text-white hover:bg-slate-50 dark:hover:bg-white/5 flex items-center gap-2.5 transition-colors"
+                >
+                  <Package size={13} className="text-blue-500" /> Mover para TCV
+                </button>
+              )}
+              {client.product !== 'Recorrência Mensal' && (
+                <button
+                  onClick={() => { setOpenMenuId(null); handleSetProduct(client, 'Recorrência Mensal'); }}
+                  className="w-full px-4 py-2.5 text-left text-xs font-medium text-light-text dark:text-white hover:bg-slate-50 dark:hover:bg-white/5 flex items-center gap-2.5 transition-colors"
+                >
+                  <RefreshCcw size={13} className="text-emerald-500" /> Mover para Recorrente
+                </button>
+              )}
+              
+              {(() => {
+                const tags = client.tags || '[]';
+                let isQuarantine = false;
+                try { isQuarantine = JSON.parse(tags).includes('quarentena'); } catch(e) {}
+                return (
+                  <button
+                    onClick={() => { setOpenMenuId(null); handleToggleQuarantine(client); }}
+                    className="w-full px-4 py-2.5 text-left text-xs font-medium text-light-text dark:text-white hover:bg-slate-50 dark:hover:bg-white/5 flex items-center gap-2.5 transition-colors"
+                  >
+                    <ShieldAlert size={13} className="text-amber-500" /> 
+                    {isQuarantine ? 'Remover Quarentena' : 'Adicionar Quarentena'}
+                  </button>
+                );
+              })()}
+
+              <div className="border-t border-slate-100 dark:border-white/5" />
+              
               <button
                 onClick={() => { setOpenMenuId(null); handleToggleStatus(client); }}
                 className="w-full px-4 py-2.5 text-left text-xs font-medium text-light-text dark:text-white hover:bg-slate-50 dark:hover:bg-white/5 flex items-center gap-2.5 transition-colors"

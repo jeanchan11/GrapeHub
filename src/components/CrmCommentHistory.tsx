@@ -35,7 +35,14 @@ const getInitials = (name?: string) => {
 };
 
 const formatDate = (dateString: string) => {
-  const date = new Date(dateString);
+  let parsedString = dateString;
+  if (!parsedString.includes('Z') && !parsedString.includes('+') && parsedString.includes('T')) {
+      parsedString += 'Z';
+  } else if (!parsedString.includes('T') && !parsedString.includes('Z')) {
+      parsedString = parsedString.replace(' ', 'T') + 'Z';
+  }
+  
+  const date = new Date(parsedString);
   return date.toLocaleDateString('pt-BR', {
     day: '2-digit',
     month: 'short',

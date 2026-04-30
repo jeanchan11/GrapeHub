@@ -45,17 +45,17 @@ const fmtCur = (v: number) => {
 };
 
 const fmtCell = (v: number, type: string) => {
-  if (v === 0) return <span className="text-dark-text/25">R$ 0,00</span>;
+  if (v === 0) return <span className="text-dark-text/20 text-xs">—</span>;
   const prefix = type === 'despesa' ? '-' : '';
-  const color = type === 'despesa' ? 'text-rose-500' : 'text-emerald-500';
-  return <span className={color}>{prefix}{fmtCur(v)}</span>;
+  const color = type === 'despesa' ? 'text-rose-400' : 'text-emerald-400';
+  return <span className={`${color} text-[13px]`}>{prefix}{fmtCur(v)}</span>;
 };
 
 const fmtCellBold = (v: number, type: string) => {
-  if (v === 0) return <span className="text-dark-text/25 font-bold">R$ 0,00</span>;
+  if (v === 0) return <span className="text-dark-text/20 font-bold text-xs">—</span>;
   const prefix = type === 'despesa' ? '-' : '';
-  const color = type === 'despesa' ? 'text-rose-500' : 'text-emerald-500';
-  return <span className={`${color} font-bold`}>{prefix}{fmtCur(v)}</span>;
+  const color = type === 'despesa' ? 'text-rose-400' : 'text-emerald-400';
+  return <span className={`${color} font-bold text-[13px]`}>{prefix}{fmtCur(v)}</span>;
 };
 
 // ── Main Component ───────────────────────────────────
@@ -162,24 +162,24 @@ export default function DRE() {
       const row = rows[i];
 
       if (row.level === 1) {
-        // L1 header row — green tinted
-        const l1Bg = row.type === 'despesa' ? 'bg-rose-500/10' : 'bg-emerald-500/10';
-        const l1Border = row.type === 'despesa' ? 'border-rose-500/30' : 'border-emerald-500/30';
-        const l1Text = row.type === 'despesa' ? 'text-rose-500' : 'text-emerald-500';
+        const isDespesa = row.type === 'despesa';
+        const l1Bg = isDespesa ? 'bg-rose-500/[0.06]' : 'bg-emerald-500/[0.06]';
+        const l1Border = isDespesa ? 'border-l-4 border-l-rose-500' : 'border-l-4 border-l-emerald-500';
+        const l1Text = isDespesa ? 'text-rose-400' : 'text-emerald-400';
         elements.push(
-          <tr key={row.code} className={`${l1Bg} border-t-2 ${l1Border}`}>
-            <td className={`px-3 py-2.5 font-bold ${l1Text} text-[11px] whitespace-nowrap sticky left-0 ${l1Bg} z-10`}>
-              <span className={`${l1Text} opacity-60 font-mono text-[10px] mr-1.5`}>{row.code}</span>
-              - {row.name}
+          <tr key={row.code} className={`${l1Bg} ${l1Border} border-t border-dark-text/10`}>
+            <td className={`px-4 py-4 font-bold ${l1Text} text-sm whitespace-nowrap sticky left-0 ${l1Bg} z-10`}>
+              <span className="opacity-50 font-mono text-[11px] mr-2">{row.code}</span>
+              {row.name}
             </td>
             {row.values.map((v, mi) => (
               visibleCols.has(mi) && (
-                <td key={mi} className="px-2 py-2.5 text-right text-[10px] font-bold whitespace-nowrap">
+                <td key={mi} className="px-3 py-4 text-right whitespace-nowrap">
                   {fmtCellBold(v, row.type)}
                 </td>
               )
             ))}
-            <td className={`px-3 py-2.5 text-right text-[11px] font-black whitespace-nowrap ${l1Bg} opacity-90`}>
+            <td className={`px-4 py-4 text-right whitespace-nowrap font-black ${l1Bg}`}>
               {fmtCellBold(row.total, row.type)}
             </td>
           </tr>
@@ -191,68 +191,64 @@ export default function DRE() {
       if (row.level === 2) {
         const hasChildren = row.isGroup;
         const isExpanded = expandedL2.has(row.code);
-
         elements.push(
           <tr
             key={row.code}
-            className={`border-b border-dark-text/5 transition-colors ${hasChildren ? 'cursor-pointer hover:bg-dark-card-hover' : ''}`}
+            className={`border-b border-dark-text/[0.06] transition-colors ${hasChildren ? 'cursor-pointer hover:bg-dark-text/[0.03]' : ''}`}
             onClick={() => hasChildren && toggleL2(row.code)}
           >
-            <td className="px-3 py-2 pl-6 whitespace-nowrap sticky left-0 bg-dark-card z-10">
-              <div className="flex items-center gap-1.5">
+            <td className="px-4 py-3 pl-8 whitespace-nowrap sticky left-0 bg-dark-card z-10">
+              <div className="flex items-center gap-2">
                 {hasChildren && (
-                  <ChevronDown
-                    size={10}
-                    className={`text-dark-text/40 transition-transform shrink-0 ${isExpanded ? 'rotate-180' : ''}`}
-                  />
+                  <ChevronDown size={12} className={`text-dark-text/40 transition-transform shrink-0 ${isExpanded ? 'rotate-180' : ''}`} />
                 )}
-                <span className="text-violet-500/60 font-mono text-[9px]">{row.code}</span>
-                <span className="text-[10px] font-semibold text-dark-text/80 truncate max-w-[200px]">{row.name}</span>
+                {!hasChildren && <span className="w-3" />}
+                <span className="text-violet-400/50 font-mono text-[10px]">{row.code}</span>
+                <span className="text-[13px] font-medium text-dark-text/90 truncate max-w-[220px]">{row.name}</span>
               </div>
             </td>
             {row.values.map((v, mi) => (
               visibleCols.has(mi) && (
-                <td key={mi} className="px-2 py-2 text-right text-[10px] whitespace-nowrap">
+                <td key={mi} className="px-3 py-3 text-right whitespace-nowrap">
                   {fmtCell(v, row.type)}
                 </td>
               )
             ))}
-            <td className="px-3 py-2 text-right text-[10px] font-bold whitespace-nowrap bg-dark-text/[0.03]">
+            <td className="px-4 py-3 text-right whitespace-nowrap font-bold bg-dark-text/[0.02]">
               {fmtCellBold(row.total, row.type)}
             </td>
           </tr>
         );
-
-        // L3 children
         if (isExpanded) {
           i++;
           while (i < rows.length && rows[i].level === 3) {
             const l3 = rows[i];
             elements.push(
-              <tr key={l3.code} className="border-b border-dark-text/[0.03] bg-dark-text/[0.02] cursor-pointer hover:bg-violet-500/5 transition-colors">
-                <td className="px-3 py-1.5 pl-10 whitespace-nowrap sticky left-0 bg-dark-card z-10">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-dark-text/30 font-mono text-[9px]">{l3.code}</span>
-                    <span className="text-[9px] text-dark-text/50 truncate max-w-[180px]">{l3.name}</span>
+              <tr key={l3.code} className="border-b border-dark-text/[0.04] bg-dark-text/[0.015] cursor-pointer hover:bg-violet-500/[0.04] transition-colors">
+                <td className="px-4 py-2.5 pl-14 whitespace-nowrap sticky left-0 bg-dark-card z-10">
+                  <div className="flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-dark-text/20 shrink-0" />
+                    <span className="text-dark-text/40 font-mono text-[10px]">{l3.code}</span>
+                    <span className="text-[12px] text-dark-text/70 truncate max-w-[200px]">{l3.name}</span>
                   </div>
                 </td>
                 {l3.values.map((v, mi) => (
                   visibleCols.has(mi) && (
-                    <td key={mi} className="px-2 py-1.5 text-right text-[9px] whitespace-nowrap"
+                    <td key={mi} className="px-3 py-2.5 text-right whitespace-nowrap"
                         onClick={() => v > 0 && openDetail(l3.code, l3.name, mi, l3.type)}>
                       {v === 0
-                        ? <span className="text-dark-text/15">R$ 0,00</span>
-                        : <span className={`${l3.type === 'despesa' ? 'text-rose-500/60' : 'text-emerald-500/60'} hover:underline`}>
+                        ? <span className="text-dark-text/15 text-xs">—</span>
+                        : <span className={`text-[12px] cursor-pointer hover:underline decoration-dotted ${l3.type === 'despesa' ? 'text-rose-400/70' : 'text-emerald-400/70'}`}>
                             {l3.type === 'despesa' ? '-' : ''}{fmtCur(v)}
                           </span>
                       }
                     </td>
                   )
                 ))}
-                <td className="px-3 py-1.5 text-right text-[9px] font-semibold whitespace-nowrap bg-dark-text/[0.03]">
+                <td className="px-4 py-2.5 text-right whitespace-nowrap bg-dark-text/[0.02]">
                   {l3.total === 0
-                    ? <span className="text-dark-text/15">R$ 0,00</span>
-                    : <span className={l3.type === 'despesa' ? 'text-rose-500/70' : 'text-emerald-500/70'}>
+                    ? <span className="text-dark-text/15 text-xs">—</span>
+                    : <span className={`text-[12px] font-semibold ${l3.type === 'despesa' ? 'text-rose-400/80' : 'text-emerald-400/80'}`}>
                         {l3.type === 'despesa' ? '-' : ''}{fmtCur(l3.total)}
                       </span>
                   }
@@ -263,8 +259,6 @@ export default function DRE() {
           }
           continue;
         }
-
-        // Skip L3 if collapsed
         i++;
         while (i < rows.length && rows[i].level === 3) i++;
         continue;
@@ -276,37 +270,30 @@ export default function DRE() {
     return elements;
   };
 
-  // Summary row helper
   const SummaryRow = ({ label, monthlyValues, total, variant }: {
-    label: string;
-    monthlyValues: number[];
-    total: number;
-    variant: 'geracao' | 'saldo';
+    label: string; monthlyValues: number[]; total: number; variant: 'geracao' | 'saldo';
   }) => {
-    const bgClass = variant === 'geracao'
-      ? 'bg-violet-500/10 border-t-2 border-violet-500/30'
-      : 'bg-emerald-500/10 border-t-2 border-emerald-500/30';
-    const labelClass = variant === 'geracao' ? 'text-violet-500' : 'text-dark-text';
-
+    const isGeracao = variant === 'geracao';
+    const bg = isGeracao ? 'bg-violet-500/10' : 'bg-emerald-500/[0.08]';
+    const border = isGeracao ? 'border-l-4 border-l-violet-500' : 'border-l-4 border-l-emerald-500';
+    const labelColor = isGeracao ? 'text-violet-400' : 'text-emerald-400';
     return (
-      <tr className={bgClass}>
-        <td className={`px-3 py-2.5 font-bold text-[11px] ${labelClass} whitespace-nowrap sticky left-0 z-10 ${variant === 'geracao' ? 'bg-violet-500/10' : 'bg-emerald-500/10'}`}>
+      <tr className={`${bg} ${border} border-t-2 border-dark-text/10`}>
+        <td className={`px-4 py-4 font-bold text-sm ${labelColor} whitespace-nowrap sticky left-0 z-10 ${bg}`}>
           {label}
         </td>
         {monthlyValues.map((v, mi) => (
           visibleCols.has(mi) && (
-            <td key={mi} className="px-2 py-2.5 text-right text-[10px] font-bold whitespace-nowrap">
+            <td key={mi} className="px-3 py-4 text-right whitespace-nowrap">
               {v === 0
-                ? <span className="text-dark-text/25">R$ 0,00</span>
-                : <span className={v >= 0 ? 'text-emerald-500' : 'text-rose-500'}>{fmtCur(v)}</span>
+                ? <span className="text-dark-text/20 text-xs">—</span>
+                : <span className={`text-[13px] font-bold ${v >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{fmtCur(v)}</span>
               }
             </td>
           )
         ))}
-        <td className={`px-3 py-2.5 text-right font-black text-[11px] whitespace-nowrap ${variant === 'geracao' ? 'bg-violet-500/10' : 'bg-emerald-500/10'}`}>
-          <span className={total >= 0 ? 'text-emerald-500' : 'text-rose-500'}>
-            {fmtCur(total)}
-          </span>
+        <td className={`px-4 py-4 text-right whitespace-nowrap ${bg}`}>
+          <span className={`text-sm font-black ${total >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{fmtCur(total)}</span>
         </td>
       </tr>
     );
@@ -486,18 +473,18 @@ export default function DRE() {
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
-                    <tr className="border-b border-dark-text/10">
-                      <th className="px-3 py-3 text-left text-[10px] font-bold text-violet-500 uppercase tracking-wider sticky left-0 bg-dark-card z-20 min-w-[260px]">
+                    <tr className="border-b-2 border-dark-text/10 bg-dark-text/[0.02]">
+                      <th className="px-4 py-4 text-left text-xs font-bold text-violet-400 uppercase tracking-widest sticky left-0 bg-dark-card z-20 min-w-[280px]">
                         Categoria
                       </th>
                       {MESES_SHORT.map((m, mi) => (
                         visibleCols.has(mi) && (
-                          <th key={mi} className="px-2 py-3 text-right text-[10px] font-bold text-dark-text/40 uppercase tracking-wider min-w-[90px]">
+                          <th key={mi} className="px-3 py-4 text-right text-xs font-bold text-dark-text/50 uppercase tracking-widest min-w-[110px]">
                             {m}
                           </th>
                         )
                       ))}
-                      <th className="px-3 py-3 text-right text-[10px] font-bold text-violet-500 uppercase tracking-wider min-w-[110px] bg-dark-text/[0.03]">
+                      <th className="px-4 py-4 text-right text-xs font-bold text-violet-400 uppercase tracking-widest min-w-[130px] bg-violet-500/[0.05]">
                         Total
                       </th>
                     </tr>

@@ -1,3 +1,5 @@
+// fin_movements (Marvee legado) — não usar.
+// Usar fin_movements_asaas para extrato e fin_receivables para cobranças.
 import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -8,6 +10,7 @@ import dotenv from "dotenv";
 import crypto from "crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import multer from "multer";
+import { setupCollectionRoutes } from "./src/routes/collection";
 
 
 // IMMEDIATE LOGGING TO VERIFY BOOT
@@ -2940,7 +2943,7 @@ app.get("/api/todos", async (req, res) => {
     try {
       const { crm_status } = req.query;
       let whereClause = "";
-      const params = [];
+      const params: any[] = [];
 
       if (crm_status === 'true') {
         whereClause = "WHERE c.crm_status IS NOT NULL AND c.crm_status != ''";
@@ -2949,75 +2952,38 @@ app.get("/api/todos", async (req, res) => {
       const result = await pool.query(`
         SELECT 
           c.*,
-          c.fin_people_guid IS NOT NULL as has_financial_link,
+          fp_link.id IS NOT NULL as has_financial_link,
+          fp_link.guid as fin_people_guid_resolved,
           EXISTS(SELECT 1 FROM projects p WHERE p.active_client_id = c.id) as has_project_link,
           (SELECT p.partner FROM projects p WHERE p.active_client_id = c.id LIMIT 1) as project_name,
-          (
-            SELECT fm.movement_value 
-            FROM fin_movements fm 
-            WHERE fm.fin_people_id = fp_link.id 
-            AND fm.type = 1 
-            AND fm.category_l1_ext_id = 176790 
-            ORDER BY fm.expiration_date DESC 
-            LIMIT 1
-          ) as monthly_fee,
-          (
-            SELECT MAX(CURRENT_DATE - fm.expiration_date::date)
-            FROM fin_movements fm 
-            WHERE fm.fin_people_id = fp_link.id 
-            AND fm.status = 'Atrasado'
-          ) as days_in_arrears,
-          (
-            SELECT SUM(fm.movement_value)
-            FROM fin_movements fm
-            WHERE fm.fin_people_id = fp_link.id
-            AND fm.status = 'Conciliado'
-            AND fm.type = 1
-            AND EXTRACT(MONTH FROM fm.expiration_date) = EXTRACT(MONTH FROM CURRENT_DATE)
-            AND EXTRACT(YEAR FROM fm.expiration_date) = EXTRACT(YEAR FROM CURRENT_DATE)
-          ) as paid_this_month,
-          (
-            SELECT json_agg(json_build_object('date', fm.expiration_date, 'status', fm.status))
-            FROM (
-              SELECT fm2.expiration_date, fm2.status
-              FROM fin_movements fm2
-              WHERE fm2.fin_people_id = fp_link.id
-              AND fm2.type = 1
-              AND fm2.category_l1_ext_id = 176790
-              ORDER BY fm2.expiration_date DESC
-              LIMIT 6
-            ) fm
-          ) as payment_history,
+          COALESCE(
+            (SELECT SUM(r.value) FROM fin_receivables r WHERE r.customer_id = fp_link.asaas_id AND r.status = 'OVERDUE'),
+            (SELECT r.value FROM fin_receivables r WHERE r.customer_id = fp_link.asaas_id AND r.status = 'PENDING' ORDER BY r.due_date ASC LIMIT 1),
+            fs.value,
+            0
+          ) as valor_display,
+          (SELECT CURRENT_DATE - MIN(r.due_date) FROM fin_receivables r WHERE r.customer_id = fp_link.asaas_id AND r.status = 'OVERDUE') as dias_atraso,
+          (SELECT MIN(r.due_date) FROM fin_receivables r WHERE r.customer_id = fp_link.asaas_id AND r.status = 'PENDING') as proxima_cobranca,
+          CASE 
+            WHEN EXISTS (SELECT 1 FROM fin_receivables r WHERE r.customer_id = fp_link.asaas_id AND r.status = 'OVERDUE') THEN 'atrasada'
+            WHEN EXISTS (SELECT 1 FROM fin_receivables r WHERE r.customer_id = fp_link.asaas_id AND r.status = 'PENDING' AND r.due_date <= CURRENT_DATE + interval '7 days') THEN 'vence_em_breve'
+            ELSE 'em_dia'
+          END as payment_status,
           CASE WHEN fs.id IS NOT NULL THEN true ELSE false END as has_active_subscription,
           fs.value as subscription_value,
           fs.next_due_date as subscription_next_due,
           fs.billing_type as subscription_billing_type,
           fs.cycle as subscription_cycle
         FROM clients c
-        LEFT JOIN fin_people fp_link ON fp_link.guid = c.fin_people_guid
-        LEFT JOIN fin_subscriptions fs ON fs.customer_id = fp_link.asaas_id AND fs.status = 'ACTIVE'
+        LEFT JOIN fin_people fp_link ON fp_link.grapehub_client_id = c.id
+        LEFT JOIN fin_subscriptions fs ON 
+          (c.fin_subscription_id IS NOT NULL AND fs.id::text = c.fin_subscription_id) OR
+          (c.fin_subscription_id IS NULL AND fs.customer_id = fp_link.asaas_id AND fs.status = 'ACTIVE')
         ${whereClause}
         ORDER BY c.name ASC
       `, params);
       
       const clients = result.rows.map(row => {
-        let recurringDelay = false;
-        if (row.payment_history && row.payment_history.length >= 2) {
-          const history = row.payment_history.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
-          let consecutiveDelays = 0;
-          for (const payment of history) {
-            if (payment.status === 'Atrasado') {
-              consecutiveDelays++;
-              if (consecutiveDelays >= 2) {
-                recurringDelay = true;
-                break;
-              }
-            } else {
-              consecutiveDelays = 0;
-            }
-          }
-        }
-
         return {
           id: row.id,
           name: row.name,
@@ -3035,18 +3001,18 @@ app.get("/api/todos", async (req, res) => {
           projectName: row.project_name,
           crmStatus: row.crm_status,
           product: row.product,
-          monthlyFee: row.monthly_fee,
-          daysInArrears: row.days_in_arrears,
-          paidThisMonth: row.paid_this_month,
-          paymentHistory: row.payment_history,
-          recurringDelay: recurringDelay,
+          valorDisplay: row.valor_display ? parseFloat(row.valor_display) : 0,
+          diasAtraso: row.dias_atraso,
+          proximaCobranca: row.proxima_cobranca,
+          paymentStatus: row.payment_status,
           aviso_previo_date: row.aviso_previo_date,
           hasActiveSubscription: row.has_active_subscription,
           subscriptionValue: row.subscription_value ? parseFloat(row.subscription_value) : null,
           subscriptionNextDue: row.subscription_next_due,
           subscriptionBillingType: row.subscription_billing_type,
           subscriptionCycle: row.subscription_cycle,
-          finPeopleGuid: row.fin_people_guid
+          finPeopleGuid: row.fin_people_guid_resolved || row.fin_people_guid,
+          finSubscriptionId: row.fin_subscription_id
         };
       });
       res.json(clients);
@@ -3055,6 +3021,43 @@ app.get("/api/todos", async (req, res) => {
       res.status(500).json({ error: "Failed to fetch clients" });
     }
   });
+
+  // GET /api/clients/stats — KPI cards da página Clientes Ativos
+  app.get("/api/clients/stats", async (req, res) => {
+    try {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const startOfMonth = `${year}-${month}-01`;
+      const endOfMonth = new Date(year, now.getMonth() + 1, 0).toISOString().slice(0, 10);
+
+      const [activeRes, tcvRes, feeRes, entryRes, churnRes] = await Promise.all([
+        // Ativos
+        pool.query(`SELECT COUNT(*) FROM clients WHERE status = 'Ativo'`),
+        // TCV
+        pool.query(`SELECT COUNT(*) FROM clients WHERE status = 'Ativo' AND product = 'TCV'`),
+        // FEE (Recorrência Mensal)
+        pool.query(`SELECT COUNT(*) FROM clients WHERE status = 'Ativo' AND product = 'Recorrência Mensal'`),
+        // Entradas do mês — fechamentos do comercial
+        pool.query(`SELECT COUNT(*) FROM fechamentos WHERE day >= $1 AND day <= $2`, [startOfMonth, endOfMonth]),
+        // Churn do mês — tabela churn
+        pool.query(`SELECT COUNT(*) FROM churn WHERE "day_exit" >= $1 AND "day_exit" <= $2::date + interval '1 day'`, [startOfMonth, endOfMonth]),
+      ]);
+
+      res.json({
+        ativos:   parseInt(activeRes.rows[0].count || '0', 10),
+        tcv:      parseInt(tcvRes.rows[0].count || '0', 10),
+        fee:      parseInt(feeRes.rows[0].count || '0', 10),
+        entradas: parseInt(entryRes.rows[0].count || '0', 10),
+        churn:    parseInt(churnRes.rows[0].count || '0', 10),
+      });
+    } catch (err) {
+      console.error("Error fetching client stats:", err);
+      res.status(500).json({ error: "Failed to fetch client stats" });
+    }
+  });
+
+
 
   app.post("/api/optimizations", async (req, res) => {
     const { id, product_id, author, authorPhoto, role, date, time, message, is_internal, images } = req.body;
@@ -3093,64 +3096,46 @@ app.get("/api/todos", async (req, res) => {
 
   app.post("/api/crm/sync-inadimplentes", async (req, res) => {
     try {
-      const clientsResult = await pool.query(`SELECT id, crm_status FROM clients`);
-      const clients = clientsResult.rows;
-
-      const atrasadosResult = await pool.query(`
-        SELECT 
-          c.id as client_id,
-          MAX(CURRENT_DATE - fm.expiration_date::date) as days_in_arrears
-        FROM clients c
-        JOIN fin_people fp ON fp.grapehub_client_id = c.id
-        JOIN fin_movements fm ON fm.fin_people_id = fp.id
-        WHERE fm.source = 'bills_to_receive' AND fm.status = 'Atrasado'
-        GROUP BY c.id
+      // ENTRADA: Clientes com fatura em atraso há 6+ dias (por due_date) que não estão em coluna manual
+      const entradaResult = await pool.query(`
+        UPDATE clients c
+        SET crm_status = 'inadimplente_asaas'
+        FROM fin_people fp
+        WHERE fp.grapehub_client_id = c.id
+        AND EXISTS (
+          SELECT 1 FROM fin_receivables r
+          WHERE r.customer_id = fp.asaas_id
+          AND r.status IN ('PENDING', 'OVERDUE')
+          AND r.due_date IS NOT NULL
+          AND (CURRENT_DATE - r.due_date) >= 6
+        )
+        AND (
+          c.crm_status IS NULL
+          OR c.crm_status NOT IN ('inadimplente_asaas', 'pedido_finalizacao', 'negociacao', 'aviso_30_dias', 'processo_saida', 'arquivado')
+        )
+        RETURNING c.id
       `);
-      
-      const atrasadosMap = new Map(atrasadosResult.rows.map(r => [r.client_id, r.days_in_arrears]));
+      const added = entradaResult.rowCount || 0;
 
-      let added = 0;
-      let moved = 0;
-      let removed = 0;
+      // SAÍDA: Clientes inadimplentes que não têm mais faturas com 6+ dias de atraso
+      const saidaResult = await pool.query(`
+        UPDATE clients c
+        SET crm_status = NULL
+        FROM fin_people fp
+        WHERE fp.grapehub_client_id = c.id
+        AND c.crm_status = 'inadimplente_asaas'
+        AND NOT EXISTS (
+          SELECT 1 FROM fin_receivables r
+          WHERE r.customer_id = fp.asaas_id
+          AND r.status IN ('PENDING', 'OVERDUE')
+          AND r.due_date IS NOT NULL
+          AND (CURRENT_DATE - r.due_date) >= 6
+        )
+        RETURNING c.id
+      `);
+      const removed = saidaResult.rowCount || 0;
 
-      const manualStatuses = ['negociacao', 'aviso_30_dias', 'pedido_finalizacao', 'processo_saida', 'arquivado'];
-
-      for (const client of clients) {
-        const { id, crm_status } = client;
-        const isManual = crm_status && manualStatuses.includes(crm_status);
-        
-        if (isManual) continue;
-
-        const daysInArrears = atrasadosMap.get(id);
-
-        if (daysInArrears !== undefined) {
-          let newStatus = null;
-          if (daysInArrears >= 1 && daysInArrears <= 10) {
-            newStatus = 'inadimplente_marvee';
-          } else if (daysInArrears >= 11 && daysInArrears <= 20) {
-            newStatus = 'inadimplente_grape';
-          } else if (daysInArrears > 20) {
-            if (crm_status === 'inadimplente_marvee' || crm_status === 'inadimplente_grape') {
-              newStatus = crm_status;
-            } else {
-              newStatus = 'inadimplente_grape';
-            }
-          }
-
-          if (newStatus && newStatus !== crm_status) {
-            await pool.query(`UPDATE clients SET crm_status = $1 WHERE id = $2`, [newStatus, id]);
-            if (!crm_status) added++;
-            else moved++;
-          }
-        } else {
-          if (crm_status === 'inadimplente_marvee' || crm_status === 'inadimplente_grape') {
-            await pool.query(`UPDATE clients SET crm_status = NULL WHERE id = $1`, [id]);
-            removed++;
-          }
-        }
-      }
-
-      res.json({ added, moved, removed });
+      res.json({ added, removed });
     } catch (err) {
       console.error("Error syncing inadimplentes:", err);
       res.status(500).json({ error: "Failed to sync inadimplentes" });
@@ -3167,8 +3152,8 @@ app.get("/api/todos", async (req, res) => {
       await pool.query("BEGIN");
       for (const c of clients) {
         await pool.query(
-          `INSERT INTO clients (id, name, email, phone, status, start_date, location, squad, tags, contracts, crm_status, product) 
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+          `INSERT INTO clients (id, name, email, phone, status, start_date, location, squad, tags, contracts, crm_status, product, fin_subscription_id) 
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
            ON CONFLICT (id) DO UPDATE SET
              name = EXCLUDED.name,
              email = EXCLUDED.email,
@@ -3180,8 +3165,9 @@ app.get("/api/todos", async (req, res) => {
              tags = EXCLUDED.tags,
              contracts = EXCLUDED.contracts,
              crm_status = EXCLUDED.crm_status,
-             product = EXCLUDED.product`,
-          [c.id, c.name, c.email, c.phone, c.status, c.startDate, c.location, c.squad, c.tags, c.contracts, c.crmStatus, c.product]
+             product = EXCLUDED.product,
+             fin_subscription_id = EXCLUDED.fin_subscription_id`,
+          [c.id, c.name, c.email, c.phone, c.status, c.startDate, c.location, c.squad, c.tags, c.contracts, c.crmStatus, c.product, c.finSubscriptionId]
         );
       }
       await pool.query("COMMIT");
@@ -3206,7 +3192,7 @@ app.get("/api/todos", async (req, res) => {
 
   app.patch("/api/clients/:id", async (req, res) => {
     const { id } = req.params;
-    const { crm_status, status, aviso_previo_date, contracts, product, fin_people_guid } = req.body;
+    const { crm_status, status, aviso_previo_date, contracts, product, fin_people_guid, fin_subscription_id, tags } = req.body;
     try {
       console.log(`[CLIENT PATCH] ID: ${id}, Body:`, req.body);
       // Check if crm_status is changing to 'processo_saida'
@@ -3260,6 +3246,14 @@ app.get("/api/todos", async (req, res) => {
       if (fin_people_guid !== undefined) {
         updates.push(`fin_people_guid = $${i++}`);
         values.push(fin_people_guid);
+      }
+      if (fin_subscription_id !== undefined) {
+        updates.push(`fin_subscription_id = $${i++}`);
+        values.push(fin_subscription_id);
+      }
+      if (tags !== undefined) {
+        updates.push(`tags = $${i++}`);
+        values.push(tags);
       }
 
       if (updates.length > 0) {
@@ -3475,7 +3469,7 @@ app.get("/api/todos", async (req, res) => {
     }
     try {
       const result = await pool.query(
-        `SELECT c.*, u.email as user_email, u.name as user_name, u.picture as user_picture, u.role as user_role
+        `SELECT c.*, u.email as user_email, u.name as user_name, COALESCE(c.user_picture, u.picture) as user_picture, u.role as user_role
          FROM crm_comments c 
          LEFT JOIN users u ON c.user_id = u.email 
          WHERE c.client_id = $1 
@@ -3689,42 +3683,83 @@ app.get("/api/todos", async (req, res) => {
       }
 
       // 2) Buscar net de movimentações APÓS o mês de referência (para meses passados)
+      //    Inclui Sicredi cujo dia de pagamento (dia 18) caia após o mês
       const netAposRes = await pool.query(`
         SELECT
           COALESCE(SUM(CASE WHEN type = 1 THEN value ELSE 0 END), 0) -
           COALESCE(SUM(CASE WHEN type = -1 THEN value ELSE 0 END), 0) AS net
-        FROM fin_movements_asaas
-        WHERE account = 'asaas' AND transaction_date >= $1
+        FROM (
+          SELECT type, value FROM fin_movements_asaas
+          WHERE account = 'asaas' AND transaction_date >= $1
+
+          UNION ALL
+
+          SELECT type, value FROM fin_movements_asaas
+          WHERE account = 'sicredi' AND sicredi_status = 'realizado'
+            AND (billing_month || '-18')::date >= $1
+        ) AS combined
       `, [fim]);
       const netAposMes = parseFloat(netAposRes.rows[0].net);
 
       // 3) Net do mês de referência (todas as movimentações, incluindo pares de antecipação)
+      //    Inclui Sicredi cujo dia 18 caia dentro do mês
       const netMesRes = await pool.query(`
         SELECT
           COALESCE(SUM(CASE WHEN type = 1 THEN value ELSE 0 END), 0) -
           COALESCE(SUM(CASE WHEN type = -1 THEN value ELSE 0 END), 0) AS net
-        FROM fin_movements_asaas
-        WHERE account = 'asaas' AND transaction_date >= $1 AND transaction_date < $2
+        FROM (
+          SELECT type, value FROM fin_movements_asaas
+          WHERE account = 'asaas'
+            AND transaction_date >= $1 AND transaction_date < $2
+
+          UNION ALL
+
+          SELECT type, value FROM fin_movements_asaas
+          WHERE account = 'sicredi' AND sicredi_status = 'realizado'
+            AND (billing_month || '-18')::date >= $1
+            AND (billing_month || '-18')::date < $2
+        ) AS combined
       `, [inicio, fim]);
       const netMes = parseFloat(netMesRes.rows[0].net);
 
       // 4) Saldo no início do mês = saldo atual - movimentos do mês - movimentos após o mês
       const saldoAnterior = saldoAtual - netMes - netAposMes;
 
-      // 5) Realizado diário — fin_movements_asaas (sem is_anticipation_pair para exibição)
+      // 5) Realizado diário — Asaas por transaction_date + Sicredi no dia 18 do billing_month
+      //    Mesma lógica do endpoint /api/financeiro/extrato para consistência total
       const realizadoRes = await pool.query(`
         SELECT
-          TO_CHAR(transaction_date, 'DD/MM') AS dia,
-          EXTRACT(DAY FROM transaction_date) AS dia_numero,
-          COALESCE(SUM(CASE WHEN type = 1 AND is_anticipation_pair = false THEN value ELSE 0 END), 0) AS entradas_realizadas,
+          TO_CHAR(effective_date, 'DD/MM') AS dia,
+          EXTRACT(DAY FROM effective_date) AS dia_numero,
+          COALESCE(SUM(CASE WHEN type = 1  AND is_anticipation_pair = false THEN value ELSE 0 END), 0) AS entradas_realizadas,
           COALESCE(SUM(CASE WHEN type = -1 AND is_anticipation_pair = false THEN value ELSE 0 END), 0) AS saidas_realizadas
-        FROM fin_movements_asaas
-        WHERE transaction_date >= $1 AND transaction_date < $2 AND account = 'asaas'
-        GROUP BY transaction_date
-        ORDER BY transaction_date
+        FROM (
+          -- Asaas: usa transaction_date real, excluindo transferências entre contas
+          SELECT type, value, is_anticipation_pair, transaction_date AS effective_date
+          FROM fin_movements_asaas
+          WHERE account = 'asaas'
+            AND transaction_date >= $1 AND transaction_date < $2
+            AND LOWER(COALESCE(custom_category, '')) NOT IN ('transferencia entre contas', 'transferência entre contas')
+
+          UNION ALL
+
+          -- Sicredi cartão: aparece no dia 18 do mês seguinte ao billing_month
+          -- Ex: billing_month='2026-03' → effective_date = 2026-04-18
+          SELECT type, value, COALESCE(is_anticipation_pair, false) AS is_anticipation_pair,
+                 (billing_month || '-18')::date AS effective_date
+          FROM fin_movements_asaas
+          WHERE account = 'sicredi'
+            AND sicredi_status = 'realizado'
+            AND (billing_month || '-18')::date >= $1
+            AND (billing_month || '-18')::date < $2
+        ) AS combined
+        GROUP BY effective_date
+        ORDER BY effective_date
       `, [inicio, fim]);
 
-      // 6) Previsto entradas — fin_receivables pendentes por due_date
+
+
+      // 6) Previsto entradas — Contas a Receber (fin_receivables pendentes por due_date)
       const prevEntRes = await pool.query(`
         SELECT TO_CHAR(due_date, 'DD/MM') AS dia,
                COALESCE(SUM(value), 0) AS entradas_previstas
@@ -3734,14 +3769,33 @@ app.get("/api/todos", async (req, res) => {
         GROUP BY due_date
       `, [inicio, fim]);
 
-      // 7) Previsto saídas — fin_recurring_bill_entries pendentes por due_date
+      // 7) Previsto saídas — Contas a Pagar:
+      //    a) Despesas recorrentes pendentes (fin_recurring_bill_entries) por due_date
+      //    b) Sicredi cartão pendente do billing_month → aparece no dia 18 do próprio mês
+      //       Ex: billing_month='2026-05' → dia 18/05
       const prevSaiRes = await pool.query(`
-        SELECT TO_CHAR(due_date, 'DD/MM') AS dia,
-               COALESCE(SUM(expected_value), 0) AS saidas_previstas
-        FROM fin_recurring_bill_entries
-        WHERE reference_month = $1::date AND status = 'pending'
-        GROUP BY due_date
-      `, [inicio]);
+        SELECT dia, COALESCE(SUM(saidas_previstas), 0) AS saidas_previstas
+        FROM (
+          -- Despesas recorrentes por due_date
+          SELECT TO_CHAR(due_date, 'DD/MM') AS dia,
+                 COALESCE(SUM(expected_value), 0) AS saidas_previstas
+          FROM fin_recurring_bill_entries
+          WHERE reference_month = $1::date AND status = 'pending'
+          GROUP BY due_date
+
+          UNION ALL
+
+          -- Sicredi pendente: soma total do billing_month aparece no dia 18
+          SELECT TO_CHAR(($1::date + interval '17 days'), 'DD/MM') AS dia,
+                 COALESCE(SUM(ABS(value::numeric)), 0) AS saidas_previstas
+          FROM fin_movements_asaas
+          WHERE account = 'sicredi'
+            AND sicredi_status = 'pendente'
+            AND billing_month = $2
+        ) AS combined
+        GROUP BY dia
+      `, [inicio, mes]);
+
 
       // Merge all days
       const dayMap: Record<string, any> = {};
@@ -3895,7 +3949,7 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
-  // Despesas do mês (source = 'bills_to_pay')
+  // Despesas do mês (fin_movements_asaas — outgoing / value < 0)
   app.get("/api/financeiro/despesas", async (req, res) => {
     try {
       const mes = (req.query.mes as string) || new Date().toISOString().slice(0, 7);
@@ -3906,25 +3960,24 @@ app.get("/api/todos", async (req, res) => {
 
       const result = await pool.query(`
         SELECT
-          fm.id,
-          fm.description,
-          fm.movement_value,
-          fm.value,
-          fm.movement_date,
-          fm.expiration_date,
-          fm.status,
-          fm.type_column,
-          fm.category_l1_ext_id,
-          fm.category_l2_ext_id,
-          fm.category_l3_ext_id,
-          fm.payment_method,
-          fm.document_code,
-          fm.grapehub_category
-        FROM fin_movements fm
-        WHERE fm.source = 'bills_to_pay'
-          AND ((fm.movement_date >= $1 AND fm.movement_date < $2)
-            OR (fm.expiration_date >= $1 AND expiration_date < $2))
-        ORDER BY COALESCE(fm.movement_date, fm.expiration_date) DESC
+          m.id,
+          COALESCE(m.custom_description, m.description) as description,
+          ABS(m.value) as movement_value,
+          ABS(m.value) as value,
+          m.transaction_date as movement_date,
+          m.transaction_date as expiration_date,
+          'Realizado' as status,
+          m.type as type_column,
+          NULL as category_l1_ext_id,
+          NULL as category_l2_ext_id,
+          NULL as category_l3_ext_id,
+          m.transaction_type as payment_method,
+          m.asaas_id as document_code,
+          COALESCE(m.custom_category, m.grapehub_category) as grapehub_category
+        FROM fin_movements_asaas m
+        WHERE m.value < 0
+          AND m.transaction_date >= $1 AND m.transaction_date < $2
+        ORDER BY m.transaction_date DESC
       `, [inicio, fim]);
 
       res.json(result.rows);
@@ -5000,7 +5053,7 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
-  // Receitas do mês (source = 'bills_to_receive')
+  // Receitas do mês (fin_receivables)
   app.get("/api/financeiro/receitas", async (req, res) => {
     try {
       const mes = (req.query.mes as string) || new Date().toISOString().slice(0, 7);
@@ -5011,28 +5064,21 @@ app.get("/api/todos", async (req, res) => {
 
       const result = await pool.query(`
         SELECT
-          fm.description,
-          fm.movement_value,
-          fm.value,
-          fm.movement_date,
-          fm.expiration_date,
-          fm.status,
-          fm.type_column,
-          fm.category_l1_ext_id,
-          fm.category_l2_ext_id,
-          fm.category_l3_ext_id,
-          fm.payment_method,
-          fm.document_code
-        FROM fin_movements fm
-        WHERE fm.source = 'bills_to_receive'
-          AND (fm.fin_people_id IS NULL OR fm.fin_people_id NOT IN (
-            SELECT fp.id FROM fin_people fp
-            JOIN clients c ON c.id = fp.grapehub_client_id
-            WHERE c.crm_status IS NOT NULL AND c.crm_status != ''
-          ))
-          AND ((fm.movement_date >= $1 AND fm.movement_date < $2)
-            OR (fm.expiration_date >= $1 AND expiration_date < $2))
-        ORDER BY COALESCE(fm.movement_date, fm.expiration_date) DESC
+          r.description,
+          r.value as movement_value,
+          r.net_value as value,
+          r.payment_date as movement_date,
+          r.due_date as expiration_date,
+          r.status,
+          r.billing_type as type_column,
+          NULL as category_l1_ext_id,
+          NULL as category_l2_ext_id,
+          NULL as category_l3_ext_id,
+          r.billing_type as payment_method,
+          r.asaas_id as document_code
+        FROM fin_receivables r
+        WHERE r.due_date >= $1 AND r.due_date < $2
+        ORDER BY r.due_date DESC
       `, [inicio, fim]);
 
       res.json(result.rows);
@@ -5079,6 +5125,27 @@ app.get("/api/todos", async (req, res) => {
       if (accountParam === 'asaas') { accountClause = ` AND account = $3`; queryParams.push('asaas'); }
       else if (accountParam === 'sicredi') { accountClause = ` AND account = $3`; queryParams.push('sicredi'); }
 
+      const isDayFilter = !!(req.query.start && req.query.end);
+
+      // Para filtro por dia: Sicredi aparece apenas no dia 18 do mês seguinte ao billing_month
+      // Para filtro por mês: Sicredi aparece todos os itens do billing_month (comportamento atual)
+      let sicrediClause: string;
+      let sicrediParams: any[];
+
+      if (isDayFilter) {
+        // Verifica se o dia filtrado é dia 18 de algum mês. Se sim, mostra itens do billing_month anterior.
+        // Ex: filtro 2026-04-18 → mostra itens com billing_month = '2026-03'
+        // billing_month do item = mês anterior ao dia de pagamento
+        sicrediClause = `(account = 'sicredi' AND sicredi_status = 'realizado'
+          AND (billing_month || '-18')::date >= $1
+          AND (billing_month || '-18')::date < $2)`;
+        sicrediParams = [];
+      } else {
+        // Modo mês: mostra todos os itens do billing_month selecionado
+        sicrediClause = `(account = 'sicredi' AND billing_month = $${queryParams.length + 1} AND sicredi_status = 'realizado')`;
+        sicrediParams = [inicio.slice(0, 7)];
+      }
+
       const result = await pool.query(`
         SELECT
           id,
@@ -5086,7 +5153,11 @@ app.get("/api/todos", async (req, res) => {
           type,
           transaction_type,
           value,
-          transaction_date,
+          CASE
+            WHEN account = 'sicredi' AND $${queryParams.length + sicrediParams.length + 1}
+              THEN (billing_month || '-18')::date
+            ELSE transaction_date
+          END AS transaction_date,
           description,
           balance,
           payment_id,
@@ -5099,17 +5170,20 @@ app.get("/api/todos", async (req, res) => {
           is_anticipation_pair,
           account,
           sicredi_status,
+          billing_month,
           COALESCE(custom_description, description) AS display_description,
           COALESCE(custom_category, grapehub_category) AS display_category
         FROM fin_movements_asaas
         WHERE (
           (account != 'sicredi' AND transaction_date >= $1 AND transaction_date < $2)
           OR
-          (account = 'sicredi' AND billing_month = $${queryParams.length + 1} AND sicredi_status = 'realizado')
+          ${sicrediClause}
         )
+          AND LOWER(COALESCE(custom_category, '')) NOT IN ('transferencia entre contas', 'transferência entre contas')
           ${accountClause}
         ORDER BY transaction_date DESC, id DESC
-      `, [...queryParams, inicio.slice(0, 7)]);
+      `, [...queryParams, ...sicrediParams, isDayFilter]);
+
 
       // Map to ExtratoItem format expected by frontend
       const rows = result.rows.map((r: any) => {
@@ -6073,28 +6147,70 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
-  // GET /api/fin-people/:id/movements - retorna o histórico financeiro de uma pessoa
+  // GET /api/fin-people/:id/movements - retorna o histórico financeiro de uma pessoa (via fin_receivables)
   app.get("/api/fin-people/:id/movements", async (req, res) => {
     const { id } = req.params;
     try {
+      // First get the asaas_id for this fin_people record
+      const personRes = await pool.query('SELECT asaas_id FROM fin_people WHERE id = $1', [id]);
+      if (personRes.rowCount === 0 || !personRes.rows[0].asaas_id) {
+        return res.json([]);
+      }
+      const asaasId = personRes.rows[0].asaas_id;
+
       const result = await pool.query(`
         SELECT 
-          description,
-          movement_value,
-          value,
-          movement_date,
-          expiration_date,
-          status,
-          type_column,
-          payment_method
-        FROM fin_movements
-        WHERE fin_people_id = $1 AND source = 'bills_to_receive'
-        ORDER BY COALESCE(movement_date, expiration_date) DESC
-      `, [id]);
+          r.description,
+          r.value::text as movement_value,
+          r.net_value::text as value,
+          r.payment_date as movement_date,
+          r.due_date as expiration_date,
+          CASE 
+            WHEN r.status = 'RECEIVED' OR r.status = 'CONFIRMED' THEN 'Conciliado'
+            WHEN r.status = 'OVERDUE' THEN 'Atrasado'
+            WHEN r.status = 'PENDING' THEN 'Pendente'
+            ELSE r.status
+          END as status,
+          r.billing_type as payment_method
+        FROM fin_receivables r
+        WHERE r.customer_id = $1
+        ORDER BY r.due_date DESC
+      `, [asaasId]);
       res.json(result.rows);
     } catch (err) {
       console.error("Error fetching fin_people movements:", err);
       res.status(500).json({ error: "Failed to fetch movements" });
+    }
+  });
+
+  // GET /api/fin-people/:id/subscriptions - retorna as assinaturas financeiras do Asaas vinculadas a pessoa
+  app.get("/api/fin-people/:id/subscriptions", async (req, res) => {
+    const { id } = req.params;
+    try {
+      const personRes = await pool.query('SELECT asaas_id FROM fin_people WHERE id = $1', [id]);
+      if (personRes.rowCount === 0 || !personRes.rows[0].asaas_id) {
+        return res.json([]);
+      }
+      const asaasId = personRes.rows[0].asaas_id;
+
+      const result = await pool.query(`
+        SELECT 
+          id,
+          customer_id,
+          billing_type,
+          value,
+          next_due_date,
+          status,
+          cycle,
+          description
+        FROM fin_subscriptions
+        WHERE customer_id = $1 AND status = 'ACTIVE'
+        ORDER BY next_due_date ASC
+      `, [asaasId]);
+      res.json(result.rows);
+    } catch (err) {
+      console.error("Error fetching fin_people subscriptions:", err);
+      res.status(500).json({ error: "Failed to fetch subscriptions" });
     }
   });
 
@@ -9135,15 +9251,15 @@ app.get("/api/todos", async (req, res) => {
             `),
             pool.query(`
               SELECT
-                c.name,
+                COALESCE(fp.name, r.customer_name) AS name,
                 c.crm_status,
-                MAX(CURRENT_DATE - fm.expiration_date::date) AS dias_atraso,
-                SUM(fm.movement_value)::numeric(14,2) AS valor_em_aberto
-              FROM clients c
-              JOIN fin_people fp ON fp.grapehub_client_id = c.id
-              JOIN fin_movements fm ON fm.fin_people_id = fp.id
-              WHERE fm.status = 'Atrasado'
-              GROUP BY c.name, c.crm_status
+                CURRENT_DATE - MIN(r.due_date) AS dias_atraso,
+                SUM(r.value)::numeric(14,2) AS valor_em_aberto
+              FROM fin_receivables r
+              JOIN fin_people fp ON fp.asaas_id = r.customer_id
+              LEFT JOIN clients c ON c.fin_people_guid = fp.guid
+              WHERE r.status = 'OVERDUE'
+              GROUP BY fp.name, r.customer_name, c.crm_status
               ORDER BY valor_em_aberto DESC LIMIT 10
             `),
             pool.query(`
@@ -9266,95 +9382,68 @@ app.get("/api/todos", async (req, res) => {
             `),
             pool.query(`
               SELECT
-                COALESCE(grapehub_category, 'Não categorizado') AS categoria,
-                SUM(value)::numeric(14,2) AS total,
+                COALESCE(custom_category, grapehub_category, 'Não categorizado') AS categoria,
+                SUM(ABS(value))::numeric(14,2) AS total,
                 COUNT(*) AS qtd
-              FROM fin_movements fm
-              WHERE fm.type = -1
-                AND fm.type_column = 'realizado'
-                AND fm.status = 'Conciliado'
-                AND fm.source NOT IN ('transfer_in', 'transfer_out')
-                AND (fm.fin_people_id IS NULL OR fm.fin_people_id NOT IN (
-                  SELECT fp2.id FROM fin_people fp2
-                  JOIN clients c ON c.id = fp2.grapehub_client_id
-                  WHERE c.crm_status IS NOT NULL AND c.crm_status != ''
-                ))
-                AND DATE_TRUNC('month', COALESCE(fm.movement_date, fm.expiration_date)) = DATE_TRUNC('month', NOW())
+              FROM fin_movements_asaas
+              WHERE value < 0
+                AND DATE_TRUNC('month', transaction_date) = DATE_TRUNC('month', NOW())
               GROUP BY 1 ORDER BY 2 DESC
             `),
             pool.query(`
               SELECT
                 COUNT(*) AS qtd,
-                SUM(movement_value)::numeric(14,2) AS valor_total
-              FROM fin_movements
-              WHERE type = 1
-                AND type_column = 'previsto'
-                AND status IN ('Pendente', 'Vence Hoje')
-                AND expiration_date <= NOW() + INTERVAL '30 days'
-                AND source NOT IN ('transfer_in', 'transfer_out')
+                SUM(value)::numeric(14,2) AS valor_total
+              FROM fin_receivables
+              WHERE status IN ('PENDING', 'OVERDUE')
+                AND due_date <= NOW() + INTERVAL '30 days'
             `),
             pool.query(`
               SELECT
-                COALESCE(fp.fantasy_name, fp.name, 'Desconhecido') AS cliente,
-                SUM(fm.value)::numeric(14,2) AS total_recebido
-              FROM fin_movements fm
-              JOIN fin_people fp ON fp.id = fm.fin_people_id
-              WHERE fm.type = 1
-                AND fm.type_column = 'realizado'
-                AND fm.status = 'Conciliado'
-                AND fm.source NOT IN ('transfer_in', 'transfer_out')
-              GROUP BY fp.fantasy_name, fp.name ORDER BY 2 DESC LIMIT 5
+                COALESCE(fp.name, r.customer_name, 'Desconhecido') AS cliente,
+                SUM(r.value)::numeric(14,2) AS total_recebido
+              FROM fin_receivables r
+              JOIN fin_people fp ON fp.asaas_id = r.customer_id
+              WHERE r.status IN ('RECEIVED', 'CONFIRMED')
+                AND DATE_TRUNC('month', r.payment_date) = DATE_TRUNC('month', NOW())
+              GROUP BY fp.name, r.customer_name ORDER BY 2 DESC LIMIT 5
             `),
             pool.query(`
               SELECT
-                SUM(CASE WHEN type = 1  AND type_column = 'realizado' THEN value ELSE 0 END)::numeric(14,2) AS entradas_realizadas,
-                SUM(CASE WHEN type = -1 AND type_column = 'realizado' THEN value ELSE 0 END)::numeric(14,2) AS saidas_realizadas,
-                SUM(CASE WHEN type_column = 'realizado' THEN value * type ELSE 0 END)::numeric(14,2) AS saldo_periodo
-              FROM fin_movements
-              WHERE source NOT IN ('transfer_in', 'transfer_out')
-                AND DATE_TRUNC('month', COALESCE(movement_date, expiration_date)) = DATE_TRUNC('month', NOW())
+                SUM(CASE WHEN value > 0 THEN value ELSE 0 END)::numeric(14,2) AS entradas_realizadas,
+                SUM(CASE WHEN value < 0 THEN ABS(value) ELSE 0 END)::numeric(14,2) AS saidas_realizadas,
+                SUM(value)::numeric(14,2) AS saldo_periodo
+              FROM fin_movements_asaas
+              WHERE DATE_TRUNC('month', transaction_date) = DATE_TRUNC('month', NOW())
             `),
             pool.query(`
               SELECT
-                fm.id,
-                fm.description,
-                COALESCE(fp.fantasy_name, fp.name) AS contraparte,
-                fm.grapehub_category AS categoria_manual,
-                fm.type,
-                fm.type_column,
-                fm.status,
-                COALESCE(fm.movement_date, fm.expiration_date)::date AS data,
-                fm.value::numeric(14,2) AS valor,
+                m.id,
+                COALESCE(m.custom_description, m.description) AS description,
+                '' AS contraparte,
+                COALESCE(m.custom_category, m.grapehub_category) AS categoria_manual,
+                CASE WHEN m.value > 0 THEN 1 ELSE -1 END AS type,
+                'realizado' AS type_column,
+                'Realizado' AS status,
+                m.transaction_date::date AS data,
+                m.value::numeric(14,2) AS valor,
                 CASE
-                  WHEN fm.grapehub_category IS NOT NULL AND fm.grapehub_category != '' THEN fm.grapehub_category
-                  WHEN lower(fm.description) LIKE '%cartão de crédito%' OR lower(fm.description) LIKE '%cartao de credito%' OR lower(fm.description) LIKE '%cartão de cred%' THEN 'Cartão de Crédito'
-                  WHEN lower(fm.description) LIKE ANY(ARRAY['%simples nacional%','%iss%','%irpj%','%imposto%','%das %','%pis%','%cofins%','%csll%','%taxa municipal%','%alvará%']) THEN 'Impostos'
-                  WHEN lower(fm.description) LIKE ANY(ARRAY['%remuneração%','%salário%','%bonificação%','%business partner%','%fgts%','%irrf%','%folha%','%férias%','%13º%','%rescisão%','%benefício%','%vale %','%plano de saúde%','%odonto%','%seguro de vida%']) THEN 'Salários e Pessoal'
-                  WHEN lower(fm.description) LIKE ANY(ARRAY['%ferramenta%','%software%','%vps%','%domínio%','%hospedagem%','%aws%','%google cloud%','%vercel%','%openai%','%claude%','%github%','%cursor%','%slack%','%zoom%','%canva%','%adobe%','%figma%','%notion%','%trello%','%jira%','%elevenlabs%','%typeform%','%hostinger%','%microsoft%','%gather%','%htm fech%']) THEN 'Cartão de Crédito'
-                  WHEN lower(fm.description) LIKE ANY(ARRAY['%comissão%','%tráfego pago%','%facebook ads%','%google ads%','%meta ads%','%marketing%','%publicidade%','%rd station%','%hubspot%','%activecamp%']) THEN 'Marketing e Vendas'
-                  WHEN lower(fm.description) LIKE ANY(ARRAY['%aluguel%','%condomínio%','%energia%','%internet%','%assessoria%','%contabilidade%','%limpeza%','%escritório%','%material%','%seguro%','%água%','%telefone%','%correios%','%copel%']) THEN 'Administrativo'
-                  WHEN lower(fm.description) LIKE ANY(ARRAY['%taxa%','%tarifa%','%juros%','%iof%','%banco%','%anuidade%','%ted%','%boleto%']) THEN 'Despesas Financeiras'
-                  WHEN lower(fm.description) LIKE ANY(ARRAY['%pró-labore%','%pro-labore%','%dividendo%','%inss%','%retirada%','%lucro%','%sócio%','%distribuição%']) THEN 'Distribuição de Lucros'
-                  WHEN lower(fm.description) LIKE ANY(ARRAY['%facebk%','%facebook%']) THEN 'Cartão de Crédito > Facebook'
+                  WHEN m.custom_category IS NOT NULL AND m.custom_category != '' THEN m.custom_category
+                  WHEN m.grapehub_category IS NOT NULL AND m.grapehub_category != '' THEN m.grapehub_category
+                  WHEN lower(m.description) LIKE '%cartão de crédito%' OR lower(m.description) LIKE '%cartao de credito%' OR lower(m.description) LIKE '%cartão de cred%' THEN 'Cartão de Crédito'
+                  WHEN lower(m.description) LIKE ANY(ARRAY['%simples nacional%','%iss%','%irpj%','%imposto%','%das %','%pis%','%cofins%','%csll%','%taxa municipal%','%alvará%']) THEN 'Impostos'
+                  WHEN lower(m.description) LIKE ANY(ARRAY['%remuneração%','%salário%','%bonificação%','%business partner%','%fgts%','%irrf%','%folha%','%férias%','%13º%','%rescisão%','%benefício%','%vale %','%plano de saúde%','%odonto%','%seguro de vida%']) THEN 'Salários e Pessoal'
+                  WHEN lower(m.description) LIKE ANY(ARRAY['%ferramenta%','%software%','%vps%','%domínio%','%hospedagem%','%aws%','%google cloud%','%vercel%','%openai%','%claude%','%github%','%cursor%','%slack%','%zoom%','%canva%','%adobe%','%figma%','%notion%','%trello%','%jira%','%elevenlabs%','%typeform%','%hostinger%','%microsoft%','%gather%','%htm fech%']) THEN 'Cartão de Crédito'
+                  WHEN lower(m.description) LIKE ANY(ARRAY['%comissão%','%tráfego pago%','%facebook ads%','%google ads%','%meta ads%','%marketing%','%publicidade%','%rd station%','%hubspot%','%activecamp%']) THEN 'Marketing e Vendas'
+                  WHEN lower(m.description) LIKE ANY(ARRAY['%aluguel%','%condomínio%','%energia%','%internet%','%assessoria%','%contabilidade%','%limpeza%','%escritório%','%material%','%seguro%','%água%','%telefone%','%correios%','%copel%']) THEN 'Administrativo'
+                  WHEN lower(m.description) LIKE ANY(ARRAY['%taxa%','%tarifa%','%juros%','%iof%','%banco%','%anuidade%','%ted%','%boleto%']) THEN 'Despesas Financeiras'
+                  WHEN lower(m.description) LIKE ANY(ARRAY['%pró-labore%','%pro-labore%','%dividendo%','%inss%','%retirada%','%lucro%','%sócio%','%distribuição%']) THEN 'Distribuição de Lucros'
+                  WHEN lower(m.description) LIKE ANY(ARRAY['%facebk%','%facebook%']) THEN 'Cartão de Crédito > Facebook'
                   ELSE 'Outros'
                 END AS categoria_efetiva
-              FROM fin_movements fm
-              LEFT JOIN fin_people fp ON fp.id = fm.fin_people_id
-              WHERE fm.source NOT IN ('transfer_in', 'transfer_out')
-                AND (fm.fin_people_id IS NULL OR fm.fin_people_id NOT IN (
-                  SELECT fp2.id FROM fin_people fp2
-                  JOIN clients c ON c.id = fp2.grapehub_client_id
-                  WHERE c.crm_status IS NOT NULL AND c.crm_status != ''
-                ))
-                AND (
-                  (fm.type_column = 'realizado'
-                    AND DATE_TRUNC('month', COALESCE(fm.movement_date, fm.expiration_date)) = DATE_TRUNC('month', NOW()))
-                  OR
-                  (fm.type_column != 'realizado'
-                    AND (DATE_TRUNC('month', fm.movement_date) = DATE_TRUNC('month', NOW())
-                      OR DATE_TRUNC('month', fm.expiration_date) = DATE_TRUNC('month', NOW())))
-                )
-              ORDER BY COALESCE(fm.movement_date, fm.expiration_date) DESC
+              FROM fin_movements_asaas m
+              WHERE DATE_TRUNC('month', m.transaction_date) = DATE_TRUNC('month', NOW())
+              ORDER BY m.transaction_date DESC
               LIMIT 300
             `),
           ]);
@@ -10180,6 +10269,9 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
     }
   });
 
+  // ── Collection Routes (Regua de Cobranca) ─────────────────────────────────
+  setupCollectionRoutes(app, pool);
+
   // Vite middleware for development
 
   const isDev = process.env.NODE_ENV === "development";
@@ -10211,6 +10303,55 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
     console.log(`Env: ${process.env.NODE_ENV}`);
     console.log(`CWD: ${process.cwd()}`);
     console.log(`__dirname: ${__dirname}`);
+
+    // Sync inadimplentes ao iniciar e a cada 1 hora
+    const syncInadimplentes = async () => {
+      try {
+        const entradaResult = await pool.query(`
+          UPDATE clients c
+          SET crm_status = 'inadimplente_asaas'
+          FROM fin_people fp
+          WHERE fp.grapehub_client_id = c.id
+          AND EXISTS (
+            SELECT 1 FROM fin_receivables r
+            WHERE r.customer_id = fp.asaas_id
+            AND r.status IN ('PENDING', 'OVERDUE')
+            AND r.due_date IS NOT NULL
+            AND (CURRENT_DATE - r.due_date) >= 6
+          )
+          AND (
+            c.crm_status IS NULL
+            OR c.crm_status NOT IN ('inadimplente_asaas', 'pedido_finalizacao', 'negociacao', 'aviso_30_dias', 'processo_saida', 'arquivado')
+          )
+          RETURNING c.id
+        `);
+        const saidaResult = await pool.query(`
+          UPDATE clients c
+          SET crm_status = NULL
+          FROM fin_people fp
+          WHERE fp.grapehub_client_id = c.id
+          AND c.crm_status = 'inadimplente_asaas'
+          AND NOT EXISTS (
+            SELECT 1 FROM fin_receivables r
+            WHERE r.customer_id = fp.asaas_id
+            AND r.status IN ('PENDING', 'OVERDUE')
+            AND r.due_date IS NOT NULL
+            AND (CURRENT_DATE - r.due_date) >= 6
+          )
+          RETURNING c.id
+        `);
+        const added = entradaResult.rowCount || 0;
+        const removed = saidaResult.rowCount || 0;
+        if (added > 0 || removed > 0) {
+          console.log(`[sync-inadimplentes] +${added} adicionados, -${removed} removidos`);
+        }
+      } catch (err) {
+        console.error('[sync-inadimplentes] Erro ao sincronizar:', err);
+      }
+    };
+
+    syncInadimplentes(); // executa imediatamente ao iniciar
+    setInterval(syncInadimplentes, 60 * 60 * 1000); // repete a cada 1 hora
   });
 }
 

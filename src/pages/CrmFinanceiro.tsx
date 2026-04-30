@@ -50,14 +50,16 @@ interface Client {
   contracts: string;
   createdAt: string;
   crmStatus?: string;
-  monthlyFee?: number;
-  daysInArrears?: number;
-  paidThisMonth?: number;
-  recurringDelay?: boolean;
-  paymentHistory?: { date: string; status: string }[];
+  valorDisplay?: number;
+  diasAtraso?: number;
+  proximaCobranca?: string;
+  paymentStatus?: string;
   displayColumn?: string;
   isArchived?: boolean;
   aviso_previo_date?: string;
+  finPeopleGuid?: string;
+  hasActiveSubscription?: boolean;
+  subscriptionValue?: number;
 }
 
 interface Comment {
@@ -88,8 +90,7 @@ interface Task {
 }
 
 const COLUMNS = [
-  { id: 'inadimplente_marvee', title: 'INADIMPLENTES MARVEE', emoji: '🔄', color: '#3b82f6', colorKey: 'red' },
-  { id: 'inadimplente_grape', title: 'INADIMPLENTES GRAPE', emoji: '🔄', color: '#a78bfa', colorKey: 'red' },
+  { id: 'inadimplente_asaas', title: 'INADIMPLENTES', emoji: '🔄', color: '#3b82f6', colorKey: 'red' },
   { id: 'pedido_finalizacao', title: 'PEDIDO DE FINALIZAÇÃO', emoji: '📋', color: '#f43f5e', colorKey: 'finalizacao' },
   { id: 'negociacao', title: 'NEGOCIAÇÃO', emoji: '🟡', color: '#34d399', colorKey: 'negociacao' },
   { id: 'aviso_30_dias', title: 'AVISO 30 DIAS', emoji: '⚠️', color: '#fb923c', colorKey: 'yellow' },
@@ -370,17 +371,35 @@ const SortableCard: React.FC<SortableCardProps> = ({ client, tasks, onClick, onM
           'bg-gray-100 text-gray-700 dark:bg-white/10 dark:text-slate-300'
         }`}
       >
-        {formatCurrency(client.monthlyFee)}
+        {!client.finPeopleGuid ? '—' : formatCurrency(client.valorDisplay)}
       </div>
 
-      {/* Footer: badges + atraso */}
+      {/* Footer: payment status badges */}
       <div className="flex flex-wrap items-center gap-1.5 mt-1 border-t border-gray-100 dark:border-white/5 pt-2">
-        <span className="flex items-center gap-1 text-gray-500 dark:text-slate-400 darker:text-slate-500">
-          <Clock size={11} />
-          <span className="text-[11px] font-medium">
-            {client.daysInArrears && client.daysInArrears > 0 ? `${client.daysInArrears} dias em atraso` : 'Em dia'}
+        {!client.finPeopleGuid ? (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-500 dark:bg-white/5 dark:text-slate-400">
+            <LinkIcon size={9} /> Sem vínculo Asaas
           </span>
-        </span>
+        ) : client.paymentStatus === 'atrasada' ? (
+          <span className="flex items-center gap-1 text-rose-600 dark:text-rose-400">
+            <AlertCircle size={11} />
+            <span className="text-[11px] font-bold">
+              {client.diasAtraso} dias em atraso
+            </span>
+          </span>
+        ) : client.paymentStatus === 'vence_em_breve' ? (
+          <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
+            <Clock size={11} />
+            <span className="text-[11px] font-medium">
+              Vence em {client.proximaCobranca ? new Date(client.proximaCobranca + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '—'}
+            </span>
+          </span>
+        ) : (
+          <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+            <CheckCircle2 size={11} />
+            <span className="text-[11px] font-medium">Em dia</span>
+          </span>
+        )}
         
         {client.aviso_previo_date && (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-orange-100 text-orange-600 dark:bg-orange-500/10 dark:text-orange-400">
@@ -388,19 +407,9 @@ const SortableCard: React.FC<SortableCardProps> = ({ client, tasks, onClick, onM
           </span>
         )}
 
-        {client.recurringDelay && (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-rose-100 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400">
-            <AlertCircle size={9} /> Atraso Recorrente
-          </span>
-        )}
-        {client.crmStatus === 'aviso_30_dias' && (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-100 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400">
-            <AlertCircle size={9} /> Aviso 30 Dias
-          </span>
-        )}
-        {client.crmStatus === 'pedido_finalizacao' && (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-100 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400">
-            <AlertCircle size={9} /> Pedido Finalização
+        {client.proximaCobranca && client.paymentStatus !== 'vence_em_breve' && (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-500 dark:bg-white/5 dark:text-slate-400">
+            <Calendar size={9} /> {new Date(client.proximaCobranca + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
           </span>
         )}
       </div>
@@ -913,7 +922,7 @@ const CrmFinanceiro = () => {
                     </span>
                   </div>
                   <div className="text-[11px] pl-9 text-gray-500 dark:text-slate-400 darker:text-slate-500">
-                    {columnClients.length} cliente{columnClients.length !== 1 ? 's' : ''} · <span className="font-semibold text-emerald-600 dark:text-emerald-500">{formatCurrency(columnClients.reduce((acc, c) => acc + (typeof c.monthlyFee === 'string' ? parseFloat(c.monthlyFee) : (c.monthlyFee || 0)), 0))}</span>
+                    {columnClients.length} cliente{columnClients.length !== 1 ? 's' : ''} · <span className="font-semibold text-emerald-600 dark:text-emerald-500">{formatCurrency(columnClients.reduce((acc, c) => acc + (typeof c.valorDisplay === 'string' ? parseFloat(c.valorDisplay) : (c.valorDisplay || 0)), 0))}</span>
                   </div>
                 </div>
 
@@ -1205,46 +1214,50 @@ const CrmFinanceiro = () => {
                   <div className="space-y-6">
                     <div className="grid grid-cols-2 gap-4">
                       <div className="bg-white dark:bg-white/5 p-4 rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm">
-                        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Fee Mensal / MRR</div>
-                        <div className="text-lg font-black text-light-text dark:text-white">{formatCurrency(selectedClient.monthlyFee)}</div>
+                        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Valor</div>
+                        <div className="text-lg font-black text-light-text dark:text-white">
+                          {!selectedClient.finPeopleGuid ? '—' : formatCurrency(selectedClient.valorDisplay)}
+                        </div>
                       </div>
-                      <div className="bg-emerald-500/5 p-4 rounded-2xl border border-emerald-500/20 shadow-sm">
-                        <div className="text-[10px] font-bold text-emerald-600 dark:text-emerald-500 uppercase tracking-widest mb-1">Pago no Mês</div>
-                        <div className="text-lg font-black text-emerald-600 dark:text-emerald-400">{formatCurrency(selectedClient.paidThisMonth)}</div>
+                      <div className={`p-4 rounded-2xl border shadow-sm ${
+                        selectedClient.paymentStatus === 'atrasada' 
+                          ? 'bg-rose-500/5 border-rose-500/20' 
+                          : selectedClient.paymentStatus === 'vence_em_breve'
+                            ? 'bg-amber-500/5 border-amber-500/20'
+                            : 'bg-emerald-500/5 border-emerald-500/20'
+                      }`}>
+                        <div className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${
+                          selectedClient.paymentStatus === 'atrasada'
+                            ? 'text-rose-600 dark:text-rose-500'
+                            : selectedClient.paymentStatus === 'vence_em_breve'
+                              ? 'text-amber-600 dark:text-amber-500'
+                              : 'text-emerald-600 dark:text-emerald-500'
+                        }`}>Status</div>
+                        <div className={`text-lg font-black ${
+                          selectedClient.paymentStatus === 'atrasada'
+                            ? 'text-rose-600 dark:text-rose-400'
+                            : selectedClient.paymentStatus === 'vence_em_breve'
+                              ? 'text-amber-600 dark:text-amber-400'
+                              : 'text-emerald-600 dark:text-emerald-400'
+                        }`}>
+                          {selectedClient.paymentStatus === 'atrasada' 
+                            ? `${selectedClient.diasAtraso} dias em atraso`
+                            : selectedClient.paymentStatus === 'vence_em_breve'
+                              ? 'Vence em breve'
+                              : !selectedClient.finPeopleGuid 
+                                ? 'Sem vínculo'
+                                : 'Em dia'}
+                        </div>
                       </div>
-                      <div className="bg-rose-500/5 p-4 rounded-2xl border border-rose-500/20 col-span-2 flex justify-between items-center shadow-sm">
-                        <div>
-                          <div className="text-[10px] font-bold text-rose-600 dark:text-rose-500 uppercase tracking-widest mb-1">Valor em Aberto (Aprox.)</div>
-                          <div className="text-lg font-black text-rose-600 dark:text-rose-400">
-                            {formatCurrency((selectedClient.monthlyFee || 0) - (selectedClient.paidThisMonth || 0))}
+                      {selectedClient.proximaCobranca && (
+                        <div className="bg-white dark:bg-white/5 p-4 rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm col-span-2">
+                          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Próxima Cobrança</div>
+                          <div className="text-sm font-bold text-light-text dark:text-white">
+                            {new Date(selectedClient.proximaCobranca + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}
                           </div>
                         </div>
-                        {selectedClient.daysInArrears && selectedClient.daysInArrears > 0 && (
-                          <div className="text-right">
-                            <div className="text-[10px] font-bold text-rose-600 dark:text-rose-500 uppercase tracking-widest mb-1">Atraso</div>
-                            <div className="text-sm font-bold text-rose-600 dark:text-rose-400">{selectedClient.daysInArrears} dias</div>
-                          </div>
-                        )}
-                      </div>
+                      )}
                     </div>
-
-                    {selectedClient.paymentHistory && selectedClient.paymentHistory.length > 0 && (
-                      <div className="bg-white dark:bg-white/5 p-6 rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm">
-                        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4">Histórico de Pontualidade (Últimos 6 meses)</div>
-                        <div className="flex items-center gap-3">
-                          {selectedClient.paymentHistory.map((ph, idx) => (
-                            <div 
-                              key={idx} 
-                              className="flex-1 flex flex-col items-center gap-2"
-                              title={`${new Date(ph.date).toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' })}: ${ph.status}`}
-                            >
-                              <div className={`w-full h-3 rounded-full ${ph.status === 'Conciliado' ? 'bg-emerald-500' : ph.status === 'Atrasado' ? 'bg-rose-500' : 'bg-slate-300 dark:bg-slate-700'}`} />
-                              <span className="text-[10px] font-bold text-slate-400 uppercase">{new Date(ph.date).toLocaleDateString('pt-BR', { month: 'short' })}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
 
                     <div className="bg-white dark:bg-white/5 p-6 rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm">
                       <div className="flex justify-between items-center mb-4">

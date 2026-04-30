@@ -30,6 +30,7 @@ interface Client {
   subscriptionBillingType?: string;
   subscriptionCycle?: string;
   finPeopleGuid?: string;
+  finSubscriptionId?: string;
 }
 
 interface FinPerson {
@@ -47,6 +48,17 @@ interface FinMovement {
   movement_value: string;
   status: string;
   value?: string;
+}
+
+interface FinSubscription {
+  id: string;
+  customer_id: string;
+  billing_type: string;
+  value: number;
+  next_due_date: string;
+  status: string;
+  cycle: string;
+  description: string;
 }
 
 interface ClientModalProps {
@@ -76,7 +88,8 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
     phone: '',
     status: 'Ativo' as 'Ativo' | 'Inativo',
     crmStatus: '',
-    product: ''
+    product: '',
+    finSubscriptionId: ''
   });
 
   // Finance state
@@ -86,6 +99,11 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
   const [isFinDropdownOpen, setIsFinDropdownOpen] = useState(false);
   const [finMovements, setFinMovements] = useState<FinMovement[]>([]);
   const [isFetchingMovements, setIsFetchingMovements] = useState(false);
+  
+  // Subscription state
+  const [finSubscriptions, setFinSubscriptions] = useState<FinSubscription[]>([]);
+  const [isFetchingSubscriptions, setIsFetchingSubscriptions] = useState(false);
+  const [isSubDropdownOpen, setIsSubDropdownOpen] = useState(false);
 
   // Asaas linking state
   const [asaasSearchQuery, setAsaasSearchQuery] = useState('');
@@ -104,7 +122,8 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
         phone: editingClient.phone || '',
         status: editingClient.status || 'Ativo',
         crmStatus: editingClient.crmStatus || '',
-        product: editingClient.product || ''
+        product: editingClient.product || '',
+        finSubscriptionId: editingClient.finSubscriptionId || ''
       });
     } else {
       setFormData({
@@ -117,7 +136,8 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
         phone: '',
         status: 'Ativo',
         crmStatus: '',
-        product: ''
+        product: '',
+        finSubscriptionId: ''
       });
     }
     setActiveTab('client');
@@ -181,7 +201,22 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
           setIsFetchingMovements(false);
         }
       };
+      const fetchSubscriptions = async () => {
+        setIsFetchingSubscriptions(true);
+        try {
+          const response = await fetch(`/api/fin-people/${selectedFinPersonId}/subscriptions`);
+          if (response.ok) {
+            const data = await response.json();
+            setFinSubscriptions(data);
+          }
+        } catch (err) {
+          console.error("Failed to fetch subscriptions:", err);
+        } finally {
+          setIsFetchingSubscriptions(false);
+        }
+      };
       fetchMovements();
+      fetchSubscriptions();
     }
   }, [isOpen, activeTab, selectedFinPersonId]);
 
@@ -265,6 +300,21 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
     }
     setSelectedFinPersonId(newPersonId);
     onSaveSuccess();
+  };
+
+  const saveFinSubscription = async (subId: string | null) => {
+    if (!editingClient) return;
+    setFormData({ ...formData, finSubscriptionId: subId || '' });
+    try {
+      await fetch(`/api/clients/${editingClient.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fin_subscription_id: subId })
+      });
+      onSaveSuccess();
+    } catch (err) {
+      console.error("Failed to save subscription link:", err);
+    }
   };
 
   const squads = ['Able', 'Baker', 'Charlie', 'Delta'];
@@ -643,38 +693,140 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
                             <CreditCard size={16} className="text-violet-500" />
                             <h3 className="text-sm font-bold text-light-text dark:text-white uppercase tracking-widest">Assinatura Asaas</h3>
                           </div>
-                          {editingClient?.hasActiveSubscription ? (
-                            <div className="p-5 bg-emerald-500/5 border border-emerald-500/20 rounded-2xl space-y-3">
-                              <div className="flex items-center justify-between">
-                                <span className="px-2.5 py-0.5 bg-emerald-500/10 text-emerald-500 text-[9px] font-bold rounded-md uppercase tracking-widest">Ativa</span>
-                                <span className="text-xs text-slate-500">
-                                  {editingClient.subscriptionCycle === 'MONTHLY' ? 'Mensal' : editingClient.subscriptionCycle === 'YEARLY' ? 'Anual' : editingClient.subscriptionCycle || 'Mensal'}
-                                </span>
+                          
+                          {/* Dropdown de Seleção de Assinatura */}
+                          {finSubscriptions.length > 0 && (
+                            <div className={`space-y-2 relative ${isSubDropdownOpen ? 'pb-[180px]' : ''}`}>
+                              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block ml-1">Vincular a uma assinatura</label>
+                              <div className="relative">
+                                <button
+                                  type="button"
+                                  onClick={() => setIsSubDropdownOpen(!isSubDropdownOpen)}
+                                  className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-5 py-4 text-left flex items-center justify-between transition-all hover:border-violet-500/50"
+                                >
+                                  {formData.finSubscriptionId ? (
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-light-text dark:text-white font-medium">
+                                        Assinatura selecionada
+                                      </span>
+                                      <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-500 text-[9px] font-bold rounded-md uppercase tracking-widest">
+                                        Vinculada ✓
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-400">Selecionar assinatura...</span>
+                                  )}
+                                  <ChevronDown size={18} className={`text-slate-400 transition-transform ${isSubDropdownOpen ? 'rotate-180' : ''}`} />
+                                </button>
+
+                                {isSubDropdownOpen && (
+                                  <div className="absolute z-[100] top-full left-0 right-0 mt-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                                    <div className="max-h-[250px] overflow-y-auto p-1">
+                                      {/* Opção de desvincular/usar fallback */}
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          saveFinSubscription(null);
+                                          setIsSubDropdownOpen(false);
+                                        }}
+                                        className={`w-full text-left p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-white/5 transition-all flex flex-col gap-0.5 ${!formData.finSubscriptionId ? 'bg-violet-500/10' : ''}`}
+                                      >
+                                        <div className="flex items-center justify-between">
+                                          <span className={`font-bold text-sm ${!formData.finSubscriptionId ? 'text-violet-500' : 'text-light-text dark:text-white'}`}>
+                                            Nenhuma assinatura explícita
+                                          </span>
+                                          {!formData.finSubscriptionId && <Check size={14} className="text-violet-500" />}
+                                        </div>
+                                        <span className="text-[10px] text-slate-500 font-medium">Deixar sem assinatura ou usar auto-detecção</span>
+                                      </button>
+                                      
+                                      {finSubscriptions.map(sub => (
+                                        <button
+                                          key={sub.id}
+                                          type="button"
+                                          onClick={() => {
+                                            saveFinSubscription(sub.id);
+                                            setIsSubDropdownOpen(false);
+                                          }}
+                                          className={`w-full text-left p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-white/5 transition-all flex flex-col gap-0.5 ${formData.finSubscriptionId === sub.id ? 'bg-violet-500/10' : ''}`}
+                                        >
+                                          <div className="flex items-center justify-between">
+                                            <span className={`font-bold text-sm ${formData.finSubscriptionId === sub.id ? 'text-violet-500' : 'text-light-text dark:text-white'}`}>
+                                              {sub.description || 'Assinatura'} ({sub.cycle === 'MONTHLY' ? 'Mensal' : sub.cycle === 'YEARLY' ? 'Anual' : sub.cycle})
+                                            </span>
+                                            {formData.finSubscriptionId === sub.id && <Check size={14} className="text-violet-500" />}
+                                          </div>
+                                          <span className="text-[10px] text-slate-500 font-medium">
+                                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sub.value)} - 
+                                            Próx: {new Date(String(sub.next_due_date).substring(0, 10) + 'T12:00:00').toLocaleDateString('pt-BR')} - {sub.billing_type}
+                                          </span>
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
                               </div>
-                              <p className="text-2xl font-bold text-light-text dark:text-white">
-                                {editingClient.subscriptionValue ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(editingClient.subscriptionValue) : 'R$ 0,00'}
-                              </p>
-                              <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Próximo Vencimento</p>
-                                  <p className="text-xs font-bold text-light-text dark:text-white">
-                                    {editingClient.subscriptionNextDue ? new Date(editingClient.subscriptionNextDue + 'T12:00:00').toLocaleDateString('pt-BR') : '-'}
-                                  </p>
-                                </div>
-                                <div>
-                                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Tipo de Cobrança</p>
-                                  <p className="text-xs font-bold text-light-text dark:text-white">
-                                    {editingClient.subscriptionBillingType === 'BOLETO' ? 'Boleto' : editingClient.subscriptionBillingType === 'CREDIT_CARD' ? 'Cartão' : editingClient.subscriptionBillingType === 'PIX' ? 'Pix' : editingClient.subscriptionBillingType || '-'}
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="p-5 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5 flex items-center gap-3">
-                              <CreditCard size={20} className="text-slate-300 dark:text-slate-600" />
-                              <p className="text-sm text-slate-400">Sem assinatura ativa no Asaas</p>
                             </div>
                           )}
+
+                          {/* Renderização da Assinatura Selecionada */}
+                          {(() => {
+                            let displaySub = null;
+                            if (formData.finSubscriptionId) {
+                              const found = finSubscriptions.find(s => s.id === formData.finSubscriptionId);
+                              if (found) {
+                                displaySub = {
+                                  cycle: found.cycle,
+                                  value: found.value,
+                                  nextDue: found.next_due_date,
+                                  billingType: found.billing_type
+                                };
+                              }
+                            } else if (editingClient?.hasActiveSubscription) {
+                              displaySub = {
+                                cycle: editingClient.subscriptionCycle,
+                                value: editingClient.subscriptionValue,
+                                nextDue: editingClient.subscriptionNextDue,
+                                billingType: editingClient.subscriptionBillingType
+                              };
+                            }
+
+                            if (displaySub) {
+                              return (
+                                <div className="p-5 bg-emerald-500/5 border border-emerald-500/20 rounded-2xl space-y-3">
+                                  <div className="flex items-center justify-between">
+                                    <span className="px-2.5 py-0.5 bg-emerald-500/10 text-emerald-500 text-[9px] font-bold rounded-md uppercase tracking-widest">Ativa</span>
+                                    <span className="text-xs text-slate-500">
+                                      {displaySub.cycle === 'MONTHLY' ? 'Mensal' : displaySub.cycle === 'YEARLY' ? 'Anual' : displaySub.cycle || 'Mensal'}
+                                    </span>
+                                  </div>
+                                  <p className="text-2xl font-bold text-light-text dark:text-white">
+                                    {displaySub.value ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(displaySub.value) : 'R$ 0,00'}
+                                  </p>
+                                  <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Próximo Vencimento</p>
+                                      <p className="text-xs font-bold text-light-text dark:text-white">
+                                        {displaySub.nextDue ? new Date(String(displaySub.nextDue).substring(0, 10) + 'T12:00:00').toLocaleDateString('pt-BR') : '-'}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Tipo de Cobrança</p>
+                                      <p className="text-xs font-bold text-light-text dark:text-white">
+                                        {displaySub.billingType === 'BOLETO' ? 'Boleto' : displaySub.billingType === 'CREDIT_CARD' ? 'Cartão' : displaySub.billingType === 'PIX' ? 'Pix' : displaySub.billingType || '-'}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            }
+                            return (
+                              <div className="p-5 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5 flex items-center gap-3">
+                                <CreditCard size={20} className="text-slate-300 dark:text-slate-600" />
+                                <p className="text-sm text-slate-400">Sem assinatura ativa no Asaas</p>
+                              </div>
+                            );
+                          })()}
                         </div>
 
                         {/* Seção 3 - Histórico de Pagamentos */}
