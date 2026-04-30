@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Calendar, ChevronDown, ChevronUp, ChevronRight, AlertTriangle, FileText, Upload, CreditCard, Check, Tag, Search } from 'lucide-react';
+import { Calendar, ChevronDown, ChevronUp, ChevronRight, AlertTriangle, FileText, Upload, CreditCard, Check, Tag, Search, TrendingDown, Clock, CheckCircle, BarChart2 } from 'lucide-react';
 import ContasRecorrentes from './ContasRecorrentes';
 import RecurringBillDetail from './RecurringBillDetail';
 
@@ -145,7 +145,7 @@ const L3Dropdown = ({ group, onViewFatura }: { group: L3Group; onViewFatura?: (e
       >
         <div className="flex items-center gap-2">
           <div className="w-1 h-1 rounded-full bg-slate-500 shrink-0" />
-          <span className="text-[10px] font-mono text-slate-500">{group.code}</span>
+          <span className="text-[10px] font-mono text-slate-400">{group.code}</span>
           <span className="text-[10px] font-medium text-slate-400">{group.name}</span>
           <span className="text-[9px] text-slate-600">{group.items.length} {group.items.length === 1 ? 'item' : 'itens'}</span>
         </div>
@@ -178,8 +178,8 @@ const L2Collapsible = ({ group, onViewFatura }: { group: L2Group; onViewFatura?:
       >
         <div className="flex items-center gap-2">
           <div className="w-1.5 h-1.5 rounded-full bg-violet-500 shrink-0" />
-          <span className="text-[10px] font-mono text-violet-400/60">{group.code}</span>
-          <span className="text-[11px] font-semibold text-violet-400/80">{group.name}</span>
+          <span className="text-[10px] font-mono text-slate-400">{group.code}</span>
+          <span className="text-[11px] font-semibold text-dark-text/80">{group.name}</span>
           <span className="text-[9px] text-slate-600 font-normal">{totalItems} {totalItems === 1 ? 'item' : 'itens'}</span>
         </div>
         <div className="flex items-center gap-3">
@@ -879,34 +879,95 @@ export default function ContasAPagar() {
           </div>
         ) : (
           <>
-            {/* KPI Cards */}
+            {/* KPI Cards — mesmo padrão do Dashboard Financeiro */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="bg-dark-card border-2 border-rose-500/30 rounded-2xl p-5">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Vence em 7 dias</p>
-                <div className="flex items-center justify-between">
-                  <h3 className="text-2xl font-black text-rose-500">{formatCurrency(summary.vence_hoje_amanha)}</h3>
-                  <span className="px-2 py-0.5 bg-rose-600 text-white text-[10px] font-bold rounded-full uppercase tracking-wider">urgente</span>
+              {/* Card 1: Vence em 7 dias */}
+              <div className="bg-dark-card border border-white/10 rounded-2xl p-6 relative overflow-hidden flex flex-col min-h-[150px]">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-2.5 rounded-2xl bg-rose-600">
+                    <Clock size={20} className="text-white" />
+                  </div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Vence em 7 dias</p>
+                </div>
+                <div className="flex flex-col mt-auto">
+                  <h3 className="text-3xl font-black tracking-tight mb-3 text-rose-400">
+                    {formatCurrency(summary.vence_hoje_amanha)}
+                  </h3>
                 </div>
               </div>
-              <div className="bg-dark-card border border-white/10 rounded-2xl p-5">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Total Previsto</p>
-                <div className="flex items-center justify-between mt-1">
-                  <h3 className="text-2xl font-black text-dark-text">{formatCurrency(summary.total_previsto)}</h3>
-                  <span className="px-2 py-0.5 bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 text-[10px] font-bold rounded-full uppercase tracking-wider">a pagar</span>
+
+              {/* Card 2: Total Previsto */}
+              <div className="bg-dark-card border border-white/10 rounded-2xl p-6 relative overflow-hidden flex flex-col min-h-[150px]">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-2.5 rounded-2xl bg-amber-500">
+                    <TrendingDown size={20} className="text-white" />
+                  </div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total Previsto</p>
+                </div>
+                <div className="flex flex-col mt-auto">
+                  <h3 className="text-3xl font-black tracking-tight mb-3 text-dark-text">
+                    {formatCurrency(summary.total_previsto)}
+                  </h3>
+                  <div className="pt-3 border-t border-white/10">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-500">A pagar</span>
+                      <span className="font-semibold text-amber-400">{formatCurrency(summary.total_previsto)}</span>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div className="bg-dark-card border border-white/10 rounded-2xl p-5">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Já Pago</p>
-                <div className="flex items-center justify-between mt-1">
-                  <h3 className="text-2xl font-black text-dark-text">{formatCurrency(summary.ja_pago)}</h3>
-                  <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-[10px] font-bold rounded-full uppercase tracking-wider">conciliado</span>
+
+              {/* Card 3: Já Pago */}
+              <div className="bg-dark-card border border-white/10 rounded-2xl p-6 relative overflow-hidden flex flex-col min-h-[150px]">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-2.5 rounded-2xl bg-emerald-600">
+                    <CheckCircle size={20} className="text-white" />
+                  </div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Já Pago</p>
+                </div>
+                <div className="flex flex-col mt-auto">
+                  <h3 className="text-3xl font-black tracking-tight mb-3 text-dark-text">
+                    {formatCurrency(summary.ja_pago)}
+                  </h3>
+                  <div className="pt-3 border-t border-white/10">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-500">Conciliado</span>
+                      <span className="font-semibold text-emerald-400">{formatCurrency(summary.ja_pago)}</span>
+                    </div>
+                    <div className="mt-2 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full bg-emerald-500 transition-all duration-500"
+                        style={{ width: `${Math.min(100, summary.total_mes > 0 ? (summary.ja_pago / summary.total_mes) * 100 : 0)}%` }} />
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div className="bg-dark-card border border-white/10 rounded-2xl p-5">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Total do Mês</p>
-                <div className="flex items-center justify-between mt-1">
-                  <h3 className="text-2xl font-black text-dark-text">{formatCurrency(summary.total_mes)}</h3>
-                  <span className="px-2 py-0.5 bg-dark-bg text-slate-500 text-[10px] font-bold rounded-full uppercase tracking-wider border border-white/10">geral</span>
+
+              {/* Card 4: Total do Mês */}
+              <div className="bg-dark-card border border-white/10 rounded-2xl p-6 relative overflow-hidden flex flex-col min-h-[150px]">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-2.5 rounded-2xl bg-violet-600">
+                    <BarChart2 size={20} className="text-white" />
+                  </div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total do Mês</p>
+                </div>
+                <div className="flex flex-col mt-auto">
+                  <h3 className="text-3xl font-black tracking-tight mb-3 text-dark-text">
+                    {formatCurrency(summary.total_mes)}
+                  </h3>
+                  <div className="pt-3 border-t border-white/10">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-500">Pago</span>
+                      <span className="font-semibold text-emerald-400">{formatCurrency(summary.ja_pago)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm mt-1">
+                      <span className="text-slate-500">A pagar</span>
+                      <span className="font-semibold text-amber-400">{formatCurrency(summary.total_previsto)}</span>
+                    </div>
+                    <div className="mt-2 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full bg-violet-500 transition-all duration-500"
+                        style={{ width: `${Math.min(100, summary.total_mes > 0 ? (summary.ja_pago / summary.total_mes) * 100 : 0)}%` }} />
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

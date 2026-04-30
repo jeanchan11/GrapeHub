@@ -6,6 +6,9 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
 import { MoreVertical, DollarSign, TrendingUp, TrendingDown, AlertCircle, Wallet, Calendar, AlertTriangle, ArrowUpRight, ShieldAlert, Users, ChevronDown, ChevronUp, X, ArrowUp, ArrowDown } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { designSystem } from '../design-system';
+import { AIChat } from '../components/AIChat/AIChat';
+import { useAuth } from '../contexts/AuthContext';
+import fredImg from '../assets/fred.png';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend, Filler, LineController, BarController);
 
@@ -228,6 +231,8 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 const MESES_FULL_FIN = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
 export default function FinanceiroDashboard() {
+  const { user, userData } = useAuth();
+  const [showAI, setShowAI] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [resumo, setResumo] = useState<Resumo | null>(null);
   const [fluxo, setFluxo] = useState<FluxoDiario[]>([]);
@@ -503,7 +508,25 @@ export default function FinanceiroDashboard() {
           titleAccent="ceiro" 
           subtitle="Gestão integrada de caixa e indicadores de saúde do negócio"
         >
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-2">
+            {/* Botão Fred IA */}
+            <button
+              onClick={() => setShowAI(o => !o)}
+              className={`flex items-center gap-2 px-3 py-2 rounded-xl border font-bold text-xs transition-all ${
+                showAI
+                  ? 'bg-violet-500 border-violet-500 text-white shadow-lg shadow-violet-500/30'
+                  : 'bg-dark-card border-white/10 text-violet-400 hover:border-violet-500/50 hover:bg-violet-500/10'
+              }`}
+              title="Perguntar ao Fred (especialista financeiro IA)"
+            >
+              <div style={{ width: 22, height: 22, flexShrink: 0 }}>
+                <img src={fredImg} alt="Fred" style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
+              </div>
+              <span>Consultar Fred</span>
+            </button>
+
+            {/* Month picker */}
+            <div className="flex items-center gap-1">
             {/* Seta esquerda */}
             <button
               onClick={() => {
@@ -537,7 +560,8 @@ export default function FinanceiroDashboard() {
             >
               <ChevronDown size={14} className="text-slate-400 -rotate-90" />
             </button>
-          </div>
+            </div>{/* end month picker */}
+          </div>{/* end outer flex gap-2 */}
         </PageHeader>
 
         {/* Visão Geral */}
@@ -790,6 +814,15 @@ export default function FinanceiroDashboard() {
           </>
 
       </div>
+
+      {/* AIChat — modo inline, sem botão flutuante, controlado pelo header */}
+      <AIChat
+        activePage="financeiro-dashboard"
+        userName={userData?.nome || userData?.name || user?.displayName || user?.email || undefined}
+        floatingButton={false}
+        externalOpen={showAI}
+        onExternalToggle={() => setShowAI(o => !o)}
+      />
 
       {/* ── Day Popup Modal (Portal) ── */}
       {dayPopup && ReactDOM.createPortal(

@@ -4143,6 +4143,8 @@ app.get("/api/todos", async (req, res) => {
         }
       }
 
+      // Antecipações: excluídas do DFC (tratadas via is_anticipation_pair=false no filtro principal)
+
       // ── Override Jan/Fev/Mar 2026 com dados do sistema legado ──
       if (year === 2026) {
         // Dados exatos do sistema anterior (código → [Jan, Fev, Mar])
@@ -4256,10 +4258,36 @@ app.get("/api/todos", async (req, res) => {
         isGroup: boolean;
       }> = [];
 
-      // L1 sorted by code
-      const l1Codes = categories.filter(c => c.level === 1).map(c => c.structure).sort();
+      // ── Merge "Receitas Não Operacionais" (03) into "Receitas Operacionais" (01) ──
+      if (nodeMap['03'] && nodeMap['01']) {
+        // Sum monthly values
+        for (let m = 0; m < 12; m++) {
+          nodeMap['01'].values[m] += nodeMap['03'].values[m];
+        }
+        // Move L2 children of 03 into 01 (re-parent)
+        for (const l2Code of nodeMap['03'].childCodes) {
+          nodeMap['01'].childCodes.push(l2Code);
+          if (nodeMap[l2Code]) nodeMap[l2Code].type = 'receita';
+        }
+        // Mark 03 as absorbed — will be skipped in row output
+        nodeMap['03'].values = new Array(12).fill(0);
+        nodeMap['03'].childCodes = [];
+      }
+
+      // L1: receitas first, then despesas — numeric order within each group
+      const l1Codes = categories
+        .filter(c => c.level === 1)
+        .map(c => c.structure)
+        .sort((a, b) => {
+          const aIsReceita = nodeMap[a]?.type === 'receita' ? 0 : 1;
+          const bIsReceita = nodeMap[b]?.type === 'receita' ? 0 : 1;
+          if (aIsReceita !== bIsReceita) return aIsReceita - bIsReceita;
+          return a.localeCompare(b);
+        });
       for (const l1Code of l1Codes) {
         const l1 = nodeMap[l1Code];
+        // Skip 03 — merged into 01
+        if (l1Code === '03') continue;
         if (!l1 || !hasData(l1Code)) continue;
 
         const l1Total = l1.values.reduce((s, v) => s + v, 0);
@@ -4302,12 +4330,58 @@ app.get("/api/todos", async (req, res) => {
       const geracaoCaixa = totalReceitas - totalDespesas;
       const saldoFinal = geracaoCaixa - totalDistribuicao;
 
-      // Geração de caixa per month
+      // Geração de caixa per month (monthly delta)
       const monthlyGeracaoCaixa = emptyMonths();
-      const monthlySaldoFinal = emptyMonths();
+      const monthlyDelta = emptyMonths(); // delta = geração - distribuição
       for (let m = 0; m < 12; m++) {
         monthlyGeracaoCaixa[m] = monthlyReceitas[m] - monthlyDespesas[m];
-        monthlySaldoFinal[m] = monthlyGeracaoCaixa[m] - monthlyDistribuicao[m];
+        monthlyDelta[m] = monthlyGeracaoCaixa[m] - monthlyDistribuicao[m];
+      }
+
+      // ── Saldo Inicial retroativo a partir da âncora em fin_dfc_config ──
+      const configRes = await pool.query(
+        'SELECT mes_referencia, saldo_referencia, saldo_proximo_mes FROM fin_dfc_config WHERE year = $1 ORDER BY mes_referencia ASC',
+        [year]
+      );
+
+      const monthlySaldoInicial = emptyMonths();
+      const monthlySaldoFinal = emptyMonths();
+
+      if (configRes.rows.length > 0) {
+        const refMesIdx = (configRes.rows[0].mes_referencia || 1) - 1; // 0-indexed
+        const refSaldo = parseFloat(configRes.rows[0].saldo_referencia);
+
+        // Anchor: saldo_final do mês de referência = saldo conhecido
+        monthlySaldoFinal[refMesIdx] = refSaldo;
+        monthlySaldoInicial[refMesIdx] = refSaldo - monthlyDelta[refMesIdx];
+
+        // Retroativo: do mês de referência até Janeiro
+        for (let m = refMesIdx - 1; m >= 0; m--) {
+          monthlySaldoFinal[m] = monthlySaldoInicial[m + 1]; // saldo_final[m] = saldo_inicial[m+1]
+          monthlySaldoInicial[m] = monthlySaldoFinal[m] - monthlyDelta[m];
+        }
+
+        // Âncoras secundárias: rows adicionais = override de saldo_inicial para meses futuros
+        const overrides: Record<number, number> = {};
+        for (let i = 1; i < configRes.rows.length; i++) {
+          const row = configRes.rows[i];
+          overrides[(row.mes_referencia || 1) - 1] = parseFloat(row.saldo_referencia);
+        }
+        // saldo_proximo_mes na âncora principal = override do mês seguinte ao de referência
+        if (configRes.rows[0].saldo_proximo_mes) {
+          overrides[refMesIdx + 1] = parseFloat(configRes.rows[0].saldo_proximo_mes);
+        }
+
+        // Progressivo: do mês seguinte ao de referência até Dezembro
+        for (let m = refMesIdx + 1; m < 12; m++) {
+          // Se há override de saldo_inicial para este mês (ex: caixa real de Maio), usa ele
+          if (overrides[m] !== undefined) {
+            monthlySaldoInicial[m] = overrides[m];
+          } else {
+            monthlySaldoInicial[m] = monthlySaldoFinal[m - 1];
+          }
+          monthlySaldoFinal[m] = monthlySaldoInicial[m] + monthlyDelta[m];
+        }
       }
 
       res.json({
@@ -4319,6 +4393,7 @@ app.get("/api/todos", async (req, res) => {
           monthly_distribuicao: monthlyDistribuicao,
           monthly_geracao_caixa: monthlyGeracaoCaixa,
           monthly_saldo_final: monthlySaldoFinal,
+          monthly_saldo_inicial: monthlySaldoInicial,
           total_receitas: totalReceitas,
           total_despesas: totalDespesas,
           geracao_caixa: geracaoCaixa,
@@ -4420,7 +4495,7 @@ app.get("/api/todos", async (req, res) => {
           category_l2_desc: null as string | null,
           category_l3_desc: null as string | null,
           category_structure: null as string | null,
-          is_edited: !!(r.custom_description || r.custom_category),
+          is_edited: !!(r.custom_description),
         };
       });
 
@@ -5212,7 +5287,7 @@ app.get("/api/todos", async (req, res) => {
           if (transferMatch) personName = transferMatch[1].trim();
         }
 
-        const isEdited = !!(r.custom_description || r.custom_category);
+        const isEdited = !!(r.custom_description);
         const isSicredi = r.account === 'sicredi';
         const sicrediPending = isSicredi && (r.sicredi_status === 'pendente');
 
@@ -5239,6 +5314,7 @@ app.get("/api/todos", async (req, res) => {
           document_code: r.asaas_id || '',
           grapehub_category: catLabel,
           custom_category: r.custom_category || null,
+          raw_grapehub_category: r.display_category || null, // null when truly uncategorized in DB
           custom_category_id: r.custom_category_id || null,
           person_name: personName,
           person_fantasy_name: null,
@@ -6013,9 +6089,7 @@ app.get("/api/todos", async (req, res) => {
                grapehub_category = $2,
                edited_at = NOW(),
                edited_by = 'regra-auto'
-           WHERE custom_category IS NULL
-             AND (grapehub_category IS NULL OR grapehub_category = '')
-             AND is_anticipation_pair = false
+           WHERE is_anticipation_pair = false
              AND description ILIKE $1
            RETURNING id`,
           [pattern, rule.category_name, rule.category_id]
@@ -9367,19 +9441,19 @@ app.get("/api/todos", async (req, res) => {
         try {
           const mesAtual = `DATE_TRUNC('month', NOW())`;
           const [receitasRes, despesasRes, aReceberRes, topClientesRes, saldoRes, extratoRes] = await Promise.all([
+            // 1) Receitas dos últimos 6 meses
             pool.query(`
               SELECT
-                TO_CHAR(DATE_TRUNC('month', COALESCE(movement_date, expiration_date)), 'YYYY-MM') AS mes,
+                TO_CHAR(DATE_TRUNC('month', transaction_date), 'YYYY-MM') AS mes,
                 SUM(value)::numeric(14,2) AS total_receita,
                 COUNT(*) AS qtd_recebimentos
-              FROM fin_movements
+              FROM fin_movements_asaas
               WHERE type = 1
-                AND type_column = 'realizado'
-                AND status = 'Conciliado'
-                AND source NOT IN ('transfer_in', 'transfer_out')
-                AND COALESCE(movement_date, expiration_date) >= NOW() - INTERVAL '6 months'
+                AND is_anticipation_pair = false
+                AND transaction_date >= NOW() - INTERVAL '6 months'
               GROUP BY 1 ORDER BY 1 DESC
             `),
+            // 2) Despesas do mês atual por categoria
             pool.query(`
               SELECT
                 COALESCE(custom_category, grapehub_category, 'Não categorizado') AS categoria,
@@ -9387,9 +9461,11 @@ app.get("/api/todos", async (req, res) => {
                 COUNT(*) AS qtd
               FROM fin_movements_asaas
               WHERE value < 0
+                AND is_anticipation_pair = false
                 AND DATE_TRUNC('month', transaction_date) = DATE_TRUNC('month', NOW())
               GROUP BY 1 ORDER BY 2 DESC
             `),
+            // 3) A receber nos próximos 30 dias
             pool.query(`
               SELECT
                 COUNT(*) AS qtd,
@@ -9398,16 +9474,18 @@ app.get("/api/todos", async (req, res) => {
               WHERE status IN ('PENDING', 'OVERDUE')
                 AND due_date <= NOW() + INTERVAL '30 days'
             `),
+            // 4) Top 5 clientes por valor recebido no mês
             pool.query(`
               SELECT
                 COALESCE(fp.name, r.customer_name, 'Desconhecido') AS cliente,
                 SUM(r.value)::numeric(14,2) AS total_recebido
               FROM fin_receivables r
-              JOIN fin_people fp ON fp.asaas_id = r.customer_id
+              LEFT JOIN fin_people fp ON fp.asaas_id = r.customer_id
               WHERE r.status IN ('RECEIVED', 'CONFIRMED')
                 AND DATE_TRUNC('month', r.payment_date) = DATE_TRUNC('month', NOW())
               GROUP BY fp.name, r.customer_name ORDER BY 2 DESC LIMIT 5
             `),
+            // 5) Resumo do mês atual (entradas / saídas / saldo)
             pool.query(`
               SELECT
                 SUM(CASE WHEN value > 0 THEN value ELSE 0 END)::numeric(14,2) AS entradas_realizadas,
@@ -9415,6 +9493,7 @@ app.get("/api/todos", async (req, res) => {
                 SUM(value)::numeric(14,2) AS saldo_periodo
               FROM fin_movements_asaas
               WHERE DATE_TRUNC('month', transaction_date) = DATE_TRUNC('month', NOW())
+                AND is_anticipation_pair = false
             `),
             pool.query(`
               SELECT
@@ -9497,9 +9576,9 @@ app.get("/api/todos", async (req, res) => {
             })),
             gerado_em: new Date().toISOString(),
           };
-        } catch (dbErr) {
-          console.error('[AI Chat] Erro ao buscar contexto financeiro:', dbErr);
-          financialContext = { erro: 'Não foi possível carregar os dados financeiros neste momento.' };
+        } catch (dbErr: any) {
+          console.error('[AI Chat] Erro ao buscar contexto financeiro:', dbErr?.message || dbErr);
+          financialContext = { erro: `Não foi possível carregar os dados financeiros: ${dbErr?.message || 'erro desconhecido'}` };
         }
       }
 
@@ -9620,7 +9699,47 @@ Dados de marketing injetados no contexto representam as ações em andamento —
 Você está operando como **Especialista Financeiro** da Grape Mídia.
 Seu foco AGORA é caixa, receitas, despesas, inadimplência, margens e projeções.
 Pense como CFO conservador: prefira caixa a crescimento alavancado, questione toda despesa sem retorno claro.
-Dados financeiros injetados no contexto (extrato, receitas, despesas por categoria) são REAIS e carregados agora do banco.`,
+Dados financeiros injetados no contexto (extrato, receitas, despesas por categoria) são REAIS e carregados agora do banco.
+
+## 🏗️ ARQUITETURA DO FINANCEIRO GRAPEHUB (conhecimento técnico profundo)
+
+### Fontes de dados
+- **Asaas**: gateway de cobrança — sincronizado manualmente via botão "Importar" no Extrato. Consome API \`/financialTransactions\`.
+- **Sicredi**: cartão de crédito corporativo — importado via OFX/CSV mensalmente. Usa campo \`billing_month\` (competência) ≠ \`transaction_date\` (físico).
+- **Saldo real**: consultado ao vivo via \`/finance/balance\` do Asaas. Não é salvo no banco.
+
+### Tabela central: fin_movements_asaas
+Todos os movimentos (Asaas + Sicredi) vivem nesta tabela.
+Campos-chave: \`type\` (+1 entrada / -1 saída), \`transaction_type\`, \`value\`, \`transaction_date\`, \`description\`, \`account\` ('asaas' ou 'sicredi'), \`grapehub_category\`, \`custom_category\`, \`is_anticipation_pair\`, \`billing_month\`.
+
+### Os 7 módulos financeiros
+1. **Dashboard** — visão do mês: saldo real + previsto. Regime misto.
+2. **Extrato** — todas as movimentações brutas, editáveis. Filtro "Sem categoria" para identificar não categorizados.
+3. **Contas a Receber** — cobranças por data de pagamento do cliente (regime competência).
+4. **Contas a Pagar** — saídas Asaas + fatura Sicredi por \`billing_month\`. Exclui "transferência entre contas".
+5. **DFC (Fluxo de Caixa)** — visão anual, por categoria hierárquica, regime de caixa (\`transaction_date\`). Lê \`fin_categories\` (L1→L2→L3). Cálculo de Saldo Inicial retroativo usando âncora em \`fin_dfc_config\`.
+6. **Contas Recorrentes** — despesas fixas mensais (salário, aluguel). Controle de previsto × realizado.
+7. **Categorias** — plano de contas L1/L2/L3. Toda a categorização depende desta tabela.
+
+### Lógica de antecipações
+Quando o Asaas antecipa recebíveis:
+- \`RECEIVABLE_ANTICIPATION_GROSS_CREDIT\` → crédito bruto real (entra em Receitas Operacionais no DFC)
+- \`Baixa da antecipacao\` + \`Cobranca recebida\` do mesmo fatura → marcados \`is_anticipation_pair=true\` → EXCLUÍDOS do extrato e DFC
+- \`Taxa de antecipacao\` → despesa independente (entra como saída categorizada)
+
+### Diferenças entre módulos (causa raiz)
+- **DFC ≠ Contas a Pagar**: DFC ignora movimentos sem categoria mapeada; C.A.Pagar mostra tudo incluindo "Outros".
+- **DFC ≠ Contas a Receber**: DFC usa \`transaction_date\` (banco); C.A.Receber usa data de pagamento do cliente.
+- **Sicredi**: C.A.Pagar usa \`billing_month\` (competência); DFC usa \`transaction_date\` (fisicamente dia 18+).
+- **Geração de Caixa** = Receitas − Despesas (excluindo distribuição). **Saldo Final** = Saldo Inicial + Geração − Distribuição.
+
+### Gaps conhecidos
+- ~18 itens sem categoria no extrato → somem do DFC, causando subnotificação de despesas.
+- Sync do Asaas é manual → dados podem estar desatualizados.
+- Saldo âncora (\`fin_dfc_config\`) é estático e precisa ser atualizado mensalmente.
+- Sicredi sem importação automática → mês errado se o CSV não for importado.
+
+Quando o usuário perguntar sobre discrepâncias entre módulos, use este conhecimento para explicar a causa raiz com precisão.`,
 
         operacional: `
 Você está operando como **Especialista Operacional** da Grape Mídia.

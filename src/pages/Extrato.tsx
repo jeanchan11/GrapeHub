@@ -29,6 +29,7 @@ interface ExtratoItem {
   edited_by: string | null;
   is_anticipation_pair: boolean;
   account?: string;
+  raw_grapehub_category?: string | null;
 }
 
 interface DateRange { start: string; end: string; }
@@ -664,7 +665,7 @@ const getStatusDotColor = (status: string) => {
   return 'bg-slate-500';
 };
 
-const TABS = ['Extrato', 'Clientes'] as const;
+const TABS = ['Extrato'] as const;
 type TabType = typeof TABS[number];
 
 // ── Reconciliation Rule Types ────────────────────────────
@@ -1252,6 +1253,10 @@ export default function Extrato() {
     return true;
   }).filter(item => {
     if (!categoryFilter) return true;
+    if (categoryFilter === '__sem_categoria__') {
+      // Use raw_grapehub_category: null means no real category in DB (ignores autoCategory fallback)
+      return !item.raw_grapehub_category && !item.custom_category;
+    }
     const itemCat = getCategory(item).name;
     return itemCat === categoryFilter;
   });
@@ -1337,24 +1342,6 @@ export default function Extrato() {
         </div>
       </div>
 
-      {/* ── Tab Navigation ── */}
-      <div className="px-6 md:px-8 mb-6">
-        <div className="inline-flex items-center p-1.5 bg-dark-bg border border-white/10 rounded-full">
-          {TABS.map(tab => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`relative flex items-center px-6 py-2.5 text-sm font-bold rounded-full transition-all duration-200 ${
-                activeTab === tab
-                  ? 'bg-dark-card text-dark-text shadow-sm'
-                  : 'text-slate-500 hover:text-dark-text'
-              }`}
-            >
-              {tab}
-            </button>
-          ))}
-        </div>
-      </div>
 
       {/* ── Tab: Extrato ── */}
       {activeTab === 'Extrato' && (
@@ -1430,6 +1417,7 @@ export default function Extrato() {
                 }`}
               >
                 <option value="">Todas categorias</option>
+                <option value="__sem_categoria__">⚠️ Sem categoria</option>
                 {availableCategories.map(cat => (
                   <option key={cat} value={cat}>{cat}</option>
                 ))}
@@ -1583,119 +1571,6 @@ export default function Extrato() {
         </div>
       )}
 
-      {/* ── Tab: Clientes ── */}
-      {activeTab === 'Clientes' && (
-        <div className="px-6 md:px-8 pb-8">
-          {tabLoading ? (
-            <div className="flex items-center justify-center py-24">
-              <div className="w-8 h-8 border-4 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Lista de Clientes */}
-              <div className="lg:col-span-2 bg-dark-card border border-white/10 rounded-2xl overflow-hidden">
-                <div className="p-6 border-b border-white/10 flex justify-between items-center">
-                  <h2 className="text-sm font-bold text-dark-text uppercase tracking-widest">Clientes Recentes</h2>
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{clientes.length} registros</span>
-                </div>
-                <div className="divide-y divide-white/5 max-h-[600px] overflow-y-auto">
-                  {clientes.map((cliente, idx) => (
-                    <div key={idx} className="flex items-center justify-between px-6 py-4 hover:bg-white/[0.02] transition-colors">
-                      <div className="flex items-center gap-4">
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white ${getStatusDotColor(cliente.status)}`}>
-                          {(cliente.fantasy_name || cliente.name || '??').substring(0, 2).toUpperCase()}
-                        </div>
-                        <div>
-                          <p className="text-sm font-bold text-slate-900 dark:text-white truncate max-w-[240px]">{cliente.fantasy_name || cliente.name}</p>
-                          <p className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wider mt-0.5">
-                            Parc. {cliente.installment_number || '1'} · {cliente.payment_method || 'N/A'} · {fmtDate(cliente.movement_date)}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm font-bold text-slate-900 dark:text-white">{formatCurrency(cliente.valor)}</p>
-                        <span className={`inline-block mt-1 px-2 py-0.5 text-[10px] font-bold rounded-full uppercase tracking-wider ${getStatusColor(cliente.status)}`}>
-                          {cliente.status}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                  {clientes.length === 0 && (
-                    <div className="py-16 text-center">
-                      <Users size={32} className="mx-auto text-slate-600 mb-3" />
-                      <p className="text-sm font-bold text-slate-500">Nenhum cliente recente neste mês.</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Resumo */}
-              <div className="space-y-6">
-                <div className="bg-dark-card border border-white/10 rounded-2xl p-6">
-                  <div className="flex items-center gap-3 mb-6">
-                    <div className="p-2.5 bg-violet-500/15 rounded-xl">
-                      <TrendingUp className="text-violet-500" size={20} />
-                    </div>
-                    <h2 className="text-sm font-bold text-dark-text uppercase tracking-widest">Receitas do Mês</h2>
-                  </div>
-                  <div className="space-y-4">
-                    {(() => {
-                      const recebido = receitas.filter(r => r.type_column === 'realizado' && r.status === 'Conciliado').reduce((a, c) => a + parseFloat(c.value || '0'), 0);
-                      const aReceber = receitas.filter(r => r.type_column === 'previsto' && ['Pendente', 'Vence Hoje'].includes(r.status)).reduce((a, c) => a + parseFloat(c.movement_value || '0'), 0);
-                      const total = recebido + aReceber;
-                      const pct = total > 0 ? Math.round((recebido / total) * 100) : 0;
-                      return (
-                        <>
-                          <div className="flex justify-between items-center">
-                            <span className="text-xs font-bold text-slate-500">Recebido</span>
-                            <span className="text-sm font-bold text-emerald-500">{formatCurrency(recebido)}</span>
-                          </div>
-                          <div className="flex justify-between items-center">
-                            <span className="text-xs font-bold text-slate-500">A receber</span>
-                            <span className="text-sm font-bold text-slate-400">{formatCurrency(aReceber)}</span>
-                          </div>
-                          <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
-                            <div className="h-full bg-emerald-500 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
-                          </div>
-                          <div className="pt-2 border-t border-white/10 flex justify-between items-center">
-                            <span className="text-xs font-bold text-slate-500">Total</span>
-                            <span className="text-base font-black text-dark-text">{formatCurrency(total)}</span>
-                          </div>
-                        </>
-                      );
-                    })()}
-                  </div>
-                </div>
-
-                <div className="bg-dark-card border border-white/10 rounded-2xl p-6">
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="p-2.5 bg-rose-500/15 rounded-xl">
-                      <AlertTriangle className="text-rose-500" size={20} />
-                    </div>
-                    <h2 className="text-sm font-bold text-dark-text uppercase tracking-widest">Inadimplência</h2>
-                  </div>
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center p-3 bg-dark-bg border border-white/10 rounded-xl">
-                      <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Clientes atrasados</span>
-                      <span className="text-xl font-black text-dark-text">{inadimplentes.length}</span>
-                    </div>
-                    <div className="flex justify-between items-center p-3 bg-dark-bg border border-white/10 rounded-xl">
-                      <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Valor em risco</span>
-                      <span className="text-xl font-black text-rose-500">{formatCurrency(totalInadimplencia)}</span>
-                    </div>
-                    <div className="flex justify-between items-center p-3 bg-dark-bg border border-white/10 rounded-xl">
-                      <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Maior atraso</span>
-                      <span className="text-xl font-black text-dark-text">{maxAtraso} dias</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-
       {/* ── Transaction Detail Modal ── */}
       {selectedTransaction && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={() => setSelectedTransaction(null)}>
@@ -1784,7 +1659,7 @@ export default function Extrato() {
                       item={selectedTransaction}
                       onSave={(id, cat) => {
                         handleCategorySave(id, cat);
-                        setSelectedTransaction({ ...selectedTransaction, grapehub_category: cat, custom_category: cat, is_edited: true });
+                        setSelectedTransaction({ ...selectedTransaction, grapehub_category: cat, custom_category: cat });
                       }}
                     />
                   </div>
@@ -1853,7 +1728,7 @@ export default function Extrato() {
                     if (res.ok) {
                       setModalSaved(true);
                       const hasCustomDesc = !!(body.custom_description);
-                      const newIsEdited = hasCustomDesc || !!selectedTransaction.custom_category;
+                      const newIsEdited = hasCustomDesc;
                       const newDescription = body.custom_description || origDesc;
                       setExtrato(prev => prev.map(e => e.id === selectedTransaction.id ? {
                         ...e,

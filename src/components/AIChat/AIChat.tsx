@@ -1,5 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import ReactDOM from 'react-dom';
+import Lottie from 'lottie-react';
+import grapeLoader from '../../assets/grape-loader.json';
+import fredImg from '../../assets/fred.png';
 import { usePersonalityConfig } from '../../hooks/usePersonalityConfig';
 
 interface Message {
@@ -10,6 +13,9 @@ interface Message {
 interface AIChatProps {
   activePage: string;
   userName?: string;
+  floatingButton?: boolean;       // default true — se false, não renderiza o botão fixo
+  externalOpen?: boolean;          // modo controlado: o pai gerencia o open
+  onExternalToggle?: () => void;   // callback para o pai alternar
 }
 
 const PAGE_SECTION_MAP: Record<string, string> = {
@@ -147,7 +153,7 @@ function RichMarkdown({ text }: { text: string }) {
         i++;
       }
       nodes.push(
-        <div key={i} style={{ margin: '8px 0', borderRadius: 8, overflow: 'hidden', border: '1px solid rgba(124,58,237,0.3)' }}>
+        <div key={i} style={{ margin: '10px 0', borderRadius: 8, overflow: 'hidden', border: '1px solid rgba(124,58,237,0.3)' }}>
           {lang && (
             <div style={{ background: 'rgba(124,58,237,0.3)', padding: '3px 10px', fontSize: 10, fontWeight: 700, color: '#c4b5fd', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
               {lang}
@@ -204,9 +210,10 @@ function RichMarkdown({ text }: { text: string }) {
     const hMatch = line.match(/^(#{1,3})\s+(.+)/);
     if (hMatch) {
       const level = hMatch[1].length;
-      const sizes = ['1.1em', '1em', '0.95em'];
+      const sizes = ['1.15em', '1.05em', '1em'];
+      const margins = ['14px 0 6px', '10px 0 4px', '8px 0 3px'];
       nodes.push(
-        <div key={i} style={{ fontWeight: 800, fontSize: sizes[level - 1], color: 'inherit', margin: `${level === 1 ? 10 : 6}px 0 4px`, lineHeight: 1.3 }}>
+        <div key={i} style={{ fontWeight: 800, fontSize: sizes[level - 1], color: 'inherit', margin: margins[level - 1], lineHeight: 1.35 }}>
           {parseInline(hMatch[2])}
         </div>
       );
@@ -229,9 +236,9 @@ function RichMarkdown({ text }: { text: string }) {
         i++;
       }
       nodes.push(
-        <ul key={i} style={{ margin: '4px 0', paddingLeft: 18, color: 'inherit', fontSize: 13, lineHeight: 1.7 }}>
+        <ul key={i} style={{ margin: '6px 0', paddingLeft: 22, color: 'inherit', fontSize: 15, lineHeight: 1.75, listStyleType: 'disc' }}>
           {items.map((item, ii) => (
-            <li key={ii} style={{ marginBottom: 2 }}>{parseInline(item)}</li>
+            <li key={ii} style={{ marginBottom: 4 }}>{parseInline(item)}</li>
           ))}
         </ul>
       );
@@ -246,9 +253,9 @@ function RichMarkdown({ text }: { text: string }) {
         i++;
       }
       nodes.push(
-        <ol key={i} style={{ margin: '4px 0', paddingLeft: 20, color: 'inherit', fontSize: 13, lineHeight: 1.7 }}>
+        <ol key={i} style={{ margin: '6px 0', paddingLeft: 24, color: 'inherit', fontSize: 15, lineHeight: 1.75 }}>
           {items.map((item, ii) => (
-            <li key={ii} style={{ marginBottom: 2 }}>{parseInline(item)}</li>
+            <li key={ii} style={{ marginBottom: 4 }}>{parseInline(item)}</li>
           ))}
         </ol>
       );
@@ -279,7 +286,7 @@ function RichMarkdown({ text }: { text: string }) {
 
     // Regular paragraph
     nodes.push(
-      <p key={i} style={{ margin: '2px 0', lineHeight: 1.65, color: 'inherit', fontSize: 13 }}>
+      <p key={i} style={{ margin: '0 0 8px', lineHeight: 1.75, color: 'inherit', fontSize: 15 }}>
         {parseInline(line)}
       </p>
     );
@@ -345,8 +352,18 @@ function renderAssistantMessage(content: string, c: any): React.ReactNode {
 }
 
 // ── Main Component ─────────────────────────────────────────────────────────────
-export function AIChat({ activePage, userName }: AIChatProps) {
-  const [open, setOpen] = useState(false);
+export function AIChat({ activePage, userName, floatingButton = true, externalOpen, onExternalToggle }: AIChatProps) {
+  const [_open, _setOpen] = useState(false);
+
+  // Modo controlado: usa o estado externo se fornecido
+  const open = externalOpen !== undefined ? externalOpen : _open;
+  const setOpen = (val: boolean | ((o: boolean) => boolean)) => {
+    if (onExternalToggle) {
+      onExternalToggle();
+    } else {
+      _setOpen(val);
+    }
+  };
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -382,19 +399,19 @@ export function AIChat({ activePage, userName }: AIChatProps) {
   }, []);
 
   const c = isDark ? {
-    panelBg: '#11111b',
-    msgsBg: '#0f0f1a',
-    headerBg: 'rgba(124,58,237,0.06)',
+    panelBg: '#0f0f17',
+    msgsBg: '#0f0f17',
+    headerBg: '#0f0f17',
     border: 'rgba(255,255,255,0.08)',
     configBg: 'rgba(0,0,0,0.2)',
-    inputAreaBg: '#11111b',
-    inputWrapBg: 'rgba(255,255,255,0.05)',
-    inputWrapBorder: 'rgba(255,255,255,0.1)',
+    inputAreaBg: '#0f0f17',
+    inputWrapBg: 'rgba(255,255,255,0.06)',
+    inputWrapBorder: 'rgba(255,255,255,0.12)',
     text: '#fff',
     subText: 'rgba(255,255,255,0.5)',
     labelText: 'rgba(255,255,255,0.3)',
-    assistantBubbleBg: '#1a1a2e',
-    assistantBubbleText: '#e2e8f0',
+    assistantBubbleBg: 'transparent',
+    assistantBubbleText: 'rgba(255,255,255,0.88)',
     iconBtnBg: 'rgba(255,255,255,0.07)',
     iconBtnColor: 'rgba(255,255,255,0.5)',
     boxShadow: '0 24px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(124,58,237,0.15)',
@@ -402,18 +419,18 @@ export function AIChat({ activePage, userName }: AIChatProps) {
     hintText: 'rgba(255,255,255,0.2)',
   } : {
     panelBg: '#ffffff',
-    msgsBg: '#f5f5fa',
-    headerBg: '#f9f7ff',
+    msgsBg: '#ffffff',
+    headerBg: '#ffffff',
     border: '#e5e7eb',
     configBg: '#f9fafb',
     inputAreaBg: '#ffffff',
-    inputWrapBg: '#f3f4f6',
+    inputWrapBg: '#f4f4f4',
     inputWrapBorder: '#d1d5db',
-    text: '#1a1a2e',
+    text: '#1a1a1a',
     subText: '#6b7280',
     labelText: '#9ca3af',
-    assistantBubbleBg: '#f3f4f6',
-    assistantBubbleText: '#1f2937',
+    assistantBubbleBg: 'transparent',
+    assistantBubbleText: '#1a1a1a',
     iconBtnBg: '#f3f4f6',
     iconBtnColor: '#6b7280',
     boxShadow: '0 24px 80px rgba(0,0,0,0.15), 0 0 0 1px rgba(124,58,237,0.1)',
@@ -596,11 +613,10 @@ export function AIChat({ activePage, userName }: AIChatProps) {
           flexShrink: 0,
         }}>
           <div style={{
-            width: 38, height: 38, borderRadius: '50%',
-            background: 'linear-gradient(135deg,#7C3AED,#5B21B6)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 22, flexShrink: 0,
-          }}>🍇</div>
+            width: 38, height: 38, flexShrink: 0,
+          }}>
+            <img src={fredImg} alt="Fred" style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
+          </div>
 
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 700, fontSize: 17, color: c.text }}>{config.nome}</div>
@@ -658,7 +674,9 @@ export function AIChat({ activePage, userName }: AIChatProps) {
               <div style={{ maxHeight: '65vh', overflowY: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {historySessions.length === 0 ? (
                   <div style={{ textAlign: 'center', padding: '48px 0', color: 'rgba(255,255,255,0.3)', fontSize: 14 }}>
-                    <div style={{ fontSize: 36, marginBottom: 12 }}>🍇</div>
+                    <div style={{ width: 64, height: 64, marginBottom: 4 }}>
+                <img src={fredImg} alt="Fred" style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
+              </div>
                     Nenhuma conversa salva ainda
                   </div>
                 ) : historySessions.map(session => {
@@ -782,11 +800,13 @@ export function AIChat({ activePage, userName }: AIChatProps) {
         )}
 
         {/* ── Messages ── */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14, background: c.msgsBg }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '28px 32px', display: 'flex', flexDirection: 'column', gap: 24, background: c.msgsBg, fontFamily: "'General Sans', system-ui, -apple-system, sans-serif" }}>
 
           {messages.length === 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 10, textAlign: 'center', padding: '0 40px' }}>
-              <div style={{ fontSize: 48, filter: 'drop-shadow(0 0 20px rgba(124,58,237,0.5))' }}>🍇</div>
+              <div style={{ width: 64, height: 64, marginBottom: 8 }}>
+                <img src={fredImg} alt="Fred" style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
+              </div>
               <p style={{ fontSize: 17, color: c.subText, margin: 0, lineHeight: 1.6, fontWeight: 500 }}>
                 {greeting} Pergunte sobre finanças, clientes, estratégia ou operações.
               </p>
@@ -818,9 +838,11 @@ export function AIChat({ activePage, userName }: AIChatProps) {
           {messages.map((m, idx) => (
             <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: m.role === 'user' ? 'flex-end' : 'flex-start', gap: 4 }}>
               {m.role === 'assistant' && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 4 }}>
-                  <div style={{ width: 22, height: 22, borderRadius: '50%', background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12 }}>🍇</div>
-                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', fontWeight: 600 }}>{config.nome}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 2 }}>
+                  <div style={{ width: 22, height: 22, flexShrink: 0 }}>
+                  <img src={fredImg} alt="Fred" style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
+                </div>
+                  <span style={{ fontSize: 12, color: isDark ? 'rgba(255,255,255,0.5)' : '#6b7280', fontWeight: 600, fontFamily: "'General Sans', system-ui, -apple-system, sans-serif", letterSpacing: '0.01em' }}>{config.nome}</span>
                 </div>
               )}
               {(() => {
@@ -828,21 +850,30 @@ export function AIChat({ activePage, userName }: AIChatProps) {
                   /^```[hH][tT][mM][lL]?\s*\n[\s\S]*?```\s*$/.test(m.content) ||
                   m.content.trim().startsWith('<')
                 );
+                if (m.role === 'user') {
+                  return (
+                    <div style={{
+                      maxWidth: '72%',
+                      background: isDark ? 'rgba(255,255,255,0.08)' : '#f0f0f0',
+                      borderRadius: '18px 18px 4px 18px',
+                      padding: '11px 16px',
+                      color: isDark ? 'rgba(255,255,255,0.92)' : '#1a1a1a',
+                    }}>
+                      <p style={{ margin: 0, fontSize: 15, lineHeight: 1.65, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: "'General Sans', system-ui, -apple-system, sans-serif" }}>{m.content}</p>
+                    </div>
+                  );
+                }
+                // Assistant: sem caixa, texto plano
                 return (
                   <div style={{
                     width: isHtmlContent ? '100%' : undefined,
-                    maxWidth: isHtmlContent ? '100%' : '88%',
-                    background: m.role === 'user' ? 'linear-gradient(135deg,#7C3AED,#6D28D9)' : (isHtmlContent ? 'transparent' : c.assistantBubbleBg),
-                    border: m.role === 'user' ? 'none' : (isHtmlContent ? 'none' : `1px solid ${c.border}`),
-                    borderRadius: m.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
-                    padding: m.role === 'user' ? '10px 15px' : (isHtmlContent ? '0' : '12px 16px'),
-                    color: c.assistantBubbleText,
-                    boxShadow: m.role === 'user' ? '0 4px 15px rgba(124,58,237,0.3)' : 'none',
+                    maxWidth: isHtmlContent ? '100%' : '92%',
+                    background: 'transparent',
+                    border: 'none',
+                    padding: isHtmlContent ? '0' : '0 0 0 30px',
+                    color: isDark ? 'rgba(255,255,255,0.88)' : '#1a1a1a',
                   }}>
-                    {m.role === 'assistant'
-                      ? renderAssistantMessage(m.content, c)
-                      : <p style={{ margin: 0, fontSize: 15, lineHeight: 1.6, color: '#fff', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{m.content}</p>
-                    }
+                    {renderAssistantMessage(m.content, c)}
                   </div>
                 );
               })()}
@@ -851,14 +882,19 @@ export function AIChat({ activePage, userName }: AIChatProps) {
 
           {loading && (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 4 }}>
-                <div style={{ width: 22, height: 22, borderRadius: '50%', background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12 }}>🍇</div>
-                <span style={{ fontSize: 11, color: c.labelText, fontWeight: 600 }}>{config.nome}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 2 }}>
+                <div style={{ width: 22, height: 22 }}>
+                  <img src={fredImg} alt="Fred" style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
+                </div>
+                <span style={{ fontSize: 12, color: isDark ? 'rgba(255,255,255,0.5)' : '#6b7280', fontWeight: 600, fontFamily: "'General Sans', system-ui, -apple-system, sans-serif" }}>{config.nome}</span>
               </div>
-              <div style={{ background: c.assistantBubbleBg, border: `1px solid ${c.border}`, borderRadius: '18px 18px 18px 4px', padding: '14px 18px', display: 'flex', gap: 6, alignItems: 'center' }}>
-                {[0, 1, 2].map((d) => (
-                  <span key={d} style={{ width: 7, height: 7, borderRadius: '50%', background: '#A78BFA', display: 'inline-block', animation: `ai-dot-bounce 1.2s infinite ${d * 0.2}s` }} />
-                ))}
+              <div style={{ paddingLeft: 30 }}>
+                <Lottie
+                  animationData={grapeLoader}
+                  loop
+                  autoplay
+                  style={{ width: 100, height: 100 }}
+                />
               </div>
             </div>
           )}
@@ -934,43 +970,43 @@ export function AIChat({ activePage, userName }: AIChatProps) {
 
   return (
     <>
-      {/* ── Botão Flutuante ── */}
-      <button
-        id="ai-chat-toggle-btn"
-        onClick={() => setOpen((o) => !o)}
-        title={open ? 'Fechar Fred' : `Abrir ${config.nome}`}
-        style={{
-          position: 'fixed',
-          bottom: 24,
-          right: 24,
-          zIndex: 9998,
-          width: 52,
-          height: 52,
-          borderRadius: '50%',
-          background: open ? '#5B21B6' : '#7C3AED',
-          color: '#fff',
-          border: 'none',
-          cursor: 'pointer',
-          fontSize: open ? 18 : 24,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          boxShadow: '0 4px 24px rgba(124,58,237,0.5)',
-          transition: 'all 0.2s',
-          transform: open ? 'rotate(90deg) scale(0.9)' : 'scale(1)',
-        }}
-      >
-        {open ? '✕' : '🍇'}
-      </button>
+        {floatingButton && (
+        <button
+          id="ai-chat-toggle-btn"
+          onClick={() => setOpen((o) => !o)}
+          title={open ? 'Fechar Fred' : `Abrir ${config.nome}`}
+          style={{
+            position: 'fixed',
+            bottom: 24,
+            right: 24,
+            zIndex: 9998,
+            width: 52,
+            height: 52,
+            borderRadius: '50%',
+            background: open ? '#5B21B6' : 'linear-gradient(135deg,#7C3AED,#5B21B6)',
+            color: '#fff',
+            border: 'none',
+            cursor: 'pointer',
+            overflow: 'hidden',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 4px 24px rgba(124,58,237,0.5)',
+            transition: 'all 0.2s',
+            transform: open ? 'rotate(90deg) scale(0.9)' : 'scale(1)',
+          }}
+        >
+          {open
+            ? <span style={{ fontSize: 18 }}>✕</span>
+            : <img src={fredImg} alt="Fred" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          }
+        </button>
+        )}
 
       {/* ── Modal via Portal ── */}
       {ReactDOM.createPortal(modal, document.body)}
 
       <style>{`
-        @keyframes ai-dot-bounce {
-          0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
-          40% { transform: translateY(-5px); opacity: 1; }
-        }
         @keyframes ai-modal-in {
           from { opacity: 0; transform: scale(0.96) translateY(10px); }
           to   { opacity: 1; transform: scale(1) translateY(0); }

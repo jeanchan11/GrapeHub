@@ -52,7 +52,6 @@ import {
 
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { MenuProvider, useMenu } from './src/context/MenuContext';
-import { AIChat } from './src/components/AIChat/AIChat';
 
 const AppContent: React.FC = () => {
   const { user, userData, loading } = useAuth();
@@ -293,10 +292,6 @@ const AppContent: React.FC = () => {
       <main className="flex-1 overflow-y-auto scrollbar-hide rounded-tl-[2.5rem] bg-light-bg dark:bg-dark-bg transition-colors duration-300">
         {renderPage()}
       </main>
-      <AIChat
-        activePage={pageTemplate}
-        userName={userData?.nome || userData?.name || user?.displayName || user?.email || undefined}
-      />
     </div>
   );
 };

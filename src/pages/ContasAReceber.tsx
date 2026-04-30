@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, ChevronDown, ChevronUp, Clock, CreditCard, Zap, FileText, ExternalLink, Settings, AlertTriangle, Pause, Play, Check, X, ShieldAlert, Activity, CheckCircle2, Send, Settings2, Search } from 'lucide-react';
+import { Calendar, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Clock, CreditCard, Zap, FileText, ExternalLink, Settings, AlertTriangle, Pause, Play, Check, X, ShieldAlert, Activity, CheckCircle2, Send, Settings2, Search, TrendingUp, Banknote, BarChart2 } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────
 interface InvoiceItem {
@@ -834,40 +834,97 @@ export default function ContasAReceber() {
           </div>
         ) : (
           <>
-            {/* KPI Cards */}
+            {/* KPI Cards — mesmo padrão do Dashboard Financeiro */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="bg-dark-card border-2 border-amber-500/30 rounded-2xl p-5">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">A Receber</p>
-                <div className="flex items-center justify-between mt-1">
-                  <h3 className="text-2xl font-black text-amber-400">{formatCurrency(summary.total_a_receber)}</h3>
-                  <span className="px-2 py-0.5 bg-amber-500/20 text-amber-400 text-[10px] font-bold rounded-full uppercase tracking-wider">
-                    {pendentes.length + vencidos.length} cobranças
-                  </span>
+              {/* Card 1: A Receber */}
+              <div className="bg-dark-card border border-white/10 rounded-2xl p-6 relative overflow-hidden flex flex-col min-h-[150px]">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-2.5 rounded-2xl bg-amber-500">
+                    <Clock size={20} className="text-white" />
+                  </div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">A Receber</p>
+                </div>
+                <div className="flex flex-col mt-auto">
+                  <h3 className="text-3xl font-black tracking-tight mb-3 text-dark-text">
+                    {formatCurrency(summary.total_a_receber)}
+                  </h3>
+                  <div className="pt-3 border-t border-white/10">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-500">Cobranças</span>
+                      <span className="font-semibold text-amber-400">{pendentes.length + vencidos.length} pendentes</span>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div className="bg-dark-card border border-white/10 rounded-2xl p-5">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Já Recebido</p>
-                <div className="flex items-center justify-between mt-1">
-                  <h3 className="text-2xl font-black text-emerald-400">{formatCurrency(summary.total_recebido)}</h3>
-                  <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 text-[10px] font-bold rounded-full uppercase tracking-wider">
-                    {recebidos.length} entradas
-                  </span>
+
+              {/* Card 2: Total do Mês */}
+              <div className="bg-dark-card border border-white/10 rounded-2xl p-6 relative overflow-hidden flex flex-col min-h-[150px]">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-2.5 rounded-2xl bg-emerald-600">
+                    <TrendingUp size={20} className="text-white" />
+                  </div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total do Mês</p>
+                </div>
+                <div className="flex flex-col mt-auto">
+                  <h3 className="text-3xl font-black tracking-tight mb-3 text-emerald-400">
+                    {formatCurrency(summary.total_mes)}
+                  </h3>
+                  <div className="pt-3 border-t border-white/10">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-500">Recebido + Antecipado</span>
+                      <span className="font-semibold text-emerald-400">{formatCurrency(summary.total_mes)}</span>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div className="bg-dark-card border border-white/10 rounded-2xl p-5">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Antecipações</p>
-                <div className="flex items-center justify-between mt-1">
-                  <h3 className="text-2xl font-black text-blue-400">{formatCurrency(summary.total_antecipacoes)}</h3>
-                  <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 text-[10px] font-bold rounded-full uppercase tracking-wider">
-                    {antecipacoes.length} antecipado
-                  </span>
+
+              {/* Card 3: Antecipações */}
+              <div className="bg-dark-card border border-white/10 rounded-2xl p-6 relative overflow-hidden flex flex-col min-h-[150px]">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-2.5 rounded-2xl bg-blue-600">
+                    <Banknote size={20} className="text-white" />
+                  </div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Antecipações</p>
+                </div>
+                <div className="flex flex-col mt-auto">
+                  <h3 className="text-3xl font-black tracking-tight mb-3 text-dark-text">
+                    {formatCurrency(summary.total_antecipacoes)}
+                  </h3>
+                  <div className="pt-3 border-t border-white/10">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-500">Antecipado</span>
+                      <span className="font-semibold text-blue-400">{antecipacoes.length} cobranças</span>
+                    </div>
+                    <div className="mt-2 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full bg-blue-500 transition-all duration-500"
+                        style={{ width: `${Math.min(100, summary.total_mes > 0 ? (summary.total_antecipacoes / summary.total_mes) * 100 : 0)}%` }} />
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div className="bg-dark-card border border-violet-500/30 rounded-2xl p-5">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Total do Mês</p>
-                <div className="flex items-center justify-between">
-                  <h3 className="text-2xl font-black text-violet-400">{formatCurrency(summary.total_mes)}</h3>
-                  <span className="px-2 py-0.5 bg-violet-500/20 text-violet-400 text-[10px] font-bold rounded-full uppercase tracking-wider">recebido + antecipado</span>
+
+              {/* Card 4: Já Recebido */}
+              <div className="bg-dark-card border border-white/10 rounded-2xl p-6 relative overflow-hidden flex flex-col min-h-[150px]">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-2.5 rounded-2xl bg-violet-600">
+                    <BarChart2 size={20} className="text-white" />
+                  </div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Já Recebido</p>
+                </div>
+                <div className="flex flex-col mt-auto">
+                  <h3 className="text-3xl font-black tracking-tight mb-3 text-violet-400">
+                    {formatCurrency(summary.total_recebido)}
+                  </h3>
+                  <div className="pt-3 border-t border-white/10">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-500">Entradas</span>
+                      <span className="font-semibold text-violet-400">{recebidos.length} recebimentos</span>
+                    </div>
+                    <div className="mt-2 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full bg-violet-500 transition-all duration-500"
+                        style={{ width: `${Math.min(100, summary.total_mes > 0 ? (summary.total_recebido / summary.total_mes) * 100 : 0)}%` }} />
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -930,9 +987,9 @@ export default function ContasAReceber() {
                     <>
                       {recebidosGrouped.length > 0 && (
                         <div className="mb-4">
-                          <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest mb-2 px-2">Recebidos — {formatCurrency(summary.total_recebido)}</p>
+                          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 px-2">Recebidos — {formatCurrency(summary.total_recebido)}</p>
                           {recebidosGrouped.map((group, idx) => (
-                            <CollapsibleGroup key={`r-${idx}`} title={group.label} icon={group.icon} items={group.items} total={group.total} valueColor="text-emerald-400" />
+                            <CollapsibleGroup key={`r-${idx}`} title={group.label} icon={group.icon} items={group.items} total={group.total} valueColor="text-dark-text" />
                           ))}
                         </div>
                       )}

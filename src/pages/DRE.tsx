@@ -27,6 +27,7 @@ interface DRESummary {
   monthly_distribuicao: number[];
   monthly_geracao_caixa: number[];
   monthly_saldo_final: number[];
+  monthly_saldo_inicial: number[];
   total_receitas: number;
   total_despesas: number;
   geracao_caixa: number;
@@ -65,6 +66,8 @@ export default function DRE() {
   const [rows, setRows] = useState<DRERow[]>([]);
   const [summary, setSummary] = useState<DRESummary | null>(null);
   const [expandedL2, setExpandedL2] = useState<Set<string>>(new Set());
+  const [expandedL1, setExpandedL1] = useState<Set<string>>(() => new Set(['all'])); // 'all' sentinel = start expanded
+  const [viewMode, setViewMode] = useState<'detalhado' | 'agrupado'>('detalhado');
   const [visibleCols, setVisibleCols] = useState<Set<number>>(new Set(ALL_COLUMNS));
   const [showColFilter, setShowColFilter] = useState(false);
   const filterRef = useRef<HTMLDivElement>(null);
@@ -153,6 +156,21 @@ export default function DRE() {
     });
   };
 
+  const toggleL1 = (code: string) => {
+    setExpandedL1(prev => {
+      const next = new Set(prev);
+      if (next.has(code)) next.delete(code);
+      else next.add(code);
+      return next;
+    });
+  };
+
+  // Expand all L1 when rows load
+  useEffect(() => {
+    const l1Codes = rows.filter(r => r.level === 1).map(r => r.code);
+    if (l1Codes.length > 0) setExpandedL1(new Set(l1Codes));
+  }, [rows]);
+
   // Build renderable rows
   const renderRows = () => {
     const elements: JSX.Element[] = [];
@@ -166,11 +184,22 @@ export default function DRE() {
         const l1Bg = isDespesa ? 'bg-rose-500/[0.06]' : 'bg-emerald-500/[0.06]';
         const l1Border = isDespesa ? 'border-l-4 border-l-rose-500' : 'border-l-4 border-l-emerald-500';
         const l1Text = isDespesa ? 'text-rose-400' : 'text-emerald-400';
+        const isL1Expanded = expandedL1.has(row.code);
         elements.push(
-          <tr key={row.code} className={`${l1Bg} ${l1Border} border-t border-dark-text/10`}>
+          <tr
+            key={row.code}
+            className={`${l1Bg} ${l1Border} border-t border-dark-text/10 cursor-pointer hover:brightness-110 transition-all`}
+            onClick={() => toggleL1(row.code)}
+          >
             <td className={`px-4 py-4 font-bold ${l1Text} text-sm whitespace-nowrap sticky left-0 ${l1Bg} z-10`}>
-              <span className="opacity-50 font-mono text-[11px] mr-2">{row.code}</span>
-              {row.name}
+              <div className="flex items-center gap-2">
+                <ChevronDown
+                  size={14}
+                  className={`shrink-0 opacity-60 transition-transform duration-200 ${isL1Expanded ? '' : '-rotate-90'}`}
+                />
+                <span className="opacity-50 font-mono text-[11px]">{row.code}</span>
+                {row.name}
+              </div>
             </td>
             {row.values.map((v, mi) => (
               visibleCols.has(mi) && (
@@ -185,6 +214,10 @@ export default function DRE() {
           </tr>
         );
         i++;
+        // Skip L2/L3 children if L1 is collapsed
+        if (!isL1Expanded) {
+          while (i < rows.length && rows[i].level > 1) i++;
+        }
         continue;
       }
 
@@ -203,7 +236,7 @@ export default function DRE() {
                   <ChevronDown size={12} className={`text-dark-text/40 transition-transform shrink-0 ${isExpanded ? 'rotate-180' : ''}`} />
                 )}
                 {!hasChildren && <span className="w-3" />}
-                <span className="text-violet-400/50 font-mono text-[10px]">{row.code}</span>
+                <span className="text-slate-400 font-mono text-[9px]">{row.code}</span>
                 <span className="text-[13px] font-medium text-dark-text/90 truncate max-w-[220px]">{row.name}</span>
               </div>
             </td>
@@ -468,6 +501,23 @@ export default function DRE() {
                     </div>
                   )}
                 </div>
+
+                {/* View mode toggle */}
+                <div className="flex items-center gap-1 p-1 bg-dark-bg border border-dark-text/10 rounded-xl">
+                  {(['detalhado', 'agrupado'] as const).map(mode => (
+                    <button
+                      key={mode}
+                      onClick={() => setViewMode(mode)}
+                      className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all capitalize ${
+                        viewMode === mode
+                          ? 'bg-violet-500 text-white shadow-sm'
+                          : 'text-dark-text/40 hover:text-dark-text'
+                      }`}
+                    >
+                      {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="overflow-x-auto">
@@ -490,9 +540,76 @@ export default function DRE() {
                     </tr>
                   </thead>
                   <tbody>
-                    {renderRows()}
+                    {/* Saldo Inicial — sempre primeira linha */}
+                    {summary?.monthly_saldo_inicial && (
+                      <SummaryRow
+                        label="Saldo Inicial"
+                        monthlyValues={summary.monthly_saldo_inicial}
+                        total={summary.monthly_saldo_inicial.reduce((s, v) => s + v, 0)}
+                        variant="saldo"
+                      />
+                    )}
 
-                    {/* Summary rows */}
+                    {viewMode === 'detalhado' ? renderRows() : (() => {
+                      // ── Agrupado: soma todas as receitas e todas as despesas ──
+                      const emptyMonths = () => new Array(12).fill(0);
+                      const receitaMonths = emptyMonths();
+                      const despesaMonths = emptyMonths();
+
+                      for (const row of rows) {
+                        if (row.level !== 1) continue;
+                        const target = row.type === 'receita' ? receitaMonths : despesaMonths;
+                        row.values.forEach((v, i) => { target[i] += v; });
+                      }
+
+                      const receitaTotal = receitaMonths.reduce((s, v) => s + v, 0);
+                      const despesaTotal = despesaMonths.reduce((s, v) => s + v, 0);
+
+                      return (
+                        <>
+                          {/* Receitas */}
+                          <tr className="bg-emerald-500/[0.06] border-l-4 border-l-emerald-500 border-t border-dark-text/10">
+                            <td className="px-4 py-4 font-bold text-emerald-400 text-sm whitespace-nowrap sticky left-0 bg-emerald-500/[0.06] z-10">
+                              Receitas
+                            </td>
+                            {receitaMonths.map((v, mi) => (
+                              visibleCols.has(mi) && (
+                                <td key={mi} className="px-3 py-4 text-right whitespace-nowrap">
+                                  {v === 0
+                                    ? <span className="text-dark-text/20 text-xs">—</span>
+                                    : <span className="text-emerald-400 font-bold text-[13px]">{fmtCur(v)}</span>
+                                  }
+                                </td>
+                              )
+                            ))}
+                            <td className="px-4 py-4 text-right whitespace-nowrap font-black bg-emerald-500/[0.06]">
+                              <span className="text-emerald-400 font-bold text-[13px]">{fmtCur(receitaTotal)}</span>
+                            </td>
+                          </tr>
+                          {/* Despesas */}
+                          <tr className="bg-rose-500/[0.06] border-l-4 border-l-rose-500 border-t border-dark-text/10">
+                            <td className="px-4 py-4 font-bold text-rose-400 text-sm whitespace-nowrap sticky left-0 bg-rose-500/[0.06] z-10">
+                              Despesas
+                            </td>
+                            {despesaMonths.map((v, mi) => (
+                              visibleCols.has(mi) && (
+                                <td key={mi} className="px-3 py-4 text-right whitespace-nowrap">
+                                  {v === 0
+                                    ? <span className="text-dark-text/20 text-xs">—</span>
+                                    : <span className="text-rose-400 font-bold text-[13px]">-{fmtCur(v)}</span>
+                                  }
+                                </td>
+                              )
+                            ))}
+                            <td className="px-4 py-4 text-right whitespace-nowrap font-black bg-rose-500/[0.06]">
+                              <span className="text-rose-400 font-bold text-[13px]">-{fmtCur(despesaTotal)}</span>
+                            </td>
+                          </tr>
+                        </>
+                      );
+                    })()}
+
+                    {/* Summary rows — sempre no final */}
                     {summary && (
                       <>
                         <SummaryRow
@@ -504,7 +621,7 @@ export default function DRE() {
                         <SummaryRow
                           label="Saldo Final"
                           monthlyValues={summary.monthly_saldo_final}
-                          total={summary.saldo_final}
+                          total={summary.monthly_saldo_final.reduce((s, v) => s + v, 0)}
                           variant="saldo"
                         />
                       </>
