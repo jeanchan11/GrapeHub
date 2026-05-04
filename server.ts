@@ -6729,12 +6729,8 @@ app.get("/api/todos", async (req, res) => {
   // ==========================================
   app.get("/api/crm-metas", async (req, res) => {
     try {
-      const { user_id } = req.query;
-      if (!user_id) return res.status(400).json({ error: "user_id required" });
-
       const metas = await pool.query(
-        `SELECT * FROM crm_metas WHERE user_id = $1 ORDER BY created_at DESC`,
-        [user_id]
+        `SELECT * FROM crm_metas ORDER BY created_at DESC`
       );
 
       const now = new Date();
@@ -9294,7 +9290,81 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
+  // ── Onboarding Operacional ─────────────────────────────────────────────────
+  app.get('/api/onboarding-tasks', async (req, res) => {
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS onboarding_tasks (
+          id SERIAL PRIMARY KEY,
+          client_name TEXT NOT NULL,
+          squad TEXT,
+          responsible_id TEXT,
+          responsible_name TEXT,
+          responsible_avatar TEXT,
+          start_date DATE,
+          due_date DATE,
+          status_group TEXT NOT NULL DEFAULT 'a-fazer-briefing',
+          tags TEXT[] DEFAULT '{}',
+          subtask_count INT DEFAULT 0,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+      `);
+      const result = await pool.query(
+        'SELECT * FROM onboarding_tasks ORDER BY status_group, created_at DESC'
+      );
+      res.json(result.rows);
+    } catch (err) {
+      console.error('GET /api/onboarding-tasks error:', err);
+      res.status(500).json({ error: 'Erro ao buscar tarefas de onboarding.' });
+    }
+  });
+
+  app.post('/api/onboarding-tasks', async (req, res) => {
+    try {
+      const { client_name, squad, responsible_id, responsible_name, responsible_avatar, start_date, due_date, status_group, tags } = req.body;
+      if (!client_name) return res.status(400).json({ error: 'client_name é obrigatório.' });
+      const result = await pool.query(
+        `INSERT INTO onboarding_tasks (client_name, squad, responsible_id, responsible_name, responsible_avatar, start_date, due_date, status_group, tags)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+        [client_name, squad || null, responsible_id || null, responsible_name || null, responsible_avatar || null,
+         start_date || null, due_date || null, status_group || 'a-fazer-briefing', tags || []]
+      );
+      res.status(201).json(result.rows[0]);
+    } catch (err) {
+      console.error('POST /api/onboarding-tasks error:', err);
+      res.status(500).json({ error: 'Erro ao criar tarefa de onboarding.' });
+    }
+  });
+
+  app.patch('/api/onboarding-tasks/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const fields = req.body;
+      const allowed = ['client_name','squad','responsible_id','responsible_name','responsible_avatar','start_date','due_date','status_group','tags','subtask_count'];
+      const sets: string[] = [];
+      const vals: any[] = [];
+      let idx = 1;
+      for (const key of allowed) {
+        if (key in fields) { sets.push(`${key} = $${idx++}`); vals.push(fields[key]); }
+      }
+      if (sets.length === 0) return res.status(400).json({ error: 'Nenhum campo para atualizar.' });
+      sets.push(`updated_at = NOW()`);
+      vals.push(id);
+      const result = await pool.query(
+        `UPDATE onboarding_tasks SET ${sets.join(', ')} WHERE id = $${idx} RETURNING *`,
+        vals
+      );
+      if (result.rowCount === 0) return res.status(404).json({ error: 'Tarefa não encontrada.' });
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error('PATCH /api/onboarding-tasks error:', err);
+      res.status(500).json({ error: 'Erro ao atualizar tarefa.' });
+    }
+  });
+
   // ── POST /api/ai/chat — Fred, o Sócio Virtual (Claude AI) ──────────────────
+
   app.post('/api/ai/chat', async (req, res) => {
     try {
       const anthropicKey = process.env.ANTHROPIC_API_KEY;

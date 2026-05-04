@@ -424,6 +424,7 @@ const templates = [
   { id: 'gestor-dashboard', label: 'Dashboard Gestor' },
   { id: 'marketing-dashboard', label: 'Dashboard Marketing' },
   { id: 'dashboard-operacional', label: 'Dashboard Operacional' },
+  { id: 'onboarding-operacional', label: 'Onboarding Operacional' },
   { id: 'closer', label: 'Calculadora Closer' },
   { id: 'sdr', label: 'Calculadora SDR' },
   { id: 'gerente-operacional', label: 'Calculadora Gerente Operacional' },

@@ -1571,7 +1571,10 @@ export default function Extrato() {
         </div>
       )}
 
+    </div>
+
       {/* ── Transaction Detail Modal ── */}
+
       {selectedTransaction && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={() => setSelectedTransaction(null)}>
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />

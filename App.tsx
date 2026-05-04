@@ -28,6 +28,7 @@ import MarketingAcoes from './src/pages/MarketingAcoes';
 import DashboardOperacional from './src/pages/DashboardOperacional';
 import ParceirosSquad from './src/pages/ParceirosSquad';
 import TodoStaff from './src/pages/TodoStaff';
+import OnboardingOperacional from './src/pages/OnboardingOperacional';
 import ContratacaoPage from './src/pages/ContratacaoPage';
 import ContasAPagar from './src/pages/ContasAPagar';
 import ContasAReceber from './src/pages/ContasAReceber';
@@ -242,6 +243,8 @@ const AppContent: React.FC = () => {
         return <DashboardOperacional />;
       case 'todo-staff':
         return <TodoStaff />;
+      case 'onboarding-operacional':
+        return <OnboardingOperacional />;
       case 'contratacao':
         return <ContratacaoPage />;
       case 'contas-a-pagar':

@@ -150,7 +150,7 @@ export default function CrmMetas() {
     if (!silent) setLoading(true);
     else setRefreshing(true);
     try {
-      const res = await fetch(`/api/crm-metas?user_id=${user.email}`);
+      const res = await fetch(`/api/crm-metas`);
       if (res.ok) setMetas(await res.json());
     } finally {
       setLoading(false);
