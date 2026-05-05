@@ -59,9 +59,14 @@ export function setupCollectionRoutes(app: Express, pool: Pool) {
     }
   });
 
-  // 8a. Queue stats — registrado ANTES do /:customerAsaasId para não ser capturado como parâmetro
+  // 8a. Queue stats
   app.get('/api/fin/collection/events/stats', async (req, res) => {
     try {
+      const month = (req.query.month as string) || new Date().toISOString().slice(0, 7);
+      const [year, mon] = month.split('-').map(Number);
+      const startDate = `${year}-${String(mon).padStart(2, '0')}-01`;
+      const endDate = mon === 12 ? `${year + 1}-01-01` : `${year}-${String(mon + 1).padStart(2, '0')}-01`;
+
       const result = await pool.query(`
         SELECT
           (
@@ -69,23 +74,25 @@ export function setupCollectionRoutes(app: Express, pool: Pool) {
             FROM fin_collection_events fce
             JOIN fin_receivables fr ON fr.asaas_id = fce.receivable_asaas_id
             WHERE DATE(fce.triggered_at) = CURRENT_DATE
-              AND (CURRENT_DATE - fr.due_date) < 10
+              AND fce.status = 'sent'
+              AND fr.due_date >= $1::date AND fr.due_date < $2::date
           ) as hoje,
           (
             SELECT COUNT(*)
             FROM fin_collection_events fce
             JOIN fin_receivables fr ON fr.asaas_id = fce.receivable_asaas_id
             WHERE fce.triggered_at >= CURRENT_DATE - interval '7 days'
-              AND (CURRENT_DATE - fr.due_date) < 10
+              AND fce.status = 'sent'
+              AND fr.due_date >= $1::date AND fr.due_date < $2::date
           ) as ultimos7dias,
           (
             SELECT COUNT(*)
             FROM fin_receivables
             WHERE status IN ('PENDING', 'OVERDUE')
               AND due_date IS NOT NULL
-              AND (CURRENT_DATE - due_date) BETWEEN -5 AND -1
+              AND due_date >= $1::date AND due_date < $2::date
           ) as agendados
-      `);
+      `, [startDate, endDate]);
       const row = result.rows[0] || { hoje: 0, ultimos7dias: 0, agendados: 0 };
       res.json({
         hoje: parseInt(row.hoje || '0', 10),
@@ -101,46 +108,103 @@ export function setupCollectionRoutes(app: Express, pool: Pool) {
   // 8b. Queue unificada — registrado ANTES do /:customerAsaasId
   app.get('/api/fin/collection/events/queue', async (req, res) => {
     try {
+      const fetchAll = req.query.all === 'true';
+      const month = (req.query.month as string) || new Date().toISOString().slice(0, 7);
+      const [year, mon] = month.split('-').map(Number);
+      const startDate = `${year}-${String(mon).padStart(2, '0')}-01`;
+      const endDate = mon === 12 ? `${year + 1}-01-01` : `${year}-${String(mon + 1).padStart(2, '0')}-01`;
+
+      // Build date filter clauses conditionally
+      const dateFilter = fetchAll ? '' : `AND fr.due_date >= $1::date AND fr.due_date < $2::date`;
+      const pendingDateFilter = fetchAll ? '' : `AND r.due_date >= $1::date AND r.due_date < $2::date`;
+      const params = fetchAll ? [] : [startDate, endDate];
+
       const result = await pool.query(`
-        SELECT 
-          fp.name as client_name,
-          fr.value,
-          fr.due_date,
-          fcr.label as rule_label,
-          fcr.day_offset,
-          fce.channel,
-          DATE(fce.triggered_at) as scheduled_date,
-          fce.status,
-          fce.triggered_at,
-          'event' as row_type
-        FROM fin_collection_events fce
-        JOIN fin_collection_rules fcr ON fcr.id = fce.rule_id
-        JOIN fin_receivables fr ON fr.asaas_id = fce.receivable_asaas_id
-        JOIN fin_people fp ON fp.asaas_id = fce.customer_asaas_id
-        WHERE (CURRENT_DATE - fr.due_date) < 10
+        WITH sent_events AS (
+          SELECT 
+            fp.name as client_name,
+            fr.value,
+            fr.due_date,
+            fcr.label as rule_label,
+            fcr.day_offset,
+            fce.channel,
+            DATE(fce.triggered_at) as scheduled_date,
+            fce.status,
+            fce.triggered_at,
+            fce.receivable_asaas_id,
+            fce.customer_asaas_id,
+            fce.rule_id,
+            fcr.message_template,
+            fce.id as event_id,
+            fr.invoice_url,
+            'event' as row_type
+          FROM fin_collection_events fce
+          JOIN fin_collection_rules fcr ON fcr.id = fce.rule_id
+          JOIN fin_receivables fr ON fr.asaas_id = fce.receivable_asaas_id
+          JOIN fin_people fp ON fp.asaas_id = fce.customer_asaas_id
+          WHERE 1=1 ${dateFilter}
+        ),
+        pending_receivables AS (
+          SELECT
+            COALESCE(p.name, r.customer_name, 'Desconhecido') as client_name,
+            r.value,
+            r.due_date,
+            r.asaas_id as receivable_asaas_id,
+            r.customer_id as customer_asaas_id,
+            r.invoice_url,
+            (CURRENT_DATE - r.due_date) as current_day_offset
+          FROM fin_receivables r
+          LEFT JOIN fin_people p ON p.asaas_id = r.customer_id
+          WHERE r.status IN ('PENDING', 'OVERDUE')
+            AND r.due_date IS NOT NULL
+            ${pendingDateFilter}
+        ),
+        matched AS (
+          SELECT
+            pr.*,
+            COALESCE(
+              (SELECT id FROM fin_collection_rules WHERE day_offset = pr.current_day_offset AND is_active = true LIMIT 1),
+              (SELECT id FROM fin_collection_rules WHERE day_offset <= pr.current_day_offset AND is_active = true ORDER BY day_offset DESC LIMIT 1),
+              (SELECT id FROM fin_collection_rules WHERE day_offset > pr.current_day_offset AND is_active = true ORDER BY day_offset ASC LIMIT 1)
+            ) as best_rule_id
+          FROM pending_receivables pr
+        )
+        SELECT * FROM sent_events
 
         UNION ALL
 
         SELECT
-          COALESCE(p.name, r.customer_name, 'Desconhecido') as client_name,
-          r.value,
-          r.due_date,
-          'Preventivo agendado' as rule_label,
-          (CURRENT_DATE - r.due_date) as day_offset,
+          m.client_name,
+          m.value,
+          m.due_date,
+          fcr.label as rule_label,
+          fcr.day_offset,
           'whatsapp' as channel,
-          r.due_date as scheduled_date,
-          'pending' as status,
+          (m.due_date + fcr.day_offset * interval '1 day')::date as scheduled_date,
+          CASE 
+            WHEN m.current_day_offset >= fcr.day_offset THEN 'manual'
+            ELSE 'pending'
+          END as status,
           NULL::timestamptz as triggered_at,
+          m.receivable_asaas_id,
+          m.customer_asaas_id,
+          fcr.id as rule_id,
+          fcr.message_template,
+          NULL::int as event_id,
+          m.invoice_url,
           'pending' as row_type
-        FROM fin_receivables r
-        LEFT JOIN fin_people p ON p.asaas_id = r.customer_id
-        WHERE r.status IN ('PENDING', 'OVERDUE')
-          AND r.due_date IS NOT NULL
-          AND (CURRENT_DATE - r.due_date) BETWEEN -5 AND -1
+        FROM matched m
+        JOIN fin_collection_rules fcr ON fcr.id = m.best_rule_id
+        WHERE NOT EXISTS (
+          SELECT 1 FROM fin_collection_events e
+          WHERE e.receivable_asaas_id = m.receivable_asaas_id
+            AND e.rule_id = m.best_rule_id
+            AND e.status = 'sent'
+        )
 
-        ORDER BY triggered_at DESC NULLS LAST, scheduled_date ASC
-        LIMIT 100;
-      `);
+        ORDER BY scheduled_date ASC, triggered_at DESC NULLS LAST
+        LIMIT 200;
+      `, params);
       res.json(result.rows);
     } catch (err) {
       console.error('[fin_collection_events] Queue GET error:', err);
@@ -196,6 +260,50 @@ export function setupCollectionRoutes(app: Express, pool: Pool) {
     } catch (err) {
       console.error('[fin_collection_events] Webhook error:', err);
       res.status(500).json({ error: 'Webhook processing failed' });
+    }
+  });
+
+  // 6b. Manual mark as sent (replaces automation)
+  app.post('/api/fin/collection/events/mark-sent', async (req, res) => {
+    const { rule_id, receivable_asaas_id, customer_asaas_id, event_id, client_name, value, due_date, rule_label, message } = req.body;
+    try {
+      // 1. If there's an existing event (pending), update it
+      if (event_id) {
+        await pool.query(
+          `UPDATE fin_collection_events SET status = 'sent', triggered_at = NOW() WHERE id = $1`,
+          [event_id]
+        );
+      } else {
+        // 2. Create new event as sent
+        await pool.query(`
+          INSERT INTO fin_collection_events 
+          (rule_id, receivable_asaas_id, customer_asaas_id, channel, status, triggered_at)
+          VALUES ($1, $2, $3, 'whatsapp', 'sent', NOW())
+        `, [rule_id || null, receivable_asaas_id, customer_asaas_id]);
+      }
+
+      // 3. Insert comment in crm_comments (same as automation)
+      const commentContent = `Mensagem de cobrança enviada:\n${message || rule_label || 'Cobrança manual'}`;
+      
+      // Find the grapehub client_id from customer_asaas_id
+      const clientRes = await pool.query(
+        `SELECT grapehub_client_id FROM fin_people WHERE asaas_id = $1 AND grapehub_client_id IS NOT NULL LIMIT 1`,
+        [customer_asaas_id]
+      );
+      
+      if (clientRes.rows.length > 0 && clientRes.rows[0].grapehub_client_id) {
+        const clientId = clientRes.rows[0].grapehub_client_id;
+        await pool.query(`
+          INSERT INTO crm_comments (client_id, user_id, type, content, created_at, user_picture)
+          VALUES ($1, 'sistema', 'cobranca', $2, NOW(), 
+            'data:image/svg+xml,' || encode(('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><circle cx="20" cy="20" r="20" fill="%2322c55e"/><text x="20" y="26" text-anchor="middle" fill="white" font-size="18" font-weight="bold">✓</text></svg>')::bytea, 'escape'))
+        `, [clientId, commentContent]);
+      }
+
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('[fin_collection_events] Manual send error:', err);
+      res.status(500).json({ error: 'Failed to mark as sent' });
     }
   });
 

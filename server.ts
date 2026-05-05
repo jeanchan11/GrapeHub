@@ -3776,25 +3776,15 @@ app.get("/api/todos", async (req, res) => {
       const prevSaiRes = await pool.query(`
         SELECT dia, COALESCE(SUM(saidas_previstas), 0) AS saidas_previstas
         FROM (
-          -- Despesas recorrentes por due_date
+          -- Despesas recorrentes por due_date (inclui Fatura Cartão Sicredi consolidada)
           SELECT TO_CHAR(due_date, 'DD/MM') AS dia,
                  COALESCE(SUM(expected_value), 0) AS saidas_previstas
           FROM fin_recurring_bill_entries
           WHERE reference_month = $1::date AND status = 'pending'
           GROUP BY due_date
-
-          UNION ALL
-
-          -- Sicredi pendente: soma total do billing_month aparece no dia 18
-          SELECT TO_CHAR(($1::date + interval '17 days'), 'DD/MM') AS dia,
-                 COALESCE(SUM(ABS(value::numeric)), 0) AS saidas_previstas
-          FROM fin_movements_asaas
-          WHERE account = 'sicredi'
-            AND sicredi_status = 'pendente'
-            AND billing_month = $2
         ) AS combined
         GROUP BY dia
-      `, [inicio, mes]);
+      `, [inicio]);
 
 
       // Merge all days
@@ -5035,7 +5025,7 @@ app.get("/api/todos", async (req, res) => {
       const fn = fm === 12 ? 1 : fm + 1; const ny = fm === 12 ? fy + 1 : fy;
       const fim = `${ny}-${String(fn).padStart(2, '0')}-01`;
 
-      // 1) A Receber — fin_receivables com status Pendente ou Confirmado (não pagos)
+      // 1) A Receber — fin_receivables com status Pendente ou Vencido (não pagos)
       const aReceberResult = await pool.query(`
         SELECT
           r.id,
@@ -5050,40 +5040,54 @@ app.get("/api/todos", async (req, res) => {
           r.payment_date,
           r.description,
           r.customer_id,
-          r.invoice_url
+          r.invoice_url,
+          r.raw_json
         FROM fin_receivables r
         LEFT JOIN fin_people p ON p.asaas_id = r.customer_id
         WHERE r.due_date >= $1 AND r.due_date < $2
-          AND r.status IN ('Pendente', 'PENDING')
+          AND r.status IN ('Pendente', 'PENDING', 'OVERDUE')
         ORDER BY r.due_date ASC
       `, [inicio, fim]);
 
-      const aReceber = aReceberResult.rows;
+      const aReceber = aReceberResult.rows.filter((r: any) => r.raw_json?.anticipated !== true && r.raw_json?.anticipated !== 'true');
       const pendentes = aReceber.filter((r: any) => r.status === 'Pendente' || r.status === 'PENDING');
-      const vencidos = aReceber.filter((r: any) => r.status === 'Confirmado' || r.status === 'OVERDUE');
+      const vencidos = aReceber.filter((r: any) => r.status === 'OVERDUE');
       const total_a_receber = aReceber.reduce((s: number, r: any) => s + parseFloat(r.value || '0'), 0);
 
-      // 2) Já Recebido — fin_movements_asaas (entradas, excluindo pares de antecipação e antecipações)
+      // 2) Já Recebido — fin_receivables com status pago OU antecipado, filtrado por due_date (competência)
       const recebidoResult = await pool.query(`
         SELECT
-          asaas_id,
-          transaction_type,
-          value,
-          transaction_date,
-          description,
-          payment_id
-        FROM fin_movements_asaas
-        WHERE type = 1
-          AND transaction_date >= $1
-          AND transaction_date < $2
-          AND is_anticipation_pair = false
-          AND transaction_type NOT IN ('RECEIVABLE_ANTICIPATION', 'RECEIVABLE_ANTICIPATION_GROSS_CREDIT')
-          AND account = 'asaas'
-        ORDER BY transaction_date DESC
+          r.id,
+          r.asaas_id,
+          COALESCE(p.name, r.customer_name) AS customer_name,
+          COALESCE(p.cnpjcpf, r.customer_cpfcnpj) AS customer_cpfcnpj,
+          r.billing_type,
+          r.status,
+          r.value,
+          r.net_value,
+          r.due_date,
+          r.payment_date,
+          r.description,
+          r.customer_id,
+          r.invoice_url,
+          r.raw_json->>'anticipated' AS anticipated
+        FROM fin_receivables r
+        LEFT JOIN fin_people p ON p.asaas_id = r.customer_id
+        WHERE r.due_date >= $1 AND r.due_date < $2
+          AND (
+            r.status IN ('Confirmado', 'CONFIRMED', 'RECEIVED', 'RECEIVED_IN_CASH')
+            OR (r.raw_json->>'anticipated')::boolean = true
+          )
+        ORDER BY r.due_date ASC
       `, [inicio, fim]);
 
       const recebidos = recebidoResult.rows;
-      const total_recebido = recebidos.reduce((s: number, r: any) => s + parseFloat(r.value || '0'), 0);
+      // Separar: Recebidas (RECEIVED/RECEIVED_IN_CASH) vs Confirmadas (CONFIRMED + anticipated)
+      const recebidas = recebidos.filter((r: any) => r.status === 'RECEIVED' || r.status === 'RECEIVED_IN_CASH');
+      const confirmadas = recebidos.filter((r: any) => r.status === 'CONFIRMED' || r.status === 'Confirmado' || r.anticipated === 'true');
+      const total_recebidas = recebidas.reduce((s: number, r: any) => s + parseFloat(r.value || '0'), 0);
+      const total_confirmadas = confirmadas.reduce((s: number, r: any) => s + parseFloat(r.value || '0'), 0);
+      const total_recebido = total_recebidas + total_confirmadas;
 
       // 3) Antecipações — fin_movements_asaas (RECEIVABLE_ANTICIPATION_GROSS_CREDIT = crédito real do adiantamento)
       const antecipResult = await pool.query(`
@@ -5105,12 +5109,14 @@ app.get("/api/todos", async (req, res) => {
       const antecipacoes = antecipResult.rows;
       const total_antecipacoes = antecipacoes.reduce((s: number, r: any) => s + parseFloat(r.value || '0'), 0);
 
-      // 4) Total do mês = Já Recebido + Antecipações
-      const total_mes = total_recebido + total_antecipacoes;
+      // 4) Total do mês = Já Recebido (recebidas + confirmadas)
+      const total_mes = total_recebido;
 
       res.json({
         summary: {
           total_recebido,
+          total_recebidas,
+          total_confirmadas,
           total_antecipacoes,
           total_a_receber,
           total_mes,
@@ -5120,6 +5126,8 @@ app.get("/api/todos", async (req, res) => {
           vencidos,
         },
         recebidos,
+        recebidas,
+        confirmadas,
         antecipacoes,
       });
     } catch (err) {
@@ -9291,25 +9299,66 @@ app.get("/api/todos", async (req, res) => {
   });
 
   // ── Onboarding Operacional ─────────────────────────────────────────────────
+
+  // Ensure tables exist
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS onboarding_tasks (
+      id SERIAL PRIMARY KEY,
+      client_name TEXT NOT NULL,
+      squad TEXT,
+      responsible_id TEXT,
+      responsible_name TEXT,
+      responsible_avatar TEXT,
+      start_date DATE,
+      due_date DATE,
+      status_group TEXT NOT NULL DEFAULT 'a-fazer-briefing',
+      tags TEXT[] DEFAULT '{}',
+      subtask_count INT DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS onboarding_template_items (
+      id SERIAL PRIMARY KEY,
+      title TEXT NOT NULL,
+      order_index INT NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS onboarding_subtasks (
+      id SERIAL PRIMARY KEY,
+      task_id INT NOT NULL REFERENCES onboarding_tasks(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      completed BOOLEAN DEFAULT false,
+      order_index INT NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  // Add form fields columns
+  const formCols = ['nome_completo','nome_fantasia','telefone_whatsapp','cnpj_cpf','cep','cidade','uf'];
+  for (const col of formCols) {
+    await pool.query(`ALTER TABLE onboarding_tasks ADD COLUMN IF NOT EXISTS ${col} TEXT`);
+  }
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS onboarding_comments (
+      id SERIAL PRIMARY KEY,
+      task_id INT NOT NULL REFERENCES onboarding_tasks(id) ON DELETE CASCADE,
+      author_name TEXT,
+      author_email TEXT,
+      text TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  // ── GET tasks ──
   app.get('/api/onboarding-tasks', async (req, res) => {
     try {
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS onboarding_tasks (
-          id SERIAL PRIMARY KEY,
-          client_name TEXT NOT NULL,
-          squad TEXT,
-          responsible_id TEXT,
-          responsible_name TEXT,
-          responsible_avatar TEXT,
-          start_date DATE,
-          due_date DATE,
-          status_group TEXT NOT NULL DEFAULT 'a-fazer-briefing',
-          tags TEXT[] DEFAULT '{}',
-          subtask_count INT DEFAULT 0,
-          created_at TIMESTAMPTZ DEFAULT NOW(),
-          updated_at TIMESTAMPTZ DEFAULT NOW()
-        )
-      `);
       const result = await pool.query(
         'SELECT * FROM onboarding_tasks ORDER BY status_group, created_at DESC'
       );
@@ -9320,28 +9369,58 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
+  // ── POST task (auto-creates subtasks from template) ──
   app.post('/api/onboarding-tasks', async (req, res) => {
     try {
       const { client_name, squad, responsible_id, responsible_name, responsible_avatar, start_date, due_date, status_group, tags } = req.body;
       if (!client_name) return res.status(400).json({ error: 'client_name é obrigatório.' });
+
+      // 1. Create the task
       const result = await pool.query(
         `INSERT INTO onboarding_tasks (client_name, squad, responsible_id, responsible_name, responsible_avatar, start_date, due_date, status_group, tags)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
         [client_name, squad || null, responsible_id || null, responsible_name || null, responsible_avatar || null,
          start_date || null, due_date || null, status_group || 'a-fazer-briefing', tags || []]
       );
-      res.status(201).json(result.rows[0]);
+      const newTask = result.rows[0];
+
+      // 2. Copy template items as subtasks
+      const template = await pool.query(
+        'SELECT title, order_index FROM onboarding_template_items ORDER BY order_index ASC'
+      );
+      if (template.rows.length > 0) {
+        const values: string[] = [];
+        const params: any[] = [];
+        let idx = 1;
+        for (const item of template.rows) {
+          values.push(`($${idx++}, $${idx++}, $${idx++})`);
+          params.push(newTask.id, item.title, item.order_index);
+        }
+        await pool.query(
+          `INSERT INTO onboarding_subtasks (task_id, title, order_index) VALUES ${values.join(', ')}`,
+          params
+        );
+        // Update subtask_count
+        await pool.query(
+          `UPDATE onboarding_tasks SET subtask_count = $1 WHERE id = $2`,
+          [template.rows.length, newTask.id]
+        );
+        newTask.subtask_count = template.rows.length;
+      }
+
+      res.status(201).json(newTask);
     } catch (err) {
       console.error('POST /api/onboarding-tasks error:', err);
       res.status(500).json({ error: 'Erro ao criar tarefa de onboarding.' });
     }
   });
 
+  // ── PATCH task ──
   app.patch('/api/onboarding-tasks/:id', async (req, res) => {
     try {
       const { id } = req.params;
       const fields = req.body;
-      const allowed = ['client_name','squad','responsible_id','responsible_name','responsible_avatar','start_date','due_date','status_group','tags','subtask_count'];
+      const allowed = ['client_name','squad','responsible_id','responsible_name','responsible_avatar','start_date','due_date','status_group','tags','subtask_count','nome_completo','nome_fantasia','telefone_whatsapp','cnpj_cpf','cep','cidade','uf'];
       const sets: string[] = [];
       const vals: any[] = [];
       let idx = 1;
@@ -9360,6 +9439,163 @@ app.get("/api/todos", async (req, res) => {
     } catch (err) {
       console.error('PATCH /api/onboarding-tasks error:', err);
       res.status(500).json({ error: 'Erro ao atualizar tarefa.' });
+    }
+  });
+
+  // ── GET subtasks for a task ──
+  app.get('/api/onboarding-tasks/:id/subtasks', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const result = await pool.query(
+        'SELECT * FROM onboarding_subtasks WHERE task_id = $1 ORDER BY order_index ASC',
+        [id]
+      );
+      res.json(result.rows);
+    } catch (err) {
+      console.error('GET /api/onboarding-subtasks error:', err);
+      res.status(500).json({ error: 'Erro ao buscar subtarefas.' });
+    }
+  });
+
+  // ── PATCH subtask (toggle completed) ──
+  app.patch('/api/onboarding-subtasks/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { completed, title } = req.body;
+      const sets: string[] = [];
+      const vals: any[] = [];
+      let idx = 1;
+      if (completed !== undefined) { sets.push(`completed = $${idx++}`); vals.push(completed); }
+      if (title !== undefined) { sets.push(`title = $${idx++}`); vals.push(title); }
+      if (sets.length === 0) return res.status(400).json({ error: 'Nenhum campo.' });
+      vals.push(id);
+      const result = await pool.query(
+        `UPDATE onboarding_subtasks SET ${sets.join(', ')} WHERE id = $${idx} RETURNING *`,
+        vals
+      );
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error('PATCH /api/onboarding-subtasks error:', err);
+      res.status(500).json({ error: 'Erro ao atualizar subtarefa.' });
+    }
+  });
+
+  // ── Template CRUD ──
+  app.get('/api/onboarding-template', async (req, res) => {
+    try {
+      const result = await pool.query(
+        'SELECT * FROM onboarding_template_items ORDER BY order_index ASC'
+      );
+      res.json(result.rows);
+    } catch (err) {
+      console.error('GET /api/onboarding-template error:', err);
+      res.status(500).json({ error: 'Erro ao buscar template.' });
+    }
+  });
+
+  app.post('/api/onboarding-template', async (req, res) => {
+    try {
+      const { title } = req.body;
+      if (!title?.trim()) return res.status(400).json({ error: 'title obrigatório.' });
+      // Get next order_index
+      const maxRes = await pool.query('SELECT COALESCE(MAX(order_index), -1) + 1 AS next FROM onboarding_template_items');
+      const nextIdx = maxRes.rows[0].next;
+      const result = await pool.query(
+        `INSERT INTO onboarding_template_items (title, order_index) VALUES ($1, $2) RETURNING *`,
+        [title.trim(), nextIdx]
+      );
+      res.status(201).json(result.rows[0]);
+    } catch (err) {
+      console.error('POST /api/onboarding-template error:', err);
+      res.status(500).json({ error: 'Erro ao adicionar item ao template.' });
+    }
+  });
+
+  app.patch('/api/onboarding-template/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { title, order_index } = req.body;
+      const sets: string[] = [];
+      const vals: any[] = [];
+      let idx = 1;
+      if (title !== undefined) { sets.push(`title = $${idx++}`); vals.push(title); }
+      if (order_index !== undefined) { sets.push(`order_index = $${idx++}`); vals.push(order_index); }
+      if (sets.length === 0) return res.status(400).json({ error: 'Nenhum campo.' });
+      vals.push(id);
+      await pool.query(
+        `UPDATE onboarding_template_items SET ${sets.join(', ')} WHERE id = $${idx}`,
+        vals
+      );
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('PATCH /api/onboarding-template error:', err);
+      res.status(500).json({ error: 'Erro ao atualizar item do template.' });
+    }
+  });
+
+  app.delete('/api/onboarding-template/:id', async (req, res) => {
+    try {
+      await pool.query('DELETE FROM onboarding_template_items WHERE id = $1', [req.params.id]);
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('DELETE /api/onboarding-template error:', err);
+      res.status(500).json({ error: 'Erro ao remover item do template.' });
+    }
+  });
+
+  // Bulk replace all template items
+  app.put('/api/onboarding-template', async (req, res) => {
+    try {
+      const { items } = req.body; // [{title: string}]
+      if (!Array.isArray(items)) return res.status(400).json({ error: 'items deve ser um array.' });
+      await pool.query('DELETE FROM onboarding_template_items');
+      if (items.length > 0) {
+        const values: string[] = [];
+        const params: any[] = [];
+        let idx = 1;
+        items.forEach((item: any, i: number) => {
+          values.push(`($${idx++}, $${idx++})`);
+          params.push(item.title, i);
+        });
+        await pool.query(
+          `INSERT INTO onboarding_template_items (title, order_index) VALUES ${values.join(', ')}`,
+          params
+        );
+      }
+      const result = await pool.query('SELECT * FROM onboarding_template_items ORDER BY order_index ASC');
+      res.json(result.rows);
+    } catch (err) {
+      console.error('PUT /api/onboarding-template error:', err);
+      res.status(500).json({ error: 'Erro ao salvar template.' });
+    }
+  });
+
+  // ── Onboarding Comments ──
+  app.get('/api/onboarding-tasks/:id/comments', async (req, res) => {
+    try {
+      const result = await pool.query(
+        'SELECT * FROM onboarding_comments WHERE task_id = $1 ORDER BY created_at DESC',
+        [req.params.id]
+      );
+      res.json(result.rows);
+    } catch (err) {
+      console.error('GET /api/onboarding-comments error:', err);
+      res.status(500).json({ error: 'Erro ao buscar comentários.' });
+    }
+  });
+
+  app.post('/api/onboarding-tasks/:id/comments', async (req, res) => {
+    try {
+      const { text, author_name, author_email } = req.body;
+      if (!text?.trim()) return res.status(400).json({ error: 'text obrigatório.' });
+      const result = await pool.query(
+        `INSERT INTO onboarding_comments (task_id, text, author_name, author_email) VALUES ($1, $2, $3, $4) RETURNING *`,
+        [req.params.id, text.trim(), author_name || null, author_email || null]
+      );
+      res.status(201).json(result.rows[0]);
+    } catch (err) {
+      console.error('POST /api/onboarding-comments error:', err);
+      res.status(500).json({ error: 'Erro ao criar comentário.' });
     }
   });
 

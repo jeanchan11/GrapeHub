@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Clock, CreditCard, Zap, FileText, ExternalLink, Settings, AlertTriangle, Pause, Play, Check, X, ShieldAlert, Activity, CheckCircle2, Send, Settings2, Search, TrendingUp, Banknote, BarChart2 } from 'lucide-react';
+import { Calendar, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Clock, CreditCard, Zap, FileText, ExternalLink, Settings, AlertTriangle, Pause, Play, Check, X, ShieldAlert, Activity, CheckCircle2, Send, Settings2, Search, TrendingUp, Banknote, BarChart2, MessageCircle, Copy } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────
 interface InvoiceItem {
@@ -28,6 +28,8 @@ interface MovementItem {
 
 interface Summary {
   total_recebido: number;
+  total_recebidas: number;
+  total_confirmadas: number;
   total_antecipacoes: number;
   total_a_receber: number;
   total_mes: number;
@@ -156,6 +158,13 @@ interface QueueItem {
   scheduled_date: string;
   status: string;
   triggered_at: string;
+  receivable_asaas_id: string;
+  customer_asaas_id: string;
+  rule_id: number | null;
+  message_template: string | null;
+  event_id: number | null;
+  invoice_url: string | null;
+  row_type: string;
 }
 
 interface SummaryData {
@@ -165,7 +174,7 @@ interface SummaryData {
   humano: number;
 }
 
-const CollectionRulesBlock = () => {
+const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
   const [summary, setSummary] = useState<SummaryData>({ preventivo: 0, vencimento: 0, reativo: 0, humano: 0 });
   const [rules, setRules] = useState<Rule[]>([]);
   const [queue, setQueue] = useState<QueueItem[]>([]);
@@ -178,8 +187,66 @@ const CollectionRulesBlock = () => {
   const [phaseDetail, setPhaseDetail] = useState<{ phase: string; label: string; items: any[] } | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [queueStats, setQueueStats] = useState({ hoje: 0, ultimos7dias: 0, agendados: 0 });
+  const [confettiItems, setConfettiItems] = useState<{ id: number; x: number; y: number }[]>([]);
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
+  const [queueSubTab, setQueueSubTab] = useState<'agendados' | 'enviados' | 'humano' | 'suspensao'>('agendados');
+  const [queueAll, setQueueAll] = useState<QueueItem[]>([]);
 
-  const phaseLabels: Record<string, string> = { preventivo: 'Em Preventivo', vencimento: 'No Vencimento', reativo: 'Em Atraso', humano: 'Contato Humano' };
+  const buildMessage = (template: string | null, item: QueueItem) => {
+    if (!template) return `Olá! Sua fatura de ${formatCurrency(item.value)} vence em ${fmtDate(item.due_date)}. ${item.invoice_url || ''}`;
+    const hora = new Date().getHours();
+    const saudacao = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite';
+    return template
+      .replace(/\\n/g, '\n')
+      .replace(/\{\{saudacao\}\}/g, saudacao)
+      .replace(/\{\{nome\}\}/g, item.client_name || '')
+      .replace(/\{\{valor\}\}/g, formatCurrency(item.value))
+      .replace(/\{\{vencimento\}\}/g, fmtDate(item.due_date))
+      .replace(/\{\{link\}\}/g, item.invoice_url || '');
+  };
+
+  const copyMessage = (item: QueueItem, idx: number) => {
+    const msg = buildMessage(item.message_template, item);
+    navigator.clipboard.writeText(msg);
+    setCopiedIdx(idx);
+    setTimeout(() => setCopiedIdx(null), 2000);
+  };
+
+  const triggerConfetti = (e: React.MouseEvent) => {
+    const rect = (e.target as HTMLElement).getBoundingClientRect();
+    const particles = Array.from({ length: 30 }, (_, i) => ({
+      id: Date.now() + i,
+      x: rect.left + rect.width / 2,
+      y: rect.top,
+    }));
+    setConfettiItems(particles);
+    setTimeout(() => setConfettiItems([]), 2000);
+  };
+
+  const markAsSent = async (item: QueueItem, idx: number, e: React.MouseEvent) => {
+    triggerConfetti(e);
+    // Optimistic update
+    setQueue(prev => prev.map((q, i) => i === idx ? { ...q, status: 'sent' } : q));
+    setQueueStats(prev => ({ ...prev, hoje: prev.hoje + 1, agendados: Math.max(0, prev.agendados - 1) }));
+    try {
+      const msg = buildMessage(item.message_template, item);
+      await fetch('/api/fin/collection/events/mark-sent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rule_id: item.rule_id,
+          receivable_asaas_id: item.receivable_asaas_id,
+          customer_asaas_id: item.customer_asaas_id,
+          event_id: item.event_id,
+          client_name: item.client_name,
+          value: item.value,
+          due_date: item.due_date,
+          rule_label: item.rule_label,
+          message: msg,
+        }),
+      });
+    } catch { /* silent */ }
+  };  const phaseLabels: Record<string, string> = { preventivo: 'Em Preventivo', vencimento: 'No Vencimento', reativo: 'Em Atraso', humano: 'Contato Humano' };
 
   const openPhaseDetail = async (phase: string) => {
     setLoadingDetail(true);
@@ -204,13 +271,16 @@ const CollectionRulesBlock = () => {
         const [sumRes, rulesRes, queueRes, statsRes] = await Promise.all([
           fetch('/api/fin/collection/summary'),
           fetch('/api/fin/collection/rules'),
-          fetch('/api/fin/collection/events/queue'),
-          fetch('/api/fin/collection/events/stats'),
+          fetch(`/api/fin/collection/events/queue?month=${selectedMonth}`),
+          fetch(`/api/fin/collection/events/stats?month=${selectedMonth}`),
         ]);
         if (sumRes.ok) setSummary(await sumRes.json());
         if (rulesRes.ok) setRules(await rulesRes.json());
         if (queueRes.ok) setQueue(await queueRes.json());
         if (statsRes.ok) setQueueStats(await statsRes.json());
+        // Fetch all queue items (no month filter) for Contato Humano and Suspensão tabs
+        const allQueueRes = await fetch('/api/fin/collection/events/queue?all=true');
+        if (allQueueRes.ok) setQueueAll(await allQueueRes.json());
       } catch (err) {
         console.error('Error fetching collection data:', err);
       } finally {
@@ -218,7 +288,7 @@ const CollectionRulesBlock = () => {
       }
     };
     fetchData();
-  }, []);
+  }, [selectedMonth]);
 
   const hoje = new Date().toISOString().split('T')[0];
   const disparosHoje = queueStats.hoje;
@@ -228,6 +298,13 @@ const CollectionRulesBlock = () => {
   const filteredQueue = queue.filter(q => 
     !searchTerm || q.client_name?.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const queueAgendados = filteredQueue.filter(q => (q.status === 'pending' || q.status === 'manual') && q.day_offset < 10);
+  const queueEnviados = filteredQueue.filter(q => q.status === 'sent' || q.status === 'failed');
+  // Humano e Suspensão: sem filtro de mês, usam queueAll
+  const filteredQueueAll = queueAll.filter(q => !searchTerm || q.client_name?.toLowerCase().includes(searchTerm.toLowerCase()));
+  const queueHumano = filteredQueueAll.filter(q => (q.status === 'pending' || q.status === 'manual') && q.day_offset >= 10 && q.day_offset < 15);
+  const queueSuspensao = filteredQueueAll.filter(q => (q.status === 'pending' || q.status === 'manual') && q.day_offset >= 15);
 
   const handleToggleRule = async (id: number) => {
     try {
@@ -488,51 +565,92 @@ const CollectionRulesBlock = () => {
                 </div>
               </div>
 
-              <div className="rounded-xl border border-gray-100 dark:border-white/5 overflow-hidden">
-                <table className="w-full text-left border-collapse">
+              <div className="rounded-xl border border-gray-100 dark:border-white/5 overflow-x-auto">
+                {/* Sub-tabs: Agendados / Enviados */}
+                <div className="flex items-center gap-6 px-4 pt-3 border-b border-gray-100 dark:border-white/5 bg-gray-50 dark:bg-dark-bg/50">
+                  <button onClick={() => setQueueSubTab('agendados')}
+                    className={`pb-3 text-sm font-bold border-b-2 transition-colors ${queueSubTab === 'agendados' ? 'border-amber-400 text-amber-600 dark:text-amber-400' : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'}`}>
+                    Agendados
+                    <span className={`ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full ${queueSubTab === 'agendados' ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400' : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-slate-400'}`}>{queueAgendados.length}</span>
+                  </button>
+                  <button onClick={() => setQueueSubTab('enviados')}
+                    className={`pb-3 text-sm font-bold border-b-2 transition-colors ${queueSubTab === 'enviados' ? 'border-emerald-400 text-emerald-600 dark:text-emerald-400' : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'}`}>
+                    Enviados
+                    <span className={`ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full ${queueSubTab === 'enviados' ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-slate-400'}`}>{queueEnviados.length}</span>
+                  </button>
+                  <button onClick={() => setQueueSubTab('humano')}
+                    className={`pb-3 text-sm font-bold border-b-2 transition-colors ${queueSubTab === 'humano' ? 'border-violet-400 text-violet-600 dark:text-violet-400' : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'}`}>
+                    Contato Humano
+                    <span className={`ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full ${queueSubTab === 'humano' ? 'bg-violet-500/15 text-violet-600 dark:text-violet-400' : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-slate-400'}`}>{queueHumano.length}</span>
+                  </button>
+                  <button onClick={() => setQueueSubTab('suspensao')}
+                    className={`pb-3 text-sm font-bold border-b-2 transition-colors ${queueSubTab === 'suspensao' ? 'border-rose-400 text-rose-600 dark:text-rose-400' : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'}`}>
+                    Suspensão
+                    <span className={`ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full ${queueSubTab === 'suspensao' ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400' : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-slate-400'}`}>{queueSuspensao.length}</span>
+                  </button>
+                </div>
+                <table className="w-full text-left border-collapse table-fixed">
                   <thead>
                     <tr className="bg-gray-50 dark:bg-dark-bg/50 border-b border-gray-100 dark:border-white/5">
-                      <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest">Cliente / Valor</th>
-                      <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest">Regra Acionada</th>
-                      <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest">Canal</th>
-                      <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest">Data Programada</th>
-                      <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest text-right">Status</th>
+                      <th className="w-[30%] px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap">Cliente / Valor</th>
+                      <th className="w-[20%] px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap">Regra Acionada</th>
+                      <th className="w-[10%] px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap">Canal</th>
+                      <th className="w-[15%] px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap">Data Programada</th>
+                      <th className="w-[10%] px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap text-center">Mensagem</th>
+                      <th className="w-[15%] px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap text-right">Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 dark:divide-white/5">
-                    {filteredQueue.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="px-4 py-8 text-center text-gray-500 dark:text-slate-400 text-sm">
-                          Nenhum disparo encontrado.
-                        </td>
-                      </tr>
-                    ) : filteredQueue.map((item, idx) => {
+                    {(() => {
+                      const currentList = queueSubTab === 'agendados' ? queueAgendados : queueSubTab === 'enviados' ? queueEnviados : queueSubTab === 'humano' ? queueHumano : queueSuspensao;
+                      const emptyMsg = queueSubTab === 'agendados' ? 'Nenhum disparo agendado.' : queueSubTab === 'enviados' ? 'Nenhum disparo enviado.' : queueSubTab === 'humano' ? 'Nenhum cliente em contato humano.' : 'Nenhum cliente em suspensão.';
+                      if (currentList.length === 0) return (
+                        <tr>
+                          <td colSpan={6} className="px-4 py-8 text-center text-gray-500 dark:text-slate-400 text-sm">{emptyMsg}</td>
+                        </tr>
+                      );
+                      return currentList.map((item, idx) => {
                       const phaseKey = item.day_offset < 0 ? 'preventivo' : item.day_offset === 0 ? 'vencimento' : item.day_offset >= 10 ? 'humano' : 'reativo';
                       const badgeColor = timelineStyles[phaseKey]?.pillBg + ' ' + timelineStyles[phaseKey]?.text;
                       const badgeLabel = item.day_offset < 0 ? `D${item.day_offset}` : item.day_offset === 0 ? 'D0' : `D+${item.day_offset}`;
                       const fmtTriggered = item.triggered_at ? new Date(item.triggered_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : fmtDate(item.scheduled_date);
 
                       return (
-                        <tr key={idx} className="bg-white dark:bg-dark-card hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
-                          <td className="px-4 py-3">
+                        <tr key={idx} className="bg-white hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
+                          <td className="px-4 py-3 dark:bg-dark-card">
                             <p className="text-sm font-bold text-gray-900 dark:text-white">{item.client_name || 'Desconhecido'}</p>
                             <p className="text-xs text-gray-500 dark:text-slate-400">{formatCurrency(item.value)} • Venc: {fmtDate(item.due_date)}</p>
                           </td>
-                          <td className="px-4 py-3">
+                          <td className="px-4 py-3 dark:bg-dark-card">
                             <div className="flex items-center gap-2">
                               <span className={`px-2 py-0.5 rounded text-[9px] font-bold border border-current opacity-80 ${badgeColor}`}>{badgeLabel}</span>
                               <span className="text-xs font-medium text-gray-700 dark:text-slate-300">{item.rule_label}</span>
                             </div>
                           </td>
-                          <td className="px-4 py-3">
+                          <td className="px-4 py-3 dark:bg-dark-card">
                             <span className="text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest bg-gray-100 dark:bg-white/5 px-2 py-1 rounded-md border border-gray-200 dark:border-white/5">
                               {item.channel}
                             </span>
                           </td>
-                          <td className="px-4 py-3">
+                          <td className="px-4 py-3 dark:bg-dark-card">
                             <span className="text-xs text-gray-600 dark:text-slate-400">{fmtTriggered}</span>
                           </td>
-                          <td className="px-4 py-3 text-right">
+                          {/* Mensagem column */}
+                          <td className="px-4 py-3 text-center dark:bg-dark-card">
+                            <button
+                              onClick={() => copyMessage(item, idx)}
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+                                copiedIdx === idx
+                                  ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                                  : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-slate-400 border border-gray-200 dark:border-white/10 hover:bg-violet-500/10 hover:text-violet-500 hover:border-violet-500/20'
+                              }`}
+                              title="Copiar mensagem"
+                            >
+                              {copiedIdx === idx ? <><Check size={12} /> Copiado!</> : <><Copy size={12} /> Copiar</>}
+                            </button>
+                          </td>
+                          {/* Status column */}
+                          <td className="px-4 py-3 text-right dark:bg-dark-card">
                             {item.status === 'sent' && (
                               <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-1 rounded-full">
                                 <CheckCircle2 size={12} /> Enviado
@@ -544,22 +662,72 @@ const CollectionRulesBlock = () => {
                               </span>
                             )}
                             {item.status === 'manual' && (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 px-2 py-1 rounded-full">
+                              <button
+                                onClick={(e) => markAsSent(item, idx, e)}
+                                className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 px-2 py-1 rounded-full cursor-pointer hover:bg-emerald-50 dark:hover:bg-emerald-500/10 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
+                              >
                                 <Clock size={12} /> Pendente
-                              </span>
+                              </button>
                             )}
                             {item.status === 'pending' && (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400 bg-gray-100 dark:bg-white/5 px-2 py-1 rounded-full">
+                              <button
+                                onClick={(e) => markAsSent(item, idx, e)}
+                                className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400 bg-gray-100 dark:bg-white/5 px-2 py-1 rounded-full cursor-pointer hover:bg-emerald-50 dark:hover:bg-emerald-500/10 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
+                              >
                                 <Clock size={12} /> Agendado
-                              </span>
+                              </button>
                             )}
                           </td>
                         </tr>
                       );
-                    })}
+                    });
+                    })()}
                   </tbody>
                 </table>
               </div>
+
+              {/* Confetti animation */}
+              {confettiItems.length > 0 && (
+                <div className="fixed inset-0 pointer-events-none z-[9999]">
+                  {confettiItems.map((p, i) => {
+                    const angle = (Math.random() - 0.5) * 120;
+                    const dist = 80 + Math.random() * 200;
+                    const dx = Math.sin(angle * Math.PI / 180) * dist;
+                    const dy = -(100 + Math.random() * 300);
+                    const size = 6 + Math.random() * 6;
+                    const rotation = Math.random() * 720;
+                    const hue = 100 + Math.random() * 40; // green range
+                    const delay = Math.random() * 0.2;
+                    return (
+                      <div
+                        key={p.id}
+                        style={{
+                          position: 'fixed',
+                          left: p.x,
+                          top: p.y,
+                          width: size,
+                          height: size,
+                          borderRadius: Math.random() > 0.5 ? '50%' : '2px',
+                          backgroundColor: `hsl(${hue}, 80%, ${50 + Math.random() * 20}%)`,
+                          animation: `confetti-fly 1.5s ease-out ${delay}s forwards`,
+                          opacity: 1,
+                          transform: `translate(0, 0) rotate(0deg)`,
+                          zIndex: 9999,
+                          ['--dx' as any]: `${dx}px`,
+                          ['--dy' as any]: `${dy}px`,
+                          ['--rot' as any]: `${rotation}deg`,
+                        }}
+                      />
+                    );
+                  })}
+                  <style>{`
+                    @keyframes confetti-fly {
+                      0% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+                      100% { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)); opacity: 0; }
+                    }
+                  `}</style>
+                </div>
+              )}
             </div>
           )}
         </>
@@ -694,10 +862,12 @@ const CollectionRulesBlock = () => {
 export default function ContasAReceber() {
   const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [loading, setLoading] = useState(true);
-  const [summary, setSummary] = useState<Summary>({ total_recebido: 0, total_antecipacoes: 0, total_a_receber: 0, total_mes: 0 });
+  const [summary, setSummary] = useState<Summary>({ total_recebido: 0, total_recebidas: 0, total_confirmadas: 0, total_antecipacoes: 0, total_a_receber: 0, total_mes: 0 });
   const [pendentes, setPendentes] = useState<InvoiceItem[]>([]);
   const [vencidos, setVencidos] = useState<InvoiceItem[]>([]);
-  const [recebidos, setRecebidos] = useState<MovementItem[]>([]);
+  const [recebidos, setRecebidos] = useState<any[]>([]);
+  const [recebidas, setRecebidas] = useState<any[]>([]);
+  const [confirmadas, setConfirmadas] = useState<any[]>([]);
   const [antecipacoes, setAntecipacoes] = useState<MovementItem[]>([]);
 
   const [selY, selM] = selectedMonth.split('-').map(Number);
@@ -725,6 +895,8 @@ export default function ContasAReceber() {
         setPendentes(data.a_receber?.pendentes || []);
         setVencidos(data.a_receber?.vencidos || []);
         setRecebidos(data.recebidos || []);
+        setRecebidas(data.recebidas || []);
+        setConfirmadas(data.confirmadas || []);
         setAntecipacoes(data.antecipacoes || []);
       } catch (err) {
         console.error('Error fetching contas a receber:', err);
@@ -796,12 +968,14 @@ export default function ContasAReceber() {
     date: item.transaction_date,
     value: Math.abs(parseFloat(item.value || '0')),
   }));
+  const [mainTab, setMainTab] = useState<'receber' | 'cobrancas'>('receber');
+  const [receberSubTab, setReceberSubTab] = useState<'pendentes' | 'recebidos'>('pendentes');
 
   return (
     <div className="min-h-screen bg-dark-bg transition-colors duration-300">
 
       {/* ── Header ── */}
-      <div className="flex items-center justify-between px-6 md:px-8 pt-8 pb-4">
+      <div className="flex items-center justify-between px-6 md:px-8 pt-8 pb-2">
         <div>
           <h1 className="text-2xl font-black tracking-tight text-dark-text">
             Contas a <span className="text-violet-500">Receber</span>
@@ -827,6 +1001,22 @@ export default function ContasAReceber() {
         </div>
       </div>
 
+      {/* ── Tab Navigation ── */}
+      <div className="px-6 md:px-8 mb-4 flex items-center gap-1 border-b border-white/5">
+        <button
+          onClick={() => setMainTab('receber')}
+          className={`px-5 py-3 text-sm font-bold border-b-2 transition-colors ${mainTab === 'receber' ? 'border-violet-500 text-violet-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
+        >
+          A Receber
+        </button>
+        <button
+          onClick={() => setMainTab('cobrancas')}
+          className={`px-5 py-3 text-sm font-bold border-b-2 transition-colors ${mainTab === 'cobrancas' ? 'border-violet-500 text-violet-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
+        >
+          Cobranças
+        </button>
+      </div>
+
       <div className="px-6 md:px-8 pb-8 space-y-6">
         {loading ? (
           <div className="flex items-center justify-center py-24">
@@ -834,178 +1024,197 @@ export default function ContasAReceber() {
           </div>
         ) : (
           <>
-            {/* KPI Cards — mesmo padrão do Dashboard Financeiro */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              {/* Card 1: A Receber */}
-              <div className="bg-dark-card border border-white/10 rounded-2xl p-6 relative overflow-hidden flex flex-col min-h-[150px]">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="p-2.5 rounded-2xl bg-amber-500">
-                    <Clock size={20} className="text-white" />
+            {/* ══ Tab: A Receber ══ */}
+            {mainTab === 'receber' && (
+              <>
+                {/* KPI Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  {/* 1) Recebidas */}
+                  <div className="bg-dark-card border border-white/10 rounded-2xl p-6 flex flex-col min-h-[150px]">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="p-2.5 rounded-2xl bg-emerald-600"><TrendingUp size={20} className="text-white" /></div>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Recebidas</p>
+                    </div>
+                    <div className="flex flex-col mt-auto">
+                      <h3 className="text-3xl font-black tracking-tight mb-3 text-emerald-400">{formatCurrency(summary.total_recebidas)}</h3>
+                      <div className="pt-3 border-t border-white/10">
+                        <div className="flex justify-between items-center text-sm"><span className="text-slate-500">Pix + Boleto</span><span className="font-semibold text-emerald-400">{recebidas.length} cobranças</span></div>
+                      </div>
+                    </div>
                   </div>
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">A Receber</p>
-                </div>
-                <div className="flex flex-col mt-auto">
-                  <h3 className="text-3xl font-black tracking-tight mb-3 text-dark-text">
-                    {formatCurrency(summary.total_a_receber)}
-                  </h3>
-                  <div className="pt-3 border-t border-white/10">
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-slate-500">Cobranças</span>
-                      <span className="font-semibold text-amber-400">{pendentes.length + vencidos.length} pendentes</span>
+                  {/* 2) Confirmadas */}
+                  <div className="bg-dark-card border border-white/10 rounded-2xl p-6 flex flex-col min-h-[150px]">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="p-2.5 rounded-2xl bg-blue-600"><Banknote size={20} className="text-white" /></div>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Confirmadas</p>
+                    </div>
+                    <div className="flex flex-col mt-auto">
+                      <h3 className="text-3xl font-black tracking-tight mb-3 text-blue-400">{formatCurrency(summary.total_confirmadas)}</h3>
+                      <div className="pt-3 border-t border-white/10">
+                        <div className="flex justify-between items-center text-sm"><span className="text-slate-500">Cartão + Antecipadas</span><span className="font-semibold text-blue-400">{confirmadas.length} cobranças</span></div>
+                      </div>
+                    </div>
+                  </div>
+                  {/* 3) A Receber */}
+                  <div className="bg-dark-card border border-white/10 rounded-2xl p-6 flex flex-col min-h-[150px]">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="p-2.5 rounded-2xl bg-amber-500"><Clock size={20} className="text-white" /></div>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">A Receber</p>
+                    </div>
+                    <div className="flex flex-col mt-auto">
+                      <h3 className="text-3xl font-black tracking-tight mb-3 text-amber-400">{formatCurrency(pendentes.reduce((s, r) => s + parseFloat(r.value || '0'), 0))}</h3>
+                      <div className="pt-3 border-t border-white/10"><div className="flex justify-between items-center text-sm"><span className="text-slate-500">Cobranças</span><span className="font-semibold text-amber-400">{pendentes.length} pendentes</span></div></div>
+                    </div>
+                  </div>
+                  {/* 4) Vencidas */}
+                  <div className="bg-dark-card border border-white/10 rounded-2xl p-6 flex flex-col min-h-[150px]">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="p-2.5 rounded-2xl bg-rose-600"><AlertTriangle size={20} className="text-white" /></div>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Vencidas</p>
+                    </div>
+                    <div className="flex flex-col mt-auto">
+                      <h3 className={`text-3xl font-black tracking-tight mb-3 ${vencidos.length > 0 ? 'text-rose-400' : 'text-dark-text'}`}>{formatCurrency(vencidos.reduce((s, r) => s + parseFloat(r.value || '0'), 0))}</h3>
+                      <div className="pt-3 border-t border-white/10">
+                        <div className="flex justify-between items-center text-sm"><span className="text-slate-500">Atrasadas</span><span className={`font-semibold ${vencidos.length > 0 ? 'text-rose-400' : 'text-slate-500'}`}>{vencidos.length} cobranças</span></div>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Card 2: Total do Mês */}
-              <div className="bg-dark-card border border-white/10 rounded-2xl p-6 relative overflow-hidden flex flex-col min-h-[150px]">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="p-2.5 rounded-2xl bg-emerald-600">
-                    <TrendingUp size={20} className="text-white" />
+                {/* Sub-tabs: A Receber / Já Recebido */}
+                <div className="bg-dark-card border border-white/10 rounded-2xl overflow-hidden">
+                  <div className="flex items-center gap-6 px-6 pt-4 border-b border-white/5">
+                    <button onClick={() => setReceberSubTab('pendentes')}
+                      className={`pb-3 text-sm font-bold border-b-2 transition-colors ${receberSubTab === 'pendentes' ? 'border-amber-400 text-amber-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}>
+                      A Receber
+                      <span className="ml-2 text-[10px] font-bold bg-amber-500/15 text-amber-400 px-2 py-0.5 rounded-full">{pendentes.length + vencidos.length}</span>
+                    </button>
+                    <button onClick={() => setReceberSubTab('recebidos')}
+                      className={`pb-3 text-sm font-bold border-b-2 transition-colors ${receberSubTab === 'recebidos' ? 'border-emerald-400 text-emerald-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}>
+                      Já Recebido
+                      <span className="ml-2 text-[10px] font-bold bg-emerald-500/15 text-emerald-400 px-2 py-0.5 rounded-full">{recebidos.length}</span>
+                    </button>
                   </div>
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total do Mês</p>
-                </div>
-                <div className="flex flex-col mt-auto">
-                  <h3 className="text-3xl font-black tracking-tight mb-3 text-emerald-400">
-                    {formatCurrency(summary.total_mes)}
-                  </h3>
-                  <div className="pt-3 border-t border-white/10">
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-slate-500">Recebido + Antecipado</span>
-                      <span className="font-semibold text-emerald-400">{formatCurrency(summary.total_mes)}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
 
-              {/* Card 3: Antecipações */}
-              <div className="bg-dark-card border border-white/10 rounded-2xl p-6 relative overflow-hidden flex flex-col min-h-[150px]">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="p-2.5 rounded-2xl bg-blue-600">
-                    <Banknote size={20} className="text-white" />
-                  </div>
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Antecipações</p>
-                </div>
-                <div className="flex flex-col mt-auto">
-                  <h3 className="text-3xl font-black tracking-tight mb-3 text-dark-text">
-                    {formatCurrency(summary.total_antecipacoes)}
-                  </h3>
-                  <div className="pt-3 border-t border-white/10">
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-slate-500">Antecipado</span>
-                      <span className="font-semibold text-blue-400">{antecipacoes.length} cobranças</span>
+                  {/* Sub-tab: A Receber */}
+                  {receberSubTab === 'pendentes' && (
+                    <div>
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="bg-gray-50 dark:bg-dark-bg/50 border-b border-gray-100 dark:border-white/5">
+                            <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest">Cliente / Descrição</th>
+                            <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest">Tipo</th>
+                            <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest">Vencimento</th>
+                            <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest text-right">Valor</th>
+                            <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest text-right">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100 dark:divide-white/5">
+                          {[...vencidos, ...pendentes].length === 0 ? (
+                            <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500 text-sm">Nenhuma cobrança pendente neste mês.</td></tr>
+                          ) : [...vencidos, ...pendentes].map((inv, idx) => {
+                            const isOverdue = inv.status === 'OVERDUE';
+                            const bt = BILLING_LABELS[inv.billing_type] || BILLING_LABELS['UNDEFINED'];
+                            return (
+                              <tr key={idx} className="hover:bg-white/[0.02] transition-colors">
+                                <td className="px-4 py-3">
+                                  <p className="text-sm font-bold text-gray-900 dark:text-white">{inv.customer_name || 'Desconhecido'}</p>
+                                  {inv.description && <p className="text-xs text-slate-500 truncate max-w-[300px]">{inv.description}</p>}
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className="text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest bg-gray-100 dark:bg-white/5 px-2 py-1 rounded-md border border-gray-200 dark:border-white/5">
+                                    {bt.icon} {bt.label}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className="text-xs text-slate-400">{fmtDate(inv.due_date)}</span>
+                                </td>
+                                <td className="px-4 py-3 text-right">
+                                  <span className={`text-sm font-bold ${isOverdue ? 'text-rose-400' : 'text-amber-400'}`}>{formatCurrency(inv.value)}</span>
+                                </td>
+                                <td className="px-4 py-3 text-right">
+                                  {isOverdue ? (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-rose-400 bg-rose-500/10 px-2 py-1 rounded-full">
+                                      <AlertTriangle size={10} /> Vencido
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-amber-400 bg-amber-500/10 px-2 py-1 rounded-full">
+                                      <Clock size={10} /> Pendente
+                                    </span>
+                                  )}
+                                  {inv.invoice_url && (
+                                    <a href={inv.invoice_url} target="_blank" rel="noopener noreferrer" className="ml-2 text-violet-400 hover:text-violet-300 inline-block align-middle">
+                                      <ExternalLink size={12} />
+                                    </a>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
                     </div>
-                    <div className="mt-2 h-1.5 bg-white/10 rounded-full overflow-hidden">
-                      <div className="h-full rounded-full bg-blue-500 transition-all duration-500"
-                        style={{ width: `${Math.min(100, summary.total_mes > 0 ? (summary.total_antecipacoes / summary.total_mes) * 100 : 0)}%` }} />
-                    </div>
-                  </div>
-                </div>
-              </div>
+                  )}
 
-              {/* Card 4: Já Recebido */}
-              <div className="bg-dark-card border border-white/10 rounded-2xl p-6 relative overflow-hidden flex flex-col min-h-[150px]">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="p-2.5 rounded-2xl bg-violet-600">
-                    <BarChart2 size={20} className="text-white" />
-                  </div>
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Já Recebido</p>
-                </div>
-                <div className="flex flex-col mt-auto">
-                  <h3 className="text-3xl font-black tracking-tight mb-3 text-violet-400">
-                    {formatCurrency(summary.total_recebido)}
-                  </h3>
-                  <div className="pt-3 border-t border-white/10">
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-slate-500">Entradas</span>
-                      <span className="font-semibold text-violet-400">{recebidos.length} recebimentos</span>
+                  {/* Sub-tab: Já Recebido */}
+                  {receberSubTab === 'recebidos' && (
+                    <div>
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="bg-gray-50 dark:bg-dark-bg/50 border-b border-gray-100 dark:border-white/5">
+                            <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest">Cliente / Descrição</th>
+                            <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest">Tipo</th>
+                            <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest">Vencimento</th>
+                            <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest">Pago em</th>
+                            <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest text-right">Valor</th>
+                            <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest text-right">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100 dark:divide-white/5">
+                          {recebidos.length === 0 ? (
+                            <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-500 text-sm">Nenhum recebimento neste mês.</td></tr>
+                          ) : recebidos.map((inv: any, idx: number) => {
+                            const bt = BILLING_LABELS[inv.billing_type] || BILLING_LABELS['UNDEFINED'];
+                            return (
+                              <tr key={idx} className="hover:bg-white/[0.02] transition-colors">
+                                <td className="px-4 py-3">
+                                  <p className="text-sm font-bold text-gray-900 dark:text-white">{inv.customer_name || 'Desconhecido'}</p>
+                                  {inv.description && <p className="text-xs text-slate-500 truncate max-w-[300px]">{inv.description}</p>}
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className="text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest bg-gray-100 dark:bg-white/5 px-2 py-1 rounded-md border border-gray-200 dark:border-white/5">
+                                    {bt.icon} {bt.label}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className="text-xs text-slate-400">{fmtDate(inv.due_date)}</span>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className="text-xs text-emerald-400">{inv.payment_date ? fmtDate(inv.payment_date) : '—'}</span>
+                                </td>
+                                <td className="px-4 py-3 text-right">
+                                  <span className="text-sm font-bold text-emerald-400">{formatCurrency(inv.value)}</span>
+                                </td>
+                                <td className="px-4 py-3 text-right">
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-full">
+                                    <CheckCircle2 size={10} /> Recebido
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
                     </div>
-                    <div className="mt-2 h-1.5 bg-white/10 rounded-full overflow-hidden">
-                      <div className="h-full rounded-full bg-violet-500 transition-all duration-500"
-                        style={{ width: `${Math.min(100, summary.total_mes > 0 ? (summary.total_recebido / summary.total_mes) * 100 : 0)}%` }} />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* ── Two-column layout ── */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-              {/* LEFT COLUMN — A Receber (Pendentes + Vencidos) */}
-              <div className="bg-dark-card border border-white/10 rounded-2xl overflow-hidden flex flex-col">
-                <div className="p-6 border-b border-white/10 flex justify-between items-center">
-                  <div className="flex items-center gap-2">
-                    <Clock size={16} className="text-amber-400" />
-                    <h2 className="text-sm font-bold text-dark-text uppercase tracking-widest">A Receber</h2>
-                  </div>
-                  <span className="px-3 py-1 bg-amber-500/20 text-amber-400 text-[10px] font-bold rounded-full uppercase tracking-wider">
-                    {pendentes.length + vencidos.length} cobranças
-                  </span>
-                </div>
-                <div className="flex-1 overflow-y-auto max-h-[600px] p-4">
-                  {pendentesGrouped.length === 0 && vencidosGrouped.length === 0 ? (
-                    <p className="text-center py-12 text-slate-500">Nenhuma cobrança pendente neste mês.</p>
-                  ) : (
-                    <>
-                      {pendentesGrouped.length > 0 && (
-                        <div className="mb-4">
-                          <p className="text-[10px] font-bold text-amber-400 uppercase tracking-widest mb-2 px-2">Pendentes — {formatCurrency(pendentesTotal)}</p>
-                          {pendentesGrouped.map((group, idx) => (
-                            <CollapsibleGroup key={`p-${idx}`} title={group.label} icon={group.icon} items={group.items} total={group.total} valueColor="text-amber-400" />
-                          ))}
-                        </div>
-                      )}
-                      {vencidosGrouped.length > 0 && (
-                        <div>
-                          <p className="text-[10px] font-bold text-rose-400 uppercase tracking-widest mb-2 px-2">Vencidos — {formatCurrency(vencidosTotal)}</p>
-                          {vencidosGrouped.map((group, idx) => (
-                            <CollapsibleGroup key={`v-${idx}`} title={group.label} icon={group.icon} items={group.items} total={group.total} valueColor="text-rose-400" />
-                          ))}
-                        </div>
-                      )}
-                    </>
                   )}
                 </div>
-              </div>
+              </>
+            )}
 
-              {/* RIGHT COLUMN — Já Recebido + Antecipações */}
-              <div className="bg-dark-card border border-white/10 rounded-2xl overflow-hidden flex flex-col">
-                <div className="p-6 border-b border-white/10 flex justify-between items-center">
-                  <div className="flex items-center gap-2">
-                    <CreditCard size={16} className="text-emerald-400" />
-                    <h2 className="text-sm font-bold text-dark-text uppercase tracking-widest">Já Recebido</h2>
-                  </div>
-                  <span className="px-3 py-1 bg-emerald-500/20 text-emerald-400 text-[10px] font-bold rounded-full uppercase tracking-wider">
-                    {recebidos.length + antecipacoes.length} entradas
-                  </span>
-                </div>
-                <div className="flex-1 overflow-y-auto max-h-[600px] p-4">
-                  {recebidosGrouped.length === 0 && antecipItems.length === 0 ? (
-                    <p className="text-center py-12 text-slate-500">Nenhum recebimento neste mês.</p>
-                  ) : (
-                    <>
-                      {recebidosGrouped.length > 0 && (
-                        <div className="mb-4">
-                          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 px-2">Recebidos — {formatCurrency(summary.total_recebido)}</p>
-                          {recebidosGrouped.map((group, idx) => (
-                            <CollapsibleGroup key={`r-${idx}`} title={group.label} icon={group.icon} items={group.items} total={group.total} valueColor="text-dark-text" />
-                          ))}
-                        </div>
-                      )}
-                      {antecipItems.length > 0 && (
-                        <div>
-                          <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest mb-2 px-2">Antecipações — {formatCurrency(antecipTotal)}</p>
-                          <CollapsibleGroup title="Antecipações Asaas" icon="⚡" items={antecipItems} total={antecipTotal} valueColor="text-blue-400" />
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <CollectionRulesBlock />
+            {/* ══ Tab: Cobranças ══ */}
+            {mainTab === 'cobrancas' && (
+              <CollectionRulesBlock selectedMonth={selectedMonth} />
+            )}
           </>
         )}
       </div>
