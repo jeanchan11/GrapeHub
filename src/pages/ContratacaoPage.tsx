@@ -670,8 +670,12 @@ export default function ContratacaoPage() {
   // Candidate form
   const [candidateForm, setCandidateForm] = useState({ nome: '', contato: '', acao: '', data_acao: '', col: '' });
 
-  // Drag state
+  // Drag state (candidates)
   const [draggedId, setDraggedId] = useState<number | null>(null);
+
+  // Drag state (columns)
+  const [draggedCol, setDraggedCol] = useState<string | null>(null);
+  const [dragOverCol, setDragOverCol] = useState<string | null>(null);
 
   // Kanban: add column inline
   const [addingCol, setAddingCol] = useState(false);
@@ -933,24 +937,71 @@ export default function ContratacaoPage() {
   function handleDeleteColumn(colName: string) {
     if (!activeFolder) return;
     const colCands = candidates.filter(c => c.col === colName);
+    const newCols = activeFolder.cols.filter((c: string) => c !== colName);
+    const targetCol = newCols[0] || 'Inscritos';
+
     if (colCands.length > 0) {
       setConfirmAction({
-        msg: `Excluir a etapa "${colName}"? Os ${colCands.length} candidato(s) nela serão perdidos.`,
+        msg: `Excluir a etapa "${colName}"? Os ${colCands.length} candidato(s) serão movidos para "${targetCol}".`,
         onConfirm: async () => {
+          // Move candidates to the first remaining column
           for (const c of colCands) {
-            try { await fetch(`/api/hiring/candidates/${c.id}`, { method: 'DELETE' }); } catch (e) { console.error(e); }
+            try {
+              await fetch(`/api/hiring/candidates/${c.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...c, col: targetCol }),
+              });
+            } catch (e) { console.error(e); }
           }
-          setCandidates(prev => prev.filter(c => c.col !== colName));
-          const newCols = activeFolder.cols.filter((c: string) => c !== colName);
+          setCandidates(prev => prev.map(c => c.col === colName ? { ...c, col: targetCol } : c));
           await updateFolderCols(newCols);
           setConfirmAction(null);
         }
       });
     } else {
-      const newCols = activeFolder.cols.filter((c: string) => c !== colName);
       updateFolderCols(newCols);
     }
     setColSettingsOpen(null);
+  }
+
+  // ── Column drag-and-drop reorder ──────────────────────────────────────────
+
+  function handleColDragStart(col: string) {
+    setDraggedCol(col);
+  }
+
+  function handleColDragOver(e: React.DragEvent, col: string) {
+    e.preventDefault();
+    if (draggedCol && draggedCol !== col) {
+      setDragOverCol(col);
+    }
+  }
+
+  function handleColDragLeave() {
+    setDragOverCol(null);
+  }
+
+  async function handleColDrop(targetCol: string) {
+    if (!draggedCol || !activeFolder || draggedCol === targetCol) {
+      setDraggedCol(null);
+      setDragOverCol(null);
+      return;
+    }
+    const cols = [...activeFolder.cols];
+    const fromIdx = cols.indexOf(draggedCol);
+    const toIdx = cols.indexOf(targetCol);
+    if (fromIdx === -1 || toIdx === -1) return;
+    cols.splice(fromIdx, 1);
+    cols.splice(toIdx, 0, draggedCol);
+    await updateFolderCols(cols);
+    setDraggedCol(null);
+    setDragOverCol(null);
+  }
+
+  function handleColDragEnd() {
+    setDraggedCol(null);
+    setDragOverCol(null);
   }
 
   // ── Stats ──────────────────────────────────────────────────────────────────
@@ -1049,12 +1100,17 @@ export default function ContratacaoPage() {
               return (
                 <div
                   key={col}
-                  className="flex-shrink-0 w-[280px] bg-transparent flex flex-col h-full"
-                  onDragOver={e => e.preventDefault()}
-                  onDrop={() => handleDrop(col)}
+                  className={`flex-shrink-0 w-[280px] bg-transparent flex flex-col h-full transition-all duration-200 ${draggedCol === col ? 'opacity-40' : ''} ${dragOverCol === col && draggedCol ? 'ring-2 ring-violet-500 rounded-2xl' : ''}`}
+                  onDragOver={e => { e.preventDefault(); if (draggedCol) handleColDragOver(e, col); }}
+                  onDragLeave={handleColDragLeave}
+                  onDrop={() => { if (draggedCol) { handleColDrop(col); } else { handleDrop(col); } }}
                 >
                   {/* Column header */}
-                  <div className="bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-xl p-3 flex items-center justify-between mb-4 flex-shrink-0 shadow-sm relative group/header">
+                  <div
+                    draggable
+                    onDragStart={() => handleColDragStart(col)}
+                    onDragEnd={handleColDragEnd}
+                    className="bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-xl p-3 flex items-center justify-between mb-4 flex-shrink-0 shadow-sm relative group/header cursor-grab active:cursor-grabbing">
                     <div className="flex items-center gap-3">
                       <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
                         col === 'Aprovado' ? 'bg-emerald-600' : col === 'Reprovado' ? 'bg-rose-600' : 'bg-violet-500'

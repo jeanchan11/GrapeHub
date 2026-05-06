@@ -361,6 +361,208 @@
                 display: none !important;
             }
         }
+        /* ─── Tiptap Visual Editor ─────────────────────────────── */
+        .tiptap-wrapper .ProseMirror {
+            outline: none;
+            min-height: 380px;
+            caret-color: #a78bfa;
+            font-size: 0.875rem;
+            line-height: 1.7;
+            color: rgb(var(--dark-text));
+        }
+        /* Placeholder */
+        .tiptap-wrapper .ProseMirror > p:first-child:only-child:before,
+        .tiptap-wrapper .ProseMirror .is-empty::before {
+            color: #64748b;
+            content: attr(data-placeholder);
+            float: left;
+            height: 0;
+            pointer-events: none;
+        }
+        /* Paragraphs */
+        .tiptap-wrapper .ProseMirror p {
+            margin-top: 0;
+            margin-bottom: 0.4rem;
+        }
+        /* Headings */
+        .tiptap-wrapper .ProseMirror h1 {
+            font-size: 1.6rem;
+            font-weight: 800;
+            color: #10B981;
+            margin: 1.5rem 0 0.5rem;
+            border-bottom: 1px solid rgba(16, 185, 129, 0.2);
+            padding-bottom: 0.3rem;
+        }
+        .tiptap-wrapper .ProseMirror h2 {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #a78bfa;
+            margin: 1.2rem 0 0.4rem;
+        }
+        .tiptap-wrapper .ProseMirror h3 {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #94a3b8;
+            margin: 1rem 0 0.35rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        /* Bullet/Ordered Lists */
+        .tiptap-wrapper .ProseMirror ul:not([data-type="taskList"]) {
+            padding-left: 1.4rem;
+            list-style-type: disc;
+            margin: 0.25rem 0 0.5rem;
+        }
+        .tiptap-wrapper .ProseMirror ol {
+            padding-left: 1.4rem;
+            list-style-type: decimal;
+            margin: 0.25rem 0 0.5rem;
+        }
+        .tiptap-wrapper .ProseMirror li p {
+            margin: 0;
+        }
+        /* Task List (Checklist) */
+        .tiptap-wrapper .ProseMirror ul[data-type="taskList"] {
+            list-style: none;
+            padding: 0;
+            margin: 0.25rem 0 0.5rem;
+        }
+        .tiptap-wrapper .ProseMirror ul[data-type="taskList"] > li {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.6rem;
+            margin-bottom: 0.4rem;
+        }
+        .tiptap-wrapper .ProseMirror ul[data-type="taskList"] > li > label {
+            flex: 0 0 auto;
+            margin-top: 0.18rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+        /* Hide native checkbox */
+        .tiptap-wrapper .ProseMirror ul[data-type="taskList"] > li > label input[type="checkbox"] {
+            position: absolute;
+            opacity: 0;
+            width: 0;
+            height: 0;
+            pointer-events: none;
+        }
+        /* Custom checkbox circle */
+        .tiptap-wrapper .ProseMirror ul[data-type="taskList"] > li > label::before {
+            content: '';
+            display: block;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            border: 2px solid rgba(167, 139, 250, 0.5);
+            background: transparent;
+            transition: all 0.2s ease;
+            flex-shrink: 0;
+        }
+        /* Checkmark */
+        .tiptap-wrapper .ProseMirror ul[data-type="taskList"] > li > label::after {
+            content: '';
+            position: absolute;
+            left: 3px;
+            top: 2px;
+            width: 5px;
+            height: 8px;
+            border-right: 2.5px solid white;
+            border-bottom: 2.5px solid white;
+            transform: rotate(45deg) scale(0);
+            transition: transform 0.15s ease;
+        }
+        /* Hover state */
+        .tiptap-wrapper .ProseMirror ul[data-type="taskList"] > li > label:hover::before {
+            border-color: #a78bfa;
+            background: rgba(167, 139, 250, 0.1);
+        }
+        /* Checked state */
+        .tiptap-wrapper .ProseMirror ul[data-type="taskList"] > li[data-checked="true"] > label::before {
+            background: linear-gradient(135deg, #7c3aed, #a78bfa);
+            border-color: #7c3aed;
+            box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.15);
+        }
+        .tiptap-wrapper .ProseMirror ul[data-type="taskList"] > li[data-checked="true"] > label::after {
+            transform: rotate(45deg) scale(1);
+        }
+        .tiptap-wrapper .ProseMirror ul[data-type="taskList"] > li > div {
+            flex: 1;
+        }
+        .tiptap-wrapper .ProseMirror ul[data-type="taskList"] > li[data-checked="true"] > div {
+            text-decoration: line-through;
+            opacity: 0.5;
+        }
+        /* ── Toggle / Lista Alternada (Tiptap Details Extension v3) ──────────────── */
+        /* The extension renders: div[data-type="details"] > div[data-type="detailsSummary"] > summary */
+        .tiptap-wrapper .ProseMirror div[data-type="details"] {
+            margin: 0.3rem 0;
+        }
+        .tiptap-wrapper .ProseMirror div[data-type="detailsSummary"] {
+            display: flex;
+            align-items: baseline;
+            gap: 0;
+            padding: 0;
+        }
+        .tiptap-wrapper .ProseMirror div[data-type="detailsSummary"] summary {
+            display: flex;
+            align-items: baseline;
+            gap: 0.4rem;
+            padding: 0.2rem 0;
+            cursor: pointer;
+            list-style: none;
+            font-size: 0.875rem;
+            color: rgb(var(--dark-text));
+            user-select: none;
+            font-weight: 500;
+            width: 100%;
+        }
+        .tiptap-wrapper .ProseMirror div[data-type="detailsSummary"] summary::-webkit-details-marker { display: none; }
+        .tiptap-wrapper .ProseMirror div[data-type="detailsSummary"] summary::marker { display: none; content: ''; }
+        /* Arrow */
+        .tiptap-wrapper .ProseMirror div[data-type="detailsSummary"] summary::before {
+            content: '▶';
+            font-size: 8px;
+            color: #a78bfa;
+            transition: transform 0.18s ease;
+            display: inline-block;
+            width: 14px;
+            flex-shrink: 0;
+            margin-top: 2px;
+            margin-right: 4px;
+        }
+        /* Open state — arrow rotated */
+        .tiptap-wrapper .ProseMirror div[data-type="details"].is-open div[data-type="detailsSummary"] summary::before,
+        .tiptap-wrapper .ProseMirror div[data-type="details"][open] div[data-type="detailsSummary"] summary::before {
+            transform: rotate(90deg);
+        }
+        /* Content area hidden by default, visible when open */
+        .tiptap-wrapper .ProseMirror div[data-type="detailsContent"] {
+            padding-left: 1.6rem;
+            margin: 0.1rem 0 0.25rem;
+        }
+        /* Horizontal Rule */
+        .tiptap-wrapper .ProseMirror hr {
+            border: none;
+            border-top: 1px solid rgba(255,255,255,0.08);
+            margin: 1rem 0;
+        }
+        /* Strong / Bold */
+        .tiptap-wrapper .ProseMirror strong {
+            font-weight: 700;
+            color: rgb(var(--dark-text));
+        }
+        /* Light mode overrides */
+        html.light .tiptap-wrapper .ProseMirror {
+            color: #1e293b;
+        }
+        html.light .tiptap-wrapper .ProseMirror h1 { color: #059669; }
+        html.light .tiptap-wrapper .ProseMirror h2 { color: #7c3aed; }
+        html.light .tiptap-wrapper .ProseMirror h3 { color: #475569; }
+        html.light .tiptap-wrapper .ProseMirror hr { border-color: rgba(0,0,0,0.1); }
     </style>
     <script>
         window.onerror = function(msg) {
