@@ -225,8 +225,13 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
 
   const markAsSent = async (item: QueueItem, idx: number, e: React.MouseEvent) => {
     triggerConfetti(e);
-    // Optimistic update
-    setQueue(prev => prev.map((q, i) => i === idx ? { ...q, status: 'sent' } : q));
+    // Optimistic update — identify by unique key, not index
+    const updateFn = (q: QueueItem) =>
+      q.receivable_asaas_id === item.receivable_asaas_id && q.rule_id === item.rule_id
+        ? { ...q, status: 'sent' as const }
+        : q;
+    setQueue(prev => prev.map(updateFn));
+    setQueueAll(prev => prev.map(updateFn));
     setQueueStats(prev => ({ ...prev, hoje: prev.hoje + 1, agendados: Math.max(0, prev.agendados - 1) }));
     try {
       const msg = buildMessage(item.message_template, item);

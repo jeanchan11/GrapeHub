@@ -9301,6 +9301,64 @@ app.get("/api/todos", async (req, res) => {
   // ── Onboarding Operacional ─────────────────────────────────────────────────
 
   // Ensure tables exist
+  // (tables are created in initDB above)
+
+  app.patch('/api/onboarding-tasks/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const fields = req.body;
+      const allowed = ['client_name','squad','responsible_id','responsible_name','responsible_avatar','start_date','due_date','status_group','tags','subtask_count','nome_completo','nome_fantasia','telefone_whatsapp','cnpj_cpf','cep','cidade','uf'];
+      const sets: string[] = [];
+      const vals: any[] = [];
+      let idx = 1;
+      for (const key of allowed) {
+        if (key in fields) { sets.push(`${key} = $${idx++}`); vals.push(fields[key]); }
+      }
+      if (sets.length === 0) return res.status(400).json({ error: 'Nenhum campo para atualizar.' });
+      sets.push(`updated_at = NOW()`);
+      vals.push(id);
+      const result = await pool.query(
+        `UPDATE onboarding_tasks SET ${sets.join(', ')} WHERE id = $${idx} RETURNING *`,
+        vals
+      );
+      if (result.rowCount === 0) return res.status(404).json({ error: 'Tarefa não encontrada.' });
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error('PATCH /api/onboarding-tasks error:', err);
+      res.status(500).json({ error: 'Erro ao atualizar tarefa.' });
+    }
+  });
+
+
+  // ── DELETE onboarding task ──
+  app.delete('/api/onboarding-tasks/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const result = await pool.query('DELETE FROM onboarding_tasks WHERE id = $1 RETURNING id', [id]);
+      if (result.rowCount === 0) return res.status(404).json({ error: 'Tarefa não encontrada.' });
+      res.json({ success: true, id: result.rows[0].id });
+    } catch (err) {
+      console.error('DELETE /api/onboarding-tasks error:', err);
+      res.status(500).json({ error: 'Erro ao excluir tarefa.' });
+    }
+  });
+
+  // ── ARCHIVE onboarding task (move to arquivado status_group) ──
+  app.post('/api/onboarding-tasks/:id/archive', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const result = await pool.query(
+        `UPDATE onboarding_tasks SET status_group = 'arquivado', updated_at = NOW() WHERE id = $1 RETURNING *`,
+        [id]
+      );
+      if (result.rowCount === 0) return res.status(404).json({ error: 'Tarefa não encontrada.' });
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error('POST /api/onboarding-tasks/archive error:', err);
+      res.status(500).json({ error: 'Erro ao arquivar tarefa.' });
+    }
+  });
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS onboarding_tasks (
       id SERIAL PRIMARY KEY,
@@ -9345,6 +9403,12 @@ app.get("/api/todos", async (req, res) => {
     await pool.query(`ALTER TABLE onboarding_tasks ADD COLUMN IF NOT EXISTS ${col} TEXT`);
   }
 
+  // Add subtask extended columns
+  const subtaskCols = ['description', 'due_date', 'responsible_id', 'responsible_name', 'responsible_avatar', 'internal_doc'];
+  for (const col of subtaskCols) {
+    await pool.query(`ALTER TABLE onboarding_subtasks ADD COLUMN IF NOT EXISTS ${col} TEXT`);
+  }
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS onboarding_comments (
       id SERIAL PRIMARY KEY,
@@ -9352,6 +9416,29 @@ app.get("/api/todos", async (req, res) => {
       author_name TEXT,
       author_email TEXT,
       text TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS onboarding_subtask_comments (
+      id SERIAL PRIMARY KEY,
+      subtask_id INT NOT NULL REFERENCES onboarding_subtasks(id) ON DELETE CASCADE,
+      author_name TEXT,
+      author_avatar TEXT,
+      text TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS onboarding_subtask_files (
+      id SERIAL PRIMARY KEY,
+      subtask_id INT NOT NULL REFERENCES onboarding_subtasks(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL, -- 'pdf', 'doc', 'link'
+      url TEXT,
+      content TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
@@ -9457,18 +9544,26 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
-  // ── PATCH subtask (toggle completed) ──
+  // ── PATCH subtask (toggle completed, update details) ──
   app.patch('/api/onboarding-subtasks/:id', async (req, res) => {
     try {
       const { id } = req.params;
-      const { completed, title } = req.body;
+      const fields = req.body;
+      const allowed = ['completed', 'title', 'description', 'due_date', 'responsible_id', 'responsible_name', 'responsible_avatar', 'internal_doc'];
       const sets: string[] = [];
       const vals: any[] = [];
       let idx = 1;
-      if (completed !== undefined) { sets.push(`completed = $${idx++}`); vals.push(completed); }
-      if (title !== undefined) { sets.push(`title = $${idx++}`); vals.push(title); }
+      
+      for (const key of allowed) {
+        if (key in fields) {
+          sets.push(`${key} = $${idx++}`);
+          vals.push(fields[key]);
+        }
+      }
+
       if (sets.length === 0) return res.status(400).json({ error: 'Nenhum campo.' });
       vals.push(id);
+      
       const result = await pool.query(
         `UPDATE onboarding_subtasks SET ${sets.join(', ')} WHERE id = $${idx} RETURNING *`,
         vals
@@ -9477,6 +9572,109 @@ app.get("/api/todos", async (req, res) => {
     } catch (err) {
       console.error('PATCH /api/onboarding-subtasks error:', err);
       res.status(500).json({ error: 'Erro ao atualizar subtarefa.' });
+    }
+  });
+
+  // ── Subtask Comments ──
+  app.get('/api/onboarding-subtasks/:id/comments', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const result = await pool.query(
+        'SELECT * FROM onboarding_subtask_comments WHERE subtask_id = $1 ORDER BY created_at ASC',
+        [id]
+      );
+      res.json(result.rows);
+    } catch (err) {
+      console.error('GET /api/onboarding-subtasks/comments error:', err);
+      res.status(500).json({ error: 'Erro ao buscar comentários da subtarefa.' });
+    }
+  });
+
+  app.post('/api/onboarding-subtasks/:id/comments', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { text, author_name, author_avatar } = req.body;
+      if (!text?.trim()) return res.status(400).json({ error: 'Texto obrigatório.' });
+
+      const result = await pool.query(
+        `INSERT INTO onboarding_subtask_comments (subtask_id, author_name, author_avatar, text) 
+         VALUES ($1, $2, $3, $4) RETURNING *`,
+        [id, author_name, author_avatar, text]
+      );
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error('POST /api/onboarding-subtasks/comments error:', err);
+      res.status(500).json({ error: 'Erro ao adicionar comentário.' });
+    }
+  });
+
+  // ── Subtask Files/Docs ──
+  app.get('/api/onboarding-subtasks/:id/files', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const result = await pool.query(
+        'SELECT * FROM onboarding_subtask_files WHERE subtask_id = $1 ORDER BY created_at ASC',
+        [id]
+      );
+      res.json(result.rows);
+    } catch (err) {
+      console.error('GET /api/onboarding-subtasks/files error:', err);
+      res.status(500).json({ error: 'Erro ao buscar arquivos da subtarefa.' });
+    }
+  });
+
+  app.post('/api/onboarding-subtasks/:id/files', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { name, type, url, content } = req.body; // type: 'pdf', 'doc', 'link'
+      if (!name) return res.status(400).json({ error: 'Nome obrigatório.' });
+
+      const result = await pool.query(
+        `INSERT INTO onboarding_subtask_files (subtask_id, name, type, url, content) 
+         VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+        [id, name, type || 'link', url || null, content || null]
+      );
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error('POST /api/onboarding-subtasks/files error:', err);
+      res.status(500).json({ error: 'Erro ao adicionar arquivo.' });
+    }
+  });
+
+  app.patch('/api/onboarding-subtask-files/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { name, url, content } = req.body;
+      const sets: string[] = [];
+      const vals: any[] = [];
+      let idx = 1;
+      
+      if (name !== undefined) { sets.push(`name = $${idx++}`); vals.push(name); }
+      if (url !== undefined) { sets.push(`url = $${idx++}`); vals.push(url); }
+      if (content !== undefined) { sets.push(`content = $${idx++}`); vals.push(content); }
+
+      if (sets.length === 0) return res.status(400).json({ error: 'Nenhum campo.' });
+      vals.push(id);
+      
+      const result = await pool.query(
+        `UPDATE onboarding_subtask_files SET ${sets.join(', ')} WHERE id = $${idx} RETURNING *`,
+        vals
+      );
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error('PATCH /api/onboarding-subtask-files error:', err);
+      res.status(500).json({ error: 'Erro ao atualizar arquivo.' });
+    }
+  });
+
+  app.delete('/api/onboarding-subtask-files/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      await pool.query('DELETE FROM onboarding_subtask_files WHERE id = $1', [id]);
+      res.json({ success: true });
+    } catch (err) {
+      console.error('DELETE /api/onboarding-subtask-files error:', err);
+      res.status(500).json({ error: 'Erro ao deletar arquivo.' });
     }
   });
 
@@ -9867,6 +10065,190 @@ app.get("/api/todos", async (req, res) => {
             };
           }
 
+          // ── DFC: fluxo diário do mês atual + despesas previstas + DRE anual completo ──
+          const mesHoje = new Date();
+          const anoAtual = mesHoje.getFullYear();
+          const inicioMes = `${anoAtual}-${String(mesHoje.getMonth()+1).padStart(2,'0')}-01`;
+          const fimMes = mesHoje.getMonth() === 11
+            ? `${anoAtual+1}-01-01`
+            : `${anoAtual}-${String(mesHoje.getMonth()+2).padStart(2,'0')}-01`;
+
+          const [dfcDiarioRes, dfcBillsRes, dfcConfigRes] = await Promise.all([
+            // Movimentos realizados por dia no mês atual
+            pool.query(`
+              SELECT
+                TO_CHAR(transaction_date::date, 'DD/MM') AS dia,
+                SUM(CASE WHEN value > 0 THEN value ELSE 0 END)::numeric(12,2) AS entradas_realizadas,
+                SUM(CASE WHEN value < 0 THEN ABS(value) ELSE 0 END)::numeric(12,2) AS saidas_realizadas
+              FROM fin_movements_asaas
+              WHERE transaction_date >= $1::date
+                AND transaction_date < $2::date
+                AND is_anticipation_pair = false
+              GROUP BY transaction_date::date
+              ORDER BY transaction_date::date ASC
+            `, [inicioMes, fimMes]),
+            // Despesas recorrentes previstas no mês (pendentes)
+            pool.query(`
+              SELECT
+                TO_CHAR(rbe.due_date, 'DD/MM') AS dia,
+                rb.name AS descricao,
+                rbe.expected_value,
+                rbe.status
+              FROM fin_recurring_bill_entries rbe
+              JOIN fin_recurring_bills rb ON rb.id = rbe.recurring_bill_id
+              WHERE rbe.reference_month = $1::date
+              ORDER BY rbe.due_date ASC
+            `, [inicioMes]),
+            // Config DFC (saldo âncora)
+            pool.query(`
+              SELECT mes_referencia, saldo_referencia, saldo_proximo_mes
+              FROM fin_dfc_config
+              ORDER BY mes_referencia DESC LIMIT 3
+            `),
+          ]).catch(() => [{ rows: [] }, { rows: [] }, { rows: [] }]);
+
+          // ── DFC anual completo (tabela visível na página DFC) ──
+          let dfcAnual: any = null;
+          try {
+            const MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+            // Buscar movimentos do ano
+            const [asaasMovAnual, sicrediMovAnual, catAnual, configAnual] = await Promise.all([
+              pool.query(`
+                SELECT
+                  COALESCE(custom_category, grapehub_category) AS cat,
+                  EXTRACT(MONTH FROM transaction_date)::int AS mes,
+                  SUM(ABS(value))::numeric(14,2) AS total
+                FROM fin_movements_asaas
+                WHERE EXTRACT(YEAR FROM transaction_date) = $1
+                  AND is_anticipation_pair = false
+                  AND type != 1 OR (type = 1 AND (custom_category IS NOT NULL OR grapehub_category IS NOT NULL))
+                GROUP BY cat, mes
+              `, [anoAtual]).catch(() => ({ rows: [] })),
+              pool.query(`
+                SELECT
+                  COALESCE(custom_category, grapehub_category) AS cat,
+                  EXTRACT(MONTH FROM transaction_date::date)::int AS mes,
+                  SUM(ABS(value::numeric))::numeric(14,2) AS total
+                FROM fin_movements_asaas
+                WHERE billing_month >= $1 AND billing_month <= $2
+                  AND account = 'sicredi'
+                  AND sicredi_status = 'realizado'
+                GROUP BY cat, mes
+              `, [`${anoAtual}-01`, `${anoAtual}-12`]).catch(() => ({ rows: [] })),
+              pool.query('SELECT id, external_id, structure, description, level FROM fin_categories ORDER BY structure'),
+              pool.query(
+                'SELECT mes_referencia, saldo_referencia, saldo_proximo_mes FROM fin_dfc_config WHERE year = $1 ORDER BY mes_referencia ASC',
+                [anoAtual]
+              ).catch(() => ({ rows: [] })),
+            ]);
+
+            // Build category totals per month
+            const catTotals: Record<string, number[]> = {};
+            const addToCat = (cat: string, mes: number, total: number) => {
+              if (!cat || cat.toLowerCase() === 'transferencia entre contas') return;
+              if (!catTotals[cat]) catTotals[cat] = new Array(12).fill(0);
+              catTotals[cat][mes - 1] += total;
+            };
+            for (const r of [...asaasMovAnual.rows, ...sicrediMovAnual.rows]) {
+              addToCat(r.cat, parseInt(r.mes), parseFloat(r.total));
+            }
+
+            // Map categories to structure codes
+            const catByName: Record<string, any> = {};
+            for (const c of catAnual.rows) catByName[c.description.toLowerCase()] = c;
+
+            // Build monthly totals by L1 group
+            const monthlyReceitas = new Array(12).fill(0);
+            const monthlyDespesas = new Array(12).fill(0);
+            const monthlyDistrib = new Array(12).fill(0);
+
+            // Build simplified DFC table (L1 + L2 only for readability)
+            const dfcRows: any[] = [];
+            const l1Groups: Record<string, { name: string; monthly: number[]; children: any[] }> = {};
+
+            for (const [catName, monthly] of Object.entries(catTotals)) {
+              const found = catByName[catName.toLowerCase()];
+              if (!found) continue;
+              const struct = found.structure;
+              const l1 = struct.split('.')[0];
+              const isReceita = l1 === '01' || l1 === '03';
+              const isDistrib = l1 === '05';
+
+              if (!l1Groups[l1]) l1Groups[l1] = { name: catAnual.rows.find((c: any) => c.structure === l1)?.description || l1, monthly: new Array(12).fill(0), children: [] };
+              l1Groups[l1].children.push({ name: found.description, structure: struct, monthly: [...monthly] });
+              for (let m = 0; m < 12; m++) {
+                l1Groups[l1].monthly[m] += monthly[m];
+                if (isReceita) monthlyReceitas[m] += monthly[m];
+                else if (isDistrib) monthlyDistrib[m] += monthly[m];
+                else monthlyDespesas[m] += monthly[m];
+              }
+            }
+
+            // Saldo Inicial calculation from anchor
+            const monthlySaldoInicial = new Array(12).fill(0);
+            const monthlySaldoFinal = new Array(12).fill(0);
+            const monthlyGeracao = monthlyReceitas.map((r, i) => r - monthlyDespesas[i]);
+
+            if (configAnual.rows.length > 0) {
+              const refIdx = (configAnual.rows[0].mes_referencia || 1) - 1;
+              const refSaldo = parseFloat(configAnual.rows[0].saldo_referencia);
+              monthlySaldoFinal[refIdx] = refSaldo;
+              monthlySaldoInicial[refIdx] = refSaldo - (monthlyGeracao[refIdx] - monthlyDistrib[refIdx]);
+              for (let m = refIdx - 1; m >= 0; m--) {
+                monthlySaldoFinal[m] = monthlySaldoInicial[m + 1];
+                monthlySaldoInicial[m] = monthlySaldoFinal[m] - (monthlyGeracao[m] - monthlyDistrib[m]);
+              }
+              const overrides: Record<number, number> = {};
+              if (configAnual.rows[0].saldo_proximo_mes) overrides[refIdx + 1] = parseFloat(configAnual.rows[0].saldo_proximo_mes);
+              for (let i = 1; i < configAnual.rows.length; i++) overrides[(configAnual.rows[i].mes_referencia || 1) - 1] = parseFloat(configAnual.rows[i].saldo_referencia);
+              for (let m = refIdx + 1; m < 12; m++) {
+                monthlySaldoInicial[m] = overrides[m] !== undefined ? overrides[m] : monthlySaldoFinal[m - 1];
+                monthlySaldoFinal[m] = monthlySaldoInicial[m] + (monthlyGeracao[m] - monthlyDistrib[m]);
+              }
+            }
+
+            // Format as readable table
+            const fmt = (v: number) => `R$${v.toFixed(2).replace('.', ',')}`;
+            const fmtRow = (name: string, monthly: number[]) =>
+              `| ${name.padEnd(45)} | ${monthly.map((v, i) => (i < mesHoje.getMonth() + 1 || v > 0 ? fmt(v) : '—').padStart(12)).join(' | ')} |`;
+
+            const header = `| ${'CATEGORIA'.padEnd(45)} | ${MESES.map(m => m.padStart(12)).join(' | ')} |`;
+            const separator = `|${'-'.repeat(47)}|${MESES.map(() => '-'.repeat(14)).join('|')}|`;
+
+            const tableLines = [header, separator];
+            tableLines.push(fmtRow('SALDO INICIAL', monthlySaldoInicial));
+            for (const [l1Code, group] of Object.entries(l1Groups).sort()) {
+              tableLines.push(fmtRow(group.name.toUpperCase(), group.monthly));
+              for (const child of group.children.sort((a: any, b: any) => a.structure.localeCompare(b.structure))) {
+                tableLines.push(fmtRow(`  └ ${child.name}`, child.monthly));
+              }
+            }
+            tableLines.push(separator);
+            tableLines.push(fmtRow('GERAÇÃO DE CAIXA', monthlyGeracao));
+            tableLines.push(fmtRow('SALDO FINAL', monthlySaldoFinal));
+
+            dfcAnual = {
+              ano: anoAtual,
+              meses: MESES,
+              tabela_formatada: tableLines.join('\n'),
+              resumo: {
+                total_receitas: fmt(monthlyReceitas.reduce((s, v) => s + v, 0)),
+                total_despesas: fmt(monthlyDespesas.reduce((s, v) => s + v, 0)),
+                geracao_caixa: fmt(monthlyGeracao.reduce((s, v) => s + v, 0)),
+                distribuicao_lucros: fmt(monthlyDistrib.reduce((s, v) => s + v, 0)),
+                saldo_final_dez: fmt(monthlySaldoFinal[11]),
+                saldo_atual: fmt(monthlySaldoFinal[mesHoje.getMonth()]),
+              },
+              monthly_receitas: monthlyReceitas.map((v, i) => ({ mes: MESES[i], valor: fmt(v) })),
+              monthly_despesas: monthlyDespesas.map((v, i) => ({ mes: MESES[i], valor: fmt(v) })),
+              monthly_geracao_caixa: monthlyGeracao.map((v, i) => ({ mes: MESES[i], valor: fmt(v) })),
+              monthly_saldo_final: monthlySaldoFinal.map((v, i) => ({ mes: MESES[i], valor: fmt(v) })),
+            };
+          } catch (dfcErr: any) {
+            console.error('[AI Chat] Erro ao montar DFC anual:', dfcErr?.message);
+            dfcAnual = { erro: 'Não foi possível calcular o DFC anual.' };
+          }
+
           financialContext = {
             receitas_6meses: receitasRes.rows,
             despesas_mes_atual: despesasRes.rows,
@@ -9880,6 +10262,10 @@ app.get("/api/todos", async (req, res) => {
               qtd_itens: data.itens.length,
               itens: data.itens.slice(0, 30),
             })),
+            dfc_fluxo_diario_mes_atual: dfcDiarioRes.rows,
+            dfc_despesas_previstas_mes: dfcBillsRes.rows,
+            dfc_config_saldo_ancora: dfcConfigRes.rows,
+            dfc_anual: dfcAnual,
             gerado_em: new Date().toISOString(),
           };
         } catch (dbErr: any) {
@@ -9919,6 +10305,55 @@ ${JSON.stringify(financialContext.top_5_clientes, null, 2)}
 > Cada item tem: descrição, contraparte, data, status (realizado/previsto), valor (negativo = saída, positivo = entrada)
 > Categoria "Cartão de Crédito > Facebook" = gastos com Facebook/Facebk; "Cartão de Crédito > Aplicativos" = demais apps
 ${JSON.stringify(financialContext.extrato_por_categoria, null, 2)}
+
+---
+
+## 📈 DFC — FLUXO DE CAIXA DO MÊS ATUAL
+> Representa exatamente o que o gráfico "Movimentação Diária" mostra na tela do Dashboard Financeiro.
+> entradas_realizadas = barras verdes sólidas | saidas_realizadas = barras vermelhas sólidas
+> As despesas previstas abaixo são as barras coloridas pontilhadas (previsão futura).
+
+### Fluxo diário realizado (dia a dia do mês)
+> Formato: { dia, entradas_realizadas, saidas_realizadas }
+${JSON.stringify(financialContext.dfc_fluxo_diario_mes_atual, null, 2)}
+
+### Despesas previstas no mês (contas recorrentes pendentes)
+> São as barras "Saídas Previstas" no gráfico. Cada item tem: dia de vencimento, descrição, valor esperado, status.
+${JSON.stringify(financialContext.dfc_despesas_previstas_mes, null, 2)}
+
+### Saldo âncora DFC (fin_dfc_config)
+> Usado para calcular o Saldo Inicial do mês no gráfico "Saúde do Caixa Diário".
+> saldo_referencia = saldo real naquele mês; saldo_proximo_mes = projeção para o próximo mês.
+${JSON.stringify(financialContext.dfc_config_saldo_ancora, null, 2)}
+
+---
+
+## 🗂️ DFC ANUAL COMPLETO — FLUXO DE CAIXA ${new Date().getFullYear()}
+> Esta é a tabela exata que aparece na página "DFC" do GrapeHub.
+> Categorias hierárquicas: L1 (grupo) → L2/L3 (subcategorias).
+> Receitas = positivo; Despesas/Distribuição = negativo (representam saídas).
+> Saldo Inicial = caixa no início do mês; Saldo Final = caixa ao fim do mês.
+> Geração de Caixa = Receitas − Despesas Operacionais (excluindo distribuição).
+
+### Resumo anual
+${financialContext.dfc_anual?.erro ? `⚠️ ${financialContext.dfc_anual.erro}` : JSON.stringify(financialContext.dfc_anual?.resumo, null, 2)}
+
+### Receitas por mês
+${JSON.stringify(financialContext.dfc_anual?.monthly_receitas, null, 2)}
+
+### Despesas por mês
+${JSON.stringify(financialContext.dfc_anual?.monthly_despesas, null, 2)}
+
+### Geração de Caixa por mês (Receitas − Despesas)
+${JSON.stringify(financialContext.dfc_anual?.monthly_geracao_caixa, null, 2)}
+
+### Saldo Final por mês (saúde do caixa)
+${JSON.stringify(financialContext.dfc_anual?.monthly_saldo_final, null, 2)}
+
+### Tabela DFC completa (todas as categorias × meses)
+\`\`\`
+${financialContext.dfc_anual?.tabela_formatada || '(não disponível)'}
+\`\`\`
 
 > Gerado em: ${financialContext.gerado_em}
 `
