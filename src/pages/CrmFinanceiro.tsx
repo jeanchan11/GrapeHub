@@ -60,6 +60,7 @@ interface Client {
   finPeopleGuid?: string;
   hasActiveSubscription?: boolean;
   subscriptionValue?: number;
+  subscriptionStatus?: string;
 }
 
 interface Comment {
@@ -90,7 +91,6 @@ interface Task {
 }
 
 const COLUMNS = [
-  { id: 'inadimplente_asaas', title: 'INADIMPLENTES', emoji: '🔄', color: '#3b82f6', colorKey: 'red' },
   { id: 'pedido_finalizacao', title: 'PEDIDO DE FINALIZAÇÃO', emoji: '📋', color: '#f43f5e', colorKey: 'finalizacao' },
   { id: 'negociacao', title: 'NEGOCIAÇÃO', emoji: '🟡', color: '#34d399', colorKey: 'negociacao' },
   { id: 'aviso_30_dias', title: 'AVISO 30 DIAS', emoji: '⚠️', color: '#fb923c', colorKey: 'yellow' },
@@ -205,25 +205,21 @@ const SortableCard: React.FC<SortableCardProps> = ({ client, tasks, onClick, onM
     if (isPastDate(task.dueDate)) {
       return { 
         badge: 'text-red-600 bg-red-50 border-red-200 dark:bg-red-500/10 dark:border-red-500/20 dark:text-red-400', 
-        label: 'Atrasada' 
+        label: 'Tarefa Atrasada' 
       };
     }
     if (isToday(task.dueDate)) {
       return { 
         badge: 'text-emerald-600 bg-emerald-50 border-emerald-200 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:text-emerald-400', 
-        label: 'Hoje' 
-      };
-    }
-    if (isTomorrowDate(task.dueDate)) {
-      return { 
-        badge: 'text-yellow-600 bg-yellow-50 border-yellow-200 dark:bg-yellow-500/10 dark:border-yellow-500/20 dark:text-yellow-400', 
-        label: 'Amanhã' 
+        label: 'Tarefa para Hoje' 
       };
     }
     
+    // Future date — agendada (subtle white)
+    const dateStr = parseLocalDate(task.dueDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
     return { 
       badge: 'text-gray-500 bg-gray-50 border-gray-200 dark:bg-white/5 dark:border-white/10 dark:text-slate-400', 
-      label: parseLocalDate(task.dueDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) 
+      label: 'Tarefa Agendada' 
     };
   };
 
@@ -362,57 +358,7 @@ const SortableCard: React.FC<SortableCardProps> = ({ client, tasks, onClick, onM
         </div>
       </div>
 
-      {/* Value bar */}
-      <div
-        className={`rounded-md text-[13px] font-semibold px-[10px] py-[7px] mb-2 ${
-          col?.colorKey === 'negociacao' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400 darker:bg-emerald-500/10' :
-          col?.colorKey === 'red' ? 'bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400 darker:bg-rose-500/10' :
-          col?.colorKey === 'finalizacao' || col?.colorKey === 'yellow' ? 'bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400 darker:bg-amber-500/10' :
-          'bg-gray-100 text-gray-700 dark:bg-white/10 dark:text-slate-300'
-        }`}
-      >
-        {!client.finPeopleGuid ? '—' : formatCurrency(client.valorDisplay)}
-      </div>
 
-      {/* Footer: payment status badges */}
-      <div className="flex flex-wrap items-center gap-1.5 mt-1 border-t border-gray-100 dark:border-white/5 pt-2">
-        {!client.finPeopleGuid ? (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-500 dark:bg-white/5 dark:text-slate-400">
-            <LinkIcon size={9} /> Sem vínculo Asaas
-          </span>
-        ) : client.paymentStatus === 'atrasada' ? (
-          <span className="flex items-center gap-1 text-rose-600 dark:text-rose-400">
-            <AlertCircle size={11} />
-            <span className="text-[11px] font-bold">
-              {client.diasAtraso} dias em atraso
-            </span>
-          </span>
-        ) : client.paymentStatus === 'vence_em_breve' ? (
-          <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
-            <Clock size={11} />
-            <span className="text-[11px] font-medium">
-              Vence em {client.proximaCobranca ? new Date(client.proximaCobranca + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '—'}
-            </span>
-          </span>
-        ) : (
-          <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
-            <CheckCircle2 size={11} />
-            <span className="text-[11px] font-medium">Em dia</span>
-          </span>
-        )}
-        
-        {client.aviso_previo_date && (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-orange-100 text-orange-600 dark:bg-orange-500/10 dark:text-orange-400">
-            <Clock size={9} /> {new Date(client.aviso_previo_date + 'T12:00:00').toLocaleDateString('pt-BR')}
-          </span>
-        )}
-
-        {client.proximaCobranca && client.paymentStatus !== 'vence_em_breve' && (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-500 dark:bg-white/5 dark:text-slate-400">
-            <Calendar size={9} /> {new Date(client.proximaCobranca + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
-          </span>
-        )}
-      </div>
 
       {/* Next Task / No Task Alert */}
       <div className="mt-2 pt-2 border-t border-gray-100 dark:border-white/5">
@@ -420,18 +366,15 @@ const SortableCard: React.FC<SortableCardProps> = ({ client, tasks, onClick, onM
           <div className={`flex items-center justify-between rounded-lg px-2 py-1.5 border text-[11px] font-bold ${taskStyle.badge}`}>
             <div className="flex items-center gap-1.5">
               <Clock size={11} />
-              <span className="truncate max-w-[140px] uppercase tracking-tighter">
-                {taskStyle.label}: {nextTask.title}
+              <span className="truncate max-w-[160px] uppercase tracking-tighter">
+                {nextTask.dueDate ? `${parseLocalDate(nextTask.dueDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} - ${taskStyle.label}` : taskStyle.label}
               </span>
             </div>
-            {nextTask.dueDate && isToday(nextTask.dueDate) && (
-              <span className="font-black text-[10px]">HOJE</span>
-            )}
           </div>
         ) : (
           <div className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 border border-amber-200 bg-amber-50 dark:bg-amber-500/10 dark:border-amber-500/20 text-amber-600 dark:text-amber-400 text-[11px] font-bold uppercase tracking-tighter">
             <AlertCircle size={11} />
-            <span>Nenhuma tarefa agendada</span>
+            <span>Sem tarefa</span>
           </div>
         )}
       </div>
@@ -528,20 +471,10 @@ const CrmFinanceiro = () => {
     }
   };
 
-  const syncInadimplentes = async () => {
-    setIsSyncing(true);
-    try {
-      await fetch('/api/crm/sync-inadimplentes', { method: 'POST' });
-    } catch (err) {
-      console.error("Error syncing inadimplentes:", err);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
+
 
   useEffect(() => {
     const init = async () => {
-      await syncInadimplentes();
       await fetchClients();
       await fetchTasks();
     };
@@ -809,12 +742,13 @@ const CrmFinanceiro = () => {
       >
         <button
           onClick={async () => {
-            await syncInadimplentes();
+            setIsSyncing(true);
             await fetchClients();
+            setIsSyncing(false);
           }}
           disabled={isSyncing}
           className="p-3 bg-white dark:bg-[#1a1a1a] darker:bg-[#0d0d0d] border border-gray-100 dark:border-neutral-800 darker:border-neutral-900 rounded-2xl text-gray-500 hover:text-purple-500 dark:hover:text-purple-400 transition-colors disabled:opacity-50"
-          title="Sincronizar Inadimplentes"
+          title="Atualizar dados"
         >
           <RefreshCw size={18} className={isSyncing ? "animate-spin" : ""} />
         </button>
@@ -922,7 +856,7 @@ const CrmFinanceiro = () => {
                     </span>
                   </div>
                   <div className="text-[11px] pl-9 text-gray-500 dark:text-slate-400 darker:text-slate-500">
-                    {columnClients.length} cliente{columnClients.length !== 1 ? 's' : ''} · <span className="font-semibold text-emerald-600 dark:text-emerald-500">{formatCurrency(columnClients.reduce((acc, c) => acc + (typeof c.valorDisplay === 'string' ? parseFloat(c.valorDisplay) : (c.valorDisplay || 0)), 0))}</span>
+                    {columnClients.length} cliente{columnClients.length !== 1 ? 's' : ''}
                   </div>
                 </div>
 
@@ -1249,14 +1183,28 @@ const CrmFinanceiro = () => {
                                 : 'Em dia'}
                         </div>
                       </div>
-                      {selectedClient.proximaCobranca && (
-                        <div className="bg-white dark:bg-white/5 p-4 rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm col-span-2">
-                          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Próxima Cobrança</div>
-                          <div className="text-sm font-bold text-light-text dark:text-white">
-                            {new Date(selectedClient.proximaCobranca + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}
+                      {(() => {
+                        const statusMap: Record<string, { label: string; cls: string }> = {
+                          'ACTIVE': { label: 'Ativa', cls: 'text-emerald-500' },
+                          'INACTIVE': { label: 'Inativa / Pausada', cls: 'text-amber-500' },
+                          'EXPIRED': { label: 'Expirada', cls: 'text-rose-500' },
+                        };
+                        const hasValidDate = selectedClient.proximaCobranca && !isNaN(new Date(selectedClient.proximaCobranca + 'T12:00:00').getTime());
+                        const subStatus = selectedClient.subscriptionStatus ? statusMap[selectedClient.subscriptionStatus] : null;
+                        return (
+                          <div className="bg-white dark:bg-white/5 p-4 rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm col-span-2">
+                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
+                              {hasValidDate ? 'Próxima Cobrança' : 'Status da Assinatura'}
+                            </div>
+                            <div className={`text-sm font-bold ${hasValidDate ? 'text-light-text dark:text-white' : (subStatus?.cls || 'text-slate-400')}`}>
+                              {hasValidDate
+                                ? new Date(selectedClient.proximaCobranca! + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })
+                                : subStatus?.label || 'Sem assinatura'
+                              }
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        );
+                      })()}
                     </div>
 
                     <div className="bg-white dark:bg-white/5 p-6 rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm">

@@ -54,6 +54,7 @@ const ActiveClients: React.FC = () => {
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'ativos' | 'tcv' | 'recorrente' | 'quarentena' | 'churn'>('ativos');
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [menuPos, setMenuPos] = useState<{top: number, left: number}>({top: 0, left: 0});
   const [contractPreview, setContractPreview] = useState<{name: string, url: string} | null>(null);
   const contractInputRef = useRef<HTMLInputElement>(null);
@@ -284,7 +285,6 @@ const ActiveClients: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Tem certeza que deseja excluir este cliente?')) return;
     
     try {
       const response = await fetch(`/api/clients/${id}`, {
@@ -894,7 +894,7 @@ const ActiveClients: React.FC = () => {
         if (!client) return null;
         return (
           <>
-            <div className="fixed inset-0 z-[100]" onClick={() => setOpenMenuId(null)} />
+            <div className="fixed inset-0 z-[100]" onClick={() => { setOpenMenuId(null); setConfirmDeleteId(null); }} />
             <div
               className="fixed z-[101] w-48 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl overflow-hidden"
               style={{ top: `${menuPos.top}px`, left: `${menuPos.left}px` }}
@@ -951,12 +951,21 @@ const ActiveClients: React.FC = () => {
                 )}
               </button>
               <div className="border-t border-slate-100 dark:border-white/5" />
-              <button
-                onClick={() => { setOpenMenuId(null); handleDelete(client.id); }}
-                className="w-full px-4 py-2.5 text-left text-xs font-medium text-rose-500 hover:bg-rose-500/5 flex items-center gap-2.5 transition-colors"
-              >
-                <Trash2 size={13} /> Excluir Cliente
-              </button>
+              {confirmDeleteId === client.id ? (
+                <button
+                  onClick={() => { setConfirmDeleteId(null); setOpenMenuId(null); handleDelete(client.id); }}
+                  className="w-full px-4 py-2.5 text-left text-xs font-bold text-white bg-rose-500 hover:bg-rose-600 flex items-center gap-2.5 transition-colors"
+                >
+                  <Trash2 size={13} /> Confirmar exclusão?
+                </button>
+              ) : (
+                <button
+                  onClick={() => setConfirmDeleteId(client.id)}
+                  className="w-full px-4 py-2.5 text-left text-xs font-medium text-rose-500 hover:bg-rose-500/5 flex items-center gap-2.5 transition-colors"
+                >
+                  <Trash2 size={13} /> Excluir Cliente
+                </button>
+              )}
             </div>
           </>
         );

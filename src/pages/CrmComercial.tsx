@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import { 
-  Plus, Search, Filter, MessageSquare, Clock, Trash2, 
+import {
+  Plus, Search, Filter, MessageSquare, Clock, Trash2,
   ChevronRight, ChevronLeft, Flame, DollarSign, X, Edit2, ChevronDown, Check, Users, LayoutGrid,
   TrendingUp, TrendingDown, MoreHorizontal, ArrowRightLeft, Send, History, Phone, Mail,
   ArrowRight, Calendar, CheckSquare, FileText, Paperclip, Trophy, Star, Eye, EyeOff, Settings, PhoneCall, Loader2, Mic, MicOff,
@@ -11,21 +11,21 @@ import {
 } from 'lucide-react';
 import { storage } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { 
-  DndContext, 
+import {
+  DndContext,
   closestCorners,
   closestCenter,
-  KeyboardSensor, 
-  PointerSensor, 
-  useSensor, 
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
   useSensors,
   DragOverlay,
   defaultDropAnimationSideEffects,
   useDroppable
 } from '@dnd-kit/core';
-import { 
-  SortableContext, 
-  arrayMove, 
+import {
+  SortableContext,
+  arrayMove,
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
   useSortable
@@ -122,7 +122,7 @@ const formatCurrency = (value: number) => {
 const formatDuration = (start: string, end: string) => {
   const diff = new Date(end).getTime() - new Date(start).getTime();
   if (diff <= 0) return 'alguns segundos';
-  
+
   const minutes = Math.floor(diff / (1000 * 60));
   const hours = Math.floor(diff / (1000 * 60 * 60));
   const days = Math.floor(diff / (1000 * 60 * 60 * 24));
@@ -162,8 +162,8 @@ const getCallTypeLabel = (call: any): string => {
 };
 
 export const COLUMN_ICONS = [
-  'LayoutGrid', 'MessageSquare', 'Phone', 'Mail', 'Users', 
-  'Briefcase', 'Calendar', 'FileText', 'Award', 'Flame', 
+  'LayoutGrid', 'MessageSquare', 'Phone', 'Mail', 'Users',
+  'Briefcase', 'Calendar', 'FileText', 'Award', 'Flame',
   'DollarSign', 'Star', 'Trophy',
   'Handshake', 'RefreshCw', 'XCircle', 'Search', 'ClipboardList'
 ];
@@ -191,10 +191,10 @@ export const RenderIcon = ({ name, size = 20, className = "" }: { name: string, 
   }
 };
 
-const isWonColumn = (title?: string) => 
+const isWonColumn = (title?: string) =>
   title?.toLowerCase().includes('ganho') || title?.toLowerCase().includes('fechado');
 
-const isLostColumn = (title?: string) => 
+const isLostColumn = (title?: string) =>
   title?.toLowerCase().includes('perd') || title?.toLowerCase().includes('descart');
 
 const getInitials = (name: string) => {
@@ -241,8 +241,8 @@ const DroppableColumn = ({ id, children }: { id: string, children: React.ReactNo
   });
 
   return (
-    <div 
-      ref={setNodeRef} 
+    <div
+      ref={setNodeRef}
       className={`flex-1 flex flex-col transition-colors duration-200 rounded-2xl ${isOver ? 'bg-gray-100 dark:bg-white/5 ring-2 ring-emerald-500/50' : ''}`}
     >
       {children}
@@ -326,7 +326,7 @@ const SortableCard = (props: SortableCardProps) => {
 
   const responsavel = users.find(u => u.id === lead.responsavel_id);
 
-  const isWon  = isWonColumn(columns.find(c => c.id === lead.coluna)?.title);
+  const isWon = isWonColumn(columns.find(c => c.id === lead.coluna)?.title);
   const isLost = (lead as any).is_lost || isLostColumn(columns.find(c => c.id === lead.coluna)?.title);
 
   // Próxima atividade pendente
@@ -339,7 +339,7 @@ const SortableCard = (props: SortableCardProps) => {
 
   const getTaskStyle = (task: CrmTask) => {
     if (!task.due_date) return null;
-    const today = new Date(); today.setHours(0,0,0,0);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
     // Pega só os primeiros 10 chars para evitar timestamps (ex: 2026-04-16T00:00:00Z)
     const dateOnly = task.due_date.substring(0, 10);
@@ -374,12 +374,11 @@ const SortableCard = (props: SortableCardProps) => {
 
       <div
         onClick={() => onClick()}
-        className={`rounded-xl p-3 pl-6 border shadow-sm cursor-pointer relative transition-all duration-200 ${
-          isDragging ? 'ring-2 ring-violet-500 opacity-30' :
-          isWon  ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-500/30 shadow-[0_4px_15px_rgba(16,185,129,0.1)] hover:border-emerald-500/50 hover:shadow-emerald-500/20' :
-          isLost ? 'bg-red-50 dark:bg-red-500/10 border-red-300/50 shadow-[0_4px_15px_rgba(239,68,68,0.08)] hover:border-red-400/50 hover:shadow-red-500/15' :
-          'bg-white dark:bg-dark-card border-gray-200 dark:border-white/5 hover:border-violet-500/30 hover:shadow-md'
-        }`}
+        className={`rounded-xl p-3 pl-6 border shadow-sm cursor-pointer relative transition-all duration-200 ${isDragging ? 'ring-2 ring-violet-500 opacity-30' :
+            isWon ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-500/30 shadow-[0_4px_15px_rgba(16,185,129,0.1)] hover:border-emerald-500/50 hover:shadow-emerald-500/20' :
+              isLost ? 'bg-red-50 dark:bg-red-500/10 border-red-300/50 shadow-[0_4px_15px_rgba(239,68,68,0.08)] hover:border-red-400/50 hover:shadow-red-500/15' :
+                'bg-white dark:bg-dark-card border-gray-200 dark:border-white/5 hover:border-violet-500/30 hover:shadow-md'
+          }`}
       >
         {isWon && (
           <div className="absolute -top-2.5 -right-2.5 z-20 bg-emerald-500 text-white p-2 rounded-full shadow-lg border-2 border-white dark:border-dark-card animate-pulse">
@@ -408,11 +407,10 @@ const SortableCard = (props: SortableCardProps) => {
               <h4 className="font-bold text-sm text-gray-900 dark:text-white line-clamp-1">{lead.nome}</h4>
               <div className="flex flex-wrap items-center gap-1 mt-1">
                 <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 text-gray-600 dark:text-slate-300">
-                  <span className={`w-1.5 h-1.5 rounded-full ${
-                    lead.origem === 'Indicação' ? 'bg-orange-500' :
-                    lead.origem === 'TCV'       ? 'bg-emerald-500' :
-                    'bg-blue-500'
-                  }`}></span>
+                  <span className={`w-1.5 h-1.5 rounded-full ${lead.origem === 'Indicação' ? 'bg-orange-500' :
+                      lead.origem === 'TCV' ? 'bg-emerald-500' :
+                        'bg-blue-500'
+                    }`}></span>
                   {lead.origem}
                 </span>
                 {((lead as any).tags || []).map((tag: any) => (
@@ -447,7 +445,7 @@ const SortableCard = (props: SortableCardProps) => {
               <span>{taskStyle.label}: {nextTask.type}</span>
             </div>
             {nextTask.start_time && (
-              <span className="font-bold">{nextTask.start_time.slice(0,5)}</span>
+              <span className="font-bold">{nextTask.start_time.slice(0, 5)}</span>
             )}
           </div>
         )}
@@ -459,7 +457,7 @@ const SortableCard = (props: SortableCardProps) => {
 const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   lead, users, columns, kanbans, comments, history, tasks, templates, newComment,
   setNewComment, onClose, onAddComment, onDeleteComment,
-  onMove, onDelete, onWin, onLose, onReopen, onMoveToKanban, 
+  onMove, onDelete, onWin, onLose, onReopen, onMoveToKanban,
   onAddTask, onUpdateTask, onDeleteTask, onApplyTemplate, onManageTemplates,
   onRefreshTasks, currentKanbanId, api4comSettings, callingLeadId, onCallLead, onUpdateLeadField,
   tags, onRefreshTags, currentUserEmail, currentUserName, lossReasons, sequences, onApplySequence
@@ -490,13 +488,13 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   });
 
   // Computed: estado do lead (ganho / perdido)
-  const isWon  = isWonColumn(columns.find(c => c.id === lead?.coluna)?.title);
+  const isWon = isWonColumn(columns.find(c => c.id === lead?.coluna)?.title);
   const isLost = !!(lead as any)?.is_lost || isLostColumn(columns.find(c => c.id === lead?.coluna)?.title);
 
   const [meetings, setMeetings] = useState<any[]>([]);
   const [meetingsLoading, setMeetingsLoading] = useState(false);
   const [meetingsFetched, setMeetingsFetched] = useState(false);
-  
+
   const [notes, setNotes] = useState<any[]>([]);
   const [notesLoading, setNotesLoading] = useState(false);
   const [notesFetched, setNotesFetched] = useState(false);
@@ -533,7 +531,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
     closing_goal: '',
     reunion_link: ''
   });
-  
+
   const [files, setFiles] = useState<any[]>([]);
   const [filesLoading, setFilesLoading] = useState(false);
   const [filesFetched, setFilesFetched] = useState(false);
@@ -623,14 +621,14 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
 
   const handleFileUpload = async (file: File) => {
     if (!lead) return;
-    
+
     setUploadingFiles(true);
     try {
       // Usando path "projects/crm_comercial" para contornar limitações de firebase.rules locais no Storage
       const storageRef = ref(storage, `projects/crm_comercial/${lead.id}/${Date.now()}_${file.name}`);
       await uploadBytes(storageRef, file);
       const downloadURL = await getDownloadURL(storageRef);
-      
+
       const newFileObj = {
         lead_id: lead.id,
         name: file.name,
@@ -689,7 +687,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   const [showTagMenu, setShowTagMenu] = useState(false);
   const [tagSearch, setTagSearch] = useState('');
   const tagsRef = useRef<HTMLDivElement>(null);
-  
+
   const [sectionsOpen, setSectionsOpen] = useState({
     business: true,
     tags: true,
@@ -710,7 +708,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
 
   const handleCreateMeeting = () => {
     if (!meetingForm.title || !meetingForm.meeting_date) return;
-    
+
     // Atualizar dados de Informações da Reunião no Lead
     ['office_location', 'reunion_niche', 'monthly_closings', 'closing_goal', 'reunion_link'].forEach(f => {
       const val = meetingForm[f as keyof typeof meetingForm] as string;
@@ -722,7 +720,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
     if (meetingForm.meeting_date && meetingForm.meeting_date !== (lead as any).reunion_date) {
       onUpdateLeadField(lead.id, 'reunion_date', meetingForm.meeting_date);
     }
-    
+
     setMeetingsLoading(true);
     fetch('/api/crm-comercial/meetings', {
       method: 'POST',
@@ -740,14 +738,14 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
         closing_goal: meetingForm.closing_goal
       })
     })
-    .then(r => r.json())
-    .then(newMeeting => {
-      setMeetings(prev => [newMeeting, ...prev].sort((a,b) => new Date(b.meeting_date).getTime() - new Date(a.meeting_date).getTime()));
-      setShowMeetingModal(false);
-      setMeetingForm({ title: '', meeting_date: new Date().toISOString().slice(0, 16), notes: '', office_location: '', reunion_niche: '', monthly_closings: '', closing_goal: '', reunion_link: '' });
-      setMeetingsLoading(false);
-    })
-    .catch(() => setMeetingsLoading(false));
+      .then(r => r.json())
+      .then(newMeeting => {
+        setMeetings(prev => [newMeeting, ...prev].sort((a, b) => new Date(b.meeting_date).getTime() - new Date(a.meeting_date).getTime()));
+        setShowMeetingModal(false);
+        setMeetingForm({ title: '', meeting_date: new Date().toISOString().slice(0, 16), notes: '', office_location: '', reunion_niche: '', monthly_closings: '', closing_goal: '', reunion_link: '' });
+        setMeetingsLoading(false);
+      })
+      .catch(() => setMeetingsLoading(false));
   };
 
   const handleNoteClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -775,7 +773,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
         })
       });
       const newNote = await res.json();
-      setNotes(prev => [newNote, ...prev].sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
+      setNotes(prev => [newNote, ...prev].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
       editorRef.current.innerHTML = '';
       setNewNoteContent('');
       setNotesLoading(false);
@@ -801,13 +799,13 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
             img.style.borderRadius = '8px';
             img.style.marginTop = '12px';
             img.style.marginBottom = '12px';
-            
+
             const selection = window.getSelection();
             if (selection && selection.rangeCount > 0) {
               const range = selection.getRangeAt(0);
               range.deleteContents();
               range.insertNode(img);
-              
+
               // Move cursor after the image
               range.setStartAfter(img);
               range.setEndAfter(img);
@@ -832,1982 +830,1970 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
       <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4">
         {/* Backdrop */}
         <div className="fixed inset-0 modal-overlay" onClick={onClose} />
-        
+
         {/* Modal */}
         <div className="relative w-full max-w-7xl h-[90vh] modal-container overflow-hidden flex flex-col shadow-2xl">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b modal-divider shrink-0">
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center font-bold text-violet-600 dark:text-violet-400">
-                {getInitials(lead.nome)}
-              </div>
-              <div>
-                <h2 className="font-bold text-lg modal-title">{lead.nome}</h2>
-                {lead.telefone && <p className="text-xs text-gray-500 dark:text-slate-400">{lead.telefone}</p>}
-              </div>
-            </div>
-
-            {/* Botão de Ligação (Api4Com) */}
-            <button
-              title={api4comSettings?.configured && lead.telefone ? 'Ligar para contato' : !lead.telefone ? 'Sem telefone cadastrado' : 'Configure a telefonia primeiro'}
-              disabled={!api4comSettings?.configured || !lead.telefone || callingLeadId === lead.id}
-              onClick={(e) => { e.stopPropagation(); onCallLead(lead.id, lead.telefone!, lead.nome); }}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all shadow-lg flex-shrink-0 ${
-                api4comSettings?.configured && lead.telefone
-                  ? 'bg-violet-600 hover:bg-violet-700 text-white shadow-violet-500/20 active:scale-95'
-                  : 'bg-gray-100 dark:bg-white/5 text-gray-400 dark:text-gray-600 shadow-none cursor-not-allowed'
-              }`}
-            >
-              {callingLeadId === lead.id
-                ? <Loader2 size={15} className="animate-spin" />
-                : <PhoneCall size={15} />
-              }
-              Ligar
-            </button>
-          </div>
-
-          <div className="flex items-center gap-2">
-
-            {/* Ganhar */}
-            <button
-              onClick={() => { onWin(lead.id); onClose(); }}
-              className="flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-emerald-500/20"
-            >
-              <TrendingUp size={15} />
-              Ganhar
-            </button>
-
-            {/* Perda com dropdown de motivos */}
-            <div className="relative" ref={lossDropdownRef}>
-              <button
-                onClick={() => { setShowLossDropdown(v => !v); setShowMoreMenu(false); setShowMoveMenu(false); }}
-                className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-red-500/20"
-              >
-                <TrendingDown size={15} />
-                Perda
-                <ChevronDown size={13} className={`transition-transform ${showLossDropdown ? 'rotate-180' : ''}`} />
-              </button>
-              {showLossDropdown && (
-                <div className="absolute left-0 top-full mt-2 w-56 modal-container rounded-xl py-2 z-50 shadow-2xl border border-white/10">
-                  <p className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-400">Motivo da perda</p>
-                  {lossReasons.length === 0 ? (
-                    <p className="px-3 py-2 text-xs text-gray-400">Nenhum motivo cadastrado.<br/>Configure em ⚙️ Configurações.</p>
-                  ) : (
-                    lossReasons.map(r => (
-                      <button
-                        key={r.id}
-                        onClick={() => { setShowLossDropdown(false); onLose(lead.id, r.id, r.name); onClose(); }}
-                        className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left text-gray-700 dark:text-gray-200 hover:bg-red-500/10 transition-colors"
-                      >
-                        <span className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0" />
-                        {r.name}
-                      </button>
-                    ))
-                  )}
-                  <div className="border-t border-white/10 mt-1 pt-1">
-                    <button
-                      onClick={() => { setShowLossDropdown(false); onLose(lead.id); onClose(); }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left text-gray-400 hover:bg-white/5 transition-colors"
-                    >
-                      <X size={12} />
-                      Perda sem motivo
-                    </button>
-                  </div>
+          {/* Header */}
+          <div className="flex items-center justify-between px-6 py-4 border-b modal-divider shrink-0">
+            <div className="flex items-center gap-6">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center font-bold text-violet-600 dark:text-violet-400">
+                  {getInitials(lead.nome)}
                 </div>
-              )}
+                <div>
+                  <h2 className="font-bold text-lg modal-title">{lead.nome}</h2>
+                  {lead.telefone && <p className="text-xs text-gray-500 dark:text-slate-400">{lead.telefone}</p>}
+                </div>
+              </div>
+
+              {/* Botão de Ligação (Api4Com) */}
+              <button
+                title={api4comSettings?.configured && lead.telefone ? 'Ligar para contato' : !lead.telefone ? 'Sem telefone cadastrado' : 'Configure a telefonia primeiro'}
+                disabled={!api4comSettings?.configured || !lead.telefone || callingLeadId === lead.id}
+                onClick={(e) => { e.stopPropagation(); onCallLead(lead.id, lead.telefone!, lead.nome); }}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all shadow-lg flex-shrink-0 ${api4comSettings?.configured && lead.telefone
+                    ? 'bg-violet-600 hover:bg-violet-700 text-white shadow-violet-500/20 active:scale-95'
+                    : 'bg-gray-100 dark:bg-white/5 text-gray-400 dark:text-gray-600 shadow-none cursor-not-allowed'
+                  }`}
+              >
+                {callingLeadId === lead.id
+                  ? <Loader2 size={15} className="animate-spin" />
+                  : <PhoneCall size={15} />
+                }
+                Ligar
+              </button>
             </div>
 
-            {/* Mais (+ dropdown) */}
-            <div className="relative" ref={moreRef}>
+            <div className="flex items-center gap-2">
+
+              {/* Ganhar */}
               <button
-                onClick={() => { setShowMoreMenu(v => !v); setShowMoveMenu(false); setShowKanbanMenu(false); }}
-                className="flex items-center gap-1.5 px-3 py-2 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 hover:bg-gray-50 dark:hover:bg-white/10 text-gray-700 dark:text-white rounded-xl text-sm font-bold transition-all"
+                onClick={() => { onWin(lead.id); onClose(); }}
+                className="flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-emerald-500/20"
               >
-                <MoreHorizontal size={16} />
-                Mais
+                <TrendingUp size={15} />
+                Ganhar
               </button>
-              {showMoreMenu && (
-                <div className="absolute right-0 top-full mt-2 w-52 modal-container py-2 z-50 shadow-2xl">
-                  {/* Mover de kanban */}
-                  <div className="relative" ref={moveRef}>
-                    <button
-                      onClick={() => setShowMoveMenu(v => !v)}
-                      className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-white/5 text-sm text-gray-700 dark:text-slate-200 transition-colors"
-                    >
-                      <ArrowRightLeft size={15} className="text-violet-500" />
-                      Mover de coluna
-                      <ChevronLeft size={14} className="ml-auto" />
-                    </button>
-                    <AnimatePresence>
-                      {showMoveMenu && (
-                        <motion.div 
-                          initial={{ opacity: 0, x: 10, scale: 0.95 }}
-                          animate={{ opacity: 1, x: 0, scale: 1 }}
-                          exit={{ opacity: 0, x: 10, scale: 0.95 }}
-                          className="absolute right-[calc(100%+8px)] top-0 w-56 bg-white/80 dark:bg-[#161420]/90 backdrop-blur-xl border border-gray-200 dark:border-white/10 rounded-2xl py-2 z-50 shadow-2xl"
-                        >
-                          <div className="px-4 py-2 border-b border-gray-100 dark:border-white/5 mb-1">
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-slate-500">Mover para coluna</span>
-                          </div>
-                          <div className="max-h-[300px] overflow-y-auto scrollbar-hide">
-                            {columns.map(col => (
-                              <button
-                                key={col.id}
-                                onClick={() => { onMove(lead.id, col.id); setShowMoveMenu(false); setShowMoreMenu(false); }}
-                                className={`w-full text-left flex items-center gap-3 px-4 py-2.5 text-sm transition-all duration-200 hover:bg-gray-100 dark:hover:bg-white/5 ${
-                                  lead.coluna === col.id ? 'text-violet-500 font-bold bg-violet-500/5' : 'text-gray-700 dark:text-slate-300'
-                                }`}
-                              >
-                                <div className={`w-2 h-2 rounded-full ${
-                                  col.color === 'orange' ? 'bg-orange-500' :
-                                  col.color === 'blue' ? 'bg-blue-500' :
-                                  col.color === 'green' ? 'bg-emerald-500' :
-                                  col.color === 'pink' ? 'bg-pink-500' :
-                                  col.color === 'red' ? 'bg-red-500' : 'bg-slate-500'
-                                }`} />
-                                {col.title}
-                                {lead.coluna === col.id && <Check size={14} className="ml-auto" />}
-                              </button>
-                            ))}
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
 
-                  {/* Mover de Kanban */}
-                  <div className="relative" ref={kanbanRef}>
-                    <button
-                      onClick={() => setShowKanbanMenu(v => !v)}
-                      className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-white/5 text-sm text-gray-700 dark:text-slate-200 transition-colors"
-                    >
-                      <LayoutGrid size={15} className="text-blue-500" />
-                      Mover de kanban
-                      <ChevronLeft size={14} className="ml-auto" />
-                    </button>
-                    <AnimatePresence>
-                      {showKanbanMenu && (
-                        <motion.div 
-                          initial={{ opacity: 0, x: 10, scale: 0.95 }}
-                          animate={{ opacity: 1, x: 0, scale: 1 }}
-                          exit={{ opacity: 0, x: 10, scale: 0.95 }}
-                          className="absolute right-[calc(100%+8px)] top-0 w-60 bg-white/80 dark:bg-[#161420]/90 backdrop-blur-xl border border-gray-200 dark:border-white/10 rounded-2xl py-2 z-50 shadow-2xl"
-                        >
-                          <div className="px-4 py-2 border-b border-gray-100 dark:border-white/5 mb-1">
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-slate-500">Mover para Kanban</span>
-                          </div>
-                          <div className="max-h-[300px] overflow-y-auto scrollbar-hide">
-                            {kanbans.map(kb => (
-                              <button
-                                key={kb.id}
-                                onClick={() => { onMoveToKanban(lead.id, kb.id); setShowKanbanMenu(false); setShowMoreMenu(false); onClose(); }}
-                                className={`w-full text-left flex items-center gap-3 px-4 py-2.5 text-sm transition-all duration-200 hover:bg-gray-100 dark:hover:bg-white/5 ${
-                                  kb.id === currentKanbanId ? 'text-violet-500 font-bold bg-violet-500/5' : 'text-gray-700 dark:text-slate-300'
-                                }`}
-                              >
-                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-[10px] uppercase shadow-inner ${
-                                  kb.cor === 'blue' ? 'bg-blue-500 shadow-blue-500/50' :
-                                  kb.cor === 'green' ? 'bg-emerald-500 shadow-emerald-500/50' :
-                                  kb.cor === 'pink' ? 'bg-pink-500 shadow-pink-500/50' :
-                                  kb.cor === 'orange' ? 'bg-orange-500 shadow-orange-500/50' :
-                                  kb.cor === 'yellow' ? 'bg-yellow-500 shadow-yellow-500/50' :
-                                  kb.cor === 'indigo' ? 'bg-indigo-500 shadow-indigo-500/50' : 'bg-violet-500 shadow-violet-500/50'
-                                }`}>
-                                  {kb.nome.charAt(0)}
-                                </div>
-                                <div className="flex flex-col">
-                                  <span className="font-bold">{kb.nome}</span>
-                                  {kb.id === currentKanbanId && <span className="text-[9px] text-violet-500">Kanban atual</span>}
-                                </div>
-                                {kb.id === currentKanbanId && <Check size={14} className="ml-auto text-violet-500" />}
-                              </button>
-                            ))}
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-
-                  <div className="h-px bg-gray-100 dark:bg-white/5 my-1" />
-
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(`${window.location.origin}/f/${lead.id}`);
-                      alert("Link copiado para a área de transferência!");
-                      setShowMoreMenu(false);
-                    }}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-violet-50 dark:hover:bg-violet-500/10 text-sm text-gray-700 dark:text-slate-200 transition-colors"
-                  >
-                    <Copy size={15} className="text-violet-500" />
-                    Copiar link do Formulário
-                  </button>
-
-                  <div className="h-px bg-gray-100 dark:bg-white/5 my-1" />
-
-                  <button
-                    onClick={handleCreateWhatsappGroup}
-                    disabled={creatingWhatsapp}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 text-sm text-gray-700 dark:text-slate-200 transition-colors disabled:opacity-50"
-                  >
-                    {creatingWhatsapp ? (
-                      <span className="w-[15px] h-[15px] border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+              {/* Perda com dropdown de motivos */}
+              <div className="relative" ref={lossDropdownRef}>
+                <button
+                  onClick={() => { setShowLossDropdown(v => !v); setShowMoreMenu(false); setShowMoveMenu(false); }}
+                  className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-red-500/20"
+                >
+                  <TrendingDown size={15} />
+                  Perda
+                  <ChevronDown size={13} className={`transition-transform ${showLossDropdown ? 'rotate-180' : ''}`} />
+                </button>
+                {showLossDropdown && (
+                  <div className="absolute left-0 top-full mt-2 w-56 modal-container rounded-xl py-2 z-50 shadow-2xl border border-white/10">
+                    <p className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-400">Motivo da perda</p>
+                    {lossReasons.length === 0 ? (
+                      <p className="px-3 py-2 text-xs text-gray-400">Nenhum motivo cadastrado.<br />Configure em ⚙️ Configurações.</p>
                     ) : (
-                      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="none" className="text-emerald-500">
-                        <path d="M11.996 0A12 12 0 0 0 0 12c0 2.155.565 4.18 1.554 5.955L.032 23.978l6.166-1.616A11.956 11.956 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 11.996 0zm0 21.995c-1.848 0-3.623-.483-5.228-1.39l-.375-.213-3.882 1.017 1.037-3.784-.233-.37A9.972 9.972 0 0 1 2.006 12C2.006 6.486 6.484 2.005 11.996 2.005c5.512 0 9.99 4.481 9.99 9.995s-4.478 9.995-9.99 9.995zm5.49-7.513c-.301-.151-1.782-.879-2.058-.98-.276-.1-.478-.151-.678.151-.2.301-.78 1.011-.954 1.218-.175.207-.35.232-.651.081-1.391-.689-2.39-1.32-3.328-2.923-.243-.414.24-.396.828-1.572.075-.152.038-.284-.038-.435-.075-.151-.678-1.632-.931-2.235-.245-.584-.492-.505-.678-.514-.175-.01-.377-.01-.577-.01s-.527.075-.803.376c-.276.302-1.055 1.031-1.055 2.513s1.08 2.914 1.231 3.115c.151.202 2.126 3.245 5.147 4.549 1.952.84 2.628.71 3.129.591.688-.163 1.782-.728 2.033-1.433.251-.705.251-1.309.176-1.433-.076-.124-.277-.2-.578-.35z" />
-                      </svg>
+                      lossReasons.map(r => (
+                        <button
+                          key={r.id}
+                          onClick={() => { setShowLossDropdown(false); onLose(lead.id, r.id, r.name); onClose(); }}
+                          className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left text-gray-700 dark:text-gray-200 hover:bg-red-500/10 transition-colors"
+                        >
+                          <span className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0" />
+                          {r.name}
+                        </button>
+                      ))
                     )}
-                    Criar grupo do Whatsapp
-                  </button>
-
-                  {/* Reabrir Card — visível apenas para leads ganhos ou perdidos */}
-                  {(isWon || isLost) && (
-                    <>
-                      <div className="h-px bg-gray-100 dark:bg-white/5 my-1" />
+                    <div className="border-t border-white/10 mt-1 pt-1">
                       <button
-                        onClick={() => { onReopen(lead.id); setShowMoreMenu(false); onClose(); }}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-violet-50 dark:hover:bg-violet-500/10 text-sm text-violet-600 dark:text-violet-400 transition-colors"
+                        onClick={() => { setShowLossDropdown(false); onLose(lead.id); onClose(); }}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left text-gray-400 hover:bg-white/5 transition-colors"
                       >
-                        <RefreshCw size={15} />
-                        Reabrir Card
+                        <X size={12} />
+                        Perda sem motivo
                       </button>
-                    </>
-                  )}
+                    </div>
+                  </div>
+                )}
+              </div>
 
-                  <div className="h-px bg-gray-100 dark:bg-white/5 my-1" />
+              {/* Mais (+ dropdown) */}
+              <div className="relative" ref={moreRef}>
+                <button
+                  onClick={() => { setShowMoreMenu(v => !v); setShowMoveMenu(false); setShowKanbanMenu(false); }}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 hover:bg-gray-50 dark:hover:bg-white/10 text-gray-700 dark:text-white rounded-xl text-sm font-bold transition-all"
+                >
+                  <MoreHorizontal size={16} />
+                  Mais
+                </button>
+                {showMoreMenu && (
+                  <div className="absolute right-0 top-full mt-2 w-52 modal-container py-2 z-50 shadow-2xl">
+                    {/* Mover de kanban */}
+                    <div className="relative" ref={moveRef}>
+                      <button
+                        onClick={() => setShowMoveMenu(v => !v)}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-white/5 text-sm text-gray-700 dark:text-slate-200 transition-colors"
+                      >
+                        <ArrowRightLeft size={15} className="text-violet-500" />
+                        Mover de coluna
+                        <ChevronLeft size={14} className="ml-auto" />
+                      </button>
+                      <AnimatePresence>
+                        {showMoveMenu && (
+                          <motion.div
+                            initial={{ opacity: 0, x: 10, scale: 0.95 }}
+                            animate={{ opacity: 1, x: 0, scale: 1 }}
+                            exit={{ opacity: 0, x: 10, scale: 0.95 }}
+                            className="absolute right-[calc(100%+8px)] top-0 w-56 bg-white/80 dark:bg-[#161420]/90 backdrop-blur-xl border border-gray-200 dark:border-white/10 rounded-2xl py-2 z-50 shadow-2xl"
+                          >
+                            <div className="px-4 py-2 border-b border-gray-100 dark:border-white/5 mb-1">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-slate-500">Mover para coluna</span>
+                            </div>
+                            <div className="max-h-[300px] overflow-y-auto scrollbar-hide">
+                              {columns.map(col => (
+                                <button
+                                  key={col.id}
+                                  onClick={() => { onMove(lead.id, col.id); setShowMoveMenu(false); setShowMoreMenu(false); }}
+                                  className={`w-full text-left flex items-center gap-3 px-4 py-2.5 text-sm transition-all duration-200 hover:bg-gray-100 dark:hover:bg-white/5 ${lead.coluna === col.id ? 'text-violet-500 font-bold bg-violet-500/5' : 'text-gray-700 dark:text-slate-300'
+                                    }`}
+                                >
+                                  <div className={`w-2 h-2 rounded-full ${col.color === 'orange' ? 'bg-orange-500' :
+                                      col.color === 'blue' ? 'bg-blue-500' :
+                                        col.color === 'green' ? 'bg-emerald-500' :
+                                          col.color === 'pink' ? 'bg-pink-500' :
+                                            col.color === 'red' ? 'bg-red-500' : 'bg-slate-500'
+                                    }`} />
+                                  {col.title}
+                                  {lead.coluna === col.id && <Check size={14} className="ml-auto" />}
+                                </button>
+                              ))}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
 
-                  <button
-                    onClick={() => { onDelete(lead.id); onClose(); }}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-red-50 dark:hover:bg-red-500/10 text-sm text-red-500 transition-colors"
-                  >
-                    <Trash2 size={15} />
-                    Excluir lead
-                  </button>
-                </div>
-              )}
+                    {/* Mover de Kanban */}
+                    <div className="relative" ref={kanbanRef}>
+                      <button
+                        onClick={() => setShowKanbanMenu(v => !v)}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-white/5 text-sm text-gray-700 dark:text-slate-200 transition-colors"
+                      >
+                        <LayoutGrid size={15} className="text-blue-500" />
+                        Mover de kanban
+                        <ChevronLeft size={14} className="ml-auto" />
+                      </button>
+                      <AnimatePresence>
+                        {showKanbanMenu && (
+                          <motion.div
+                            initial={{ opacity: 0, x: 10, scale: 0.95 }}
+                            animate={{ opacity: 1, x: 0, scale: 1 }}
+                            exit={{ opacity: 0, x: 10, scale: 0.95 }}
+                            className="absolute right-[calc(100%+8px)] top-0 w-60 bg-white/80 dark:bg-[#161420]/90 backdrop-blur-xl border border-gray-200 dark:border-white/10 rounded-2xl py-2 z-50 shadow-2xl"
+                          >
+                            <div className="px-4 py-2 border-b border-gray-100 dark:border-white/5 mb-1">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-slate-500">Mover para Kanban</span>
+                            </div>
+                            <div className="max-h-[300px] overflow-y-auto scrollbar-hide">
+                              {kanbans.map(kb => (
+                                <button
+                                  key={kb.id}
+                                  onClick={() => { onMoveToKanban(lead.id, kb.id); setShowKanbanMenu(false); setShowMoreMenu(false); onClose(); }}
+                                  className={`w-full text-left flex items-center gap-3 px-4 py-2.5 text-sm transition-all duration-200 hover:bg-gray-100 dark:hover:bg-white/5 ${kb.id === currentKanbanId ? 'text-violet-500 font-bold bg-violet-500/5' : 'text-gray-700 dark:text-slate-300'
+                                    }`}
+                                >
+                                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-[10px] uppercase shadow-inner ${kb.cor === 'blue' ? 'bg-blue-500 shadow-blue-500/50' :
+                                      kb.cor === 'green' ? 'bg-emerald-500 shadow-emerald-500/50' :
+                                        kb.cor === 'pink' ? 'bg-pink-500 shadow-pink-500/50' :
+                                          kb.cor === 'orange' ? 'bg-orange-500 shadow-orange-500/50' :
+                                            kb.cor === 'yellow' ? 'bg-yellow-500 shadow-yellow-500/50' :
+                                              kb.cor === 'indigo' ? 'bg-indigo-500 shadow-indigo-500/50' : 'bg-violet-500 shadow-violet-500/50'
+                                    }`}>
+                                    {kb.nome.charAt(0)}
+                                  </div>
+                                  <div className="flex flex-col">
+                                    <span className="font-bold">{kb.nome}</span>
+                                    {kb.id === currentKanbanId && <span className="text-[9px] text-violet-500">Kanban atual</span>}
+                                  </div>
+                                  {kb.id === currentKanbanId && <Check size={14} className="ml-auto text-violet-500" />}
+                                </button>
+                              ))}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+
+                    <div className="h-px bg-gray-100 dark:bg-white/5 my-1" />
+
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(`${window.location.origin}/f/${lead.id}`);
+                        alert("Link copiado para a área de transferência!");
+                        setShowMoreMenu(false);
+                      }}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-violet-50 dark:hover:bg-violet-500/10 text-sm text-gray-700 dark:text-slate-200 transition-colors"
+                    >
+                      <Copy size={15} className="text-violet-500" />
+                      Copiar link do Formulário
+                    </button>
+
+                    <div className="h-px bg-gray-100 dark:bg-white/5 my-1" />
+
+                    <button
+                      onClick={handleCreateWhatsappGroup}
+                      disabled={creatingWhatsapp}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 text-sm text-gray-700 dark:text-slate-200 transition-colors disabled:opacity-50"
+                    >
+                      {creatingWhatsapp ? (
+                        <span className="w-[15px] h-[15px] border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="none" className="text-emerald-500">
+                          <path d="M11.996 0A12 12 0 0 0 0 12c0 2.155.565 4.18 1.554 5.955L.032 23.978l6.166-1.616A11.956 11.956 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 11.996 0zm0 21.995c-1.848 0-3.623-.483-5.228-1.39l-.375-.213-3.882 1.017 1.037-3.784-.233-.37A9.972 9.972 0 0 1 2.006 12C2.006 6.486 6.484 2.005 11.996 2.005c5.512 0 9.99 4.481 9.99 9.995s-4.478 9.995-9.99 9.995zm5.49-7.513c-.301-.151-1.782-.879-2.058-.98-.276-.1-.478-.151-.678.151-.2.301-.78 1.011-.954 1.218-.175.207-.35.232-.651.081-1.391-.689-2.39-1.32-3.328-2.923-.243-.414.24-.396.828-1.572.075-.152.038-.284-.038-.435-.075-.151-.678-1.632-.931-2.235-.245-.584-.492-.505-.678-.514-.175-.01-.377-.01-.577-.01s-.527.075-.803.376c-.276.302-1.055 1.031-1.055 2.513s1.08 2.914 1.231 3.115c.151.202 2.126 3.245 5.147 4.549 1.952.84 2.628.71 3.129.591.688-.163 1.782-.728 2.033-1.433.251-.705.251-1.309.176-1.433-.076-.124-.277-.2-.578-.35z" />
+                        </svg>
+                      )}
+                      Criar grupo do Whatsapp
+                    </button>
+
+                    {/* Reabrir Card — visível apenas para leads ganhos ou perdidos */}
+                    {(isWon || isLost) && (
+                      <>
+                        <div className="h-px bg-gray-100 dark:bg-white/5 my-1" />
+                        <button
+                          onClick={() => { onReopen(lead.id); setShowMoreMenu(false); onClose(); }}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-violet-50 dark:hover:bg-violet-500/10 text-sm text-violet-600 dark:text-violet-400 transition-colors"
+                        >
+                          <RefreshCw size={15} />
+                          Reabrir Card
+                        </button>
+                      </>
+                    )}
+
+                    <div className="h-px bg-gray-100 dark:bg-white/5 my-1" />
+
+                    <button
+                      onClick={() => { onDelete(lead.id); onClose(); }}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-red-50 dark:hover:bg-red-500/10 text-sm text-red-500 transition-colors"
+                    >
+                      <Trash2 size={15} />
+                      Excluir lead
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Fechar */}
+              <button
+                onClick={onClose}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-xl text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white transition-colors"
+              >
+                <X size={20} />
+              </button>
             </div>
-
-            {/* Fechar */}
-            <button
-              onClick={onClose}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-white/10 rounded-xl text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white transition-colors"
-            >
-              <X size={20} />
-            </button>
           </div>
-        </div>
 
-        {/* Tabs */}
-        <div className="flex items-center gap-1 px-6 border-b modal-divider shrink-0">
-          {tabs.map(tab => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab.toLowerCase() as any)}
-              className={`px-4 py-3 text-sm font-semibold transition-all border-b-2 ${
-                activeTab === tab.toLowerCase()
-                  ? 'modal-tab-active'
-                  : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'
-              }`}
-            >
-              {tab}
-            </button>
-          ))}
-        </div>
+          {/* Tabs */}
+          <div className="flex items-center gap-1 px-6 border-b modal-divider shrink-0">
+            {tabs.map(tab => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab.toLowerCase() as any)}
+                className={`px-4 py-3 text-sm font-semibold transition-all border-b-2 ${activeTab === tab.toLowerCase()
+                    ? 'modal-tab-active'
+                    : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
 
-        {/* Body: two columns */}
-        <div className="flex flex-1 overflow-hidden">
-          {/* Left: activity/comments */}
-          <div className="flex-1 flex flex-col overflow-hidden border-r modal-divider">
-            <div className="flex-1 overflow-y-auto flex flex-col h-full bg-slate-50 dark:bg-black/20">
-              {activeTab === 'histórico' && (
-                <div className="p-6 space-y-4 flex-1">
-                  <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-2">Histórico</h3>
-                  {history.length === 0 && comments.length === 0 && callLogs.length === 0 ? (
-                    <p className="text-sm text-gray-500 dark:text-slate-500 text-center py-8">Nenhuma atividade registrada.</p>
-                  ) : (
-                    (() => {
-                      const formatCallDuration = (secs: number) => {
-                        if (!secs) return '0:00';
-                        const m = Math.floor(secs / 60);
-                        const s = secs % 60;
-                        return `${m}:${String(s).padStart(2, '0')}`;
-                      };
-                      const formatRelativeTime = formatCallRelativeTime;
-                      const isSuccess = (call: any) => call.hangup_cause === 'NORMAL_CLEARING';
+          {/* Body: two columns */}
+          <div className="flex flex-1 overflow-hidden">
+            {/* Left: activity/comments */}
+            <div className="flex-1 flex flex-col overflow-hidden border-r modal-divider">
+              <div className="flex-1 overflow-y-auto flex flex-col h-full bg-slate-50 dark:bg-black/20">
+                {activeTab === 'histórico' && (
+                  <div className="p-6 space-y-4 flex-1">
+                    <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-2">Histórico</h3>
+                    {history.length === 0 && comments.length === 0 && callLogs.length === 0 ? (
+                      <p className="text-sm text-gray-500 dark:text-slate-500 text-center py-8">Nenhuma atividade registrada.</p>
+                    ) : (
+                      (() => {
+                        const formatCallDuration = (secs: number) => {
+                          if (!secs) return '0:00';
+                          const m = Math.floor(secs / 60);
+                          const s = secs % 60;
+                          return `${m}:${String(s).padStart(2, '0')}`;
+                        };
+                        const formatRelativeTime = formatCallRelativeTime;
+                        const isSuccess = (call: any) => call.hangup_cause === 'NORMAL_CLEARING';
 
-                      const parseDateSafe = (dStr?: string) => {
-                        if (!dStr) return 0;
-                        const t = new Date(dStr.replace(' ', 'T')).getTime();
-                        return isNaN(t) ? 0 : t;
-                      };
+                        const parseDateSafe = (dStr?: string) => {
+                          if (!dStr) return 0;
+                          const t = new Date(dStr.replace(' ', 'T')).getTime();
+                          return isNaN(t) ? 0 : t;
+                        };
 
-                      const unifiedItems = [
-                        ...history
-                          .filter(item => item.action_type !== 'call_initiated' && item.action_type !== 'call_completed')
-                          .map(item => ({ ...item, _rawType: 'history', _date: parseDateSafe(item.created_at) })),
-                        ...comments.map(c => ({ ...c, _rawType: 'comment', _date: parseDateSafe(c.created_at) })),
-                        ...callLogs.map(call => ({ ...call, _rawType: 'call', _date: parseDateSafe(call.started_at || call.created_at) }))
-                      ].sort((a, b) => b._date - a._date);
+                        const unifiedItems = [
+                          ...history
+                            .filter(item => item.action_type !== 'call_initiated' && item.action_type !== 'call_completed')
+                            .map(item => ({ ...item, _rawType: 'history', _date: parseDateSafe(item.created_at) })),
+                          ...comments.map(c => ({ ...c, _rawType: 'comment', _date: parseDateSafe(c.created_at) })),
+                          ...callLogs.map(call => ({ ...call, _rawType: 'call', _date: parseDateSafe(call.started_at || call.created_at) }))
+                        ].sort((a, b) => b._date - a._date);
 
-                      return (
-                        <>
-                          {unifiedItems.map((unifiedItem, index) => {
-                            if (unifiedItem._rawType === 'call') {
-                              const call = unifiedItem;
-                              const success = isSuccess(call);
-                              const dotColor = success ? 'bg-emerald-500' : 'bg-red-500';
-                              
-                              return (
-                                <div key={`call-${call.id}`} className="relative pl-6 pb-6 last:pb-0">
-                                  {/* Timeline Line */}
-                                  {index !== unifiedItems.length - 1 && (
-                                    <div className="absolute left-[7px] top-[14px] w-[2px] h-full bg-gray-100 dark:bg-white/5" />
-                                  )}
-                                  
-                                  {/* Timeline Dot */}
-                                  <div className={`absolute left-0 top-1 w-[16px] h-[16px] rounded-full border-4 border-white dark:border-[#1A1625] shadow-sm z-10 flex items-center justify-center ${dotColor}`} />
-                                  
-                                  <div className="bg-white/50 dark:bg-white/5 border border-gray-100 dark:border-white/10 rounded-2xl p-4 shadow-sm transition-all hover:shadow-md">
-                                    <div className="flex items-start gap-3">
-                                      <div className="flex-shrink-0 w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.12)' }}>
-                                        <Phone size={18} style={{ color: '#7c3aed' }} />
-                                      </div>
-                                      <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-2 flex-wrap mb-1">
-                                          <span className="font-semibold text-[13px] text-gray-800 dark:text-slate-100">Ligação</span>
-                                          <span className="text-[10px] px-2 py-0.5 rounded-full font-medium"
-                                            style={{ background: success ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', color: success ? '#059669' : '#dc2626' }}>
-                                            {success ? '✓' : '✕'} {getCallTypeLabel(call)}
-                                          </span>
-                                        </div>
-                                        <p className="text-[11px]" style={{ color: '#9ca3af' }}>ORIGEM: GrapeHub CRM</p>
-
-                                        {call.duration > 0 && (
-                                          <div className="mt-2 text-[11px] text-gray-400 dark:text-slate-500">
-                                            ⏱ Duração: <strong className="text-gray-600 dark:text-slate-400">{formatCallDuration(call.duration)}</strong>
-                                          </div>
-                                        )}
-
-                                        {call.record_url && (
-                                          <div className="mt-2.5 rounded-lg p-1.5 flex items-center gap-2 max-w-[350px]" style={{ background: 'rgba(0,0,0,0.03)', border: '1px solid rgba(0,0,0,0.06)' }}>
-                                            <audio controls src={call.record_url} className="w-full h-7" style={{ minWidth: 0, flex: 1 }} preload="none" />
-                                            <a href={call.record_url} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 p-1 rounded hover:bg-purple-50 transition-colors" title="Abrir gravação">
-                                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                                            </a>
-                                          </div>
-                                        )}
-
-                                        <div className="flex items-center gap-1.5 mt-2.5">
-                                          <Clock size={11} className="text-gray-400" />
-                                          <span className="text-[11px]" style={{ color: '#9ca3af' }}>
-                                            {formatRelativeTime(call.started_at)}
-                                            {(call.first_name || call.last_name) && <> por <strong className="font-medium text-gray-600 dark:text-slate-400">{[call.first_name, call.last_name].filter(Boolean).join(' ')}</strong></>}
-                                          </span>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            }
-
-                            if (unifiedItem._rawType === 'comment') {
-                              const comment = unifiedItem;
-                              return (
-                                <div key={`comment-${comment.id}`} className="relative pl-6 pb-6 last:pb-0">
-                                  {/* Timeline Line */}
-                                  {index !== unifiedItems.length - 1 && (
-                                    <div className="absolute left-[7px] top-[14px] w-[2px] h-full bg-gray-100 dark:bg-white/5" />
-                                  )}
-                                  
-                                  {/* Timeline Dot */}
-                                  <div className="absolute left-0 top-1 w-[16px] h-[16px] rounded-full border-4 border-white dark:border-[#1A1625] shadow-sm z-10 flex items-center justify-center bg-violet-400" />
-
-                                  <div className="bg-white/50 dark:bg-white/5 border border-gray-100 dark:border-white/10 rounded-2xl p-4 shadow-sm">
-                                    <div className="flex items-start gap-3">
-                                      <div className="w-8 h-8 rounded-full bg-violet-500/10 flex items-center justify-center flex-shrink-0 mt-0.5 text-xs font-bold text-violet-600">
-                                        {getInitials(comment.user_name)}
-                                      </div>
-                                      <div className="flex-1 min-w-0">
-                                        <div className="flex items-center justify-between gap-2">
-                                          <span className="text-sm font-bold text-gray-900 dark:text-white truncate">{comment.user_name || 'Nota'}</span>
-                                          <div className="flex items-center gap-2 shrink-0">
-                                            <span className="text-[11px] text-gray-400 dark:text-slate-500">{new Date(comment.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-                                            <button onClick={() => onDeleteComment(comment.id)} className="text-gray-400 hover:text-red-500 transition-colors p-1 rounded-md hover:bg-red-50 dark:hover:bg-red-900/30">
-                                              <Trash2 size={12} />
-                                            </button>
-                                          </div>
-                                        </div>
-                                        <p className="text-sm text-gray-600 dark:text-slate-300 mt-1 whitespace-pre-wrap">{comment.content}</p>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            }
-
-                            // else history
-                            const item = unifiedItem;
-                            
-                            const historyIndex = history.findIndex((h) => h.id === item.id);
-                            const nextItem = history[historyIndex + 1];
-                            const prevDate = nextItem ? nextItem.created_at : lead.created_at;
-                            const duration = formatDuration(prevDate, item.created_at);
-                            const isTaskAction = item.action_type?.startsWith('task_');
-
-                            const isNoteAction = item.action_type === 'note_created';
-                            const isWhatsappTrigger = item.action_type === 'whatsapp_trigger';
-                            const isAutomationAction = item.action_type === 'automacao';
-
-                            // Task/meeting/note-specific events get a different style
-                            if (isTaskAction || item.action_type === 'template_applied' || item.action_type === 'meeting_created' || isNoteAction || isWhatsappTrigger || isAutomationAction) {
-                              const iconMap: Record<string, { icon: any; color: string; bg: string }> = {
-                                task_created: { icon: <Plus size={10} />, color: 'text-blue-500', bg: 'bg-blue-500' },
-                                task_completed: { icon: <Check size={10} />, color: 'text-emerald-500', bg: 'bg-emerald-500' },
-                                task_reopened: { icon: <Clock size={10} />, color: 'text-orange-500', bg: 'bg-orange-500' },
-                                task_deleted: { icon: <Trash2 size={10} />, color: 'text-red-500', bg: 'bg-red-500' },
-                                template_applied: { icon: <FileText size={10} />, color: 'text-violet-500', bg: 'bg-violet-500' },
-                                meeting_created: { icon: <Calendar size={10} />, color: 'text-violet-500', bg: 'bg-violet-500' },
-                                note_created: { icon: <FileText size={10} />, color: 'text-fuchsia-500', bg: 'bg-fuchsia-500' },
-                                whatsapp_trigger: { icon: <Bot size={10} />, color: 'text-emerald-500', bg: 'bg-emerald-500' },
-                              };
-                              const taskTypeIcons: Record<string, any> = {
-                                'Tarefa': <CheckSquare size={14} />,
-                                'Ligação': <Phone size={14} />,
-                                'WhatsApp': <MessageSquare size={14} />,
-                                'Email': <Mail size={14} />,
-                                'Reunião': <Users size={14} />,
-                                'Lembrete': <Clock size={14} />,
-                                'Nota Rica': <FileText size={14} />,
-                                'Automação': <Bot size={14} />,
-                              };
-
-                              const meta = iconMap[item.action_type] || iconMap.task_created;
-                              
-                              // Fallback for older records: parse type from description or title content
-                              let effectiveTaskType = (item.task_type || '').trim();
-                              
-                              // Split description to show action and title as badges
-                              const descParts = item.description.split(':');
-                              let action = descParts[0];
-                              let title = descParts[1]?.replace(/"/g, '').trim() || '';
-
-                              // Cleanup old metadata from title if present (e.g., "(Tarefa · Normal)")
-                              if (title.includes('(')) {
-                                const metaMatch = title.match(/\(([^·]+)·/);
-                                if (!effectiveTaskType && metaMatch) effectiveTaskType = metaMatch[1].trim();
-                                title = title.split('(')[0].trim();
-                              }
-
-                              // Smart icon detection by keyword if still no type
-                              const lowerTitle = title.toLowerCase();
-                              if (item.action_type === 'meeting_created' && !effectiveTaskType) {
-                                effectiveTaskType = 'Reunião';
-                              } else if (item.action_type === 'note_created') {
-                                effectiveTaskType = 'Nota Rica';
-                                title = ''; // Content is rendered in a dedicated box below
-                                action = '';
-                              } else if (item.action_type === 'whatsapp_trigger') {
-                                effectiveTaskType = 'Automação';
-                                title = '';
-                                action = '';
-                              } else if (isAutomationAction) {
-                                effectiveTaskType = 'Automação';
-                                title = item.description || '';
-                                action = '';
-                              } else if (!effectiveTaskType || effectiveTaskType === 'Tarefa') {
-                                 if (lowerTitle.includes('whatsapp') || lowerTitle.includes('wpp')) effectiveTaskType = 'WhatsApp';
-                                 else if (lowerTitle.includes('ligar') || lowerTitle.includes('ligação') || lowerTitle.includes('call')) effectiveTaskType = 'Ligação';
-                                 else if (lowerTitle.includes('email') || lowerTitle.includes('e-mail')) effectiveTaskType = 'Email';
-                                 else if (lowerTitle.includes('reunião') || lowerTitle.includes('meeting')) effectiveTaskType = 'Reunião';
-                              }
-
-                              const taskIcon = taskTypeIcons[effectiveTaskType] || taskTypeIcons[effectiveTaskType.charAt(0).toUpperCase() + effectiveTaskType.slice(1)] || taskTypeIcons['Tarefa'];
-                              const matchMeeting = item.action_type === 'meeting_created' ? meetings.find(m => m.title === title && m.responsible_name === item.user_name) : null;
-
-                              if (item.action_type === 'meeting_created' && matchMeeting) {
-                                const dateObj = new Date(matchMeeting.meeting_date);
-                                const mMonth = dateObj.toLocaleString('pt-BR', { month: 'short' }).toUpperCase();
-                                const mDay = String(dateObj.getDate()).padStart(2, '0');
-                                const uResp = users.find(u => u.email === matchMeeting.responsible_name || u.name === matchMeeting.responsible_name);
-                                const getInitials = (n?: string) => n ? n.substring(0, 2).toUpperCase() : '??';
+                        return (
+                          <>
+                            {unifiedItems.map((unifiedItem, index) => {
+                              if (unifiedItem._rawType === 'call') {
+                                const call = unifiedItem;
+                                const success = isSuccess(call);
+                                const dotColor = success ? 'bg-emerald-500' : 'bg-red-500';
 
                                 return (
-                                  <div key={item.id} className="relative pl-6 pb-6 last:pb-0">
+                                  <div key={`call-${call.id}`} className="relative pl-6 pb-6 last:pb-0">
+                                    {/* Timeline Line */}
                                     {index !== unifiedItems.length - 1 && (
                                       <div className="absolute left-[7px] top-[14px] w-[2px] h-full bg-gray-100 dark:bg-white/5" />
                                     )}
-                                    <div className={`absolute left-0 top-[28px] w-[16px] h-[16px] rounded-full bg-violet-500 border-4 border-white dark:border-[#1A1625] shadow-sm z-10`} />
-                                    
-                                    <div className="w-full max-w-[420px]">
-                                      <div className="p-5 rounded-2xl border border-indigo-50 dark:border-white/10 bg-white dark:bg-white/5 shadow-sm hover:shadow-md transition-all relative group w-full">
-                                        <div className="flex items-start gap-3.5 mb-4">
-                                          <div className="w-[52px] h-[52px] rounded-xl flex flex-col items-center justify-center bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 shrink-0 shadow-inner mt-0.5">
-                                            <span className="text-[9px] font-black tracking-widest">{mMonth}.</span>
-                                            <span className="text-lg font-bold leading-none mt-0.5">{mDay}</span>
+
+                                    {/* Timeline Dot */}
+                                    <div className={`absolute left-0 top-1 w-[16px] h-[16px] rounded-full border-4 border-white dark:border-[#1A1625] shadow-sm z-10 flex items-center justify-center ${dotColor}`} />
+
+                                    <div className="bg-white/50 dark:bg-white/5 border border-gray-100 dark:border-white/10 rounded-2xl p-4 shadow-sm transition-all hover:shadow-md">
+                                      <div className="flex items-start gap-3">
+                                        <div className="flex-shrink-0 w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.12)' }}>
+                                          <Phone size={18} style={{ color: '#7c3aed' }} />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                                            <span className="font-semibold text-[13px] text-gray-800 dark:text-slate-100">Ligação</span>
+                                            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium"
+                                              style={{ background: success ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', color: success ? '#059669' : '#dc2626' }}>
+                                              {success ? '✓' : '✕'} {getCallTypeLabel(call)}
+                                            </span>
                                           </div>
-                                          <div className="flex-1 min-w-0 pr-1">
-                                            <div className="flex items-start justify-between gap-2">
-                                              <h4 className="font-extrabold text-gray-800 dark:text-slate-100 text-[13px] leading-tight break-words pr-2">{matchMeeting.title}</h4>
-                                              <span className="text-[9px] font-medium text-gray-400 shrink-0 mt-0.5">{dateObj.toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric'})} às {dateObj.toLocaleString('pt-BR', { hour:'2-digit', minute:'2-digit'})}</span>
+                                          <p className="text-[11px]" style={{ color: '#9ca3af' }}>ORIGEM: GrapeHub CRM</p>
+
+                                          {call.duration > 0 && (
+                                            <div className="mt-2 text-[11px] text-gray-400 dark:text-slate-500">
+                                              ⏱ Duração: <strong className="text-gray-600 dark:text-slate-400">{formatCallDuration(call.duration)}</strong>
                                             </div>
-                                            <div className="flex items-center gap-1.5 mt-2.5 text-[10px] text-gray-500 font-medium">
-                                              {uResp ? (
-                                                <>
-                                                  {uResp.picture ? (
-                                                    <img src={uResp.picture} alt={uResp.name} className="w-4 h-4 rounded-full object-cover" />
-                                                  ) : (
-                                                    <div className="w-4 h-4 rounded-full bg-violet-100 dark:bg-violet-500/20 text-violet-600 flex items-center justify-center font-bold text-[7px]" title={uResp.name}>
-                                                      {getInitials(uResp.name)}
-                                                    </div>
-                                                  )}
-                                                  <span className="truncate max-w-[150px]">{uResp.name || uResp.email}</span>
-                                                </>
-                                              ) : (
-                                                <>
-                                                  <Users size={11} className="opacity-70" />
-                                                  <span className="truncate max-w-[150px]">{matchMeeting.responsible_name || 'Sistema'}</span>
-                                                </>
-                                              )}
+                                          )}
+
+                                          {call.record_url && (
+                                            <div className="mt-2.5 rounded-lg p-1.5 flex items-center gap-2 max-w-[350px]" style={{ background: 'rgba(0,0,0,0.03)', border: '1px solid rgba(0,0,0,0.06)' }}>
+                                              <audio controls src={call.record_url} className="w-full h-7" style={{ minWidth: 0, flex: 1 }} preload="none" />
+                                              <a href={call.record_url} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 p-1 rounded hover:bg-purple-50 transition-colors" title="Abrir gravação">
+                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>
+                                              </a>
                                             </div>
+                                          )}
+
+                                          <div className="flex items-center gap-1.5 mt-2.5">
+                                            <Clock size={11} className="text-gray-400" />
+                                            <span className="text-[11px]" style={{ color: '#9ca3af' }}>
+                                              {formatRelativeTime(call.started_at)}
+                                              {(call.first_name || call.last_name) && <> por <strong className="font-medium text-gray-600 dark:text-slate-400">{[call.first_name, call.last_name].filter(Boolean).join(' ')}</strong></>}
+                                            </span>
                                           </div>
                                         </div>
-                                        
-                                        {(matchMeeting.office_location || matchMeeting.reunion_link || matchMeeting.reunion_niche || matchMeeting.monthly_closings || matchMeeting.closing_goal || true) && (
-                                          <div className="mt-4 pt-4 border-t border-gray-100 dark:border-white/5 space-y-3">
-                                            <h5 className="text-[10px] font-bold text-gray-500/80 uppercase tracking-widest" style={{ color: '#6b7280' }}>Detalhes:</h5>
-                                            <div className="grid grid-cols-2 gap-y-3 gap-x-2 text-xs">
-                                              <div><span className="text-gray-400 font-medium block text-[9px] uppercase tracking-wider mb-0.5">Local</span><span className="font-semibold text-gray-700 dark:text-slate-300">{matchMeeting.office_location || '-'}</span></div>
-                                              <div><span className="text-gray-400 font-medium block text-[9px] uppercase tracking-wider mb-0.5">Link</span>{matchMeeting.reunion_link ? <a href={matchMeeting.reunion_link.startsWith('http') ? matchMeeting.reunion_link : `https://${matchMeeting.reunion_link}`} target="_blank" rel="noreferrer" className="text-violet-500 hover:text-violet-600 font-semibold hover:underline truncate inline-block max-w-[120px]">{matchMeeting.reunion_link}</a> : <span className="font-semibold text-gray-700 dark:text-slate-300">-</span>}</div>
-                                              <div><span className="text-gray-400 font-medium block text-[9px] uppercase tracking-wider mb-0.5">Nicho</span><span className="font-semibold text-gray-700 dark:text-slate-300 truncate max-w-[120px] inline-block">{matchMeeting.reunion_niche || '-'}</span></div>
-                                              <div><span className="text-gray-400 font-medium block text-[9px] uppercase tracking-wider mb-0.5">Fechamentos Mês</span><span className="font-semibold text-gray-700 dark:text-slate-300">{matchMeeting.monthly_closings || '-'}</span></div>
-                                              <div><span className="text-gray-400 font-medium block text-[9px] uppercase tracking-wider mb-0.5">Meta</span><span className="font-semibold text-gray-700 dark:text-slate-300">{matchMeeting.closing_goal || '-'}</span></div>
-                                            </div>
-                                          </div>
-                                        )}
-                              
-                                        {matchMeeting.notes && (
-                                          <div className="mt-4 pt-4 border-t border-gray-100 dark:border-white/5">
-                                            <h5 className="text-[10px] font-bold text-gray-500/80 uppercase tracking-widest mb-3" style={{ color: '#6b7280' }}>Informações da Reunião:</h5>
-                                            <ul className="space-y-2">
-                                              {matchMeeting.notes.split('\n').filter((l:string) => l.trim().length > 0).map((line:string, i:number) => {
-                                                const isCheck = line.trim().startsWith('-');
-                                                return (
-                                                  <li key={i} className="flex items-start gap-2.5 text-[11px] text-gray-600 dark:text-slate-300">
-                                                    {isCheck ? (
-                                                      <Check size={14} className="text-emerald-500 shrink-0 mt-0.5 opacity-80" />
-                                                    ) : (
-                                                      <span className="w-1 h-3 mt-1.5 shrink-0" />
-                                                    )}
-                                                    <span className="leading-relaxed font-medium" style={{ color: '#4b5563' }}>{line.replace(/^- /, '')}</span>
-                                                  </li>
-                                                );
-                                              })}
-                                            </ul>
-                                          </div>
-                                        )}
                                       </div>
                                     </div>
                                   </div>
                                 );
                               }
 
+                              if (unifiedItem._rawType === 'comment') {
+                                const comment = unifiedItem;
+                                return (
+                                  <div key={`comment-${comment.id}`} className="relative pl-6 pb-6 last:pb-0">
+                                    {/* Timeline Line */}
+                                    {index !== unifiedItems.length - 1 && (
+                                      <div className="absolute left-[7px] top-[14px] w-[2px] h-full bg-gray-100 dark:bg-white/5" />
+                                    )}
+
+                                    {/* Timeline Dot */}
+                                    <div className="absolute left-0 top-1 w-[16px] h-[16px] rounded-full border-4 border-white dark:border-[#1A1625] shadow-sm z-10 flex items-center justify-center bg-violet-400" />
+
+                                    <div className="bg-white/50 dark:bg-white/5 border border-gray-100 dark:border-white/10 rounded-2xl p-4 shadow-sm">
+                                      <div className="flex items-start gap-3">
+                                        <div className="w-8 h-8 rounded-full bg-violet-500/10 flex items-center justify-center flex-shrink-0 mt-0.5 text-xs font-bold text-violet-600">
+                                          {getInitials(comment.user_name)}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                          <div className="flex items-center justify-between gap-2">
+                                            <span className="text-sm font-bold text-gray-900 dark:text-white truncate">{comment.user_name || 'Nota'}</span>
+                                            <div className="flex items-center gap-2 shrink-0">
+                                              <span className="text-[11px] text-gray-400 dark:text-slate-500">{new Date(comment.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                                              <button onClick={() => onDeleteComment(comment.id)} className="text-gray-400 hover:text-red-500 transition-colors p-1 rounded-md hover:bg-red-50 dark:hover:bg-red-900/30">
+                                                <Trash2 size={12} />
+                                              </button>
+                                            </div>
+                                          </div>
+                                          <p className="text-sm text-gray-600 dark:text-slate-300 mt-1 whitespace-pre-wrap">{comment.content}</p>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              }
+
+                              // else history
+                              const item = unifiedItem;
+
+                              const historyIndex = history.findIndex((h) => h.id === item.id);
+                              const nextItem = history[historyIndex + 1];
+                              const prevDate = nextItem ? nextItem.created_at : lead.created_at;
+                              const duration = formatDuration(prevDate, item.created_at);
+                              const isTaskAction = item.action_type?.startsWith('task_');
+
+                              const isNoteAction = item.action_type === 'note_created';
+                              const isWhatsappTrigger = item.action_type === 'whatsapp_trigger';
+                              const isAutomationAction = item.action_type === 'automacao';
+
+                              // Task/meeting/note-specific events get a different style
+                              if (isTaskAction || item.action_type === 'template_applied' || item.action_type === 'meeting_created' || isNoteAction || isWhatsappTrigger || isAutomationAction) {
+                                const iconMap: Record<string, { icon: any; color: string; bg: string }> = {
+                                  task_created: { icon: <Plus size={10} />, color: 'text-blue-500', bg: 'bg-blue-500' },
+                                  task_completed: { icon: <Check size={10} />, color: 'text-emerald-500', bg: 'bg-emerald-500' },
+                                  task_reopened: { icon: <Clock size={10} />, color: 'text-orange-500', bg: 'bg-orange-500' },
+                                  task_deleted: { icon: <Trash2 size={10} />, color: 'text-red-500', bg: 'bg-red-500' },
+                                  template_applied: { icon: <FileText size={10} />, color: 'text-violet-500', bg: 'bg-violet-500' },
+                                  meeting_created: { icon: <Calendar size={10} />, color: 'text-violet-500', bg: 'bg-violet-500' },
+                                  note_created: { icon: <FileText size={10} />, color: 'text-fuchsia-500', bg: 'bg-fuchsia-500' },
+                                  whatsapp_trigger: { icon: <Bot size={10} />, color: 'text-emerald-500', bg: 'bg-emerald-500' },
+                                };
+                                const taskTypeIcons: Record<string, any> = {
+                                  'Tarefa': <CheckSquare size={14} />,
+                                  'Ligação': <Phone size={14} />,
+                                  'WhatsApp': <MessageSquare size={14} />,
+                                  'Email': <Mail size={14} />,
+                                  'Reunião': <Users size={14} />,
+                                  'Lembrete': <Clock size={14} />,
+                                  'Nota Rica': <FileText size={14} />,
+                                  'Automação': <Bot size={14} />,
+                                };
+
+                                const meta = iconMap[item.action_type] || iconMap.task_created;
+
+                                // Fallback for older records: parse type from description or title content
+                                let effectiveTaskType = (item.task_type || '').trim();
+
+                                // Split description to show action and title as badges
+                                const descParts = item.description.split(':');
+                                let action = descParts[0];
+                                let title = descParts[1]?.replace(/"/g, '').trim() || '';
+
+                                // Cleanup old metadata from title if present (e.g., "(Tarefa · Normal)")
+                                if (title.includes('(')) {
+                                  const metaMatch = title.match(/\(([^·]+)·/);
+                                  if (!effectiveTaskType && metaMatch) effectiveTaskType = metaMatch[1].trim();
+                                  title = title.split('(')[0].trim();
+                                }
+
+                                // Smart icon detection by keyword if still no type
+                                const lowerTitle = title.toLowerCase();
+                                if (item.action_type === 'meeting_created' && !effectiveTaskType) {
+                                  effectiveTaskType = 'Reunião';
+                                } else if (item.action_type === 'note_created') {
+                                  effectiveTaskType = 'Nota Rica';
+                                  title = ''; // Content is rendered in a dedicated box below
+                                  action = '';
+                                } else if (item.action_type === 'whatsapp_trigger') {
+                                  effectiveTaskType = 'Automação';
+                                  title = '';
+                                  action = '';
+                                } else if (isAutomationAction) {
+                                  effectiveTaskType = 'Automação';
+                                  title = item.description || '';
+                                  action = '';
+                                } else if (!effectiveTaskType || effectiveTaskType === 'Tarefa') {
+                                  if (lowerTitle.includes('whatsapp') || lowerTitle.includes('wpp')) effectiveTaskType = 'WhatsApp';
+                                  else if (lowerTitle.includes('ligar') || lowerTitle.includes('ligação') || lowerTitle.includes('call')) effectiveTaskType = 'Ligação';
+                                  else if (lowerTitle.includes('email') || lowerTitle.includes('e-mail')) effectiveTaskType = 'Email';
+                                  else if (lowerTitle.includes('reunião') || lowerTitle.includes('meeting')) effectiveTaskType = 'Reunião';
+                                }
+
+                                const taskIcon = taskTypeIcons[effectiveTaskType] || taskTypeIcons[effectiveTaskType.charAt(0).toUpperCase() + effectiveTaskType.slice(1)] || taskTypeIcons['Tarefa'];
+                                const matchMeeting = item.action_type === 'meeting_created' ? meetings.find(m => m.title === title && m.responsible_name === item.user_name) : null;
+
+                                if (item.action_type === 'meeting_created' && matchMeeting) {
+                                  const dateObj = new Date(matchMeeting.meeting_date);
+                                  const mMonth = dateObj.toLocaleString('pt-BR', { month: 'short' }).toUpperCase();
+                                  const mDay = String(dateObj.getDate()).padStart(2, '0');
+                                  const uResp = users.find(u => u.email === matchMeeting.responsible_name || u.name === matchMeeting.responsible_name);
+                                  const getInitials = (n?: string) => n ? n.substring(0, 2).toUpperCase() : '??';
+
+                                  return (
+                                    <div key={item.id} className="relative pl-6 pb-6 last:pb-0">
+                                      {index !== unifiedItems.length - 1 && (
+                                        <div className="absolute left-[7px] top-[14px] w-[2px] h-full bg-gray-100 dark:bg-white/5" />
+                                      )}
+                                      <div className={`absolute left-0 top-[28px] w-[16px] h-[16px] rounded-full bg-violet-500 border-4 border-white dark:border-[#1A1625] shadow-sm z-10`} />
+
+                                      <div className="w-full max-w-[420px]">
+                                        <div className="p-5 rounded-2xl border border-indigo-50 dark:border-white/10 bg-white dark:bg-white/5 shadow-sm hover:shadow-md transition-all relative group w-full">
+                                          <div className="flex items-start gap-3.5 mb-4">
+                                            <div className="w-[52px] h-[52px] rounded-xl flex flex-col items-center justify-center bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 shrink-0 shadow-inner mt-0.5">
+                                              <span className="text-[9px] font-black tracking-widest">{mMonth}.</span>
+                                              <span className="text-lg font-bold leading-none mt-0.5">{mDay}</span>
+                                            </div>
+                                            <div className="flex-1 min-w-0 pr-1">
+                                              <div className="flex items-start justify-between gap-2">
+                                                <h4 className="font-extrabold text-gray-800 dark:text-slate-100 text-[13px] leading-tight break-words pr-2">{matchMeeting.title}</h4>
+                                                <span className="text-[9px] font-medium text-gray-400 shrink-0 mt-0.5">{dateObj.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })} às {dateObj.toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                                              </div>
+                                              <div className="flex items-center gap-1.5 mt-2.5 text-[10px] text-gray-500 font-medium">
+                                                {uResp ? (
+                                                  <>
+                                                    {uResp.picture ? (
+                                                      <img src={uResp.picture} alt={uResp.name} className="w-4 h-4 rounded-full object-cover" />
+                                                    ) : (
+                                                      <div className="w-4 h-4 rounded-full bg-violet-100 dark:bg-violet-500/20 text-violet-600 flex items-center justify-center font-bold text-[7px]" title={uResp.name}>
+                                                        {getInitials(uResp.name)}
+                                                      </div>
+                                                    )}
+                                                    <span className="truncate max-w-[150px]">{uResp.name || uResp.email}</span>
+                                                  </>
+                                                ) : (
+                                                  <>
+                                                    <Users size={11} className="opacity-70" />
+                                                    <span className="truncate max-w-[150px]">{matchMeeting.responsible_name || 'Sistema'}</span>
+                                                  </>
+                                                )}
+                                              </div>
+                                            </div>
+                                          </div>
+
+                                          {(matchMeeting.office_location || matchMeeting.reunion_link || matchMeeting.reunion_niche || matchMeeting.monthly_closings || matchMeeting.closing_goal || true) && (
+                                            <div className="mt-4 pt-4 border-t border-gray-100 dark:border-white/5 space-y-3">
+                                              <h5 className="text-[10px] font-bold text-gray-500/80 uppercase tracking-widest" style={{ color: '#6b7280' }}>Detalhes:</h5>
+                                              <div className="grid grid-cols-2 gap-y-3 gap-x-2 text-xs">
+                                                <div><span className="text-gray-400 font-medium block text-[9px] uppercase tracking-wider mb-0.5">Local</span><span className="font-semibold text-gray-700 dark:text-slate-300">{matchMeeting.office_location || '-'}</span></div>
+                                                <div><span className="text-gray-400 font-medium block text-[9px] uppercase tracking-wider mb-0.5">Link</span>{matchMeeting.reunion_link ? <a href={matchMeeting.reunion_link.startsWith('http') ? matchMeeting.reunion_link : `https://${matchMeeting.reunion_link}`} target="_blank" rel="noreferrer" className="text-violet-500 hover:text-violet-600 font-semibold hover:underline truncate inline-block max-w-[120px]">{matchMeeting.reunion_link}</a> : <span className="font-semibold text-gray-700 dark:text-slate-300">-</span>}</div>
+                                                <div><span className="text-gray-400 font-medium block text-[9px] uppercase tracking-wider mb-0.5">Nicho</span><span className="font-semibold text-gray-700 dark:text-slate-300 truncate max-w-[120px] inline-block">{matchMeeting.reunion_niche || '-'}</span></div>
+                                                <div><span className="text-gray-400 font-medium block text-[9px] uppercase tracking-wider mb-0.5">Fechamentos Mês</span><span className="font-semibold text-gray-700 dark:text-slate-300">{matchMeeting.monthly_closings || '-'}</span></div>
+                                                <div><span className="text-gray-400 font-medium block text-[9px] uppercase tracking-wider mb-0.5">Meta</span><span className="font-semibold text-gray-700 dark:text-slate-300">{matchMeeting.closing_goal || '-'}</span></div>
+                                              </div>
+                                            </div>
+                                          )}
+
+                                          {matchMeeting.notes && (
+                                            <div className="mt-4 pt-4 border-t border-gray-100 dark:border-white/5">
+                                              <h5 className="text-[10px] font-bold text-gray-500/80 uppercase tracking-widest mb-3" style={{ color: '#6b7280' }}>Informações da Reunião:</h5>
+                                              <ul className="space-y-2">
+                                                {matchMeeting.notes.split('\n').filter((l: string) => l.trim().length > 0).map((line: string, i: number) => {
+                                                  const isCheck = line.trim().startsWith('-');
+                                                  return (
+                                                    <li key={i} className="flex items-start gap-2.5 text-[11px] text-gray-600 dark:text-slate-300">
+                                                      {isCheck ? (
+                                                        <Check size={14} className="text-emerald-500 shrink-0 mt-0.5 opacity-80" />
+                                                      ) : (
+                                                        <span className="w-1 h-3 mt-1.5 shrink-0" />
+                                                      )}
+                                                      <span className="leading-relaxed font-medium" style={{ color: '#4b5563' }}>{line.replace(/^- /, '')}</span>
+                                                    </li>
+                                                  );
+                                                })}
+                                              </ul>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                }
+
                                 return (
                                   <div key={item.id} className="relative pl-6 pb-6 last:pb-0">
+                                    {index !== unifiedItems.length - 1 && (
+                                      <div className="absolute left-[7px] top-[14px] w-[2px] h-full bg-gray-100 dark:bg-white/5" />
+                                    )}
+                                    {/* Dot */}
+                                    <div className={`absolute left-0 top-1 w-[16px] h-[16px] rounded-full ${meta.bg} border-4 border-white dark:border-[#1A1625] shadow-sm z-10`} />
+
+                                    <div className="bg-white/50 dark:bg-white/5 border border-gray-100 dark:border-white/10 rounded-2xl p-4 shadow-sm transition-all hover:shadow-md">
+                                      <div className="flex items-start gap-3">
+                                        <div className="flex-shrink-0 w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: isWhatsappTrigger ? 'rgba(16,185,129,0.1)' : isAutomationAction ? 'rgba(139,92,246,0.12)' : 'rgba(124,58,237,0.12)' }}>
+                                          {React.cloneElement(taskIcon as React.ReactElement, { size: 18, style: { color: isWhatsappTrigger ? '#10b981' : '#8b5cf6' } })}
+                                        </div>
+
+                                        <div className="flex-1 min-w-0">
+                                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                                            <span className="px-2 py-0.5 rounded font-black text-[10px] uppercase tracking-wider"
+                                              style={{
+                                                background: action.includes('Concluída') ? 'rgba(16,185,129,0.1)' : 'rgba(124,58,237,0.1)',
+                                                color: action.includes('Concluída') ? '#059669' : '#7c3aed'
+                                              }}
+                                            >
+                                              {action.replace('Tarefa ', '').trim()}
+                                            </span>
+                                            {title && (
+                                              <span className="font-semibold text-[13px] text-gray-800 dark:text-slate-100">
+                                                {title}
+                                              </span>
+                                            )}
+                                          </div>
+
+                                          <p className="text-[11px]" style={{ color: '#9ca3af' }}>
+                                            ORIGEM: {effectiveTaskType || 'Atividade'}
+                                          </p>
+
+                                          {item.action_type === 'note_created' && (
+                                            <div
+                                              className="mt-3 text-sm text-gray-700 dark:text-slate-200 leading-relaxed whitespace-pre-wrap prose prose-sm dark:prose-invert max-w-none prose-img:cursor-zoom-in hover:prose-img:opacity-90 prose-img:transition-opacity prose-img:rounded-xl border border-gray-100 dark:border-white/5 shadow-sm"
+                                              style={{ wordBreak: 'break-word', padding: '14px', background: 'rgba(0,0,0,0.015)', borderRadius: '12px' }}
+                                              onClick={handleNoteClick}
+                                              dangerouslySetInnerHTML={{ __html: item.description?.replace(/style="[^"]*color:[^"]*"/g, '') || '' }}
+                                            />
+                                          )}
+                                          {item.action_type === 'whatsapp_trigger' && (
+                                            <div
+                                              className="mt-3 text-[13px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/20 shadow-sm flex items-center gap-2"
+                                              style={{ wordBreak: 'break-word', padding: '12px 14px', borderRadius: '12px' }}
+                                            >
+                                              <span className="flex-1">{item.description || 'Gatilho de WhatsApp acionado ✅'}</span>
+                                            </div>
+                                          )}
+                                          {isAutomationAction && item.description && (
+                                            <div
+                                              className="mt-3 text-[13px] font-medium text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-500/10 border border-violet-100 dark:border-violet-500/20 shadow-sm flex items-center gap-2"
+                                              style={{ wordBreak: 'break-word', padding: '12px 14px', borderRadius: '12px' }}
+                                            >
+                                              <span className="flex-1">{item.description}</span>
+                                            </div>
+                                          )}
+
+                                          <div className="flex items-center gap-1.5 mt-2.5">
+                                            <Clock size={11} className="text-gray-400" />
+                                            <span className="text-[11px]" style={{ color: '#9ca3af' }}>
+                                              {formatRelativeTime(item.created_at)}
+                                              {item.user_name && (() => {
+                                                const userMatch = users?.find((u: any) => u.email === item.user_name || u.name === item.user_name);
+                                                return <> por <strong className="font-medium text-gray-600 dark:text-slate-400">{userMatch?.name || item.user_name}</strong></>;
+                                              })()}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              }
+
+                              const toColumnTitle = columns.find(c => c.id === item.to_coluna)?.title || item.to_coluna;
+                              const isWonMove = isWonColumn(toColumnTitle);
+
+                              return (
+                                <div key={item.id} className="relative pl-6 pb-6 last:pb-0">
+                                  {/* Line connecting items */}
                                   {index !== unifiedItems.length - 1 && (
                                     <div className="absolute left-[7px] top-[14px] w-[2px] h-full bg-gray-100 dark:bg-white/5" />
                                   )}
+
                                   {/* Dot */}
-                                  <div className={`absolute left-0 top-1 w-[16px] h-[16px] rounded-full ${meta.bg} border-4 border-white dark:border-[#1A1625] shadow-sm z-10`} />
-                                  
-                                  <div className="bg-white/50 dark:bg-white/5 border border-gray-100 dark:border-white/10 rounded-2xl p-4 shadow-sm transition-all hover:shadow-md">
-                                    <div className="flex items-start gap-3">
-                                      <div className="flex-shrink-0 w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: isWhatsappTrigger ? 'rgba(16,185,129,0.1)' : isAutomationAction ? 'rgba(139,92,246,0.12)' : 'rgba(124,58,237,0.12)' }}>
-                                        {React.cloneElement(taskIcon as React.ReactElement, { size: 18, style: { color: isWhatsappTrigger ? '#10b981' : '#8b5cf6' } })}
+                                  <div className={`absolute left-0 top-1 w-[16px] h-[16px] rounded-full border-4 border-white dark:border-[#1A1625] shadow-sm z-10 flex items-center justify-center ${isWonMove ? 'bg-emerald-500 scale-125' : 'bg-violet-500'
+                                    }`}>
+                                    {isWonMove && <Trophy size={6} className="text-white" />}
+                                  </div>
+
+                                  <div className={`rounded-2xl p-4 shadow-sm border transition-all duration-300 ${isWonMove
+                                      ? 'bg-emerald-500/10 border-emerald-500/30 shadow-[0_0_20px_rgba(16,185,129,0.1)]'
+                                      : 'bg-white/50 dark:bg-white/5 border-gray-100 dark:border-white/10'
+                                    }`}>
+                                    <div className="flex flex-wrap items-center gap-2 mb-3">
+                                      {isWonMove && (
+                                        <span className="px-2.5 py-1 rounded-lg bg-emerald-500 text-white text-[10px] font-black uppercase tracking-wider shadow-lg shadow-emerald-500/20">
+                                          CONQUISTA! 🏆
+                                        </span>
+                                      )}
+                                      <span className="px-2.5 py-1 rounded-lg bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-xs font-bold text-gray-700 dark:text-slate-300">
+                                        {columns.find(c => c.id === item.from_coluna)?.title || 'Sem Coluna'}
+                                      </span>
+                                      <ArrowRight size={14} className="text-gray-400" />
+                                      <span className={`px-2.5 py-1 rounded-lg text-xs font-bold shadow-lg ${isWonMove
+                                          ? 'bg-emerald-500 text-white shadow-emerald-500/30'
+                                          : 'bg-violet-500 text-white shadow-violet-500/20'
+                                        }`}>
+                                        {toColumnTitle}
+                                      </span>
+                                    </div>
+
+                                    <div className="space-y-1">
+                                      <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-slate-400">
+                                        <Clock size={12} />
+                                        <span>{new Date(item.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                                       </div>
-                                      
-                                      <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-2 flex-wrap mb-1">
-                                          <span className="px-2 py-0.5 rounded font-black text-[10px] uppercase tracking-wider"
-                                            style={{
-                                              background: action.includes('Concluída') ? 'rgba(16,185,129,0.1)' : 'rgba(124,58,237,0.1)',
-                                              color: action.includes('Concluída') ? '#059669' : '#7c3aed'
-                                            }}
-                                          >
-                                            {action.replace('Tarefa ', '').trim()}
-                                          </span>
-                                          {title && (
-                                            <span className="font-semibold text-[13px] text-gray-800 dark:text-slate-100">
-                                              {title}
-                                            </span>
-                                          )}
-                                        </div>
-
-                                        <p className="text-[11px]" style={{ color: '#9ca3af' }}>
-                                          ORIGEM: {effectiveTaskType || 'Atividade'}
-                                        </p>
-
-                                        {item.action_type === 'note_created' && (
-                                          <div 
-                                            className="mt-3 text-sm text-gray-700 dark:text-slate-200 leading-relaxed whitespace-pre-wrap prose prose-sm dark:prose-invert max-w-none prose-img:cursor-zoom-in hover:prose-img:opacity-90 prose-img:transition-opacity prose-img:rounded-xl border border-gray-100 dark:border-white/5 shadow-sm"
-                                            style={{ wordBreak: 'break-word', padding: '14px', background: 'rgba(0,0,0,0.015)', borderRadius: '12px' }}
-                                            onClick={handleNoteClick}
-                                            dangerouslySetInnerHTML={{ __html: item.description?.replace(/style="[^"]*color:[^"]*"/g, '') || '' }}
-                                          />
-                                        )}
-                                        {item.action_type === 'whatsapp_trigger' && (
-                                          <div 
-                                            className="mt-3 text-[13px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/20 shadow-sm flex items-center gap-2"
-                                            style={{ wordBreak: 'break-word', padding: '12px 14px', borderRadius: '12px' }}
-                                          >
-                                            <span className="flex-1">{item.description || 'Gatilho de WhatsApp acionado ✅'}</span>
-                                          </div>
-                                        )}
-                                        {isAutomationAction && item.description && (
-                                          <div 
-                                            className="mt-3 text-[13px] font-medium text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-500/10 border border-violet-100 dark:border-violet-500/20 shadow-sm flex items-center gap-2"
-                                            style={{ wordBreak: 'break-word', padding: '12px 14px', borderRadius: '12px' }}
-                                          >
-                                            <span className="flex-1">{item.description}</span>
-                                          </div>
-                                        )}
-                                        
-                                        <div className="flex items-center gap-1.5 mt-2.5">
-                                          <Clock size={11} className="text-gray-400" />
-                                          <span className="text-[11px]" style={{ color: '#9ca3af' }}>
-                                            {formatRelativeTime(item.created_at)}
-                                            {item.user_name && (() => {
-                                              const userMatch = users?.find((u:any) => u.email === item.user_name || u.name === item.user_name);
-                                              return <> por <strong className="font-medium text-gray-600 dark:text-slate-400">{userMatch?.name || item.user_name}</strong></>;
-                                            })()}
-                                          </span>
-                                        </div>
+                                      <div className="text-[11px] text-gray-400 dark:text-slate-500 italic">
+                                        Tempo na etapa anterior: {duration}
                                       </div>
                                     </div>
                                   </div>
                                 </div>
                               );
-                            }
-
-                            const toColumnTitle = columns.find(c => c.id === item.to_coluna)?.title || item.to_coluna;
-                            const isWonMove = isWonColumn(toColumnTitle);
-
-                            return (
-                              <div key={item.id} className="relative pl-6 pb-6 last:pb-0">
-                                {/* Line connecting items */}
-                                {index !== unifiedItems.length - 1 && (
-                                  <div className="absolute left-[7px] top-[14px] w-[2px] h-full bg-gray-100 dark:bg-white/5" />
-                                )}
-                                
-                                {/* Dot */}
-                                <div className={`absolute left-0 top-1 w-[16px] h-[16px] rounded-full border-4 border-white dark:border-[#1A1625] shadow-sm z-10 flex items-center justify-center ${
-                                  isWonMove ? 'bg-emerald-500 scale-125' : 'bg-violet-500'
-                                }`}>
-                                  {isWonMove && <Trophy size={6} className="text-white" />}
-                                </div>
-
-                                <div className={`rounded-2xl p-4 shadow-sm border transition-all duration-300 ${
-                                  isWonMove 
-                                  ? 'bg-emerald-500/10 border-emerald-500/30 shadow-[0_0_20px_rgba(16,185,129,0.1)]' 
-                                  : 'bg-white/50 dark:bg-white/5 border-gray-100 dark:border-white/10'
-                                }`}>
-                                  <div className="flex flex-wrap items-center gap-2 mb-3">
-                                    {isWonMove && (
-                                      <span className="px-2.5 py-1 rounded-lg bg-emerald-500 text-white text-[10px] font-black uppercase tracking-wider shadow-lg shadow-emerald-500/20">
-                                        CONQUISTA! 🏆
-                                      </span>
-                                    )}
-                                    <span className="px-2.5 py-1 rounded-lg bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-xs font-bold text-gray-700 dark:text-slate-300">
-                                      {columns.find(c => c.id === item.from_coluna)?.title || 'Sem Coluna'}
-                                    </span>
-                                    <ArrowRight size={14} className="text-gray-400" />
-                                    <span className={`px-2.5 py-1 rounded-lg text-xs font-bold shadow-lg ${
-                                      isWonMove 
-                                      ? 'bg-emerald-500 text-white shadow-emerald-500/30' 
-                                      : 'bg-violet-500 text-white shadow-violet-500/20'
-                                    }`}>
-                                      {toColumnTitle}
-                                    </span>
-                                  </div>
-
-                                  <div className="space-y-1">
-                                    <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-slate-400">
-                                      <Clock size={12} />
-                                      <span>{new Date(item.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-                                    </div>
-                                    <div className="text-[11px] text-gray-400 dark:text-slate-500 italic">
-                                      Tempo na etapa anterior: {duration}
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </>
-                      );
-                    })()
-                  )}
-                </div>
-              )}
-              {activeTab === 'atividades' && (
-                <>
-                  {/* Header do Design (Limpo) */}
-                  <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-white/5 bg-slate-50 dark:bg-black/20 shrink-0">
-                    <span className="text-[11px] font-bold text-gray-400 dark:text-slate-500 uppercase tracking-widest">Atividades</span>
-                    <div className="flex items-center gap-2">
-                      <button 
-                        onClick={() => setIsPickingSequence(true)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 rounded-lg text-xs font-bold text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-white/10 transition-all"
-                      >
-                        <CheckSquare size={14} /> Sequência
-                      </button>
-                      <button 
-                        onClick={() => { setTaskToEdit(null); setIsAddingTask(true); }}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-500 text-white rounded-lg text-xs font-bold shadow-md shadow-violet-500/20 hover:bg-violet-600 transition-all"
-                      >
-                        <Plus size={14} /> Adicionar
-                      </button>
-                    </div>
+                            })}
+                          </>
+                        );
+                      })()
+                    )}
                   </div>
-
-                  <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-50 dark:bg-black/20">
-                    {/* Add/Edit Task Form Modal */}
-                    <AnimatePresence>
-                      {(isAddingTask || taskToEdit) && (
-                        <NovaAtividadeModal
-                          initialLead={lead}
-                          initialTask={taskToEdit}
-                          onClose={() => { setIsAddingTask(false); setTaskToEdit(null); }}
-                          onSave={() => {
-                            setIsAddingTask(false);
-                            setTaskToEdit(null);
-                            onRefreshTasks();
-                          }}
-                        />
-                      )}
-                    </AnimatePresence>
-
-                    {/* Sequence Picker Modal */}
-                    <AnimatePresence>
-                      {isPickingSequence && (
-                        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }}>
-                          <div className="absolute inset-0" onClick={() => setIsPickingSequence(false)} />
-                          <motion.div
-                            initial={{ opacity: 0, scale: 0.95 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.95 }}
-                            className="bg-white dark:bg-[#1A1625] border border-gray-200 dark:border-white/10 rounded-2xl p-6 shadow-xl w-full max-w-lg relative z-10"
-                          >
-                            <div className="flex items-center justify-between mb-5">
-                              <div>
-                                <h4 className="text-base font-bold text-gray-900 dark:text-white">Aplicar Sequência</h4>
-                                <p className="text-xs text-gray-500 dark:text-slate-500 mt-0.5">Selecione uma cadência para criar as atividades automaticamente.</p>
-                              </div>
-                              <button onClick={() => setIsPickingSequence(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-xl transition-colors"><X size={18} /></button>
-                            </div>
-                            {sequences.length === 0 ? (
-                              <div className="py-10 text-center">
-                                <p className="text-sm text-gray-400 dark:text-slate-500 mb-3">Nenhuma sequência criada ainda.</p>
-                                <p className="text-xs text-gray-400 dark:text-slate-600">Crie sequências em Configurações → Sequências.</p>
-                              </div>
-                            ) : (
-                              <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
-                                {sequences.map(seq => {
-                                  const SEQ_COLOR: Record<string,string> = {
-                                    'Ligação':'bg-blue-500/15 text-blue-400', 'Reunião':'bg-purple-500/15 text-purple-400',
-                                    'Videochamada':'bg-cyan-500/15 text-cyan-400', 'Email':'bg-orange-500/15 text-orange-400',
-                                    'WhatsApp':'bg-emerald-500/15 text-emerald-400', 'Instagram':'bg-pink-500/15 text-pink-400',
-                                    'LinkedIn':'bg-sky-500/15 text-sky-400', 'Outros':'bg-slate-500/15 text-slate-400',
-                                  };
-                                  return (
-                                    <button
-                                      key={seq.id}
-                                      onClick={() => { onApplySequence(lead.id, seq); setIsPickingSequence(false); }}
-                                      className="w-full flex items-start justify-between p-4 bg-gray-50 dark:bg-white/5 border border-gray-100 dark:border-white/10 rounded-xl hover:border-violet-500/60 hover:bg-violet-50 dark:hover:bg-violet-500/5 transition-all group text-left"
-                                    >
-                                      <div className="flex-1 min-w-0">
-                                        <p className="font-bold text-sm text-slate-800 dark:text-slate-100 mb-1">{seq.name}</p>
-                                        <p className="text-xs text-gray-500 dark:text-slate-500 mb-2">{seq.steps?.length || 0} {seq.steps?.length === 1 ? 'passo' : 'passos'} · {seq.skip_weekends ? 'pula fins de semana' : 'todos os dias'}</p>
-                                        {seq.steps?.length > 0 && (
-                                          <div className="flex flex-wrap gap-1">
-                                            {seq.steps.map((s: any, i: number) => (
-                                              <span key={i} className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${SEQ_COLOR[s.type] || 'bg-slate-500/15 text-slate-400'}`}>
-                                                Dia {s.day_offset} · {s.title || s.type}
-                                              </span>
-                                            ))}
-                                          </div>
-                                        )}
-                                      </div>
-                                      <span className="ml-3 shrink-0 mt-1 text-xs font-bold text-violet-500 group-hover:text-violet-400">Aplicar →</span>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </motion.div>
-                        </div>
-                      )}
-                    </AnimatePresence>
-
-                    {/* Template Selector Modal (mantido para acesso interno se necessário) */}
-                    <AnimatePresence>
-                      {isSelectingTemplate && (
-                        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.45)' }}>
-                          <div className="absolute inset-0" onClick={() => setIsSelectingTemplate(false)} />
-                          <motion.div 
-                            initial={{ opacity: 0, scale: 0.95 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.95 }}
-                            className="bg-white dark:bg-[#1A1625] border border-gray-200 dark:border-white/10 rounded-2xl p-6 shadow-xl w-full max-w-lg relative z-10"
-                          >
-                            <div className="flex items-center justify-between mb-6">
-                              <h4 className="text-lg font-bold">Selecione um modelo:</h4>
-                              <button onClick={() => setIsSelectingTemplate(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-xl transition-colors"><X size={20} /></button>
-                            </div>
-                            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
-                              {templates.map(tmp => (
-                                <button
-                                  key={tmp.id}
-                                  onClick={() => { onApplyTemplate(tmp.id); setIsSelectingTemplate(false); }}
-                                  className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-white/5 border border-gray-100 dark:border-white/10 rounded-xl hover:border-violet-500 transition-all group"
-                                >
-                                  <div className="text-left">
-                                    <p className="font-bold text-base text-slate-800 dark:text-slate-200 mb-1">{tmp.name}</p>
-                                    <p className="text-sm text-gray-500">{tmp.description}</p>
-                                  </div>
-                                  <span className="bg-white dark:bg-white/5 px-2.5 py-1 rounded-md text-xs font-bold text-gray-500 border border-slate-200 dark:border-white/10 shadow-sm">
-                                    {tmp.items?.length || 0} tarefas
-                                  </span>
-                                </button>
-                              ))}
-                            </div>
-                          </motion.div>
-                        </div>
-                      )}
-                    </AnimatePresence>
-
-                    {/* Task List */}
-                    {tasks.length === 0 && !isAddingTask && !taskToEdit && !isSelectingTemplate ? (
-                      <div className="flex flex-col items-center justify-center py-12 text-gray-400">
-                        <CheckSquare size={48} className="opacity-10 mb-3" />
-                        <p className="text-sm">Nenhuma tarefa para este lead</p>
+                )}
+                {activeTab === 'atividades' && (
+                  <>
+                    {/* Header do Design (Limpo) */}
+                    <div className="flex items-center justify-between p-6 border-b border-gray-100 dark:border-white/5 bg-slate-50 dark:bg-black/20 shrink-0">
+                      <span className="text-[11px] font-bold text-gray-400 dark:text-slate-500 uppercase tracking-widest">Atividades</span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setIsPickingSequence(true)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 rounded-lg text-xs font-bold text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-white/10 transition-all"
+                        >
+                          <CheckSquare size={14} /> Sequência
+                        </button>
+                        <button
+                          onClick={() => { setTaskToEdit(null); setIsAddingTask(true); }}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-500 text-white rounded-lg text-xs font-bold shadow-md shadow-violet-500/20 hover:bg-violet-600 transition-all"
+                        >
+                          <Plus size={14} /> Adicionar
+                        </button>
                       </div>
-                    ) : (
-                      <div className="space-y-3">
-                        {[...tasks].sort((a, b) => {
-                          if (a.completed === b.completed) {
-                            return new Date(a.due_date).getTime() - new Date(b.due_date).getTime();
-                          }
-                          return a.completed ? 1 : -1;
-                        }).map(task => (
-                          <div 
-                            key={task.id}
-                            className={`group flex items-center gap-4 px-5 py-3.5 bg-white dark:bg-slate-800/60 border rounded-xl transition-all duration-200 ${
-                              task.completed
-                                ? 'border-slate-100 dark:border-white/5 opacity-55'
-                                : 'border-slate-200/70 dark:border-white/10 hover:border-violet-300/60 dark:hover:border-violet-500/30 hover:shadow-md hover:shadow-violet-500/5'
-                            }`}
-                          >
-                            {/* Checkbox */}
-                            <button
-                              onClick={() => onUpdateTask(task.id, { completed: !task.completed, completed_at: !task.completed ? new Date().toISOString() : null })}
-                              className="shrink-0 transition-transform hover:scale-110"
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-50 dark:bg-black/20">
+                      {/* Add/Edit Task Form Modal */}
+                      <AnimatePresence>
+                        {(isAddingTask || taskToEdit) && (
+                          <NovaAtividadeModal
+                            initialLead={lead}
+                            initialTask={taskToEdit}
+                            onClose={() => { setIsAddingTask(false); setTaskToEdit(null); }}
+                            onSave={() => {
+                              setIsAddingTask(false);
+                              setTaskToEdit(null);
+                              onRefreshTasks();
+                            }}
+                          />
+                        )}
+                      </AnimatePresence>
+
+                      {/* Sequence Picker Modal */}
+                      <AnimatePresence>
+                        {isPickingSequence && (
+                          <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }}>
+                            <div className="absolute inset-0" onClick={() => setIsPickingSequence(false)} />
+                            <motion.div
+                              initial={{ opacity: 0, scale: 0.95 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              exit={{ opacity: 0, scale: 0.95 }}
+                              className="bg-white dark:bg-[#1A1625] border border-gray-200 dark:border-white/10 rounded-2xl p-6 shadow-xl w-full max-w-lg relative z-10"
                             >
-                              {task.completed
-                                ? <CheckCircle2 size={20} className="text-violet-500" />
-                                : <Circle size={20} className="text-slate-300 dark:text-slate-600 group-hover:text-violet-400 transition-colors" />
-                              }
-                            </button>
+                              <div className="flex items-center justify-between mb-5">
+                                <div>
+                                  <h4 className="text-base font-bold text-gray-900 dark:text-white">Aplicar Sequência</h4>
+                                  <p className="text-xs text-gray-500 dark:text-slate-500 mt-0.5">Selecione uma cadência para criar as atividades automaticamente.</p>
+                                </div>
+                                <button onClick={() => setIsPickingSequence(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-xl transition-colors"><X size={18} /></button>
+                              </div>
+                              {sequences.length === 0 ? (
+                                <div className="py-10 text-center">
+                                  <p className="text-sm text-gray-400 dark:text-slate-500 mb-3">Nenhuma sequência criada ainda.</p>
+                                  <p className="text-xs text-gray-400 dark:text-slate-600">Crie sequências em Configurações → Sequências.</p>
+                                </div>
+                              ) : (
+                                <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+                                  {sequences.map(seq => {
+                                    const SEQ_COLOR: Record<string, string> = {
+                                      'Ligação': 'bg-blue-500/15 text-blue-400', 'Reunião': 'bg-purple-500/15 text-purple-400',
+                                      'Videochamada': 'bg-cyan-500/15 text-cyan-400', 'Email': 'bg-orange-500/15 text-orange-400',
+                                      'WhatsApp': 'bg-emerald-500/15 text-emerald-400', 'Instagram': 'bg-pink-500/15 text-pink-400',
+                                      'LinkedIn': 'bg-sky-500/15 text-sky-400', 'Outros': 'bg-slate-500/15 text-slate-400',
+                                    };
+                                    return (
+                                      <button
+                                        key={seq.id}
+                                        onClick={() => { onApplySequence(lead.id, seq); setIsPickingSequence(false); }}
+                                        className="w-full flex items-start justify-between p-4 bg-gray-50 dark:bg-white/5 border border-gray-100 dark:border-white/10 rounded-xl hover:border-violet-500/60 hover:bg-violet-50 dark:hover:bg-violet-500/5 transition-all group text-left"
+                                      >
+                                        <div className="flex-1 min-w-0">
+                                          <p className="font-bold text-sm text-slate-800 dark:text-slate-100 mb-1">{seq.name}</p>
+                                          <p className="text-xs text-gray-500 dark:text-slate-500 mb-2">{seq.steps?.length || 0} {seq.steps?.length === 1 ? 'passo' : 'passos'} · {seq.skip_weekends ? 'pula fins de semana' : 'todos os dias'}</p>
+                                          {seq.steps?.length > 0 && (
+                                            <div className="flex flex-wrap gap-1">
+                                              {seq.steps.map((s: any, i: number) => (
+                                                <span key={i} className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${SEQ_COLOR[s.type] || 'bg-slate-500/15 text-slate-400'}`}>
+                                                  Dia {s.day_offset} · {s.title || s.type}
+                                                </span>
+                                              ))}
+                                            </div>
+                                          )}
+                                        </div>
+                                        <span className="ml-3 shrink-0 mt-1 text-xs font-bold text-violet-500 group-hover:text-violet-400">Aplicar →</span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </motion.div>
+                          </div>
+                        )}
+                      </AnimatePresence>
 
-                            {/* Type Icon */}
-                            <div className="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-white/5">
-                              {task.type === 'WhatsApp' ? <MessageSquare size={15} className="text-slate-500 dark:text-slate-400" /> :
-                               task.type === 'Ligação' ? <Phone size={15} className="text-slate-500 dark:text-slate-400" /> :
-                               task.type === 'Email' ? <Mail size={15} className="text-slate-500 dark:text-slate-400" /> :
-                               task.type === 'Reunião' ? <Users size={15} className="text-slate-500 dark:text-slate-400" /> :
-                               task.type === 'Videochamada' ? <Video size={15} className="text-slate-500 dark:text-slate-400" /> :
-                               <CheckSquare size={15} className="text-slate-500 dark:text-slate-400" />}
-                            </div>
+                      {/* Template Selector Modal (mantido para acesso interno se necessário) */}
+                      <AnimatePresence>
+                        {isSelectingTemplate && (
+                          <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.45)' }}>
+                            <div className="absolute inset-0" onClick={() => setIsSelectingTemplate(false)} />
+                            <motion.div
+                              initial={{ opacity: 0, scale: 0.95 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              exit={{ opacity: 0, scale: 0.95 }}
+                              className="bg-white dark:bg-[#1A1625] border border-gray-200 dark:border-white/10 rounded-2xl p-6 shadow-xl w-full max-w-lg relative z-10"
+                            >
+                              <div className="flex items-center justify-between mb-6">
+                                <h4 className="text-lg font-bold">Selecione um modelo:</h4>
+                                <button onClick={() => setIsSelectingTemplate(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-xl transition-colors"><X size={20} /></button>
+                              </div>
+                              <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
+                                {templates.map(tmp => (
+                                  <button
+                                    key={tmp.id}
+                                    onClick={() => { onApplyTemplate(tmp.id); setIsSelectingTemplate(false); }}
+                                    className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-white/5 border border-gray-100 dark:border-white/10 rounded-xl hover:border-violet-500 transition-all group"
+                                  >
+                                    <div className="text-left">
+                                      <p className="font-bold text-base text-slate-800 dark:text-slate-200 mb-1">{tmp.name}</p>
+                                      <p className="text-sm text-gray-500">{tmp.description}</p>
+                                    </div>
+                                    <span className="bg-white dark:bg-white/5 px-2.5 py-1 rounded-md text-xs font-bold text-gray-500 border border-slate-200 dark:border-white/10 shadow-sm">
+                                      {tmp.items?.length || 0} tarefas
+                                    </span>
+                                  </button>
+                                ))}
+                              </div>
+                            </motion.div>
+                          </div>
+                        )}
+                      </AnimatePresence>
 
-                            {/* Content */}
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                {task.start_time && (
-                                  <span className="text-sm font-semibold text-slate-700 dark:text-white">
-                                    {task.start_time.slice(0, 5)} -
+                      {/* Task List */}
+                      {tasks.length === 0 && !isAddingTask && !taskToEdit && !isSelectingTemplate ? (
+                        <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+                          <CheckSquare size={48} className="opacity-10 mb-3" />
+                          <p className="text-sm">Nenhuma tarefa para este lead</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {[...tasks].sort((a, b) => {
+                            if (a.completed === b.completed) {
+                              return new Date(a.due_date).getTime() - new Date(b.due_date).getTime();
+                            }
+                            return a.completed ? 1 : -1;
+                          }).map(task => (
+                            <div
+                              key={task.id}
+                              className={`group flex items-center gap-4 px-5 py-3.5 bg-white dark:bg-slate-800/60 border rounded-xl transition-all duration-200 ${task.completed
+                                  ? 'border-slate-100 dark:border-white/5 opacity-55'
+                                  : 'border-slate-200/70 dark:border-white/10 hover:border-violet-300/60 dark:hover:border-violet-500/30 hover:shadow-md hover:shadow-violet-500/5'
+                                }`}
+                            >
+                              {/* Checkbox */}
+                              <button
+                                onClick={() => onUpdateTask(task.id, { completed: !task.completed, completed_at: !task.completed ? new Date().toISOString() : null })}
+                                className="shrink-0 transition-transform hover:scale-110"
+                              >
+                                {task.completed
+                                  ? <CheckCircle2 size={20} className="text-violet-500" />
+                                  : <Circle size={20} className="text-slate-300 dark:text-slate-600 group-hover:text-violet-400 transition-colors" />
+                                }
+                              </button>
+
+                              {/* Type Icon */}
+                              <div className="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-white/5">
+                                {task.type === 'WhatsApp' ? <MessageSquare size={15} className="text-slate-500 dark:text-slate-400" /> :
+                                  task.type === 'Ligação' ? <Phone size={15} className="text-slate-500 dark:text-slate-400" /> :
+                                    task.type === 'Email' ? <Mail size={15} className="text-slate-500 dark:text-slate-400" /> :
+                                      task.type === 'Reunião' ? <Users size={15} className="text-slate-500 dark:text-slate-400" /> :
+                                        task.type === 'Videochamada' ? <Video size={15} className="text-slate-500 dark:text-slate-400" /> :
+                                          <CheckSquare size={15} className="text-slate-500 dark:text-slate-400" />}
+                              </div>
+
+                              {/* Content */}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  {task.start_time && (
+                                    <span className="text-sm font-semibold text-slate-700 dark:text-white">
+                                      {task.start_time.slice(0, 5)} -
+                                    </span>
+                                  )}
+                                  <span className={`text-sm font-semibold ${task.completed ? 'line-through text-slate-400' : 'text-slate-800 dark:text-white'}`}>
+                                    {task.title}
                                   </span>
-                                )}
-                                <span className={`text-sm font-semibold ${task.completed ? 'line-through text-slate-400' : 'text-slate-800 dark:text-white'}`}>
-                                  {task.title}
+                                </div>
+                                <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                                  {task.due_date && (
+                                    <span className={`flex items-center gap-1 text-xs font-medium ${!task.completed && isPastDate(task.due_date) ? 'text-rose-500' : 'text-violet-500 dark:text-violet-400'
+                                      }`}>
+                                      <Calendar size={11} />
+                                      {parseLocalDate(task.due_date).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }).replace('.', '')}. {task.start_time ? task.start_time.slice(0, 5) : '00:00'}
+                                    </span>
+                                  )}
+                                  {!task.completed && isPastDate(task.due_date) && (
+                                    <span className="text-[10px] font-bold text-rose-500 bg-rose-500/10 px-2 py-0.5 rounded-md">Atrasada</span>
+                                  )}
+                                  {!task.completed && isToday(task.due_date) && (
+                                    <span className="text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-md">Hoje</span>
+                                  )}
+                                  {!task.completed && isTomorrowDate(task.due_date) && (
+                                    <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-md">Amanhã</span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Actions + Type badge */}
+                              <div className="flex items-center gap-2 shrink-0">
+                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <button
+                                    onClick={() => setTaskToEdit(task)}
+                                    className="p-1.5 rounded-lg text-slate-400 hover:text-violet-500 hover:bg-violet-50 transition-colors"
+                                  >
+                                    <Edit2 size={13} />
+                                  </button>
+                                  <button
+                                    onClick={() => onDeleteTask(task.id)}
+                                    className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </div>
+                                <span className="text-xs font-medium px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                                  {task.type || 'Tarefa'}
                                 </span>
                               </div>
-                              <div className="flex items-center gap-3 mt-0.5 flex-wrap">
-                                {task.due_date && (
-                                  <span className={`flex items-center gap-1 text-xs font-medium ${
-                                    !task.completed && isPastDate(task.due_date) ? 'text-rose-500' : 'text-violet-500 dark:text-violet-400'
-                                  }`}>
-                                    <Calendar size={11} />
-                                    {parseLocalDate(task.due_date).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }).replace('.', '')}. {task.start_time ? task.start_time.slice(0, 5) : '00:00'}
-                                  </span>
-                                )}
-                                {!task.completed && isPastDate(task.due_date) && (
-                                  <span className="text-[10px] font-bold text-rose-500 bg-rose-500/10 px-2 py-0.5 rounded-md">Atrasada</span>
-                                )}
-                                {!task.completed && isToday(task.due_date) && (
-                                  <span className="text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-md">Hoje</span>
-                                )}
-                                {!task.completed && isTomorrowDate(task.due_date) && (
-                                  <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-md">Amanhã</span>
-                                )}
-                              </div>
                             </div>
+                          ))}                      </div>
+                      )}
+                    </div>
+                  </>
+                )}
+                {activeTab === 'notas' && (
+                  <div className="space-y-6 flex-1 flex flex-col overflow-y-auto relative bg-[#F8F9FA] dark:bg-[#15121E]">
+                    <div className="flex flex-col py-4 px-6 shrink-0 bg-white dark:bg-white/5 border-b border-gray-100 dark:border-white/10 shadow-sm z-20 sticky top-0">
+                      <h3 className="font-bold text-gray-700 dark:text-white uppercase text-[11px] tracking-wider mb-3">Editor de Notas Rico</h3>
+                      <div className="w-full bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl overflow-hidden shadow-inner flex flex-col">
+                        <div className="flex gap-2 p-2 bg-slate-100 dark:bg-white/5 border-b border-slate-200 dark:border-white/10 text-xs text-gray-500 items-center justify-between">
+                          <span className="font-medium px-2">Suporta Colagem de Imagens (Ctrl+V)</span>
+                          <button
+                            onClick={handleCreateNote}
+                            disabled={notesLoading}
+                            className="px-4 py-1.5 bg-violet-600 hover:bg-violet-700 active:scale-95 text-white rounded-lg text-xs font-bold transition-all shadow-sm shadow-violet-500/20 disabled:opacity-50"
+                          >
+                            {notesLoading ? <Loader2 size={14} className="animate-spin" /> : 'Salvar Nota'}
+                          </button>
+                        </div>
+                        <div
+                          ref={editorRef}
+                          contentEditable
+                          onPaste={handlePaste}
+                          className="p-4 min-h-[120px] max-h-[300px] overflow-y-auto outline-none text-sm text-gray-700 dark:text-slate-200"
+                          style={{ cursor: 'text' }}
+                          onInput={(e) => {
+                            if (e.currentTarget.innerHTML === '<br>') e.currentTarget.innerHTML = '';
+                          }}
+                        />
+                      </div>
+                    </div>
 
-                            {/* Actions + Type badge */}
-                            <div className="flex items-center gap-2 shrink-0">
-                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button
-                                  onClick={() => setTaskToEdit(task)}
-                                  className="p-1.5 rounded-lg text-slate-400 hover:text-violet-500 hover:bg-violet-50 transition-colors"
-                                >
-                                  <Edit2 size={13} />
-                                </button>
-                                <button
-                                  onClick={() => onDeleteTask(task.id)}
-                                  className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                                >
-                                  <Trash2 size={13} />
-                                </button>
+                    <div className="relative flex-1 p-6 z-10 w-full max-w-4xl mx-auto pb-16">
+                      {notesLoading && notes.length === 0 ? (
+                        <div className="flex flex-col justify-center items-center mt-12 text-gray-400">
+                          <Loader2 size={32} className="animate-spin text-violet-500 mb-2" />
+                          <span className="text-sm">Carregando anotações...</span>
+                        </div>
+                      ) : notes.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-16 text-gray-400 dark:text-slate-500">
+                          <FileText size={36} className="mb-3 opacity-30" />
+                          <p className="text-sm font-medium">Nenhuma nota registrada</p>
+                          <p className="text-xs mt-1 opacity-60">Use o editor acima para criar a primeira anotação</p>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="absolute left-1/2 top-4 bottom-4 w-[2px] bg-indigo-50/50 dark:bg-white/5 -translate-x-1/2" />
+
+                          <div className="space-y-16 relative">
+                            {notes.map((n, idx) => {
+                              const isLeft = idx % 2 === 0;
+                              const dateObj = new Date(n.created_at || new Date());
+                              const nMonth = dateObj.toLocaleString('pt-BR', { month: 'short' }).toUpperCase();
+                              const nDay = String(dateObj.getDate()).padStart(2, '0');
+                              const uResp = users.find(u => u.name === n.user_name);
+                              const getInitials = (num?: string) => num ? num.substring(0, 2).toUpperCase() : '??';
+
+                              return (
+                                <div key={n.id || idx} className={`flex items-start w-full relative ${isLeft ? 'justify-start' : 'justify-end'}`}>
+                                  <div className="absolute left-1/2 top-[34px] -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border-[3px] border-white dark:border-[#15121E] bg-violet-50 dark:bg-violet-500/20 flex items-center justify-center z-10 shadow-sm">
+                                    <FileText size={14} className="text-violet-500" />
+                                  </div>
+
+                                  <div className="w-[45%]">
+                                    <div className={`p-5 rounded-2xl border border-indigo-50 dark:border-white/10 bg-white dark:bg-white/5 shadow-sm hover:shadow-md transition-all relative group
+                                      ${isLeft ? 'mr-auto' : 'ml-auto'}`}>
+
+                                      <div className="flex items-center justify-between mb-3 border-b border-gray-100 dark:border-white/5 pb-3">
+                                        <div className="flex items-center gap-1.5 text-[11px] text-gray-500 font-medium">
+                                          {uResp ? (
+                                            <>
+                                              {uResp.picture ? (
+                                                <img src={uResp.picture} alt={uResp.name} className="w-5 h-5 rounded-full object-cover" />
+                                              ) : (
+                                                <div className="w-5 h-5 rounded-full bg-violet-100 dark:bg-violet-500/20 text-violet-600 flex items-center justify-center font-bold text-[8px]" title={uResp.name}>
+                                                  {getInitials(uResp.name)}
+                                                </div>
+                                              )}
+                                              <span className="truncate max-w-[150px] font-bold text-gray-700 dark:text-slate-300">{uResp.name || uResp.email}</span>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <Users size={12} className="opacity-70" />
+                                              <span className="truncate max-w-[150px] font-bold text-gray-700 dark:text-slate-300">{n.user_name || 'Sistema'}</span>
+                                            </>
+                                          )}
+                                        </div>
+                                        <span className="text-[10px] font-bold text-gray-400">
+                                          {!isNaN(dateObj.getTime()) ? `${dateObj.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })} às ${dateObj.toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : 'Agora mesmo'}
+                                        </span>
+                                      </div>
+
+                                      <div
+                                        className="mt-2 text-sm text-gray-700 dark:text-slate-200 leading-relaxed whitespace-pre-wrap prose prose-sm dark:prose-invert max-w-none prose-img:cursor-zoom-in hover:prose-img:opacity-90 prose-img:transition-opacity prose-img:rounded-xl"
+                                        style={{ wordBreak: 'break-word' }}
+                                        onClick={handleNoteClick}
+                                        dangerouslySetInnerHTML={{ __html: n.content?.replace(/style="[^"]*color:[^"]*"/g, '') || '' }}
+                                      />
+
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {activeTab === 'reuniões' && (
+                  <div className="space-y-6 flex-1 flex flex-col overflow-y-auto relative bg-[#F8F9FA] dark:bg-[#15121E]">
+                    <div className="flex items-center justify-between py-4 px-6 shrink-0 bg-white dark:bg-white/5 border-b border-gray-100 dark:border-white/10 shadow-sm z-20 sticky top-0">
+                      <h3 className="font-bold text-gray-700 dark:text-white uppercase text-[11px] tracking-wider">Histórico de Reuniões</h3>
+                      <button
+                        onClick={() => {
+                          setMeetingForm(p => ({
+                            ...p,
+                            meeting_date: (lead as any).reunion_date || new Date().toISOString().slice(0, 16),
+                            office_location: (lead as any).office_location || '',
+                            reunion_niche: (lead as any).reunion_niche || '',
+                            monthly_closings: (lead as any).monthly_closings || '',
+                            closing_goal: (lead as any).closing_goal || '',
+                            reunion_link: (lead as any).reunion_link || ''
+                          }));
+                          setShowMeetingModal(true);
+                        }}
+                        className="px-4 py-2 bg-violet-600 hover:bg-violet-700 active:scale-95 text-white rounded-xl text-sm font-bold transition-all shadow-md shadow-violet-500/20 flex items-center gap-2">
+                        <Plus size={15} /> Adicionar Reunião
+                      </button>
+                    </div>
+
+                    <div className="relative flex-1 p-6 z-10 w-full max-w-4xl mx-auto pb-16">
+                      {meetingsLoading ? (
+                        <div className="flex flex-col justify-center items-center mt-12 text-gray-400">
+                          <Loader2 size={32} className="animate-spin text-violet-500 mb-2" />
+                          <span className="text-sm">Carregando reuniões...</span>
+                        </div>
+                      ) : meetings.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-16 text-gray-400 dark:text-slate-500">
+                          <Users size={36} className="mb-3 opacity-30" />
+                          <p className="text-sm font-medium">Nenhuma reunião registrada</p>
+                          <p className="text-xs mt-1 opacity-60">As marcações ficarão registradas no nosso histórico vertical</p>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="absolute left-1/2 top-4 bottom-4 w-[2px] bg-indigo-50/50 dark:bg-white/5 -translate-x-1/2" />
+
+                          <div className="space-y-16 relative">
+                            {meetings.map((m, idx) => {
+                              const isLeft = idx % 2 === 0;
+                              const dateObj = new Date(m.meeting_date);
+                              const mMonth = dateObj.toLocaleString('pt-BR', { month: 'short' }).toUpperCase();
+                              const mDay = String(dateObj.getDate()).padStart(2, '0');
+                              const notesLines = (m.notes || '').split('\n').filter((l: string) => l.trim().length > 0);
+                              const uResp = users.find(u => u.email === m.responsible_name || u.name === m.responsible_name);
+                              const getInitials = (n?: string) => n ? n.substring(0, 2).toUpperCase() : '??';
+
+                              return (
+                                <div key={m.id || idx} className={`flex items-start w-full relative ${isLeft ? 'justify-start' : 'justify-end'}`}>
+                                  <div className="absolute left-1/2 top-[34px] -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border-[3px] border-white dark:border-[#15121E] bg-violet-50 dark:bg-violet-500/20 flex items-center justify-center z-10 shadow-sm">
+                                    <Check size={14} className="text-violet-500" />
+                                  </div>
+
+                                  <div className="w-[45%]">
+                                    <div className={`p-5 rounded-2xl border border-indigo-50 dark:border-white/10 bg-white dark:bg-white/5 shadow-sm hover:shadow-md transition-all relative group
+                                      ${isLeft ? 'mr-auto' : 'ml-auto'}`}>
+
+                                      <div className="flex items-start gap-3.5 mb-4">
+                                        <div className="w-[52px] h-[52px] rounded-xl flex flex-col items-center justify-center bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 shrink-0 shadow-inner mt-0.5">
+                                          <span className="text-[9px] font-black tracking-widest">{mMonth}.</span>
+                                          <span className="text-lg font-bold leading-none mt-0.5">{mDay}</span>
+                                        </div>
+
+                                        <div className="flex-1 min-w-0 pr-1">
+                                          <div className="flex items-start justify-between gap-2">
+                                            <h4 className="font-extrabold text-gray-800 dark:text-slate-100 text-[13px] leading-tight break-words pr-2">{m.title}</h4>
+                                            <span className="text-[9px] font-medium text-gray-400 shrink-0 mt-0.5">{dateObj.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })} às {dateObj.toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                                          </div>
+                                          <div className="flex items-center gap-1.5 mt-2.5 text-[10px] text-gray-500 font-medium">
+                                            {uResp ? (
+                                              <>
+                                                {uResp.picture ? (
+                                                  <img src={uResp.picture} alt={uResp.name} className="w-4 h-4 rounded-full object-cover" />
+                                                ) : (
+                                                  <div className="w-4 h-4 rounded-full bg-violet-100 dark:bg-violet-500/20 text-violet-600 flex items-center justify-center font-bold text-[7px]" title={uResp.name}>
+                                                    {getInitials(uResp.name)}
+                                                  </div>
+                                                )}
+                                                <span className="truncate max-w-[150px]">{uResp.name || uResp.email}</span>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <Users size={11} className="opacity-70" />
+                                                <span className="truncate max-w-[150px]">{m.responsible_name || 'Sistema'}</span>
+                                              </>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {(m.office_location || m.reunion_link || m.reunion_niche || m.monthly_closings || m.closing_goal || true) && (
+                                        <div className="mt-4 pt-4 border-t border-gray-100 dark:border-white/5 space-y-3">
+                                          <h5 className="text-[10px] font-bold text-gray-500/80 uppercase tracking-widest" style={{ color: '#6b7280' }}>Detalhes:</h5>
+                                          <div className="grid grid-cols-2 gap-y-3 gap-x-2 text-xs">
+                                            <div><span className="text-gray-400 font-medium block text-[9px] uppercase tracking-wider mb-0.5">Local</span><span className="font-semibold text-gray-700 dark:text-slate-300">{m.office_location || '-'}</span></div>
+                                            <div><span className="text-gray-400 font-medium block text-[9px] uppercase tracking-wider mb-0.5">Link</span>{m.reunion_link ? <a href={m.reunion_link.startsWith('http') ? m.reunion_link : `https://${m.reunion_link}`} target="_blank" rel="noreferrer" className="text-violet-500 hover:text-violet-600 font-semibold hover:underline truncate inline-block max-w-[120px]">{m.reunion_link}</a> : <span className="font-semibold text-gray-700 dark:text-slate-300">-</span>}</div>
+                                            <div><span className="text-gray-400 font-medium block text-[9px] uppercase tracking-wider mb-0.5">Nicho</span><span className="font-semibold text-gray-700 dark:text-slate-300 truncate max-w-[120px] inline-block">{m.reunion_niche || '-'}</span></div>
+                                            <div><span className="text-gray-400 font-medium block text-[9px] uppercase tracking-wider mb-0.5">Fechamentos Mês</span><span className="font-semibold text-gray-700 dark:text-slate-300">{m.monthly_closings || '-'}</span></div>
+                                            <div><span className="text-gray-400 font-medium block text-[9px] uppercase tracking-wider mb-0.5">Meta</span><span className="font-semibold text-gray-700 dark:text-slate-300">{m.closing_goal || '-'}</span></div>
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {(notesLines.length > 0) && (
+                                        <div className="mt-4 pt-4 border-t border-gray-100 dark:border-white/5">
+                                          <h5 className="text-[10px] font-bold text-gray-500/80 uppercase tracking-widest mb-3" style={{ color: '#6b7280' }}>Informações da Reunião:</h5>
+                                          <ul className="space-y-2">
+                                            {notesLines.map((line: string, i: number) => {
+                                              const isCheck = line.trim().startsWith('-');
+                                              return (
+                                                <li key={i} className="flex items-start gap-2.5 text-[11px] text-gray-600 dark:text-slate-300">
+                                                  {isCheck ? (
+                                                    <Check size={14} className="text-emerald-500 shrink-0 mt-0.5 opacity-80" />
+                                                  ) : (
+                                                    <span className="w-1 h-3 mt-1.5 shrink-0" />
+                                                  )}
+                                                  <span className="leading-relaxed font-medium" style={{ color: '#4b5563' }}>{line.replace(/^- /, '')}</span>
+                                                </li>
+                                              );
+                                            })}
+                                          </ul>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {activeTab === 'ligações' && (() => {
+                  const formatCallDuration = (secs: number) => {
+                    if (!secs) return '0:00';
+                    const m = Math.floor(secs / 60);
+                    const s = secs % 60;
+                    return `${m}:${String(s).padStart(2, '0')}`;
+                  };
+                  const formatRelativeTime = formatCallRelativeTime;
+                  const isSuccess = (call: any) => call.hangup_cause === 'NORMAL_CLEARING';
+
+                  return (
+                    <div className="p-4 space-y-3 flex-1 overflow-y-auto">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500">Histórico de ligações</p>
+                        <button onClick={() => setCallLogsFetched(false)} className="text-xs text-purple-500 hover:text-purple-400 flex items-center gap-1 transition-colors">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 4v6h-6M1 20v-6h6" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" /></svg>
+                          Atualizar
+                        </button>
+                      </div>
+                      {callLogsLoading && (
+                        <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+                          <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mb-3" />
+                          <p className="text-sm">Carregando ligações...</p>
+                        </div>
+                      )}
+                      {!callLogsLoading && callLogsFetched && callLogs.length === 0 && (
+                        <div className="flex flex-col items-center justify-center py-12 text-gray-400 dark:text-slate-500">
+                          <Phone size={36} className="mb-3 opacity-30" />
+                          <p className="text-sm font-medium">Nenhuma ligação encontrada</p>
+                          <p className="text-xs mt-1 opacity-60">As ligações aparecerão aqui após serem realizadas</p>
+                        </div>
+                      )}
+                      {!callLogsLoading && callLogs.map((call: any, index: number) => {
+                        const success = isSuccess(call);
+                        const dotColor = success ? 'bg-emerald-500' : 'bg-red-500';
+
+                        return (
+                          <div key={call.id} className="relative pl-6 pb-6 last:pb-0">
+                            {/* Timeline Line */}
+                            {index !== callLogs.length - 1 && (
+                              <div className="absolute left-[7px] top-[14px] w-[2px] h-full bg-gray-100 dark:bg-white/5" />
+                            )}
+
+                            {/* Timeline Dot */}
+                            <div className={`absolute left-0 top-1 w-[16px] h-[16px] rounded-full border-4 border-white dark:border-[#1A1625] shadow-sm z-10 flex items-center justify-center ${dotColor}`} />
+
+                            <div className="bg-white/50 dark:bg-white/5 border border-gray-100 dark:border-white/10 rounded-2xl p-4 shadow-sm transition-all hover:shadow-md">
+                              <div className="flex items-start gap-3">
+                                <div className="flex-shrink-0 w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.12)' }}>
+                                  <Phone size={18} style={{ color: '#7c3aed' }} />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                                    <span className="font-semibold text-[13px] text-gray-800 dark:text-slate-100">Ligação</span>
+                                    <span className="text-[10px] px-2 py-0.5 rounded-full font-medium"
+                                      style={{ background: success ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', color: success ? '#059669' : '#dc2626' }}>
+                                      {success ? '✓' : '✕'} {getCallTypeLabel(call)}
+                                    </span>
+                                  </div>
+                                  <p className="text-[11px]" style={{ color: '#9ca3af' }}>ORIGEM: GrapeHub CRM</p>
+
+                                  {call.duration > 0 && (
+                                    <div className="mt-2 text-[11px] text-gray-400 dark:text-slate-500">
+                                      ⏱ Duração: <strong className="text-gray-600 dark:text-slate-400">{formatCallDuration(call.duration)}</strong>
+                                    </div>
+                                  )}
+
+                                  {call.record_url && (
+                                    <div className="mt-2.5 rounded-lg p-1.5 flex items-center gap-2 max-w-[350px]" style={{ background: 'rgba(0,0,0,0.03)', border: '1px solid rgba(0,0,0,0.06)' }}>
+                                      <audio controls src={call.record_url} className="w-full h-7" style={{ minWidth: 0, flex: 1 }} preload="none" />
+                                      <a href={call.record_url} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 p-1 rounded hover:bg-purple-50 transition-colors" title="Abrir gravação">
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>
+                                      </a>
+                                    </div>
+                                  )}
+
+                                  <div className="flex items-center gap-1.5 mt-2.5">
+                                    <Clock size={11} className="text-gray-400" />
+                                    <span className="text-[11px]" style={{ color: '#9ca3af' }}>
+                                      {formatRelativeTime(call.started_at)}
+                                      {(call.first_name || call.last_name) && <> por <strong className="font-medium text-gray-600 dark:text-slate-400">{[call.first_name, call.last_name].filter(Boolean).join(' ')}</strong></>}
+                                    </span>
+                                  </div>
+                                </div>
                               </div>
-                              <span className="text-xs font-medium px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400 whitespace-nowrap">
-                                {task.type || 'Tarefa'}
-                              </span>
                             </div>
                           </div>
-                        ))}                      </div>
+                        );
+                      })}
+
+                    </div>
+                  );
+                })()}
+                {activeTab === 'arquivos' && (
+                  <div className="p-6 space-y-6 flex-1 flex flex-col font-sans">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-bold text-gray-800 dark:text-slate-100">Documentos e Arquivos</h3>
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={uploadingFiles}
+                        className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 border border-gray-200 dark:border-white/10 text-gray-700 dark:text-slate-200 rounded-xl text-sm font-bold transition-all disabled:opacity-50"
+                      >
+                        {uploadingFiles ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                        {uploadingFiles ? 'Enviando...' : 'Fazer Upload'}
+                      </button>
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleFileChange}
+                        className="hidden"
+                      />
+                    </div>
+
+                    <div
+                      onDragOver={handleDragOver}
+                      onDrop={handleDrop}
+                      onClick={() => fileInputRef.current?.click()}
+                      className="border-2 border-dashed border-gray-300 dark:border-white/10 rounded-2xl p-8 text-center bg-gray-50 dark:bg-white/5 backdrop-blur-md cursor-pointer hover:border-violet-500 transition-all relative overflow-hidden"
+                    >
+                      <div className="flex flex-col items-center gap-3 relative z-10">
+                        <div className="p-3 bg-white/50 dark:bg-white/5 rounded-full border border-gray-200 dark:border-white/10 shadow-sm">
+                          <Folder size={24} className="text-gray-400 dark:text-slate-400" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-gray-700 dark:text-slate-200">Clique ou arraste arquivos para cá</p>
+                          <p className="text-xs text-gray-500 dark:text-slate-500 mt-1">Suporta PDF, DOCX, XLSX, imagens e vídeos (Máx 50MB)</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-gray-50 dark:bg-white/5 backdrop-blur-md rounded-2xl border border-gray-200 dark:border-white/10 overflow-hidden relative">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-slate-400 font-bold uppercase tracking-widest">
+                          <tr>
+                            <th className="px-6 py-4">Nome do Arquivo</th>
+                            <th className="px-6 py-4">Data</th>
+                            <th className="px-6 py-4">Tamanho</th>
+                            <th className="px-6 py-4">Enviado por</th>
+                            <th className="px-6 py-4 text-right">Ações</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200 dark:divide-white/10 text-gray-700 dark:text-slate-200">
+                          {filesLoading && files.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="px-6 py-8 text-center text-gray-400">Carregando arquivos...</td>
+                            </tr>
+                          ) : files.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="px-6 py-8 text-center text-gray-400 italic">Nenhum arquivo enviado.</td>
+                            </tr>
+                          ) : (
+                            files.map((file: any) => (
+                              <tr key={file.id} className="hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
+                                <td className="px-6 py-4 flex items-center gap-3 font-bold max-w-[200px] truncate">
+                                  <File size={16} className="text-violet-500 flex-shrink-0" />
+                                  <span className="truncate" title={file.name}>{file.name}</span>
+                                </td>
+                                <td className="px-6 py-4 text-gray-500 dark:text-slate-400">{new Date(file.created_at).toLocaleDateString('pt-BR')}</td>
+                                <td className="px-6 py-4 text-gray-500 dark:text-slate-400">{file.size || '-'}</td>
+                                <td className="px-6 py-4">
+                                  <span className="px-2 py-1 rounded-lg font-bold text-[10px] uppercase tracking-wider bg-violet-500/10 text-violet-500">
+                                    {(() => {
+                                      if (file.sender === 'Agência') return currentUserName || 'Sistema';
+                                      const userMatch = users?.find((u: any) => u.email === file.sender || u.name === file.sender);
+                                      return userMatch?.name || file.sender || 'Sistema';
+                                    })()}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4 text-right">
+                                  <div className="flex items-center justify-end gap-3 text-gray-400">
+                                    <button onClick={() => window.open(file.url, '_blank')} className="hover:text-violet-500 transition-colors" title="Visualizar"><Eye size={16} /></button>
+                                    <button onClick={() => {
+                                      const a = document.createElement('a');
+                                      a.href = file.url;
+                                      a.download = file.name;
+                                      a.target = '_blank';
+                                      a.click();
+                                    }} className="hover:text-violet-500 transition-colors" title="Baixar"><Download size={16} /></button>
+                                    <button onClick={() => handleDeleteFile(file.id)} className="hover:text-red-500 transition-colors" title="Excluir"><Trash2 size={16} /></button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+
+            </div>
+
+            {/* Right: lead info */}
+            <div className="w-72 shrink-0 overflow-y-auto p-5 space-y-5">
+              {/* Informações do negócio */}
+              <div>
+                <div
+                  className="flex items-center justify-between cursor-pointer group mb-3"
+                  onClick={() => toggleSection('business')}
+                >
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-slate-400 group-hover:text-gray-700 dark:group-hover:text-slate-300 transition-colors">
+                    Informações do negócio
+                  </h4>
+                  <ChevronDown size={14} className={`text-gray-400 transition-transform ${sectionsOpen.business ? 'rotate-180' : ''}`} />
+                </div>
+
+                {sectionsOpen.business && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
+                        <DollarSign size={13} /> Valor do negócio
+                      </span>
+                      <input
+                        type="number"
+                        value={lead.valor}
+                        onChange={(e) => onUpdateLeadField(lead.id, 'valor', Number(e.target.value))}
+                        className="text-right text-sm font-bold text-emerald-500 bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 min-w-0 flex-1"
+                      />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5">
+                        <ArrowRightLeft size={13} /> Etapa do funil
+                      </span>
+                      <span className="text-sm font-semibold text-gray-900 dark:text-white">{currentColumn?.title || '—'}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
+                        <Users size={13} /> Responsável
+                      </span>
+                      <select
+                        value={lead.responsavel_id || ''}
+                        onChange={(e) => onUpdateLeadField(lead.id, 'responsavel_id', e.target.value)}
+                        style={{ textAlignLast: 'right', border: 'none', background: 'transparent' }}
+                        className="text-sm font-semibold text-gray-900 dark:text-white outline-none focus:ring-0 rounded px-0 -mr-1 min-w-0 flex-1 appearance-none cursor-pointer"
+                      >
+                        <option value="" className="bg-white dark:bg-slate-800">— Sem responsável</option>
+                        {users.map(u => (
+                          <option key={u.id} value={u.id} className="bg-white dark:bg-slate-800">{u.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5">
+                        <Clock size={13} /> Data de criação
+                      </span>
+                      <span className="text-sm text-gray-700 dark:text-slate-300">{new Date(lead.created_at).toLocaleDateString('pt-BR')}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
+                        <Calendar size={13} /> Previsão
+                      </span>
+                      <div
+                        className="flex items-center gap-1 cursor-pointer group"
+                        onClick={(e) => {
+                          const inp = (e.currentTarget as HTMLElement).querySelector('input[type="date"]') as HTMLInputElement | null;
+                          try { inp?.showPicker?.(); } catch { inp?.click(); }
+                        }}
+                      >
+                        <span className="text-sm text-gray-700 dark:text-slate-300 group-hover:text-violet-500 transition-colors">
+                          {(lead as any).previsao
+                            ? new Date(((lead as any).previsao as string).split('T')[0] + 'T12:00:00').toLocaleDateString('pt-BR')
+                            : <span className="text-slate-500 text-xs italic">Adicionar...</span>}
+                        </span>
+                        <input
+                          type="date"
+                          value={((lead as any).previsao || '').split('T')[0]}
+                          onChange={(e) => onUpdateLeadField(lead.id, 'previsao', e.target.value || null)}
+                          style={{ colorScheme: 'dark' }}
+                          className="sr-only"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5">
+                        <Clock size={13} /> Na etapa
+                      </span>
+                      <span className="text-sm text-gray-700 dark:text-slate-300">
+                        {(lead as any).etapa_updated_at
+                          ? Math.max(0, Math.floor((Date.now() - new Date((lead as any).etapa_updated_at).getTime()) / 86400000))
+                          : 0} dias
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="h-px bg-gray-100 dark:bg-white/5" />
+
+              {/* Etiquetas */}
+              <div className="relative" ref={tagsRef}>
+                <div
+                  className="flex items-center justify-between cursor-pointer group mb-3"
+                  onClick={() => toggleSection('tags')}
+                >
+                  <div className="flex flex-center gap-1.5">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-slate-400 flex flex-center gap-1.5"><Tag size={13} /> Etiquetas</h4>
+                    <ChevronDown size={14} className={`text-gray-400 transition-transform ${sectionsOpen.tags ? 'rotate-180' : ''}`} />
+                  </div>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowTagMenu(!showTagMenu); setSectionsOpen(prev => ({ ...prev, tags: true })); }}
+                    className="text-xs font-medium text-amber-500 hover:text-amber-600 dark:text-amber-400 dark:hover:text-amber-300 transition-colors"
+                  >
+                    Editar
+                  </button>
+                </div>
+
+                {sectionsOpen.tags && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {((lead as any).tags || []).length > 0 ? (lead as any).tags.map((tag: any) => (
+                      <span key={tag.name} className="px-2 py-0.5 text-xs font-bold rounded-full text-white shadow-sm" style={{ backgroundColor: tag.color }}>
+                        {tag.name}
+                      </span>
+                    )) : (
+                      <span className="text-xs text-gray-400 dark:text-slate-500 italic">Sem etiquetas</span>
+                    )}
+                  </div>
+                )}
+
+                {showTagMenu && sectionsOpen.tags && (
+                  <div className="absolute top-10 right-0 w-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl shadow-xl z-50 overflow-hidden">
+                    <div className="p-3 border-b border-slate-100 dark:border-white/5">
+                      <div className="relative">
+                        <Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" />
+                        <input
+                          type="text"
+                          value={tagSearch}
+                          onChange={e => setTagSearch(e.target.value)}
+                          placeholder="Buscar etiqueta..."
+                          className="w-full pl-8 pr-3 py-1.5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-lg text-sm text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-amber-500/40"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="max-h-48 overflow-y-auto">
+                      {/* Botão de adicionar nova (se não existe na busca) */}
+                      {tagSearch.trim() !== '' && !tags.some((t: any) => t.name.toLowerCase() === tagSearch.toLowerCase()) && (
+                        <div className="p-3 border-b border-slate-100 dark:border-white/5 bg-slate-50 dark:bg-white/5">
+                          <p className="text-xs text-slate-500 mb-2">Criar "{tagSearch}" com a cor:</p>
+                          <div className="flex items-center gap-2">
+                            {['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#64748b', '#ec4899', '#14b8a6'].map(colorHex => (
+                              <button
+                                key={colorHex}
+                                className="w-5 h-5 rounded-full hover:scale-110 transition-transform focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-gray-300 dark:focus:ring-offset-slate-800 border border-black/10 dark:border-white/10"
+                                style={{ backgroundColor: colorHex }}
+                                onClick={async () => {
+                                  try {
+                                    const res = await fetch('/api/crm-comercial/tags', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ name: tagSearch, color: colorHex })
+                                    });
+                                    if (res.ok) {
+                                      onRefreshTags();
+                                      const newTags = [...((lead as any).tags || []), { name: tagSearch, color: colorHex }];
+                                      onUpdateLeadField(lead.id, 'tags', newTags);
+                                      setTagSearch('');
+                                    }
+                                  } catch (err) { console.error(err); }
+                                }}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Lista das Globais */}
+                      {tags.filter((t: any) => t.name.toLowerCase().includes(tagSearch.toLowerCase())).map((globalTag: any) => {
+                        const isSelected = ((lead as any).tags || []).some((t: any) => t.name === globalTag.name);
+                        return (
+                          <div key={globalTag.name} className="flex items-center justify-between px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-white/5 group cursor-pointer"
+                            onClick={() => {
+                              let newTags;
+                              if (isSelected) {
+                                newTags = ((lead as any).tags || []).filter((t: any) => t.name !== globalTag.name);
+                              } else {
+                                newTags = [...((lead as any).tags || []), { name: globalTag.name, color: globalTag.color }];
+                              }
+                              onUpdateLeadField(lead.id, 'tags', newTags);
+                            }}
+                          >
+                            <div className="flex items-center gap-2">
+                              {isSelected ? (
+                                <CheckCircle2 size={15} className="text-emerald-500" />
+                              ) : (
+                                <Circle size={15} className="text-slate-300 dark:text-slate-600" />
+                              )}
+                              <span className="text-sm text-slate-700 dark:text-slate-300 font-medium">{globalTag.name}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: globalTag.color }} />
+                              <button
+                                className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1"
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  if (!window.confirm(`Excluir a etiqueta "${globalTag.name}" globalmente?`)) return;
+                                  try {
+                                    const res = await fetch(`/api/crm-comercial/tags/${encodeURIComponent(globalTag.name)}`, { method: 'DELETE' });
+                                    if (res.ok) {
+                                      onRefreshTags();
+                                      // Remove tag locally from lead as well
+                                      if (isSelected) {
+                                        const newTags = ((lead as any).tags || []).filter((t: any) => t.name !== globalTag.name);
+                                        onUpdateLeadField(lead.id, 'tags', newTags);
+                                      }
+                                    }
+                                  } catch (err) { console.error(err); }
+                                }}
+                              >
+                                <X size={12} />
+                              </button>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+
+                    <button onClick={() => setShowTagMenu(false)} className="w-full py-2.5 text-xs font-semibold text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 border-t border-slate-100 dark:border-white/5 bg-slate-50 dark:bg-slate-900/40 transition-colors">
+                      Fechar
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="h-px bg-gray-100 dark:bg-white/5" />
+
+              {/* Informações do contato */}
+              <div>
+                <div
+                  className="flex items-center justify-between cursor-pointer group mb-3"
+                  onClick={() => toggleSection('contact')}
+                >
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-slate-400 group-hover:text-gray-700 dark:group-hover:text-slate-300 transition-colors">
+                    Informações do contato
+                  </h4>
+                  <ChevronDown size={14} className={`text-gray-400 transition-transform ${sectionsOpen.contact ? 'rotate-180' : ''}`} />
+                </div>
+
+                {sectionsOpen.contact && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
+                        <Users size={13} /> Nome
+                      </span>
+                      <input
+                        type="text"
+                        value={lead.nome}
+                        onChange={(e) => onUpdateLeadField(lead.id, 'nome', e.target.value)}
+                        placeholder="Nome do contato"
+                        className="text-right text-sm font-semibold text-gray-900 dark:text-white bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 min-w-0 flex-1"
+                      />
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
+                        <Phone size={13} /> Telefone
+                      </span>
+                      <input
+                        type="text"
+                        value={lead.telefone || ''}
+                        onChange={(e) => onUpdateLeadField(lead.id, 'telefone', e.target.value)}
+                        placeholder="Adicionar..."
+                        className="text-right text-sm text-gray-700 dark:text-slate-300 bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 min-w-0 flex-1"
+                      />
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
+                        <Flame size={13} /> Origem
+                      </span>
+                      <select
+                        value={lead.origem || 'Outro'}
+                        onChange={(e) => onUpdateLeadField(lead.id, 'origem', e.target.value)}
+                        style={{ textAlignLast: 'right', border: 'none', background: 'transparent' }}
+                        className={`text-sm font-semibold outline-none focus:ring-0 rounded px-0 -mr-1 min-w-0 flex-1 appearance-none cursor-pointer ${lead.origem === 'Indicação' ? 'text-orange-500' :
+                            lead.origem === 'Meta ads' ? 'text-blue-500' :
+                              lead.origem === 'Google ads' ? 'text-amber-500' :
+                                lead.origem === 'Youtube ads' ? 'text-red-500' :
+                                  lead.origem === 'Linkedin' ? 'text-sky-500' :
+                                    'text-gray-900 dark:text-white'
+                          }`}
+                      >
+                        <option value="Indicação" className="font-semibold text-orange-500 bg-white dark:bg-slate-800">Indicação</option>
+                        <option value="Meta ads" className="font-semibold text-blue-500 bg-white dark:bg-slate-800">Meta ads</option>
+                        <option value="Google ads" className="font-semibold text-amber-500 bg-white dark:bg-slate-800">Google ads</option>
+                        <option value="Youtube ads" className="font-semibold text-red-500 bg-white dark:bg-slate-800">Youtube ads</option>
+                        <option value="Linkedin" className="font-semibold text-sky-500 bg-white dark:bg-slate-800">Linkedin</option>
+                        <option value="Outro" className="font-semibold text-gray-900 dark:text-white bg-white dark:bg-slate-800">Outro</option>
+                      </select>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
+                        <Instagram size={13} /> Instagram
+                      </span>
+                      <input
+                        type="text"
+                        value={lead.instagram || ''}
+                        onChange={(e) => onUpdateLeadField(lead.id, 'instagram', e.target.value)}
+                        placeholder="Adicionar..."
+                        className="text-right text-sm font-semibold text-gray-900 dark:text-white bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 min-w-0 flex-1"
+                      />
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
+                        <Briefcase size={13} /> Nicho
+                      </span>
+                      <input
+                        type="text"
+                        value={lead.nicho || ''}
+                        onChange={(e) => onUpdateLeadField(lead.id, 'nicho', e.target.value)}
+                        placeholder="Adicionar..."
+                        className="text-right text-sm font-semibold text-gray-900 dark:text-white bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 min-w-0 flex-1"
+                      />
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
+                        <Award size={13} /> Tempo de OAB
+                      </span>
+                      <input
+                        type="text"
+                        value={lead.tempo_oab || ''}
+                        onChange={(e) => onUpdateLeadField(lead.id, 'tempo_oab', e.target.value)}
+                        placeholder="Adicionar..."
+                        className="text-right text-sm font-semibold text-gray-900 dark:text-white bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 min-w-0 flex-1"
+                      />
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
+                        <DollarSign size={13} /> Faturamento
+                      </span>
+                      <input
+                        type="text"
+                        value={lead.faturamento || ''}
+                        onChange={(e) => onUpdateLeadField(lead.id, 'faturamento', e.target.value)}
+                        placeholder="Adicionar..."
+                        className="text-right text-sm font-semibold text-gray-900 dark:text-white bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 min-w-0 flex-1"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Observações */}
+              {lead.observacoes && (
+                <>
+                  <div className="h-px bg-gray-100 dark:bg-white/5" />
+                  <div>
+                    <div
+                      className="flex items-center justify-between cursor-pointer group mb-3"
+                      onClick={() => toggleSection('obs')}
+                    >
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-slate-400 group-hover:text-gray-700 dark:group-hover:text-slate-300 transition-colors">
+                        Observações
+                      </h4>
+                      <ChevronDown size={14} className={`text-gray-400 transition-transform ${sectionsOpen.obs ? 'rotate-180' : ''}`} />
+                    </div>
+                    {sectionsOpen.obs && (
+                      <textarea
+                        value={lead.observacoes}
+                        onChange={(e) => onUpdateLeadField(lead.id, 'observacoes', e.target.value)}
+                        placeholder="Adicionar..."
+                        className="w-full text-sm text-gray-700 dark:text-slate-300 bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mx-1 min-h-[60px] resize-none"
+                      />
                     )}
                   </div>
                 </>
               )}
-              {activeTab === 'notas' && (
-                <div className="space-y-6 flex-1 flex flex-col overflow-y-auto relative bg-[#F8F9FA] dark:bg-[#15121E]">
-                  <div className="flex flex-col py-4 px-6 shrink-0 bg-white dark:bg-white/5 border-b border-gray-100 dark:border-white/10 shadow-sm z-20 sticky top-0">
-                    <h3 className="font-bold text-gray-700 dark:text-white uppercase text-[11px] tracking-wider mb-3">Editor de Notas Rico</h3>
-                    <div className="w-full bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl overflow-hidden shadow-inner flex flex-col">
-                      <div className="flex gap-2 p-2 bg-slate-100 dark:bg-white/5 border-b border-slate-200 dark:border-white/10 text-xs text-gray-500 items-center justify-between">
-                        <span className="font-medium px-2">Suporta Colagem de Imagens (Ctrl+V)</span>
-                        <button
-                           onClick={handleCreateNote}
-                           disabled={notesLoading}
-                           className="px-4 py-1.5 bg-violet-600 hover:bg-violet-700 active:scale-95 text-white rounded-lg text-xs font-bold transition-all shadow-sm shadow-violet-500/20 disabled:opacity-50"
-                        >
-                           {notesLoading ? <Loader2 size={14} className="animate-spin" /> : 'Salvar Nota'}
-                        </button>
-                      </div>
-                      <div 
-                        ref={editorRef}
-                        contentEditable
-                        onPaste={handlePaste}
-                        className="p-4 min-h-[120px] max-h-[300px] overflow-y-auto outline-none text-sm text-gray-700 dark:text-slate-200"
-                        style={{ cursor: 'text' }}
-                        onInput={(e) => {
-                          if (e.currentTarget.innerHTML === '<br>') e.currentTarget.innerHTML = '';
-                        }}
-                      />
-                    </div>
-                  </div>
 
-                  <div className="relative flex-1 p-6 z-10 w-full max-w-4xl mx-auto pb-16">
-                    {notesLoading && notes.length === 0 ? (
-                      <div className="flex flex-col justify-center items-center mt-12 text-gray-400">
-                         <Loader2 size={32} className="animate-spin text-violet-500 mb-2" />
-                         <span className="text-sm">Carregando anotações...</span>
-                      </div>
-                    ) : notes.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-16 text-gray-400 dark:text-slate-500">
-                        <FileText size={36} className="mb-3 opacity-30" />
-                        <p className="text-sm font-medium">Nenhuma nota registrada</p>
-                        <p className="text-xs mt-1 opacity-60">Use o editor acima para criar a primeira anotação</p>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="absolute left-1/2 top-4 bottom-4 w-[2px] bg-indigo-50/50 dark:bg-white/5 -translate-x-1/2" />
-                        
-                        <div className="space-y-16 relative">
-                          {notes.map((n, idx) => {
-                            const isLeft = idx % 2 === 0;
-                            const dateObj = new Date(n.created_at || new Date());
-                            const nMonth = dateObj.toLocaleString('pt-BR', { month: 'short' }).toUpperCase();
-                            const nDay = String(dateObj.getDate()).padStart(2, '0');
-                            const uResp = users.find(u => u.name === n.user_name);
-                            const getInitials = (num?: string) => num ? num.substring(0, 2).toUpperCase() : '??';
+              <div className="h-px bg-gray-100 dark:bg-white/5" />
 
-                            return (
-                              <div key={n.id || idx} className={`flex items-start w-full relative ${isLeft ? 'justify-start' : 'justify-end'}`}>
-                                <div className="absolute left-1/2 top-[34px] -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border-[3px] border-white dark:border-[#15121E] bg-violet-50 dark:bg-violet-500/20 flex items-center justify-center z-10 shadow-sm">
-                                  <FileText size={14} className="text-violet-500" />
-                                </div>
-                                
-                                <div className="w-[45%]">
-                                  <div className={`p-5 rounded-2xl border border-indigo-50 dark:border-white/10 bg-white dark:bg-white/5 shadow-sm hover:shadow-md transition-all relative group
-                                      ${isLeft ? 'mr-auto' : 'ml-auto'}`}>
-                                    
-                                    <div className="flex items-center justify-between mb-3 border-b border-gray-100 dark:border-white/5 pb-3">
-                                      <div className="flex items-center gap-1.5 text-[11px] text-gray-500 font-medium">
-                                        {uResp ? (
-                                          <>
-                                            {uResp.picture ? (
-                                              <img src={uResp.picture} alt={uResp.name} className="w-5 h-5 rounded-full object-cover" />
-                                            ) : (
-                                              <div className="w-5 h-5 rounded-full bg-violet-100 dark:bg-violet-500/20 text-violet-600 flex items-center justify-center font-bold text-[8px]" title={uResp.name}>
-                                                {getInitials(uResp.name)}
-                                              </div>
-                                            )}
-                                            <span className="truncate max-w-[150px] font-bold text-gray-700 dark:text-slate-300">{uResp.name || uResp.email}</span>
-                                          </>
-                                        ) : (
-                                          <>
-                                            <Users size={12} className="opacity-70" />
-                                            <span className="truncate max-w-[150px] font-bold text-gray-700 dark:text-slate-300">{n.user_name || 'Sistema'}</span>
-                                          </>
-                                        )}
-                                      </div>
-                                      <span className="text-[10px] font-bold text-gray-400">
-                                        {!isNaN(dateObj.getTime()) ? `${dateObj.toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric'})} às ${dateObj.toLocaleString('pt-BR', { hour:'2-digit', minute:'2-digit'})}` : 'Agora mesmo'}
-                                      </span>
-                                    </div>
-                                    
-                                    <div 
-                                      className="mt-2 text-sm text-gray-700 dark:text-slate-200 leading-relaxed whitespace-pre-wrap prose prose-sm dark:prose-invert max-w-none prose-img:cursor-zoom-in hover:prose-img:opacity-90 prose-img:transition-opacity prose-img:rounded-xl"
-                                      style={{ wordBreak: 'break-word' }}
-                                      onClick={handleNoteClick}
-                                      dangerouslySetInnerHTML={{ __html: n.content?.replace(/style="[^"]*color:[^"]*"/g, '') || '' }}
-                                    />
-                                    
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-              )}
-              {activeTab === 'reuniões' && (
-                <div className="space-y-6 flex-1 flex flex-col overflow-y-auto relative bg-[#F8F9FA] dark:bg-[#15121E]">
-                  <div className="flex items-center justify-between py-4 px-6 shrink-0 bg-white dark:bg-white/5 border-b border-gray-100 dark:border-white/10 shadow-sm z-20 sticky top-0">
-                    <h3 className="font-bold text-gray-700 dark:text-white uppercase text-[11px] tracking-wider">Histórico de Reuniões</h3>
-                    <button 
-                      onClick={() => {
-                        setMeetingForm(p => ({
-                          ...p,
-                          meeting_date: (lead as any).reunion_date || new Date().toISOString().slice(0, 16),
-                          office_location: (lead as any).office_location || '',
-                          reunion_niche: (lead as any).reunion_niche || '',
-                          monthly_closings: (lead as any).monthly_closings || '',
-                          closing_goal: (lead as any).closing_goal || '',
-                          reunion_link: (lead as any).reunion_link || ''
-                        }));
-                        setShowMeetingModal(true);
-                      }}
-                      className="px-4 py-2 bg-violet-600 hover:bg-violet-700 active:scale-95 text-white rounded-xl text-sm font-bold transition-all shadow-md shadow-violet-500/20 flex items-center gap-2">
-                      <Plus size={15} /> Adicionar Reunião
-                    </button>
-                  </div>
-
-                  <div className="relative flex-1 p-6 z-10 w-full max-w-4xl mx-auto pb-16">
-                    {meetingsLoading ? (
-                      <div className="flex flex-col justify-center items-center mt-12 text-gray-400">
-                         <Loader2 size={32} className="animate-spin text-violet-500 mb-2" />
-                         <span className="text-sm">Carregando reuniões...</span>
-                      </div>
-                    ) : meetings.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-16 text-gray-400 dark:text-slate-500">
-                        <Users size={36} className="mb-3 opacity-30" />
-                        <p className="text-sm font-medium">Nenhuma reunião registrada</p>
-                        <p className="text-xs mt-1 opacity-60">As marcações ficarão registradas no nosso histórico vertical</p>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="absolute left-1/2 top-4 bottom-4 w-[2px] bg-indigo-50/50 dark:bg-white/5 -translate-x-1/2" />
-                        
-                        <div className="space-y-16 relative">
-                          {meetings.map((m, idx) => {
-                            const isLeft = idx % 2 === 0;
-                            const dateObj = new Date(m.meeting_date);
-                            const mMonth = dateObj.toLocaleString('pt-BR', { month: 'short' }).toUpperCase();
-                            const mDay = String(dateObj.getDate()).padStart(2, '0');
-                            const notesLines = (m.notes || '').split('\n').filter((l:string) => l.trim().length > 0);
-                            const uResp = users.find(u => u.email === m.responsible_name || u.name === m.responsible_name);
-                            const getInitials = (n?: string) => n ? n.substring(0, 2).toUpperCase() : '??';
-
-                            return (
-                              <div key={m.id || idx} className={`flex items-start w-full relative ${isLeft ? 'justify-start' : 'justify-end'}`}>
-                                <div className="absolute left-1/2 top-[34px] -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border-[3px] border-white dark:border-[#15121E] bg-violet-50 dark:bg-violet-500/20 flex items-center justify-center z-10 shadow-sm">
-                                  <Check size={14} className="text-violet-500" />
-                                </div>
-                                
-                                <div className="w-[45%]">
-                                  <div className={`p-5 rounded-2xl border border-indigo-50 dark:border-white/10 bg-white dark:bg-white/5 shadow-sm hover:shadow-md transition-all relative group
-                                      ${isLeft ? 'mr-auto' : 'ml-auto'}`}>
-                                    
-                                    <div className="flex items-start gap-3.5 mb-4">
-                                      <div className="w-[52px] h-[52px] rounded-xl flex flex-col items-center justify-center bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 shrink-0 shadow-inner mt-0.5">
-                                        <span className="text-[9px] font-black tracking-widest">{mMonth}.</span>
-                                        <span className="text-lg font-bold leading-none mt-0.5">{mDay}</span>
-                                      </div>
-                                      
-                                      <div className="flex-1 min-w-0 pr-1">
-                                        <div className="flex items-start justify-between gap-2">
-                                          <h4 className="font-extrabold text-gray-800 dark:text-slate-100 text-[13px] leading-tight break-words pr-2">{m.title}</h4>
-                                          <span className="text-[9px] font-medium text-gray-400 shrink-0 mt-0.5">{dateObj.toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric'})} às {dateObj.toLocaleString('pt-BR', { hour:'2-digit', minute:'2-digit'})}</span>
-                                        </div>
-                                        <div className="flex items-center gap-1.5 mt-2.5 text-[10px] text-gray-500 font-medium">
-                                          {uResp ? (
-                                            <>
-                                              {uResp.picture ? (
-                                                <img src={uResp.picture} alt={uResp.name} className="w-4 h-4 rounded-full object-cover" />
-                                              ) : (
-                                                <div className="w-4 h-4 rounded-full bg-violet-100 dark:bg-violet-500/20 text-violet-600 flex items-center justify-center font-bold text-[7px]" title={uResp.name}>
-                                                  {getInitials(uResp.name)}
-                                                </div>
-                                              )}
-                                              <span className="truncate max-w-[150px]">{uResp.name || uResp.email}</span>
-                                            </>
-                                          ) : (
-                                            <>
-                                              <Users size={11} className="opacity-70" />
-                                              <span className="truncate max-w-[150px]">{m.responsible_name || 'Sistema'}</span>
-                                            </>
-                                          )}
-                                        </div>
-                                      </div>
-                                    </div>
-                                    
-                                    {(m.office_location || m.reunion_link || m.reunion_niche || m.monthly_closings || m.closing_goal || true) && (
-                                      <div className="mt-4 pt-4 border-t border-gray-100 dark:border-white/5 space-y-3">
-                                        <h5 className="text-[10px] font-bold text-gray-500/80 uppercase tracking-widest" style={{ color: '#6b7280' }}>Detalhes:</h5>
-                                        <div className="grid grid-cols-2 gap-y-3 gap-x-2 text-xs">
-                                          <div><span className="text-gray-400 font-medium block text-[9px] uppercase tracking-wider mb-0.5">Local</span><span className="font-semibold text-gray-700 dark:text-slate-300">{m.office_location || '-'}</span></div>
-                                          <div><span className="text-gray-400 font-medium block text-[9px] uppercase tracking-wider mb-0.5">Link</span>{m.reunion_link ? <a href={m.reunion_link.startsWith('http') ? m.reunion_link : `https://${m.reunion_link}`} target="_blank" rel="noreferrer" className="text-violet-500 hover:text-violet-600 font-semibold hover:underline truncate inline-block max-w-[120px]">{m.reunion_link}</a> : <span className="font-semibold text-gray-700 dark:text-slate-300">-</span>}</div>
-                                          <div><span className="text-gray-400 font-medium block text-[9px] uppercase tracking-wider mb-0.5">Nicho</span><span className="font-semibold text-gray-700 dark:text-slate-300 truncate max-w-[120px] inline-block">{m.reunion_niche || '-'}</span></div>
-                                          <div><span className="text-gray-400 font-medium block text-[9px] uppercase tracking-wider mb-0.5">Fechamentos Mês</span><span className="font-semibold text-gray-700 dark:text-slate-300">{m.monthly_closings || '-'}</span></div>
-                                          <div><span className="text-gray-400 font-medium block text-[9px] uppercase tracking-wider mb-0.5">Meta</span><span className="font-semibold text-gray-700 dark:text-slate-300">{m.closing_goal || '-'}</span></div>
-                                        </div>
-                                      </div>
-                                    )}
-                                    
-                                    {(notesLines.length > 0) && (
-                                      <div className="mt-4 pt-4 border-t border-gray-100 dark:border-white/5">
-                                        <h5 className="text-[10px] font-bold text-gray-500/80 uppercase tracking-widest mb-3" style={{ color: '#6b7280' }}>Informações da Reunião:</h5>
-                                        <ul className="space-y-2">
-                                          {notesLines.map((line:string, i:number) => {
-                                            const isCheck = line.trim().startsWith('-');
-                                            return (
-                                              <li key={i} className="flex items-start gap-2.5 text-[11px] text-gray-600 dark:text-slate-300">
-                                                {isCheck ? (
-                                                  <Check size={14} className="text-emerald-500 shrink-0 mt-0.5 opacity-80" />
-                                                ) : (
-                                                  <span className="w-1 h-3 mt-1.5 shrink-0" />
-                                                )}
-                                                <span className="leading-relaxed font-medium" style={{ color: '#4b5563' }}>{line.replace(/^- /, '')}</span>
-                                              </li>
-                                            );
-                                          })}
-                                        </ul>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-              )}
-              {activeTab === 'ligações' && (() => {
-                const formatCallDuration = (secs: number) => {
-                  if (!secs) return '0:00';
-                  const m = Math.floor(secs / 60);
-                  const s = secs % 60;
-                  return `${m}:${String(s).padStart(2, '0')}`;
-                };
-                const formatRelativeTime = formatCallRelativeTime;
-                const isSuccess = (call: any) => call.hangup_cause === 'NORMAL_CLEARING';
-
-                return (
-                  <div className="p-4 space-y-3 flex-1 overflow-y-auto">
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500">Histórico de ligações</p>
-                      <button onClick={() => setCallLogsFetched(false)} className="text-xs text-purple-500 hover:text-purple-400 flex items-center gap-1 transition-colors">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-                        Atualizar
-                      </button>
-                    </div>
-                    {callLogsLoading && (
-                      <div className="flex flex-col items-center justify-center py-12 text-gray-400">
-                        <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mb-3" />
-                        <p className="text-sm">Carregando ligações...</p>
-                      </div>
-                    )}
-                    {!callLogsLoading && callLogsFetched && callLogs.length === 0 && (
-                      <div className="flex flex-col items-center justify-center py-12 text-gray-400 dark:text-slate-500">
-                        <Phone size={36} className="mb-3 opacity-30" />
-                        <p className="text-sm font-medium">Nenhuma ligação encontrada</p>
-                        <p className="text-xs mt-1 opacity-60">As ligações aparecerão aqui após serem realizadas</p>
-                      </div>
-                    )}
-                    {!callLogsLoading && callLogs.map((call: any, index: number) => {
-                      const success = isSuccess(call);
-                      const dotColor = success ? 'bg-emerald-500' : 'bg-red-500';
-                      
-                      return (
-                        <div key={call.id} className="relative pl-6 pb-6 last:pb-0">
-                          {/* Timeline Line */}
-                          {index !== callLogs.length - 1 && (
-                            <div className="absolute left-[7px] top-[14px] w-[2px] h-full bg-gray-100 dark:bg-white/5" />
-                          )}
-                          
-                          {/* Timeline Dot */}
-                          <div className={`absolute left-0 top-1 w-[16px] h-[16px] rounded-full border-4 border-white dark:border-[#1A1625] shadow-sm z-10 flex items-center justify-center ${dotColor}`} />
-                          
-                          <div className="bg-white/50 dark:bg-white/5 border border-gray-100 dark:border-white/10 rounded-2xl p-4 shadow-sm transition-all hover:shadow-md">
-                            <div className="flex items-start gap-3">
-                              <div className="flex-shrink-0 w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.12)' }}>
-                                <Phone size={18} style={{ color: '#7c3aed' }} />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap mb-1">
-                                  <span className="font-semibold text-[13px] text-gray-800 dark:text-slate-100">Ligação</span>
-                                  <span className="text-[10px] px-2 py-0.5 rounded-full font-medium"
-                                    style={{ background: success ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', color: success ? '#059669' : '#dc2626' }}>
-                                    {success ? '✓' : '✕'} {getCallTypeLabel(call)}
-                                  </span>
-                                </div>
-                                <p className="text-[11px]" style={{ color: '#9ca3af' }}>ORIGEM: GrapeHub CRM</p>
-
-                                {call.duration > 0 && (
-                                  <div className="mt-2 text-[11px] text-gray-400 dark:text-slate-500">
-                                    ⏱ Duração: <strong className="text-gray-600 dark:text-slate-400">{formatCallDuration(call.duration)}</strong>
-                                  </div>
-                                )}
-
-                                {call.record_url && (
-                                  <div className="mt-2.5 rounded-lg p-1.5 flex items-center gap-2 max-w-[350px]" style={{ background: 'rgba(0,0,0,0.03)', border: '1px solid rgba(0,0,0,0.06)' }}>
-                                    <audio controls src={call.record_url} className="w-full h-7" style={{ minWidth: 0, flex: 1 }} preload="none" />
-                                    <a href={call.record_url} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 p-1 rounded hover:bg-purple-50 transition-colors" title="Abrir gravação">
-                                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                                    </a>
-                                  </div>
-                                )}
-
-                                <div className="flex items-center gap-1.5 mt-2.5">
-                                  <Clock size={11} className="text-gray-400" />
-                                  <span className="text-[11px]" style={{ color: '#9ca3af' }}>
-                                    {formatRelativeTime(call.started_at)}
-                                    {(call.first_name || call.last_name) && <> por <strong className="font-medium text-gray-600 dark:text-slate-400">{[call.first_name, call.last_name].filter(Boolean).join(' ')}</strong></>}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-
-                  </div>
-                );
-              })()}
-              {activeTab === 'arquivos' && (
-                <div className="p-6 space-y-6 flex-1 flex flex-col font-sans">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-bold text-gray-800 dark:text-slate-100">Documentos e Arquivos</h3>
-                    <button 
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={uploadingFiles}
-                      className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 border border-gray-200 dark:border-white/10 text-gray-700 dark:text-slate-200 rounded-xl text-sm font-bold transition-all disabled:opacity-50"
-                    >
-                      {uploadingFiles ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
-                      {uploadingFiles ? 'Enviando...' : 'Fazer Upload'}
-                    </button>
-                    <input 
-                      type="file" 
-                      ref={fileInputRef} 
-                      onChange={handleFileChange} 
-                      className="hidden" 
-                    />
-                  </div>
-
-                  <div 
-                    onDragOver={handleDragOver}
-                    onDrop={handleDrop}
-                    onClick={() => fileInputRef.current?.click()}
-                    className="border-2 border-dashed border-gray-300 dark:border-white/10 rounded-2xl p-8 text-center bg-gray-50 dark:bg-white/5 backdrop-blur-md cursor-pointer hover:border-violet-500 transition-all relative overflow-hidden"
-                  >
-                    <div className="flex flex-col items-center gap-3 relative z-10">
-                      <div className="p-3 bg-white/50 dark:bg-white/5 rounded-full border border-gray-200 dark:border-white/10 shadow-sm">
-                        <Folder size={24} className="text-gray-400 dark:text-slate-400" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-bold text-gray-700 dark:text-slate-200">Clique ou arraste arquivos para cá</p>
-                        <p className="text-xs text-gray-500 dark:text-slate-500 mt-1">Suporta PDF, DOCX, XLSX, imagens e vídeos (Máx 50MB)</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-gray-50 dark:bg-white/5 backdrop-blur-md rounded-2xl border border-gray-200 dark:border-white/10 overflow-hidden relative">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-slate-400 font-bold uppercase tracking-widest">
-                        <tr>
-                          <th className="px-6 py-4">Nome do Arquivo</th>
-                          <th className="px-6 py-4">Data</th>
-                          <th className="px-6 py-4">Tamanho</th>
-                          <th className="px-6 py-4">Enviado por</th>
-                          <th className="px-6 py-4 text-right">Ações</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-200 dark:divide-white/10 text-gray-700 dark:text-slate-200">
-                        {filesLoading && files.length === 0 ? (
-                          <tr>
-                            <td colSpan={5} className="px-6 py-8 text-center text-gray-400">Carregando arquivos...</td>
-                          </tr>
-                        ) : files.length === 0 ? (
-                          <tr>
-                            <td colSpan={5} className="px-6 py-8 text-center text-gray-400 italic">Nenhum arquivo enviado.</td>
-                          </tr>
-                        ) : (
-                          files.map((file: any) => (
-                            <tr key={file.id} className="hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
-                              <td className="px-6 py-4 flex items-center gap-3 font-bold max-w-[200px] truncate">
-                                <File size={16} className="text-violet-500 flex-shrink-0" />
-                                <span className="truncate" title={file.name}>{file.name}</span>
-                              </td>
-                              <td className="px-6 py-4 text-gray-500 dark:text-slate-400">{new Date(file.created_at).toLocaleDateString('pt-BR')}</td>
-                              <td className="px-6 py-4 text-gray-500 dark:text-slate-400">{file.size || '-'}</td>
-                              <td className="px-6 py-4">
-                                <span className="px-2 py-1 rounded-lg font-bold text-[10px] uppercase tracking-wider bg-violet-500/10 text-violet-500">
-                                  {(() => {
-                                    if (file.sender === 'Agência') return currentUserName || 'Sistema';
-                                    const userMatch = users?.find((u:any) => u.email === file.sender || u.name === file.sender);
-                                    return userMatch?.name || file.sender || 'Sistema';
-                                  })()}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4 text-right">
-                                <div className="flex items-center justify-end gap-3 text-gray-400">
-                                  <button onClick={() => window.open(file.url, '_blank')} className="hover:text-violet-500 transition-colors" title="Visualizar"><Eye size={16} /></button>
-                                  <button onClick={() => {
-                                    const a = document.createElement('a');
-                                    a.href = file.url;
-                                    a.download = file.name;
-                                    a.target = '_blank';
-                                    a.click();
-                                  }} className="hover:text-violet-500 transition-colors" title="Baixar"><Download size={16} /></button>
-                                  <button onClick={() => handleDeleteFile(file.id)} className="hover:text-red-500 transition-colors" title="Excluir"><Trash2 size={16} /></button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </div>
-
-
-          </div>
-
-          {/* Right: lead info */}
-          <div className="w-72 shrink-0 overflow-y-auto p-5 space-y-5">
-            {/* Informações do negócio */}
-            <div>
-              <div 
-                className="flex items-center justify-between cursor-pointer group mb-3"
-                onClick={() => toggleSection('business')}
-              >
-                <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-slate-400 group-hover:text-gray-700 dark:group-hover:text-slate-300 transition-colors">
-                  Informações do negócio
-                </h4>
-                <ChevronDown size={14} className={`text-gray-400 transition-transform ${sectionsOpen.business ? 'rotate-180' : ''}`} />
-              </div>
-              
-              {sectionsOpen.business && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
-                      <DollarSign size={13} /> Valor do negócio
-                    </span>
-                    <input 
-                      type="number"
-                      value={lead.valor}
-                      onChange={(e) => onUpdateLeadField(lead.id, 'valor', Number(e.target.value))}
-                      className="text-right text-sm font-bold text-emerald-500 bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 min-w-0 flex-1"
-                    />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5">
-                      <ArrowRightLeft size={13} /> Etapa do funil
-                    </span>
-                    <span className="text-sm font-semibold text-gray-900 dark:text-white">{currentColumn?.title || '—'}</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
-                      <Users size={13} /> Responsável
-                    </span>
-                    <select
-                      value={lead.responsavel_id || ''}
-                      onChange={(e) => onUpdateLeadField(lead.id, 'responsavel_id', e.target.value)}
-                      style={{ textAlignLast: 'right', border: 'none', background: 'transparent' }}
-                      className="text-sm font-semibold text-gray-900 dark:text-white outline-none focus:ring-0 rounded px-0 -mr-1 min-w-0 flex-1 appearance-none cursor-pointer"
-                    >
-                      <option value="" className="bg-white dark:bg-slate-800">— Sem responsável</option>
-                      {users.map(u => (
-                        <option key={u.id} value={u.id} className="bg-white dark:bg-slate-800">{u.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5">
-                      <Clock size={13} /> Data de criação
-                    </span>
-                    <span className="text-sm text-gray-700 dark:text-slate-300">{new Date(lead.created_at).toLocaleDateString('pt-BR')}</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
-                      <Calendar size={13} /> Previsão
-                    </span>
-                    <div
-                      className="flex items-center gap-1 cursor-pointer group"
-                      onClick={(e) => {
-                        const inp = (e.currentTarget as HTMLElement).querySelector('input[type="date"]') as HTMLInputElement | null;
-                        try { inp?.showPicker?.(); } catch { inp?.click(); }
-                      }}
-                    >
-                      <span className="text-sm text-gray-700 dark:text-slate-300 group-hover:text-violet-500 transition-colors">
-                        {(lead as any).previsao
-                          ? new Date(((lead as any).previsao as string).split('T')[0] + 'T12:00:00').toLocaleDateString('pt-BR')
-                          : <span className="text-slate-500 text-xs italic">Adicionar...</span>}
-                      </span>
-                      <input
-                        type="date"
-                        value={((lead as any).previsao || '').split('T')[0]}
-                        onChange={(e) => onUpdateLeadField(lead.id, 'previsao', e.target.value || null)}
-                        style={{ colorScheme: 'dark' }}
-                        className="sr-only"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5">
-                      <Clock size={13} /> Na etapa
-                    </span>
-                    <span className="text-sm text-gray-700 dark:text-slate-300">
-                      {(lead as any).etapa_updated_at 
-                        ? Math.max(0, Math.floor((Date.now() - new Date((lead as any).etapa_updated_at).getTime()) / 86400000))
-                        : 0} dias
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="h-px bg-gray-100 dark:bg-white/5" />
-
-            {/* Etiquetas */}
-            <div className="relative" ref={tagsRef}>
-              <div 
-                className="flex items-center justify-between cursor-pointer group mb-3"
-                onClick={() => toggleSection('tags')}
-              >
-                <div className="flex flex-center gap-1.5">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-slate-400 flex flex-center gap-1.5"><Tag size={13}/> Etiquetas</h4>
-                  <ChevronDown size={14} className={`text-gray-400 transition-transform ${sectionsOpen.tags ? 'rotate-180' : ''}`} />
-                </div>
-                <button 
-                  onClick={(e) => { e.stopPropagation(); setShowTagMenu(!showTagMenu); setSectionsOpen(prev => ({...prev, tags: true})); }}
-                  className="text-xs font-medium text-amber-500 hover:text-amber-600 dark:text-amber-400 dark:hover:text-amber-300 transition-colors"
+              {/* Informações da Reunião */}
+              <div>
+                <div
+                  className="flex items-center justify-between cursor-pointer group mb-3"
+                  onClick={() => toggleSection('meeting')}
                 >
-                  Editar
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-slate-400 group-hover:text-gray-700 dark:group-hover:text-slate-300 transition-colors">
+                    Formulário
+                  </h4>
+                  <ChevronDown size={14} className={`text-gray-400 transition-transform ${sectionsOpen.meeting ? 'rotate-180' : ''}`} />
+                </div>
+
+                {sectionsOpen.meeting && (
+                  <div className="space-y-3">
+                    {[
+                      { label: 'Nome Completo', field: 'form_nome_completo', type: 'text' },
+                      { label: 'Nome Fantasia', field: 'form_nome_fantasia', type: 'text' },
+                      { label: 'Telefone (WhatsApp)', field: 'form_telefone_whatsapp', type: 'text' },
+                      { label: 'CNPJ / CPF', field: 'form_cnpj_cpf', type: 'text' },
+                      { label: 'CEP', field: 'form_cep', type: 'text' },
+                      { label: 'Cidade', field: 'form_cidade', type: 'text' },
+                      { label: 'UF', field: 'form_estado', type: 'text' },
+                    ].map(({ label, field, type }) => (
+                      <div key={label} className="flex items-center justify-between gap-2">
+                        <span className="text-xs text-gray-500 dark:text-slate-400 shrink-0">{label}</span>
+                        <input
+                          type={type}
+                          value={(lead as any)[field] || ''}
+                          onChange={(e) => onUpdateLeadField(lead.id, field, e.target.value)}
+                          placeholder="Adicionar..."
+                          className="text-right text-xs font-medium text-gray-800 dark:text-slate-200 bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 min-w-0 flex-1 truncate"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="h-px bg-gray-100 dark:bg-white/5" />
+
+              {/* UTMs */}
+              <div>
+                <div
+                  className="flex items-center justify-between cursor-pointer group mb-3"
+                  onClick={() => toggleSection('utms')}
+                >
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-slate-400 group-hover:text-gray-700 dark:group-hover:text-slate-300 transition-colors">
+                    UTMs
+                  </h4>
+                  <ChevronDown size={14} className={`text-gray-400 transition-transform ${sectionsOpen.utms ? 'rotate-180' : ''}`} />
+                </div>
+
+                {sectionsOpen.utms && (
+                  <div className="space-y-3">
+                    {[
+                      { label: 'Plataforma', field: 'utm_platform' },
+                      { label: 'Campanha', field: 'utm_campaign' },
+                      { label: 'Conjunto', field: 'utm_set' },
+                      { label: 'Criativo', field: 'utm_creative' },
+                      { label: 'Posicionamento', field: 'utm_position' },
+                    ].map(({ label, field }) => (
+                      <div key={label} className="flex items-center justify-between gap-2">
+                        <span className="text-xs text-gray-500 dark:text-slate-400 shrink-0 min-w-max">{label}</span>
+                        <input
+                          type="text"
+                          value={(lead as any)[field] || ''}
+                          onChange={(e) => onUpdateLeadField(lead.id, field, e.target.value)}
+                          placeholder="Adicionar..."
+                          className="text-right text-xs font-medium text-gray-800 dark:text-slate-200 bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 w-full ml-2 truncate"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+        {/* Meeting Modal */}
+        {showMeetingModal && (
+          <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowMeetingModal(false)} />
+            <div className="bg-white dark:bg-[#1A1625] rounded-3xl w-full max-w-lg p-6 shadow-2xl relative z-10 animate-in fade-in zoom-in-95 duration-200">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h3 className="text-lg font-bold text-gray-800 dark:text-white">Adicionar Reunião</h3>
+                  <p className="text-[11px] font-medium text-gray-500 dark:text-slate-400 mt-1 uppercase tracking-wider">Registre na timeline do lead</p>
+                </div>
+                <button onClick={() => setShowMeetingModal(false)} className="w-8 h-8 rounded-full bg-gray-100 dark:bg-white/5 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-white/10 transition-colors">
+                  <X size={16} className="text-gray-500" />
                 </button>
               </div>
-              
-              {sectionsOpen.tags && (
-                <div className="flex flex-wrap gap-1.5">
-                  {((lead as any).tags || []).length > 0 ? (lead as any).tags.map((tag: any) => (
-                    <span key={tag.name} className="px-2 py-0.5 text-xs font-bold rounded-full text-white shadow-sm" style={{ backgroundColor: tag.color }}>
-                      {tag.name}
-                    </span>
-                  )) : (
-                    <span className="text-xs text-gray-400 dark:text-slate-500 italic">Sem etiquetas</span>
-                  )}
-                </div>
-              )}
 
-              {showTagMenu && sectionsOpen.tags && (
-                <div className="absolute top-10 right-0 w-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl shadow-xl z-50 overflow-hidden">
-                  <div className="p-3 border-b border-slate-100 dark:border-white/5">
-                    <div className="relative">
-                      <Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" />
-                      <input 
-                        type="text" 
-                        value={tagSearch}
-                        onChange={e => setTagSearch(e.target.value)}
-                        placeholder="Buscar etiqueta..." 
-                        className="w-full pl-8 pr-3 py-1.5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-lg text-sm text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-amber-500/40"
-                      />
-                    </div>
+              <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="text-xs font-bold text-gray-600 dark:text-slate-300 uppercase tracking-wider mb-2 block">Título da Reunião</label>
+                    <input
+                      type="text"
+                      value={meetingForm.title}
+                      onChange={e => setMeetingForm(p => ({ ...p, title: e.target.value }))}
+                      placeholder="Ex: Reunião de alinhamento estratégico..."
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all font-medium text-sm text-gray-800 dark:text-slate-200 placeholder-gray-400"
+                    />
                   </div>
-                  
-                  <div className="max-h-48 overflow-y-auto">
-                    {/* Botão de adicionar nova (se não existe na busca) */}
-                    {tagSearch.trim() !== '' && !tags.some((t:any) => t.name.toLowerCase() === tagSearch.toLowerCase()) && (
-                      <div className="p-3 border-b border-slate-100 dark:border-white/5 bg-slate-50 dark:bg-white/5">
-                        <p className="text-xs text-slate-500 mb-2">Criar "{tagSearch}" com a cor:</p>
-                        <div className="flex items-center gap-2">
-                          {['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#64748b', '#ec4899', '#14b8a6'].map(colorHex => (
-                            <button 
-                              key={colorHex}
-                              className="w-5 h-5 rounded-full hover:scale-110 transition-transform focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-gray-300 dark:focus:ring-offset-slate-800 border border-black/10 dark:border-white/10"
-                              style={{ backgroundColor: colorHex }}
-                              onClick={async () => {
-                                try {
-                                  const res = await fetch('/api/crm-comercial/tags', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ name: tagSearch, color: colorHex })
-                                  });
-                                  if (res.ok) {
-                                    onRefreshTags();
-                                    const newTags = [...((lead as any).tags || []), { name: tagSearch, color: colorHex }];
-                                    onUpdateLeadField(lead.id, 'tags', newTags);
-                                    setTagSearch('');
-                                  }
-                                } catch (err) { console.error(err); }
-                              }}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    
-                    {/* Lista das Globais */}
-                    {tags.filter((t:any) => t.name.toLowerCase().includes(tagSearch.toLowerCase())).map((globalTag: any) => {
-                      const isSelected = ((lead as any).tags || []).some((t:any) => t.name === globalTag.name);
-                      return (
-                        <div key={globalTag.name} className="flex items-center justify-between px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-white/5 group cursor-pointer"
-                          onClick={() => {
-                            let newTags;
-                            if (isSelected) {
-                              newTags = ((lead as any).tags || []).filter((t:any) => t.name !== globalTag.name);
-                            } else {
-                              newTags = [...((lead as any).tags || []), { name: globalTag.name, color: globalTag.color }];
-                            }
-                            onUpdateLeadField(lead.id, 'tags', newTags);
-                          }}
-                        >
-                          <div className="flex items-center gap-2">
-                            {isSelected ? (
-                              <CheckCircle2 size={15} className="text-emerald-500" />
-                            ) : (
-                              <Circle size={15} className="text-slate-300 dark:text-slate-600" />
-                            )}
-                            <span className="text-sm text-slate-700 dark:text-slate-300 font-medium">{globalTag.name}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: globalTag.color }} />
-                            <button
-                              className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1"
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                if(!window.confirm(`Excluir a etiqueta "${globalTag.name}" globalmente?`)) return;
-                                try {
-                                  const res = await fetch(`/api/crm-comercial/tags/${encodeURIComponent(globalTag.name)}`, { method: 'DELETE' });
-                                  if (res.ok) {
-                                    onRefreshTags();
-                                    // Remove tag locally from lead as well
-                                    if(isSelected) {
-                                      const newTags = ((lead as any).tags || []).filter((t:any) => t.name !== globalTag.name);
-                                      onUpdateLeadField(lead.id, 'tags', newTags);
-                                    }
-                                  }
-                                } catch (err) { console.error(err); }
-                              }}
-                            >
-                              <X size={12} />
-                            </button>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                  
-                  <button onClick={() => setShowTagMenu(false)} className="w-full py-2.5 text-xs font-semibold text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 border-t border-slate-100 dark:border-white/5 bg-slate-50 dark:bg-slate-900/40 transition-colors">
-                    Fechar
-                  </button>
-                </div>
-              )}
-            </div>
 
-            <div className="h-px bg-gray-100 dark:bg-white/5" />
-
-            {/* Informações do contato */}
-            <div>
-              <div 
-                className="flex items-center justify-between cursor-pointer group mb-3"
-                onClick={() => toggleSection('contact')}
-              >
-                <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-slate-400 group-hover:text-gray-700 dark:group-hover:text-slate-300 transition-colors">
-                  Informações do contato
-                </h4>
-                <ChevronDown size={14} className={`text-gray-400 transition-transform ${sectionsOpen.contact ? 'rotate-180' : ''}`} />
-              </div>
-
-              {sectionsOpen.contact && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
-                      <Users size={13} /> Nome
-                    </span>
-                    <input 
-                      type="text"
-                      value={lead.nome}
-                      onChange={(e) => onUpdateLeadField(lead.id, 'nome', e.target.value)}
-                      placeholder="Nome do contato"
-                      className="text-right text-sm font-semibold text-gray-900 dark:text-white bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 min-w-0 flex-1"
-                    />
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
-                      <Phone size={13} /> Telefone
-                    </span>
-                    <input 
-                      type="text"
-                      value={lead.telefone || ''}
-                      onChange={(e) => onUpdateLeadField(lead.id, 'telefone', e.target.value)}
-                      placeholder="Adicionar..."
-                      className="text-right text-sm text-gray-700 dark:text-slate-300 bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 min-w-0 flex-1"
-                    />
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
-                      <Flame size={13} /> Origem
-                    </span>
-                    <select 
-                      value={lead.origem || 'Outro'}
-                      onChange={(e) => onUpdateLeadField(lead.id, 'origem', e.target.value)}
-                      style={{ textAlignLast: 'right', border: 'none', background: 'transparent' }}
-                      className={`text-sm font-semibold outline-none focus:ring-0 rounded px-0 -mr-1 min-w-0 flex-1 appearance-none cursor-pointer ${
-                        lead.origem === 'Indicação' ? 'text-orange-500' :
-                        lead.origem === 'Meta ads' ? 'text-blue-500' :
-                        lead.origem === 'Google ads' ? 'text-amber-500' :
-                        lead.origem === 'Youtube ads' ? 'text-red-500' :
-                        lead.origem === 'Linkedin' ? 'text-sky-500' :
-                        'text-gray-900 dark:text-white'
-                      }`}
-                    >
-                      <option value="Indicação" className="font-semibold text-orange-500 bg-white dark:bg-slate-800">Indicação</option>
-                      <option value="Meta ads" className="font-semibold text-blue-500 bg-white dark:bg-slate-800">Meta ads</option>
-                      <option value="Google ads" className="font-semibold text-amber-500 bg-white dark:bg-slate-800">Google ads</option>
-                      <option value="Youtube ads" className="font-semibold text-red-500 bg-white dark:bg-slate-800">Youtube ads</option>
-                      <option value="Linkedin" className="font-semibold text-sky-500 bg-white dark:bg-slate-800">Linkedin</option>
-                      <option value="Outro" className="font-semibold text-gray-900 dark:text-white bg-white dark:bg-slate-800">Outro</option>
-                    </select>
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
-                      <Instagram size={13} /> Instagram
-                    </span>
-                    <input 
-                      type="text"
-                      value={lead.instagram || ''}
-                      onChange={(e) => onUpdateLeadField(lead.id, 'instagram', e.target.value)}
-                      placeholder="Adicionar..."
-                      className="text-right text-sm font-semibold text-gray-900 dark:text-white bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 min-w-0 flex-1"
-                    />
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
-                      <Briefcase size={13} /> Nicho
-                    </span>
-                    <input 
-                      type="text"
-                      value={lead.nicho || ''}
-                      onChange={(e) => onUpdateLeadField(lead.id, 'nicho', e.target.value)}
-                      placeholder="Adicionar..."
-                      className="text-right text-sm font-semibold text-gray-900 dark:text-white bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 min-w-0 flex-1"
-                    />
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
-                      <Award size={13} /> Tempo de OAB
-                    </span>
-                    <input 
-                      type="text"
-                      value={lead.tempo_oab || ''}
-                      onChange={(e) => onUpdateLeadField(lead.id, 'tempo_oab', e.target.value)}
-                      placeholder="Adicionar..."
-                      className="text-right text-sm font-semibold text-gray-900 dark:text-white bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 min-w-0 flex-1"
-                    />
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
-                      <DollarSign size={13} /> Faturamento
-                    </span>
-                    <input 
-                      type="text"
-                      value={lead.faturamento || ''}
-                      onChange={(e) => onUpdateLeadField(lead.id, 'faturamento', e.target.value)}
-                      placeholder="Adicionar..."
-                      className="text-right text-sm font-semibold text-gray-900 dark:text-white bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 min-w-0 flex-1"
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="text-xs font-bold text-gray-600 dark:text-slate-300 uppercase tracking-wider mb-2 block">Data e Hora</label>
+                    <input
+                      type="datetime-local"
+                      value={meetingForm.meeting_date}
+                      onChange={e => setMeetingForm(p => ({ ...p, meeting_date: e.target.value }))}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all font-medium text-sm text-gray-800 dark:text-slate-200"
                     />
                   </div>
                 </div>
-              )}
-            </div>
 
-            {/* Observações */}
-            {lead.observacoes && (
-              <>
-                <div className="h-px bg-gray-100 dark:bg-white/5" />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="text-xs font-bold text-gray-600 dark:text-slate-300 uppercase tracking-wider mb-2 block">Local do escritório</label>
+                    <input
+                      type="text"
+                      value={meetingForm.office_location}
+                      onChange={e => setMeetingForm(p => ({ ...p, office_location: e.target.value }))}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all font-medium text-sm text-gray-800 dark:text-slate-200"
+                    />
+                  </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="text-xs font-bold text-gray-600 dark:text-slate-300 uppercase tracking-wider mb-2 block">Link da reunião</label>
+                    <input
+                      type="text"
+                      value={meetingForm.reunion_link}
+                      onChange={e => setMeetingForm(p => ({ ...p, reunion_link: e.target.value }))}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all font-medium text-sm text-gray-800 dark:text-slate-200"
+                    />
+                  </div>
+
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="text-xs font-bold text-gray-600 dark:text-slate-300 uppercase tracking-wider mb-2 block">Nicho de atuação</label>
+                    <input
+                      type="text"
+                      value={meetingForm.reunion_niche}
+                      onChange={e => setMeetingForm(p => ({ ...p, reunion_niche: e.target.value }))}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all font-medium text-sm text-gray-800 dark:text-slate-200"
+                    />
+                  </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="text-xs font-bold text-gray-600 dark:text-slate-300 uppercase tracking-wider mb-2 block">Fechamentos mês</label>
+                    <input
+                      type="text"
+                      value={meetingForm.monthly_closings}
+                      onChange={e => setMeetingForm(p => ({ ...p, monthly_closings: e.target.value }))}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all font-medium text-sm text-gray-800 dark:text-slate-200"
+                    />
+                  </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="text-xs font-bold text-gray-600 dark:text-slate-300 uppercase tracking-wider mb-2 block">Meta de fechamentos</label>
+                    <input
+                      type="text"
+                      value={meetingForm.closing_goal}
+                      onChange={e => setMeetingForm(p => ({ ...p, closing_goal: e.target.value }))}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all font-medium text-sm text-gray-800 dark:text-slate-200"
+                    />
+                  </div>
+                </div>
+
                 <div>
-                  <div 
-                    className="flex items-center justify-between cursor-pointer group mb-3"
-                    onClick={() => toggleSection('obs')}
-                  >
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-slate-400 group-hover:text-gray-700 dark:group-hover:text-slate-300 transition-colors">
-                      Observações
-                    </h4>
-                    <ChevronDown size={14} className={`text-gray-400 transition-transform ${sectionsOpen.obs ? 'rotate-180' : ''}`} />
-                  </div>
-                  {sectionsOpen.obs && (
-                    <textarea 
-                      value={lead.observacoes}
-                      onChange={(e) => onUpdateLeadField(lead.id, 'observacoes', e.target.value)}
-                      placeholder="Adicionar..."
-                      className="w-full text-sm text-gray-700 dark:text-slate-300 bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mx-1 min-h-[60px] resize-none"
-                    />
-                  )}
+                  <label className="text-xs font-bold text-gray-600 dark:text-slate-300 uppercase tracking-wider mb-2 flex items-center justify-between">
+                    <span>Próximas Ações / Acordos</span>
+                    <span className="text-[9px] font-medium text-violet-500 lowercase opacity-70">Use - pra marcações</span>
+                  </label>
+                  <textarea
+                    value={meetingForm.notes}
+                    onChange={e => setMeetingForm(p => ({ ...p, notes: e.target.value }))}
+                    placeholder="Dica: Registre aqui os detalhes...&#10;&#10;- Primeiro ponto acordado&#10;- Segundo item de ação"
+                    rows={4}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all font-medium text-sm resize-none text-gray-800 dark:text-slate-200 placeholder-gray-400"
+                  />
                 </div>
-              </>
-            )}
 
-            <div className="h-px bg-gray-100 dark:bg-white/5" />
-
-            {/* Informações da Reunião */}
-            <div>
-              <div 
-                className="flex items-center justify-between cursor-pointer group mb-3"
-                onClick={() => toggleSection('meeting')}
-              >
-                <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-slate-400 group-hover:text-gray-700 dark:group-hover:text-slate-300 transition-colors">
-                  Formulário
-                </h4>
-                <ChevronDown size={14} className={`text-gray-400 transition-transform ${sectionsOpen.meeting ? 'rotate-180' : ''}`} />
+                <button
+                  onClick={handleCreateMeeting}
+                  disabled={!meetingForm.title || !meetingForm.meeting_date || meetingsLoading}
+                  className="w-full py-3.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-bold mt-2 transition-all active:scale-[0.98] shadow-xl shadow-violet-500/20 disabled:opacity-50 disabled:active:scale-100 flex justify-center items-center gap-2">
+                  {meetingsLoading ? <Loader2 size={18} className="animate-spin" /> : 'Salvar Reunião'}
+                </button>
               </div>
-              
-              {sectionsOpen.meeting && (
-                <div className="space-y-3">
-                  {[
-                    { label: 'Nome Completo', field: 'form_nome_completo', type: 'text' },
-                    { label: 'Nome Fantasia', field: 'form_nome_fantasia', type: 'text' },
-                    { label: 'Telefone (WhatsApp)', field: 'form_telefone_whatsapp', type: 'text' },
-                    { label: 'CNPJ / CPF', field: 'form_cnpj_cpf', type: 'text' },
-                    { label: 'CEP', field: 'form_cep', type: 'text' },
-                    { label: 'Cidade', field: 'form_cidade', type: 'text' },
-                    { label: 'UF', field: 'form_estado', type: 'text' },
-                  ].map(({ label, field, type }) => (
-                    <div key={label} className="flex items-center justify-between gap-2">
-                      <span className="text-xs text-gray-500 dark:text-slate-400 shrink-0">{label}</span>
-                      <input 
-                        type={type}
-                        value={(lead as any)[field] || ''}
-                        onChange={(e) => onUpdateLeadField(lead.id, field, e.target.value)}
-                        placeholder="Adicionar..."
-                        className="text-right text-xs font-medium text-gray-800 dark:text-slate-200 bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 min-w-0 flex-1 truncate"
-                      />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="h-px bg-gray-100 dark:bg-white/5" />
-
-            {/* UTMs */}
-            <div>
-              <div 
-                className="flex items-center justify-between cursor-pointer group mb-3"
-                onClick={() => toggleSection('utms')}
-              >
-                <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-slate-400 group-hover:text-gray-700 dark:group-hover:text-slate-300 transition-colors">
-                  UTMs
-                </h4>
-                <ChevronDown size={14} className={`text-gray-400 transition-transform ${sectionsOpen.utms ? 'rotate-180' : ''}`} />
-              </div>
-
-              {sectionsOpen.utms && (
-                <div className="space-y-3">
-                  {[
-                    { label: 'Plataforma',     field: 'utm_platform' },
-                    { label: 'Campanha',       field: 'utm_campaign' },
-                    { label: 'Conjunto',       field: 'utm_set' },
-                    { label: 'Criativo',       field: 'utm_creative' },
-                    { label: 'Posicionamento', field: 'utm_position' },
-                  ].map(({ label, field }) => (
-                    <div key={label} className="flex items-center justify-between gap-2">
-                      <span className="text-xs text-gray-500 dark:text-slate-400 shrink-0 min-w-max">{label}</span>
-                      <input 
-                        type="text"
-                        value={(lead as any)[field] || ''}
-                        onChange={(e) => onUpdateLeadField(lead.id, field, e.target.value)}
-                        placeholder="Adicionar..."
-                        className="text-right text-xs font-medium text-gray-800 dark:text-slate-200 bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 w-full ml-2 truncate"
-                      />
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
           </div>
-        </div>
+        )}      {/* Image Viewer Popup */}
+        {selectedImage && (
+          <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm transition-all" onClick={() => setSelectedImage(null)}>
+            <div className="relative max-w-[90vw] max-h-[90vh] flex flex-col items-center">
+              <button
+                onClick={() => setSelectedImage(null)}
+                className="absolute -top-12 right-0 p-2 text-white/70 hover:text-white bg-black/20 hover:bg-black/50 rounded-full transition-colors backdrop-blur-md"
+              >
+                <X size={24} />
+              </button>
+              <img
+                src={selectedImage}
+                alt="Visualização"
+                className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>
+          </div>
+        )}
       </div>
-{/* Meeting Modal */}
-      {showMeetingModal && (
-        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowMeetingModal(false)} />
-          <div className="bg-white dark:bg-[#1A1625] rounded-3xl w-full max-w-lg p-6 shadow-2xl relative z-10 animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h3 className="text-lg font-bold text-gray-800 dark:text-white">Adicionar Reunião</h3>
-                <p className="text-[11px] font-medium text-gray-500 dark:text-slate-400 mt-1 uppercase tracking-wider">Registre na timeline do lead</p>
-              </div>
-              <button onClick={() => setShowMeetingModal(false)} className="w-8 h-8 rounded-full bg-gray-100 dark:bg-white/5 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-white/10 transition-colors">
-                <X size={16} className="text-gray-500" />
-              </button>
-            </div>
-
-            <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="col-span-2 sm:col-span-1">
-                  <label className="text-xs font-bold text-gray-600 dark:text-slate-300 uppercase tracking-wider mb-2 block">Título da Reunião</label>
-                  <input
-                    type="text"
-                    value={meetingForm.title}
-                    onChange={e => setMeetingForm(p => ({...p, title: e.target.value}))}
-                    placeholder="Ex: Reunião de alinhamento estratégico..."
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all font-medium text-sm text-gray-800 dark:text-slate-200 placeholder-gray-400"
-                  />
-                </div>
-
-                <div className="col-span-2 sm:col-span-1">
-                  <label className="text-xs font-bold text-gray-600 dark:text-slate-300 uppercase tracking-wider mb-2 block">Data e Hora</label>
-                  <input
-                    type="datetime-local"
-                    value={meetingForm.meeting_date}
-                    onChange={e => setMeetingForm(p => ({...p, meeting_date: e.target.value}))}
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all font-medium text-sm text-gray-800 dark:text-slate-200"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="col-span-2 sm:col-span-1">
-                  <label className="text-xs font-bold text-gray-600 dark:text-slate-300 uppercase tracking-wider mb-2 block">Local do escritório</label>
-                  <input
-                    type="text"
-                    value={meetingForm.office_location}
-                    onChange={e => setMeetingForm(p => ({...p, office_location: e.target.value}))}
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all font-medium text-sm text-gray-800 dark:text-slate-200"
-                  />
-                </div>
-                <div className="col-span-2 sm:col-span-1">
-                  <label className="text-xs font-bold text-gray-600 dark:text-slate-300 uppercase tracking-wider mb-2 block">Link da reunião</label>
-                  <input
-                    type="text"
-                    value={meetingForm.reunion_link}
-                    onChange={e => setMeetingForm(p => ({...p, reunion_link: e.target.value}))}
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all font-medium text-sm text-gray-800 dark:text-slate-200"
-                  />
-                </div>
-
-                <div className="col-span-2 sm:col-span-1">
-                  <label className="text-xs font-bold text-gray-600 dark:text-slate-300 uppercase tracking-wider mb-2 block">Nicho de atuação</label>
-                  <input
-                    type="text"
-                    value={meetingForm.reunion_niche}
-                    onChange={e => setMeetingForm(p => ({...p, reunion_niche: e.target.value}))}
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all font-medium text-sm text-gray-800 dark:text-slate-200"
-                  />
-                </div>
-                <div className="col-span-2 sm:col-span-1">
-                  <label className="text-xs font-bold text-gray-600 dark:text-slate-300 uppercase tracking-wider mb-2 block">Fechamentos mês</label>
-                  <input
-                    type="text"
-                    value={meetingForm.monthly_closings}
-                    onChange={e => setMeetingForm(p => ({...p, monthly_closings: e.target.value}))}
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all font-medium text-sm text-gray-800 dark:text-slate-200"
-                  />
-                </div>
-                <div className="col-span-2 sm:col-span-1">
-                  <label className="text-xs font-bold text-gray-600 dark:text-slate-300 uppercase tracking-wider mb-2 block">Meta de fechamentos</label>
-                  <input
-                    type="text"
-                    value={meetingForm.closing_goal}
-                    onChange={e => setMeetingForm(p => ({...p, closing_goal: e.target.value}))}
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all font-medium text-sm text-gray-800 dark:text-slate-200"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-bold text-gray-600 dark:text-slate-300 uppercase tracking-wider mb-2 flex items-center justify-between">
-                  <span>Próximas Ações / Acordos</span>
-                  <span className="text-[9px] font-medium text-violet-500 lowercase opacity-70">Use - pra marcações</span>
-                </label>
-                <textarea
-                  value={meetingForm.notes}
-                  onChange={e => setMeetingForm(p => ({...p, notes: e.target.value}))}
-                  placeholder="Dica: Registre aqui os detalhes...&#10;&#10;- Primeiro ponto acordado&#10;- Segundo item de ação"
-                  rows={4}
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all font-medium text-sm resize-none text-gray-800 dark:text-slate-200 placeholder-gray-400"
-                />
-              </div>
-
-              <button 
-                 onClick={handleCreateMeeting}
-                 disabled={!meetingForm.title || !meetingForm.meeting_date || meetingsLoading}
-                 className="w-full py-3.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-bold mt-2 transition-all active:scale-[0.98] shadow-xl shadow-violet-500/20 disabled:opacity-50 disabled:active:scale-100 flex justify-center items-center gap-2">
-                {meetingsLoading ? <Loader2 size={18} className="animate-spin" /> : 'Salvar Reunião'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}      {/* Image Viewer Popup */}
-      {selectedImage && (
-        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm transition-all" onClick={() => setSelectedImage(null)}>
-          <div className="relative max-w-[90vw] max-h-[90vh] flex flex-col items-center">
-            <button 
-              onClick={() => setSelectedImage(null)}
-              className="absolute -top-12 right-0 p-2 text-white/70 hover:text-white bg-black/20 hover:bg-black/50 rounded-full transition-colors backdrop-blur-md"
-            >
-              <X size={24} />
-            </button>
-            <img 
-              src={selectedImage} 
-              alt="Visualização" 
-              className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl" 
-              onClick={(e) => e.stopPropagation()} 
-            />
-          </div>
-        </div>
-      )}
-    </div>
     </>
   );
 };
@@ -2830,11 +2816,11 @@ const GerenciarKanbansModal = ({ isOpen, onClose, kanbans, columns, leads, onRen
             <X size={20} />
           </button>
         </div>
-        
+
         <div className="p-6 overflow-y-auto flex-1 space-y-4">
           {kanbans.map((kanban: any) => {
-            const kanbanColumns = columns.filter((c:any) => c.kanban_id === kanban.id).length;
-            const kanbanLeads = leads.filter((l:any) => l.kanban_id === kanban.id).length;
+            const kanbanColumns = columns.filter((c: any) => c.kanban_id === kanban.id).length;
+            const kanbanLeads = leads.filter((l: any) => l.kanban_id === kanban.id).length;
             const colorClass = kanban.cor ? `bg-${kanban.cor}-500/10 text-${kanban.cor}-500` : 'bg-gray-500/10 text-gray-500';
             const iconBg = kanban.cor ? `bg-${kanban.cor}-500` : 'bg-gray-500';
 
@@ -2870,7 +2856,7 @@ const GerenciarKanbansModal = ({ isOpen, onClose, kanbans, columns, leads, onRen
                           {kanban.nome} {kanban.nome.toLowerCase().includes('comercial') && '🔥'}
                         </h3>
                       )}
-                      
+
                       {kanban.is_default && (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-violet-500 text-white leading-none">Padrão</span>
                       )}
@@ -2893,7 +2879,7 @@ const GerenciarKanbansModal = ({ isOpen, onClose, kanbans, columns, leads, onRen
                         <Copy size={15} />
                         Criar cópia
                       </DropdownMenu.Item>
-                      <DropdownMenu.Item 
+                      <DropdownMenu.Item
                         onClick={() => { setEditingId(kanban.id); setEditName(kanban.nome || ''); }}
                         className="flex items-center gap-2.5 px-3 py-2.5 text-sm font-semibold text-gray-600 dark:text-slate-300 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer outline-none transition-colors"
                       >
@@ -2904,11 +2890,11 @@ const GerenciarKanbansModal = ({ isOpen, onClose, kanbans, columns, leads, onRen
                         <Users size={15} />
                         Gerenciar permissões
                       </DropdownMenu.Item>
-                      
+
                       {!kanban.is_default && (
                         <>
                           <DropdownMenu.Separator className="h-px bg-gray-100 dark:bg-white/10 my-1" />
-                          <DropdownMenu.Item 
+                          <DropdownMenu.Item
                             onClick={() => onDelete(kanban.id)}
                             className="flex items-center gap-2.5 px-3 py-2.5 text-sm font-semibold text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 cursor-pointer outline-none transition-colors"
                           >
@@ -2934,10 +2920,10 @@ const GerenciarKanbansModal = ({ isOpen, onClose, kanbans, columns, leads, onRen
 const CrmComercial = () => {
   const { user } = useAuth();
   const kanbanBoardRef = useRef<HTMLDivElement>(null);
-  const [celebrationDetails, setCelebrationDetails] = useState<{gif: string, value: number, name: string} | null>(null);
+  const [celebrationDetails, setCelebrationDetails] = useState<{ gif: string, value: number, name: string } | null>(null);
 
   // --- Api4Com + Softphone state ---
-  const [api4comSettings, setApi4comSettings] = useState<{configured: boolean, sip_extension?: string} | null>(null);
+  const [api4comSettings, setApi4comSettings] = useState<{ configured: boolean, sip_extension?: string } | null>(null);
   const [isTelefonySettingsOpen, setIsTelefonySettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<'webhook' | 'sequencias' | 'motivos-perda'>('webhook');
   const [crmWebhookSettings, setCrmWebhookSettings] = useState<any>({ form_webhook_url: '', whatsapp_webhook_url: '', inbound_token: '', inbound_kanban_id: '', inbound_coluna: '' });
@@ -2945,7 +2931,7 @@ const CrmComercial = () => {
   const [showWebhookConfig, setShowWebhookConfig] = useState<'form' | 'whatsapp' | 'inbound' | null>(null);
   const [inboundColumns, setInboundColumns] = useState<any[]>([]);
   // Loss Reasons state
-  const [lossReasons, setLossReasons] = useState<{id: number, name: string, description: string | null, color: string}[]>([]);
+  const [lossReasons, setLossReasons] = useState<{ id: number, name: string, description: string | null, color: string }[]>([]);
   const [newLossReason, setNewLossReason] = useState({ name: '', description: '', color: '#6b7280' });
   const [savingLossReason, setSavingLossReason] = useState(false);
   const [editingLossReason, setEditingLossReason] = useState<number | null>(null);
@@ -2958,16 +2944,16 @@ const CrmComercial = () => {
     name: string; description: string; skip_weekends: boolean;
     steps: { type: string; title: string; observations: string; day_offset: number }[];
   }>({ name: '', description: '', skip_weekends: true, steps: [] });
-  const SEQ_TYPES = ['Ligação','Reunião','Videochamada','Email','WhatsApp','Instagram','LinkedIn','Outros'];
-  const SEQ_TYPE_COLOR: Record<string,string> = {
-    'Ligação':'bg-blue-500/20 text-blue-400', 'Reunião':'bg-purple-500/20 text-purple-400',
-    'Videochamada':'bg-cyan-500/20 text-cyan-400', 'Email':'bg-orange-500/20 text-orange-400',
-    'WhatsApp':'bg-emerald-500/20 text-emerald-400', 'Instagram':'bg-pink-500/20 text-pink-400',
-    'LinkedIn':'bg-sky-500/20 text-sky-400', 'Outros':'bg-slate-500/20 text-slate-400',
+  const SEQ_TYPES = ['Ligação', 'Reunião', 'Videochamada', 'Email', 'WhatsApp', 'Instagram', 'LinkedIn', 'Outros'];
+  const SEQ_TYPE_COLOR: Record<string, string> = {
+    'Ligação': 'bg-blue-500/20 text-blue-400', 'Reunião': 'bg-purple-500/20 text-purple-400',
+    'Videochamada': 'bg-cyan-500/20 text-cyan-400', 'Email': 'bg-orange-500/20 text-orange-400',
+    'WhatsApp': 'bg-emerald-500/20 text-emerald-400', 'Instagram': 'bg-pink-500/20 text-pink-400',
+    'LinkedIn': 'bg-sky-500/20 text-sky-400', 'Outros': 'bg-slate-500/20 text-slate-400',
   };
 
   const [callingLeadId, setCallingLeadId] = useState<string | null>(null);
-  const [softphoneCall, setSoftphoneCall] = useState<{leadId: string, leadName: string, phone: string, status: 'connecting' | 'active' | 'error', errorMsg?: string, startedAt?: number} | null>(null);
+  const [softphoneCall, setSoftphoneCall] = useState<{ leadId: string, leadName: string, phone: string, status: 'connecting' | 'active' | 'error', errorMsg?: string, startedAt?: number } | null>(null);
   const [callElapsed, setCallElapsed] = useState(0);
   // JsSIP Softphone hook
   const softphone = useSoftphone();
@@ -3011,7 +2997,7 @@ const CrmComercial = () => {
     cor: 'blue'
   });
   const [isNewColumnModalOpen, setIsNewColumnModalOpen] = useState(false);
-  useEffect(() => { localStorage.setItem('crm_comercial_showWonLeads',  String(showWonLeads));  }, [showWonLeads]);
+  useEffect(() => { localStorage.setItem('crm_comercial_showWonLeads', String(showWonLeads)); }, [showWonLeads]);
   useEffect(() => { localStorage.setItem('crm_comercial_showLostLeads', String(showLostLeads)); }, [showLostLeads]);
   useEffect(() => {
     if (activeKanbanId) localStorage.setItem('activeKanbanId', activeKanbanId);
@@ -3021,7 +3007,7 @@ const CrmComercial = () => {
     color: 'orange',
     icon: 'LayoutGrid'
   });
-  
+
   const [isEditColumnModalOpen, setIsEditColumnModalOpen] = useState(false);
   const [editColumnData, setEditColumnData] = useState<{ id: string, title: string, color: string, icon: string } | null>(null);
   const [columnToDelete, setColumnToDelete] = useState<string | null>(null);
@@ -3130,7 +3116,7 @@ const CrmComercial = () => {
       console.error('Error renaming kanban:', err);
     }
   };
-  
+
   const [activeId, setActiveId] = useState<string | null>(null);
   const [selectedLeadForComments, setSelectedLeadForComments] = useState<Lead | null>(null);
   const [selectedLeadForHistory, setSelectedLeadForHistory] = useState<Lead | null>(null);
@@ -3168,7 +3154,7 @@ const CrmComercial = () => {
       if (res.ok) {
         const data = await res.json();
         setKanbans(data);
-        
+
         // Restore previously active kanban or fall back to first
         const currentActive = localStorage.getItem('activeKanbanId');
         const found = currentActive && data.find((k: any) => String(k.id) === String(currentActive));
@@ -3193,12 +3179,12 @@ const CrmComercial = () => {
         fetch('/api/crm-comercial/tags'),
         fetch(`/api/crm-comercial/kanbans/${activeKanbanId}/tasks`)
       ]);
-      
+
       if (leadsRes.ok) {
         const data = await leadsRes.json();
         setLeads(data);
       }
-      
+
       if (usersRes.ok) {
         const data = await usersRes.json();
         setUsers(data);
@@ -3208,7 +3194,7 @@ const CrmComercial = () => {
         const data = await columnsRes.json();
         setColumns(data);
       }
-      
+
       if (tagsRes.ok) {
         const data = await tagsRes.json();
         setTags(data);
@@ -3234,19 +3220,19 @@ const CrmComercial = () => {
 
   useEffect(() => {
     if (crmWebhookSettings?.inbound_kanban_id) {
-       fetch(`/api/crm-comercial/columns?kanban_id=${crmWebhookSettings.inbound_kanban_id}`)
-         .then(r => r.json())
-         .then(setInboundColumns)
-         .catch(() => setInboundColumns([]));
+      fetch(`/api/crm-comercial/columns?kanban_id=${crmWebhookSettings.inbound_kanban_id}`)
+        .then(r => r.json())
+        .then(setInboundColumns)
+        .catch(() => setInboundColumns([]));
     } else {
-       setInboundColumns([]);
+      setInboundColumns([]);
     }
   }, [crmWebhookSettings?.inbound_kanban_id]);
 
   useEffect(() => {
     if (user?.email) {
       fetchData();
-      
+
       // Fetch CRM Webhook settings
       fetch(`/api/crm/settings/webhooks?user_id=${encodeURIComponent(user.email)}`)
         .then(r => r.json())
@@ -3357,7 +3343,7 @@ const CrmComercial = () => {
           fetch(`/api/crm-comercial/kanbans/${activeKanbanId}/tasks`)
             .then(r => r.json())
             .then(data => setAllKanbanTasks(data))
-            .catch(() => {});
+            .catch(() => { });
         }
       }
     } catch (err) {
@@ -3477,23 +3463,23 @@ const CrmComercial = () => {
 
   const filteredLeads = useMemo(() => {
     let result = leads;
-    
+
     if (searchQuery) {
       const lowerQuery = searchQuery.toLowerCase();
-      result = result.filter(l => 
-        l.nome.toLowerCase().includes(lowerQuery) || 
+      result = result.filter(l =>
+        l.nome.toLowerCase().includes(lowerQuery) ||
         (l.telefone && l.telefone.toLowerCase().includes(lowerQuery))
       );
     }
-    
+
     if (!showWonLeads) {
       result = result.filter(l => !isWonColumn(columns.find(c => c.id === l.coluna)?.title));
     }
-    
+
     if (!showLostLeads) {
       result = result.filter(l => !(l as any).is_lost && !isLostColumn(columns.find(c => c.id === l.coluna)?.title));
     }
-    
+
     return result;
   }, [leads, searchQuery, showWonLeads, showLostLeads, columns]);
 
@@ -3636,18 +3622,18 @@ const CrmComercial = () => {
       fetchData(); // Previne corromper o banco e dá refresh caso caia num erro
       return;
     }
-    
+
     setLeads(prev => {
       const activeIndex = prev.findIndex(l => l.id === leadId);
       const overIndex = prev.findIndex(l => l.id === overId);
-      
+
       if (activeIndex === -1) return prev;
-      
+
       let newLeads = [...prev];
       newLeads[activeIndex] = { ...newLeads[activeIndex], coluna: newColumn };
-      
+
       if (overIndex !== -1 && activeIndex !== overIndex) {
-         newLeads = arrayMove(newLeads, activeIndex, overIndex);
+        newLeads = arrayMove(newLeads, activeIndex, overIndex);
       }
 
       return newLeads;
@@ -3658,11 +3644,24 @@ const CrmComercial = () => {
         await fetch(`/api/crm-comercial/leads/${leadId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
+          body: JSON.stringify({
             coluna: newColumn,
             moved_by: user?.name || 'Sistema'
           })
         });
+
+        // Trigger win effects if moved to a Won column
+        const targetCol = columns.find(c => c.id === newColumn);
+        const isWonTarget = targetCol?.title?.toLowerCase().includes('ganho') || targetCol?.title?.toLowerCase().includes('fechado');
+        const prevCol = columns.find(c => c.id === originalColumnRef.current);
+        const wasWonBefore = prevCol?.title?.toLowerCase().includes('ganho') || prevCol?.title?.toLowerCase().includes('fechado');
+
+        if (isWonTarget && !wasWonBefore) {
+          const lead = leads.find(l => l.id === leadId);
+          if (lead) {
+            processLeadWin(leadId, lead);
+          }
+        }
       } catch (err) {
         console.error('Error moving lead:', err);
         fetchData(); // Revert on error
@@ -3677,7 +3676,7 @@ const CrmComercial = () => {
       const response = await fetch(`/api/crm-comercial/leads/${leadId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           coluna: newColumn,
           moved_by: user?.name || 'Sistema'
         })
@@ -3703,9 +3702,7 @@ const CrmComercial = () => {
     }
   };
 
-  const handleWinLead = async (leadId: string) => {
-    const lead = leads.find(l => l.id === leadId);
-    
+  const processLeadWin = async (leadId: string, lead: any) => {
     // 1. Inicia os confetes mais longos e intensos
     const duration = 8 * 1000;
     const animationEnd = Date.now() + duration;
@@ -3713,12 +3710,9 @@ const CrmComercial = () => {
 
     const randomInRange = (min: number, max: number) => Math.random() * (max - min) + min;
 
-    const interval: any = setInterval(function() {
+    const interval: any = setInterval(function () {
       const timeLeft = animationEnd - Date.now();
-
-      if (timeLeft <= 0) {
-        return clearInterval(interval);
-      }
+      if (timeLeft <= 0) return clearInterval(interval);
 
       const particleCount = 80 * (timeLeft / duration);
       confetti({
@@ -3731,20 +3725,65 @@ const CrmComercial = () => {
       });
     }, 200);
 
-    // 2. Seleciona o GIF aleatório (agora cobrindo do 1.gif ao 15.gif) e abre o popup com os dados do lead
+    // 2. Seleciona o GIF aleatório e abre o popup
     const randomGifNum = Math.floor(Math.random() * 15) + 1;
     setCelebrationDetails({
       gif: `/gifs/${randomGifNum}.gif`,
       value: lead?.valor || 0,
       name: lead?.nome || ''
     });
-    
+
     setTimeout(() => {
       setCelebrationDetails(null);
     }, duration);
 
-    // 3. Efetiva a movimentação de coluna para Fechado/Ganho
+    // 3. Cria automaticamente o cliente no Onboarding Operacional com os dados
+    try {
+      const meetingsRes = await fetch(`/api/crm-comercial/meetings?lead_id=${leadId}`);
+      let meetingData = null;
+      if (meetingsRes.ok) {
+        const meetingsArray = await meetingsRes.json();
+        if (meetingsArray.length > 0) {
+          const m = meetingsArray[0]; // get latest meeting
+          meetingData = JSON.stringify({
+            title: m.title,
+            date: m.meeting_date,
+            responsible: m.responsible_name,
+            local: m.office_location,
+            link: m.reunion_link,
+            niche: m.reunion_niche,
+            closings: m.monthly_closings,
+            goal: m.closing_goal,
+            notes: m.notes
+          });
+        }
+      }
+
+      await fetch('/api/onboarding-tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_name: lead?.nome || 'Cliente sem nome',
+          nome_completo: lead?.nome || '',
+          telefone_whatsapp: lead?.telefone || '',
+          meeting_info: meetingData,
+          status_group: 'a-fazer-briefing' // column for new clients
+        }),
+      });
+    } catch (e) {
+      console.error('Erro ao transferir para onboarding:', e);
+    }
+  };
+
+  const handleWinLead = async (leadId: string) => {
+    const lead = leads.find(l => l.id === leadId);
+    if (!lead) return;
+
+    // Efetiva a movimentação de coluna para Fechado/Ganho (apenas quando clicado no modal)
     await handleMoveLead(leadId, columns.find(c => c.title?.toLowerCase().includes('ganho') || c.title?.toLowerCase().includes('fechado'))?.id || columns[columns.length - 1]?.id || '');
+
+    // Roda os efeitos e a criação no onboarding
+    processLeadWin(leadId, lead);
   };
 
   const handleCallLead = async (leadId: string, phone: string, leadName?: string) => {
@@ -3785,7 +3824,7 @@ const CrmComercial = () => {
     try {
       const res = await fetch('/api/crm-comercial/loss-reasons');
       if (res.ok) setLossReasons(await res.json());
-    } catch {}
+    } catch { }
   };
 
   const fetchSequences = async () => {
@@ -3793,7 +3832,7 @@ const CrmComercial = () => {
       // Busca todas as sequências (global, sem filtro de kanban)
       const res = await fetch('/api/crm-comercial/sequences/all');
       if (res.ok) setSequences(await res.json());
-    } catch {}
+    } catch { }
   };
 
   const handleSaveSequence = async () => {
@@ -3811,11 +3850,11 @@ const CrmComercial = () => {
         fetchSequences();
         setSeqMode('list');
         setSeqEditId(null);
-        setSeqForm({ name:'', description:'', skip_weekends:true, steps:[] });
+        setSeqForm({ name: '', description: '', skip_weekends: true, steps: [] });
       } else {
         alert(`Erro ao salvar sequência: ${data?.error || res.status}`);
       }
-    } catch(e) {
+    } catch (e) {
       console.error('[SEQ] Fetch error', e);
       alert('Erro de rede ao salvar sequência');
     }
@@ -3840,7 +3879,7 @@ const CrmComercial = () => {
         setNewLossReason({ name: '', description: '', color: '#6b7280' });
         fetchLossReasons();
       }
-    } catch {} finally {
+    } catch { } finally {
       setSavingLossReason(false);
     }
   };
@@ -3849,7 +3888,7 @@ const CrmComercial = () => {
     try {
       await fetch(`/api/crm-comercial/loss-reasons/${id}`, { method: 'DELETE' });
       setLossReasons(prev => prev.filter(r => r.id !== id));
-    } catch {}
+    } catch { }
   };
 
   const handleUpdateLossReason = async (id: number) => {
@@ -3860,7 +3899,7 @@ const CrmComercial = () => {
         body: JSON.stringify(editLossReasonForm),
       });
       if (res.ok) { setEditingLossReason(null); fetchLossReasons(); }
-    } catch {}
+    } catch { }
   };
 
   const handleReopenLead = async (leadId: string) => {
@@ -3906,8 +3945,8 @@ const CrmComercial = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action_type: 'perda', description: desc, user_name: user?.name || 'Sistema' })
-      }).catch(() => {});
-    } catch(e) {
+      }).catch(() => { });
+    } catch (e) {
       console.error('Erro ao marcar perda:', e);
       fetchData(); // reverte em caso de erro
     }
@@ -3956,7 +3995,7 @@ const CrmComercial = () => {
 
   const handleCreateLead = async () => {
     if (!newLeadData.nome || !activeKanbanId) return;
-    
+
     try {
       const res = await fetch('/api/crm-comercial/leads', {
         method: 'POST',
@@ -3968,7 +4007,7 @@ const CrmComercial = () => {
           coluna: newLeadData.coluna || columns[0]?.id || 'follow_up_1'
         })
       });
-      
+
       if (res.ok) {
         setIsNewLeadModalOpen(false);
         setNewLeadData({ nome: '', telefone: '', origem: 'Outro', responsavel_id: '', valor: '', observacoes: '', coluna: '' });
@@ -3981,7 +4020,7 @@ const CrmComercial = () => {
 
   const handleCreateColumn = async () => {
     if (!newColumnData.title || !activeKanbanId) return;
-    
+
     try {
       const res = await fetch('/api/crm-comercial/columns', {
         method: 'POST',
@@ -3992,7 +4031,7 @@ const CrmComercial = () => {
           order_index: columns.length
         })
       });
-      
+
       if (res.ok) {
         setIsNewColumnModalOpen(false);
         setNewColumnData({ title: '', color: 'orange' });
@@ -4005,9 +4044,9 @@ const CrmComercial = () => {
 
   return (
     <div className="p-8 w-full min-h-screen flex flex-col">
-      <PageHeader 
-        title="CRM" 
-        titleAccent={kanbans.find(k => k.id === activeKanbanId)?.nome || 'Comercial'} 
+      <PageHeader
+        title="CRM"
+        titleAccent={kanbans.find(k => k.id === activeKanbanId)?.nome || 'Comercial'}
         subtitle="Gestão de leads e negociações"
       >
         <div className="flex items-center gap-3">
@@ -4015,11 +4054,10 @@ const CrmComercial = () => {
           {/* Gear + telephony status badge */}
           <div className="flex items-center gap-1.5">
             <button
-              title={`Configurações do CRM — Ramal: ${
-                softphone.sipStatus === 'registered' ? '✓ Registrado' :
-                softphone.sipStatus === 'connecting' ? 'Conectando...' :
-                softphone.sipStatus === 'error' ? '✗ Falha no registro' : 'Não conectado'
-              }`}
+              title={`Configurações do CRM — Ramal: ${softphone.sipStatus === 'registered' ? '✓ Registrado' :
+                  softphone.sipStatus === 'connecting' ? 'Conectando...' :
+                    softphone.sipStatus === 'error' ? '✗ Falha no registro' : 'Não conectado'
+                }`}
               onClick={() => { setSettingsTab('webhook'); fetchLossReasons(); setIsTelefonySettingsOpen(true); }}
               className="relative flex items-center justify-center w-[38px] h-[38px] flex-shrink-0 bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-lg text-gray-500 dark:text-slate-400 hover:text-violet-600 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-white/5 transition-all shadow-sm"
             >
@@ -4027,8 +4065,8 @@ const CrmComercial = () => {
               {/* SIP status dot on gear */}
               <span className="absolute -top-[3px] -right-[3px] w-2.5 h-2.5 rounded-full border border-white dark:border-[#0d0b14]" style={{
                 background: softphone.sipStatus === 'registered' ? '#22c55e' :
-                            softphone.sipStatus === 'connecting' ? '#f59e0b' :
-                            softphone.sipStatus === 'error' ? '#ef4444' : '#374151'
+                  softphone.sipStatus === 'connecting' ? '#f59e0b' :
+                    softphone.sipStatus === 'error' ? '#ef4444' : '#374151'
               }} />
             </button>
 
@@ -4038,27 +4076,27 @@ const CrmComercial = () => {
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-all text-xs font-semibold"
               style={{
                 background: softphone.sipStatus === 'registered' ? 'rgba(34,197,94,0.1)' :
-                            softphone.sipStatus === 'connecting' ? 'rgba(245,158,11,0.1)' :
-                            softphone.sipStatus === 'error' ? 'rgba(239,68,68,0.1)' : 'rgba(55,65,81,0.15)',
+                  softphone.sipStatus === 'connecting' ? 'rgba(245,158,11,0.1)' :
+                    softphone.sipStatus === 'error' ? 'rgba(239,68,68,0.1)' : 'rgba(55,65,81,0.15)',
                 borderColor: softphone.sipStatus === 'registered' ? 'rgba(34,197,94,0.3)' :
-                             softphone.sipStatus === 'connecting' ? 'rgba(245,158,11,0.3)' :
-                             softphone.sipStatus === 'error' ? 'rgba(239,68,68,0.3)' : 'rgba(55,65,81,0.3)',
+                  softphone.sipStatus === 'connecting' ? 'rgba(245,158,11,0.3)' :
+                    softphone.sipStatus === 'error' ? 'rgba(239,68,68,0.3)' : 'rgba(55,65,81,0.3)',
                 color: softphone.sipStatus === 'registered' ? '#22c55e' :
-                       softphone.sipStatus === 'connecting' ? '#f59e0b' :
-                       softphone.sipStatus === 'error' ? '#ef4444' : '#9ca3af',
+                  softphone.sipStatus === 'connecting' ? '#f59e0b' :
+                    softphone.sipStatus === 'error' ? '#ef4444' : '#9ca3af',
               }}
             >
               <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{
                 background: softphone.sipStatus === 'registered' ? '#22c55e' :
-                            softphone.sipStatus === 'connecting' ? '#f59e0b' :
-                            softphone.sipStatus === 'error' ? '#ef4444' : '#374151',
+                  softphone.sipStatus === 'connecting' ? '#f59e0b' :
+                    softphone.sipStatus === 'error' ? '#ef4444' : '#374151',
                 boxShadow: softphone.sipStatus === 'registered' ? '0 0 5px #22c55e99' :
-                           softphone.sipStatus === 'connecting' ? '0 0 5px #f59e0b99' :
-                           softphone.sipStatus === 'error' ? '0 0 5px #ef444499' : 'none',
+                  softphone.sipStatus === 'connecting' ? '0 0 5px #f59e0b99' :
+                    softphone.sipStatus === 'error' ? '0 0 5px #ef444499' : 'none',
               }} />
               {softphone.sipStatus === 'registered' ? 'Ramal ativo' :
-               softphone.sipStatus === 'connecting' ? 'Conectando...' :
-               softphone.sipStatus === 'error' ? 'Falha' : 'Ramal offline'}
+                softphone.sipStatus === 'connecting' ? 'Conectando...' :
+                  softphone.sipStatus === 'error' ? 'Falha' : 'Ramal offline'}
             </button>
           </div>
 
@@ -4074,7 +4112,7 @@ const CrmComercial = () => {
             <DropdownMenu.Portal>
               <DropdownMenu.Content className="bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-xl p-2 min-w-[280px] shadow-xl z-50">
                 {kanbans.map(kanban => (
-                  <DropdownMenu.Item 
+                  <DropdownMenu.Item
                     key={kanban.id}
                     onClick={() => setActiveKanbanId(String(kanban.id))}
                     className="flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-white/5 rounded-lg cursor-pointer outline-none group"
@@ -4098,14 +4136,14 @@ const CrmComercial = () => {
                   </DropdownMenu.Item>
                 ))}
                 <DropdownMenu.Separator className="h-px bg-gray-200 dark:bg-white/10 my-2" />
-                <DropdownMenu.Item 
+                <DropdownMenu.Item
                   onClick={() => setIsNewKanbanModalOpen(true)}
                   className="flex items-center gap-2 p-3 hover:bg-gray-50 dark:hover:bg-white/5 rounded-lg cursor-pointer text-violet-600 dark:text-violet-400 font-bold text-sm outline-none"
                 >
                   <Plus size={16} />
                   Novo Kanban
                 </DropdownMenu.Item>
-                <DropdownMenu.Item 
+                <DropdownMenu.Item
                   onClick={() => setIsManageKanbansOpen(true)}
                   className="flex items-center gap-2 p-3 hover:bg-gray-50 dark:hover:bg-white/5 rounded-lg cursor-pointer text-gray-600 dark:text-slate-300 font-bold text-sm outline-none"
                 >
@@ -4115,16 +4153,16 @@ const CrmComercial = () => {
               </DropdownMenu.Content>
             </DropdownMenu.Portal>
           </DropdownMenu.Root>
-          
-          <button 
+
+          <button
             onClick={() => setIsNewColumnModalOpen(true)}
             className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 text-gray-700 dark:text-white rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
           >
             <Plus size={16} />
             Nova Coluna
           </button>
-          
-          <button 
+
+          <button
             onClick={() => setIsNewLeadModalOpen(true)}
             className="flex items-center gap-2 px-4 py-2 bg-violet-600 text-white rounded-lg text-sm font-medium hover:bg-violet-700 transition-colors"
           >
@@ -4137,15 +4175,15 @@ const CrmComercial = () => {
       <div className="flex items-center gap-3 mb-8">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500" size={16} />
-          <input 
-            type="text" 
-            placeholder="Buscar tickets..." 
+          <input
+            type="text"
+            placeholder="Buscar tickets..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-lg py-2 pl-10 pr-4 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-slate-500 outline-none focus:border-violet-500/50 transition-colors"
           />
         </div>
-        
+
         <button className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-lg text-sm text-gray-700 dark:text-white hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
           <Filter size={16} />
           Filtros
@@ -4171,14 +4209,14 @@ const CrmComercial = () => {
           </DropdownMenu.Trigger>
           <DropdownMenu.Portal>
             <DropdownMenu.Content className="m-2 min-w-[200px] bg-white dark:bg-[#1A1625] rounded-xl shadow-xl border border-gray-100 dark:border-white/10 p-2 z-[100]" align="end">
-              <DropdownMenu.Item 
+              <DropdownMenu.Item
                 onClick={() => setShowWonLeads(!showWonLeads)}
                 className="flex items-center gap-2 p-2 hover:bg-gray-50 dark:hover:bg-white/5 rounded-lg cursor-pointer text-gray-700 dark:text-slate-300 font-medium text-sm outline-none"
               >
                 {showWonLeads ? <Eye size={14} className="text-gray-400" /> : <EyeOff size={14} className="text-gray-400" />}
                 Mostrar ganhos
               </DropdownMenu.Item>
-              <DropdownMenu.Item 
+              <DropdownMenu.Item
                 onClick={() => setShowLostLeads(!showLostLeads)}
                 className="flex items-center gap-2 p-2 hover:bg-gray-50 dark:hover:bg-white/5 rounded-lg cursor-pointer text-gray-700 dark:text-slate-300 font-medium text-sm outline-none"
               >
@@ -4192,14 +4230,14 @@ const CrmComercial = () => {
 
       <div className="flex justify-center mb-6">
         <div className="flex items-center gap-3 bg-white dark:bg-dark-card border border-gray-200 dark:border-white/5 rounded-full px-4 py-1.5">
-          <button 
+          <button
             onClick={() => kanbanBoardRef.current?.scrollBy({ left: -340, behavior: 'smooth' })}
             className="p-1 text-gray-400 dark:text-slate-500 hover:text-gray-900 dark:hover:text-white transition-colors"
           >
             <ChevronRight size={14} className="rotate-180" />
           </button>
           <span className="text-xs text-gray-500 dark:text-slate-400">Navegue pelas colunas</span>
-          <button 
+          <button
             onClick={() => kanbanBoardRef.current?.scrollBy({ left: 340, behavior: 'smooth' })}
             className="p-1 text-gray-400 dark:text-slate-500 hover:text-gray-900 dark:hover:text-white transition-colors"
           >
@@ -4208,7 +4246,7 @@ const CrmComercial = () => {
         </div>
       </div>
 
-      <DndContext 
+      <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
         onDragStart={handleDragStart}
@@ -4219,19 +4257,18 @@ const CrmComercial = () => {
           {columns.map(column => {
             const columnLeads = filteredLeads.filter(l => l.coluna === column.id);
             const totalValue = columnLeads.reduce((acc, l) => acc + Number(l.valor || 0), 0);
-            
+
             return (
               <div key={column.id} className="flex flex-col flex-1 min-h-[500px] min-w-[320px] w-[320px] snap-start bg-slate-50/50 dark:bg-white/[0.02] rounded-3xl border border-gray-200 dark:border-white/5 p-2">
                 <div className="p-3 flex items-start justify-between mb-2">
                   <div className="flex items-start gap-3">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                      column.color === 'orange' ? 'bg-orange-500' :
-                      column.color === 'blue' ? 'bg-blue-500' :
-                      column.color === 'green' ? 'bg-emerald-500' :
-                      column.color === 'pink' ? 'bg-pink-500' :
-                      column.color === 'red' ? 'bg-red-500' :
-                      column.color === 'cyan' ? 'bg-cyan-500' : 'bg-slate-500'
-                    }`}>
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${column.color === 'orange' ? 'bg-orange-500' :
+                        column.color === 'blue' ? 'bg-blue-500' :
+                          column.color === 'green' ? 'bg-emerald-500' :
+                            column.color === 'pink' ? 'bg-pink-500' :
+                              column.color === 'red' ? 'bg-red-500' :
+                                column.color === 'cyan' ? 'bg-cyan-500' : 'bg-slate-500'
+                      }`}>
                       <RenderIcon name={column.icon || 'LayoutGrid'} size={20} className="text-white" />
                     </div>
                     <div>
@@ -4243,7 +4280,7 @@ const CrmComercial = () => {
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
-                    <button 
+                    <button
                       onClick={() => {
                         setEditColumnData({ id: column.id, title: column.title, color: column.color || 'orange', icon: column.icon || 'LayoutGrid' });
                         setIsEditColumnModalOpen(true);
@@ -4255,7 +4292,7 @@ const CrmComercial = () => {
                         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
                       </svg>
                     </button>
-                    <button 
+                    <button
                       onClick={() => setColumnToDelete(column.id)}
                       className="p-1.5 text-gray-400 dark:text-slate-500 hover:text-red-500 transition-colors"
                     >
@@ -4265,30 +4302,30 @@ const CrmComercial = () => {
                 </div>
 
                 <DroppableColumn id={column.id}>
-                  <SortableContext 
+                  <SortableContext
                     id={column.id}
                     items={columnLeads.map(l => l.id)}
                     strategy={verticalListSortingStrategy}
                   >
-                  <div className="flex flex-col min-h-[100px] flex-1">
+                    <div className="flex flex-col min-h-[100px] flex-1">
                       {columnLeads.length === 0 ? (
-                        <div 
-                        className="flex-1 border-2 border-dashed border-gray-200 dark:border-white/10 rounded-xl flex flex-col items-center justify-center text-gray-400 dark:text-slate-500 p-8 min-h-[150px] pointer-events-none"
-                      >
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mb-2 opacity-40">
-                          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-                          <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
-                          <line x1="12" y1="22.08" x2="12" y2="12"></line>
-                        </svg>
-                        <p className="font-medium text-sm">Arraste tickets para cá</p>
-                        <p className="text-xs opacity-50 mt-1">Solte aqui para adicionar</p>
-                      </div>
+                        <div
+                          className="flex-1 border-2 border-dashed border-gray-200 dark:border-white/10 rounded-xl flex flex-col items-center justify-center text-gray-400 dark:text-slate-500 p-8 min-h-[150px] pointer-events-none"
+                        >
+                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mb-2 opacity-40">
+                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                            <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                            <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                          </svg>
+                          <p className="font-medium text-sm">Arraste tickets para cá</p>
+                          <p className="text-xs opacity-50 mt-1">Solte aqui para adicionar</p>
+                        </div>
                       ) : (
                         <>
                           {columnLeads.map(lead => (
-                            <SortableCard 
-                              key={lead.id} 
-                              lead={lead} 
+                            <SortableCard
+                              key={lead.id}
+                              lead={lead}
                               users={users}
                               columns={columns}
                               tasks={allKanbanTasks}
@@ -4318,19 +4355,19 @@ const CrmComercial = () => {
             );
           })}
         </div>
-        
+
         <DragOverlay>
           {activeId ? (
-            <SortableCard 
-              lead={leads.find(l => l.id === activeId)!} 
+            <SortableCard
+              lead={leads.find(l => l.id === activeId)!}
               users={users}
               columns={columns}
               tasks={allKanbanTasks}
-              onClick={() => {}} 
-              onMove={() => {}}
-              onDelete={() => {}}
-              onEditValue={() => {}}
-              onHistory={() => {}}
+              onClick={() => { }}
+              onMove={() => { }}
+              onDelete={() => { }}
+              onEditValue={() => { }}
+              onHistory={() => { }}
               isOverlay={true}
             />
           ) : null}
@@ -4400,7 +4437,7 @@ const CrmComercial = () => {
                   )}
                   <h2 className="text-lg font-black">
                     {templateEditor.mode === 'list' ? 'Modelos de Tarefas Recorrentes' :
-                     templateEditor.mode === 'create' ? 'Novo Modelo' : 'Editar Modelo'}
+                      templateEditor.mode === 'create' ? 'Novo Modelo' : 'Editar Modelo'}
                   </h2>
                 </div>
                 <button onClick={() => { setIsManageTemplatesOpen(false); setTemplateEditor({ mode: 'list', template: null, form: { name: '', description: '', items: [] } }); }} className="text-gray-400 hover:text-gray-700 dark:hover:text-white">
@@ -4607,7 +4644,7 @@ const CrmComercial = () => {
         <div className="space-y-4">
           <div>
             <label className={designSystem.input.label}>Nome do Lead *</label>
-            <input 
+            <input
               type="text"
               value={newLeadData.nome}
               onChange={e => setNewLeadData(prev => ({ ...prev, nome: e.target.value }))}
@@ -4615,10 +4652,10 @@ const CrmComercial = () => {
               placeholder="Nome da empresa ou contato"
             />
           </div>
-          
+
           <div>
             <label className={designSystem.input.label}>Telefone</label>
-            <input 
+            <input
               type="text"
               value={newLeadData.telefone}
               onChange={e => setNewLeadData(prev => ({ ...prev, telefone: e.target.value }))}
@@ -4643,7 +4680,7 @@ const CrmComercial = () => {
                 <option value="Outro" className="text-gray-900 dark:text-white bg-light-sidebar dark:bg-dark-sidebar font-semibold">Outro</option>
               </select>
             </div>
-            
+
             <div>
               <label className={designSystem.input.label}>Responsável</label>
               <select
@@ -4658,10 +4695,10 @@ const CrmComercial = () => {
               </select>
             </div>
           </div>
-          
+
           <div>
             <label className={designSystem.input.label}>Valor do Contrato (R$)</label>
-            <input 
+            <input
               type="number"
               value={newLeadData.valor}
               onChange={e => setNewLeadData(prev => ({ ...prev, valor: e.target.value }))}
@@ -4672,7 +4709,7 @@ const CrmComercial = () => {
 
           <div>
             <label className={designSystem.input.label}>Observações</label>
-            <textarea 
+            <textarea
               value={newLeadData.observacoes}
               onChange={e => setNewLeadData(prev => ({ ...prev, observacoes: e.target.value }))}
               className={`${designSystem.input.field} resize-none h-24`}
@@ -4693,7 +4730,7 @@ const CrmComercial = () => {
           <div className="mb-4">
             <p className="text-sm text-gray-500 dark:text-slate-500">{selectedLeadForComments?.nome}</p>
           </div>
-          
+
           <div className="flex-1 overflow-y-auto space-y-4 mb-4 pr-2">
             {comments.length === 0 ? (
               <p className="text-center text-gray-500 dark:text-slate-500 text-sm py-8">Nenhum comentário ainda.</p>
@@ -4708,7 +4745,7 @@ const CrmComercial = () => {
                       <span className="text-sm font-bold text-gray-900 dark:text-white">{comment.user_name}</span>
                       <span className="text-xs text-gray-500 dark:text-slate-500">{new Date(comment.created_at).toLocaleString('pt-BR')}</span>
                     </div>
-                    <button 
+                    <button
                       onClick={() => handleDeleteComment(comment.id)}
                       className="text-gray-400 dark:text-slate-400 hover:text-red-500 transition-colors"
                     >
@@ -4720,9 +4757,9 @@ const CrmComercial = () => {
               ))
             )}
           </div>
-          
+
           <div className="flex gap-2 mt-auto">
-            <input 
+            <input
               type="text"
               value={newComment}
               onChange={e => setNewComment(e.target.value)}
@@ -4730,7 +4767,7 @@ const CrmComercial = () => {
               placeholder="Digite um comentário..."
               className={designSystem.input.field}
             />
-            <button 
+            <button
               onClick={handleAddComment}
               disabled={!newComment.trim()}
               className={designSystem.button.primary}
@@ -4752,7 +4789,7 @@ const CrmComercial = () => {
           <div className="mb-4">
             <p className="text-sm text-gray-500 dark:text-slate-500">{selectedLeadForHistory?.nome}</p>
           </div>
-          
+
           <div className="flex-1 overflow-y-auto space-y-4 pr-2">
             {history.length === 0 ? (
               <p className="text-center text-gray-500 dark:text-slate-500 text-sm py-8">Nenhuma movimentação registrada.</p>
@@ -4782,7 +4819,7 @@ const CrmComercial = () => {
         title="Nova Coluna"
         maxWidth="max-w-md"
         footer={
-          <button 
+          <button
             onClick={handleCreateColumn}
             disabled={!newColumnData.title}
             className={designSystem.button.primary}
@@ -4794,7 +4831,7 @@ const CrmComercial = () => {
         <div className="space-y-4">
           <div>
             <label className={designSystem.input.label}>Nome da Coluna *</label>
-            <input 
+            <input
               type="text"
               value={newColumnData.title}
               onChange={e => setNewColumnData(prev => ({ ...prev, title: e.target.value }))}
@@ -4802,7 +4839,7 @@ const CrmComercial = () => {
               placeholder="Ex: Em negociação"
             />
           </div>
-          
+
           <div>
             <label className={designSystem.input.label}>Cor</label>
             <div className="flex gap-2">
@@ -4825,11 +4862,10 @@ const CrmComercial = () => {
                 <button
                   key={iconName}
                   onClick={() => setNewColumnData(prev => ({ ...prev, icon: iconName }))}
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
-                    newColumnData.icon === iconName 
-                    ? 'bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-400 ring-2 ring-violet-500' 
-                    : 'bg-gray-50 text-gray-400 dark:bg-white/5 dark:text-slate-500 hover:bg-gray-100 dark:hover:bg-white/10'
-                  }`}
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${newColumnData.icon === iconName
+                      ? 'bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-400 ring-2 ring-violet-500'
+                      : 'bg-gray-50 text-gray-400 dark:bg-white/5 dark:text-slate-500 hover:bg-gray-100 dark:hover:bg-white/10'
+                    }`}
                 >
                   <RenderIcon name={iconName} size={18} />
                 </button>
@@ -4846,7 +4882,7 @@ const CrmComercial = () => {
         title="Editar Coluna"
         maxWidth="max-w-md"
         footer={
-          <button 
+          <button
             onClick={handleUpdateColumn}
             disabled={!editColumnData?.title.trim()}
             className={designSystem.button.primary}
@@ -4859,7 +4895,7 @@ const CrmComercial = () => {
           <div className="space-y-4">
             <div>
               <label className={designSystem.input.label}>Nome da Coluna *</label>
-              <input 
+              <input
                 type="text"
                 value={editColumnData.title}
                 onChange={e => setEditColumnData(prev => prev ? ({ ...prev, title: e.target.value }) : null)}
@@ -4867,7 +4903,7 @@ const CrmComercial = () => {
                 placeholder="Ex: Em negociação"
               />
             </div>
-            
+
             <div>
               <label className={designSystem.input.label}>Cor da Coluna</label>
               <div className="flex gap-2">
@@ -4890,11 +4926,10 @@ const CrmComercial = () => {
                   <button
                     key={iconName}
                     onClick={() => setEditColumnData(prev => prev ? ({ ...prev, icon: iconName }) : null)}
-                    className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
-                      editColumnData.icon === iconName 
-                      ? 'bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-400 ring-2 ring-violet-500' 
-                      : 'bg-gray-50 text-gray-400 dark:bg-white/5 dark:text-slate-500 hover:bg-gray-100 dark:hover:bg-white/10'
-                    }`}
+                    className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${editColumnData.icon === iconName
+                        ? 'bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-400 ring-2 ring-violet-500'
+                        : 'bg-gray-50 text-gray-400 dark:bg-white/5 dark:text-slate-500 hover:bg-gray-100 dark:hover:bg-white/10'
+                      }`}
                   >
                     <RenderIcon name={iconName} size={18} />
                   </button>
@@ -4913,13 +4948,13 @@ const CrmComercial = () => {
         maxWidth="max-w-md"
         footer={
           <div className="flex gap-2 w-full">
-            <button 
+            <button
               onClick={() => setColumnToDelete(null)}
               className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 dark:bg-white/5 dark:hover:bg-white/10 text-gray-700 dark:text-gray-300 font-bold rounded-xl transition-all"
             >
               Cancelar
             </button>
-            <button 
+            <button
               onClick={() => {
                 if (columnToDelete) handleDeleteColumn(columnToDelete);
               }}
@@ -4942,7 +4977,7 @@ const CrmComercial = () => {
         title="Novo Kanban"
         maxWidth="max-w-md"
         footer={
-          <button 
+          <button
             onClick={handleCreateKanban}
             disabled={!newKanbanData.nome.trim()}
             className={designSystem.button.primary}
@@ -4954,21 +4989,21 @@ const CrmComercial = () => {
         <div className="space-y-4">
           <div>
             <label className={designSystem.input.label}>Nome do Kanban</label>
-            <input 
+            <input
               type="text"
               value={newKanbanData.nome}
-              onChange={e => setNewKanbanData({...newKanbanData, nome: e.target.value})}
+              onChange={e => setNewKanbanData({ ...newKanbanData, nome: e.target.value })}
               placeholder="Ex: Vendas, Jurídico, Suporte..."
               className={designSystem.input.field}
               autoFocus
             />
           </div>
-          
+
           <div>
             <label className={designSystem.input.label}>Descrição (opcional)</label>
-            <textarea 
+            <textarea
               value={newKanbanData.descricao}
-              onChange={e => setNewKanbanData({...newKanbanData, descricao: e.target.value})}
+              onChange={e => setNewKanbanData({ ...newKanbanData, descricao: e.target.value })}
               placeholder="Descreva o propósito deste kanban..."
               className={`${designSystem.input.field} resize-none h-24`}
             />
@@ -4980,7 +5015,7 @@ const CrmComercial = () => {
               {KANBAN_COLORS.map(color => (
                 <button
                   key={color.id}
-                  onClick={() => setNewKanbanData({...newKanbanData, cor: color.id})}
+                  onClick={() => setNewKanbanData({ ...newKanbanData, cor: color.id })}
                   className={`h-12 rounded-xl ${color.class} transition-all ${newKanbanData.cor === color.id ? 'ring-2 ring-white scale-105 shadow-lg' : 'opacity-80 hover:opacity-100'}`}
                 />
               ))}
@@ -5110,8 +5145,8 @@ const CrmComercial = () => {
           const bgGradient = isLive
             ? 'linear-gradient(135deg, #064e3b 0%, #0d0b14 60%)'
             : isCalling
-            ? 'linear-gradient(135deg, #1e1b4b 0%, #0d0b14 60%)'
-            : 'linear-gradient(135deg, #1c1917 0%, #0d0b14 60%)';
+              ? 'linear-gradient(135deg, #1e1b4b 0%, #0d0b14 60%)'
+              : 'linear-gradient(135deg, #1c1917 0%, #0d0b14 60%)';
 
           return (
             <motion.div
@@ -5154,10 +5189,10 @@ const CrmComercial = () => {
                   {isCalling && <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: accentColor }} />}
                   <p className="text-sm font-semibold" style={{ color: accentColor }}>
                     {status === 'calling' ? 'Chamando...' :
-                     status === 'ringing' ? 'Aguardando atender...' :
-                     status === 'active' ? 'Em chamada' :
-                     status === 'ended' ? 'Chamada encerrada' :
-                     call.errorMsg || 'Falha na chamada'}
+                      status === 'ringing' ? 'Aguardando atender...' :
+                        status === 'active' ? 'Em chamada' :
+                          status === 'ended' ? 'Chamada encerrada' :
+                            call.errorMsg || 'Falha na chamada'}
                   </p>
                 </div>
 
@@ -5201,9 +5236,9 @@ const CrmComercial = () => {
                       }}
                     >
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                        <circle cx="5" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="19" cy="5" r="2"/>
-                        <circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/>
-                        <circle cx="5" cy="19" r="2"/><circle cx="12" cy="19" r="2"/><circle cx="19" cy="19" r="2"/>
+                        <circle cx="5" cy="5" r="2" /><circle cx="12" cy="5" r="2" /><circle cx="19" cy="5" r="2" />
+                        <circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" />
+                        <circle cx="5" cy="19" r="2" /><circle cx="12" cy="19" r="2" /><circle cx="19" cy="19" r="2" />
                       </svg>
                     </button>
 
@@ -5231,8 +5266,8 @@ const CrmComercial = () => {
                       {phoneSpeakerVol === 0
                         ? <VolumeX size={18} />
                         : phoneSpeakerVol < 0.5
-                        ? <Volume1 size={18} />
-                        : <Volume2 size={18} />}
+                          ? <Volume1 size={18} />
+                          : <Volume2 size={18} />}
                     </button>
                   </div>
 
@@ -5281,7 +5316,7 @@ const CrmComercial = () => {
                     <div className="rounded-2xl p-3 mb-3" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
                       <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-3 text-center">Teclado</p>
                       <div className="grid grid-cols-3 gap-2">
-                        {['1','2','3','4','5','6','7','8','9','*','0','#'].map(d => (
+                        {['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'].map(d => (
                           <button
                             key={d}
                             onClick={() => softphone.sendDTMF(d)}
@@ -5370,11 +5405,10 @@ const CrmComercial = () => {
                   <button
                     key={tab.key}
                     onClick={() => setSettingsTab(tab.key)}
-                    className={`px-4 py-2.5 text-sm font-semibold transition-all border-b-2 -mb-px ${
-                      settingsTab === tab.key
+                    className={`px-4 py-2.5 text-sm font-semibold transition-all border-b-2 -mb-px ${settingsTab === tab.key
                         ? 'border-violet-600 text-violet-600 dark:border-violet-500 dark:text-violet-400'
                         : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
-                    }`}
+                      }`}
                   >
                     {tab.label}
                   </button>
@@ -5407,21 +5441,21 @@ const CrmComercial = () => {
                         {showWebhookConfig === 'whatsapp' ? (
                           <div className="mt-2 space-y-3 animate-in fade-in slide-in-from-top-2">
                             <label className="text-xs font-semibold text-gray-700 dark:text-gray-300">URL do Webhook (POST)</label>
-                            <input 
+                            <input
                               type="url"
                               value={crmWebhookSettings.whatsapp_webhook_url}
-                              onChange={e => setCrmWebhookSettings({...crmWebhookSettings, whatsapp_webhook_url: e.target.value})}
+                              onChange={e => setCrmWebhookSettings({ ...crmWebhookSettings, whatsapp_webhook_url: e.target.value })}
                               placeholder="https://seu-webhook.com/..."
                               className="w-full bg-white dark:bg-black/40 border border-gray-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:border-emerald-500 outline-none"
                             />
                             <div className="flex gap-2">
-                              <button 
+                              <button
                                 onClick={() => setShowWebhookConfig(null)}
                                 className="flex-1 py-2 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
                               >
                                 Cancelar
                               </button>
-                              <button 
+                              <button
                                 onClick={handleSaveWebhookSettings}
                                 disabled={savingWebhookSettings}
                                 className="flex-[2] py-2 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white transition-colors disabled:opacity-50"
@@ -5432,8 +5466,8 @@ const CrmComercial = () => {
                           </div>
                         ) : (
                           <div className="mt-auto">
-                            <button 
-                              onClick={() => setShowWebhookConfig('whatsapp')} 
+                            <button
+                              onClick={() => setShowWebhookConfig('whatsapp')}
                               className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all bg-gray-50 dark:bg-black/30 border border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300 hover:bg-emerald-500 hover:text-white hover:border-emerald-500"
                             >
                               {crmWebhookSettings.whatsapp_webhook_url ? '✨ Editar Integração' : 'Configurar Integração'}
@@ -5456,21 +5490,21 @@ const CrmComercial = () => {
                         {showWebhookConfig === 'form' ? (
                           <div className="mt-2 space-y-3 animate-in fade-in slide-in-from-top-2">
                             <label className="text-xs font-semibold text-gray-700 dark:text-gray-300">URL do Webhook (POST)</label>
-                            <input 
+                            <input
                               type="url"
                               value={crmWebhookSettings.form_webhook_url}
-                              onChange={e => setCrmWebhookSettings({...crmWebhookSettings, form_webhook_url: e.target.value})}
+                              onChange={e => setCrmWebhookSettings({ ...crmWebhookSettings, form_webhook_url: e.target.value })}
                               placeholder="https://seu-webhook.com/..."
                               className="w-full bg-white dark:bg-black/40 border border-gray-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:border-blue-500 outline-none"
                             />
                             <div className="flex gap-2">
-                              <button 
+                              <button
                                 onClick={() => setShowWebhookConfig(null)}
                                 className="flex-1 py-2 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
                               >
                                 Cancelar
                               </button>
-                              <button 
+                              <button
                                 onClick={handleSaveWebhookSettings}
                                 disabled={savingWebhookSettings}
                                 className="flex-[2] py-2 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-50"
@@ -5481,8 +5515,8 @@ const CrmComercial = () => {
                           </div>
                         ) : (
                           <div className="mt-auto">
-                            <button 
-                              onClick={() => setShowWebhookConfig('form')} 
+                            <button
+                              onClick={() => setShowWebhookConfig('form')}
                               className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all bg-gray-50 dark:bg-black/30 border border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300 hover:bg-blue-500 hover:text-white hover:border-blue-500"
                             >
                               {crmWebhookSettings.form_webhook_url ? '✨ Editar Integração' : 'Configurar Integração'}
@@ -5490,7 +5524,7 @@ const CrmComercial = () => {
                           </div>
                         )}
                       </div>
-                      
+
                       {/* Recebimento Inbound (Portal Leads) */}
                       <div className="rounded-2xl p-5 border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 flex flex-col hover:border-violet-500/50 transition-colors cursor-pointer group shadow-sm md:col-span-2">
                         <div className="flex items-center gap-3 mb-4">
@@ -5507,9 +5541,9 @@ const CrmComercial = () => {
                             <div className="p-3 bg-gray-50 dark:bg-black/30 rounded-lg border border-gray-200 dark:border-white/5">
                               <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">Sua URL Exclusiva (POST JSON)</label>
                               <div className="flex items-center gap-2">
-                                <input 
-                                  type="text" 
-                                  readOnly 
+                                <input
+                                  type="text"
+                                  readOnly
                                   value={`${window.location.origin}/api/public/webhooks/inbound/${crmWebhookSettings.inbound_token}`}
                                   className="w-full bg-transparent text-xs text-gray-600 dark:text-gray-300 outline-none selection:bg-violet-500/30"
                                 />
@@ -5532,13 +5566,13 @@ const CrmComercial = () => {
                             <div className="grid grid-cols-2 gap-3">
                               <div>
                                 <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 block mb-1.5">Kanban de Destino</label>
-                                <select 
+                                <select
                                   value={crmWebhookSettings.inbound_kanban_id || ''}
-                                  onChange={e => setCrmWebhookSettings({...crmWebhookSettings, inbound_kanban_id: e.target.value, inbound_coluna: ''})}
+                                  onChange={e => setCrmWebhookSettings({ ...crmWebhookSettings, inbound_kanban_id: e.target.value, inbound_coluna: '' })}
                                   className="w-full bg-white dark:bg-black/40 border border-gray-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:border-violet-500 outline-none"
                                 >
                                   <option value="">Selecione...</option>
-                                  {kanbans.map((k:any) => (
+                                  {kanbans.map((k: any) => (
                                     <option key={k.id} value={k.id}>{k.nome}</option>
                                   ))}
                                 </select>
@@ -5546,28 +5580,28 @@ const CrmComercial = () => {
 
                               <div>
                                 <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 block mb-1.5">Coluna de Destino</label>
-                                <select 
+                                <select
                                   value={crmWebhookSettings.inbound_coluna || ''}
-                                  onChange={e => setCrmWebhookSettings({...crmWebhookSettings, inbound_coluna: e.target.value})}
+                                  onChange={e => setCrmWebhookSettings({ ...crmWebhookSettings, inbound_coluna: e.target.value })}
                                   disabled={!crmWebhookSettings.inbound_kanban_id}
                                   className="w-full bg-white dark:bg-black/40 border border-gray-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:border-violet-500 outline-none disabled:opacity-50"
                                 >
                                   <option value="">Selecione...</option>
-                                  {inboundColumns.sort((a,b) => Number(a.order_index) - Number(b.order_index)).map((c:any) => (
+                                  {inboundColumns.sort((a, b) => Number(a.order_index) - Number(b.order_index)).map((c: any) => (
                                     <option key={c.id} value={c.title}>{c.title}</option>
                                   ))}
                                 </select>
                               </div>
                             </div>
-                            
+
                             <div className="flex gap-2 pt-2">
-                              <button 
+                              <button
                                 onClick={() => setShowWebhookConfig(null)}
                                 className="flex-1 py-2 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
                               >
                                 Fechar
                               </button>
-                              <button 
+                              <button
                                 onClick={handleSaveWebhookSettings}
                                 disabled={savingWebhookSettings || !crmWebhookSettings.inbound_kanban_id || !crmWebhookSettings.inbound_coluna}
                                 className="flex-[2] py-2 rounded-lg text-xs font-semibold bg-violet-600 hover:bg-violet-700 text-white transition-colors disabled:opacity-50"
@@ -5578,8 +5612,8 @@ const CrmComercial = () => {
                           </div>
                         ) : (
                           <div className="mt-auto">
-                            <button 
-                              onClick={() => setShowWebhookConfig('inbound')} 
+                            <button
+                              onClick={() => setShowWebhookConfig('inbound')}
                               className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all bg-gray-50 dark:bg-black/30 border border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300 hover:bg-violet-500 hover:text-white hover:border-violet-500"
                             >
                               {crmWebhookSettings.inbound_kanban_id && crmWebhookSettings.inbound_coluna ? '✨ Editar Roteamento (Ativo)' : 'Configurar Roteamento'}
@@ -5603,7 +5637,7 @@ const CrmComercial = () => {
                             <p className="text-xs text-gray-500 dark:text-slate-500 mt-0.5">Modelos de atividades automáticas para follow-up.</p>
                           </div>
                           <button
-                            onClick={() => { setSeqEditId(null); setSeqForm({ name:'', description:'', skip_weekends:true, steps:[] }); setSeqMode('form'); }}
+                            onClick={() => { setSeqEditId(null); setSeqForm({ name: '', description: '', skip_weekends: true, steps: [] }); setSeqMode('form'); }}
                             className="flex items-center gap-1.5 px-3 py-2 bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold rounded-xl transition-all"
                           >
                             <Plus size={13} /> Nova Sequência
@@ -5859,7 +5893,7 @@ const CrmComercial = () => {
             onClick={() => setCelebrationDetails(null)}
             className="fixed inset-0 z-[100000] flex flex-col items-center justify-center bg-black/80 backdrop-blur-md"
           >
-             <motion.div
+            <motion.div
               initial={{ scale: 0.5, y: 50, opacity: 0 }}
               animate={{ scale: 1, y: 0, opacity: 1 }}
               exit={{ scale: 0.5, y: 50, opacity: 0 }}
@@ -5872,13 +5906,13 @@ const CrmComercial = () => {
               </h2>
               <div className="relative flex flex-col items-center">
                 <div className="absolute inset-0 bg-violet-600 blur-[100px] opacity-40 rounded-full scale-150"></div>
-                
-                <img 
-                  src={celebrationDetails.gif} 
-                  alt="Celebration" 
-                  className="w-full max-w-xl rounded-[2rem] border-[6px] border-white/10 shadow-3xl relative z-10" 
+
+                <img
+                  src={celebrationDetails.gif}
+                  alt="Celebration"
+                  className="w-full max-w-xl rounded-[2rem] border-[6px] border-white/10 shadow-3xl relative z-10"
                 />
-                
+
                 {/* Valor do Negócio em Verde Saliente */}
                 <div className="relative z-20 mt-6 px-10 py-4 items-center flex flex-col justify-center rounded-3xl border border-emerald-500/40 bg-emerald-500/10 backdrop-blur-xl shadow-[0_0_50px_rgba(16,185,129,0.3)]">
                   <span className="text-emerald-400 text-sm font-bold uppercase tracking-[0.2em] mb-1">Valor VENDIDO</span>

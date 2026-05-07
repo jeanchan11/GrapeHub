@@ -2973,7 +2973,8 @@ app.get("/api/todos", async (req, res) => {
           fs.value as subscription_value,
           fs.next_due_date as subscription_next_due,
           fs.billing_type as subscription_billing_type,
-          fs.cycle as subscription_cycle
+          fs.cycle as subscription_cycle,
+          fs.status as subscription_status
         FROM clients c
         LEFT JOIN fin_people fp_link ON fp_link.grapehub_client_id = c.id
         LEFT JOIN fin_subscriptions fs ON 
@@ -3012,7 +3013,8 @@ app.get("/api/todos", async (req, res) => {
           subscriptionBillingType: row.subscription_billing_type,
           subscriptionCycle: row.subscription_cycle,
           finPeopleGuid: row.fin_people_guid_resolved || row.fin_people_guid,
-          finSubscriptionId: row.fin_subscription_id
+          finSubscriptionId: row.fin_subscription_id,
+          subscriptionStatus: row.subscription_status || null
         };
       });
       res.json(clients);
@@ -3182,6 +3184,13 @@ app.get("/api/todos", async (req, res) => {
   app.delete("/api/clients/:id", async (req, res) => {
     const { id } = req.params;
     try {
+      // Clean up dependent records first (FK constraints)
+      await pool.query("DELETE FROM crm_comments WHERE client_id = $1", [id]);
+      await pool.query("DELETE FROM crm_checklist WHERE client_id = $1", [id]);
+      await pool.query("DELETE FROM crm_exit_data WHERE client_id = $1", [id]);
+      // Unlink fin_people
+      await pool.query("UPDATE fin_people SET grapehub_client_id = NULL WHERE grapehub_client_id = $1", [id]);
+      // Delete the client
       await pool.query("DELETE FROM clients WHERE id = $1", [id]);
       res.json({ success: true });
     } catch (err) {
@@ -3262,6 +3271,28 @@ app.get("/api/todos", async (req, res) => {
         console.log(`[CLIENT PATCH] Executing query: ${query} params:`, values);
         await pool.query(query, values);
         console.log(`[CLIENT PATCH] Successfully updated client ${id}`);
+      }
+
+      // Auto-link fin_people when fin_subscription_id is set/changed
+      if (fin_subscription_id !== undefined) {
+        // First, unlink any existing fin_people linked to this client
+        await pool.query(`UPDATE fin_people SET grapehub_client_id = NULL WHERE grapehub_client_id = $1`, [id]);
+        
+        if (fin_subscription_id) {
+          // Find the subscription's customer_id, then find the fin_people record
+          const subRes = await pool.query(`SELECT customer_id FROM fin_subscriptions WHERE id::text = $1`, [fin_subscription_id]);
+          if (subRes.rows.length > 0) {
+            const customerId = subRes.rows[0].customer_id;
+            // Link the fin_people record to this client
+            await pool.query(
+              `UPDATE fin_people SET grapehub_client_id = $1 WHERE asaas_id = $2`,
+              [id, customerId]
+            );
+            console.log(`[CLIENT PATCH] Auto-linked fin_people (asaas_id: ${customerId}) to client ${id}`);
+          }
+        } else {
+          console.log(`[CLIENT PATCH] Unlinked fin_people from client ${id}`);
+        }
       }
       
       res.json({ success: true });
@@ -6292,6 +6323,33 @@ app.get("/api/todos", async (req, res) => {
       res.json(result.rows);
     } catch (err) {
       console.error("Error fetching fin_people subscriptions:", err);
+      res.status(500).json({ error: "Failed to fetch subscriptions" });
+    }
+  });
+
+  // GET all subscriptions (for the simplified linking UI)
+  app.get("/api/fin-subscriptions", async (req, res) => {
+    try {
+      const result = await pool.query(`
+        SELECT 
+          fs.id,
+          fs.customer_id,
+          fs.billing_type,
+          fs.value,
+          fs.next_due_date,
+          fs.status,
+          fs.cycle,
+          fs.description,
+          fp.name as customer_name,
+          fp.cnpjcpf as customer_cnpjcpf,
+          fp.grapehub_client_id
+        FROM fin_subscriptions fs
+        LEFT JOIN fin_people fp ON fp.asaas_id = fs.customer_id
+        ORDER BY fp.name ASC, fs.value DESC
+      `);
+      res.json(result.rows);
+    } catch (err) {
+      console.error("Error fetching all subscriptions:", err);
       res.status(500).json({ error: "Failed to fetch subscriptions" });
     }
   });
@@ -9385,6 +9443,10 @@ app.get("/api/todos", async (req, res) => {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  // Add extended columns to template items
+  for (const col of ['description', 'internal_doc']) {
+    await pool.query(`ALTER TABLE onboarding_template_items ADD COLUMN IF NOT EXISTS ${col} TEXT`);
+  }
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS onboarding_subtasks (
@@ -9398,7 +9460,7 @@ app.get("/api/todos", async (req, res) => {
   `);
 
   // Add form fields columns
-  const formCols = ['nome_completo','nome_fantasia','telefone_whatsapp','cnpj_cpf','cep','cidade','uf'];
+  const formCols = ['nome_completo','nome_fantasia','telefone_whatsapp','cnpj_cpf','cep','cidade','uf','meeting_info'];
   for (const col of formCols) {
     await pool.query(`ALTER TABLE onboarding_tasks ADD COLUMN IF NOT EXISTS ${col} TEXT`);
   }
@@ -9459,32 +9521,33 @@ app.get("/api/todos", async (req, res) => {
   // ── POST task (auto-creates subtasks from template) ──
   app.post('/api/onboarding-tasks', async (req, res) => {
     try {
-      const { client_name, squad, responsible_id, responsible_name, responsible_avatar, start_date, due_date, status_group, tags } = req.body;
+      const { client_name, squad, responsible_id, responsible_name, responsible_avatar, start_date, due_date, status_group, tags, nome_completo, nome_fantasia, telefone_whatsapp, cnpj_cpf, cep, cidade, uf, meeting_info } = req.body;
       if (!client_name) return res.status(400).json({ error: 'client_name é obrigatório.' });
 
       // 1. Create the task
       const result = await pool.query(
-        `INSERT INTO onboarding_tasks (client_name, squad, responsible_id, responsible_name, responsible_avatar, start_date, due_date, status_group, tags)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+        `INSERT INTO onboarding_tasks (client_name, squad, responsible_id, responsible_name, responsible_avatar, start_date, due_date, status_group, tags, nome_completo, nome_fantasia, telefone_whatsapp, cnpj_cpf, cep, cidade, uf, meeting_info)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *`,
         [client_name, squad || null, responsible_id || null, responsible_name || null, responsible_avatar || null,
-         start_date || null, due_date || null, status_group || 'a-fazer-briefing', tags || []]
+         start_date || null, due_date || null, status_group || 'a-fazer-briefing', tags || [],
+         nome_completo || null, nome_fantasia || null, telefone_whatsapp || null, cnpj_cpf || null, cep || null, cidade || null, uf || null, meeting_info || null]
       );
       const newTask = result.rows[0];
 
       // 2. Copy template items as subtasks
       const template = await pool.query(
-        'SELECT title, order_index FROM onboarding_template_items ORDER BY order_index ASC'
+        'SELECT title, order_index, description, internal_doc FROM onboarding_template_items ORDER BY order_index ASC'
       );
       if (template.rows.length > 0) {
         const values: string[] = [];
         const params: any[] = [];
         let idx = 1;
         for (const item of template.rows) {
-          values.push(`($${idx++}, $${idx++}, $${idx++})`);
-          params.push(newTask.id, item.title, item.order_index);
+          values.push(`($${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++})`);
+          params.push(newTask.id, item.title, item.order_index, item.description || null, item.internal_doc || null);
         }
         await pool.query(
-          `INSERT INTO onboarding_subtasks (task_id, title, order_index) VALUES ${values.join(', ')}`,
+          `INSERT INTO onboarding_subtasks (task_id, title, order_index, description, internal_doc) VALUES ${values.join(', ')}`,
           params
         );
         // Update subtask_count
@@ -9507,7 +9570,7 @@ app.get("/api/todos", async (req, res) => {
     try {
       const { id } = req.params;
       const fields = req.body;
-      const allowed = ['client_name','squad','responsible_id','responsible_name','responsible_avatar','start_date','due_date','status_group','tags','subtask_count','nome_completo','nome_fantasia','telefone_whatsapp','cnpj_cpf','cep','cidade','uf'];
+      const allowed = ['client_name','squad','responsible_id','responsible_name','responsible_avatar','start_date','due_date','status_group','tags','subtask_count','nome_completo','nome_fantasia','telefone_whatsapp','cnpj_cpf','cep','cidade','uf','meeting_info'];
       const sets: string[] = [];
       const vals: any[] = [];
       let idx = 1;
@@ -9744,7 +9807,7 @@ app.get("/api/todos", async (req, res) => {
   // Bulk replace all template items
   app.put('/api/onboarding-template', async (req, res) => {
     try {
-      const { items } = req.body; // [{title: string}]
+      const { items } = req.body;
       if (!Array.isArray(items)) return res.status(400).json({ error: 'items deve ser um array.' });
       await pool.query('DELETE FROM onboarding_template_items');
       if (items.length > 0) {
@@ -9752,11 +9815,11 @@ app.get("/api/todos", async (req, res) => {
         const params: any[] = [];
         let idx = 1;
         items.forEach((item: any, i: number) => {
-          values.push(`($${idx++}, $${idx++})`);
-          params.push(item.title, i);
+          values.push(`($${idx++}, $${idx++}, $${idx++}, $${idx++})`);
+          params.push(item.title, i, item.description || null, item.internal_doc || null);
         });
         await pool.query(
-          `INSERT INTO onboarding_template_items (title, order_index) VALUES ${values.join(', ')}`,
+          `INSERT INTO onboarding_template_items (title, order_index, description, internal_doc) VALUES ${values.join(', ')}`,
           params
         );
       }

@@ -10,6 +10,7 @@ import ComercialGrape from './src/pages/ComercialGrape';
 import ProjectsModule from './src/pages/ProjectsModule';
 import TodoPage from './src/pages/TodoPage';
 import ActiveClients from './src/pages/ActiveClients';
+import WelcomePage from './src/pages/WelcomePage';
 import CrmFinanceiro from './src/pages/CrmFinanceiro';
 import CrmComercial from './src/pages/CrmComercial';
 import { GestorDashboard } from './src/pages/GestorDashboard';
@@ -59,7 +60,7 @@ const AppContent: React.FC = () => {
   const { menu } = useMenu();
   console.log('AppContent userData:', userData);
   const [activePage, setActivePage] = useState(() => {
-    return localStorage.getItem('activePage') || 'gestor';
+    return localStorage.getItem('activePage') || 'welcome';
   });
   const [theme, setTheme] = useState<'light' | 'dark' | 'darker'>(() => {
     const saved = localStorage.getItem('theme');
@@ -253,8 +254,9 @@ const AppContent: React.FC = () => {
         return <ContasAReceber />;
       case 'dre':
         return <DRE />;
+      case 'welcome':
       default:
-        return <GestorCalculator />;
+        return <WelcomePage />;
     }
   };
 

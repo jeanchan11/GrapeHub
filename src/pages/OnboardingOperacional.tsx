@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, ChevronDown, ChevronRight, Calendar, Users, Tag, MoreHorizontal, Circle, CheckCircle2, Loader2, X, Trash2, GripVertical, Settings, FileText, Link as LinkIcon, Save, Heading1, Heading2, Heading3, Type, List, ListOrdered, CheckSquare } from 'lucide-react';
+import { Plus, ChevronDown, ChevronRight, Calendar, Users, Tag, MoreHorizontal, Circle, CheckCircle2, Loader2, X, Trash2, GripVertical, Settings, FileText, Link as LinkIcon, Save, Heading1, Heading2, Heading3, Type, List, ListOrdered, CheckSquare, Check } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
 
 // ── Types ─────────────────────────────────────────────────
@@ -23,6 +23,7 @@ interface OnboardingTask {
   cep: string | null;
   cidade: string | null;
   uf: string | null;
+  meeting_info: string | null;
 }
 
 interface Comment {
@@ -71,6 +72,8 @@ interface TemplateItem {
   id: number;
   title: string;
   order_index: number;
+  description?: string;
+  internal_doc?: string;
 }
 
 interface StatusGroup {
@@ -141,6 +144,14 @@ const Avatar = ({ name, url, size = 6 }: { name?: string | null; url?: string | 
   );
 };
 
+let cachedUsers: any[] = [];
+let fetchUsersPromise: Promise<void> | null = null;
+const fetchUsersOnce = () => {
+  if (fetchUsersPromise) return fetchUsersPromise;
+  fetchUsersPromise = fetch('/api/users').then(r => r.json()).then(data => { cachedUsers = data; }).catch(() => {});
+  return fetchUsersPromise;
+};
+
 // ── Task Row ──────────────────────────────────────────────
 const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: { 
   task: OnboardingTask; 
@@ -151,11 +162,40 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
   const [squad, setSquad] = useState(task.squad || '');
   const [showStatusPicker, setShowStatusPicker] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
   const [loadingSubs, setLoadingSubs] = useState(false);
+  const [subtaskRespPicker, setSubtaskRespPicker] = useState<number | null>(null);
+  const [taskRespPicker, setTaskRespPicker] = useState(false);
   const statusRef = React.useRef<HTMLDivElement>(null);
   const menuRef = React.useRef<HTMLDivElement>(null);
+  const respRef = React.useRef<HTMLDivElement>(null);
+  const taskRespRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => { fetchUsersOnce(); }, []);
+
+  useEffect(() => {
+    if (!subtaskRespPicker) return;
+    const handleClick = (e: MouseEvent) => {
+      if (respRef.current && !respRef.current.contains(e.target as Node)) {
+        setSubtaskRespPicker(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [subtaskRespPicker]);
+
+  useEffect(() => {
+    if (!taskRespPicker) return;
+    const handleClick = (e: MouseEvent) => {
+      if (taskRespRef.current && !taskRespRef.current.contains(e.target as Node)) {
+        setTaskRespPicker(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [taskRespPicker]);
 
   useEffect(() => {
     if (!showStatusPicker) return;
@@ -173,6 +213,7 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
     const handleClick = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setShowMenu(false);
+        setConfirmDelete(false);
       }
     };
     document.addEventListener('mousedown', handleClick);
@@ -199,6 +240,30 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ completed: newVal }),
       });
+    } catch { /* silent */ }
+  };
+
+  const handleSubtaskResponsible = async (subId: number, userId: string, userName: string, userAvatar: string) => {
+    setSubtaskRespPicker(null);
+    setSubtasks(prev => prev.map(s => s.id === subId ? { ...s, responsible_id: userId, responsible_name: userName, responsible_avatar: userAvatar } : s));
+    try {
+      await fetch(`/api/onboarding-subtasks/${subId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ responsible_id: userId, responsible_name: userName, responsible_avatar: userAvatar }),
+      });
+    } catch { /* silent */ }
+  };
+
+  const handleTaskResponsible = async (userId: string, userName: string, userAvatar: string) => {
+    setTaskRespPicker(false);
+    try {
+      await fetch(`/api/onboarding-tasks/${task.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ responsible_id: userId, responsible_name: userName, responsible_avatar: userAvatar }),
+      });
+      onUpdate();
     } catch { /* silent */ }
   };
 
@@ -235,8 +300,12 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
   };
 
   const handleDelete = async () => {
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      return;
+    }
     setShowMenu(false);
-    if (!window.confirm(`Excluir "${task.client_name}" permanentemente? Esta ação não pode ser desfeita.`)) return;
+    setConfirmDelete(false);
     try {
       await fetch(`/api/onboarding-tasks/${task.id}`, { method: 'DELETE' });
       onUpdate();
@@ -249,7 +318,7 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
 
   return (
     <div>
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-black/5 dark:border-white/5 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors group">
+      <div className="flex items-center gap-2 px-8 py-3 border-b border-black/5 dark:border-white/5 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors group">
         {/* Expand toggle */}
         <button onClick={toggleExpand} className="shrink-0 text-slate-600 hover:text-slate-400 transition-all">
           <ChevronRight size={14} className={`transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`} />
@@ -301,17 +370,42 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
         {/* Squad */}
         <div className="shrink-0 w-36">
           <select value={squad} onChange={e => handleSquadChange(e.target.value)}
-            className="w-full bg-dark-bg border border-white/10 rounded-lg px-2 py-1 text-xs text-dark-text focus:outline-none focus:border-violet-500/50 transition-colors">
-            <option value="">— Squad —</option>
-            {SQUAD_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+            className={`w-[calc(100%+0.75rem)] -ml-3 border rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer focus:outline-none ${
+              squad === 'Squad Able' ? 'bg-blue-500/15 text-blue-400 border-blue-500/30 focus:border-blue-500/50' :
+              squad === 'Squad Baker' ? 'bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/30 focus:border-fuchsia-500/50' :
+              'bg-white/5 text-slate-400 border-white/10 focus:border-white/20'
+            }`}
+          >
+            <option value="" className="bg-dark-bg text-slate-400">— SQUAD —</option>
+            {SQUAD_OPTIONS.map(s => <option key={s} value={s} className="bg-dark-bg text-dark-text">{s}</option>)}
           </select>
         </div>
 
         {/* Responsável */}
-        <div className="shrink-0 w-20 flex items-center justify-center gap-1">
-          {task.responsible_name
-            ? <Avatar name={task.responsible_name} url={task.responsible_avatar} size={6} />
-            : <div className="w-6 h-6 rounded-full border border-dashed border-slate-600 flex items-center justify-center"><Plus size={10} className="text-slate-600" /></div>}
+        <div className="shrink-0 w-20 flex items-center justify-center gap-1 relative">
+          {task.responsible_name ? (
+            <button onClick={(e) => { e.stopPropagation(); setTaskRespPicker(v => !v); }} className="focus:outline-none hover:scale-110 transition-transform">
+              <Avatar name={task.responsible_name} url={task.responsible_avatar} size={6} />
+            </button>
+          ) : (
+            <button onClick={(e) => { e.stopPropagation(); setTaskRespPicker(v => !v); }} className="w-6 h-6 rounded-full border border-dashed border-slate-600 flex items-center justify-center hover:border-violet-500 hover:text-violet-500 transition-colors">
+              <Plus size={10} className="text-slate-600 hover:text-violet-500" />
+            </button>
+          )}
+          
+          {taskRespPicker && (
+            <div ref={taskRespRef} className="absolute top-8 z-50 w-48 bg-dark-card border border-white/10 rounded-xl shadow-2xl p-1 max-h-48 overflow-y-auto">
+              <div className="px-2 py-1.5 border-b border-white/5 mb-1">
+                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Selecionar Responsável</span>
+              </div>
+              {cachedUsers.map(u => (
+                <button key={u.id} onClick={(e) => { e.stopPropagation(); handleTaskResponsible(u.id, u.name, u.picture); }} className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-white/5 rounded-lg text-left transition-colors">
+                  <Avatar name={u.name} url={u.picture} size={5} />
+                  <span className="text-xs text-dark-text truncate">{u.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Data Inicial */}
@@ -336,17 +430,27 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
                 onClick={handleArchive}
                 className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left text-xs text-dark-text hover:bg-black/5 dark:hover:bg-white/[0.06] transition-colors"
               >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-400"><polyline points="21 8 21 21 3 21 3 8" /><rect x="1" y="3" width="22" height="5" /><line x1="10" y1="12" x2="14" y2="12" /></svg>
-                Arquivar
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-400"><path d="M20 6 9 17l-5-5"/></svg>
+                Concluir Cliente
               </button>
               <div className="h-px bg-black/5 dark:bg-white/5 mx-2" />
-              <button
-                onClick={handleDelete}
-                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left text-xs text-rose-400 hover:bg-rose-500/10 transition-colors"
-              >
-                <Trash2 size={13} />
-                Excluir
-              </button>
+              {confirmDelete ? (
+                <button
+                  onClick={handleDelete}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left text-xs font-bold text-white bg-rose-500 hover:bg-rose-600 transition-colors"
+                >
+                  <Trash2 size={13} />
+                  Confirmar exclusão?
+                </button>
+              ) : (
+                <button
+                  onClick={handleDelete}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left text-xs text-rose-400 hover:bg-rose-500/10 transition-colors"
+                >
+                  <Trash2 size={13} />
+                  Excluir
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -377,15 +481,53 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
               </div>
               {subtasks.map(sub => (
                 <div key={sub.id}
-                  className="w-full flex items-center gap-3 px-12 py-2 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors">
-                  <button onClick={() => toggleSubtask(sub)}
-                    className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${sub.completed ? 'bg-emerald-500 border-emerald-500' : 'border-slate-600'}`}>
-                    {sub.completed && <CheckCircle2 size={10} className="text-white" />}
-                  </button>
-                  <button onClick={() => onOpenSubtask(sub, task)}
-                    className={`flex-1 text-left text-xs hover:text-violet-500 transition-colors ${sub.completed ? 'text-slate-600 line-through' : 'text-dark-text'}`}>
-                    {sub.title}
-                  </button>
+                  className="w-full flex items-center gap-2 px-8 py-2.5 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors border-b border-black/[0.08] dark:border-white/[0.08] last:border-none">
+                  <div className="w-[14px] shrink-0" />
+                  <div className="w-4 shrink-0 flex items-center justify-center">
+                    <button onClick={() => toggleSubtask(sub)}
+                      className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${sub.completed ? 'bg-emerald-500 border-emerald-500' : 'border-slate-600'}`}>
+                      {sub.completed && <CheckCircle2 size={10} className="text-white" />}
+                    </button>
+                  </div>
+                  <div className="flex-1 min-w-0 flex items-center pl-1">
+                    <button onClick={() => onOpenSubtask(sub, task)}
+                      className={`text-left text-xs hover:text-violet-500 transition-colors truncate ${sub.completed ? 'text-slate-600 line-through' : 'text-dark-text'}`}>
+                      {sub.title}
+                    </button>
+                  </div>
+                  <div className="shrink-0 w-36" />
+                  
+                  {/* Responsável da Subtarefa */}
+                  <div className="shrink-0 w-20 flex items-center justify-center gap-1 relative">
+                    {sub.responsible_name ? (
+                      <button onClick={() => setSubtaskRespPicker(sub.id)} className="focus:outline-none hover:scale-110 transition-transform">
+                        <Avatar name={sub.responsible_name} url={sub.responsible_avatar} size={5} />
+                      </button>
+                    ) : (
+                      <button onClick={() => setSubtaskRespPicker(sub.id)} className="w-5 h-5 rounded-full border border-dashed border-slate-600 flex items-center justify-center hover:border-violet-500 hover:text-violet-500 transition-colors">
+                        <Plus size={8} className="text-slate-600 hover:text-violet-500" />
+                      </button>
+                    )}
+                    {subtaskRespPicker === sub.id && (
+                      <div ref={respRef} className="absolute top-6 z-50 w-48 bg-dark-card border border-white/10 rounded-xl shadow-2xl p-1 max-h-48 overflow-y-auto">
+                        <div className="px-2 py-1.5 border-b border-white/5 mb-1">
+                          <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Selecionar Responsável</span>
+                        </div>
+                        {cachedUsers.map(u => (
+                          <button key={u.id} onClick={() => handleSubtaskResponsible(sub.id, u.id, u.name, u.picture)} className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-white/5 rounded-lg text-left transition-colors">
+                            <Avatar name={u.name} url={u.picture} size={5} />
+                            <span className="text-xs text-dark-text truncate">{u.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="shrink-0 w-24" />
+                  <div className="shrink-0 w-28 text-xs text-slate-500 text-left pl-2">
+                    {sub.due_date ? formatDate(sub.due_date) : '—'}
+                  </div>
+                  <div className="shrink-0 w-[22px]" />
                 </div>
               ))}
             </div>
@@ -408,21 +550,21 @@ const GroupBlock = ({ group, onUpdate, onAddTask, onOpenDetail, onOpenSubtask }:
   const [expanded, setExpanded] = useState(true);
 
   return (
-    <div className="mb-6">
+    <div className="mb-6 bg-dark-card border border-white/10 rounded-2xl overflow-hidden shadow-sm">
       {/* Group header */}
-      <div className="flex items-center gap-3 px-4 py-2 sticky top-0 bg-dark-bg z-10">
-        <button onClick={() => setExpanded(v => !v)} className="flex items-center gap-2 group">
+      <div className="flex items-center gap-3 px-6 py-4 bg-dark-card border-b border-black/5 dark:border-white/5 sticky top-0 z-10">
+        <button onClick={() => setExpanded(v => !v)} className="flex items-center gap-2 group flex-1">
           <div
-            className="px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-widest flex items-center gap-2"
-            style={{ background: `${group.color}20`, color: group.color, border: `1px solid ${group.color}40` }}
+            className="px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-widest flex items-center gap-2 transition-transform group-hover:scale-105"
+            style={{ background: `${group.color}15`, color: group.color, border: `1px solid ${group.color}30` }}
           >
             <span>{group.emoji}</span>
             <span>{group.label}</span>
-            <span className="ml-1 opacity-60">{group.tasks.length}</span>
+            <span className="ml-1 px-1.5 py-0.5 rounded-md bg-white/10">{group.tasks.length}</span>
           </div>
           {expanded
-            ? <ChevronDown size={14} className="text-slate-500" />
-            : <ChevronRight size={14} className="text-slate-500" />
+            ? <ChevronDown size={14} className="text-slate-500 ml-2" />
+            : <ChevronRight size={14} className="text-slate-500 ml-2" />
           }
         </button>
       </div>
@@ -430,19 +572,20 @@ const GroupBlock = ({ group, onUpdate, onAddTask, onOpenDetail, onOpenSubtask }:
       {/* Column headers */}
       {expanded && (
         <>
-          <div className="flex items-center gap-2 px-10 py-2 text-[10px] font-bold text-slate-600 uppercase tracking-widest border-b border-black/5 dark:border-white/5">
+          <div className="flex items-center gap-2 px-8 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest bg-black/20 dark:bg-black/20 border-b border-black/5 dark:border-white/5">
+            <div className="w-[14px] shrink-0" />
+            <div className="w-4 shrink-0" />
             <div className="flex-1">Nome</div>
-            <div className="w-36">Squad</div>
-            <div className="w-20 text-center">Responsável</div>
-            <div className="w-24">Data Inicial</div>
-            <div className="w-28">Data de Vencimento</div>
-            <div className="w-6" />
+            <div className="shrink-0 w-36">Squad</div>
+            <div className="shrink-0 w-20 text-center">Resp.</div>
+            <div className="shrink-0 w-24">Data Inicial</div>
+            <div className="shrink-0 w-28">Vencimento</div>
+            <div className="shrink-0 w-[22px]" />
           </div>
 
-          {/* Task rows */}
-          <div className="bg-dark-card/20 rounded-b-xl border-x border-b border-black/5 dark:border-white/5">
+          <div className="flex flex-col">
             {group.tasks.length === 0 ? (
-              <div className="py-8 text-center text-slate-600 text-sm">Nenhum cliente neste grupo.</div>
+              <div className="py-12 text-center text-slate-500 text-xs font-medium">Nenhum cliente neste grupo.</div>
             ) : (
               group.tasks.map(task => (
                 <TaskRow key={task.id} task={task} onUpdate={onUpdate} onOpenDetail={onOpenDetail} onOpenSubtask={onOpenSubtask} />
@@ -566,10 +709,19 @@ const TemplateModal = ({ onClose }: { onClose: () => void }) => {
       await fetch('/api/onboarding-template', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: items.map(i => ({ title: i.title })) }),
+        body: JSON.stringify({ items: items.map(i => ({ title: i.title, description: i.description || null, internal_doc: i.internal_doc || null })) }),
       });
       onClose();
     } catch { /* silent */ } finally { setSaving(false); }
+  };
+
+  const [selectedItem, setSelectedItem] = useState<TemplateItem | null>(null);
+
+  const updateItem = (idx: number, updates: Partial<TemplateItem>) => {
+    setItems(prev => prev.map((item, i) => i === idx ? { ...item, ...updates } : item));
+    if (selectedItem && items[idx]?.id === selectedItem.id) {
+      setSelectedItem(prev => prev ? { ...prev, ...updates } : prev);
+    }
   };
 
   return (
@@ -600,9 +752,10 @@ const TemplateModal = ({ onClose }: { onClose: () => void }) => {
           ) : (
             <div className="space-y-1.5">
               {items.map((item, idx) => (
-                <div key={`${item.id}-${idx}`} className="flex items-center gap-2 px-3 py-2.5 bg-black/[0.02] dark:bg-white/[0.03] border border-black/5 dark:border-white/5 rounded-xl group hover:border-black/10 dark:hover:border-white/10 transition-colors">
+                <div key={`${item.id}-${idx}`} className="flex items-center gap-2 px-3 py-2.5 bg-black/[0.02] dark:bg-white/[0.03] border border-black/5 dark:border-white/5 rounded-xl group hover:border-violet-500/30 dark:hover:border-violet-500/30 transition-colors cursor-pointer"
+                  onClick={() => setSelectedItem({ ...item, order_index: idx })}>
                   <span className="text-[10px] font-bold text-slate-600 w-5 text-center shrink-0">{idx + 1}</span>
-                  <div className="flex flex-col gap-0.5 shrink-0">
+                  <div className="flex flex-col gap-0.5 shrink-0" onClick={e => e.stopPropagation()}>
                     <button onClick={() => moveItem(idx, -1)} disabled={idx === 0}
                       className="text-slate-600 hover:text-slate-300 disabled:opacity-20 transition-colors p-0.5">
                       <ChevronDown size={10} className="rotate-180" />
@@ -613,7 +766,10 @@ const TemplateModal = ({ onClose }: { onClose: () => void }) => {
                     </button>
                   </div>
                   <span className="flex-1 text-sm text-dark-text truncate">{item.title}</span>
-                  <button onClick={() => removeItem(idx)}
+                  {item.internal_doc && (
+                    <span className="px-1.5 py-0.5 bg-violet-500/10 text-violet-400 text-[8px] font-bold rounded uppercase tracking-widest shrink-0">Com conteúdo</span>
+                  )}
+                  <button onClick={(e) => { e.stopPropagation(); removeItem(idx); }}
                     className="shrink-0 opacity-0 group-hover:opacity-100 text-slate-600 hover:text-rose-400 transition-all p-1 rounded">
                     <Trash2 size={13} />
                   </button>
@@ -653,6 +809,70 @@ const TemplateModal = ({ onClose }: { onClose: () => void }) => {
           </div>
         </div>
       </div>
+
+      {/* Template Item Detail Modal */}
+      {selectedItem && (() => {
+        const itemIdx = items.findIndex(i => i.id === selectedItem.id);
+        if (itemIdx === -1) return null;
+        return (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setSelectedItem(null)}>
+            <div className="bg-dark-card border border-white/10 rounded-2xl shadow-2xl w-full max-w-7xl h-[92vh] flex flex-col" onClick={e => e.stopPropagation()}>
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 py-5 border-b border-white/5">
+                <div>
+                  <h2 className="text-lg font-bold text-dark-text">{selectedItem.title}</h2>
+                  <p className="text-[10px] text-slate-500 mt-0.5 uppercase tracking-widest">
+                    Modelo de subtarefa — o conteúdo aqui será copiado para cada novo cliente
+                  </p>
+                </div>
+                <button onClick={() => setSelectedItem(null)} className="p-2 text-slate-500 hover:text-white hover:bg-white/10 rounded-xl transition-colors">
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 overflow-y-auto p-6 grid grid-cols-[1fr_300px] gap-6">
+                {/* Left column */}
+                <div className="space-y-6">
+
+                  {/* Internal Document */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                        <FileText size={12} className="text-violet-500" /> Documento Interno
+                      </h3>
+                    </div>
+                    <div className="bg-white dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-xl min-h-[300px] overflow-hidden">
+                      <RichTextEditor
+                        content={items[itemIdx]?.internal_doc || ''}
+                        onChange={(html) => updateItem(itemIdx, { internal_doc: html })}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right column - Info */}
+                <div className="space-y-4">
+                  <div className="p-4 bg-violet-500/5 border border-violet-500/20 rounded-xl">
+                    <h4 className="text-[10px] font-bold text-violet-400 uppercase tracking-widest mb-2">ℹ️ Sobre o modelo</h4>
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      O conteúdo adicionado aqui (documento interno) será automaticamente copiado para cada subtarefa quando um novo cliente for criado.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-4 border-t border-white/5 flex items-center justify-end gap-3">
+                <button onClick={() => setSelectedItem(null)}
+                  className="px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-sm font-bold text-white transition-colors">
+                  Fechar
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };// ── Task Detail Modal ─────────────────────────────────────
@@ -666,6 +886,8 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
     cidade: task.cidade || '',
     uf: task.uf || '',
   });
+  const [meetingInfo, setMeetingInfo] = useState(task.meeting_info || '');
+  const [meetingInfoSaving, setMeetingInfoSaving] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [loadingComments, setLoadingComments] = useState(true);
@@ -697,6 +919,18 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
     } catch { /* silent */ } finally { setSaving(false); }
   };
 
+  const saveMeetingInfo = async () => {
+    setMeetingInfoSaving(true);
+    try {
+      await fetch(`/api/onboarding-tasks/${task.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ meeting_info: meetingInfo }),
+      });
+      onUpdate();
+    } catch { /* silent */ } finally { setMeetingInfoSaving(false); }
+  };
+
   const addComment = async () => {
     if (!newComment.trim()) return;
     try {
@@ -725,91 +959,196 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+      <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-black/5 dark:border-white/5">
           <div>
             <h2 className="text-base font-bold text-dark-text">{task.client_name}</h2>
             <p className="text-[10px] text-slate-500 mt-0.5 uppercase tracking-widest">Detalhes do cliente</p>
           </div>
-          <button onClick={onClose} className="p-1.5 text-slate-500 hover:text-dark-text hover:bg-black/10 dark:hover:bg-white/10 rounded-lg transition-colors">
-            <X size={16} />
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => {
+                fetch(`/api/onboarding-tasks/${task.id}/archive`, { method: 'POST' })
+                  .then(() => { onUpdate(); onClose(); });
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 text-xs font-bold rounded-lg transition-colors border border-emerald-500/20"
+            >
+              <Check size={14} />
+              Concluir Onboarding
+            </button>
+            <button onClick={onClose} className="p-1.5 text-slate-500 hover:text-dark-text hover:bg-black/10 dark:hover:bg-white/10 rounded-lg transition-colors">
+              <X size={16} />
+            </button>
+          </div>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto">
-          {/* Form section */}
-          <div className="px-6 py-4 border-b border-black/5 dark:border-white/5">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Formulário</p>
-              {formDirty && (
-                <button onClick={saveForm} disabled={saving}
-                  className="text-[10px] font-bold text-violet-400 hover:text-violet-300 transition-colors flex items-center gap-1">
-                  {saving ? <Loader2 size={10} className="animate-spin" /> : null}
-                  Salvar
-                </button>
-              )}
-            </div>
-            <div className="space-y-2">
-              {FIELDS.map(f => (
-                <div key={f.key} className="flex items-center gap-3">
-                  <label className="text-xs text-slate-500 w-36 shrink-0 text-right">{f.label}</label>
-                  <input
-                    value={(form as any)[f.key]}
-                    onChange={e => updateField(f.key, e.target.value)}
-                    className="flex-1 bg-dark-bg border border-black/10 dark:border-white/10 rounded-lg px-3 py-1.5 text-sm text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500/50 transition-colors"
-                    placeholder="—"
-                  />
+        {/* Content - Two Columns */}
+        <div className="flex flex-1 overflow-hidden">
+          
+          {/* Left Column: Informações da Reunião */}
+          <div className="w-[60%] flex flex-col border-r border-black/5 dark:border-white/5 overflow-y-auto bg-black/[0.01] dark:bg-white/[0.01] p-6 relative">
+            <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 mb-6">
+              <FileText size={14} className="text-violet-500" />
+              Informações da Reunião
+            </h3>
+            
+            {(() => {
+              let parsed: any = null;
+              if (meetingInfo) {
+                try { parsed = JSON.parse(meetingInfo); } catch (e) { parsed = null; }
+              }
+              
+              if (!parsed) {
+                return (
+                  <div className="flex flex-col items-center justify-center py-16 text-slate-400">
+                    <FileText size={36} className="mb-3 opacity-30" />
+                    <p className="text-sm font-medium text-slate-500">Nenhuma reunião vinculada</p>
+                    <p className="text-xs mt-1 text-slate-600">As reuniões do CRM Comercial aparecerão aqui.</p>
+                  </div>
+                );
+              }
+
+              let dateObj = new Date(parsed.date);
+              if (isNaN(dateObj.getTime())) {
+                dateObj = new Date();
+              }
+              const mMonth = dateObj.toLocaleString('pt-BR', { month: 'short' }).toUpperCase();
+              const mDay = String(dateObj.getDate()).padStart(2, '0');
+              const notesLines = String(parsed.notes || '').split('\n').filter((l:string) => l.trim().length > 0);
+
+              return (
+                <div className="flex items-start w-full relative">
+                  <div className="w-full max-w-2xl mx-auto">
+                    <div className="p-6 rounded-2xl border border-black/5 dark:border-white/10 bg-dark-bg shadow-sm">
+                      
+                      <div className="flex items-start gap-4 mb-6">
+                        <div className="w-[60px] h-[60px] rounded-xl flex flex-col items-center justify-center bg-violet-500/10 text-violet-400 shrink-0 shadow-inner mt-0.5">
+                          <span className="text-[10px] font-black tracking-widest">{mMonth}.</span>
+                          <span className="text-xl font-bold leading-none mt-0.5">{mDay}</span>
+                        </div>
+                        
+                        <div className="flex-1 min-w-0 pr-1">
+                          <div className="flex items-start justify-between gap-2">
+                            <h4 className="font-bold text-dark-text text-[15px] leading-tight break-words pr-2">{parsed.title || 'Reunião'}</h4>
+                            <span className="text-[10px] font-medium text-slate-500 shrink-0 mt-0.5">{dateObj.toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric'})} às {dateObj.toLocaleString('pt-BR', { hour:'2-digit', minute:'2-digit'})}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 mt-2.5 text-[11px] text-slate-400 font-medium">
+                            <Users size={13} className="opacity-70" />
+                            <span className="truncate max-w-[200px]">{parsed.responsible || 'Sistema'}</span>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="mt-5 pt-5 border-t border-black/5 dark:border-white/5 space-y-4">
+                        <h5 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Detalhes:</h5>
+                        <div className="grid grid-cols-2 gap-y-4 gap-x-4 text-xs">
+                          <div><span className="text-slate-500 font-medium block text-[9px] uppercase tracking-wider mb-1">Local</span><span className="font-semibold text-dark-text">{parsed.local || '-'}</span></div>
+                          <div><span className="text-slate-500 font-medium block text-[9px] uppercase tracking-wider mb-1">Link</span>{parsed.link && typeof parsed.link === 'string' ? <a href={parsed.link.startsWith('http') ? parsed.link : `https://${parsed.link}`} target="_blank" rel="noreferrer" className="text-violet-500 hover:text-violet-400 font-semibold hover:underline truncate inline-block max-w-[150px]">{parsed.link}</a> : <span className="font-semibold text-dark-text">-</span>}</div>
+                          <div><span className="text-slate-500 font-medium block text-[9px] uppercase tracking-wider mb-1">Nicho</span><span className="font-semibold text-dark-text truncate max-w-[150px] inline-block">{parsed.niche || '-'}</span></div>
+                          <div><span className="text-slate-500 font-medium block text-[9px] uppercase tracking-wider mb-1">Fechamentos Mês</span><span className="font-semibold text-dark-text">{parsed.closings || '-'}</span></div>
+                          <div><span className="text-slate-500 font-medium block text-[9px] uppercase tracking-wider mb-1">Meta</span><span className="font-semibold text-dark-text">{parsed.goal || '-'}</span></div>
+                        </div>
+                      </div>
+                      
+                      {notesLines.length > 0 && (
+                        <div className="mt-6 pt-5 border-t border-black/5 dark:border-white/5">
+                          <h5 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4">Informações da Reunião:</h5>
+                          <ul className="space-y-3">
+                            {notesLines.map((line:string, i:number) => {
+                              const isCheck = line.trim().startsWith('-');
+                              return (
+                                <li key={i} className="flex items-start gap-3 text-[12px] text-slate-300">
+                                  {isCheck ? (
+                                    <Check size={14} className="text-emerald-500 shrink-0 mt-0.5 opacity-80" />
+                                  ) : (
+                                    <span className="w-1.5 h-3 mt-1.5 shrink-0" />
+                                  )}
+                                  <span className="leading-relaxed font-medium">{line.replace(/^- /, '')}</span>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              ))}
-            </div>
+              );
+            })()}
           </div>
 
-          {/* Comments section */}
-          <div className="px-6 py-4">
-            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Comentários</p>
-
-            {/* New comment */}
-            <div className="flex gap-2 mb-4">
-              <input
-                value={newComment}
-                onChange={e => setNewComment(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') addComment(); }}
-                placeholder="Escreva um comentário..."
-                className="flex-1 bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500/50 transition-colors"
-              />
-              <button onClick={addComment} disabled={!newComment.trim()}
-                className="px-4 py-2.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-30 text-white text-xs font-semibold rounded-xl transition-colors">
-                Enviar
-              </button>
-            </div>
-
-            {/* Comments list */}
-            {loadingComments ? (
-              <div className="flex justify-center py-4">
-                <Loader2 size={16} className="animate-spin text-slate-600" />
+          {/* Right Column: Formulário & Comentários */}
+          <div className="w-[40%] flex flex-col overflow-y-auto">
+            {/* Form section */}
+            <div className="px-6 py-6 border-b border-black/5 dark:border-white/5">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                  <List size={14} className="text-violet-500" />
+                  Formulário de Cadastro
+                </h3>
               </div>
-            ) : comments.length === 0 ? (
-              <p className="text-center text-slate-600 text-xs py-4">Nenhum comentário ainda.</p>
-            ) : (
               <div className="space-y-3">
-                {comments.map(c => (
-                  <div key={c.id} className="bg-black/[0.02] dark:bg-white/[0.03] border border-black/5 dark:border-white/5 rounded-xl px-4 py-3">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[10px] font-bold text-slate-500">
-                        {c.author_name || 'Usuário'}
-                      </span>
-                      <span className="text-[10px] text-slate-600">
-                        {new Date(c.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                      </span>
+                {FIELDS.map(f => (
+                  <div key={f.key} className="flex flex-col gap-1.5">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider pl-1">{f.label}</label>
+                    <div className="w-full bg-dark-bg/50 border border-black/5 dark:border-white/5 rounded-lg px-3 py-2 text-sm text-dark-text min-h-[38px] flex items-center">
+                      {(form as any)[f.key] || <span className="text-slate-500">—</span>}
                     </div>
-                    <p className="text-xs text-slate-300 whitespace-pre-wrap">{c.text}</p>
                   </div>
                 ))}
               </div>
-            )}
+            </div>
+
+            {/* Comments section */}
+            <div className="px-6 py-6 flex-1 flex flex-col">
+              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+                <CheckSquare size={14} className="text-violet-500" />
+                Anotações
+              </h3>
+
+              {/* New comment */}
+              <div className="flex gap-2 mb-6">
+                <input
+                  value={newComment}
+                  onChange={e => setNewComment(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') addComment(); }}
+                  placeholder="Escreva uma anotação..."
+                  className="flex-1 bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-4 py-2 text-sm text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500/50 transition-colors"
+                />
+                <button onClick={addComment} disabled={!newComment.trim()}
+                  className="px-4 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-30 text-white text-xs font-bold rounded-xl transition-colors">
+                  Enviar
+                </button>
+              </div>
+
+              {/* Comments list */}
+              <div className="flex-1 overflow-y-auto pr-1 space-y-3">
+                {loadingComments ? (
+                  <div className="flex justify-center py-4">
+                    <Loader2 size={16} className="animate-spin text-slate-600" />
+                  </div>
+                ) : comments.length === 0 ? (
+                  <p className="text-center text-slate-600 text-xs py-8 border border-dashed border-black/10 dark:border-white/10 rounded-xl">Nenhuma anotação ainda.</p>
+                ) : (
+                  comments.map(c => (
+                    <div key={c.id} className="bg-dark-bg border border-black/5 dark:border-white/5 rounded-xl px-4 py-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[10px] font-bold text-violet-400">
+                          {c.author_name || 'Usuário'}
+                        </span>
+                        <span className="text-[10px] text-slate-500">
+                          {new Date(c.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed">{c.text}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
           </div>
+
         </div>
       </div>
     </div>
@@ -986,10 +1325,10 @@ const SubtaskDetailModal = ({ subtask, task, onClose, onUpdate }: { subtask: any
   const [description, setDescription] = useState(subtask.description || '');
   const [descSaving, setDescSaving] = useState(false);
 
-  // Use ATA_TEMPLATE for new subtasks, or what's saved in DB
+  // Use saved content from DB, or empty for new subtasks
   const rawDoc = subtask.internal_doc || '';
   const isOldMarkdown = rawDoc.trim().startsWith('#') || rawDoc.includes('- [ ]');
-  const [internalDoc, setInternalDoc] = useState(isOldMarkdown ? ATA_TEMPLATE : (rawDoc || ATA_TEMPLATE));
+  const [internalDoc, setInternalDoc] = useState(isOldMarkdown ? '' : rawDoc);
   const [internalDocSaving, setInternalDocSaving] = useState(false);
 
   // File Add State
@@ -1083,7 +1422,7 @@ const SubtaskDetailModal = ({ subtask, task, onClose, onUpdate }: { subtask: any
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-5xl h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+      <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-7xl h-[92vh] flex flex-col" onClick={e => e.stopPropagation()}>
         
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-black/5 dark:border-white/5">
@@ -1112,25 +1451,29 @@ const SubtaskDetailModal = ({ subtask, task, onClose, onUpdate }: { subtask: any
           <div className="w-[60%] flex flex-col border-r border-black/5 dark:border-white/5 overflow-y-auto">
             <div className="p-6">
               
-              <div className="mb-6">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Descrição</h3>
-                  {description !== (subtask.description || '') && (
-                    <button onClick={handleSaveDescription} disabled={descSaving} className="text-[10px] font-bold text-violet-400 hover:text-violet-300">
-                      {descSaving ? 'Salvando...' : 'Salvar Alterações'}
+
+              {/* Internal Doc Editor */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                    <FileText size={12} className="text-violet-500" />
+                    Documento Interno
+                  </h3>
+                  {internalDoc !== (subtask.internal_doc || '') && (
+                    <button onClick={handleSaveInternalDoc} disabled={internalDocSaving} className="text-[10px] font-bold text-violet-400 hover:text-violet-300">
+                      {internalDocSaving ? 'Salvando...' : 'Salvar Documento'}
                     </button>
                   )}
                 </div>
-                <textarea
-                  value={description}
-                  onChange={e => setDescription(e.target.value)}
-                  placeholder="Adicione uma descrição detalhada para esta subtarefa..."
-                  className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-dark-text placeholder-slate-500 focus:outline-none focus:border-violet-500/50 resize-y min-h-[120px] transition-colors"
+                <RichTextEditor 
+                  content={internalDoc} 
+                  onChange={setInternalDoc} 
+                  placeholder="Escreva a ata, anotações ou dados importantes aqui... Pressione '/' para comandos" 
                 />
               </div>
 
               {/* Arquivos e Docs */}
-              <div>
+              <div className="mt-8 pt-6 border-t border-black/5 dark:border-white/5">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
                     Arquivos e Documentos
@@ -1182,26 +1525,6 @@ const SubtaskDetailModal = ({ subtask, task, onClose, onUpdate }: { subtask: any
                     ))}
                   </div>
                 )}
-              </div>
-
-              {/* Internal Doc Editor */}
-              <div className="mt-8 pt-6 border-t border-black/5 dark:border-white/5">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                    <FileText size={12} className="text-violet-500" />
-                    Documento Interno
-                  </h3>
-                  {internalDoc !== (subtask.internal_doc || ATA_TEMPLATE) && (
-                    <button onClick={handleSaveInternalDoc} disabled={internalDocSaving} className="text-[10px] font-bold text-violet-400 hover:text-violet-300">
-                      {internalDocSaving ? 'Salvando...' : 'Salvar Documento'}
-                    </button>
-                  )}
-                </div>
-                <RichTextEditor 
-                  content={internalDoc} 
-                  onChange={setInternalDoc} 
-                  placeholder="Escreva a ata, anotações ou dados importantes aqui... Pressione '/' para comandos" 
-                />
               </div>
 
             </div>
@@ -1271,6 +1594,8 @@ export default function OnboardingOperacional() {
   const [detailTask, setDetailTask] = useState<OnboardingTask | null>(null);
   const [detailSubtask, setDetailSubtask] = useState<{subtask: Subtask, task: OnboardingTask} | null>(null);
 
+  const [showCompleted, setShowCompleted] = useState(false);
+
   const fetchTasks = async () => {
     try {
       setLoading(true);
@@ -1284,7 +1609,11 @@ export default function OnboardingOperacional() {
 
   useEffect(() => { fetchTasks(); }, []);
 
-  const groups: StatusGroup[] = STATUS_GROUPS.map(sg => ({
+  const activeGroups = showCompleted 
+    ? [{ id: 'arquivado', label: 'CONCLUÍDO', color: '#10b981', emoji: '🏆' }, ...STATUS_GROUPS]
+    : STATUS_GROUPS;
+
+  const groups: StatusGroup[] = activeGroups.map(sg => ({
     ...sg,
     tasks: tasks.filter(t => t.status_group === sg.id),
   }));
@@ -1301,13 +1630,26 @@ export default function OnboardingOperacional() {
             Gestão de onboarding de clientes
           </p>
         </div>
-        <button
-          onClick={() => setShowTemplate(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold rounded-xl transition-colors"
-        >
-          <Settings size={15} />
-          Modelo Padrão
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowCompleted(!showCompleted)}
+            className={`px-4 py-2 text-[11px] font-bold rounded-xl transition-colors border flex items-center gap-2 ${
+              showCompleted 
+                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' 
+                : 'bg-dark-card text-slate-400 border-black/10 dark:border-white/10 hover:bg-black/20 dark:hover:bg-white/5'
+            }`}
+          >
+            <Check size={14} />
+            {showCompleted ? 'Ocultar Concluídos' : 'Mostrar Concluídos'}
+          </button>
+          <button
+            onClick={() => setShowTemplate(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-dark-card border border-black/10 dark:border-white/10 hover:border-violet-500/30 text-dark-text text-[11px] font-bold rounded-xl transition-colors"
+          >
+            <Settings size={14} className="text-violet-500" />
+            Editar Modelo Padrão
+          </button>
+        </div>
       </div>
 
       {/* ── Content ── */}

@@ -94,21 +94,15 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
 
   // Finance state
   const [finPeople, setFinPeople] = useState<FinPerson[]>([]);
-  const [finSearchQuery, setFinSearchQuery] = useState('');
   const [selectedFinPersonId, setSelectedFinPersonId] = useState<string | null>(null);
-  const [isFinDropdownOpen, setIsFinDropdownOpen] = useState(false);
   const [finMovements, setFinMovements] = useState<FinMovement[]>([]);
   const [isFetchingMovements, setIsFetchingMovements] = useState(false);
   
-  // Subscription state
-  const [finSubscriptions, setFinSubscriptions] = useState<FinSubscription[]>([]);
-  const [isFetchingSubscriptions, setIsFetchingSubscriptions] = useState(false);
+  // Subscription state — single dropdown for all subscriptions
+  const [allSubscriptions, setAllSubscriptions] = useState<(FinSubscription & { customer_name?: string; customer_cnpjcpf?: string; grapehub_client_id?: string })[]>([]);
+  const [subSearchQuery, setSubSearchQuery] = useState('');
   const [isSubDropdownOpen, setIsSubDropdownOpen] = useState(false);
-
-  // Asaas linking state
-  const [asaasSearchQuery, setAsaasSearchQuery] = useState('');
-  const [asaasResults, setAsaasResults] = useState<{guid: string, name: string, cnpjcpf: string, asaas_id: string}[]>([]);
-  const [isLinkingAsaas, setIsLinkingAsaas] = useState(false);
+  const [isFetchingSubs, setIsFetchingSubs] = useState(false);
 
   useEffect(() => {
     if (editingClient) {
@@ -144,8 +138,6 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
     setChurnData(null);
     setIsEditing(!editingClient);
     setIsEditingChurn(false);
-    setAsaasSearchQuery('');
-    setAsaasResults([]);
   }, [editingClient, isOpen]);
 
   // Fetch churn data when switching to churn tab
@@ -169,6 +161,7 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
     }
   }, [isOpen, activeTab, editingClient]);
 
+  // Fetch fin_people for resolving selectedFinPersonId
   useEffect(() => {
     if (isOpen) {
       fetch('/api/fin-people').then(res => res.json()).then(setFinPeople);
@@ -185,38 +178,33 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
     }
   }, [editingClient, finPeople]);
 
+  // Fetch ALL subscriptions for the dropdown
+  useEffect(() => {
+    if (isOpen && activeTab === 'finance') {
+      setIsFetchingSubs(true);
+      fetch('/api/fin-subscriptions')
+        .then(res => res.json())
+        .then(setAllSubscriptions)
+        .catch(err => console.error("Failed to fetch subscriptions:", err))
+        .finally(() => setIsFetchingSubs(false));
+    }
+  }, [isOpen, activeTab]);
+
+  // Fetch movements when fin_people is linked
   useEffect(() => {
     if (isOpen && activeTab === 'finance' && selectedFinPersonId) {
       const fetchMovements = async () => {
         setIsFetchingMovements(true);
         try {
           const response = await fetch(`/api/fin-people/${selectedFinPersonId}/movements`);
-          if (response.ok) {
-            const data = await response.json();
-            setFinMovements(data);
-          }
+          if (response.ok) setFinMovements(await response.json());
         } catch (err) {
           console.error("Failed to fetch movements:", err);
         } finally {
           setIsFetchingMovements(false);
         }
       };
-      const fetchSubscriptions = async () => {
-        setIsFetchingSubscriptions(true);
-        try {
-          const response = await fetch(`/api/fin-people/${selectedFinPersonId}/subscriptions`);
-          if (response.ok) {
-            const data = await response.json();
-            setFinSubscriptions(data);
-          }
-        } catch (err) {
-          console.error("Failed to fetch subscriptions:", err);
-        } finally {
-          setIsFetchingSubscriptions(false);
-        }
-      };
       fetchMovements();
-      fetchSubscriptions();
     }
   }, [isOpen, activeTab, selectedFinPersonId]);
 
@@ -239,26 +227,6 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
       });
 
       if (response.ok) {
-        const originalLinkedPerson = editingClient ? finPeople.find(p => p.grapehub_client_id === editingClient.id) : null;
-        
-        if (originalLinkedPerson?.id !== selectedFinPersonId) {
-          if (originalLinkedPerson) {
-            await fetch(`/api/fin-people/${originalLinkedPerson.id}`, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ grapehub_client_id: null })
-            });
-          }
-          
-          if (selectedFinPersonId) {
-            await fetch(`/api/fin-people/${selectedFinPersonId}`, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ grapehub_client_id: clientData.id })
-            });
-          }
-        }
-
         onSaveSuccess();
         onClose();
       }
@@ -267,39 +235,6 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
     } finally {
       setIsSaving(false);
     }
-  };
-
-  const saveFinLink = async (newPersonId: string | null) => {
-    if (!editingClient) return;
-    const currentLinked = finPeople.find(p => p.grapehub_client_id === editingClient.id);
-    if (currentLinked && currentLinked.id !== newPersonId) {
-      await fetch(`/api/fin-people/${currentLinked.id}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ grapehub_client_id: null })
-      });
-    }
-    if (newPersonId) {
-      const person = finPeople.find(p => p.id === newPersonId);
-      await fetch(`/api/fin-people/${newPersonId}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ grapehub_client_id: editingClient.id })
-      });
-      // Also set fin_people_guid on the client for subscription linking
-      if (person?.guid) {
-        await fetch(`/api/clients/${editingClient.id}`, {
-          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fin_people_guid: person.guid })
-        });
-      }
-    } else {
-      // Unlinking - clear fin_people_guid too
-      await fetch(`/api/clients/${editingClient.id}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fin_people_guid: null })
-      });
-    }
-    setSelectedFinPersonId(newPersonId);
-    onSaveSuccess();
   };
 
   const saveFinSubscription = async (subId: string | null) => {
@@ -311,6 +246,14 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fin_subscription_id: subId })
       });
+      // Refresh fin_people to get updated grapehub_client_id linkage
+      const fpRes = await fetch('/api/fin-people');
+      if (fpRes.ok) {
+        const fpData = await fpRes.json();
+        setFinPeople(fpData);
+        const linked = fpData.find((p: FinPerson) => p.grapehub_client_id === editingClient.id);
+        setSelectedFinPersonId(linked ? linked.id : null);
+      }
       onSaveSuccess();
     } catch (err) {
       console.error("Failed to save subscription link:", err);
@@ -553,104 +496,74 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
           )}
           {activeTab === 'finance' && (
                   <div className="space-y-8">
-                    {/* Seção 1 - Vínculo Financeiro */}
+                    {/* Seção 1 - Vincular Assinatura */}
                     <div className="space-y-4">
                       <div className="flex items-center gap-2">
-                        <LinkIcon size={16} className="text-violet-500" />
-                        <h3 className="text-sm font-bold text-light-text dark:text-white uppercase tracking-widest">Vínculo Financeiro</h3>
+                        <CreditCard size={16} className="text-violet-500" />
+                        <h3 className="text-sm font-bold text-light-text dark:text-white uppercase tracking-widest">Assinatura Financeira</h3>
                       </div>
                       
-                      <div className={`space-y-2 relative ${isFinDropdownOpen ? 'pb-[320px]' : ''}`}>
-                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block ml-1">Vincular ao Financeiro (Marvee/Asaas)</label>
+                      <div className={`space-y-2 relative ${isSubDropdownOpen ? 'pb-[320px]' : ''}`}>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block ml-1">Vincular a uma assinatura do Asaas</label>
                         <div className="flex gap-2">
                           <div className="relative flex-1">
-                            <button
-                              type="button"
-                              onClick={() => setIsFinDropdownOpen(!isFinDropdownOpen)}
-                              className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-5 py-4 text-left flex items-center justify-between transition-all hover:border-violet-500/50"
-                            >
-                              {selectedFinPersonId ? (
-                                <div className="flex items-center gap-2">
-                                  <span className="text-light-text dark:text-white font-medium">
-                                    {finPeople.find(p => p.id === selectedFinPersonId)?.name}
-                                  </span>
-                                  <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-500 text-[9px] font-bold rounded-md uppercase tracking-widest">
-                                    Vinculado ✓
-                                  </span>
-                                </div>
-                              ) : (
-                                <span className="text-slate-400">Selecionar pessoa no financeiro...</span>
-                              )}
-                              <ChevronDown size={18} className={`text-slate-400 transition-transform ${isFinDropdownOpen ? 'rotate-180' : ''}`} />
+                            <button type="button" onClick={() => setIsSubDropdownOpen(!isSubDropdownOpen)}
+                              className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-5 py-4 text-left flex items-center justify-between transition-all hover:border-violet-500/50">
+                              {formData.finSubscriptionId ? (() => {
+                                const sub = allSubscriptions.find(s => String(s.id) === formData.finSubscriptionId);
+                                return (<div className="flex items-center gap-2">
+                                  <span className="text-light-text dark:text-white font-medium">{sub?.customer_name || 'Assinatura'} — {sub ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sub.value) : ''}</span>
+                                  <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-500 text-[9px] font-bold rounded-md uppercase tracking-widest">Vinculada ✓</span>
+                                </div>);
+                              })() : (<span className="text-slate-400">Selecionar assinatura...</span>)}
+                              <ChevronDown size={18} className={`text-slate-400 transition-transform ${isSubDropdownOpen ? 'rotate-180' : ''}`} />
                             </button>
-
-                            {isFinDropdownOpen && (
-                              <div className="absolute z-[110] top-full left-0 right-0 mt-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                            {isSubDropdownOpen && (
+                              <div className="absolute z-[110] top-full left-0 right-0 mt-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden">
                                 <div className="p-3 border-b border-slate-100 dark:border-white/5">
                                   <div className="relative">
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                                    <input
-                                      autoFocus
-                                      type="text"
-                                      placeholder="Buscar por nome..."
-                                      value={finSearchQuery}
-                                      onChange={(e) => setFinSearchQuery(e.target.value)}
-                                      className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-lg pl-10 pr-4 py-2 text-sm text-light-text dark:text-white outline-none focus:border-violet-500 transition-all"
-                                    />
+                                    <input autoFocus type="text" placeholder="Buscar por nome..." value={subSearchQuery} onChange={(e) => setSubSearchQuery(e.target.value)}
+                                      className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-lg pl-10 pr-4 py-2 text-sm text-light-text dark:text-white outline-none focus:border-violet-500 transition-all" />
                                   </div>
                                 </div>
                                 <div className="max-h-[250px] overflow-y-auto p-1">
-                                  {finPeople
-                                    .filter(p => p.name.toLowerCase().includes(finSearchQuery.toLowerCase()))
-                                    .map(person => (
-                                      <button
-                                        key={person.id}
-                                        type="button"
-                                        onClick={async () => {
-                                          await saveFinLink(person.id);
-                                          setIsFinDropdownOpen(false);
-                                        }}
-                                        className={`w-full text-left p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-white/5 transition-all flex flex-col gap-0.5 ${selectedFinPersonId === person.id ? 'bg-violet-500/10' : ''}`}
-                                      >
+                                  <button type="button" onClick={() => { saveFinSubscription(null); setIsSubDropdownOpen(false); }}
+                                    className={`w-full text-left p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-white/5 transition-all ${!formData.finSubscriptionId ? 'bg-violet-500/10' : ''}`}>
+                                    <span className={`font-bold text-sm ${!formData.finSubscriptionId ? 'text-violet-500' : 'text-light-text dark:text-white'}`}>Sem assinatura vinculada</span>
+                                  </button>
+                                  {allSubscriptions
+                                    .filter(s => (s.customer_name || '').toLowerCase().includes(subSearchQuery.toLowerCase()))
+                                    .map(sub => (
+                                      <button key={sub.id} type="button" onClick={() => { saveFinSubscription(sub.id); setIsSubDropdownOpen(false); }}
+                                        className={`w-full text-left p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-white/5 transition-all flex flex-col gap-0.5 ${formData.finSubscriptionId === String(sub.id) ? 'bg-violet-500/10' : ''}`}>
                                         <div className="flex items-center justify-between">
-                                          <span className={`font-bold text-sm ${selectedFinPersonId === person.id ? 'text-violet-500' : 'text-light-text dark:text-white'}`}>
-                                            {person.name}
-                                          </span>
-                                          {selectedFinPersonId === person.id && <Check size={14} className="text-violet-500" />}
+                                          <span className={`font-bold text-sm ${formData.finSubscriptionId === String(sub.id) ? 'text-violet-500' : 'text-light-text dark:text-white'}`}>{sub.customer_name || 'Sem nome'}</span>
+                                          {formData.finSubscriptionId === String(sub.id) && <Check size={14} className="text-violet-500" />}
                                         </div>
-                                        <span className="text-[10px] text-slate-500 font-medium">{person.cnpjcpf || 'Sem documento'}</span>
-                                      </button>
-                                    ))}
-                                  {finPeople.filter(p => p.name.toLowerCase().includes(finSearchQuery.toLowerCase())).length === 0 && (
-                                    <div className="p-8 text-center text-slate-500 text-sm italic">
-                                      Nenhuma pessoa encontrada
-                                    </div>
-                                  )}
+                                        <span className="text-[10px] text-slate-500 font-medium">
+                                          {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sub.value)} · {sub.cycle === 'MONTHLY' ? 'Mensal' : sub.cycle === 'YEARLY' ? 'Anual' : sub.cycle} · {sub.status === 'ACTIVE' ? '✅ Ativa' : '⏸ ' + sub.status}
+                                        </span>
+                                      </button>))}
                                 </div>
                               </div>
                             )}
                           </div>
-                          
-                          {selectedFinPersonId && (
-                            <button
-                              type="button"
-                              onClick={() => saveFinLink(null)}
-                              className="px-4 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-xl transition-all flex items-center justify-center gap-2 border border-rose-500/20"
-                              title="Desvincular"
-                            >
-                              <Unlink size={18} />
-                              <span className="text-xs font-bold uppercase tracking-widest">Desvincular</span>
+                          {formData.finSubscriptionId && (
+                            <button type="button" onClick={() => saveFinSubscription(null)}
+                              className="px-4 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-xl transition-all flex items-center justify-center gap-2 border border-rose-500/20">
+                              <Unlink size={18} /><span className="text-xs font-bold uppercase tracking-widest">Desvincular</span>
                             </button>
                           )}
                         </div>
                       </div>
                     </div>
 
-                    {!selectedFinPersonId ? (
+                    {!formData.finSubscriptionId ? (
                       <div className="p-8 bg-amber-500/5 border border-amber-500/20 rounded-2xl flex flex-col items-center gap-3 text-center">
                         <AlertCircle className="text-amber-500" size={32} />
                         <p className="text-sm font-medium text-amber-600 dark:text-amber-400">
-                          Vincule este cliente ao financeiro para visualizar dados de pagamento e assinatura
+                          Vincule uma assinatura do Asaas para visualizar dados de pagamento
                         </p>
                       </div>
                     ) : isFetchingMovements ? (
@@ -666,8 +579,8 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
                             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Fee Mensal Atual</p>
                             <p className="text-xl font-bold text-light-text dark:text-white">
                               {(() => {
-                                const lastMovement = finMovements.find(m => m.status === 'Conciliado' || m.status === 'Pendente');
-                                return lastMovement ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(parseFloat(lastMovement.movement_value)) : 'R$ 0,00';
+                                const sub = allSubscriptions.find(s => String(s.id) === formData.finSubscriptionId);
+                                return sub ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sub.value) : 'R$ 0,00';
                               })()}
                             </p>
                           </div>
@@ -687,147 +600,6 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
                           </div>
                         </div>
 
-                        {/* Card Assinatura Asaas */}
-                        <div className="space-y-4">
-                          <div className="flex items-center gap-2">
-                            <CreditCard size={16} className="text-violet-500" />
-                            <h3 className="text-sm font-bold text-light-text dark:text-white uppercase tracking-widest">Assinatura Asaas</h3>
-                          </div>
-                          
-                          {/* Dropdown de Seleção de Assinatura */}
-                          {finSubscriptions.length > 0 && (
-                            <div className={`space-y-2 relative ${isSubDropdownOpen ? 'pb-[180px]' : ''}`}>
-                              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block ml-1">Vincular a uma assinatura</label>
-                              <div className="relative">
-                                <button
-                                  type="button"
-                                  onClick={() => setIsSubDropdownOpen(!isSubDropdownOpen)}
-                                  className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-5 py-4 text-left flex items-center justify-between transition-all hover:border-violet-500/50"
-                                >
-                                  {formData.finSubscriptionId ? (
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-light-text dark:text-white font-medium">
-                                        Assinatura selecionada
-                                      </span>
-                                      <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-500 text-[9px] font-bold rounded-md uppercase tracking-widest">
-                                        Vinculada ✓
-                                      </span>
-                                    </div>
-                                  ) : (
-                                    <span className="text-slate-400">Selecionar assinatura...</span>
-                                  )}
-                                  <ChevronDown size={18} className={`text-slate-400 transition-transform ${isSubDropdownOpen ? 'rotate-180' : ''}`} />
-                                </button>
-
-                                {isSubDropdownOpen && (
-                                  <div className="absolute z-[100] top-full left-0 right-0 mt-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-                                    <div className="max-h-[250px] overflow-y-auto p-1">
-                                      {/* Opção de desvincular/usar fallback */}
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          saveFinSubscription(null);
-                                          setIsSubDropdownOpen(false);
-                                        }}
-                                        className={`w-full text-left p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-white/5 transition-all flex flex-col gap-0.5 ${!formData.finSubscriptionId ? 'bg-violet-500/10' : ''}`}
-                                      >
-                                        <div className="flex items-center justify-between">
-                                          <span className={`font-bold text-sm ${!formData.finSubscriptionId ? 'text-violet-500' : 'text-light-text dark:text-white'}`}>
-                                            Nenhuma assinatura explícita
-                                          </span>
-                                          {!formData.finSubscriptionId && <Check size={14} className="text-violet-500" />}
-                                        </div>
-                                        <span className="text-[10px] text-slate-500 font-medium">Deixar sem assinatura ou usar auto-detecção</span>
-                                      </button>
-                                      
-                                      {finSubscriptions.map(sub => (
-                                        <button
-                                          key={sub.id}
-                                          type="button"
-                                          onClick={() => {
-                                            saveFinSubscription(sub.id);
-                                            setIsSubDropdownOpen(false);
-                                          }}
-                                          className={`w-full text-left p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-white/5 transition-all flex flex-col gap-0.5 ${formData.finSubscriptionId === sub.id ? 'bg-violet-500/10' : ''}`}
-                                        >
-                                          <div className="flex items-center justify-between">
-                                            <span className={`font-bold text-sm ${formData.finSubscriptionId === sub.id ? 'text-violet-500' : 'text-light-text dark:text-white'}`}>
-                                              {sub.description || 'Assinatura'} ({sub.cycle === 'MONTHLY' ? 'Mensal' : sub.cycle === 'YEARLY' ? 'Anual' : sub.cycle})
-                                            </span>
-                                            {formData.finSubscriptionId === sub.id && <Check size={14} className="text-violet-500" />}
-                                          </div>
-                                          <span className="text-[10px] text-slate-500 font-medium">
-                                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sub.value)} - 
-                                            Próx: {new Date(String(sub.next_due_date).substring(0, 10) + 'T12:00:00').toLocaleDateString('pt-BR')} - {sub.billing_type}
-                                          </span>
-                                        </button>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Renderização da Assinatura Selecionada */}
-                          {(() => {
-                            let displaySub = null;
-                            if (formData.finSubscriptionId) {
-                              const found = finSubscriptions.find(s => s.id === formData.finSubscriptionId);
-                              if (found) {
-                                displaySub = {
-                                  cycle: found.cycle,
-                                  value: found.value,
-                                  nextDue: found.next_due_date,
-                                  billingType: found.billing_type
-                                };
-                              }
-                            } else if (editingClient?.hasActiveSubscription) {
-                              displaySub = {
-                                cycle: editingClient.subscriptionCycle,
-                                value: editingClient.subscriptionValue,
-                                nextDue: editingClient.subscriptionNextDue,
-                                billingType: editingClient.subscriptionBillingType
-                              };
-                            }
-
-                            if (displaySub) {
-                              return (
-                                <div className="p-5 bg-emerald-500/5 border border-emerald-500/20 rounded-2xl space-y-3">
-                                  <div className="flex items-center justify-between">
-                                    <span className="px-2.5 py-0.5 bg-emerald-500/10 text-emerald-500 text-[9px] font-bold rounded-md uppercase tracking-widest">Ativa</span>
-                                    <span className="text-xs text-slate-500">
-                                      {displaySub.cycle === 'MONTHLY' ? 'Mensal' : displaySub.cycle === 'YEARLY' ? 'Anual' : displaySub.cycle || 'Mensal'}
-                                    </span>
-                                  </div>
-                                  <p className="text-2xl font-bold text-light-text dark:text-white">
-                                    {displaySub.value ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(displaySub.value) : 'R$ 0,00'}
-                                  </p>
-                                  <div className="grid grid-cols-2 gap-3">
-                                    <div>
-                                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Próximo Vencimento</p>
-                                      <p className="text-xs font-bold text-light-text dark:text-white">
-                                        {displaySub.nextDue ? new Date(String(displaySub.nextDue).substring(0, 10) + 'T12:00:00').toLocaleDateString('pt-BR') : '-'}
-                                      </p>
-                                    </div>
-                                    <div>
-                                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Tipo de Cobrança</p>
-                                      <p className="text-xs font-bold text-light-text dark:text-white">
-                                        {displaySub.billingType === 'BOLETO' ? 'Boleto' : displaySub.billingType === 'CREDIT_CARD' ? 'Cartão' : displaySub.billingType === 'PIX' ? 'Pix' : displaySub.billingType || '-'}
-                                      </p>
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            }
-                            return (
-                              <div className="p-5 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5 flex items-center gap-3">
-                                <CreditCard size={20} className="text-slate-300 dark:text-slate-600" />
-                                <p className="text-sm text-slate-400">Sem assinatura ativa no Asaas</p>
-                              </div>
-                            );
-                          })()}
-                        </div>
 
                         {/* Seção 3 - Histórico de Pagamentos */}
                         <div className="space-y-4">
