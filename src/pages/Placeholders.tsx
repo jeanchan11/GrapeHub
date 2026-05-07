@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Bell, Settings, Shield, User, Palette, Globe, Lock, HelpCircle, Mail, MessageSquare, Zap, AlertCircle, FolderTree } from 'lucide-react';
+import { Bell, Settings, Shield, User, Palette, Globe, Lock, HelpCircle, Mail, MessageSquare, Zap, AlertCircle, FolderTree, ArrowRight, CheckSquare, ChevronLeft, UserPlus } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSoftphone } from '../hooks/useSoftphone';
 
@@ -61,7 +61,7 @@ export const NotificationsPage = () => {
 export const SettingsPage = ({ onPageChange, isSuperAdmin }: { onPageChange?: (page: string) => void, isSuperAdmin?: boolean }) => {
   const { user } = useAuth();
   const softphone = useSoftphone();
-  const [activeSection, setActiveSection] = useState<'main' | 'integrations' | 'categories'>('main');
+  const [activeSection, setActiveSection] = useState<'main' | 'integrations' | 'categories' | 'automacoes'>('main');
 
   // Telefonia form state
   const [settingsForm, setSettingsForm] = useState({ api4com_token: '', api4com_domain: '', sip_extension: '', sip_password: '', sip_server: '' });
@@ -72,6 +72,9 @@ export const SettingsPage = ({ onPageChange, isSuperAdmin }: { onPageChange?: (p
   const [webhookRegistering, setWebhookRegistering] = useState(false);
   const [webhookResult, setWebhookResult] = useState<{success?: boolean; webhookUrl?: string; error?: string} | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [autoTab, setAutoTab] = useState<'automacoes' | 'logs'>('automacoes');
+  const [logs, setLogs] = useState<any[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
 
   // Fetch Api4Com settings when integrations view opens
   React.useEffect(() => {
@@ -93,6 +96,18 @@ export const SettingsPage = ({ onPageChange, isSuperAdmin }: { onPageChange?: (p
         .catch(() => setLoaded(true));
     }
   }, [activeSection, user?.email, loaded]);
+
+  // Fetch automation logs when logs tab is selected
+  React.useEffect(() => {
+    if (activeSection === 'automacoes' && autoTab === 'logs') {
+      setLogsLoading(true);
+      fetch('/api/automations/logs?limit=200')
+        .then(r => r.json())
+        .then(data => setLogs(Array.isArray(data) ? data : []))
+        .catch(() => setLogs([]))
+        .finally(() => setLogsLoading(false));
+    }
+  }, [activeSection, autoTab]);
 
   // Register SIP when form changes
   const prevSipKeyRef = React.useRef('');
@@ -212,6 +227,7 @@ export const SettingsPage = ({ onPageChange, isSuperAdmin }: { onPageChange?: (p
   const sistemaItems: { label: string; description: string; icon?: any; action?: () => void }[] = [
     { label: 'Integrações', description: 'Telefonia Api4Com e outras ferramentas', action: () => setActiveSection('integrations') },
     { label: 'Categorias Financeiras', description: 'Plano de contas hierárquico da empresa', icon: FolderTree, action: () => setActiveSection('categories') },
+    { label: 'Automações', description: 'Automações ativas que criam tarefas no CRM', icon: Zap, action: () => setActiveSection('automacoes') },
     { label: 'Logs de Atividade', description: 'Histórico de ações no sistema' },
     ...(isSuperAdmin ? [{
       label: 'Painel Admin',
@@ -220,6 +236,217 @@ export const SettingsPage = ({ onPageChange, isSuperAdmin }: { onPageChange?: (p
       action: () => onPageChange?.('admin')
     }] : [])
   ];
+
+  // ═══════════════════════════════════════════════════════
+  // AUTOMAÇÕES SUB-VIEW
+  // ═══════════════════════════════════════════════════════
+  if (activeSection === 'automacoes') {
+    const ACTIVE_AUTOMATIONS = [
+      {
+        id: 'ganho-onboarding',
+        trigger: 'Negócio ganho',
+        triggerColor: '#10b981',
+        triggerBg: 'rgba(16,185,129,0.1)',
+        name: 'Lead ganho → Onboarding Operacional',
+        description: 'Quando um negócio é marcado como ganho em qualquer pipeline do CRM, cria automaticamente uma tarefa no Onboarding Operacional no status "Reunião - Briefing" com todas as subtarefas do modelo padrão.',
+        actions: [
+          { icon: CheckSquare, label: 'Criar tarefa no Onboarding Operacional', detail: 'Status: 🗓️ Reunião - Briefing' },
+          { icon: CheckSquare, label: 'Copiar subtarefas do modelo padrão', detail: 'Baseado no Template de Onboarding' },
+        ],
+        status: 'Ativa',
+        runs: '∞',
+        trigger_event: 'lead_won',
+      },
+      {
+        id: 'ganho-cliente-ativo',
+        trigger: 'Negócio ganho',
+        triggerColor: '#10b981',
+        triggerBg: 'rgba(16,185,129,0.1)',
+        name: 'Lead ganho → Cliente Ativo',
+        description: 'Quando um negócio é marcado como ganho no CRM Comercial, cria automaticamente um cliente na lista de Clientes Ativos com status "Ativo", telefone, e-mail e localização do lead.',
+        actions: [
+          { icon: UserPlus, label: 'Criar cliente em Clientes Ativos', detail: 'Status: Ativo • Data início: hoje' },
+        ],
+        status: 'Ativa',
+        runs: '∞',
+        trigger_event: 'lead_won',
+      },
+    ];
+
+    return (
+      <div className="p-8 max-w-5xl mx-auto">
+        <div className="mb-6">
+          <button onClick={() => setActiveSection('main')} className="flex items-center gap-1.5 text-sm text-violet-500 hover:text-violet-400 transition-colors mb-4 group">
+            <ChevronLeft size={16} className="transition-transform group-hover:-translate-x-0.5" />
+            Voltar para Configurações
+          </button>
+          <h1 className="text-4xl font-black text-light-text dark:text-white tracking-tight mb-1">
+            Auto<span className="text-violet-500">mações</span>
+          </h1>
+          <p className="text-slate-500 text-sm">Automações ativas que criam tarefas no CRM e Onboarding.</p>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex gap-6 border-b border-gray-200 dark:border-white/10 mb-6">
+          <button
+            onClick={() => setAutoTab('automacoes')}
+            className={`pb-3 text-sm font-bold border-b-2 transition-colors ${autoTab === 'automacoes' ? 'border-violet-500 text-violet-600 dark:text-violet-400' : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'}`}
+          >
+            ⚡ Automações
+          </button>
+          <button
+            onClick={() => setAutoTab('logs')}
+            className={`pb-3 text-sm font-bold border-b-2 transition-colors ${autoTab === 'logs' ? 'border-violet-500 text-violet-600 dark:text-violet-400' : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'}`}
+          >
+            📋 Logs de Execução
+          </button>
+        </div>
+
+        {autoTab === 'automacoes' && (
+          <div className="space-y-4">
+            {ACTIVE_AUTOMATIONS.map(auto => (
+              <div key={auto.id} className="bg-light-card dark:bg-dark-card rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm overflow-hidden">
+                {/* Header */}
+                <div className="flex items-center gap-4 px-6 py-4 border-b border-slate-100 dark:border-white/5">
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: auto.triggerBg }}>
+                    <Zap size={18} style={{ color: auto.triggerColor }} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="font-bold text-light-text dark:text-white text-sm">{auto.name}</h3>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400">
+                        {auto.status}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">{auto.description}</p>
+                  </div>
+                </div>
+
+                {/* Flow */}
+                <div className="px-6 py-5">
+                  {/* Trigger */}
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style={{ background: auto.triggerBg }}>
+                      <Zap size={11} style={{ color: auto.triggerColor }} />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: auto.triggerColor }}>GATILHO</span>
+                      <span className="text-xs font-semibold text-light-text dark:text-white">{auto.trigger}</span>
+                    </div>
+                  </div>
+
+                  {/* Connector */}
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="flex flex-col items-center ml-[11px]">
+                      <div className="w-px h-4 bg-slate-200 dark:bg-white/10" />
+                      <div className="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-white/20" />
+                      <div className="w-px h-4 bg-slate-200 dark:bg-white/10" />
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="space-y-2">
+                    {auto.actions.map((action, i) => (
+                      <div key={i} className="flex items-start gap-3">
+                        <div className="w-6 h-6 rounded-full bg-violet-100 dark:bg-violet-500/15 flex items-center justify-center shrink-0 mt-0.5">
+                          <action.icon size={11} className="text-violet-600 dark:text-violet-400" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-semibold text-light-text dark:text-white">{action.label}</p>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-500">{action.detail}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {/* Empty state hint */}
+            <p className="text-xs text-slate-400 dark:text-slate-600 text-center pt-2">
+              Para criar ou editar automações, acesse <strong className="text-violet-500">CRM → Automações</strong>.
+            </p>
+          </div>
+        )}
+
+        {autoTab === 'logs' && (
+          <div className="bg-light-card dark:bg-dark-card rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm overflow-hidden">
+            {logsLoading ? (
+              <div className="flex items-center justify-center py-16">
+                <div className="w-8 h-8 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
+              </div>
+            ) : logs.length === 0 ? (
+              <div className="py-16 text-center">
+                <p className="text-sm text-slate-500 dark:text-slate-400">Nenhum log de execução encontrado.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-gray-50 dark:bg-dark-bg/50 border-b border-gray-100 dark:border-white/5">
+                      <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap">Data / Hora</th>
+                      <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap">Automação</th>
+                      <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap">Lead</th>
+                      <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap">Evento</th>
+                      <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap">Ação</th>
+                      <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap">Status</th>
+                      <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap">Mensagem</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-white/5">
+                    {logs.map((log: any) => {
+                      const dt = log.executed_at ? new Date(log.executed_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+                      const eventLabels: Record<string, string> = { lead_won: 'Negócio ganho', lead_created: 'Lead criado', lead_lost: 'Lead perdido', stage_changed: 'Mudou de etapa', lead_updated: 'Lead atualizado' };
+                      const actionLabels: Record<string, string> = { create_task: 'Criar atividade', create_client: 'Criar cliente', create_lead: 'Criar negócio', create_note: 'Criar nota', add_tag: 'Adicionar tag', mark_won: 'Marcar ganho', mark_lost: 'Marcar perdido', move_stage: 'Mover etapa', clear_open_tasks: 'Limpar tarefas', start_sequence: 'Iniciar sequência', send_webhook: 'Enviar webhook' };
+                      return (
+                        <tr key={log.id} className="hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <span className="text-xs text-gray-600 dark:text-slate-400">{dt}</span>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <span className="text-xs font-bold text-gray-900 dark:text-white">{log.automation_name || '—'}</span>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <span className="text-xs text-gray-700 dark:text-slate-300">{log.lead_nome || log.lead_id || '—'}</span>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-0.5 rounded-full">
+                              {eventLabels[log.event] || log.event || '—'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <span className="text-[10px] font-bold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-500/10 px-2 py-0.5 rounded-full">
+                              {actionLabels[log.action_type] || log.action_type || '—'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            {log.status === 'success' ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-0.5 rounded-full">
+                                ✓ Sucesso
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10 px-2 py-0.5 rounded-full">
+                                ✗ Erro
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="text-[11px] text-gray-500 dark:text-slate-500 line-clamp-1 max-w-[300px] block" title={log.message}>
+                              {log.message || '—'}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   // ═══════════════════════════════════════════════════════
   // CATEGORIES SUB-VIEW

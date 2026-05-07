@@ -123,6 +123,7 @@ export function setupCollectionRoutes(app: Express, pool: Pool) {
         WITH sent_events AS (
           SELECT 
             fp.name as client_name,
+            COALESCE(NULLIF(c.phone, ''), fp.phone) as client_phone,
             fr.value,
             fr.due_date,
             fcr.label as rule_label,
@@ -142,11 +143,15 @@ export function setupCollectionRoutes(app: Express, pool: Pool) {
           JOIN fin_collection_rules fcr ON fcr.id = fce.rule_id
           JOIN fin_receivables fr ON fr.asaas_id = fce.receivable_asaas_id
           JOIN fin_people fp ON fp.asaas_id = fce.customer_asaas_id
-          WHERE 1=1 ${dateFilter}
+          LEFT JOIN clients c ON c.id = fp.grapehub_client_id
+          WHERE 1=1 AND COALESCE(fr.billing_type, '') != 'CREDIT_CARD'
+            AND (c.crm_status IS NULL OR c.crm_status = '')
+            ${dateFilter}
         ),
         pending_receivables AS (
           SELECT
             COALESCE(p.name, r.customer_name, 'Desconhecido') as client_name,
+            COALESCE(NULLIF(c.phone, ''), p.phone) as client_phone,
             r.value,
             r.due_date,
             r.asaas_id as receivable_asaas_id,
@@ -155,8 +160,11 @@ export function setupCollectionRoutes(app: Express, pool: Pool) {
             (CURRENT_DATE - r.due_date) as current_day_offset
           FROM fin_receivables r
           LEFT JOIN fin_people p ON p.asaas_id = r.customer_id
+          LEFT JOIN clients c ON c.id = p.grapehub_client_id
           WHERE r.status IN ('PENDING', 'OVERDUE')
             AND r.due_date IS NOT NULL
+            AND COALESCE(r.billing_type, '') != 'CREDIT_CARD'
+            AND (c.crm_status IS NULL OR c.crm_status = '')
             ${pendingDateFilter}
         ),
         matched AS (
@@ -175,6 +183,7 @@ export function setupCollectionRoutes(app: Express, pool: Pool) {
 
         SELECT
           m.client_name,
+          m.client_phone,
           m.value,
           m.due_date,
           fcr.label as rule_label,

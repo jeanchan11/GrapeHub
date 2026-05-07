@@ -1184,24 +1184,23 @@ const CrmFinanceiro = () => {
                         </div>
                       </div>
                       {(() => {
-                        const statusMap: Record<string, { label: string; cls: string }> = {
-                          'ACTIVE': { label: 'Ativa', cls: 'text-emerald-500' },
-                          'INACTIVE': { label: 'Inativa / Pausada', cls: 'text-amber-500' },
-                          'EXPIRED': { label: 'Expirada', cls: 'text-rose-500' },
+                        const statusMap: Record<string, { label: string; badgeCls: string; dotCls: string; bgCls: string; borderCls: string }> = {
+                          'ACTIVE':   { label: 'Ativa',    badgeCls: 'text-emerald-700 dark:text-emerald-400', dotCls: 'bg-emerald-500', bgCls: 'bg-emerald-50 dark:bg-emerald-500/10', borderCls: 'border-emerald-200 dark:border-emerald-500/20' },
+                          'INACTIVE': { label: 'Inativa',  badgeCls: 'text-amber-700 dark:text-amber-400',   dotCls: 'bg-amber-500',   bgCls: 'bg-amber-50 dark:bg-amber-500/10',   borderCls: 'border-amber-200 dark:border-amber-500/20' },
+                          'EXPIRED':  { label: 'Expirada', badgeCls: 'text-rose-700 dark:text-rose-400',     dotCls: 'bg-rose-500',    bgCls: 'bg-rose-50 dark:bg-rose-500/10',     borderCls: 'border-rose-200 dark:border-rose-500/20' },
                         };
-                        const hasValidDate = selectedClient.proximaCobranca && !isNaN(new Date(selectedClient.proximaCobranca + 'T12:00:00').getTime());
                         const subStatus = selectedClient.subscriptionStatus ? statusMap[selectedClient.subscriptionStatus] : null;
                         return (
-                          <div className="bg-white dark:bg-white/5 p-4 rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm col-span-2">
-                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
-                              {hasValidDate ? 'Próxima Cobrança' : 'Status da Assinatura'}
-                            </div>
-                            <div className={`text-sm font-bold ${hasValidDate ? 'text-light-text dark:text-white' : (subStatus?.cls || 'text-slate-400')}`}>
-                              {hasValidDate
-                                ? new Date(selectedClient.proximaCobranca! + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })
-                                : subStatus?.label || 'Sem assinatura'
-                              }
-                            </div>
+                          <div className="bg-white dark:bg-white/5 p-4 rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm col-span-2 flex items-center justify-between">
+                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Status da Assinatura</div>
+                            {subStatus ? (
+                              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border ${subStatus.bgCls} ${subStatus.borderCls}`}>
+                                <div className={`w-2 h-2 rounded-full ${subStatus.dotCls} animate-pulse`} />
+                                <span className={`text-xs font-bold ${subStatus.badgeCls}`}>{subStatus.label}</span>
+                              </div>
+                            ) : (
+                              <span className="text-xs font-bold text-slate-400">Sem assinatura</span>
+                            )}
                           </div>
                         );
                       })()}

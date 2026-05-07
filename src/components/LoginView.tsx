@@ -78,7 +78,7 @@ const Login: React.FC = () => {
         className="max-w-6xl w-full flex flex-col md:flex-row bg-light-card dark:bg-dark-card rounded-[3rem] overflow-hidden border border-slate-200 dark:border-white/5 shadow-2xl min-h-[750px]"
       >
         {/* Left Side - Decorative/Info */}
-        <div className="md:w-1/2 bg-dark-card p-10 md:p-16 flex flex-col relative overflow-hidden">
+        <div className="md:w-1/2 bg-slate-50 dark:bg-dark-card p-10 md:p-16 flex flex-col relative overflow-hidden">
           {/* Background Decorative Elements */}
           <div className="absolute top-0 right-0 w-80 h-80 bg-violet-600/10 rounded-full blur-3xl -mr-40 -mt-40"></div>
           <div className="absolute bottom-0 left-0 w-80 h-80 bg-emerald-500/5 rounded-full blur-3xl -ml-40 -mb-40"></div>
@@ -92,8 +92,8 @@ const Login: React.FC = () => {
                 </div>
               </div>
               <div className="flex items-baseline">
-                <span className="font-bold text-3xl text-white tracking-tight">Grape</span>
-                <span className="font-light text-3xl text-violet-200/80">Hub</span>
+                <span className="font-bold text-3xl text-slate-900 dark:text-white tracking-tight">Grape</span>
+                <span className="font-light text-3xl text-violet-600 dark:text-violet-200/80">Hub</span>
               </div>
             </div>
 
@@ -102,7 +102,7 @@ const Login: React.FC = () => {
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: 0.2 }}
-                className="text-5xl md:text-6xl font-bold text-white leading-tight mb-6"
+                className="text-5xl md:text-6xl font-bold text-slate-900 dark:text-white leading-tight mb-6"
               >
                 Bem-vindo ao hub da <span className="text-violet-500">Grape Mídia.</span>
               </motion.h1>
@@ -110,7 +110,7 @@ const Login: React.FC = () => {
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: 0.3 }}
-                className="text-slate-400 text-xl leading-relaxed mb-8 max-w-lg"
+                className="text-slate-600 dark:text-slate-400 text-xl leading-relaxed mb-8 max-w-lg"
               >
                 Métricas, relatórios e entregas do seu projeto em um só lugar.
               </motion.p>
@@ -119,7 +119,7 @@ const Login: React.FC = () => {
             <div className="mt-auto pt-10 flex items-center gap-8">
               <div className="flex -space-x-4">
                 {[1, 2, 3, 4, 5].map((i) => (
-                  <div key={i} className="w-12 h-12 rounded-full border-2 border-dark-card bg-slate-800 flex items-center justify-center overflow-hidden">
+                  <div key={i} className="w-12 h-12 rounded-full border-2 border-white dark:border-dark-card bg-slate-200 dark:bg-slate-800 flex items-center justify-center overflow-hidden">
                     <img src={`/fotos/${i}.jpg`} alt="User" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                   </div>
                 ))}
@@ -188,7 +188,7 @@ const Login: React.FC = () => {
 
               <button
                 onClick={handleLogin}
-                className="w-full bg-dark-card dark:bg-white text-white dark:text-dark-card font-bold py-4 rounded-2xl flex items-center justify-center gap-3 hover:opacity-90 transition-all shadow-xl group"
+                className="w-full bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold py-4 rounded-2xl flex items-center justify-center gap-3 hover:opacity-90 transition-all shadow-xl group"
               >
                 <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5" />
                 <span>Entrar com Google</span>

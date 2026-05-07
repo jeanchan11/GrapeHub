@@ -112,6 +112,11 @@
   text-align: center;
 }
 
+html.darker .module-card {
+  background: #0A0A0A;
+  border-color: rgba(255, 255, 255, 0.05);
+}
+
 .module-icon {
   width: 44px;
   height: 44px;
@@ -185,4 +190,29 @@
   }
   .module-icon { margin: 0; }
   .module-card div:last-child { flex: 1; }
+}
+
+/* Light Mode Overrides */
+html.light .greeting { color: #1e293b; }
+html.light .subtitle { color: #64748b; }
+html.light .module-card {
+  background: #ffffff;
+  border-color: rgba(124, 58, 237, 0.15);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+}
+html.light .module-name { color: #334155; }
+html.light .module-desc { color: #94a3b8; }
+html.light .footer-line { color: #94a3b8; }
+
+/* Invert the white logo to dark gray in light mode */
+html.light .grape-icon img {
+  filter: invert(0.8) sepia(1) saturate(5) hue-rotate(220deg);
+}
+
+/* Adjust ambient glow for light mode */
+html.light .ambient::before {
+  background: radial-gradient(circle, rgba(124, 58, 237, 0.08) 0%, transparent 70%);
+}
+html.light .ambient::after {
+  background: radial-gradient(circle, rgba(124, 58, 237, 0.05) 0%, transparent 70%);
 }

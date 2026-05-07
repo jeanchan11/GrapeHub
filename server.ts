@@ -1477,6 +1477,32 @@ async function startServer() {
                 [leadId]
               );
               console.log(`[Automação] clear_open_tasks: ${deleted.rowCount} atividade(s) removida(s) do lead ${leadId}`);
+
+            } else if (actionType === 'create_client') {
+              // Cria um cliente em Clientes Ativos a partir dos dados do lead
+              const clientName = lead.nome || lead.form_nome_completo || 'Novo Cliente';
+              const clientPhone = lead.telefone || lead.form_telefone_whatsapp || '';
+              const clientEmail = lead.email || '';
+              const clientLocation = lead.form_cidade || lead.office_location || '';
+              const clientId = `lead-${leadId}-${Date.now()}`;
+              const startDate = new Date().toISOString().slice(0, 10);
+
+              // Verifica se já existe um cliente com o mesmo nome para evitar duplicatas
+              const existingClient = await pool.query(
+                `SELECT id FROM clients WHERE LOWER(TRIM(name)) = LOWER(TRIM($1)) LIMIT 1`,
+                [clientName]
+              );
+
+              if (existingClient.rows.length > 0) {
+                console.log(`[Automação] create_client: cliente "${clientName}" já existe (id: ${existingClient.rows[0].id}), pulando criação`);
+              } else {
+                await pool.query(
+                  `INSERT INTO clients (id, name, email, phone, status, start_date, location)
+                   VALUES ($1, $2, $3, $4, 'Ativo', $5, $6)`,
+                  [clientId, clientName, clientEmail, clientPhone, startDate, clientLocation]
+                );
+                console.log(`[Automação] create_client: cliente "${clientName}" criado com id ${clientId}`);
+              }
             }
 
             console.log(`[Automação] "${automation.name}" → ação "${actionType}" executada para lead ${leadId}`);
@@ -6230,6 +6256,52 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
+  // POST /api/fin-people/sync-phones — busca telefones no Asaas e atualiza fin_people
+  app.post("/api/fin-people/sync-phones", async (_req, res) => {
+    try {
+      let updated = 0;
+      let skipped = 0;
+      let page = 0;
+      const limit = 100;
+      let hasMore = true;
+
+      console.log('[sync-phones] Iniciando sync de telefones do Asaas...');
+
+      while (hasMore) {
+        const data = await asaasFetch(`/customers?limit=${limit}&offset=${page * limit}`);
+        if (!data || !Array.isArray(data.data)) {
+          console.warn('[sync-phones] Resposta inválida do Asaas na página', page);
+          break;
+        }
+
+        for (const customer of data.data) {
+          const asaasId = customer.id;
+          const phone = customer.mobilePhone || customer.phone || null;
+
+          if (!asaasId || !phone) {
+            skipped++;
+            continue;
+          }
+
+          const result = await pool.query(
+            `UPDATE fin_people SET phone = $1 WHERE asaas_id = $2 RETURNING id`,
+            [phone, asaasId]
+          );
+          if ((result.rowCount ?? 0) > 0) updated++;
+        }
+
+        hasMore = data.hasMore === true;
+        page++;
+      }
+
+      console.log(`[sync-phones] Concluído: ${updated} atualizados, ${skipped} sem telefone.`);
+      res.json({ ok: true, updated, skipped });
+    } catch (err) {
+      console.error('[sync-phones] Erro:', err);
+      res.status(500).json({ error: 'Falha ao sincronizar telefones' });
+    }
+  });
+
   // PATCH /api/fin-people/:id - atualiza o campo grapehub_client_id na tabela fin_people
   app.patch("/api/fin-people/:id", async (req, res) => {
     const { id } = req.params;
@@ -9529,7 +9601,7 @@ app.get("/api/todos", async (req, res) => {
         `INSERT INTO onboarding_tasks (client_name, squad, responsible_id, responsible_name, responsible_avatar, start_date, due_date, status_group, tags, nome_completo, nome_fantasia, telefone_whatsapp, cnpj_cpf, cep, cidade, uf, meeting_info)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *`,
         [client_name, squad || null, responsible_id || null, responsible_name || null, responsible_avatar || null,
-         start_date || null, due_date || null, status_group || 'a-fazer-briefing', tags || [],
+         start_date || null, due_date || null, status_group || 'briefing-realizado', tags || [],
          nome_completo || null, nome_fantasia || null, telefone_whatsapp || null, cnpj_cpf || null, cep || null, cidade || null, uf || null, meeting_info || null]
       );
       const newTask = result.rows[0];

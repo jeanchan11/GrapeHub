@@ -189,6 +189,7 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
   const [queueStats, setQueueStats] = useState({ hoje: 0, ultimos7dias: 0, agendados: 0 });
   const [confettiItems, setConfettiItems] = useState<{ id: number; x: number; y: number }[]>([]);
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
+  const [copiedPhoneIdx, setCopiedPhoneIdx] = useState<number | null>(null);
   const [queueSubTab, setQueueSubTab] = useState<'agendados' | 'enviados' | 'humano' | 'suspensao'>('agendados');
   const [queueAll, setQueueAll] = useState<QueueItem[]>([]);
 
@@ -594,15 +595,17 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                     <span className={`ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full ${queueSubTab === 'suspensao' ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400' : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-slate-400'}`}>{queueSuspensao.length}</span>
                   </button>
                 </div>
-                <table className="w-full text-left border-collapse table-fixed">
+                <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-gray-50 dark:bg-dark-bg/50 border-b border-gray-100 dark:border-white/5">
-                      <th className="w-[30%] px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap">Cliente / Valor</th>
-                      <th className="w-[20%] px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap">Regra Acionada</th>
-                      <th className="w-[10%] px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap">Canal</th>
-                      <th className="w-[15%] px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap">Data Programada</th>
-                      <th className="w-[10%] px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap text-center">Mensagem</th>
-                      <th className="w-[15%] px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap text-right">Status</th>
+                      <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap">Cliente / Valor</th>
+                      <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap">Telefone</th>
+                      <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap">Regra Acionada</th>
+                      <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap">Canal</th>
+                      <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap">Data Programada</th>
+                      <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap text-center">Fatura</th>
+                      <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap text-center">Mensagem</th>
+                      <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap text-right">Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 dark:divide-white/5">
@@ -611,7 +614,7 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                       const emptyMsg = queueSubTab === 'agendados' ? 'Nenhum disparo agendado.' : queueSubTab === 'enviados' ? 'Nenhum disparo enviado.' : queueSubTab === 'humano' ? 'Nenhum cliente em contato humano.' : 'Nenhum cliente em suspensão.';
                       if (currentList.length === 0) return (
                         <tr>
-                          <td colSpan={6} className="px-4 py-8 text-center text-gray-500 dark:text-slate-400 text-sm">{emptyMsg}</td>
+                          <td colSpan={8} className="px-4 py-8 text-center text-gray-500 dark:text-slate-400 text-sm">{emptyMsg}</td>
                         </tr>
                       );
                       return currentList.map((item, idx) => {
@@ -621,27 +624,71 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                       const fmtTriggered = item.triggered_at ? new Date(item.triggered_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : fmtDate(item.scheduled_date);
 
                       return (
-                        <tr key={idx} className="bg-white hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
-                          <td className="px-4 py-3 dark:bg-dark-card">
-                            <p className="text-sm font-bold text-gray-900 dark:text-white">{item.client_name || 'Desconhecido'}</p>
-                            <p className="text-xs text-gray-500 dark:text-slate-400">{formatCurrency(item.value)} • Venc: {fmtDate(item.due_date)}</p>
+                        <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
+                          <td className="px-4 py-3">
+                            <p className="text-sm font-bold text-gray-900 dark:text-white truncate max-w-[220px]">{item.client_name || 'Desconhecido'}</p>
+                            <p className="text-xs text-gray-500 dark:text-slate-400 whitespace-nowrap">{formatCurrency(item.value)} • Venc: {fmtDate(item.due_date)}</p>
                           </td>
-                          <td className="px-4 py-3 dark:bg-dark-card">
-                            <div className="flex items-center gap-2">
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            {item.client_phone ? (
+                              <div className="inline-flex items-center gap-1.5">
+                                <a
+                                  href={`tel:${item.client_phone}`}
+                                  className="text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors"
+                                  title="Ligar para o cliente"
+                                >
+                                  📞 {item.client_phone}
+                                </a>
+                                <button
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(item.client_phone!);
+                                    setCopiedPhoneIdx(idx);
+                                    setTimeout(() => setCopiedPhoneIdx(null), 2000);
+                                  }}
+                                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold transition-all ${
+                                    copiedPhoneIdx === idx
+                                      ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                                      : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-slate-400 border border-gray-200 dark:border-white/10 hover:bg-emerald-500/10 hover:text-emerald-500 hover:border-emerald-500/20'
+                                  }`}
+                                  title="Copiar número"
+                                >
+                                  {copiedPhoneIdx === idx ? <Check size={10} /> : <Copy size={10} />}
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-xs text-gray-400 dark:text-slate-600">—</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <div className="inline-flex items-center gap-2">
                               <span className={`px-2 py-0.5 rounded text-[9px] font-bold border border-current opacity-80 ${badgeColor}`}>{badgeLabel}</span>
                               <span className="text-xs font-medium text-gray-700 dark:text-slate-300">{item.rule_label}</span>
                             </div>
                           </td>
-                          <td className="px-4 py-3 dark:bg-dark-card">
+                          <td className="px-4 py-3 whitespace-nowrap">
                             <span className="text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest bg-gray-100 dark:bg-white/5 px-2 py-1 rounded-md border border-gray-200 dark:border-white/5">
                               {item.channel}
                             </span>
                           </td>
-                          <td className="px-4 py-3 dark:bg-dark-card">
+                          <td className="px-4 py-3 whitespace-nowrap">
                             <span className="text-xs text-gray-600 dark:text-slate-400">{fmtTriggered}</span>
                           </td>
-                          {/* Mensagem column */}
-                          <td className="px-4 py-3 text-center dark:bg-dark-card">
+                          <td className="px-4 py-3 text-center whitespace-nowrap">
+                            {item.invoice_url ? (
+                              <a
+                                href={item.invoice_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/20 hover:bg-violet-100 dark:hover:bg-violet-500/20 transition-all"
+                                title="Ver fatura"
+                              >
+                                <ExternalLink size={10} /> Ver
+                              </a>
+                            ) : (
+                              <span className="text-xs text-gray-400 dark:text-slate-600">—</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-center whitespace-nowrap">
                             <button
                               onClick={() => copyMessage(item, idx)}
                               className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
@@ -654,8 +701,7 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                               {copiedIdx === idx ? <><Check size={12} /> Copiado!</> : <><Copy size={12} /> Copiar</>}
                             </button>
                           </td>
-                          {/* Status column */}
-                          <td className="px-4 py-3 text-right dark:bg-dark-card">
+                          <td className="px-4 py-3 text-right whitespace-nowrap">
                             {item.status === 'sent' && (
                               <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-1 rounded-full">
                                 <CheckCircle2 size={12} /> Enviado

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Plus, ChevronDown, ChevronRight, Calendar, Users, Tag, MoreHorizontal, Circle, CheckCircle2, Loader2, X, Trash2, GripVertical, Settings, FileText, Link as LinkIcon, Save, Heading1, Heading2, Heading3, Type, List, ListOrdered, CheckSquare, Check } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
 
@@ -113,8 +114,9 @@ const formatDate = (iso: string | null) => {
 const SQUAD_OPTIONS = ['Squad Able', 'Squad Baker'];
 
 const STATUS_GROUPS: Omit<StatusGroup, 'tasks'>[] = [
-  { id: 'briefing-realizado', label: 'BRIEFING REALIZADO', color: '#10b981', emoji: '✅' },
-  { id: 'a-fazer-briefing', label: 'A FAZER BRIEFING', color: '#f59e0b', emoji: '📋' },
+  { id: 'reuniao-coleta-acessos', label: 'REUNIÃO - COLETA DE ACESSOS', color: '#3b82f6', emoji: '🗓️' },
+  { id: 'treinamento-comercial',  label: 'TREINAMENTO COMERCIAL',       color: '#8b5cf6', emoji: '🧠💰' },
+  { id: 'briefing-realizado',     label: 'REUNIÃO - BRIEFING',          color: '#10b981', emoji: '🗓️' },
 ];
 
 // ── Tag Badge ─────────────────────────────────────────────
@@ -157,91 +159,145 @@ function isoDate(y: number, m: number, d: number) {
 function daysInMonth(y: number, m: number) { return new Date(y, m, 0).getDate(); }
 function firstDayOfMonth(y: number, m: number) { return new Date(y, m - 1, 1).getDay(); }
 
-function SingleDatePicker({ value, onChange, placeholder = '—', align = 'right' }: { value?: string, onChange: (iso: string) => void, placeholder?: string, align?: 'left' | 'right' | 'center' }) {
+function SingleDatePicker({ value, onChange, placeholder = '—', align = 'right', checkOverdue = false }: { value?: string | null, onChange: (iso: string) => void, placeholder?: string, align?: 'left' | 'right' | 'center', checkOverdue?: boolean }) {
   const [open, setOpen] = React.useState(false);
-  const ref = React.useRef<HTMLDivElement>(null);
-  
-  const initialDate = value ? new Date(value + 'T12:00:00') : new Date();
-  const [viewYear, setViewYear] = React.useState(initialDate.getFullYear());
-  const [viewMonth, setViewMonth] = React.useState(initialDate.getMonth() + 1);
+  const [pos, setPos] = React.useState({ top: 0, left: 0 });
+  const btnRef = React.useRef<HTMLButtonElement>(null);
+
+  const today = new Date();
+  const todayIso = today.toISOString().slice(0, 10);
+
+  // Validate: must be YYYY-MM-DD
+  const safeValue = (value && typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value.slice(0, 10)))
+    ? value.slice(0, 10) : '';
+
+  const [viewYear, setViewYear] = React.useState<number>(() => {
+    if (safeValue) { const y = parseInt(safeValue.slice(0, 4)); if (!isNaN(y)) return y; }
+    return today.getFullYear();
+  });
+  const [viewMonth, setViewMonth] = React.useState<number>(() => {
+    if (safeValue) { const m = parseInt(safeValue.slice(5, 7)); if (!isNaN(m) && m >= 1 && m <= 12) return m; }
+    return today.getMonth() + 1;
+  });
 
   React.useEffect(() => {
+    if (!open) return;
     function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Element;
+      if (!target.closest('[data-sdp-portal]') && !target.closest('[data-sdp-trigger]')) setOpen(false);
     }
-    if (open) document.addEventListener('mousedown', handleClick);
+    document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, [open]);
+
+  function toggleOpen(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      const popupW = 264;
+      let left = align === 'right' ? rect.right - popupW : rect.left;
+      if (left < 8) left = 8;
+      if (left + popupW > window.innerWidth - 8) left = window.innerWidth - popupW - 8;
+      const popupH = 320;
+      const top = (window.innerHeight - rect.bottom) < popupH ? rect.top - popupH - 4 : rect.bottom + 4;
+      setPos({ top, left });
+    }
+    setOpen(o => !o);
+  }
 
   function stepMonth(dir: 1 | -1) {
     let m = viewMonth + dir, y = viewYear;
     if (m > 12) { m = 1; y++; }
-    if (m < 1)  { m = 12; y--; }
-    setViewYear(y); setViewMonth(m);
+    else if (m < 1) { m = 12; y--; }
+    setViewYear(y);
+    setViewMonth(m);
   }
 
-  const days = daysInMonth(viewYear, viewMonth);
-  const firstDay = firstDayOfMonth(viewYear, viewMonth);
-  const cells = [
+  const numDays = Math.max(1, daysInMonth(viewYear, viewMonth));
+  const firstDay = Math.max(0, Math.min(6, firstDayOfMonth(viewYear, viewMonth)));
+  const cells: (string | null)[] = [
     ...Array(firstDay).fill(null),
-    ...Array.from({ length: days }, (_, i) => isoDate(viewYear, viewMonth, i + 1)),
+    ...Array.from({ length: numDays }, (_, i) => isoDate(viewYear, viewMonth, i + 1)),
   ];
   while (cells.length % 7 !== 0) cells.push(null);
 
-  const displayVal = value ? new Date(value + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : placeholder;
+  const displayVal = safeValue
+    ? new Date(safeValue + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })
+    : placeholder;
+
+  const isOverdue = checkOverdue && safeValue ? safeValue < todayIso : false;
+
+  const popup = open ? (
+    <div
+      data-sdp-portal
+      onClick={e => e.stopPropagation()}
+      style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999, width: 264 }}
+      className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl p-4"
+    >
+      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3 flex items-center justify-between">
+        <span>Selecionar Data</span>
+        {safeValue && (
+          <button onClick={() => { onChange(''); setOpen(false); }} className="text-rose-400 hover:text-rose-300 normal-case text-[10px]">Limpar</button>
+        )}
+      </p>
+      <div className="flex items-center justify-between mb-3">
+        <button onClick={() => stepMonth(-1)} className="w-7 h-7 rounded-lg hover:bg-white/10 flex items-center justify-center transition-colors">
+          <ChevronDown size={13} className="text-slate-400 rotate-90" />
+        </button>
+        <span className="text-sm font-bold text-dark-text">{MESES_FULL[viewMonth - 1]} {viewYear}</span>
+        <button onClick={() => stepMonth(1)} className="w-7 h-7 rounded-lg hover:bg-white/10 flex items-center justify-center transition-colors">
+          <ChevronDown size={13} className="text-slate-400 -rotate-90" />
+        </button>
+      </div>
+      <div className="grid grid-cols-7 mb-1">
+        {WEEK_DAYS.map((d, i) => <div key={i} className="text-center text-[10px] font-bold text-slate-500 pb-1">{d}</div>)}
+      </div>
+      <div className="grid grid-cols-7 gap-y-0.5">
+        {cells.map((iso, idx) => {
+          if (!iso) return <div key={`empty-${idx}`} />;
+          const isSelected = iso === safeValue;
+          const isToday = iso === todayIso;
+          return (
+            <button key={iso}
+              onClick={() => { onChange(iso); setOpen(false); }}
+              className={`relative h-8 w-full text-xs font-semibold transition-all rounded-full
+                ${isSelected ? 'text-white' : 'text-dark-text hover:text-violet-600 hover:bg-white/5'}`}
+            >
+              <span className={`absolute inset-0.5 flex items-center justify-center rounded-full text-xs
+                ${isSelected ? 'bg-violet-600 shadow-md shadow-violet-500/30' : ''}
+                ${isToday && !isSelected ? 'ring-1 ring-violet-500/60' : ''}`}>
+                {parseInt(iso.slice(8))}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  ) : null;
 
   return (
-    <div ref={ref} className="relative inline-block w-full">
-      <button onClick={(e) => { e.stopPropagation(); setOpen(o => !o); }} className="w-full text-left focus:outline-none hover:text-violet-400 transition-colors">
-        {displayVal}
+    <>
+      <button ref={btnRef} data-sdp-trigger onClick={toggleOpen}
+        className={`w-full text-left focus:outline-none transition-colors font-semibold
+          ${isOverdue
+            ? 'text-rose-500 hover:text-rose-400'
+            : 'text-slate-400 hover:text-violet-400 font-normal'
+          }`}
+      >
+        {isOverdue && safeValue ? (
+          <span className="inline-flex items-center gap-1">
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+            {displayVal}
+          </span>
+        ) : displayVal}
       </button>
-      {open && (
-        <div onClick={e => e.stopPropagation()} className={`absolute top-full mt-2 z-[99] bg-dark-card border border-white/10 rounded-2xl shadow-2xl p-4 w-[260px] ${align === 'right' ? 'right-0' : align === 'center' ? 'left-1/2 -translate-x-1/2' : 'left-0'}`}>
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3 flex items-center justify-between">
-            <span>Selecionar Data</span>
-            {value && (
-              <button onClick={() => { onChange(''); setOpen(false); }} className="text-rose-400 hover:text-rose-300">Limpar</button>
-            )}
-          </p>
-          <div className="flex items-center justify-between mb-3">
-            <button onClick={() => stepMonth(-1)} className="w-7 h-7 rounded-lg hover:bg-white/10 flex items-center justify-center transition-colors">
-              <ChevronDown size={13} className="text-slate-400 rotate-90" />
-            </button>
-            <span className="text-sm font-bold text-dark-text">{MESES_FULL[viewMonth - 1]} {viewYear}</span>
-            <button onClick={() => stepMonth(1)} className="w-7 h-7 rounded-lg hover:bg-white/10 flex items-center justify-center transition-colors">
-              <ChevronDown size={13} className="text-slate-400 -rotate-90" />
-            </button>
-          </div>
-          <div className="grid grid-cols-7 mb-1">
-            {WEEK_DAYS.map((d, i) => <div key={i} className="text-center text-[10px] font-bold text-slate-500 pb-1">{d}</div>)}
-          </div>
-          <div className="grid grid-cols-7 gap-y-0.5">
-            {cells.map((iso, idx) => {
-              if (!iso) return <div key={idx} />;
-              const isSelected = iso === value;
-              const isToday = iso === new Date().toISOString().slice(0, 10);
-              return (
-                <button key={iso}
-                  onClick={() => { onChange(iso); setOpen(false); }}
-                  className={`relative h-8 w-full text-xs font-semibold transition-all rounded-full
-                    ${isSelected ? 'text-white' : 'text-dark-text hover:text-violet-600 hover:bg-white/5'}`}
-                >
-                  <span className={`absolute inset-0.5 flex items-center justify-center rounded-full text-xs
-                    ${isSelected ? 'bg-violet-600 shadow-md shadow-violet-500/30' : ''}
-                    ${isToday && !isSelected ? 'ring-1 ring-violet-500/60' : ''}`}>
-                    {parseInt(iso.slice(8))}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </div>
+      {typeof document !== 'undefined' && createPortal(popup, document.body)}
+    </>
   );
 }
 
 let cachedUsers: any[] = [];
+
 let fetchUsersPromise: Promise<void> | null = null;
 const fetchUsersOnce = () => {
   if (fetchUsersPromise) return fetchUsersPromise;
@@ -265,34 +321,38 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
   const [loadingSubs, setLoadingSubs] = useState(false);
   const [subtaskRespPicker, setSubtaskRespPicker] = useState<number | null>(null);
   const [taskRespPicker, setTaskRespPicker] = useState(false);
+  const [taskRespPos, setTaskRespPos] = useState({ top: 0, left: 0 });
+  const [subtaskRespPos, setSubtaskRespPos] = useState({ top: 0, left: 0 });
   const statusRef = React.useRef<HTMLDivElement>(null);
   const menuRef = React.useRef<HTMLDivElement>(null);
   const respRef = React.useRef<HTMLDivElement>(null);
-  const taskRespRef = React.useRef<HTMLDivElement>(null);
+  const taskRespRef = React.useRef<HTMLButtonElement>(null);
 
   useEffect(() => { fetchUsersOnce(); }, []);
 
   useEffect(() => {
-    if (!subtaskRespPicker) return;
-    const handleClick = (e: MouseEvent) => {
-      if (respRef.current && !respRef.current.contains(e.target as Node)) {
-        setSubtaskRespPicker(null);
-      }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [subtaskRespPicker]);
-
-  useEffect(() => {
     if (!taskRespPicker) return;
     const handleClick = (e: MouseEvent) => {
-      if (taskRespRef.current && !taskRespRef.current.contains(e.target as Node)) {
+      const target = e.target as Element;
+      if (!target.closest('[data-task-resp-portal]') && !target.closest('[data-task-resp-btn]')) {
         setTaskRespPicker(false);
       }
     };
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, [taskRespPicker]);
+
+  useEffect(() => {
+    if (!subtaskRespPicker) return;
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as Element;
+      if (!target.closest('[data-sub-resp-portal]') && !target.closest('[data-sub-resp-btn]')) {
+        setSubtaskRespPicker(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [subtaskRespPicker]);
 
   useEffect(() => {
     if (!showStatusPicker) return;
@@ -501,19 +561,47 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
         </div>
 
         {/* Responsável */}
-        <div className="shrink-0 w-20 flex items-center justify-center gap-1 relative">
+        <div className="shrink-0 w-20 flex items-center justify-center gap-1">
           {task.responsible_name ? (
-            <button onClick={(e) => { e.stopPropagation(); setTaskRespPicker(v => !v); }} className="focus:outline-none hover:scale-110 transition-transform">
+            <button
+              ref={taskRespRef}
+              data-task-resp-btn
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!taskRespPicker && taskRespRef.current) {
+                  const rect = taskRespRef.current.getBoundingClientRect();
+                  setTaskRespPos({ top: rect.bottom + 4, left: rect.left - 140 });
+                }
+                setTaskRespPicker(v => !v);
+              }}
+              className="focus:outline-none hover:scale-110 transition-transform"
+            >
               <Avatar name={task.responsible_name} url={task.responsible_avatar} size={6} />
             </button>
           ) : (
-            <button onClick={(e) => { e.stopPropagation(); setTaskRespPicker(v => !v); }} className="w-6 h-6 rounded-full border border-dashed border-slate-600 flex items-center justify-center hover:border-violet-500 hover:text-violet-500 transition-colors">
+            <button
+              ref={taskRespRef}
+              data-task-resp-btn
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!taskRespPicker && taskRespRef.current) {
+                  const rect = taskRespRef.current.getBoundingClientRect();
+                  setTaskRespPos({ top: rect.bottom + 4, left: rect.left - 140 });
+                }
+                setTaskRespPicker(v => !v);
+              }}
+              className="w-6 h-6 rounded-full border border-dashed border-slate-600 flex items-center justify-center hover:border-violet-500 hover:text-violet-500 transition-colors"
+            >
               <Plus size={10} className="text-slate-600 hover:text-violet-500" />
             </button>
           )}
-          
-          {taskRespPicker && (
-            <div ref={taskRespRef} className="absolute top-8 z-50 w-48 bg-dark-card border border-white/10 rounded-xl shadow-2xl p-1 max-h-48 overflow-y-auto">
+          {taskRespPicker && createPortal(
+            <div
+              data-task-resp-portal
+              onClick={e => e.stopPropagation()}
+              style={{ position: 'fixed', top: taskRespPos.top, left: taskRespPos.left, zIndex: 9999, width: 192 }}
+              className="bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl p-1 max-h-48 overflow-y-auto"
+            >
               <div className="px-2 py-1.5 border-b border-white/5 mb-1">
                 <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Selecionar Responsável</span>
               </div>
@@ -523,7 +611,8 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
                   <span className="text-xs text-dark-text truncate">{u.name}</span>
                 </button>
               ))}
-            </div>
+            </div>,
+            document.body
           )}
         </div>
 
@@ -534,7 +623,7 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
 
         {/* Data de vencimento */}
         <div className="shrink-0 w-28 text-xs text-slate-400 font-medium">
-          <SingleDatePicker value={task.due_date || undefined} onChange={(v) => handleTaskDate('due_date', v)} align="right" />
+          <SingleDatePicker value={task.due_date || undefined} onChange={(v) => handleTaskDate('due_date', v)} align="right" checkOverdue />
         </div>
 
         {/* More — dropdown com Arquivar e Excluir */}
@@ -602,7 +691,7 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
               </div>
               {subtasks.map(sub => (
                 <div key={sub.id}
-                  className="w-full flex items-center gap-2 px-8 py-2.5 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors border-b border-black/[0.08] dark:border-white/[0.08] last:border-none">
+                  className="w-full flex items-center gap-2 px-8 py-2.5 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors border-b border-black/[0.06] dark:border-white/[0.06] last:border-none">
                   <div className="w-[14px] shrink-0" />
                   <div className="w-4 shrink-0 flex items-center justify-center">
                     <button onClick={() => toggleSubtask(sub)}
@@ -619,18 +708,45 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
                   <div className="shrink-0 w-36" />
                   
                   {/* Responsável da Subtarefa */}
-                  <div className="shrink-0 w-20 flex items-center justify-center gap-1 relative">
+                  <div className="shrink-0 w-20 flex items-center justify-center gap-1">
                     {sub.responsible_name ? (
-                      <button onClick={() => setSubtaskRespPicker(sub.id)} className="focus:outline-none hover:scale-110 transition-transform">
+                      <button
+                        data-sub-resp-btn
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (subtaskRespPicker !== sub.id) {
+                            const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
+                            setSubtaskRespPos({ top: rect.bottom + 4, left: rect.left - 140 });
+                          }
+                          setSubtaskRespPicker(subtaskRespPicker === sub.id ? null : sub.id);
+                        }}
+                        className="focus:outline-none hover:scale-110 transition-transform"
+                      >
                         <Avatar name={sub.responsible_name} url={sub.responsible_avatar} size={5} />
                       </button>
                     ) : (
-                      <button onClick={() => setSubtaskRespPicker(sub.id)} className="w-5 h-5 rounded-full border border-dashed border-slate-600 flex items-center justify-center hover:border-violet-500 hover:text-violet-500 transition-colors">
+                      <button
+                        data-sub-resp-btn
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (subtaskRespPicker !== sub.id) {
+                            const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
+                            setSubtaskRespPos({ top: rect.bottom + 4, left: rect.left - 140 });
+                          }
+                          setSubtaskRespPicker(subtaskRespPicker === sub.id ? null : sub.id);
+                        }}
+                        className="w-5 h-5 rounded-full border border-dashed border-slate-600 flex items-center justify-center hover:border-violet-500 hover:text-violet-500 transition-colors"
+                      >
                         <Plus size={8} className="text-slate-600 hover:text-violet-500" />
                       </button>
                     )}
-                    {subtaskRespPicker === sub.id && (
-                      <div ref={respRef} className="absolute top-6 z-50 w-48 bg-dark-card border border-white/10 rounded-xl shadow-2xl p-1 max-h-48 overflow-y-auto">
+                    {subtaskRespPicker === sub.id && createPortal(
+                      <div
+                        data-sub-resp-portal
+                        onClick={e => e.stopPropagation()}
+                        style={{ position: 'fixed', top: subtaskRespPos.top, left: subtaskRespPos.left, zIndex: 9999, width: 192 }}
+                        className="bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl p-1 max-h-48 overflow-y-auto"
+                      >
                         <div className="px-2 py-1.5 border-b border-white/5 mb-1">
                           <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Selecionar Responsável</span>
                         </div>
@@ -640,13 +756,14 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
                             <span className="text-xs text-dark-text truncate">{u.name}</span>
                           </button>
                         ))}
-                      </div>
+                      </div>,
+                      document.body
                     )}
                   </div>
                   
                   <div className="shrink-0 w-24" />
                   <div className="shrink-0 w-28 text-xs text-slate-500 text-left pl-2 font-medium">
-                    <SingleDatePicker value={sub.due_date || undefined} onChange={(v) => handleSubtaskDate(sub.id, 'due_date', v)} align="right" />
+                    <SingleDatePicker value={sub.due_date || undefined} onChange={(v) => handleSubtaskDate(sub.id, 'due_date', v)} align="right" checkOverdue />
                   </div>
                   <div className="shrink-0 w-[22px]" />
                 </div>
@@ -668,12 +785,12 @@ const GroupBlock = ({ group, onUpdate, onAddTask, onOpenDetail, onOpenSubtask }:
   onOpenDetail: (t: OnboardingTask) => void;
   onOpenSubtask: (s: Subtask, t: OnboardingTask) => void;
 }) => {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(group.tasks.length > 0);
 
   return (
-    <div className="mb-6 bg-dark-card border border-white/10 rounded-2xl overflow-hidden shadow-sm">
+    <div className="mb-6 bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl overflow-hidden shadow-sm">
       {/* Group header */}
-      <div className="flex items-center gap-3 px-6 py-4 bg-dark-card border-b border-black/5 dark:border-white/5 sticky top-0 z-10">
+      <div className="flex items-center gap-3 px-6 py-4 bg-dark-card border-b border-black/8 dark:border-white/5 sticky top-0 z-10">
         <button onClick={() => setExpanded(v => !v)} className="flex items-center gap-2 group flex-1">
           <div
             className="px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-widest flex items-center gap-2 transition-transform group-hover:scale-105"
@@ -693,7 +810,7 @@ const GroupBlock = ({ group, onUpdate, onAddTask, onOpenDetail, onOpenSubtask }:
       {/* Column headers */}
       {expanded && (
         <>
-          <div className="flex items-center gap-2 px-8 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest bg-black/20 dark:bg-black/20 border-b border-black/5 dark:border-white/5">
+          <div className="flex items-center gap-2 px-8 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest bg-black/[0.04] dark:bg-black/20 border-b border-black/[0.07] dark:border-white/5">
             <div className="w-[14px] shrink-0" />
             <div className="w-4 shrink-0" />
             <div className="flex-1">Nome</div>
