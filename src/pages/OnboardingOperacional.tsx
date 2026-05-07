@@ -133,16 +133,113 @@ const TagBadge = ({ label }: { label: string }) => {
 };
 
 // ── Avatar ────────────────────────────────────────────────
-const Avatar = ({ name, url, size = 6 }: { name?: string | null; url?: string | null; size?: number }) => {
+const Avatar = ({ url, name, size = 6 }: { url?: string; name?: string; size?: number }) => {
+  const [error, setError] = React.useState(false);
   const initials = (name || '??').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
   const sz = `w-${size} h-${size}`;
-  if (url) return <img src={url} alt={name || ''} className={`${sz} rounded-full object-cover border border-white/10`} />;
+  if (url && !error) {
+    return <img src={url} alt={name || ''} onError={() => setError(true)} className={`${sz} rounded-full object-cover border border-white/10`} />;
+  }
   return (
     <div className={`${sz} rounded-full bg-violet-500/20 border border-violet-500/30 flex items-center justify-center text-[9px] font-bold text-violet-300`}>
       {initials}
     </div>
   );
 };
+
+// ── SingleDatePicker ──────────────────────────────────────
+const MESES_FULL = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+const WEEK_DAYS  = ['D','S','T','Q','Q','S','S'];
+
+function isoDate(y: number, m: number, d: number) {
+  return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+}
+function daysInMonth(y: number, m: number) { return new Date(y, m, 0).getDate(); }
+function firstDayOfMonth(y: number, m: number) { return new Date(y, m - 1, 1).getDay(); }
+
+function SingleDatePicker({ value, onChange, placeholder = '—', align = 'right' }: { value?: string, onChange: (iso: string) => void, placeholder?: string, align?: 'left' | 'right' | 'center' }) {
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
+  
+  const initialDate = value ? new Date(value + 'T12:00:00') : new Date();
+  const [viewYear, setViewYear] = React.useState(initialDate.getFullYear());
+  const [viewMonth, setViewMonth] = React.useState(initialDate.getMonth() + 1);
+
+  React.useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    if (open) document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [open]);
+
+  function stepMonth(dir: 1 | -1) {
+    let m = viewMonth + dir, y = viewYear;
+    if (m > 12) { m = 1; y++; }
+    if (m < 1)  { m = 12; y--; }
+    setViewYear(y); setViewMonth(m);
+  }
+
+  const days = daysInMonth(viewYear, viewMonth);
+  const firstDay = firstDayOfMonth(viewYear, viewMonth);
+  const cells = [
+    ...Array(firstDay).fill(null),
+    ...Array.from({ length: days }, (_, i) => isoDate(viewYear, viewMonth, i + 1)),
+  ];
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  const displayVal = value ? new Date(value + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : placeholder;
+
+  return (
+    <div ref={ref} className="relative inline-block w-full">
+      <button onClick={(e) => { e.stopPropagation(); setOpen(o => !o); }} className="w-full text-left focus:outline-none hover:text-violet-400 transition-colors">
+        {displayVal}
+      </button>
+      {open && (
+        <div onClick={e => e.stopPropagation()} className={`absolute top-full mt-2 z-[99] bg-dark-card border border-white/10 rounded-2xl shadow-2xl p-4 w-[260px] ${align === 'right' ? 'right-0' : align === 'center' ? 'left-1/2 -translate-x-1/2' : 'left-0'}`}>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3 flex items-center justify-between">
+            <span>Selecionar Data</span>
+            {value && (
+              <button onClick={() => { onChange(''); setOpen(false); }} className="text-rose-400 hover:text-rose-300">Limpar</button>
+            )}
+          </p>
+          <div className="flex items-center justify-between mb-3">
+            <button onClick={() => stepMonth(-1)} className="w-7 h-7 rounded-lg hover:bg-white/10 flex items-center justify-center transition-colors">
+              <ChevronDown size={13} className="text-slate-400 rotate-90" />
+            </button>
+            <span className="text-sm font-bold text-dark-text">{MESES_FULL[viewMonth - 1]} {viewYear}</span>
+            <button onClick={() => stepMonth(1)} className="w-7 h-7 rounded-lg hover:bg-white/10 flex items-center justify-center transition-colors">
+              <ChevronDown size={13} className="text-slate-400 -rotate-90" />
+            </button>
+          </div>
+          <div className="grid grid-cols-7 mb-1">
+            {WEEK_DAYS.map((d, i) => <div key={i} className="text-center text-[10px] font-bold text-slate-500 pb-1">{d}</div>)}
+          </div>
+          <div className="grid grid-cols-7 gap-y-0.5">
+            {cells.map((iso, idx) => {
+              if (!iso) return <div key={idx} />;
+              const isSelected = iso === value;
+              const isToday = iso === new Date().toISOString().slice(0, 10);
+              return (
+                <button key={iso}
+                  onClick={() => { onChange(iso); setOpen(false); }}
+                  className={`relative h-8 w-full text-xs font-semibold transition-all rounded-full
+                    ${isSelected ? 'text-white' : 'text-dark-text hover:text-violet-600 hover:bg-white/5'}`}
+                >
+                  <span className={`absolute inset-0.5 flex items-center justify-center rounded-full text-xs
+                    ${isSelected ? 'bg-violet-600 shadow-md shadow-violet-500/30' : ''}
+                    ${isToday && !isSelected ? 'ring-1 ring-violet-500/60' : ''}`}>
+                    {parseInt(iso.slice(8))}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 let cachedUsers: any[] = [];
 let fetchUsersPromise: Promise<void> | null = null;
@@ -264,6 +361,28 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
         body: JSON.stringify({ responsible_id: userId, responsible_name: userName, responsible_avatar: userAvatar }),
       });
       onUpdate();
+    } catch { /* silent */ }
+  };
+
+  const handleTaskDate = async (field: 'start_date' | 'due_date', val: string) => {
+    try {
+      await fetch(`/api/onboarding-tasks/${task.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [field]: val }),
+      });
+      onUpdate();
+    } catch { /* silent */ }
+  };
+
+  const handleSubtaskDate = async (subId: number, field: 'start_date' | 'due_date', val: string) => {
+    setSubtasks(prev => prev.map(s => s.id === subId ? { ...s, [field]: val } : s));
+    try {
+      await fetch(`/api/onboarding-subtasks/${subId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [field]: val }),
+      });
     } catch { /* silent */ }
   };
 
@@ -409,12 +528,14 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
         </div>
 
         {/* Data Inicial */}
-        <div className="shrink-0 w-24 text-xs text-slate-400">
-          {task.start_date ? new Date(task.start_date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}
+        <div className="shrink-0 w-24 text-xs text-slate-400 font-medium">
+          <SingleDatePicker value={task.start_date || undefined} onChange={(v) => handleTaskDate('start_date', v)} align="left" />
         </div>
 
         {/* Data de vencimento */}
-        <div className="shrink-0 w-28">{formatDate(task.due_date)}</div>
+        <div className="shrink-0 w-28 text-xs text-slate-400 font-medium">
+          <SingleDatePicker value={task.due_date || undefined} onChange={(v) => handleTaskDate('due_date', v)} align="right" />
+        </div>
 
         {/* More — dropdown com Arquivar e Excluir */}
         <div className="relative shrink-0" ref={menuRef}>
@@ -524,8 +645,8 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
                   </div>
                   
                   <div className="shrink-0 w-24" />
-                  <div className="shrink-0 w-28 text-xs text-slate-500 text-left pl-2">
-                    {sub.due_date ? formatDate(sub.due_date) : '—'}
+                  <div className="shrink-0 w-28 text-xs text-slate-500 text-left pl-2 font-medium">
+                    <SingleDatePicker value={sub.due_date || undefined} onChange={(v) => handleSubtaskDate(sub.id, 'due_date', v)} align="right" />
                   </div>
                   <div className="shrink-0 w-[22px]" />
                 </div>
