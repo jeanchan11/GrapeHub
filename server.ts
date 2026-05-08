@@ -254,6 +254,7 @@ async function startServer() {
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS contracts TEXT;
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS crm_status TEXT;
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS product TEXT;
+      ALTER TABLE clients ADD COLUMN IF NOT EXISTS manager_id TEXT;
 
       CREATE TABLE IF NOT EXISTS crm_comments (
         id SERIAL PRIMARY KEY,
@@ -3040,7 +3041,8 @@ app.get("/api/todos", async (req, res) => {
           subscriptionCycle: row.subscription_cycle,
           finPeopleGuid: row.fin_people_guid_resolved || row.fin_people_guid,
           finSubscriptionId: row.fin_subscription_id,
-          subscriptionStatus: row.subscription_status || null
+          subscriptionStatus: row.subscription_status || null,
+          managerId: row.manager_id || null
         };
       });
       res.json(clients);
@@ -3227,7 +3229,7 @@ app.get("/api/todos", async (req, res) => {
 
   app.patch("/api/clients/:id", async (req, res) => {
     const { id } = req.params;
-    const { crm_status, status, aviso_previo_date, contracts, product, fin_people_guid, fin_subscription_id, tags } = req.body;
+    const { crm_status, status, aviso_previo_date, contracts, product, fin_people_guid, fin_subscription_id, tags, manager_id } = req.body;
     try {
       console.log(`[CLIENT PATCH] ID: ${id}, Body:`, req.body);
       // Check if crm_status is changing to 'processo_saida'
@@ -3290,6 +3292,10 @@ app.get("/api/todos", async (req, res) => {
         updates.push(`tags = $${i++}`);
         values.push(tags);
       }
+      if (manager_id !== undefined) {
+        updates.push(`manager_id = $${i++}`);
+        values.push(manager_id);
+      }
 
       if (updates.length > 0) {
         values.push(id);
@@ -3297,6 +3303,35 @@ app.get("/api/todos", async (req, res) => {
         console.log(`[CLIENT PATCH] Executing query: ${query} params:`, values);
         await pool.query(query, values);
         console.log(`[CLIENT PATCH] Successfully updated client ${id}`);
+      }
+
+      // Sync gestor to churn table when manager_id is updated
+      if (manager_id !== undefined) {
+        try {
+          // Fetch the client's name for the churn lookup
+          const clientRes = await pool.query(`SELECT name FROM clients WHERE id = $1`, [id]);
+          if (clientRes.rows.length > 0) {
+            const clientName = clientRes.rows[0].name;
+            let gestorName: string | null = null;
+
+            if (manager_id) {
+              // Resolve user name from manager_id
+              const userRes = await pool.query(`SELECT name FROM users WHERE id = $1`, [manager_id]);
+              if (userRes.rows.length > 0) {
+                gestorName = userRes.rows[0].name;
+              }
+            }
+
+            // Update all churn records for this client
+            const churnUpdate = await pool.query(
+              `UPDATE churn SET "gestor" = $1 WHERE "CLIENTE" = $2`,
+              [gestorName, clientName]
+            );
+            console.log(`[CLIENT PATCH] Synced gestor "${gestorName}" to ${churnUpdate.rowCount} churn record(s) for client "${clientName}"`);
+          }
+        } catch (churnErr) {
+          console.warn(`[CLIENT PATCH] Could not sync gestor to churn table:`, churnErr);
+        }
       }
 
       // Auto-link fin_people when fin_subscription_id is set/changed

@@ -36,6 +36,7 @@ interface Client {
   subscriptionBillingType?: string;
   subscriptionCycle?: string;
   finPeopleGuid?: string;
+  managerId?: string | null;
 }
 
 interface FinPerson {
@@ -74,6 +75,8 @@ const ActiveClients: React.FC = () => {
   const [projects, setProjects] = useState<any[]>([]);
   const [stats, setStats] = useState({ ativos: 0, tcv: 0, fee: 0, entradas: 0, churn: 0 });
   const [statsLoading, setStatsLoading] = useState(true);
+  const [managers, setManagers] = useState<{id: number; email: string; name: string}[]>([]);
+  const [managerDropdownId, setManagerDropdownId] = useState<string | null>(null);
 
   // Fetch clients
   const fetchClients = async () => {
@@ -277,6 +280,20 @@ const ActiveClients: React.FC = () => {
       }
     };
     fetchStats();
+
+    // Fetch managers (gestor de tráfego)
+    const fetchManagers = async () => {
+      try {
+        const res = await fetch('/api/users');
+        if (res.ok) {
+          const data = await res.json();
+          setManagers(data.filter((u: any) => u.role === 'gestor-trafego'));
+        }
+      } catch (err) {
+        console.error('Failed to fetch managers:', err);
+      }
+    };
+    fetchManagers();
   }, []);
 
   const handleOpenModal = (client: Client | null = null) => {
@@ -479,6 +496,11 @@ const ActiveClients: React.FC = () => {
         const av = a.hasActiveSubscription ? 1 : 0;
         const bv = b.hasActiveSubscription ? 1 : 0;
         return dir * (av - bv);
+      }
+      case 'manager': {
+        const am = a.managerId || '';
+        const bm = b.managerId || '';
+        return dir * am.localeCompare(bm);
       }
       default: return 0;
     }
@@ -718,13 +740,14 @@ const ActiveClients: React.FC = () => {
                 <SortHeader col="subscription" label="Assinatura" className="text-center" />
                 <SortHeader col="project" label="Projeto" className="text-center" />
                 <SortHeader col="contracts" label="Contratos" />
+                <SortHeader col="manager" label="Gestor" />
                 <th className="px-8 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-white/5">
               {isLoading ? (
                 <tr>
-                  <td colSpan={10} className="px-8 py-20 text-center">
+                  <td colSpan={11} className="px-8 py-20 text-center">
                     <div className="flex flex-col items-center gap-3">
                       <div className="w-10 h-10 border-4 border-violet-500/20 border-t-violet-500 rounded-full animate-spin"></div>
                       <p className="text-slate-500 font-medium">Carregando clientes...</p>
@@ -733,7 +756,7 @@ const ActiveClients: React.FC = () => {
                 </tr>
               ) : filteredClients.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-8 py-20 text-center">
+                  <td colSpan={11} className="px-8 py-20 text-center">
                     <div className="flex flex-col items-center gap-4">
                       <div className="w-16 h-16 bg-slate-100 dark:bg-white/5 rounded-full flex items-center justify-center text-slate-400">
                         <Users size={32} />
@@ -854,6 +877,56 @@ const ActiveClients: React.FC = () => {
                         >
                           <Plus size={14} />
                         </button>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                      <div className="relative">
+                        <button
+                          onClick={() => setManagerDropdownId(managerDropdownId === client.id ? null : client.id)}
+                          className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-bold transition-all border ${
+                            client.managerId
+                              ? 'bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-200 dark:border-violet-500/20 hover:bg-violet-100 dark:hover:bg-violet-500/20'
+                              : 'bg-slate-50 dark:bg-white/5 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-white/10 hover:border-violet-300 dark:hover:border-violet-500/30'
+                          }`}
+                        >
+                          {client.managerId
+                            ? (managers.find(m => String(m.id) === client.managerId)?.name || '—')
+                            : 'Definir'
+                          }
+                          <ChevronDown size={10} />
+                        </button>
+                        {managerDropdownId === client.id && (
+                          <>
+                            <div className="fixed inset-0 z-[90]" onClick={() => setManagerDropdownId(null)} />
+                            <div className="absolute top-full left-0 mt-1 z-[91] w-48 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl overflow-hidden">
+                              <button
+                                onClick={async () => {
+                                  await fetch(`/api/clients/${client.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ manager_id: null }) });
+                                  setClients(prev => prev.map(c => c.id === client.id ? { ...c, managerId: null } : c));
+                                  setManagerDropdownId(null);
+                                }}
+                                className="w-full text-left px-3 py-2 text-xs text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors"
+                              >
+                                Nenhum
+                              </button>
+                              {managers.map(m => (
+                                <button
+                                  key={m.id}
+                                  onClick={async () => {
+                                    await fetch(`/api/clients/${client.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ manager_id: String(m.id) }) });
+                                    setClients(prev => prev.map(c => c.id === client.id ? { ...c, managerId: String(m.id) } : c));
+                                    setManagerDropdownId(null);
+                                  }}
+                                  className={`w-full text-left px-3 py-2 text-xs font-medium hover:bg-violet-50 dark:hover:bg-violet-500/10 transition-colors ${
+                                    client.managerId === String(m.id) ? 'text-violet-600 dark:text-violet-400 bg-violet-50/50 dark:bg-violet-500/5' : 'text-slate-700 dark:text-slate-300'
+                                  }`}
+                                >
+                                  {m.name}
+                                </button>
+                              ))}
+                            </div>
+                          </>
+                        )}
                       </div>
                     </td>
                     <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
