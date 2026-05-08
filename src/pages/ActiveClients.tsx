@@ -8,7 +8,7 @@ import {
   Download, UserPlus, ArrowUpDown, FileText,
   Link as LinkIcon, Unlink, Check, ChevronDown,
   UserMinus, MessageSquare, AlertTriangle, ShieldAlert,
-  CreditCard, Package, RefreshCcw
+  CreditCard, Package, RefreshCcw, Upload
 } from 'lucide-react';
 
 import { PageHeader } from '../components/ui/PageHeader';
@@ -60,6 +60,9 @@ const ActiveClients: React.FC = () => {
   const [contractPreview, setContractPreview] = useState<{name: string, url: string} | null>(null);
   const contractInputRef = useRef<HTMLInputElement>(null);
   const [contractUploadClientId, setContractUploadClientId] = useState<string | null>(null);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadDragOver, setUploadDragOver] = useState(false);
+  const [pendingUploadFile, setPendingUploadFile] = useState<File | null>(null);
   const [sortBy, setSortBy] = useState<string>('name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
@@ -316,19 +319,16 @@ const ActiveClients: React.FC = () => {
     }
   };
 
-  const handleContractUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !contractUploadClientId) return;
-    
+  const handleContractUpload = async (file: File, clientId: string) => {
+    if (!file || !clientId) return;
     const reader = new FileReader();
     reader.onload = async () => {
       const base64 = reader.result as string;
-      const client = clients.find(c => c.id === contractUploadClientId);
+      const client = clients.find(c => c.id === clientId);
       const existing: {name: string, url: string}[] = (() => { try { return JSON.parse(client?.contracts || '[]'); } catch { return []; } })();
       existing.push({ name: file.name, url: base64 });
-      
       try {
-        await fetch(`/api/clients/${contractUploadClientId}`, {
+        await fetch(`/api/clients/${clientId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ contracts: JSON.stringify(existing) })
@@ -338,9 +338,10 @@ const ActiveClients: React.FC = () => {
         console.error('Failed to upload contract:', err);
       }
       setContractUploadClientId(null);
+      setShowUploadModal(false);
+      setPendingUploadFile(null);
     };
     reader.readAsDataURL(file);
-    e.target.value = '';
   };
 
   const handleToggleStatus = async (client: Client) => {
@@ -737,7 +738,6 @@ const ActiveClients: React.FC = () => {
                 <SortHeader col="squad" label="Squad" />
                 <SortHeader col="product" label="Produto" />
                 <SortHeader col="financial" label="Financeiro" className="text-center" />
-                <SortHeader col="subscription" label="Assinatura" className="text-center" />
                 <SortHeader col="project" label="Projeto" className="text-center" />
                 <SortHeader col="contracts" label="Contratos" />
                 <SortHeader col="manager" label="Gestor" />
@@ -747,7 +747,7 @@ const ActiveClients: React.FC = () => {
             <tbody className="divide-y divide-slate-200 dark:divide-white/5">
               {isLoading ? (
                 <tr>
-                  <td colSpan={11} className="px-8 py-20 text-center">
+                  <td colSpan={10} className="px-8 py-20 text-center">
                     <div className="flex flex-col items-center gap-3">
                       <div className="w-10 h-10 border-4 border-violet-500/20 border-t-violet-500 rounded-full animate-spin"></div>
                       <p className="text-slate-500 font-medium">Carregando clientes...</p>
@@ -756,7 +756,7 @@ const ActiveClients: React.FC = () => {
                 </tr>
               ) : filteredClients.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="px-8 py-20 text-center">
+                  <td colSpan={10} className="px-8 py-20 text-center">
                     <div className="flex flex-col items-center gap-4">
                       <div className="w-16 h-16 bg-slate-100 dark:bg-white/5 rounded-full flex items-center justify-center text-slate-400">
                         <Users size={32} />
@@ -811,37 +811,40 @@ const ActiveClients: React.FC = () => {
                       )}
                     </td>
                     <td className="px-4 py-3 text-center">
-                      <div className="flex justify-center" title={client.hasFinancialLink ? "Vinculado ao financeiro" : "Sem vínculo financeiro"}>
-                        {client.hasFinancialLink ? (
-                          <CheckCircle2 size={16} className="text-emerald-500" />
-                        ) : (
-                          <AlertCircle size={16} className="text-slate-300 dark:text-slate-600" />
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <div className="flex justify-center relative group/sub">
-                        {client.hasActiveSubscription ? (
-                          <>
-                            <CreditCard size={16} className="text-emerald-500" />
-                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover/sub:block z-50">
-                              <div className="bg-slate-900 dark:bg-slate-800 text-white text-[10px] rounded-xl px-3 py-2 whitespace-nowrap shadow-xl border border-white/10">
-                                <p className="font-bold text-emerald-400 mb-0.5">
-                                  R$ {client.subscriptionValue?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} / {client.subscriptionCycle === 'MONTHLY' ? 'mês' : client.subscriptionCycle === 'YEARLY' ? 'ano' : client.subscriptionCycle?.toLowerCase() || 'mês'}
-                                </p>
-                                {client.subscriptionNextDue && (
-                                  <p className="text-slate-300">Vence em {new Date(client.subscriptionNextDue + 'T12:00:00').toLocaleDateString('pt-BR')}</p>
-                                )}
-                                <p className="text-slate-400">
-                                  {client.subscriptionBillingType === 'BOLETO' ? 'Boleto' : client.subscriptionBillingType === 'CREDIT_CARD' ? 'Cartão' : client.subscriptionBillingType === 'PIX' ? 'Pix' : client.subscriptionBillingType || '-'}
-                                </p>
-                                <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-900 dark:border-t-slate-800" />
+                      <div className="flex items-center justify-center gap-1.5">
+                        {/* Financeiro icon */}
+                        <div title={client.hasFinancialLink ? "Vinculado ao financeiro" : "Sem vínculo financeiro"}>
+                          {client.hasFinancialLink ? (
+                            <CheckCircle2 size={15} className="text-emerald-500" />
+                          ) : (
+                            <AlertCircle size={15} className="text-slate-300 dark:text-slate-600" />
+                          )}
+                        </div>
+                        <span className="text-slate-400 dark:text-slate-600 text-[10px] font-bold select-none">/</span>
+                        {/* Assinatura icon */}
+                        <div className="relative group/sub">
+                          {client.hasActiveSubscription ? (
+                            <>
+                              <CreditCard size={15} className="text-emerald-500" />
+                              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover/sub:block z-50">
+                                <div className="bg-slate-900 dark:bg-slate-800 text-white text-[10px] rounded-xl px-3 py-2 whitespace-nowrap shadow-xl border border-white/10">
+                                  <p className="font-bold text-emerald-400 mb-0.5">
+                                    R$ {client.subscriptionValue?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} / {client.subscriptionCycle === 'MONTHLY' ? 'mês' : client.subscriptionCycle === 'YEARLY' ? 'ano' : client.subscriptionCycle?.toLowerCase() || 'mês'}
+                                  </p>
+                                  {client.subscriptionNextDue && (
+                                    <p className="text-slate-300">Vence em {new Date(client.subscriptionNextDue + 'T12:00:00').toLocaleDateString('pt-BR')}</p>
+                                  )}
+                                  <p className="text-slate-400">
+                                    {client.subscriptionBillingType === 'BOLETO' ? 'Boleto' : client.subscriptionBillingType === 'CREDIT_CARD' ? 'Cartão' : client.subscriptionBillingType === 'PIX' ? 'Pix' : client.subscriptionBillingType || '-'}
+                                  </p>
+                                  <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-900 dark:border-t-slate-800" />
+                                </div>
                               </div>
-                            </div>
-                          </>
-                        ) : (
-                          <CreditCard size={16} className="text-slate-300 dark:text-slate-600" />
-                        )}
+                            </>
+                          ) : (
+                            <CreditCard size={15} className="text-slate-300 dark:text-slate-600" />
+                          )}
+                        </div>
                       </div>
                     </td>
                     <td className="px-4 py-3 text-center">
@@ -870,7 +873,8 @@ const ActiveClients: React.FC = () => {
                         <button
                           onClick={() => {
                             setContractUploadClientId(client.id);
-                            contractInputRef.current?.click();
+                            setShowUploadModal(true);
+                            setPendingUploadFile(null);
                           }}
                           className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-white/5 flex items-center justify-center text-slate-400 hover:text-violet-500 hover:bg-violet-500/10 transition-colors"
                           title="Adicionar contrato"
@@ -958,8 +962,113 @@ const ActiveClients: React.FC = () => {
         type="file"
         accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
         className="hidden"
-        onChange={handleContractUpload}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) setPendingUploadFile(file);
+          e.target.value = '';
+        }}
       />
+
+      {/* Contract Upload Modal */}
+      <AnimatePresence>
+        {showUploadModal && (
+          <div className="fixed inset-0 z-[300] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => { setShowUploadModal(false); setPendingUploadFile(null); setContractUploadClientId(null); }}
+              className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.92, y: 16 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.92, y: 16 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+              className="relative bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-white/10 w-full max-w-md flex flex-col overflow-hidden z-10"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 pt-6 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-violet-500/10 flex items-center justify-center">
+                    <FileText size={20} className="text-violet-500" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-light-text dark:text-white text-sm">Adicionar Contrato</h3>
+                    <p className="text-[11px] text-slate-400">{clients.find(c => c.id === contractUploadClientId)?.name || ''}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => { setShowUploadModal(false); setPendingUploadFile(null); setContractUploadClientId(null); }}
+                  className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Drop Zone */}
+              <div className="px-6 pb-6">
+                <div
+                  onDragOver={(e) => { e.preventDefault(); setUploadDragOver(true); }}
+                  onDragLeave={() => setUploadDragOver(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setUploadDragOver(false);
+                    const file = e.dataTransfer.files?.[0];
+                    if (file) setPendingUploadFile(file);
+                  }}
+                  className={`border-2 border-dashed rounded-2xl p-8 flex flex-col items-center justify-center gap-3 transition-all cursor-pointer ${
+                    uploadDragOver
+                      ? 'border-violet-500 bg-violet-500/5'
+                      : pendingUploadFile
+                      ? 'border-emerald-500/50 bg-emerald-500/5'
+                      : 'border-slate-200 dark:border-white/10 hover:border-violet-400 hover:bg-violet-500/5'
+                  }`}
+                  onClick={() => contractInputRef.current?.click()}
+                >
+                  {pendingUploadFile ? (
+                    <>
+                      <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center">
+                        <FileText size={24} className="text-emerald-500" />
+                      </div>
+                      <p className="text-sm font-semibold text-light-text dark:text-white text-center">{pendingUploadFile.name}</p>
+                      <p className="text-[11px] text-slate-400">{(pendingUploadFile.size / 1024).toFixed(1)} KB • Clique para trocar</p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-white/5 flex items-center justify-center">
+                        <Upload size={24} className="text-slate-400" />
+                      </div>
+                      <div className="text-center">
+                        <p className="text-sm font-semibold text-light-text dark:text-white">Arraste o arquivo aqui</p>
+                        <p className="text-[11px] text-slate-400 mt-1">ou clique para selecionar do computador</p>
+                      </div>
+                      <p className="text-[10px] text-slate-300 dark:text-slate-600">PDF, DOC, DOCX, PNG, JPG</p>
+                    </>
+                  )}
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-3 mt-4">
+                  <button
+                    onClick={() => { setShowUploadModal(false); setPendingUploadFile(null); setContractUploadClientId(null); }}
+                    className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 text-sm font-semibold text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    disabled={!pendingUploadFile}
+                    onClick={() => { if (pendingUploadFile && contractUploadClientId) handleContractUpload(pendingUploadFile, contractUploadClientId); }}
+                    className="flex-1 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-bold hover:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-lg shadow-violet-500/20"
+                  >
+                    Enviar Contrato
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Actions Dropdown Menu (portal) */}
       {openMenuId && (() => {
@@ -1091,7 +1200,7 @@ const ActiveClients: React.FC = () => {
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9 }}
-              className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden"
+              className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 w-[95vw] h-[95vh] max-w-none flex flex-col overflow-hidden"
             >
               <div className="flex items-center justify-between p-5 border-b border-slate-200 dark:border-white/5">
                 <div className="flex items-center gap-2">
@@ -1108,13 +1217,13 @@ const ActiveClients: React.FC = () => {
                   </button>
                 </div>
               </div>
-              <div className="flex-1 min-h-[500px]">
+              <div className="flex-1 overflow-hidden bg-slate-100 dark:bg-slate-950/50">
                 {(() => {
                   const url = contractPreview.url || '';
                   const isPdf = url.startsWith('data:application/pdf') || url.toLowerCase().endsWith('.pdf');
                   const isImage = url.startsWith('data:image/') || /\.(png|jpg|jpeg|gif|webp)$/i.test(url);
-                  if (isPdf) return <iframe src={url} className="w-full h-full min-h-[500px]" title="Contrato" />;
-                  if (isImage) return <img src={url} alt="Contrato" className="max-w-full max-h-[500px] object-contain mx-auto p-4" />;
+                  if (isPdf) return <iframe src={url} className="w-full h-full border-none" title="Contrato" />;
+                  if (isImage) return <img src={url} alt="Contrato" className="max-w-full h-full object-contain mx-auto p-4" />;
                   if (url) return (
                     <div className="flex flex-col items-center justify-center h-full gap-4 p-8 min-h-[300px]">
                       <FileText size={48} className="text-slate-300 dark:text-slate-600" />

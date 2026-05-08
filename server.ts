@@ -186,6 +186,10 @@ async function startServer() {
 
       ALTER TABLE churn ADD COLUMN IF NOT EXISTS comments TEXT;
 
+      -- Checklist block support
+      ALTER TABLE crm_checklist ADD COLUMN IF NOT EXISTS block TEXT DEFAULT 'diretoria';
+      ALTER TABLE crm_checklist_template ADD COLUMN IF NOT EXISTS block TEXT DEFAULT 'diretoria';
+
       CREATE TABLE IF NOT EXISTS products (
         id TEXT PRIMARY KEY,
         project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
@@ -3003,7 +3007,13 @@ app.get("/api/todos", async (req, res) => {
           fs.cycle as subscription_cycle,
           fs.status as subscription_status
         FROM clients c
-        LEFT JOIN fin_people fp_link ON fp_link.grapehub_client_id = c.id
+        LEFT JOIN LATERAL (
+          SELECT fp.id, fp.guid, fp.asaas_id, fp.grapehub_client_id
+          FROM fin_people fp
+          WHERE fp.grapehub_client_id = c.id
+             OR (c.fin_people_guid IS NOT NULL AND fp.guid = c.fin_people_guid)
+          LIMIT 1
+        ) fp_link ON true
         LEFT JOIN fin_subscriptions fs ON 
           (c.fin_subscription_id IS NOT NULL AND fs.id::text = c.fin_subscription_id) OR
           (c.fin_subscription_id IS NULL AND fs.customer_id = fp_link.asaas_id AND fs.status = 'ACTIVE')
@@ -3493,11 +3503,11 @@ app.get("/api/todos", async (req, res) => {
   });
 
   app.post("/api/crm-checklist-template", async (req, res) => {
-    const { item, order_index } = req.body;
+    const { item, order_index, block } = req.body;
     try {
       const result = await pool.query(
-        "INSERT INTO crm_checklist_template (item, order_index) VALUES ($1, $2) RETURNING *",
-        [item, order_index]
+        "INSERT INTO crm_checklist_template (item, order_index, block) VALUES ($1, $2, $3) RETURNING *",
+        [item, order_index, block || 'diretoria']
       );
       res.json(result.rows[0]);
     } catch (err) {
@@ -3608,11 +3618,11 @@ app.get("/api/todos", async (req, res) => {
   });
 
   app.post("/api/crm-checklist", async (req, res) => {
-    const { client_id, item } = req.body;
+    const { client_id, item, block } = req.body;
     try {
       const result = await pool.query(
-        "INSERT INTO crm_checklist (client_id, item) VALUES ($1, $2) RETURNING *",
-        [client_id, item]
+        "INSERT INTO crm_checklist (client_id, item, block) VALUES ($1, $2, $3) RETURNING *",
+        [client_id, item, block || 'diretoria']
       );
       res.json(result.rows[0]);
     } catch (err) {
@@ -3623,12 +3633,19 @@ app.get("/api/todos", async (req, res) => {
 
   app.patch("/api/crm-checklist/:id", async (req, res) => {
     const { id } = req.params;
-    const { completed, completed_by, completed_at } = req.body;
+    const { completed, completed_by, completed_at, block, item } = req.body;
     try {
-      const result = await pool.query(
-        "UPDATE crm_checklist SET completed = $1, completed_by = $2, completed_at = $3 WHERE id = $4 RETURNING *",
-        [completed, completed_by, completed_at, id]
-      );
+      const updates: string[] = [];
+      const values: any[] = [];
+      let p = 1;
+      if (completed !== undefined) { updates.push(`completed = $${p++}`); values.push(completed); }
+      if (completed_by !== undefined) { updates.push(`completed_by = $${p++}`); values.push(completed_by); }
+      if (completed_at !== undefined) { updates.push(`completed_at = $${p++}`); values.push(completed_at); }
+      if (block !== undefined) { updates.push(`block = $${p++}`); values.push(block); }
+      if (item !== undefined) { updates.push(`item = $${p++}`); values.push(item); }
+      if (updates.length === 0) return res.status(400).json({ error: 'No fields' });
+      values.push(id);
+      const result = await pool.query(`UPDATE crm_checklist SET ${updates.join(', ')} WHERE id = $${p} RETURNING *`, values);
       res.json(result.rows[0]);
     } catch (err) {
       console.error("Error updating crm_checklist item:", err);
@@ -5228,6 +5245,51 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
+  // ── Inadimplentes: todos os clientes com cobranças em aberto (OVERDUE) ──
+  app.get("/api/fin/inadimplentes", async (req, res) => {
+    try {
+      const result = await pool.query(`
+        SELECT
+          r.customer_id,
+          COALESCE(p.name, r.customer_name) AS customer_name,
+          p.phone,
+          p.cnpjcpf,
+          p.email,
+          -- Link GrapeHub client if any
+          c.id AS client_id,
+          c.name AS client_name_internal,
+          c.squad,
+          -- Aggregated data
+          COUNT(r.id) AS total_charges,
+          SUM(r.value::numeric) AS total_value,
+          MIN(r.due_date) AS oldest_due_date,
+          MAX(r.due_date) AS latest_due_date,
+          (CURRENT_DATE - MIN(r.due_date)) AS max_days_overdue,
+          -- Raw charges as JSON
+          json_agg(json_build_object(
+            'id', r.id,
+            'asaas_id', r.asaas_id,
+            'value', r.value,
+            'due_date', r.due_date,
+            'billing_type', r.billing_type,
+            'status', r.status,
+            'description', r.description,
+            'invoice_url', r.invoice_url
+          ) ORDER BY r.due_date ASC) AS charges
+        FROM fin_receivables r
+        LEFT JOIN fin_people p ON p.asaas_id = r.customer_id
+        LEFT JOIN clients c ON c.id = p.grapehub_client_id
+        WHERE r.status = 'OVERDUE'
+        GROUP BY r.customer_id, p.name, r.customer_name, p.phone, p.cnpjcpf, p.email, c.id, c.name, c.squad
+        ORDER BY max_days_overdue DESC, total_value DESC
+      `);
+      res.json(result.rows);
+    } catch (err) {
+      console.error("Error fetching inadimplentes:", err);
+      res.status(500).json({ error: "Failed to fetch inadimplentes" });
+    }
+  });
+
   // Receitas do mês (fin_receivables)
   app.get("/api/financeiro/receitas", async (req, res) => {
     try {
@@ -6278,11 +6340,13 @@ app.get("/api/todos", async (req, res) => {
   app.get("/api/fin-people", async (req, res) => {
     try {
       const result = await pool.query(`
-        SELECT DISTINCT ON (UPPER(TRIM(REGEXP_REPLACE(name, '^[^a-zA-ZÀ-ÿ]+', '', 'g'))))
-          id, guid, name, cnpjcpf, grapehub_client_id, asaas_id 
-        FROM fin_people 
-        WHERE is_client = true AND asaas_id IS NOT NULL
-        ORDER BY UPPER(TRIM(REGEXP_REPLACE(name, '^[^a-zA-ZÀ-ÿ]+', '', 'g'))), LENGTH(cnpjcpf) DESC
+        SELECT DISTINCT ON (UPPER(TRIM(REGEXP_REPLACE(fp.name, '^[^a-zA-ZÀ-ÿ]+', '', 'g'))))
+          fp.id, fp.guid, fp.name, fp.cnpjcpf, fp.grapehub_client_id, fp.asaas_id,
+          c.name as linked_client_name
+        FROM fin_people fp
+        LEFT JOIN clients c ON c.id = fp.grapehub_client_id OR (c.fin_people_guid IS NOT NULL AND c.fin_people_guid = fp.guid)
+        WHERE fp.is_client = true AND fp.asaas_id IS NOT NULL
+        ORDER BY UPPER(TRIM(REGEXP_REPLACE(fp.name, '^[^a-zA-ZÀ-ÿ]+', '', 'g'))), LENGTH(fp.cnpjcpf) DESC
       `);
       res.json(result.rows);
     } catch (err) {

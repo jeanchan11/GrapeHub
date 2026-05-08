@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Clock, CreditCard, Zap, FileText, ExternalLink, Settings, AlertTriangle, Pause, Play, Check, X, ShieldAlert, Activity, CheckCircle2, Send, Settings2, Search, TrendingUp, Banknote, BarChart2, MessageCircle, Copy } from 'lucide-react';
+import { Calendar, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Clock, CreditCard, Zap, FileText, ExternalLink, Settings, AlertTriangle, Pause, Play, Check, X, ShieldAlert, Activity, CheckCircle2, Send, Settings2, Search, TrendingUp, Banknote, BarChart2, MessageCircle, Copy, Phone, Mail, Users, DollarSign, Filter, RefreshCw } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────
 interface InvoiceItem {
@@ -909,6 +909,345 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
   );
 };
 
+// ── InadimplentesBlock ─────────────────────────────────
+interface InadimplentesCharge {
+  id: number;
+  asaas_id: string;
+  value: string;
+  due_date: string;
+  billing_type: string;
+  status: string;
+  description: string | null;
+  invoice_url: string | null;
+}
+
+interface InadimplentesClient {
+  customer_id: string;
+  customer_name: string | null;
+  phone: string | null;
+  cnpjcpf: string | null;
+  email: string | null;
+  client_id: string | null;
+  client_name_internal: string | null;
+  squad: string | null;
+  total_charges: number;
+  total_value: string;
+  oldest_due_date: string;
+  latest_due_date: string;
+  max_days_overdue: number;
+  charges: InadimplentesCharge[];
+}
+
+const getDaysColor = (days: number) => {
+  if (days >= 30) return { bg: 'bg-rose-500/20', text: 'text-rose-400', border: 'border-rose-500/30' };
+  if (days >= 15) return { bg: 'bg-orange-500/20', text: 'text-orange-400', border: 'border-orange-500/30' };
+  return { bg: 'bg-amber-500/20', text: 'text-amber-400', border: 'border-amber-500/30' };
+};
+
+const getWhatsAppMessage = (client: InadimplentesClient) => {
+  const totalStr = parseFloat(client.total_value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const dias = client.max_days_overdue;
+  const name = client.customer_name?.split(' ')[0] || 'Cliente';
+  return encodeURIComponent(
+    `Olá ${name}, tudo bem? 👋\n\nIdentificamos que há ${client.total_charges} cobrança(s) em aberto no total de *${totalStr}*, com atraso de ${dias} dia(s).\n\nPodemos verificar juntos para regularizar essa situação? Estamos à disposição para ajudar! 🤝`
+  );
+};
+
+const InadimplentesBlock = () => {
+  const [clients, setClients] = useState<InadimplentesClient[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<'days' | 'value' | 'charges'>('days');
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/fin/inadimplentes');
+      if (res.ok) setClients(await res.json());
+    } catch (err) {
+      console.error('Error fetching inadimplentes:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchData(); }, []);
+
+  const filtered = clients
+    .filter(c => !search || c.customer_name?.toLowerCase().includes(search.toLowerCase()) || c.phone?.includes(search))
+    .sort((a, b) => {
+      if (sortBy === 'days') return (b.max_days_overdue || 0) - (a.max_days_overdue || 0);
+      if (sortBy === 'value') return parseFloat(b.total_value) - parseFloat(a.total_value);
+      return Number(b.total_charges) - Number(a.total_charges);
+    });
+
+  const totalAmount = clients.reduce((s, c) => s + parseFloat(c.total_value || '0'), 0);
+  const avgDays = clients.length > 0 ? Math.round(clients.reduce((s, c) => s + (c.max_days_overdue || 0), 0) / clients.length) : 0;
+  const criticalCount = clients.filter(c => c.max_days_overdue >= 30).length;
+
+  const copyWhatsAppMsg = (client: InadimplentesClient) => {
+    const msg = decodeURIComponent(getWhatsAppMessage(client));
+    navigator.clipboard.writeText(msg);
+    setCopiedId(client.customer_id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-24">
+      <div className="w-8 h-8 border-4 border-rose-500/30 border-t-rose-500 rounded-full animate-spin" />
+    </div>
+  );
+
+  return (
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-dark-card border border-rose-500/20 rounded-2xl p-5 flex flex-col">
+          <div className="flex items-center justify-between mb-3">
+            <div className="p-2 rounded-xl bg-rose-500/10"><Users size={16} className="text-rose-400" /></div>
+            <span className="text-[10px] font-bold text-rose-400 uppercase tracking-widest">Inadimplentes</span>
+          </div>
+          <p className="text-3xl font-black text-rose-400">{clients.length}</p>
+          <p className="text-xs text-slate-500 mt-1">clientes com atraso</p>
+        </div>
+
+        <div className="bg-dark-card border border-orange-500/20 rounded-2xl p-5 flex flex-col">
+          <div className="flex items-center justify-between mb-3">
+            <div className="p-2 rounded-xl bg-orange-500/10"><DollarSign size={16} className="text-orange-400" /></div>
+            <span className="text-[10px] font-bold text-orange-400 uppercase tracking-widest">Total Em Risco</span>
+          </div>
+          <p className="text-3xl font-black text-orange-400">{formatCurrency(totalAmount)}</p>
+          <p className="text-xs text-slate-500 mt-1">em cobranças abertas</p>
+        </div>
+
+        <div className="bg-dark-card border border-amber-500/20 rounded-2xl p-5 flex flex-col">
+          <div className="flex items-center justify-between mb-3">
+            <div className="p-2 rounded-xl bg-amber-500/10"><Clock size={16} className="text-amber-400" /></div>
+            <span className="text-[10px] font-bold text-amber-400 uppercase tracking-widest">Média De Atraso</span>
+          </div>
+          <p className="text-3xl font-black text-amber-400">{avgDays}d</p>
+          <p className="text-xs text-slate-500 mt-1">dias em média</p>
+        </div>
+
+        <div className="bg-dark-card border border-rose-600/30 rounded-2xl p-5 flex flex-col">
+          <div className="flex items-center justify-between mb-3">
+            <div className="p-2 rounded-xl bg-rose-600/10"><AlertTriangle size={16} className="text-rose-500" /></div>
+            <span className="text-[10px] font-bold text-rose-500 uppercase tracking-widest">Críticos +30d</span>
+          </div>
+          <p className="text-3xl font-black text-rose-500">{criticalCount}</p>
+          <p className="text-xs text-slate-500 mt-1">clientes críticos</p>
+        </div>
+      </div>
+
+      {/* Toolbar */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Buscar cliente ou telefone..."
+            className="w-full pl-9 pr-4 py-2 bg-dark-card border border-white/10 rounded-xl text-sm text-dark-text focus:outline-none focus:border-rose-500/50 focus:ring-1 focus:ring-rose-500/20"
+          />
+        </div>
+        <div className="flex items-center gap-1 bg-dark-card border border-white/10 rounded-xl p-1">
+          {([['days', 'Atraso'], ['value', 'Valor'], ['charges', 'Cobranças']] as const).map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setSortBy(key)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${sortBy === key ? 'bg-rose-500/20 text-rose-400' : 'text-slate-400 hover:text-white'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={fetchData}
+          className="flex items-center gap-2 px-3 py-2 bg-dark-card border border-white/10 rounded-xl text-xs font-bold text-slate-400 hover:text-white hover:border-white/20 transition-all"
+        >
+          <RefreshCw size={13} />
+          Atualizar
+        </button>
+      </div>
+
+      {/* Clients List */}
+      <div className="bg-dark-card border border-white/10 rounded-2xl overflow-hidden">
+        {filtered.length === 0 ? (
+          <div className="py-20 text-center">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-emerald-500/10 flex items-center justify-center">
+              <CheckCircle2 size={28} className="text-emerald-400" />
+            </div>
+            <p className="text-lg font-bold text-dark-text mb-1">Nenhum inadimplente!</p>
+            <p className="text-sm text-slate-500">Todos os clientes estão em dia com os pagamentos.</p>
+          </div>
+        ) : (
+          <>
+            {/* Table Header */}
+            <div className="grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 px-5 py-3 bg-dark-bg/50 border-b border-white/5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+              <span>Cliente</span>
+              <span>Cobranças</span>
+              <span>Total Em Aberto</span>
+              <span>Atraso</span>
+              <span className="w-24 text-center">Ações</span>
+            </div>
+
+            {/* Rows */}
+            <div className="divide-y divide-white/5">
+              {filtered.map(client => {
+                const daysColor = getDaysColor(client.max_days_overdue || 0);
+                const isExpanded = expandedId === client.customer_id;
+                const waMsg = getWhatsAppMessage(client);
+                const phone = client.phone?.replace(/\D/g, '');
+                const waUrl = phone ? `https://wa.me/55${phone}?text=${waMsg}` : null;
+
+                return (
+                  <div key={client.customer_id}>
+                    {/* Main Row */}
+                    <div
+                      className="grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 px-5 py-4 hover:bg-white/[0.02] transition-colors cursor-pointer items-center"
+                      onClick={() => setExpandedId(isExpanded ? null : client.customer_id)}
+                    >
+                      {/* Client Info */}
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-sm shrink-0 ${daysColor.bg} ${daysColor.text}`}>
+                          {(client.customer_name || 'X').charAt(0).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-dark-text truncate">{client.customer_name || 'Desconhecido'}</p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            {client.phone && (
+                              <span className="text-[10px] text-slate-500 flex items-center gap-1">
+                                <Phone size={9} /> {client.phone}
+                              </span>
+                            )}
+                            {client.squad && (
+                              <span className="text-[10px] text-violet-400 bg-violet-500/10 px-1.5 py-0.5 rounded-full">
+                                {client.squad}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Total Charges */}
+                      <div>
+                        <span className={`text-xs font-bold ${daysColor.text} ${daysColor.bg} border ${daysColor.border} px-2 py-1 rounded-full`}>
+                          {client.total_charges} {Number(client.total_charges) === 1 ? 'cobrança' : 'cobranças'}
+                        </span>
+                      </div>
+
+                      {/* Total Value */}
+                      <div>
+                        <p className="text-sm font-black text-rose-400">{formatCurrency(client.total_value)}</p>
+                        <p className="text-[10px] text-slate-500">Desde {fmtDate(client.oldest_due_date)}</p>
+                      </div>
+
+                      {/* Days Overdue */}
+                      <div>
+                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-black border ${daysColor.bg} ${daysColor.text} ${daysColor.border}`}>
+                          <Clock size={10} />
+                          {client.max_days_overdue}d de atraso
+                        </span>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex items-center gap-2 w-24 justify-end" onClick={e => e.stopPropagation()}>
+                        {waUrl && (
+                          <a
+                            href={waUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="Abrir WhatsApp"
+                            className="flex items-center gap-1 px-2 py-1.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 rounded-lg text-[10px] font-bold transition-all"
+                          >
+                            <MessageCircle size={11} /> WA
+                          </a>
+                        )}
+                        <button
+                          onClick={() => copyWhatsAppMsg(client)}
+                          title="Copiar mensagem"
+                          className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all border ${
+                            copiedId === client.customer_id
+                              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                              : 'bg-white/5 border-white/10 text-slate-400 hover:text-white hover:border-white/20'
+                          }`}
+                        >
+                          {copiedId === client.customer_id ? <Check size={11} /> : <Copy size={11} />}
+                        </button>
+                        <button className={`transition-colors ${isExpanded ? 'text-rose-400' : 'text-slate-500'}`}>
+                          {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Expanded: Charge Detail */}
+                    {isExpanded && (
+                      <div className="bg-dark-bg/50 border-t border-white/5 px-5 py-4">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Cobranças em Aberto</p>
+                        <div className="space-y-2">
+                          {client.charges.map((charge, idx) => {
+                            const bt = BILLING_LABELS[charge.billing_type] || BILLING_LABELS['UNDEFINED'];
+                            const daysLate = Math.floor((Date.now() - new Date(charge.due_date).getTime()) / (1000 * 60 * 60 * 24));
+                            const c = getDaysColor(daysLate);
+                            return (
+                              <div key={idx} className="flex items-center justify-between p-3 bg-dark-card rounded-xl border border-white/5 hover:border-white/10 transition-all">
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <span className="text-lg">{bt.icon}</span>
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-bold text-dark-text truncate max-w-[300px]">{charge.description || 'Cobrança'}</p>
+                                    <p className="text-[10px] text-slate-500">Venceu em {fmtDate(charge.due_date)}</p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-3 shrink-0">
+                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${c.bg} ${c.text} ${c.border}`}>
+                                    {daysLate}d atraso
+                                  </span>
+                                  <span className="text-sm font-black text-rose-400">{formatCurrency(charge.value)}</span>
+                                  {charge.invoice_url && (
+                                    <a
+                                      href={charge.invoice_url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="flex items-center gap-1 px-2 py-1 bg-violet-500/10 border border-violet-500/20 text-violet-400 hover:bg-violet-500/20 rounded-lg text-[10px] font-bold transition-all"
+                                    >
+                                      <ExternalLink size={10} /> Ver Fatura
+                                    </a>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {client.email && (
+                          <div className="mt-3 flex items-center gap-2 text-xs text-slate-500">
+                            <Mail size={12} />
+                            <span>{client.email}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Footer summary */}
+      {filtered.length > 0 && (
+        <div className="flex items-center justify-between px-2 text-xs text-slate-500">
+          <span>{filtered.length} cliente(s) com cobranças em atraso</span>
+          <span className="font-bold text-rose-400">Total: {formatCurrency(totalAmount)}</span>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ── Main Component ───────────────────────────────────
 export default function ContasAReceber() {
   const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().slice(0, 7));
@@ -1019,7 +1358,7 @@ export default function ContasAReceber() {
     date: item.transaction_date,
     value: Math.abs(parseFloat(item.value || '0')),
   }));
-  const [mainTab, setMainTab] = useState<'receber' | 'cobrancas'>('receber');
+  const [mainTab, setMainTab] = useState<'receber' | 'cobrancas' | 'inadimplentes'>('receber');
   const [receberSubTab, setReceberSubTab] = useState<'pendentes' | 'recebidos'>('pendentes');
 
   return (
@@ -1065,6 +1404,13 @@ export default function ContasAReceber() {
           className={`px-5 py-3 text-sm font-bold border-b-2 transition-colors ${mainTab === 'cobrancas' ? 'border-violet-500 text-violet-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
         >
           Cobranças
+        </button>
+        <button
+          onClick={() => setMainTab('inadimplentes')}
+          className={`px-5 py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${mainTab === 'inadimplentes' ? 'border-rose-500 text-rose-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
+        >
+          <span>Inadimplentes</span>
+          {vencidos.length > 0 && <span className="text-[10px] font-black bg-rose-500/20 text-rose-400 border border-rose-500/30 px-1.5 py-0.5 rounded-full">{vencidos.length}</span>}
         </button>
       </div>
 
@@ -1265,6 +1611,11 @@ export default function ContasAReceber() {
             {/* ══ Tab: Cobranças ══ */}
             {mainTab === 'cobrancas' && (
               <CollectionRulesBlock selectedMonth={selectedMonth} />
+            )}
+
+            {/* ══ Tab: Inadimplentes ══ */}
+            {mainTab === 'inadimplentes' && (
+              <InadimplentesBlock />
             )}
           </>
         )}

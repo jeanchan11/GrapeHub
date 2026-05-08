@@ -40,6 +40,7 @@ interface FinPerson {
   cnpjcpf: string;
   grapehub_client_id: string | null;
   asaas_id: string | null;
+  linked_client_name: string | null;
 }
 
 interface FinMovement {
@@ -70,6 +71,8 @@ interface ClientModalProps {
 
 const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientModalProps) => {
   const [activeTab, setActiveTab] = useState<'client' | 'finance' | 'churn'>('client');
+  const [finSubTab, setFinSubTab] = useState<'cadastro' | 'assinatura'>('cadastro');
+  const finSearchRef = React.useRef<HTMLDivElement>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [isEditingChurn, setIsEditingChurn] = useState(false);
@@ -95,9 +98,15 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
   // Finance state
   const [finPeople, setFinPeople] = useState<FinPerson[]>([]);
   const [selectedFinPersonId, setSelectedFinPersonId] = useState<string | null>(null);
+  const [localFinPeopleGuid, setLocalFinPeopleGuid] = useState<string | null>(null);
   const [finMovements, setFinMovements] = useState<FinMovement[]>([]);
   const [isFetchingMovements, setIsFetchingMovements] = useState(false);
   
+  // Fin people search
+  const [finPeopleSearch, setFinPeopleSearch] = useState('');
+  const [isFinPeopleDropOpen, setIsFinPeopleDropOpen] = useState(false);
+  const [isSavingFinPerson, setIsSavingFinPerson] = useState(false);
+
   // Subscription state — single dropdown for all subscriptions
   const [allSubscriptions, setAllSubscriptions] = useState<(FinSubscription & { customer_name?: string; customer_cnpjcpf?: string; grapehub_client_id?: string })[]>([]);
   const [subSearchQuery, setSubSearchQuery] = useState('');
@@ -135,9 +144,13 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
       });
     }
     setActiveTab('client');
+    setFinSubTab('cadastro');
     setChurnData(null);
     setIsEditing(!editingClient);
     setIsEditingChurn(false);
+    // Reset local fin_people link from the current client
+    setLocalFinPeopleGuid(editingClient?.finPeopleGuid || null);
+    setSelectedFinPersonId(null);
   }, [editingClient, isOpen]);
 
   // Fetch churn data when switching to churn tab
@@ -169,14 +182,19 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
   }, [isOpen]);
 
   useEffect(() => {
-    if (editingClient && finPeople.length > 0) {
-      const linked = finPeople.find(p => p.grapehub_client_id === editingClient.id);
-      if (linked) setSelectedFinPersonId(linked.id);
-      else setSelectedFinPersonId(null);
-    } else if (!editingClient) {
-      setSelectedFinPersonId(null);
+    if (finPeople.length > 0) {
+      if (localFinPeopleGuid) {
+        const linked = finPeople.find(p => p.guid === localFinPeopleGuid);
+        setSelectedFinPersonId(linked ? String(linked.id) : null);
+      } else if (editingClient && !localFinPeopleGuid) {
+        // Fallback: search by grapehub_client_id for backward compat
+        const linked = finPeople.find(p => p.grapehub_client_id === editingClient.id);
+        setSelectedFinPersonId(linked ? String(linked.id) : null);
+      } else {
+        setSelectedFinPersonId(null);
+      }
     }
-  }, [editingClient, finPeople]);
+  }, [finPeople, localFinPeopleGuid]);
 
   // Fetch ALL subscriptions for the dropdown
   useEffect(() => {
@@ -246,17 +264,44 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fin_subscription_id: subId })
       });
-      // Refresh fin_people to get updated grapehub_client_id linkage
+      onSaveSuccess();
+    } catch (err) {
+      console.error("Failed to save subscription link:", err);
+    }
+  };
+
+  const saveFinPerson = async (personId: string | null) => {
+    if (!editingClient) return;
+    setIsSavingFinPerson(true);
+    try {
+      // Resolve the actual guid (UUID) from the numeric id
+      const person = personId ? finPeople.find(p => String(p.id) === String(personId)) : null;
+      const guidToSave = person?.guid || null;
+
+      // Update local guid state immediately (prevents useEffect from restoring old link)
+      setLocalFinPeopleGuid(guidToSave);
+
+      // Save link on the client side (allows multiple clients per fin_people)
+      await fetch(`/api/clients/${editingClient.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fin_people_guid: guidToSave })
+      });
+
+      // Refresh fin_people list and update state
       const fpRes = await fetch('/api/fin-people');
       if (fpRes.ok) {
         const fpData = await fpRes.json();
         setFinPeople(fpData);
-        const linked = fpData.find((p: FinPerson) => p.grapehub_client_id === editingClient.id);
-        setSelectedFinPersonId(linked ? linked.id : null);
+        setSelectedFinPersonId(personId);
       }
+      setIsFinPeopleDropOpen(false);
+      setFinPeopleSearch('');
       onSaveSuccess();
     } catch (err) {
-      console.error("Failed to save subscription link:", err);
+      console.error('Failed to link fin person:', err);
+    } finally {
+      setIsSavingFinPerson(false);
     }
   };
 
@@ -495,15 +540,139 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
             )
           )}
           {activeTab === 'finance' && (
-                  <div className="space-y-8">
-                    {/* Seção 1 - Vincular Assinatura */}
-                    <div className="space-y-4">
-                      <div className="flex items-center gap-2">
-                        <CreditCard size={16} className="text-violet-500" />
-                        <h3 className="text-sm font-bold text-light-text dark:text-white uppercase tracking-widest">Assinatura Financeira</h3>
+            <div className="space-y-4">
+              {/* Sub-tabs */}
+              <div className="flex gap-1 p-1 bg-slate-100 dark:bg-white/5 rounded-xl">
+                <button
+                  onClick={() => setFinSubTab('cadastro')}
+                  className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
+                    finSubTab === 'cadastro'
+                      ? 'bg-white dark:bg-white/10 text-violet-600 dark:text-violet-400 shadow-sm'
+                      : 'text-slate-500 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  Cadastro
+                </button>
+                <button
+                  onClick={() => setFinSubTab('assinatura')}
+                  className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
+                    finSubTab === 'assinatura'
+                      ? 'bg-white dark:bg-white/10 text-violet-600 dark:text-violet-400 shadow-sm'
+                      : 'text-slate-500 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  Assinatura
+                </button>
+              </div>
+
+              {/* ── CADASTRO sub-tab ── */}
+              {finSubTab === 'cadastro' && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <LinkIcon size={16} className="text-violet-500" />
+                    <h3 className="text-sm font-bold text-light-text dark:text-white uppercase tracking-widest">Cadastro Financeiro</h3>
+                  </div>
+                  <p className="text-[11px] text-slate-500">Vincule o cadastro do cliente no sistema financeiro (Asaas).</p>
+
+                  {/* Current linked person */}
+                  {selectedFinPersonId ? (() => {
+                    const person = finPeople.find(p => String(p.id) === String(selectedFinPersonId));
+                    return (
+                      <div className="flex items-center gap-3 p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-2xl">
+                        <CheckCircle2 size={20} className="text-emerald-500 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-light-text dark:text-white truncate">{person?.name || 'Cadastro vinculado'}</p>
+                          <p className="text-[10px] text-slate-500">{person?.cnpjcpf || person?.asaas_id || ''}</p>
+                        </div>
+                        <button
+                          onClick={() => saveFinPerson(null)}
+                          className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-lg text-xs font-bold flex items-center gap-1.5 border border-rose-500/20 transition-all"
+                        >
+                          <Unlink size={13} /> Desvincular
+                        </button>
                       </div>
-                      
-                      <div className={`space-y-2 relative ${isSubDropdownOpen ? 'pb-[320px]' : ''}`}>
+                    );
+                  })() : (
+                    <div className="p-4 bg-amber-500/5 border border-amber-500/20 rounded-2xl flex items-center gap-3">
+                      <AlertCircle size={18} className="text-amber-500 shrink-0" />
+                      <p className="text-xs text-amber-600 dark:text-amber-400">Nenhum cadastro financeiro vinculado.</p>
+                    </div>
+                  )}
+
+                  {/* Search & link */}
+                  <div className="relative">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Buscar e vincular cadastro</label>
+                    <div className="relative" ref={finSearchRef}>
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                      <input
+                        type="text"
+                        value={finPeopleSearch}
+                        onChange={e => { setFinPeopleSearch(e.target.value); setIsFinPeopleDropOpen(true); }}
+                        onFocus={() => setIsFinPeopleDropOpen(true)}
+                        placeholder="Buscar por nome ou CNPJ/CPF..."
+                        className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl pl-10 pr-4 py-3 text-sm text-light-text dark:text-white placeholder:text-slate-400 outline-none focus:border-violet-500/50 transition-all"
+                      />
+                    </div>
+                    {isFinPeopleDropOpen && finPeopleSearch.length > 0 && (() => {
+                      const rect = finSearchRef.current?.getBoundingClientRect();
+                      return (
+                        <>
+                          <div className="fixed inset-0 z-[200]" onClick={() => setIsFinPeopleDropOpen(false)} />
+                          <div
+                            className="fixed z-[201] bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl max-h-[260px] overflow-y-auto"
+                            style={rect ? { top: rect.bottom + 4, left: rect.left, width: rect.width } : {}}
+                          >
+                            {finPeople
+                              .filter(p =>
+                                (p.name || '').toLowerCase().includes(finPeopleSearch.toLowerCase()) ||
+                                (p.cnpjcpf || '').includes(finPeopleSearch)
+                              )
+                              .slice(0, 20)
+                              .map(person => (
+                                <button
+                                  key={person.id}
+                                  type="button"
+                                  onClick={() => { saveFinPerson(person.id); setIsFinPeopleDropOpen(false); }}
+                                  disabled={isSavingFinPerson}
+                                  className={`w-full text-left px-4 py-3 hover:bg-violet-500/5 transition-colors flex items-center justify-between gap-2 ${
+                                    selectedFinPersonId === person.id ? 'bg-violet-500/10' : ''
+                                  }`}
+                                >
+                                  <div>
+                                    <p className="text-sm font-bold text-light-text dark:text-white">{person.name}</p>
+                                    <p className="text-[10px] text-slate-500">{person.cnpjcpf || person.asaas_id || '-'}</p>
+                                  </div>
+                                  {selectedFinPersonId === person.id && <Check size={14} className="text-violet-500 shrink-0" />}
+                                  {person.grapehub_client_id && person.grapehub_client_id !== editingClient?.id && (
+                                    <span
+                                      title={person.linked_client_name || 'Outro cliente'}
+                                      className="text-[9px] bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded font-bold max-w-[120px] truncate cursor-help"
+                                    >
+                                      📎 {person.linked_client_name
+                                        ? person.linked_client_name.split(' ').slice(0, 3).join(' ')
+                                        : 'Compartilhado'}
+                                    </span>
+                                  )}
+                                </button>
+                              ))}
+                            {finPeople.filter(p =>
+                              (p.name || '').toLowerCase().includes(finPeopleSearch.toLowerCase()) ||
+                              (p.cnpjcpf || '').includes(finPeopleSearch)
+                            ).length === 0 && (
+                              <p className="text-sm text-slate-500 text-center py-4">Nenhum cadastro encontrado</p>
+                            )}
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
+              )}
+
+              {/* ── ASSINATURA sub-tab ── */}
+              {finSubTab === 'assinatura' && (
+                    <div className="space-y-6">
+
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block ml-1">Vincular a uma assinatura do Asaas</label>
                         <div className="flex gap-2">
                           <div className="relative flex-1">
@@ -556,8 +725,6 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
                             </button>
                           )}
                         </div>
-                      </div>
-                    </div>
 
                     {!formData.finSubscriptionId ? (
                       <div className="p-8 bg-amber-500/5 border border-amber-500/20 rounded-2xl flex flex-col items-center gap-3 text-center">
@@ -656,6 +823,8 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
                       </>
                     )}
                   </div>
+              )}
+            </div>
           )}
           {activeTab === 'churn' && (
                   <div className="space-y-6">
