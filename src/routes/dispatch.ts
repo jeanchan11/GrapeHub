@@ -102,6 +102,61 @@ async function runDailyBatchIfNeeded(pool: Pool) {
       [today]
     );
 
+    // ── AUTO-POPULATE ─────────────────────────────────────────
+    // 1) Corrige datas erradas
+    await pool.query(`
+      UPDATE fin_dispatch_queue dq
+      SET scheduled_date = dq.due_date::date + dq.day_offset, updated_at = NOW()
+      WHERE dq.status = 'AGENDADO'
+        AND dq.due_date IS NOT NULL
+        AND dq.scheduled_date != dq.due_date::date + dq.day_offset
+    `);
+    // 2) Cancela itens de clientes no CRM Financeiro
+    await pool.query(`
+      UPDATE fin_dispatch_queue dq
+      SET status = 'CANCELADO', updated_at = NOW()
+      WHERE dq.status = 'AGENDADO'
+        AND EXISTS (
+          SELECT 1 FROM fin_people fp
+          JOIN clients c ON c.id = fp.grapehub_client_id
+          WHERE fp.asaas_id = dq.customer_asaas_id
+            AND c.crm_status IS NOT NULL AND c.crm_status != ''
+        )
+    `);
+    // 3) Insere novos itens que ainda não estão na fila
+    const populated = await pool.query(`
+      INSERT INTO fin_dispatch_queue (
+        customer_name, customer_phone, amount, due_date, day_offset,
+        rule_triggered, channel, message_template, message_rendered,
+        scheduled_date, receivable_asaas_id, customer_asaas_id, invoice_url
+      )
+      SELECT
+        COALESCE(fp.name, fr.customer_name, 'Desconhecido'),
+        COALESCE(NULLIF(c.phone,''), NULLIF(fp.phone,''), ''),
+        fr.value, fr.due_date, fcr.day_offset, fcr.label,
+        'WHATSAPP', fcr.message_template, fcr.message_template,
+        fr.due_date::date + fcr.day_offset,
+        fr.asaas_id, fr.customer_id, fr.invoice_url
+      FROM fin_receivables fr
+      JOIN fin_collection_rules fcr ON fcr.is_active = true
+      LEFT JOIN fin_people fp ON fp.asaas_id = fr.customer_id
+      LEFT JOIN clients c ON c.id = fp.grapehub_client_id
+      WHERE fr.status IN ('PENDING','OVERDUE')
+        AND fr.due_date IS NOT NULL
+        AND fr.due_date::date + fcr.day_offset >= CURRENT_DATE
+        AND NOT (c.crm_status IS NOT NULL AND c.crm_status != '')
+        AND NOT EXISTS (
+          SELECT 1 FROM fin_dispatch_queue dq
+          WHERE dq.receivable_asaas_id = fr.asaas_id
+            AND dq.day_offset = fcr.day_offset
+            AND dq.status NOT IN ('CANCELADO','ERRO')
+        )
+      LIMIT 500
+      ON CONFLICT DO NOTHING
+    `);
+    console.log(`[dispatch-scheduler] Auto-populate: ${populated.rowCount} item(s) inserido(s)`);
+    // ─────────────────────────────────────────────────────────
+
     const qRes = await pool.query(
       `SELECT * FROM fin_dispatch_queue WHERE status = 'AGENDADO' AND scheduled_date = $1 ORDER BY created_at ASC`,
       [today]
@@ -388,6 +443,32 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
   // POST — popular fila a partir da queue existente (conversão de itens pending→dispatch)
   app.post('/api/finance/dispatch/queue/populate', async (_req, res) => {
     try {
+      // 1) Corrige itens já existentes com data errada (scheduled_date != due_date + day_offset)
+      //    e também cancela itens de clientes que estão no CRM Financeiro
+      const fix = await pool.query(`
+        UPDATE fin_dispatch_queue dq
+        SET scheduled_date = dq.due_date::date + dq.day_offset,
+            updated_at = NOW()
+        WHERE dq.status = 'AGENDADO'
+          AND dq.due_date IS NOT NULL
+          AND dq.scheduled_date != dq.due_date::date + dq.day_offset
+      `);
+
+      // Cancela itens AGENDADOS cujo cliente está no CRM Financeiro
+      const cancel = await pool.query(`
+        UPDATE fin_dispatch_queue dq
+        SET status = 'CANCELADO', updated_at = NOW()
+        WHERE dq.status = 'AGENDADO'
+          AND EXISTS (
+            SELECT 1
+            FROM fin_people fp
+            JOIN clients c ON c.id = fp.grapehub_client_id
+            WHERE fp.asaas_id = dq.customer_asaas_id
+              AND c.crm_status IS NOT NULL
+              AND c.crm_status != ''
+          )
+      `);
+
       const r = await pool.query(`
         INSERT INTO fin_dispatch_queue (
           customer_name, customer_phone, amount, due_date,
@@ -397,7 +478,7 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
         )
         SELECT
           COALESCE(fp.name, fr.customer_name, 'Desconhecido'),
-          COALESCE(NULLIF(c.phone,''), fp.phone, ''),
+          COALESCE(NULLIF(c.phone,''), NULLIF(fp.phone,''), ''),
           fr.value,
           fr.due_date,
           fcr.day_offset,
@@ -405,41 +486,42 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
           'WHATSAPP',
           fcr.message_template,
           fcr.message_template,
-          CURRENT_DATE,
+          -- Data correta: vencimento + offset da regra (D-5 = 5 dias antes, D+2 = 2 dias depois)
+          fr.due_date::date + fcr.day_offset,
           fr.asaas_id,
           fr.customer_id,
           fr.invoice_url
         FROM fin_receivables fr
+        -- Uma entrada por regra ativa
+        JOIN fin_collection_rules fcr ON fcr.is_active = true
         LEFT JOIN fin_people fp ON fp.asaas_id = fr.customer_id
         LEFT JOIN clients c ON c.id = fp.grapehub_client_id
-        JOIN (
-          SELECT DISTINCT ON (fr2.asaas_id)
-            fr2.asaas_id,
-            COALESCE(
-              (SELECT id FROM fin_collection_rules WHERE day_offset = (CURRENT_DATE - fr2.due_date) AND is_active = true LIMIT 1),
-              (SELECT id FROM fin_collection_rules WHERE day_offset <= (CURRENT_DATE - fr2.due_date) AND is_active = true ORDER BY day_offset DESC LIMIT 1)
-            ) as rule_id
-          FROM fin_receivables fr2
-          WHERE fr2.status IN ('PENDING','OVERDUE') AND fr2.due_date IS NOT NULL
-        ) matched ON matched.asaas_id = fr.asaas_id
-        JOIN fin_collection_rules fcr ON fcr.id = matched.rule_id
         WHERE fr.status IN ('PENDING','OVERDUE')
           AND fr.due_date IS NOT NULL
-          AND COALESCE(fp.phone, c.phone, '') != ''
+          -- Só popula regras cuja data de envio é hoje ou futura
+          AND fr.due_date::date + fcr.day_offset >= CURRENT_DATE
+          -- Exclui clientes que estão no CRM Financeiro (têm crm_status preenchido)
+          AND NOT (
+            c.crm_status IS NOT NULL AND c.crm_status != ''
+          )
+          -- Evita duplicar a mesma fatura + regra
           AND NOT EXISTS (
             SELECT 1 FROM fin_dispatch_queue dq
             WHERE dq.receivable_asaas_id = fr.asaas_id
-              AND dq.scheduled_date = CURRENT_DATE
+              AND dq.day_offset = fcr.day_offset
               AND dq.status NOT IN ('CANCELADO','ERRO')
           )
-        LIMIT 200
+        LIMIT 500
         ON CONFLICT DO NOTHING
       `);
-      res.json({ ok: true, inserted: r.rowCount });
+      res.json({ ok: true, inserted: r.rowCount, corrected: fix.rowCount, cancelled_crm: cancel.rowCount });
     } catch (e: any) {
       console.error('[dispatch populate]', e);
       res.status(500).json({ error: e?.message });
     }
   });
 }
+
+
+
 
