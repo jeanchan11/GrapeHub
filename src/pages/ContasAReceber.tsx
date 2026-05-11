@@ -263,6 +263,28 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
   };
 
   const [openMenuId, setOpenMenuId] = React.useState<string | null>(null);
+  const [menuPos, setMenuPos] = React.useState<{ x: number; y: number } | null>(null);
+  const [menuItem, setMenuItem] = React.useState<any>(null);
+
+  type TooltipType = 'sent' | 'error';
+  const [tooltipData, setTooltipData] = React.useState<{
+    item: any; type: TooltipType; x: number; y: number;
+  } | null>(null);
+
+  const showTooltip = (e: React.MouseEvent, item: any, type: TooltipType) => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setTooltipData({ item, type, x: rect.left, y: rect.top });
+  };
+  const hideTooltip = () => setTooltipData(null);
+
+  const openMenu = (e: React.MouseEvent, item: any) => {
+    e.stopPropagation();
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setMenuPos({ x: rect.right, y: rect.bottom });
+    setMenuItem(item);
+    setOpenMenuId(item.id);
+  };
+  const closeMenu = () => { setOpenMenuId(null); setMenuPos(null); setMenuItem(null); };
 
   const handleDispatchReopen = async (id: string) => {
     setOpenMenuId(null);
@@ -794,119 +816,39 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                                 )}
                                 {item.status === 'ENVIADO' && (() => {
                                   const confirmed = !!item.n8n_ticket_id;
-                                  const sentAt = item.sent_at
-                                    ? new Date(item.sent_at).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })
-                                    : '—';
                                   return (
                                     <div className="flex items-center gap-2">
-                                      {/* Badge principal com tooltip */}
-                                      <div className="relative group">
-                                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold cursor-default transition-all ${
+                                      <span
+                                        onMouseEnter={e => showTooltip(e, item, 'sent')}
+                                        onMouseLeave={hideTooltip}
+                                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold cursor-default transition-all ${
                                           confirmed
                                             ? 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/30'
                                             : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-slate-400 border border-gray-200 dark:border-white/10'
-                                        }`}>
-                                          {confirmed ? <CheckCircle2 size={11} /> : <Clock size={10} />}
-                                          {confirmed ? 'Enviado' : 'Aguardando n8n'}
-                                        </span>
-                                        {/* Tooltip hover — Enviado */}
-                                        <div className="absolute bottom-full right-0 mb-2 w-72 z-[9999] opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-150">
-                                          <div className="bg-white dark:bg-gray-900 text-gray-800 dark:text-white rounded-xl shadow-2xl p-3 border border-gray-200 dark:border-white/10 text-left">
-                                            <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
-                                              <CheckCircle2 size={10} /> Mensagem Enviada
-                                            </p>
-                                            <div className="space-y-1.5">
-                                              <div className="flex gap-2">
-                                                <span className="text-[10px] text-gray-500 dark:text-gray-400 w-16 shrink-0">Horário</span>
-                                                <span className="text-[10px] text-gray-900 dark:text-white font-medium">{sentAt}</span>
-                                              </div>
-                                              <div className="flex gap-2">
-                                                <span className="text-[10px] text-gray-500 dark:text-gray-400 w-16 shrink-0">Telefone</span>
-                                                <span className="text-[10px] text-gray-900 dark:text-white font-medium">{item.customer_phone || '—'}</span>
-                                              </div>
-                                              {confirmed && (
-                                                <div className="flex gap-2">
-                                                  <span className="text-[10px] text-gray-500 dark:text-gray-400 w-16 shrink-0">Ticket n8n</span>
-                                                  <span className="text-[10px] text-violet-600 dark:text-violet-300 font-mono truncate">{item.n8n_ticket_id}</span>
-                                                </div>
-                                              )}
-                                              {item.message_rendered && (
-                                                <div className="pt-1.5 border-t border-gray-100 dark:border-white/10">
-                                                  <p className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">Mensagem enviada</p>
-                                                  <p className="text-[10px] text-gray-700 dark:text-gray-200 leading-relaxed line-clamp-4">{item.message_rendered}</p>
-                                                </div>
-                                              )}
-                                            </div>
-                                          </div>
-                                          {/* Arrow */}
-                                          <div className="flex justify-end pr-4">
-                                            <div className="w-2.5 h-2.5 bg-white dark:bg-gray-900 rotate-45 -mt-1.5 border-r border-b border-gray-200 dark:border-white/10" />
-                                          </div>
-                                        </div>
-                                      </div>
-                                      {/* Menu 3 pontos */}
-                                      <div className="relative">
-                                        <button
-                                          onClick={() => setOpenMenuId(openMenuId === item.id ? null : item.id)}
-                                          className="p-1 rounded-full text-gray-400 hover:text-gray-700 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
-                                        >
-                                          <MoreHorizontal size={14} />
-                                        </button>
-                                        {openMenuId === item.id && (
-                                          <>
-                                            <div className="fixed inset-0 z-40" onClick={() => setOpenMenuId(null)} />
-                                            <div className="absolute right-0 top-7 z-50 min-w-[180px] bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-xl shadow-xl overflow-hidden">
-                                              <button
-                                                onClick={() => handleDispatchReopen(item.id)}
-                                                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-500/10 transition-colors"
-                                              >
-                                                <RotateCcw size={13} /> Reagendar envio
-                                              </button>
-                                            </div>
-                                          </>
-                                        )}
-                                      </div>
+                                        }`}
+                                      >
+                                        {confirmed ? <CheckCircle2 size={11} /> : <Clock size={10} />}
+                                        {confirmed ? 'Enviado' : 'Aguardando n8n'}
+                                      </span>
+                                      <button
+                                        onClick={e => openMenu(e, item)}
+                                        className="p-1 rounded-full text-gray-400 hover:text-gray-700 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
+                                      >
+                                        <MoreHorizontal size={14} />
+                                      </button>
                                     </div>
                                   );
                                 })()}
                                 {item.status === 'ERRO' && (() => {
-                                  const errAt = item.updated_at
-                                    ? new Date(item.updated_at).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })
-                                    : '—';
                                   return (
                                     <div className="flex items-center gap-2">
-                                      <div className="relative group">
-                                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold cursor-default bg-rose-100 dark:bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-500/30">
-                                          <AlertTriangle size={10} /> Erro no envio
-                                        </span>
-                                        {/* Tooltip hover — Erro */}
-                                        <div className="absolute bottom-full right-0 mb-2 w-72 z-[9999] opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-150">
-                                          <div className="bg-white dark:bg-gray-900 text-gray-800 dark:text-white rounded-xl shadow-2xl p-3 border border-rose-300 dark:border-rose-500/30 text-left">
-                                            <p className="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
-                                              <AlertTriangle size={10} /> Falha no Envio
-                                            </p>
-                                            <div className="space-y-1.5">
-                                              <div className="flex gap-2">
-                                                <span className="text-[10px] text-gray-500 dark:text-gray-400 w-16 shrink-0">Horário</span>
-                                                <span className="text-[10px] text-gray-900 dark:text-white font-medium">{errAt}</span>
-                                              </div>
-                                              <div className="flex gap-2">
-                                                <span className="text-[10px] text-gray-500 dark:text-gray-400 w-16 shrink-0">Telefone</span>
-                                                <span className="text-[10px] text-gray-900 dark:text-white font-medium">{item.customer_phone || '—'}</span>
-                                              </div>
-                                              {item.error_message && (
-                                                <div className="pt-1.5 border-t border-gray-100 dark:border-white/10">
-                                                  <p className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">Detalhe do erro</p>
-                                                  <p className="text-[10px] text-rose-600 dark:text-rose-300 leading-relaxed">{item.error_message}</p>
-                                                </div>
-                                              )}
-                                            </div>
-                                          </div>
-                                          <div className="flex justify-end pr-4">
-                                            <div className="w-2.5 h-2.5 bg-white dark:bg-gray-900 rotate-45 -mt-1.5 border-r border-b border-rose-300 dark:border-rose-500/30" />
-                                          </div>
-                                        </div>
-                                      </div>
+                                      <span
+                                        onMouseEnter={e => showTooltip(e, item, 'error')}
+                                        onMouseLeave={hideTooltip}
+                                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold cursor-default bg-rose-100 dark:bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-500/30"
+                                      >
+                                        <AlertTriangle size={10} /> Erro no envio
+                                      </span>
                                       <button onClick={() => handleDispatchSend(item.id)} className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 hover:text-emerald-600 transition-colors">
                                         <RefreshCw size={10} /> Retentar
                                       </button>
@@ -1850,6 +1792,91 @@ export default function ContasAReceber() {
           </>
         )}
       </div>
+
+      {/* ── Global Fixed Tooltip ────────────────────────────────────────────── */}
+      {tooltipData && (() => {
+        const { item, type, x, y } = tooltipData;
+        const isSent = type === 'sent';
+        const confirmed = !!item.n8n_ticket_id;
+        const time = isSent
+          ? (item.sent_at ? new Date(item.sent_at).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—')
+          : (item.updated_at ? new Date(item.updated_at).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—');
+        const TIP_W = 288;
+        // Position tooltip above the badge, aligned to the left of it
+        const left = Math.min(x, window.innerWidth - TIP_W - 12);
+        const top = y - 8; // will use translateY(-100%) to go above
+        return (
+          <div
+            className="pointer-events-none"
+            style={{ position: 'fixed', top, left, zIndex: 99999, transform: 'translateY(-100%)' }}
+          >
+            <div className={`w-72 rounded-xl shadow-2xl p-3 border text-left ${
+              isSent
+                ? 'bg-white dark:bg-gray-900 border-gray-200 dark:border-white/10'
+                : 'bg-white dark:bg-gray-900 border-rose-300 dark:border-rose-500/30'
+            }`}>
+              <p className={`text-[10px] font-bold uppercase tracking-widest mb-2 flex items-center gap-1.5 ${
+                isSent ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
+              }`}>
+                {isSent ? <CheckCircle2 size={10} /> : <AlertTriangle size={10} />}
+                {isSent ? 'Mensagem Enviada' : 'Falha no Envio'}
+              </p>
+              <div className="space-y-1.5">
+                <div className="flex gap-2">
+                  <span className="text-[10px] text-gray-500 dark:text-gray-400 w-16 shrink-0">Horário</span>
+                  <span className="text-[10px] text-gray-900 dark:text-white font-medium">{time}</span>
+                </div>
+                <div className="flex gap-2">
+                  <span className="text-[10px] text-gray-500 dark:text-gray-400 w-16 shrink-0">Telefone</span>
+                  <span className="text-[10px] text-gray-900 dark:text-white font-medium">{item.customer_phone || '—'}</span>
+                </div>
+                {isSent && confirmed && (
+                  <div className="flex gap-2">
+                    <span className="text-[10px] text-gray-500 dark:text-gray-400 w-16 shrink-0">Ticket n8n</span>
+                    <span className="text-[10px] text-violet-600 dark:text-violet-300 font-mono truncate">{item.n8n_ticket_id}</span>
+                  </div>
+                )}
+                {isSent && item.message_rendered && (
+                  <div className="pt-1.5 border-t border-gray-100 dark:border-white/10">
+                    <p className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">Mensagem enviada</p>
+                    <p className="text-[10px] text-gray-700 dark:text-gray-200 leading-relaxed line-clamp-4">{item.message_rendered}</p>
+                  </div>
+                )}
+                {!isSent && item.error_message && (
+                  <div className="pt-1.5 border-t border-gray-100 dark:border-white/10">
+                    <p className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">Detalhe do erro</p>
+                    <p className="text-[10px] text-rose-600 dark:text-rose-300 leading-relaxed">{item.error_message}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+            {/* Arrow */}
+            <div className="px-4 flex" style={{ justifyContent: 'flex-start', paddingLeft: '16px' }}>
+              <div className={`w-2.5 h-2.5 rotate-45 -mt-1.5 border-r border-b ${
+                isSent ? 'bg-white dark:bg-gray-900 border-gray-200 dark:border-white/10' : 'bg-white dark:bg-gray-900 border-rose-300 dark:border-rose-500/30'
+              }`} />
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Global Fixed Dropdown (3 pontos) ───────────────────────────────── */}
+      {openMenuId && menuPos && menuItem && (
+        <>
+          <div className="fixed inset-0 z-[99990]" onClick={closeMenu} />
+          <div
+            className="fixed z-[99999] min-w-[180px] bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-xl shadow-xl overflow-hidden"
+            style={{ top: menuPos.y + 4, right: window.innerWidth - menuPos.x }}
+          >
+            <button
+              onClick={() => { handleDispatchReopen(menuItem.id); closeMenu(); }}
+              className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-500/10 transition-colors"
+            >
+              <RotateCcw size={13} /> Reagendar envio
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

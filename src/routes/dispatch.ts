@@ -14,6 +14,29 @@ function todayBRT(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/** Substitui variáveis do template e converte \n para quebra de linha real */
+function renderMessage(template: string, item: Record<string, any>): string {
+  const hora = nowBRT().getHours();
+  const saudacao = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite';
+
+  const valor = item.amount != null
+    ? Number(item.amount).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+    : '';
+
+  const vencimento = item.due_date
+    ? new Date(item.due_date + 'T12:00:00').toLocaleDateString('pt-BR')
+    : '';
+
+  return template
+    .replace(/\\n/g, '\n')          // \n literal → quebra de linha real
+    .replace(/{{saudacao}}/gi, saudacao)
+    .replace(/{{nome}}/gi,     item.customer_name || '')
+    .replace(/{{valor}}/gi,    valor)
+    .replace(/{{vencimento}}/gi, vencimento)
+    .replace(/{{link}}/gi,     item.invoice_url || '')
+    .replace(/{{telefone}}/gi, item.customer_phone || '');
+}
+
 async function sendViaN8n(webhookUrl: string, payload: object): Promise<any> {
   const ctrl = new AbortController();
   const timeout = setTimeout(() => ctrl.abort(), 30000);
@@ -94,9 +117,12 @@ async function runDailyBatchIfNeeded(pool: Pool) {
         [item.id]
       );
       try {
+        const mensagem = renderMessage(item.message_template || '', item);
+        // Atualiza message_rendered no banco para exibição correta no UI
+        await pool.query(`UPDATE fin_dispatch_queue SET message_rendered = $2 WHERE id = $1`, [item.id, mensagem]);
         const payload = {
           telefone: item.customer_phone,
-          mensagem: item.message_rendered || item.message_template || '',
+          mensagem,
           nome: item.customer_name,
           email: '',
           dispatch_id: item.id,
@@ -235,7 +261,9 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
 
       // Envia assíncronamente
       try {
-        const payload = { telefone: item.customer_phone, mensagem: item.message_rendered || item.message_template || '', nome: item.customer_name, email: '', dispatch_id: id };
+        const mensagem = renderMessage(item.message_template || '', item);
+        await pool.query(`UPDATE fin_dispatch_queue SET message_rendered = $2 WHERE id = $1`, [id, mensagem]);
+        const payload = { telefone: item.customer_phone, mensagem, nome: item.customer_name, email: '', dispatch_id: id };
         const resp = await sendViaN8n(cfg.n8n_webhook_url, payload);
         await pool.query(`UPDATE fin_dispatch_queue SET status = 'ENVIADO', sent_at = NOW(), updated_at = NOW(), n8n_ticket_id = $2, n8n_contato_id = $3, n8n_contato_novo = $4, n8n_ticket_novo = $5 WHERE id = $1`,
           [id, resp?.ticket_id || null, resp?.contato_id || null, resp?.contato_novo ?? null, resp?.ticket_novo ?? null]);
@@ -299,7 +327,9 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
       for (const item of items) {
         await pool.query(`UPDATE fin_dispatch_queue SET status = 'ENVIANDO', updated_at = NOW() WHERE id = $1`, [item.id]);
         try {
-          const payload = { telefone: item.customer_phone, mensagem: item.message_rendered || item.message_template || '', nome: item.customer_name, email: '', dispatch_id: item.id };
+          const mensagem = renderMessage(item.message_template || '', item);
+          await pool.query(`UPDATE fin_dispatch_queue SET message_rendered = $2 WHERE id = $1`, [item.id, mensagem]);
+          const payload = { telefone: item.customer_phone, mensagem, nome: item.customer_name, email: '', dispatch_id: item.id };
           const resp = await sendViaN8n(cfg.n8n_webhook_url, payload);
           await pool.query(`UPDATE fin_dispatch_queue SET status = 'ENVIADO', sent_at = NOW(), updated_at = NOW(), n8n_ticket_id = $2, n8n_contato_id = $3, n8n_contato_novo = $4, n8n_ticket_novo = $5 WHERE id = $1`,
             [item.id, resp?.ticket_id || null, resp?.contato_id || null, resp?.contato_novo ?? null, resp?.ticket_novo ?? null]);
