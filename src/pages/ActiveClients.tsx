@@ -71,6 +71,7 @@ const ActiveClients: React.FC = () => {
   const [churnType, setChurnType] = useState<'INEVITÁVEL' | 'EVITÁVEL' | ''>('');
   const [churnReasons, setChurnReasons] = useState<string[]>([]);
   const [churnComment, setChurnComment] = useState('');
+  const [churnManagerId, setChurnManagerId] = useState<string>('');
   
   // Financial link states (needed for table indicators)
   const [finPeople, setFinPeople] = useState<FinPerson[]>([]);
@@ -397,6 +398,7 @@ const ActiveClients: React.FC = () => {
           squad: churnClient.squad,
           start_date: churnClient.startDate,
           comments: churnComment,
+          manager_id: churnManagerId || null,
         })
       });
       // Move to Inativo
@@ -407,6 +409,7 @@ const ActiveClients: React.FC = () => {
       });
       setClients(prev => prev.map(c => c.id === churnClient.id ? { ...c, status: 'Inativo' } : c));
       setChurnClient(null);
+      setChurnManagerId('');
     } catch (err) {
       console.error('Failed to churn client:', err);
     }
@@ -740,7 +743,6 @@ const ActiveClients: React.FC = () => {
                 <SortHeader col="financial" label="Financeiro" className="text-center" />
                 <SortHeader col="project" label="Projeto" className="text-center" />
                 <SortHeader col="contracts" label="Contratos" />
-                <SortHeader col="manager" label="Gestor" />
                 <th className="px-8 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right">Ações</th>
               </tr>
             </thead>
@@ -804,7 +806,7 @@ const ActiveClients: React.FC = () => {
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-widest ${
                           client.product === 'TCV' ? 'bg-cyan-500/10 text-cyan-500' : 'bg-violet-500/10 text-violet-500'
                         }`}>
-                          {client.product}
+                          {client.product === 'Recorrência Mensal' ? 'Mensal' : client.product}
                         </span>
                       ) : (
                         <span className="text-[10px] text-slate-400 italic">-</span>
@@ -881,56 +883,6 @@ const ActiveClients: React.FC = () => {
                         >
                           <Plus size={14} />
                         </button>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                      <div className="relative">
-                        <button
-                          onClick={() => setManagerDropdownId(managerDropdownId === client.id ? null : client.id)}
-                          className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-bold transition-all border ${
-                            client.managerId
-                              ? 'bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-200 dark:border-violet-500/20 hover:bg-violet-100 dark:hover:bg-violet-500/20'
-                              : 'bg-slate-50 dark:bg-white/5 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-white/10 hover:border-violet-300 dark:hover:border-violet-500/30'
-                          }`}
-                        >
-                          {client.managerId
-                            ? (managers.find(m => String(m.id) === client.managerId)?.name || '—')
-                            : 'Definir'
-                          }
-                          <ChevronDown size={10} />
-                        </button>
-                        {managerDropdownId === client.id && (
-                          <>
-                            <div className="fixed inset-0 z-[90]" onClick={() => setManagerDropdownId(null)} />
-                            <div className="absolute top-full left-0 mt-1 z-[91] w-48 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl overflow-hidden">
-                              <button
-                                onClick={async () => {
-                                  await fetch(`/api/clients/${client.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ manager_id: null }) });
-                                  setClients(prev => prev.map(c => c.id === client.id ? { ...c, managerId: null } : c));
-                                  setManagerDropdownId(null);
-                                }}
-                                className="w-full text-left px-3 py-2 text-xs text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors"
-                              >
-                                Nenhum
-                              </button>
-                              {managers.map(m => (
-                                <button
-                                  key={m.id}
-                                  onClick={async () => {
-                                    await fetch(`/api/clients/${client.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ manager_id: String(m.id) }) });
-                                    setClients(prev => prev.map(c => c.id === client.id ? { ...c, managerId: String(m.id) } : c));
-                                    setManagerDropdownId(null);
-                                  }}
-                                  className={`w-full text-left px-3 py-2 text-xs font-medium hover:bg-violet-50 dark:hover:bg-violet-500/10 transition-colors ${
-                                    client.managerId === String(m.id) ? 'text-violet-600 dark:text-violet-400 bg-violet-50/50 dark:bg-violet-500/5' : 'text-slate-700 dark:text-slate-300'
-                                  }`}
-                                >
-                                  {m.name}
-                                </button>
-                              ))}
-                            </div>
-                          </>
-                        )}
                       </div>
                     </td>
                     <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
@@ -1354,6 +1306,24 @@ const ActiveClients: React.FC = () => {
                     rows={3}
                     className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-light-text dark:text-white placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-rose-500/20 resize-none transition-all"
                   />
+                </div>
+
+                {/* Gestor Responsável */}
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                    <UserPlus size={12} />
+                    Gestor Responsável
+                  </label>
+                  <select
+                    value={churnManagerId}
+                    onChange={(e) => setChurnManagerId(e.target.value)}
+                    className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-light-text dark:text-white outline-none focus:ring-2 focus:ring-rose-500/20 transition-all"
+                  >
+                    <option value="">Selecionar gestor...</option>
+                    {managers.map(m => (
+                      <option key={m.id} value={String(m.id)}>{m.name}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 

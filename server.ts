@@ -633,6 +633,7 @@ async function startServer() {
       ALTER TABLE menu_pages ADD COLUMN IF NOT EXISTS template TEXT DEFAULT 'default';
       ALTER TABLE menu_pages ADD COLUMN IF NOT EXISTS icon_color TEXT;
       ALTER TABLE menu_pages ADD COLUMN IF NOT EXISTS section_id TEXT REFERENCES menu_sections(id) ON DELETE CASCADE;
+      ALTER TABLE menu_pages ADD COLUMN IF NOT EXISTS manager_id TEXT;
 
       -- Migration: Add status/type_column to fin_movements_asaas for Sicredi payment tracking
       ALTER TABLE fin_movements_asaas ADD COLUMN IF NOT EXISTS sicredi_status VARCHAR(30) DEFAULT 'realizado';
@@ -1601,13 +1602,18 @@ async function startServer() {
     console.log("!!! RECEBIDA REQUISIÇÃO GET /api/projects !!!");
     try {
       const { page_id } = req.query;
-      let query = "SELECT * FROM projects";
-      const params = [];
+      let query = `
+        SELECT p.*, mp.manager_id as page_manager_id, u.name as page_manager_name, u.picture as page_manager_picture
+        FROM projects p
+        LEFT JOIN menu_pages mp ON mp.id = p.page_id
+        LEFT JOIN users u ON u.id::text = mp.manager_id
+      `;
+      const params: any[] = [];
       if (page_id) {
-        query += " WHERE page_id = $1";
+        query += " WHERE p.page_id = $1";
         params.push(page_id);
       }
-      query += " ORDER BY partner ASC";
+      query += " ORDER BY p.partner ASC";
       
       console.log("Executing query:", query, params);
       const projectsResult = await pool.query(query, params);
@@ -1669,10 +1675,12 @@ async function startServer() {
           status: row.status,
           roi: row.roi,
           investment: row.investment,
-          responsible: row.responsible,
+          responsible: row.page_manager_name || row.responsible,
+          responsiblePicture: row.page_manager_picture || null,
           lastUpdate: row.last_update,
           activeClientId: row.active_client_id,
           page_id: row.page_id,
+          page_manager_id: row.page_manager_id,
           group: row.group,
           projectResult: row.project_result,
           squad: row.squad,
@@ -1694,6 +1702,26 @@ async function startServer() {
     } catch (err) {
       console.error("Error fetching projects:", err);
       res.status(500).json({ error: "Failed to fetch projects" });
+    }
+  });
+
+  // PATCH /api/menu-pages/:id/manager — set responsible manager for a page (admin only)
+  app.patch("/api/menu-pages/:id/manager", async (req, res) => {
+    const { id } = req.params;
+    const { manager_id, requester_email } = req.body;
+    try {
+      if (requester_email) {
+        const userRes = await pool.query("SELECT role FROM users WHERE email = $1", [requester_email.toLowerCase()]);
+        const role = userRes.rows[0]?.role;
+        if (role !== 'superadmin' && role !== 'admin') {
+          return res.status(403).json({ error: 'Acesso negado. Apenas administradores podem alterar o gestor da página.' });
+        }
+      }
+      await pool.query("UPDATE menu_pages SET manager_id = $1 WHERE id = $2", [manager_id || null, id]);
+      res.json({ success: true });
+    } catch (err) {
+      console.error('Error updating page manager:', err);
+      res.status(500).json({ error: 'Failed to update page manager' });
     }
   });
 
