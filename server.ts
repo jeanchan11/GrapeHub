@@ -11,6 +11,7 @@ import crypto from "crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import multer from "multer";
 import { setupCollectionRoutes } from "./src/routes/collection";
+import { setupDispatchRoutes } from "./src/routes/dispatch";
 
 
 // IMMEDIATE LOGGING TO VERIFY BOOT
@@ -638,6 +639,50 @@ async function startServer() {
       -- Migration: Add status/type_column to fin_movements_asaas for Sicredi payment tracking
       ALTER TABLE fin_movements_asaas ADD COLUMN IF NOT EXISTS sicredi_status VARCHAR(30) DEFAULT 'realizado';
       ALTER TABLE fin_movements_asaas ADD COLUMN IF NOT EXISTS billing_month VARCHAR(7);
+
+      -- Dispatch Queue tables
+      CREATE TABLE IF NOT EXISTS fin_dispatch_queue (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        receivable_asaas_id VARCHAR(100),
+        customer_asaas_id VARCHAR(100),
+        customer_name VARCHAR(255) NOT NULL,
+        customer_phone VARCHAR(30) NOT NULL,
+        amount DECIMAL(10,2),
+        due_date DATE,
+        day_offset INTEGER DEFAULT 0,
+        rule_triggered VARCHAR(100),
+        channel VARCHAR(20) DEFAULT 'WHATSAPP',
+        message_template TEXT,
+        message_rendered TEXT,
+        scheduled_date DATE NOT NULL,
+        scheduled_time TIME DEFAULT '09:00',
+        status VARCHAR(20) DEFAULT 'AGENDADO',
+        sent_at TIMESTAMP,
+        error_message TEXT,
+        n8n_ticket_id VARCHAR(100),
+        n8n_contato_id VARCHAR(100),
+        n8n_contato_novo BOOLEAN,
+        n8n_ticket_novo BOOLEAN,
+        invoice_url TEXT,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+      ALTER TABLE fin_dispatch_queue ADD COLUMN IF NOT EXISTS day_offset INTEGER DEFAULT 0;
+      CREATE INDEX IF NOT EXISTS idx_dispatch_queue_status ON fin_dispatch_queue(status);
+      CREATE INDEX IF NOT EXISTS idx_dispatch_queue_scheduled ON fin_dispatch_queue(scheduled_date, scheduled_time);
+
+      CREATE TABLE IF NOT EXISTS fin_dispatch_config (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        dispatch_enabled BOOLEAN DEFAULT true,
+        dispatch_time TIME DEFAULT '09:00',
+        dispatch_interval_seconds INTEGER DEFAULT 60,
+        n8n_webhook_url VARCHAR(500) DEFAULT '',
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+      INSERT INTO fin_dispatch_config (dispatch_enabled, dispatch_time, dispatch_interval_seconds, n8n_webhook_url)
+        SELECT true, '09:00', 60, ''
+        WHERE NOT EXISTS (SELECT 1 FROM fin_dispatch_config);
+      ALTER TABLE fin_dispatch_config ADD COLUMN IF NOT EXISTS last_batch_date DATE;
     `);
     console.log("Database tables initialized successfully.");
     
@@ -11393,6 +11438,9 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
 
   // ── Collection Routes (Regua de Cobranca) ─────────────────────────────────
   setupCollectionRoutes(app, pool);
+
+  // ── Dispatch Queue Routes ──────────────────────────────────────────────────
+  setupDispatchRoutes(app, pool);
 
   // Vite middleware for development
 

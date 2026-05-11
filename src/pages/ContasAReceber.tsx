@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Clock, CreditCard, Zap, FileText, ExternalLink, Settings, AlertTriangle, Pause, Play, Check, X, ShieldAlert, Activity, CheckCircle2, Send, Settings2, Search, TrendingUp, Banknote, BarChart2, MessageCircle, Copy, Phone, Mail, Users, DollarSign, Filter, RefreshCw } from 'lucide-react';
+import { Calendar, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Clock, CreditCard, Zap, FileText, ExternalLink, Settings, AlertTriangle, Pause, Play, Check, X, ShieldAlert, Activity, CheckCircle2, Send, Settings2, Search, TrendingUp, Banknote, BarChart2, MessageCircle, Copy, Phone, Mail, Users, DollarSign, Filter, RefreshCw, MoreHorizontal, RotateCcw } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────
 interface InvoiceItem {
@@ -192,6 +192,110 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
   const [copiedPhoneIdx, setCopiedPhoneIdx] = useState<number | null>(null);
   const [queueSubTab, setQueueSubTab] = useState<'agendados' | 'enviados' | 'humano' | 'suspensao'>('agendados');
   const [queueAll, setQueueAll] = useState<QueueItem[]>([]);
+
+  // ── Dispatch Queue states ──────────────────────────────────────────────────
+  const [dispatchItems, setDispatchItems] = useState<any[]>([]);
+  const [dispatchStats, setDispatchStats] = useState({ disparos_hoje: 0, concluidos_7_dias: 0, agendados_pendentes: 0 });
+  const [dispatchConfig, setDispatchConfig] = useState<any>(null);
+  const [showConfigModal, setShowConfigModal] = useState(false);
+  const [cfgForm, setCfgForm] = useState({ dispatch_enabled: true, dispatch_time: '09:00', dispatch_interval_seconds: 60, n8n_webhook_url: '' });
+  const [savingCfg, setSavingCfg] = useState(false);
+  const [copiedCallback, setCopiedCallback] = useState(false);
+  const callbackUrl = `${window.location.origin}/api/finance/dispatch/callback`;
+  const [sendingId, setSendingId] = useState<string | null>(null);
+  const [showSendAllConfirm, setShowSendAllConfirm] = useState(false);
+  const [sendingAll, setSendingAll] = useState(false);
+  const [pollingActive, setPollingActive] = useState(false);
+  const [dispatchSubTab, setDispatchSubTab] = useState<'agendados'|'enviados'|'humano'|'suspensao'|'cancelados'>('agendados');
+
+  const fetchDispatch = async () => {
+    try {
+      const [qRes, sRes, cRes] = await Promise.all([
+        fetch('/api/finance/dispatch/queue'),
+        fetch('/api/finance/dispatch/queue/stats'),
+        fetch('/api/finance/dispatch/config'),
+      ]);
+      if (qRes.ok) setDispatchItems(await qRes.json());
+      if (sRes.ok) setDispatchStats(await sRes.json());
+      if (cRes.ok) {
+        const cfg = await cRes.json();
+        setDispatchConfig(cfg);
+        setCfgForm({
+          dispatch_enabled: cfg.dispatch_enabled ?? true,
+          dispatch_time: cfg.dispatch_time?.slice(0,5) || '09:00',
+          dispatch_interval_seconds: cfg.dispatch_interval_seconds || 60,
+          n8n_webhook_url: cfg.n8n_webhook_url || '',
+        });
+      }
+    } catch (e) { /* silent */ }
+  };
+
+  // Polling when ENVIANDO items exist
+  useEffect(() => {
+    if (!pollingActive) return;
+    const t = setInterval(() => {
+      fetchDispatch().then(() => {
+        setDispatchItems(prev => {
+          if (!prev.some(i => i.status === 'ENVIANDO')) setPollingActive(false);
+          return prev;
+        });
+      });
+    }, 10_000);
+    return () => clearInterval(t);
+  }, [pollingActive]);
+
+  useEffect(() => {
+    if (activeTab === 'disparos') fetchDispatch();
+  }, [activeTab]);
+
+  const handleDispatchSend = async (id: string) => {
+    setSendingId(id);
+    setDispatchItems(prev => prev.map(i => i.id === id ? { ...i, status: 'ENVIANDO' } : i));
+    setPollingActive(true);
+    await fetch(`/api/finance/dispatch/queue/${id}/send`, { method: 'POST' });
+    setSendingId(null);
+    setTimeout(fetchDispatch, 3000);
+  };
+
+  const handleDispatchCancel = async (id: string) => {
+    await fetch(`/api/finance/dispatch/queue/${id}/cancel`, { method: 'POST' });
+    fetchDispatch();
+  };
+
+  const [openMenuId, setOpenMenuId] = React.useState<string | null>(null);
+
+  const handleDispatchReopen = async (id: string) => {
+    setOpenMenuId(null);
+    await fetch(`/api/finance/dispatch/queue/${id}/reopen`, { method: 'POST' });
+    fetchDispatch();
+  };
+
+  const handleSendAll = async () => {
+    setSendingAll(true);
+    setShowSendAllConfirm(false);
+    setPollingActive(true);
+    await fetch('/api/finance/dispatch/queue/send-all', { method: 'POST' });
+    setSendingAll(false);
+    fetchDispatch();
+  };
+
+  const handlePopulateQueue = async () => {
+    await fetch('/api/finance/dispatch/queue/populate', { method: 'POST' });
+    fetchDispatch();
+  };
+
+  const handleSaveConfig = async () => {
+    setSavingCfg(true);
+    try {
+      await fetch('/api/finance/dispatch/config', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cfgForm),
+      });
+      setShowConfigModal(false);
+      fetchDispatch();
+    } finally { setSavingCfg(false); }
+  };
+
 
   const buildMessage = (template: string | null, item: QueueItem) => {
     if (!template) return `Olá! Sua fatura de ${formatCurrency(item.value)} vence em ${fmtDate(item.due_date)}. ${item.invoice_url || ''}`;
@@ -422,11 +526,21 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
           </div>
         )}
         {activeTab === 'disparos' && (
-          <div className="flex items-center gap-3">
-             <div className="relative">
-               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-               <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar cliente..." className="pl-9 pr-3 py-1.5 bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-white/10 rounded-lg text-xs text-gray-900 dark:text-white focus:outline-none focus:border-violet-500/50" />
-             </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar..." className="pl-9 pr-3 py-1.5 bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-white/10 rounded-lg text-xs text-gray-900 dark:text-white focus:outline-none focus:border-violet-500/50" />
+            </div>
+            <button onClick={handlePopulateQueue} className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-lg text-xs font-medium text-gray-600 dark:text-slate-300 hover:bg-gray-100 transition-colors">
+              <RefreshCw size={13} /> Popular Fila
+            </button>
+            <button onClick={() => setShowSendAllConfirm(true)} disabled={sendingAll || dispatchItems.filter(i => i.status === 'AGENDADO').length === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white rounded-lg text-xs font-bold transition-colors">
+              {sendingAll ? <><div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Disparando...</> : <><Send size={13} /> Disparar Fila</>}
+            </button>
+            <button onClick={() => setShowConfigModal(true)} className="p-1.5 rounded-lg bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors" title="Configurações">
+              <Settings size={15} />
+            </button>
           </div>
         )}
       </div>
@@ -554,234 +668,278 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
           )}
 
           {/* Aba FILA DE DISPAROS */}
-          {activeTab === 'disparos' && (
-            <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <div className="p-4 rounded-xl border border-gray-100 dark:border-white/5 bg-gray-50 dark:bg-dark-bg/50">
-                  <p className="text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest mb-1">Disparos Hoje</p>
-                  <p className="text-2xl font-black text-gray-900 dark:text-white">{queueStats.hoje}</p>
-                </div>
-                <div className="p-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
-                  <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-500 uppercase tracking-widest mb-1">Concluídos 7 dias</p>
-                  <p className="text-2xl font-black text-emerald-700 dark:text-emerald-400">{queueStats.ultimos7dias}</p>
-                </div>
-                <div className="p-4 rounded-xl border border-amber-500/20 bg-amber-500/5">
-                  <p className="text-[10px] font-bold text-amber-600 dark:text-amber-500 uppercase tracking-widest mb-1">Agendados/Pendentes</p>
-                  <p className="text-2xl font-black text-amber-700 dark:text-amber-400">{queueStats.agendados}</p>
-                </div>
-              </div>
+          {activeTab === 'disparos' && (() => {
+            // ── Filtros de sub-tab baseados em day_offset (como a régua original) ──
+            const search = (i: any) => !searchTerm || i.customer_name?.toLowerCase().includes(searchTerm.toLowerCase());
 
-              <div className="rounded-xl border border-gray-100 dark:border-white/5 overflow-x-auto">
-                {/* Sub-tabs: Agendados / Enviados */}
-                <div className="flex items-center gap-6 px-4 pt-3 border-b border-gray-100 dark:border-white/5 bg-gray-50 dark:bg-dark-bg/50">
-                  <button onClick={() => setQueueSubTab('agendados')}
-                    className={`pb-3 text-sm font-bold border-b-2 transition-colors ${queueSubTab === 'agendados' ? 'border-amber-400 text-amber-600 dark:text-amber-400' : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'}`}>
-                    Agendados
-                    <span className={`ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full ${queueSubTab === 'agendados' ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400' : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-slate-400'}`}>{queueAgendados.length}</span>
-                  </button>
-                  <button onClick={() => setQueueSubTab('enviados')}
-                    className={`pb-3 text-sm font-bold border-b-2 transition-colors ${queueSubTab === 'enviados' ? 'border-emerald-400 text-emerald-600 dark:text-emerald-400' : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'}`}>
-                    Enviados
-                    <span className={`ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full ${queueSubTab === 'enviados' ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-slate-400'}`}>{queueEnviados.length}</span>
-                  </button>
-                  <button onClick={() => setQueueSubTab('humano')}
-                    className={`pb-3 text-sm font-bold border-b-2 transition-colors ${queueSubTab === 'humano' ? 'border-violet-400 text-violet-600 dark:text-violet-400' : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'}`}>
-                    Contato Humano
-                    <span className={`ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full ${queueSubTab === 'humano' ? 'bg-violet-500/15 text-violet-600 dark:text-violet-400' : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-slate-400'}`}>{queueHumano.length}</span>
-                  </button>
-                  <button onClick={() => setQueueSubTab('suspensao')}
-                    className={`pb-3 text-sm font-bold border-b-2 transition-colors ${queueSubTab === 'suspensao' ? 'border-rose-400 text-rose-600 dark:text-rose-400' : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'}`}>
-                    Suspensão
-                    <span className={`ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full ${queueSubTab === 'suspensao' ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400' : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-slate-400'}`}>{queueSuspensao.length}</span>
-                  </button>
-                </div>
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-gray-50 dark:bg-dark-bg/50 border-b border-gray-100 dark:border-white/5">
-                      <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap">Cliente / Valor</th>
-                      <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap">Telefone</th>
-                      <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap">Regra Acionada</th>
-                      <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap">Canal</th>
-                      <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap">Data Programada</th>
-                      <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap text-center">Fatura</th>
-                      <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap text-center">Mensagem</th>
-                      <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap text-right">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100 dark:divide-white/5">
-                    {(() => {
-                      const currentList = queueSubTab === 'agendados' ? queueAgendados : queueSubTab === 'enviados' ? queueEnviados : queueSubTab === 'humano' ? queueHumano : queueSuspensao;
-                      const emptyMsg = queueSubTab === 'agendados' ? 'Nenhum disparo agendado.' : queueSubTab === 'enviados' ? 'Nenhum disparo enviado.' : queueSubTab === 'humano' ? 'Nenhum cliente em contato humano.' : 'Nenhum cliente em suspensão.';
-                      if (currentList.length === 0) return (
-                        <tr>
-                          <td colSpan={8} className="px-4 py-8 text-center text-gray-500 dark:text-slate-400 text-sm">{emptyMsg}</td>
-                        </tr>
-                      );
-                      return currentList.map((item, idx) => {
-                      const phaseKey = item.day_offset < 0 ? 'preventivo' : item.day_offset === 0 ? 'vencimento' : item.day_offset >= 10 ? 'humano' : 'reativo';
-                      const badgeColor = timelineStyles[phaseKey]?.pillBg + ' ' + timelineStyles[phaseKey]?.text;
-                      const badgeLabel = item.day_offset < 0 ? `D${item.day_offset}` : item.day_offset === 0 ? 'D0' : `D+${item.day_offset}`;
-                      const fmtTriggered = item.triggered_at ? new Date(item.triggered_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : fmtDate(item.scheduled_date);
+            const agendados   = dispatchItems.filter(i => i.status === 'AGENDADO' && (i.day_offset ?? 0) < 10  && search(i));
+            const humano      = dispatchItems.filter(i => i.status === 'AGENDADO' && (i.day_offset ?? 0) >= 10 && (i.day_offset ?? 0) < 15 && search(i));
+            const suspensao   = dispatchItems.filter(i => i.status === 'AGENDADO' && (i.day_offset ?? 0) >= 15 && search(i));
+            const enviados    = dispatchItems.filter(i => (i.status === 'ENVIADO' || i.status === 'ENVIANDO') && search(i));
+            const cancelados  = dispatchItems.filter(i => (i.status === 'CANCELADO' || i.status === 'ERRO')   && search(i));
 
+            type SubTab = 'agendados' | 'humano' | 'suspensao' | 'enviados' | 'cancelados';
+            const subTabCfg: { key: SubTab; label: string; color: string; items: any[] }[] = [
+              { key: 'agendados',  label: 'Agendados',       color: 'amber',   items: agendados  },
+              { key: 'enviados',   label: 'Enviados',         color: 'emerald', items: enviados   },
+              { key: 'humano',     label: 'Contato Humano',   color: 'violet',  items: humano     },
+              { key: 'suspensao',  label: 'Suspensão',        color: 'rose',    items: suspensao  },
+              { key: 'cancelados', label: 'Cancelados',       color: 'slate',   items: cancelados },
+            ];
+
+            const currentItems = subTabCfg.find(t => t.key === dispatchSubTab)?.items ?? [];
+
+            return (
+              <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-4">
+                {/* Stats */}
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="p-4 rounded-xl border border-gray-100 dark:border-white/5 bg-gray-50 dark:bg-dark-bg/50">
+                    <p className="text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest mb-1">Disparos Hoje</p>
+                    <p className="text-2xl font-black text-gray-900 dark:text-white">{dispatchStats.disparos_hoje}</p>
+                  </div>
+                  <div className="p-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
+                    <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-500 uppercase tracking-widest mb-1">Concluídos 7 dias</p>
+                    <p className="text-2xl font-black text-emerald-700 dark:text-emerald-400">{dispatchStats.concluidos_7_dias}</p>
+                  </div>
+                  <div className="p-4 rounded-xl border border-amber-500/20 bg-amber-500/5">
+                    <p className="text-[10px] font-bold text-amber-600 dark:text-amber-500 uppercase tracking-widest mb-1">Agendados/Pendentes</p>
+                    <p className="text-2xl font-black text-amber-700 dark:text-amber-400">{dispatchStats.agendados_pendentes}</p>
+                  </div>
+                </div>
+
+                {/* Table + Sub-tabs */}
+                <div className="rounded-xl border border-gray-100 dark:border-white/5 overflow-hidden">
+                  <div className="flex items-center gap-6 px-4 pt-3 border-b border-gray-100 dark:border-white/5 bg-gray-50 dark:bg-dark-bg/50">
+                    {subTabCfg.map(({ key, label, color, items }) => {
+                      const active = dispatchSubTab === key;
                       return (
-                        <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
-                          <td className="px-4 py-3">
-                            <p className="text-sm font-bold text-gray-900 dark:text-white truncate max-w-[220px]">{item.client_name || 'Desconhecido'}</p>
-                            <p className="text-xs text-gray-500 dark:text-slate-400 whitespace-nowrap">{formatCurrency(item.value)} • Venc: {fmtDate(item.due_date)}</p>
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap">
-                            {item.client_phone ? (
-                              <div className="inline-flex items-center gap-1.5">
-                                <a
-                                  href={`tel:${item.client_phone}`}
-                                  className="text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors"
-                                  title="Ligar para o cliente"
-                                >
-                                  📞 {item.client_phone}
-                                </a>
-                                <button
-                                  onClick={() => {
-                                    navigator.clipboard.writeText(item.client_phone!);
-                                    setCopiedPhoneIdx(idx);
-                                    setTimeout(() => setCopiedPhoneIdx(null), 2000);
-                                  }}
-                                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold transition-all ${
-                                    copiedPhoneIdx === idx
-                                      ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
-                                      : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-slate-400 border border-gray-200 dark:border-white/10 hover:bg-emerald-500/10 hover:text-emerald-500 hover:border-emerald-500/20'
-                                  }`}
-                                  title="Copiar número"
-                                >
-                                  {copiedPhoneIdx === idx ? <Check size={10} /> : <Copy size={10} />}
-                                </button>
-                              </div>
-                            ) : (
-                              <span className="text-xs text-gray-400 dark:text-slate-600">—</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap">
-                            <div className="inline-flex items-center gap-2">
-                              <span className={`px-2 py-0.5 rounded text-[9px] font-bold border border-current opacity-80 ${badgeColor}`}>{badgeLabel}</span>
-                              <span className="text-xs font-medium text-gray-700 dark:text-slate-300">{item.rule_label}</span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap">
-                            <span className="text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest bg-gray-100 dark:bg-white/5 px-2 py-1 rounded-md border border-gray-200 dark:border-white/5">
-                              {item.channel}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap">
-                            <span className="text-xs text-gray-600 dark:text-slate-400">{fmtTriggered}</span>
-                          </td>
-                          <td className="px-4 py-3 text-center whitespace-nowrap">
-                            {item.invoice_url ? (
-                              <a
-                                href={item.invoice_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/20 hover:bg-violet-100 dark:hover:bg-violet-500/20 transition-all"
-                                title="Ver fatura"
-                              >
-                                <ExternalLink size={10} /> Ver
-                              </a>
-                            ) : (
-                              <span className="text-xs text-gray-400 dark:text-slate-600">—</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-center whitespace-nowrap">
-                            <button
-                              onClick={() => copyMessage(item, idx)}
-                              className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
-                                copiedIdx === idx
-                                  ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
-                                  : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-slate-400 border border-gray-200 dark:border-white/10 hover:bg-violet-500/10 hover:text-violet-500 hover:border-violet-500/20'
-                              }`}
-                              title="Copiar mensagem"
-                            >
-                              {copiedIdx === idx ? <><Check size={12} /> Copiado!</> : <><Copy size={12} /> Copiar</>}
-                            </button>
-                          </td>
-                          <td className="px-4 py-3 text-right whitespace-nowrap">
-                            {item.status === 'sent' && (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-1 rounded-full">
-                                <CheckCircle2 size={12} /> Enviado
-                              </span>
-                            )}
-                            {item.status === 'failed' && (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10 px-2 py-1 rounded-full">
-                                <AlertTriangle size={12} /> Falhou
-                              </span>
-                            )}
-                            {item.status === 'manual' && (
-                              <button
-                                onClick={(e) => markAsSent(item, idx, e)}
-                                className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 px-2 py-1 rounded-full cursor-pointer hover:bg-emerald-50 dark:hover:bg-emerald-500/10 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
-                              >
-                                <Clock size={12} /> Pendente
-                              </button>
-                            )}
-                            {item.status === 'pending' && (
-                              <button
-                                onClick={(e) => markAsSent(item, idx, e)}
-                                className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-gray-500 dark:text-slate-400 bg-gray-100 dark:bg-white/5 px-2 py-1 rounded-full cursor-pointer hover:bg-emerald-50 dark:hover:bg-emerald-500/10 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
-                              >
-                                <Clock size={12} /> Agendado
-                              </button>
-                            )}
-                          </td>
-                        </tr>
+                        <button key={key} onClick={() => setDispatchSubTab(key)}
+                          className={`pb-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${active ? `border-${color}-400 text-${color}-600 dark:text-${color}-400` : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'}`}>
+                          {label}
+                          <span className={`ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full ${active ? `bg-${color}-500/15 text-${color}-600 dark:text-${color}-400` : 'bg-gray-100 dark:bg-white/5 text-gray-500'}`}>
+                            {items.length}
+                          </span>
+                        </button>
                       );
-                    });
-                    })()}
-                  </tbody>
-                </table>
-              </div>
+                    })}
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-gray-50 dark:bg-dark-bg/50 border-b border-gray-100 dark:border-white/5">
+                          {['Cliente / Valor','Telefone','Regra','Canal','Agendado','Fatura','Status'].map(h => (
+                            <th key={h} className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 dark:divide-white/5">
+                        {currentItems.length === 0 ? (
+                          <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-400 dark:text-slate-500">Nenhum item nesta categoria.</td></tr>
+                        ) : currentItems.map((item) => (
 
-              {/* Confetti animation */}
-              {confettiItems.length > 0 && (
-                <div className="fixed inset-0 pointer-events-none z-[9999]">
-                  {confettiItems.map((p, i) => {
-                    const angle = (Math.random() - 0.5) * 120;
-                    const dist = 80 + Math.random() * 200;
-                    const dx = Math.sin(angle * Math.PI / 180) * dist;
-                    const dy = -(100 + Math.random() * 300);
-                    const size = 6 + Math.random() * 6;
-                    const rotation = Math.random() * 720;
-                    const hue = 100 + Math.random() * 40; // green range
-                    const delay = Math.random() * 0.2;
-                    return (
-                      <div
-                        key={p.id}
-                        style={{
-                          position: 'fixed',
-                          left: p.x,
-                          top: p.y,
-                          width: size,
-                          height: size,
-                          borderRadius: Math.random() > 0.5 ? '50%' : '2px',
-                          backgroundColor: `hsl(${hue}, 80%, ${50 + Math.random() * 20}%)`,
-                          animation: `confetti-fly 1.5s ease-out ${delay}s forwards`,
-                          opacity: 1,
-                          transform: `translate(0, 0) rotate(0deg)`,
-                          zIndex: 9999,
-                          ['--dx' as any]: `${dx}px`,
-                          ['--dy' as any]: `${dy}px`,
-                          ['--rot' as any]: `${rotation}deg`,
-                        }}
-                      />
-                    );
-                  })}
-                  <style>{`
-                    @keyframes confetti-fly {
-                      0% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
-                      100% { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)); opacity: 0; }
-                    }
-                  `}</style>
+                          <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
+                            <td className="px-4 py-3">
+                              <p className="text-sm font-bold text-gray-900 dark:text-white truncate max-w-[200px]">{item.customer_name}</p>
+                              <p className="text-xs text-gray-500 dark:text-slate-400">{formatCurrency(item.amount)} • {fmtDate(item.due_date)}</p>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <span className="text-xs font-medium text-gray-700 dark:text-slate-300">{item.customer_phone || '—'}</span>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <div className="flex items-center gap-2">
+                                {(() => {
+                                  const d = item.day_offset ?? 0;
+                                  const phaseKey = d < 0 ? 'preventivo' : d === 0 ? 'vencimento' : d >= 10 ? 'humano' : 'reativo';
+                                  const pillColors: Record<string, string> = {
+                                    preventivo: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20',
+                                    vencimento: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20',
+                                    reativo:    'bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20',
+                                    humano:     'bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20',
+                                  };
+                                  const label = d < 0 ? `D${d}` : d === 0 ? 'D0' : `D+${d}`;
+                                  return (
+                                    <span className={`px-2 py-0.5 rounded text-[9px] font-bold border ${pillColors[phaseKey]}`}>{label}</span>
+                                  );
+                                })()}
+                                <span className="text-xs text-gray-600 dark:text-slate-400">{item.rule_triggered || '—'}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <span className="text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase bg-gray-100 dark:bg-white/5 px-2 py-1 rounded-md">{item.channel}</span>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-xs text-gray-600 dark:text-slate-400">
+                              {fmtDate(item.scheduled_date)}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              {item.invoice_url
+                                ? <a href={item.invoice_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/20 hover:bg-violet-100 transition-all"><ExternalLink size={10} /> Ver</a>
+                                : <span className="text-xs text-gray-400">—</span>}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <div className="flex items-center gap-2">
+                                {item.status === 'AGENDADO' && (
+                                  <>
+                                    <button onClick={() => handleDispatchSend(item.id)} disabled={sendingId === item.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors">
+                                      <Play size={10} /> Enviar
+                                    </button>
+                                    <button onClick={() => handleDispatchCancel(item.id)} className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold text-gray-400 hover:text-rose-500 transition-colors">
+                                      <X size={10} />
+                                    </button>
+                                  </>
+                                )}
+                                {item.status === 'ENVIANDO' && (
+                                  <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                                    <div className="w-2.5 h-2.5 border-2 border-blue-400/30 border-t-blue-500 rounded-full animate-spin" /> Enviando...
+                                  </span>
+                                )}
+                                {item.status === 'ENVIADO' && (
+                                  <div className="flex items-center gap-2">
+                                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                                      <CheckCircle2 size={11} /> Enviado
+                                    </span>
+                                    {/* Badge de confirmação n8n */}
+                                    {item.n8n_ticket_id ? (
+                                      <span
+                                        className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-200 dark:border-violet-500/20"
+                                        title={`Ticket: ${item.n8n_ticket_id}${item.n8n_contato_id ? ` | Contato: ${item.n8n_contato_id}` : ''}`}
+                                      >
+                                        <Activity size={9} /> n8n ✓
+                                      </span>
+                                    ) : (
+                                      <span
+                                        className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-gray-100 dark:bg-white/5 text-gray-400 dark:text-slate-500 border border-gray-200 dark:border-white/5"
+                                        title="Aguardando confirmação do n8n"
+                                      >
+                                        <Clock size={9} /> Aguardando
+                                      </span>
+                                    )}
+                                    <div className="relative">
+                                      <button
+                                        onClick={() => setOpenMenuId(openMenuId === item.id ? null : item.id)}
+                                        className="p-1 rounded-full text-gray-400 hover:text-gray-700 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
+                                        title="Opções"
+                                      >
+                                        <MoreHorizontal size={14} />
+                                      </button>
+                                      {openMenuId === item.id && (
+                                        <>
+                                          <div className="fixed inset-0 z-40" onClick={() => setOpenMenuId(null)} />
+                                          <div className="absolute right-0 top-7 z-50 min-w-[180px] bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-xl shadow-xl overflow-hidden">
+                                            <button
+                                              onClick={() => handleDispatchReopen(item.id)}
+                                              className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-500/10 transition-colors"
+                                            >
+                                              <RotateCcw size={13} /> Reagendar envio
+                                            </button>
+                                          </div>
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                                {item.status === 'ERRO' && (
+                                  <button onClick={() => handleDispatchSend(item.id)} className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-amber-50 dark:hover:bg-amber-500/10 hover:text-amber-600 transition-colors">
+                                    <RefreshCw size={10} /> Retentar
+                                  </button>
+                                )}
+                                {item.status === 'CANCELADO' && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-gray-100 dark:bg-white/5 text-gray-400">Cancelado</span>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              )}
-            </div>
-          )}
+              </div>
+            );
+          })()}
         </>
+      )}
+
+      {/* ── Config Modal ─────────────────────────────────────────────────────── */}
+      {showConfigModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowConfigModal(false)}>
+          <div className="bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-[22px] w-full max-w-md shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-5 border-b border-gray-100 dark:border-white/10 flex items-center justify-between">
+              <h3 className="text-base font-bold text-gray-900 dark:text-white flex items-center gap-2"><Settings size={16} className="text-violet-500" /> Configurações de Disparo</h3>
+              <button onClick={() => setShowConfigModal(false)} className="text-gray-400 hover:text-gray-700 dark:hover:text-white"><X size={18} /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-white/5 rounded-xl">
+                <span className="text-sm font-medium text-gray-700 dark:text-slate-300">Disparos automáticos</span>
+                <button onClick={() => setCfgForm(f => ({ ...f, dispatch_enabled: !f.dispatch_enabled }))}
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${cfgForm.dispatch_enabled ? 'bg-violet-500' : 'bg-gray-300 dark:bg-slate-700'}`}>
+                  <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${cfgForm.dispatch_enabled ? 'translate-x-4.5' : 'translate-x-1'}`} />
+                </button>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-gray-500 dark:text-slate-500 uppercase tracking-widest block mb-1">Horário de início</label>
+                <input type="time" value={cfgForm.dispatch_time} onChange={e => setCfgForm(f => ({ ...f, dispatch_time: e.target.value }))}
+                  className="w-full bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-violet-500/50" />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-gray-500 dark:text-slate-500 uppercase tracking-widest block mb-1">Intervalo entre disparos (segundos)</label>
+                <input type="number" min={10} value={cfgForm.dispatch_interval_seconds} onChange={e => setCfgForm(f => ({ ...f, dispatch_interval_seconds: parseInt(e.target.value) }))}
+                  className="w-full bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-violet-500/50" />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-gray-500 dark:text-slate-500 uppercase tracking-widest block mb-1">URL do Webhook n8n</label>
+                <input type="url" value={cfgForm.n8n_webhook_url} onChange={e => setCfgForm(f => ({ ...f, n8n_webhook_url: e.target.value }))}
+                  placeholder="https://n8n.seudominio.com/webhook/..." className="w-full bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-violet-500/50" />
+              </div>
+              {/* Callback URL - para configurar no n8n */}
+              <div className="border border-dashed border-emerald-400/40 bg-emerald-50/50 dark:bg-emerald-500/5 rounded-xl p-4">
+                <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-widest mb-1 flex items-center gap-1.5">
+                  <Activity size={10} /> URL de Callback (configure no n8n)
+                </p>
+                <p className="text-[10px] text-gray-500 dark:text-slate-400 mb-2.5">
+                  Coloque esta URL no nó <strong>"Callback GrapeHub"</strong> do seu workflow n8n. Quando o envio for bem-sucedido, o n8n faz um POST aqui para confirmar.
+                </p>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 text-[11px] font-mono bg-white dark:bg-dark-bg border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 text-emerald-700 dark:text-emerald-300 truncate select-all">
+                    {callbackUrl}
+                  </code>
+                  <button
+                    onClick={() => { navigator.clipboard.writeText(callbackUrl); setCopiedCallback(true); setTimeout(() => setCopiedCallback(false), 2000); }}
+                    className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-bold border transition-all ${
+                      copiedCallback
+                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+                        : 'bg-white dark:bg-dark-bg border-gray-200 dark:border-white/10 text-gray-600 dark:text-slate-300 hover:border-emerald-400/50 hover:text-emerald-600'
+                    }`}
+                  >
+                    {copiedCallback ? <><Check size={11} /> Copiado!</> : <><Copy size={11} /> Copiar</>}
+                  </button>
+                </div>
+                <p className="text-[10px] text-gray-400 dark:text-slate-500 mt-2">
+                  Corpo esperado: <code className="font-mono">{`{ "dispatch_id": "...", "success": true }`}</code>
+                </p>
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-gray-100 dark:border-white/10 bg-gray-50 dark:bg-dark-bg/30 flex justify-end gap-3">
+              <button onClick={() => setShowConfigModal(false)} className="px-4 py-2 text-gray-500 text-xs font-bold">Cancelar</button>
+              <button onClick={handleSaveConfig} disabled={savingCfg} className="px-5 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-xl text-xs font-bold flex items-center gap-2 disabled:opacity-50">
+                {savingCfg && <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />} Salvar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Send-all confirm ────────────────────────────────────────────────── */}
+      {showSendAllConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowSendAllConfirm(false)}>
+          <div className="bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-[22px] w-full max-w-sm shadow-2xl p-6" onClick={e => e.stopPropagation()}>
+            <h3 className="text-base font-bold text-gray-900 dark:text-white mb-2">Disparar fila completa?</h3>
+            <p className="text-sm text-gray-500 dark:text-slate-400 mb-6">Isso irá enviar <strong className="text-gray-900 dark:text-white">{dispatchItems.filter(i => i.status === 'AGENDADO').length} mensagens</strong> agendadas para hoje, respeitando o intervalo configurado.</p>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setShowSendAllConfirm(false)} className="px-4 py-2 text-gray-500 text-xs font-bold">Cancelar</button>
+              <button onClick={handleSendAll} className="px-5 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-xl text-xs font-bold">Confirmar</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* 6. Modal de Edição */}
