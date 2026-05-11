@@ -183,7 +183,7 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
   const [editingRule, setEditingRule] = useState<Rule | null>(null);
   const [templateText, setTemplateText] = useState('');
   const [isSaving, setIsSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState<'config' | 'disparos'>('config');
+  const [activeTab, setActiveTab] = useState<'config' | 'disparos'>('disparos');
   const [phaseDetail, setPhaseDetail] = useState<{ phase: string; label: string; items: any[] } | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [queueStats, setQueueStats] = useState({ hoje: 0, ultimos7dias: 0, agendados: 0 });
@@ -526,18 +526,18 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
         <div className="flex items-center gap-6">
           <Activity size={20} className="text-violet-500 hidden sm:block" />
           <button 
-            onClick={() => setActiveTab('config')}
-            className={`flex items-center gap-2 pb-4 -mb-[17px] border-b-2 font-bold text-sm transition-colors ${activeTab === 'config' ? 'border-violet-500 text-violet-600 dark:text-violet-400' : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'}`}
-          >
-            <Settings2 size={16} />
-            Régua de Cobrança
-          </button>
-          <button 
             onClick={() => setActiveTab('disparos')}
             className={`flex items-center gap-2 pb-4 -mb-[17px] border-b-2 font-bold text-sm transition-colors ${activeTab === 'disparos' ? 'border-violet-500 text-violet-600 dark:text-violet-400' : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'}`}
           >
             <Send size={16} />
             Fila de Disparos
+          </button>
+          <button 
+            onClick={() => setActiveTab('config')}
+            className={`flex items-center gap-2 pb-4 -mb-[17px] border-b-2 font-bold text-sm transition-colors ${activeTab === 'config' ? 'border-violet-500 text-violet-600 dark:text-violet-400' : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'}`}
+          >
+            <Settings2 size={16} />
+            Régua de Cobrança
           </button>
         </div>
         
