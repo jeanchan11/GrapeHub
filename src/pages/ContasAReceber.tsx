@@ -1077,6 +1077,65 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
           </div>
         </div>
       )}
+      {/* Global Fixed Tooltip */}
+      {tooltipData && (() => {
+        const { item, type, x, y } = tooltipData;
+        const isSent = type === 'sent';
+        const confirmed = !!item.n8n_ticket_id;
+        const time = isSent
+          ? (item.sent_at ? new Date(item.sent_at).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—')
+          : (item.updated_at ? new Date(item.updated_at).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—');
+        const left = Math.min(x, window.innerWidth - 300);
+        const top = y - 8;
+        return (
+          <div className="pointer-events-none" style={{ position: 'fixed', top, left, zIndex: 99999, transform: 'translateY(-100%)' }}>
+            <div className={`w-72 rounded-xl shadow-2xl p-3 border text-left ${isSent ? 'bg-white dark:bg-gray-900 border-gray-200 dark:border-white/10' : 'bg-white dark:bg-gray-900 border-rose-300 dark:border-rose-500/30'}`}>
+              <p className={`text-[10px] font-bold uppercase tracking-widest mb-2 flex items-center gap-1.5 ${isSent ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                {isSent ? <CheckCircle2 size={10} /> : <AlertTriangle size={10} />}
+                {isSent ? 'Mensagem Enviada' : 'Falha no Envio'}
+              </p>
+              <div className="space-y-1.5">
+                <div className="flex gap-2">
+                  <span className="text-[10px] text-gray-500 dark:text-gray-400 w-16 shrink-0">Horário</span>
+                  <span className="text-[10px] text-gray-900 dark:text-white font-medium">{time}</span>
+                </div>
+                <div className="flex gap-2">
+                  <span className="text-[10px] text-gray-500 dark:text-gray-400 w-16 shrink-0">Telefone</span>
+                  <span className="text-[10px] text-gray-900 dark:text-white font-medium">{item.customer_phone || '—'}</span>
+                </div>
+                {isSent && confirmed && (
+                  <div className="flex gap-2">
+                    <span className="text-[10px] text-gray-500 dark:text-gray-400 w-16 shrink-0">Ticket n8n</span>
+                    <span className="text-[10px] text-violet-600 dark:text-violet-300 font-mono truncate">{item.n8n_ticket_id}</span>
+                  </div>
+                )}
+                {isSent && item.message_rendered && (
+                  <div className="pt-1.5 border-t border-gray-100 dark:border-white/10">
+                    <p className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">Mensagem enviada</p>
+                    <p className="text-[10px] text-gray-700 dark:text-gray-200 leading-relaxed line-clamp-4">{item.message_rendered}</p>
+                  </div>
+                )}
+                {!isSent && item.error_message && (
+                  <div className="pt-1.5 border-t border-gray-100 dark:border-white/10">
+                    <p className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">Detalhe do erro</p>
+                    <p className="text-[10px] text-rose-600 dark:text-rose-300 leading-relaxed">{item.error_message}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+      {openMenuId && menuPos && menuItem && (
+        <>
+          <div className="fixed inset-0 z-[99990]" onClick={closeMenu} />
+          <div className="fixed z-[99999] min-w-[180px] bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-xl shadow-xl overflow-hidden" style={{ top: menuPos.y + 4, right: window.innerWidth - menuPos.x }}>
+            <button onClick={() => { handleDispatchReopen(menuItem.id); closeMenu(); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-500/10 transition-colors">
+              <RotateCcw size={13} /> Reagendar envio
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 };
@@ -1762,121 +1821,36 @@ export default function ContasAReceber() {
                                   <span className="text-xs text-emerald-400">{inv.payment_date ? fmtDate(inv.payment_date) : '—'}</span>
                                 </td>
                                 <td className="px-4 py-3 text-right">
-                                  <span className="text-sm font-bold text-emerald-400">{formatCurrency(inv.value)}</span>
-                                </td>
-                                <td className="px-4 py-3 text-right">
-                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-full">
-                                    <CheckCircle2 size={10} /> Recebido
-                                  </span>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
+                                   <span className="text-sm font-bold text-emerald-400">{formatCurrency(inv.value)}</span>
+                                 </td>
+                                 <td className="px-4 py-3 text-right">
+                                   <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-full">
+                                     <CheckCircle2 size={10} /> Recebido
+                                   </span>
+                                 </td>
+                               </tr>
+                             );
+                           })}
+                         </tbody>
+                       </table>
+                     </div>
+                   )}
+                 </div>
+               </>
+             )}
 
-            {/* ══ Tab: Cobranças ══ */}
-            {mainTab === 'cobrancas' && (
-              <CollectionRulesBlock selectedMonth={selectedMonth} />
-            )}
+             {/* Tab: Cobranças */}
+             {mainTab === 'cobrancas' && (
+               <CollectionRulesBlock selectedMonth={selectedMonth} />
+             )}
 
-            {/* ══ Tab: Inadimplentes ══ */}
-            {mainTab === 'inadimplentes' && (
-              <InadimplentesBlock />
-            )}
-          </>
-        )}
-      </div>
-
-      {/* ── Global Fixed Tooltip ────────────────────────────────────────────── */}
-      {tooltipData && (() => {
-        const { item, type, x, y } = tooltipData;
-        const isSent = type === 'sent';
-        const confirmed = !!item.n8n_ticket_id;
-        const time = isSent
-          ? (item.sent_at ? new Date(item.sent_at).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—')
-          : (item.updated_at ? new Date(item.updated_at).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—');
-        const TIP_W = 288;
-        // Position tooltip above the badge, aligned to the left of it
-        const left = Math.min(x, window.innerWidth - TIP_W - 12);
-        const top = y - 8; // will use translateY(-100%) to go above
-        return (
-          <div
-            className="pointer-events-none"
-            style={{ position: 'fixed', top, left, zIndex: 99999, transform: 'translateY(-100%)' }}
-          >
-            <div className={`w-72 rounded-xl shadow-2xl p-3 border text-left ${
-              isSent
-                ? 'bg-white dark:bg-gray-900 border-gray-200 dark:border-white/10'
-                : 'bg-white dark:bg-gray-900 border-rose-300 dark:border-rose-500/30'
-            }`}>
-              <p className={`text-[10px] font-bold uppercase tracking-widest mb-2 flex items-center gap-1.5 ${
-                isSent ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
-              }`}>
-                {isSent ? <CheckCircle2 size={10} /> : <AlertTriangle size={10} />}
-                {isSent ? 'Mensagem Enviada' : 'Falha no Envio'}
-              </p>
-              <div className="space-y-1.5">
-                <div className="flex gap-2">
-                  <span className="text-[10px] text-gray-500 dark:text-gray-400 w-16 shrink-0">Horário</span>
-                  <span className="text-[10px] text-gray-900 dark:text-white font-medium">{time}</span>
-                </div>
-                <div className="flex gap-2">
-                  <span className="text-[10px] text-gray-500 dark:text-gray-400 w-16 shrink-0">Telefone</span>
-                  <span className="text-[10px] text-gray-900 dark:text-white font-medium">{item.customer_phone || '—'}</span>
-                </div>
-                {isSent && confirmed && (
-                  <div className="flex gap-2">
-                    <span className="text-[10px] text-gray-500 dark:text-gray-400 w-16 shrink-0">Ticket n8n</span>
-                    <span className="text-[10px] text-violet-600 dark:text-violet-300 font-mono truncate">{item.n8n_ticket_id}</span>
-                  </div>
-                )}
-                {isSent && item.message_rendered && (
-                  <div className="pt-1.5 border-t border-gray-100 dark:border-white/10">
-                    <p className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">Mensagem enviada</p>
-                    <p className="text-[10px] text-gray-700 dark:text-gray-200 leading-relaxed line-clamp-4">{item.message_rendered}</p>
-                  </div>
-                )}
-                {!isSent && item.error_message && (
-                  <div className="pt-1.5 border-t border-gray-100 dark:border-white/10">
-                    <p className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">Detalhe do erro</p>
-                    <p className="text-[10px] text-rose-600 dark:text-rose-300 leading-relaxed">{item.error_message}</p>
-                  </div>
-                )}
-              </div>
-            </div>
-            {/* Arrow */}
-            <div className="px-4 flex" style={{ justifyContent: 'flex-start', paddingLeft: '16px' }}>
-              <div className={`w-2.5 h-2.5 rotate-45 -mt-1.5 border-r border-b ${
-                isSent ? 'bg-white dark:bg-gray-900 border-gray-200 dark:border-white/10' : 'bg-white dark:bg-gray-900 border-rose-300 dark:border-rose-500/30'
-              }`} />
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* ── Global Fixed Dropdown (3 pontos) ───────────────────────────────── */}
-      {openMenuId && menuPos && menuItem && (
-        <>
-          <div className="fixed inset-0 z-[99990]" onClick={closeMenu} />
-          <div
-            className="fixed z-[99999] min-w-[180px] bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-xl shadow-xl overflow-hidden"
-            style={{ top: menuPos.y + 4, right: window.innerWidth - menuPos.x }}
-          >
-            <button
-              onClick={() => { handleDispatchReopen(menuItem.id); closeMenu(); }}
-              className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-500/10 transition-colors"
-            >
-              <RotateCcw size={13} /> Reagendar envio
-            </button>
-          </div>
-        </>
-      )}
-    </div>
-  );
+             {/* Tab: Inadimplentes */}
+             {mainTab === 'inadimplentes' && (
+               <InadimplentesBlock />
+             )}
+           </>
+         )}
+       </div>
+     </div>
+   );
 }
