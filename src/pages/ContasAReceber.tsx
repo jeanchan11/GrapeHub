@@ -708,8 +708,8 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                 </div>
 
                 {/* Table + Sub-tabs */}
-                <div className="rounded-xl border border-gray-100 dark:border-white/5 overflow-hidden">
-                  <div className="flex items-center gap-6 px-4 pt-3 border-b border-gray-100 dark:border-white/5 bg-gray-50 dark:bg-dark-bg/50">
+                <div className="rounded-xl border border-gray-100 dark:border-white/5">
+                  <div className="flex items-center gap-6 px-4 pt-3 border-b border-gray-100 dark:border-white/5 bg-gray-50 dark:bg-dark-bg/50 rounded-t-xl">
                     {subTabCfg.map(({ key, label, color, items }) => {
                       const active = dispatchSubTab === key;
                       return (
@@ -809,38 +809,38 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                                           {confirmed ? <CheckCircle2 size={11} /> : <Clock size={10} />}
                                           {confirmed ? 'Enviado' : 'Aguardando n8n'}
                                         </span>
-                                        {/* Tooltip hover */}
-                                        <div className="absolute bottom-full right-0 mb-2 w-72 z-50 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-150">
-                                          <div className="bg-gray-900 dark:bg-gray-800 text-white rounded-xl shadow-2xl p-3 border border-white/10 text-left">
-                                            <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                                        {/* Tooltip hover — Enviado */}
+                                        <div className="absolute bottom-full right-0 mb-2 w-72 z-[9999] opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-150">
+                                          <div className="bg-white dark:bg-gray-900 text-gray-800 dark:text-white rounded-xl shadow-2xl p-3 border border-gray-200 dark:border-white/10 text-left">
+                                            <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
                                               <CheckCircle2 size={10} /> Mensagem Enviada
                                             </p>
                                             <div className="space-y-1.5">
                                               <div className="flex gap-2">
-                                                <span className="text-[10px] text-gray-400 w-16 shrink-0">Horário</span>
-                                                <span className="text-[10px] text-white font-medium">{sentAt}</span>
+                                                <span className="text-[10px] text-gray-500 dark:text-gray-400 w-16 shrink-0">Horário</span>
+                                                <span className="text-[10px] text-gray-900 dark:text-white font-medium">{sentAt}</span>
                                               </div>
                                               <div className="flex gap-2">
-                                                <span className="text-[10px] text-gray-400 w-16 shrink-0">Telefone</span>
-                                                <span className="text-[10px] text-white font-medium">{item.customer_phone || '—'}</span>
+                                                <span className="text-[10px] text-gray-500 dark:text-gray-400 w-16 shrink-0">Telefone</span>
+                                                <span className="text-[10px] text-gray-900 dark:text-white font-medium">{item.customer_phone || '—'}</span>
                                               </div>
                                               {confirmed && (
                                                 <div className="flex gap-2">
-                                                  <span className="text-[10px] text-gray-400 w-16 shrink-0">Ticket n8n</span>
-                                                  <span className="text-[10px] text-violet-300 font-mono truncate">{item.n8n_ticket_id}</span>
+                                                  <span className="text-[10px] text-gray-500 dark:text-gray-400 w-16 shrink-0">Ticket n8n</span>
+                                                  <span className="text-[10px] text-violet-600 dark:text-violet-300 font-mono truncate">{item.n8n_ticket_id}</span>
                                                 </div>
                                               )}
                                               {item.message_rendered && (
-                                                <div className="pt-1.5 border-t border-white/10">
-                                                  <p className="text-[10px] text-gray-400 mb-1">Mensagem enviada</p>
-                                                  <p className="text-[10px] text-gray-200 leading-relaxed line-clamp-4">{item.message_rendered}</p>
+                                                <div className="pt-1.5 border-t border-gray-100 dark:border-white/10">
+                                                  <p className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">Mensagem enviada</p>
+                                                  <p className="text-[10px] text-gray-700 dark:text-gray-200 leading-relaxed line-clamp-4">{item.message_rendered}</p>
                                                 </div>
                                               )}
                                             </div>
                                           </div>
                                           {/* Arrow */}
                                           <div className="flex justify-end pr-4">
-                                            <div className="w-2.5 h-2.5 bg-gray-900 dark:bg-gray-800 rotate-45 -mt-1.5 border-r border-b border-white/10" />
+                                            <div className="w-2.5 h-2.5 bg-white dark:bg-gray-900 rotate-45 -mt-1.5 border-r border-b border-gray-200 dark:border-white/10" />
                                           </div>
                                         </div>
                                       </div>
@@ -879,31 +879,31 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                                         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold cursor-default bg-rose-100 dark:bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-500/30">
                                           <AlertTriangle size={10} /> Erro no envio
                                         </span>
-                                        {/* Tooltip hover */}
-                                        <div className="absolute bottom-full right-0 mb-2 w-72 z-50 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-150">
-                                          <div className="bg-gray-900 dark:bg-gray-800 text-white rounded-xl shadow-2xl p-3 border border-rose-500/30 text-left">
-                                            <p className="text-[10px] font-bold text-rose-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                                        {/* Tooltip hover — Erro */}
+                                        <div className="absolute bottom-full right-0 mb-2 w-72 z-[9999] opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-150">
+                                          <div className="bg-white dark:bg-gray-900 text-gray-800 dark:text-white rounded-xl shadow-2xl p-3 border border-rose-300 dark:border-rose-500/30 text-left">
+                                            <p className="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
                                               <AlertTriangle size={10} /> Falha no Envio
                                             </p>
                                             <div className="space-y-1.5">
                                               <div className="flex gap-2">
-                                                <span className="text-[10px] text-gray-400 w-16 shrink-0">Horário</span>
-                                                <span className="text-[10px] text-white font-medium">{errAt}</span>
+                                                <span className="text-[10px] text-gray-500 dark:text-gray-400 w-16 shrink-0">Horário</span>
+                                                <span className="text-[10px] text-gray-900 dark:text-white font-medium">{errAt}</span>
                                               </div>
                                               <div className="flex gap-2">
-                                                <span className="text-[10px] text-gray-400 w-16 shrink-0">Telefone</span>
-                                                <span className="text-[10px] text-white font-medium">{item.customer_phone || '—'}</span>
+                                                <span className="text-[10px] text-gray-500 dark:text-gray-400 w-16 shrink-0">Telefone</span>
+                                                <span className="text-[10px] text-gray-900 dark:text-white font-medium">{item.customer_phone || '—'}</span>
                                               </div>
                                               {item.error_message && (
-                                                <div className="pt-1.5 border-t border-white/10">
-                                                  <p className="text-[10px] text-gray-400 mb-1">Detalhe do erro</p>
-                                                  <p className="text-[10px] text-rose-300 leading-relaxed">{item.error_message}</p>
+                                                <div className="pt-1.5 border-t border-gray-100 dark:border-white/10">
+                                                  <p className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">Detalhe do erro</p>
+                                                  <p className="text-[10px] text-rose-600 dark:text-rose-300 leading-relaxed">{item.error_message}</p>
                                                 </div>
                                               )}
                                             </div>
                                           </div>
                                           <div className="flex justify-end pr-4">
-                                            <div className="w-2.5 h-2.5 bg-gray-900 dark:bg-gray-800 rotate-45 -mt-1.5 border-r border-b border-rose-500/30" />
+                                            <div className="w-2.5 h-2.5 bg-white dark:bg-gray-900 rotate-45 -mt-1.5 border-r border-b border-rose-300 dark:border-rose-500/30" />
                                           </div>
                                         </div>
                                       </div>
