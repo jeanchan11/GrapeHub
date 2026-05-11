@@ -244,8 +244,12 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
     return () => clearInterval(t);
   }, [pollingActive]);
 
+  // Atualização automática a cada 30s enquanto a aba de disparos está aberta
   useEffect(() => {
-    if (activeTab === 'disparos') fetchDispatch();
+    if (activeTab !== 'disparos') return;
+    fetchDispatch();
+    const t = setInterval(fetchDispatch, 30_000);
+    return () => clearInterval(t);
   }, [activeTab]);
 
   const handleDispatchSend = async (id: string) => {

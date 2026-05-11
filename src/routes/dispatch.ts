@@ -23,8 +23,13 @@ function renderMessage(template: string, item: Record<string, any>): string {
     ? Number(item.amount).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
     : '';
 
-  const vencimento = item.due_date
-    ? new Date(item.due_date + 'T12:00:00').toLocaleDateString('pt-BR')
+  // due_date pode vir como Date (objeto JS) ou string 'YYYY-MM-DD' do PostgreSQL
+  const dueDateStr = item.due_date instanceof Date
+    ? item.due_date.toISOString().slice(0, 10)
+    : String(item.due_date || '').slice(0, 10);
+
+  const vencimento = dueDateStr
+    ? new Date(dueDateStr + 'T12:00:00').toLocaleDateString('pt-BR')
     : '';
 
   return template
