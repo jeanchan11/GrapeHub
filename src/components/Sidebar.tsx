@@ -535,7 +535,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
             <div className="relative shrink-0">
               <div className="w-9 h-9 rounded-xl bg-violet-500/20 flex items-center justify-center overflow-hidden border border-violet-500/30">
                 <img
-                  src={user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.email}`}
+                  src={userData?.picture || user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.email}`}
                   alt="User"
                   className="w-full h-full object-cover"
                 />
@@ -672,9 +672,29 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                       }
                     }}
                   />
-                  <div className="text-center">
+                  <div className="text-center flex flex-col items-center">
                     <p className="text-base font-bold text-light-text dark:text-white">Foto de Perfil</p>
-                    <p className="text-xs text-slate-500 mt-1">Clique na foto para alterar. JPG, PNG, GIF ou WebP.</p>
+                    <p className="text-xs text-slate-500 mt-1 mb-3">Clique na foto para alterar. JPG, PNG, GIF ou WebP.</p>
+                    {userData?.role && (
+                      <span className={`text-[10px] font-bold px-3 py-1 rounded uppercase tracking-widest ${
+                        userData.role === 'superadmin' ? 'bg-rose-500/10 text-rose-600 dark:text-rose-500 border border-rose-500/20' :
+                        userData.role === 'diretor-operacional' ? 'bg-amber-500/10 text-amber-600 dark:text-amber-500 border border-amber-500/20' :
+                        userData.role === 'gestor-trafego' ? 'bg-violet-500/10 text-violet-600 dark:text-violet-500 border border-violet-500/20' :
+                        userData.role === 'gerente-comercial' ? 'bg-orange-500/10 text-orange-600 dark:text-orange-500 border border-orange-500/20' :
+                        'bg-blue-500/10 text-blue-600 dark:text-blue-500 border border-blue-500/20'
+                      }`}>
+                        {{
+                          'superadmin': 'Superadmin',
+                          'diretor-operacional': 'Diretor Operacional',
+                          'gerente-operacional': 'Gerente Operacional',
+                          'gerente-comercial': 'Gerente Comercial',
+                          'gestor-trafego': 'Gestor de Tráfego',
+                          'analista-ia': 'Analista de IA',
+                          'design': 'Design',
+                          'user': 'Usuário Padrão'
+                        }[userData.role] || userData.role}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div>

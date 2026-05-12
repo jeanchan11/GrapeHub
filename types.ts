@@ -1,5 +1,5 @@
 
-export type UserRole = 'superadmin' | 'gerente-operacional' | 'gestor-trafego' | 'design' | 'user';
+export type UserRole = 'superadmin' | 'gerente-operacional' | 'gestor-trafego' | 'design' | 'user' | 'diretor-operacional' | 'analista-ia' | 'gerente-comercial';
 
 export interface UserData {
   id: string;

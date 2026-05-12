@@ -50,8 +50,11 @@ const AdminPanel: React.FC = () => {
 
   const roles: { id: UserRole; label: string }[] = [
     { id: 'superadmin', label: 'Superadmin' },
+    { id: 'diretor-operacional', label: 'Diretor Operacional' },
     { id: 'gerente-operacional', label: 'Gerente Operacional' },
+    { id: 'gerente-comercial', label: 'Gerente Comercial' },
     { id: 'gestor-trafego', label: 'Gestor de Tráfego' },
+    { id: 'analista-ia', label: 'Analista de IA' },
     { id: 'design', label: 'Design' },
     { id: 'user', label: 'Usuário Padrão' },
   ];
@@ -534,6 +537,16 @@ const AdminPanel: React.FC = () => {
               const currentData = pendingChanges[user.id] || { allowedPages: user.allowedPages || [], role: user.role };
               const hasChanges = pendingChanges[user.id] !== undefined;
 
+              const getRoleBadgeClasses = (role: string) => {
+                switch (role) {
+                  case 'superadmin': return 'bg-rose-500/10 text-rose-600 dark:text-rose-500 border border-rose-500/20';
+                  case 'diretor-operacional': return 'bg-amber-500/10 text-amber-600 dark:text-amber-500 border border-amber-500/20';
+                  case 'gestor-trafego': return 'bg-violet-500/10 text-violet-600 dark:text-violet-500 border border-violet-500/20';
+                  case 'gerente-comercial': return 'bg-orange-500/10 text-orange-600 dark:text-orange-500 border border-orange-500/20';
+                  default: return 'bg-blue-500/10 text-blue-600 dark:text-blue-500 border border-blue-500/20';
+                }
+              };
+
               return (
                 <div 
                   key={user.id} 
@@ -559,7 +572,7 @@ const AdminPanel: React.FC = () => {
                         </div>
                         <div className="flex items-center gap-2 mt-1">
                           {user.name && user.name.trim() !== '' && <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate max-w-[200px]">{user.email}</p>}
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-widest ${user.role === 'superadmin' ? 'bg-rose-500/10 text-rose-600 dark:text-rose-500' : 'bg-blue-500/10 text-blue-600 dark:text-blue-500'}`}>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-widest ${getRoleBadgeClasses(user.role)}`}>
                             {roles.find(r => r.id === user.role)?.label || user.role}
                           </span>
                         </div>

@@ -34,8 +34,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (response.ok) {
         const data = await response.json();
         
-        // Check if name or picture changed
-        if (data.name !== firebaseUser.displayName || data.picture !== firebaseUser.photoURL) {
+        // Check if name should be updated or if picture is missing and should be populated from Firebase
+        const shouldUpdateName = firebaseUser.displayName && data.name !== firebaseUser.displayName;
+        const shouldUpdatePicture = firebaseUser.photoURL && !data.picture;
+
+        if (shouldUpdateName || shouldUpdatePicture) {
+          const newName = shouldUpdateName ? firebaseUser.displayName : data.name;
+          const newPicture = shouldUpdatePicture ? firebaseUser.photoURL : data.picture;
+
           try {
             await fetch(`/api/users/${data.id}`, {
               method: 'PUT',
@@ -43,8 +49,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
               body: JSON.stringify({
                 role: data.role,
                 allowedPages: data.allowedPages,
-                name: firebaseUser.displayName,
-                picture: firebaseUser.photoURL
+                name: newName,
+                picture: newPicture
               })
             });
           } catch (e) {
@@ -55,13 +61,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
               body: JSON.stringify({
                 role: data.role,
                 allowedPages: data.allowedPages,
-                name: firebaseUser.displayName,
-                picture: firebaseUser.photoURL
+                name: newName,
+                picture: newPicture
               })
             });
           }
-          data.name = firebaseUser.displayName;
-          data.picture = firebaseUser.photoURL;
+          data.name = newName;
+          data.picture = newPicture;
         }
 
         if (data.email === 'jeanchan@grapemidia.com') {
