@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Users, Shield, Check, X, Search, UserMinus, UserPlus, Lock, Unlock, Database, ChevronDown, ChevronUp, Layers, Loader2, FileText } from 'lucide-react';
+import { Users, Shield, Check, X, Search, UserMinus, UserPlus, Lock, Unlock, Database, ChevronDown, ChevronUp, Layers, Loader2, FileText, MoreHorizontal, Edit3, Trash2 } from 'lucide-react';
 import LoadingSpinner from './LoadingSpinner';
 import { UserData, UserRole } from '../../types';
 import { useMenu } from '../context/MenuContext';
@@ -22,6 +22,31 @@ const AdminPanel: React.FC = () => {
   const [pendingChanges, setPendingChanges] = useState<Record<string, { allowedPages: string[], role: UserRole, squad?: string, name?: string }>>({});
   const [isSaving, setIsSaving] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'users' | 'pages'>('users');
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleClickOutside = () => setOpenMenuId(null);
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, []);
+
+  const deleteUser = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm('Tem certeza que deseja excluir este usuário? Esta ação não pode ser desfeita.')) return;
+    setOpenMenuId(null);
+    try {
+      const response = await fetch(`/api/users/${id}`, { method: 'DELETE' });
+      if (response.ok) {
+        setUsers(users.filter(u => u.id !== id));
+      } else {
+        const errorData = await response.json();
+        alert(`Erro ao excluir: ${errorData.message}`);
+      }
+    } catch (error) {
+      console.error('Erro ao excluir usuário', error);
+      alert('Erro ao excluir usuário.');
+    }
+  };
 
   const roles: { id: UserRole; label: string }[] = [
     { id: 'superadmin', label: 'Superadmin' },
@@ -510,10 +535,9 @@ const AdminPanel: React.FC = () => {
               const hasChanges = pendingChanges[user.id] !== undefined;
 
               return (
-                <button 
+                <div 
                   key={user.id} 
-                  onClick={() => startEditing(user)}
-                  className="w-full text-left cursor-pointer bg-dark-card/60 backdrop-blur-md rounded-3xl border border-white/10 overflow-hidden shadow-xl transition-colors hover:border-violet-500/50"
+                  className={`w-full text-left bg-dark-card/60 backdrop-blur-md rounded-3xl border border-white/10 overflow-visible shadow-xl transition-colors hover:border-violet-500/50 ${openMenuId === user.id ? 'relative z-50' : 'relative z-10'}`}
                 >
                   <div className="p-6 flex flex-col md:flex-row md:items-center justify-between gap-6">
                     <div className="flex items-center gap-4">
@@ -542,11 +566,36 @@ const AdminPanel: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs text-slate-500 dark:text-slate-400">Clique para editar</span>
+                    <div className="flex items-center gap-3 relative">
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === user.id ? null : user.id); }}
+                        className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                      >
+                        <MoreHorizontal size={20} />
+                      </button>
+
+                      {openMenuId === user.id && (
+                        <div className="absolute right-0 top-10 z-20 w-48 bg-[#1e1b29] border border-white/10 rounded-xl shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); startEditing(user); setOpenMenuId(null); }}
+                            className="w-full flex items-center gap-3 px-4 py-3 text-sm text-slate-300 hover:bg-white/5 transition-colors text-left"
+                          >
+                            <Edit3 size={16} />
+                            Alterar usuário
+                          </button>
+                          <div className="border-t border-white/5" />
+                          <button 
+                            onClick={(e) => deleteUser(user.id, e)}
+                            className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-400 hover:bg-red-500/10 transition-colors text-left"
+                          >
+                            <Trash2 size={16} />
+                            Excluir usuário
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>

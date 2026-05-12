@@ -2471,7 +2471,9 @@ async function startServer() {
         name: row.name,
         picture: row.picture,
         role: row.role,
-        allowedPages: row.allowed_pages || []
+        allowedPages: row.allowed_pages || [],
+        phone: row.phone,
+        bio: row.bio
       })));
     } catch (err) {
       console.error("Error fetching users:", err);
@@ -2491,7 +2493,9 @@ async function startServer() {
           name: row.name,
           picture: row.picture,
           role: row.role,
-          allowedPages: row.allowed_pages || []
+          allowedPages: row.allowed_pages || [],
+          phone: row.phone,
+          bio: row.bio
         });
       } else {
         res.status(404).json({ error: "User not found" });
@@ -2503,14 +2507,14 @@ async function startServer() {
   });
 
   app.post("/api/users", async (req, res) => {
-    const { email, role, allowedPages, name, picture, uid } = req.body;
+    const { email, role, allowedPages, name, picture, uid, phone, bio } = req.body;
     if (!email) return res.status(400).json({ error: 'Email is required', message: 'Email é obrigatório' });
     // uid is required by the DB (NOT NULL). Use provided uid, or derive one from email.
     const userUid = uid || email.toLowerCase().replace(/[^a-z0-9]/g, '_');
     try {
       await pool.query(
-        "INSERT INTO users (uid, email, name, picture, role, allowed_pages) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (email) DO UPDATE SET name = COALESCE(EXCLUDED.name, users.name), picture = COALESCE(EXCLUDED.picture, users.picture), role = EXCLUDED.role, allowed_pages = EXCLUDED.allowed_pages",
-        [userUid, email.toLowerCase().trim(), name || null, picture || null, role || 'user', JSON.stringify(allowedPages || [])]
+        "INSERT INTO users (uid, email, name, picture, role, allowed_pages, phone, bio) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (email) DO UPDATE SET name = COALESCE(EXCLUDED.name, users.name), picture = COALESCE(EXCLUDED.picture, users.picture), role = EXCLUDED.role, allowed_pages = EXCLUDED.allowed_pages, phone = COALESCE(EXCLUDED.phone, users.phone), bio = COALESCE(EXCLUDED.bio, users.bio)",
+        [userUid, email.toLowerCase().trim(), name || null, picture || null, role || 'user', JSON.stringify(allowedPages || []), phone || null, bio || null]
       );
       res.json({ success: true });
     } catch (err) {
@@ -2522,17 +2526,29 @@ async function startServer() {
 
   app.put("/api/users/:id", async (req, res) => {
     const { id } = req.params;
-    const { role, allowedPages, name, picture, squad } = req.body;
+    const { role, allowedPages, name, picture, squad, phone, bio } = req.body;
     try {
       await pool.query(
-        "UPDATE users SET role = $1, allowed_pages = $2, name = COALESCE($3, name), picture = COALESCE($4, picture), squad = $5 WHERE id = $6",
-        [role, JSON.stringify(allowedPages || []), name, picture, squad || null, id]
+        "UPDATE users SET role = COALESCE($1, role), allowed_pages = COALESCE($2, allowed_pages), name = COALESCE($3, name), picture = COALESCE($4, picture), squad = COALESCE($5, squad), phone = COALESCE($6, phone), bio = COALESCE($7, bio) WHERE id = $8",
+        [role, allowedPages ? JSON.stringify(allowedPages) : null, name, picture, squad, phone, bio, id]
       );
       res.json({ success: true });
     } catch (err) {
       console.error("Error updating user:", err);
       const msg = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: "Failed to update user", message: msg });
+    }
+  });
+
+  app.delete("/api/users/:id", async (req, res) => {
+    const { id } = req.params;
+    try {
+      await pool.query("DELETE FROM users WHERE id = $1", [id]);
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Error deleting user:", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: "Failed to delete user", message: msg });
     }
   });
 

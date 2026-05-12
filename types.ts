@@ -10,6 +10,8 @@ export interface UserData {
   role: UserRole;
   allowedPages: string[];
   squad?: string;
+  phone?: string;
+  bio?: string;
 }
 
 export interface Subtask {

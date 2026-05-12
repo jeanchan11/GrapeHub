@@ -11,7 +11,7 @@ import { useMenu } from '../context/MenuContext';
 import {
   Search, Bell, Settings,
   ChevronRight, ChevronLeft, LogOut,
-  ChevronDown, Sun, Moon, Zap, Folder,
+  ChevronDown, Sun, Moon, Zap, Folder, Camera, Phone, User as UserIcon, Save, X
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -29,6 +29,13 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
   const [isCollapsed, setIsCollapsed] = useState(() => {
     try { return localStorage.getItem('sidebar-collapsed') === 'true'; } catch { return false; }
   });
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [profileData, setProfileData] = useState({ 
+    picture: userData?.picture || user.photoURL || '', 
+    phone: userData?.phone || '', 
+    bio: userData?.bio || '' 
+  });
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
     try {
@@ -70,6 +77,38 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
 
   const keepFlyout = () => {
     if (flyoutTimeout.current) clearTimeout(flyoutTimeout.current);
+  };
+
+  const handleSaveProfile = async () => {
+    if (!userData) return;
+    setIsSavingProfile(true);
+    try {
+      const response = await fetch(`/api/users/${userData.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          role: userData.role,
+          allowedPages: userData.allowedPages,
+          name: userData.name,
+          squad: userData.squad,
+          picture: profileData.picture,
+          phone: profileData.phone,
+          bio: profileData.bio
+        })
+      });
+      if (response.ok) {
+        setShowProfileModal(false);
+        // Force reload to apply changes quickly
+        window.location.reload();
+      } else {
+        alert('Erro ao salvar perfil.');
+      }
+    } catch (error) {
+      console.error(error);
+      alert('Erro ao salvar perfil.');
+    } finally {
+      setIsSavingProfile(false);
+    }
   };
 
   const toggleExpand = (id: string) =>
@@ -504,7 +543,18 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
               <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 border-2 border-light-sidebar dark:border-dark-sidebar rounded-full" />
             </div>
             {!isCollapsed && (
-              <div className="flex-1 min-w-0 overflow-hidden">
+              <div 
+                className="flex-1 min-w-0 overflow-hidden cursor-pointer hover:bg-white/5 rounded-lg p-1 transition-colors"
+                onClick={() => {
+                  setProfileData({
+                    picture: userData?.picture || user.photoURL || '',
+                    phone: userData?.phone || '',
+                    bio: userData?.bio || ''
+                  });
+                  setShowProfileModal(true);
+                }}
+                title="Editar perfil"
+              >
                 <p className="text-xs font-bold text-light-text dark:text-white truncate">{userData?.name || user.displayName || 'Usuário'}</p>
                 <p className="text-[10px] text-slate-600 dark:text-slate-500 truncate">{user.email}</p>
               </div>
@@ -562,6 +612,113 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
           })}
         </div>
       )}
+
+      {/* ── User Profile Modal ─────────────────────────────── */}
+      <AnimatePresence>
+        {showProfileModal && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white dark:bg-[#1e1b29] border border-slate-200 dark:border-white/10 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden"
+            >
+              <div className="p-6 border-b border-slate-100 dark:border-white/5 flex items-center justify-between">
+                <h2 className="text-xl font-bold text-light-text dark:text-white">Editar Perfil</h2>
+                <button onClick={() => setShowProfileModal(false)} className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors rounded-lg hover:bg-slate-100 dark:hover:bg-white/5">
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="p-6 space-y-4">
+                <div className="flex flex-col items-center justify-center gap-4 mb-2">
+                  <div 
+                    className="relative w-28 h-28 rounded-full bg-[#4285F4]/20 flex items-center justify-center overflow-hidden cursor-pointer group shadow-xl border-4 border-slate-100 dark:border-[#1e1b29]"
+                    onClick={() => document.getElementById('profile-upload')?.click()}
+                  >
+                    {profileData.picture ? (
+                      <img src={profileData.picture} alt="Profile" className="w-full h-full object-cover" />
+                    ) : (
+                      <UserIcon size={56} className="text-[#4285F4]" />
+                    )}
+                    <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Camera size={28} className="text-white" />
+                    </div>
+                  </div>
+                  <input 
+                    id="profile-upload"
+                    type="file" 
+                    accept="image/png, image/jpeg, image/gif, image/webp"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onload = (ev) => {
+                          const img = new Image();
+                          img.onload = () => {
+                            const canvas = document.createElement('canvas');
+                            const size = Math.min(img.width, img.height);
+                            canvas.width = 250;
+                            canvas.height = 250;
+                            const ctx = canvas.getContext('2d');
+                            if (ctx) {
+                              ctx.drawImage(img, (img.width - size) / 2, (img.height - size) / 2, size, size, 0, 0, 250, 250);
+                              setProfileData({...profileData, picture: canvas.toDataURL(file.type || 'image/jpeg', 0.8)});
+                            }
+                          };
+                          img.src = ev.target?.result as string;
+                        };
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                  />
+                  <div className="text-center">
+                    <p className="text-base font-bold text-light-text dark:text-white">Foto de Perfil</p>
+                    <p className="text-xs text-slate-500 mt-1">Clique na foto para alterar. JPG, PNG, GIF ou WebP.</p>
+                  </div>
+                </div>
+                <div>
+                  <label className="flex items-center gap-2 text-sm font-bold text-light-text dark:text-white mb-2">
+                    <Phone size={16} className="text-emerald-500" /> Telefone
+                  </label>
+                  <input 
+                    type="text" 
+                    value={profileData.phone} 
+                    onChange={e => setProfileData({...profileData, phone: e.target.value})} 
+                    placeholder="(00) 00000-0000" 
+                    className="w-full bg-slate-50 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-light-text dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500/50"
+                  />
+                </div>
+                <div>
+                  <label className="flex items-center gap-2 text-sm font-bold text-light-text dark:text-white mb-2">
+                    <UserIcon size={16} className="text-blue-500" /> Bio
+                  </label>
+                  <textarea 
+                    value={profileData.bio} 
+                    onChange={e => setProfileData({...profileData, bio: e.target.value})} 
+                    placeholder="Conte um pouco sobre você..." 
+                    rows={3}
+                    className="w-full bg-slate-50 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-light-text dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500/50 resize-none"
+                  />
+                </div>
+              </div>
+              <div className="p-6 border-t border-slate-100 dark:border-white/5 bg-slate-50 dark:bg-white/5 flex justify-end gap-3">
+                <button onClick={() => setShowProfileModal(false)} className="px-4 py-2 text-sm font-bold text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors">
+                  Cancelar
+                </button>
+                <button 
+                  onClick={handleSaveProfile} 
+                  disabled={isSavingProfile}
+                  className="px-6 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-sm font-bold transition-all disabled:opacity-50 flex items-center gap-2 shadow-lg shadow-violet-600/20"
+                >
+                  {isSavingProfile ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Save size={16} />}
+                  Salvar
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </>
   );
 };
