@@ -45,7 +45,10 @@ const formatCurrency = (value: string | number) => {
 
 const fmtDate = (d: string | null) => {
   if (!d) return '—';
-  return new Date(d).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  // Força interpretação como data local (não UTC) pegando só YYYY-MM-DD e adicionando T12:00:00
+  // Evita o bug: "2026-05-12T00:00:00Z" (UTC midnight) → "11/05" em fuso UTC-3
+  const dateOnly = String(d).slice(0, 10);
+  return new Date(`${dateOnly}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 };
 
 const extractClientName = (desc: string): string => {
@@ -169,13 +172,14 @@ interface QueueItem {
 
 interface SummaryData {
   preventivo: number;
+  suspensao: number;
   vencimento: number;
   reativo: number;
   humano: number;
 }
 
 const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
-  const [summary, setSummary] = useState<SummaryData>({ preventivo: 0, vencimento: 0, reativo: 0, humano: 0 });
+  const [summary, setSummary] = useState<SummaryData>({ preventivo: 0, vencimento: 0, reativo: 0, humano: 0, suspensao: 0 });
   const [rules, setRules] = useState<Rule[]>([]);
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -207,11 +211,12 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
   const [sendingAll, setSendingAll] = useState(false);
   const [pollingActive, setPollingActive] = useState(false);
   const [dispatchSubTab, setDispatchSubTab] = useState<'agendados'|'enviados'|'humano'|'suspensao'|'cancelados'>('agendados');
+  const [overdueClients, setOverdueClients] = useState<any[]>([]);
 
   const fetchDispatch = async () => {
     try {
       const [qRes, sRes, cRes] = await Promise.all([
-        fetch('/api/finance/dispatch/queue'),
+        fetch('/api/finance/dispatch/queue?limit=2000'),
         fetch('/api/finance/dispatch/queue/stats'),
         fetch('/api/finance/dispatch/config'),
       ]);
@@ -227,6 +232,9 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
           n8n_webhook_url: cfg.n8n_webhook_url || '',
         });
       }
+      // Overdue clients (Contato Humano + Suspensão) — all, regardless of CRM status
+      const odRes = await fetch('/api/fin/collection/overdue-clients');
+      if (odRes.ok) setOverdueClients(await odRes.json());
     } catch (e) { /* silent */ }
   };
 
@@ -390,7 +398,7 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
         }),
       });
     } catch { /* silent */ }
-  };  const phaseLabels: Record<string, string> = { preventivo: 'Em Preventivo', vencimento: 'No Vencimento', reativo: 'Em Atraso', humano: 'Contato Humano' };
+  };  const phaseLabels: Record<string, string> = { preventivo: 'Em Preventivo', vencimento: 'No Vencimento', reativo: 'Em Atraso', humano: 'Contato Humano', suspensao: 'Suspensão' };
 
   const openPhaseDetail = async (phase: string) => {
     setLoadingDetail(true);
@@ -506,6 +514,9 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
     humano: {
       bg: 'bg-[#a78bfa]/10 dark:bg-[#a78bfa]/5', border: 'border-[#a78bfa]/30', text: 'text-violet-600 dark:text-[#a78bfa]', pillBg: 'bg-[#a78bfa]/10', iconColor: 'bg-violet-500 dark:bg-[#a78bfa]'
     },
+    suspensao: {
+      bg: 'bg-[#fb923c]/10 dark:bg-[#fb923c]/5', border: 'border-[#fb923c]/30', text: 'text-orange-600 dark:text-[#fb923c]', pillBg: 'bg-[#fb923c]/10', iconColor: 'bg-orange-500 dark:bg-[#fb923c]'
+    },
   };
 
   const getExtraBadge = (day: number) => {
@@ -588,17 +599,17 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
           {activeTab === 'config' && (
             <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
           {/* 4. Alerta Humano */}
-          {summary.humano > 0 && (
+          {(summary.humano > 0 || summary.suspensao > 0) && (
             <div className="mb-6 p-4 bg-orange-50 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-500/50 rounded-xl flex items-center gap-3">
               <AlertTriangle className="text-orange-500 dark:text-orange-400 shrink-0" size={20} />
               <p className="text-sm text-orange-800 dark:text-orange-200 font-medium">
-                <strong className="text-orange-600 dark:text-orange-500">{summary.humano} cliente(s)</strong> atingiram D+10 e requerem contato humano urgente.
+                <strong className="text-orange-600 dark:text-orange-500">{summary.humano + summary.suspensao} cliente(s)</strong> atingiram D+10 e requerem contato humano urgente.
               </p>
             </div>
           )}
 
           {/* 2. Métricas 4 Fases */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
             <div onClick={() => openPhaseDetail('preventivo')} className="p-4 rounded-xl border border-[#2dd4bf]/20 bg-[#2dd4bf]/5 dark:bg-[#0d4a3a]/10 cursor-pointer hover:border-[#2dd4bf]/40 hover:shadow-md transition-all">
               <p className="text-[10px] font-bold text-teal-600 dark:text-[#2dd4bf] uppercase tracking-widest mb-1">Em preventivo</p>
               <p className="text-2xl font-black text-gray-800 dark:text-white">{summary.preventivo}</p>
@@ -618,6 +629,13 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
               </p>
               <p className="text-2xl font-black text-gray-800 dark:text-white">{summary.humano}</p>
             </div>
+            <div onClick={() => openPhaseDetail('suspensao')} className="p-4 rounded-xl border border-[#fb923c]/20 bg-[#fb923c]/5 dark:bg-[#7c2d12]/10 relative overflow-hidden cursor-pointer hover:border-[#fb923c]/40 hover:shadow-md transition-all">
+              <p className="text-[10px] font-bold text-orange-600 dark:text-[#fb923c] uppercase tracking-widest mb-1 flex items-center gap-2">
+                Suspensão
+                {summary.suspensao > 0 && <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse shadow-[0_0_8px_rgba(249,115,22,0.8)]" />}
+              </p>
+              <p className="text-2xl font-black text-gray-800 dark:text-white">{summary.suspensao}</p>
+            </div>
           </div>
 
           {/* Legenda Timeline */}
@@ -626,6 +644,7 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
             <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-[#f59e0b]" /> Vencimento</div>
             <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-[#f87171]" /> Reativo automático</div>
             <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-[#a78bfa]" /> Contato humano</div>
+            <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-[#fb923c]" /> Suspensão</div>
           </div>
 
           {/* 3. Timeline Vertical (Novo Design) */}
@@ -651,9 +670,10 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                     onClick={() => { setEditingRule(rule); setTemplateText(rule.message_template || ''); }}
                     className={`relative flex flex-col p-5 rounded-xl border transition-all cursor-pointer ${rule.is_active ? `${style.bg} ${style.border} hover:bg-gray-50 dark:hover:bg-white/5` : 'bg-gray-50 dark:bg-dark-bg/40 border-gray-200 dark:border-white/5 opacity-60 hover:opacity-100'}`}
                   >
-                    {/* Bolinha cortando a linha */}
-                    <div className={`absolute -left-[67px] top-5 w-9 h-9 rounded-full border-2 bg-white dark:bg-dark-bg flex items-center justify-center font-bold text-[10px] ${rule.is_active ? style.border + ' ' + style.text : 'border-gray-200 dark:border-white/10 text-gray-400 dark:text-slate-500'}`}>
-                      {formatDay(rule.day_offset)}
+                    {/* Badge cortando a linha */}
+                    <div className={`absolute left-[-49px] -translate-x-1/2 top-5 px-3.5 py-1.5 rounded-full border flex items-center justify-center font-bold text-xs bg-white dark:bg-dark-bg overflow-hidden ${rule.is_active ? style.border + ' ' + style.text : 'border-gray-200 dark:border-white/10 text-gray-400 dark:text-slate-500'}`}>
+                      {rule.is_active && <div className={`absolute inset-0 ${style.pillBg}`} />}
+                      <span className="relative z-10">{formatDay(rule.day_offset)}</span>
                     </div>
 
                     {/* Header do Card */}
@@ -661,18 +681,12 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                       <h3 className={`text-base font-bold ${rule.is_active ? style.text : 'text-gray-500 dark:text-slate-400'}`}>{rule.label}</h3>
                       <div className="flex items-center gap-4">
                         <div className="flex gap-2">
-                          {rule.channels.map(ch => (
+                          {rule.channels.filter(ch => ch.toLowerCase() !== 'email').map(ch => (
                             <span key={ch} className={`px-3 py-1 text-[10px] font-bold rounded-full border ${rule.is_active ? style.pillBg + ' ' + style.text + ' ' + style.border : 'bg-gray-100 dark:bg-white/5 text-gray-400 dark:text-slate-500 border-gray-200 dark:border-white/10'}`}>
                               {ch}
                             </span>
                           ))}
                         </div>
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); handleToggleRule(rule.id); }}
-                          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${rule.is_active ? style.iconColor : 'bg-gray-300 dark:bg-slate-700'}`}
-                        >
-                          <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${rule.is_active ? 'translate-x-4.5' : 'translate-x-1'}`} />
-                        </button>
                       </div>
                     </div>
 
@@ -707,22 +721,94 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
             // ── Filtros de sub-tab baseados em day_offset (como a régua original) ──
             const search = (i: any) => !searchTerm || i.customer_name?.toLowerCase().includes(searchTerm.toLowerCase());
 
-            const agendados   = dispatchItems.filter(i => i.status === 'AGENDADO' && (i.day_offset ?? 0) < 10  && search(i));
-            const humano      = dispatchItems.filter(i => i.status === 'AGENDADO' && (i.day_offset ?? 0) >= 10 && (i.day_offset ?? 0) < 15 && search(i));
-            const suspensao   = dispatchItems.filter(i => i.status === 'AGENDADO' && (i.day_offset ?? 0) >= 15 && search(i));
-            const enviados    = dispatchItems.filter(i => (i.status === 'ENVIADO' || i.status === 'ENVIANDO') && search(i));
+            // Classifica cada fatura pelo estágio REAL: dias desde o vencimento (hoje - due_date)
+            const hoje = new Date(); hoje.setHours(12,0,0,0);
+            const daysPast = (dueDate: string) => {
+              if (!dueDate) return -999;
+              const d = new Date(String(dueDate).slice(0,10) + 'T12:00:00');
+              return Math.floor((hoje.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
+            };
+
+            // Para cada fatura, determina o estágio atual baseado no vencimento real
+            const agendadosAll = dispatchItems.filter(i => i.status === 'AGENDADO' && search(i));
+
+            // Agrupa por fatura (receivable_asaas_id) e pega o estágio real
+            const faturaMap = new Map<string, { stage: 'agendados' | 'humano' | 'suspensao'; items: any[] }>();
+            for (const item of agendadosAll) {
+              const key = item.receivable_asaas_id || item.id; // fallback para id se não tem asaas_id
+              const dp = daysPast(item.due_date);
+              const stage = dp >= 15 ? 'suspensao' : dp >= 10 ? 'humano' : 'agendados';
+              if (!faturaMap.has(key)) {
+                faturaMap.set(key, { stage, items: [] });
+              }
+              const entry = faturaMap.get(key)!;
+              // Atualiza para o estágio mais avançado
+              if (stage === 'suspensao' || (stage === 'humano' && entry.stage === 'agendados')) {
+                entry.stage = stage;
+              }
+              entry.items.push(item);
+            }
+
+            // Distribui: cada fatura mostra apenas os itens do seu estágio atual
+            const agendados: any[]  = [];
+            const humano: any[]     = [];
+            const suspensao: any[]  = [];
+            for (const [, { stage, items }] of faturaMap) {
+              if (stage === 'suspensao') {
+                // Só mostra a regra D+15 (a mais relevante)
+                const rep = items.find(i => (i.day_offset ?? 0) >= 15) || items[0];
+                suspensao.push(rep);
+              } else if (stage === 'humano') {
+                const rep = items.find(i => (i.day_offset ?? 0) >= 10 && (i.day_offset ?? 0) < 15) || items[0];
+                humano.push(rep);
+              } else {
+                // Agendados: mostra apenas a PRÓXIMA regra a ser enviada para a fatura (a mais próxima)
+                const nextItem = items.sort((a, b) => new Date(String(a.scheduled_date).slice(0,10) + 'T12:00:00').getTime() - new Date(String(b.scheduled_date).slice(0,10) + 'T12:00:00').getTime())[0];
+                if (nextItem) agendados.push(nextItem);
+              }
+            }
+            // Ordena agendados pela data de disparo (mais próximos primeiro)
+            agendados.sort((a, b) => new Date(String(a.scheduled_date).slice(0,10) + 'T12:00:00').getTime() - new Date(String(b.scheduled_date).slice(0,10) + 'T12:00:00').getTime());
+
+            const enviados    = dispatchItems.filter(i => (i.status === 'ENVIADO' || i.status === 'ENVIANDO') && !!i.sent_at && search(i)).sort((a, b) => new Date(b.sent_at).getTime() - new Date(a.sent_at).getTime());
             const cancelados  = dispatchItems.filter(i => (i.status === 'CANCELADO' || i.status === 'ERRO')   && search(i));
 
-            type SubTab = 'agendados' | 'humano' | 'suspensao' | 'enviados' | 'cancelados';
+            // Deduplica overdueClients por cliente: pega a fatura com maior atraso por customer_asaas_id
+            const overdueSearch = overdueClients.filter(o =>
+              !searchTerm || o.customer_name?.toLowerCase().includes(searchTerm.toLowerCase())
+            );
+            const overdueByCustomer = new Map<string, any>();
+            for (const o of overdueSearch) {
+              const key = o.customer_asaas_id || o.receivable_asaas_id;
+              const existing = overdueByCustomer.get(key);
+              if (!existing || Number(o.days_past) > Number(existing.days_past)) {
+                overdueByCustomer.set(key, o);
+              }
+            }
+            const overdueDeduped = Array.from(overdueByCustomer.values());
+            // Mapeia para o shape esperado pela tabela
+            const toTableItem = (o: any) => ({
+              ...o,
+              customer_phone: o.customer_phone || '—',
+              day_offset: Number(o.days_past),
+              rule_triggered: `${o.days_past}d de atraso`,
+              channel: 'WHATSAPP',
+              scheduled_date: o.due_date,
+              status: 'AGENDADO',
+            });
+            const humanoFinal   = overdueDeduped.filter(o => Number(o.days_past) < 15).map(toTableItem);
+            const suspensaoFinal = overdueDeduped.filter(o => Number(o.days_past) >= 15).map(toTableItem);
+
+            type SubTab = 'agendados' | 'humano' | 'suspensao' | 'enviados';
             const subTabCfg: { key: SubTab; label: string; color: string; items: any[] }[] = [
-              { key: 'agendados',  label: 'Agendados',       color: 'amber',   items: agendados  },
-              { key: 'enviados',   label: 'Enviados',         color: 'emerald', items: enviados   },
-              { key: 'humano',     label: 'Contato Humano',   color: 'violet',  items: humano     },
-              { key: 'suspensao',  label: 'Suspensão',        color: 'rose',    items: suspensao  },
-              { key: 'cancelados', label: 'Cancelados',       color: 'slate',   items: cancelados },
+              { key: 'agendados',  label: 'Agendados',       color: 'amber',   items: agendados      },
+              { key: 'enviados',   label: 'Enviados',         color: 'emerald', items: enviados       },
+              { key: 'humano',     label: 'Contato Humano',   color: 'violet',  items: humanoFinal    },
+              { key: 'suspensao',  label: 'Suspensão',        color: 'rose',    items: suspensaoFinal },
             ];
 
             const currentItems = subTabCfg.find(t => t.key === dispatchSubTab)?.items ?? [];
+
 
             return (
               <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-4">
@@ -738,7 +824,7 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                   </div>
                   <div className="p-4 rounded-xl border border-amber-500/20 bg-amber-500/5">
                     <p className="text-[10px] font-bold text-amber-600 dark:text-amber-500 uppercase tracking-widest mb-1">Agendados/Pendentes</p>
-                    <p className="text-2xl font-black text-amber-700 dark:text-amber-400">{dispatchStats.agendados_pendentes}</p>
+                    <p className="text-2xl font-black text-amber-700 dark:text-amber-400">{agendados.length}</p>
                   </div>
                 </div>
 
@@ -1041,7 +1127,7 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
           <div className="bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col overflow-hidden max-h-[80vh]" onClick={e => e.stopPropagation()}>
             <div className="p-6 border-b border-gray-100 dark:border-white/10 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className={`w-3 h-3 rounded-full ${phaseDetail.phase === 'preventivo' ? 'bg-[#2dd4bf]' : phaseDetail.phase === 'vencimento' ? 'bg-[#f59e0b]' : phaseDetail.phase === 'reativo' ? 'bg-[#f87171]' : 'bg-[#a78bfa]'}`} />
+                <div className={`w-3 h-3 rounded-full ${phaseDetail.phase === 'preventivo' ? 'bg-[#2dd4bf]' : phaseDetail.phase === 'vencimento' ? 'bg-[#f59e0b]' : phaseDetail.phase === 'reativo' ? 'bg-[#f87171]' : phaseDetail.phase === 'suspensao' ? 'bg-[#fb923c]' : 'bg-[#a78bfa]'}`} />
                 <h3 className="text-lg font-bold text-gray-900 dark:text-white tracking-tight">{phaseDetail.label}</h3>
                 <span className="text-xs text-gray-500 dark:text-slate-400 font-medium">{phaseDetail.items.length} cliente(s)</span>
               </div>
@@ -1197,7 +1283,7 @@ const getWhatsAppMessage = (client: InadimplentesClient) => {
   );
 };
 
-const InadimplentesBlock = () => {
+const InadimplentesBlock = ({ onCountChange }: { onCountChange?: (n: number) => void }) => {
   const [clients, setClients] = useState<InadimplentesClient[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -1209,7 +1295,11 @@ const InadimplentesBlock = () => {
     setLoading(true);
     try {
       const res = await fetch('/api/fin/inadimplentes');
-      if (res.ok) setClients(await res.json());
+      if (res.ok) {
+        const data = await res.json();
+        setClients(data);
+        onCountChange?.(data.length);
+      }
     } catch (err) {
       console.error('Error fetching inadimplentes:', err);
     } finally {
@@ -1604,6 +1694,7 @@ export default function ContasAReceber() {
   }));
   const [mainTab, setMainTab] = useState<'receber' | 'cobrancas' | 'inadimplentes'>('receber');
   const [receberSubTab, setReceberSubTab] = useState<'pendentes' | 'recebidos'>('pendentes');
+  const [inadimplenteCount, setInadimplenteCount] = useState(0);
 
   return (
     <div className="min-h-screen bg-dark-bg transition-colors duration-300">
@@ -1654,7 +1745,7 @@ export default function ContasAReceber() {
           className={`px-5 py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${mainTab === 'inadimplentes' ? 'border-rose-500 text-rose-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
         >
           <span>Inadimplentes</span>
-          {vencidos.length > 0 && <span className="text-[10px] font-black bg-rose-500/20 text-rose-400 border border-rose-500/30 px-1.5 py-0.5 rounded-full">{vencidos.length}</span>}
+          {inadimplenteCount > 0 && <span className="text-[10px] font-black bg-rose-500/20 text-rose-400 border border-rose-500/30 px-1.5 py-0.5 rounded-full">{inadimplenteCount}</span>}
         </button>
       </div>
 
@@ -1859,7 +1950,7 @@ export default function ContasAReceber() {
 
              {/* Tab: Inadimplentes */}
              {mainTab === 'inadimplentes' && (
-               <InadimplentesBlock />
+               <InadimplentesBlock onCountChange={setInadimplenteCount} />
              )}
            </>
          )}

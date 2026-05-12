@@ -221,6 +221,39 @@ export function setupCollectionRoutes(app: Express, pool: Pool) {
     }
   });
 
+  // 8c. Overdue clients for Contato Humano / Suspensão — ALL clients regardless of CRM status
+  app.get('/api/fin/collection/overdue-clients', async (req, res) => {
+    try {
+      const result = await pool.query(`
+        SELECT
+          COALESCE(fp.name, r.customer_name, 'Desconhecido') as customer_name,
+          COALESCE(NULLIF(c.phone, ''), NULLIF(fp.phone, ''), '') as customer_phone,
+          r.value as amount,
+          r.due_date,
+          r.asaas_id as receivable_asaas_id,
+          r.customer_id as customer_asaas_id,
+          r.invoice_url,
+          (CURRENT_DATE - r.due_date) as days_past,
+          CASE
+            WHEN (CURRENT_DATE - r.due_date) >= 15 THEN 'suspensao'
+            ELSE 'humano'
+          END as stage
+        FROM fin_receivables r
+        LEFT JOIN fin_people fp ON fp.asaas_id = r.customer_id
+        LEFT JOIN clients c ON c.id = fp.grapehub_client_id
+        WHERE r.status IN ('PENDING', 'OVERDUE')
+          AND r.due_date IS NOT NULL
+          AND COALESCE(r.billing_type, '') != 'CREDIT_CARD'
+          AND (CURRENT_DATE - r.due_date) >= 10
+        ORDER BY r.due_date ASC
+      `);
+      res.json(result.rows);
+    } catch (err) {
+      console.error('[fin_collection] Overdue clients GET error:', err);
+      res.status(500).json({ error: 'Failed to get overdue clients' });
+    }
+  });
+
   // 4. Get events by customer
   app.get('/api/fin/collection/events/:customerAsaasId', async (req, res) => {
     const { customerAsaasId } = req.params;
@@ -321,22 +354,28 @@ export function setupCollectionRoutes(app: Express, pool: Pool) {
     try {
       const result = await pool.query(`
         SELECT 
-          COUNT(CASE WHEN (CURRENT_DATE - due_date) BETWEEN -5 AND -1 THEN 1 END) as preventivo,
-          COUNT(CASE WHEN (CURRENT_DATE - due_date) = 0  THEN 1 END) as vencimento,
-          COUNT(CASE WHEN (CURRENT_DATE - due_date) BETWEEN 1 AND 10 THEN 1 END) as reativo,
-          COUNT(CASE WHEN (CURRENT_DATE - due_date) > 10 THEN 1 END) as humano
-        FROM fin_receivables
-        WHERE status IN ('PENDING', 'OVERDUE')
-          AND due_date IS NOT NULL
+          COUNT(CASE WHEN (CURRENT_DATE - r.due_date) BETWEEN -5 AND -1 THEN 1 END) as preventivo,
+          COUNT(CASE WHEN (CURRENT_DATE - r.due_date) = 0  THEN 1 END) as vencimento,
+          COUNT(CASE WHEN (CURRENT_DATE - r.due_date) BETWEEN 1 AND 9 THEN 1 END) as reativo,
+          COUNT(CASE WHEN (CURRENT_DATE - r.due_date) BETWEEN 10 AND 14 THEN 1 END) as humano,
+          COUNT(CASE WHEN (CURRENT_DATE - r.due_date) >= 15 THEN 1 END) as suspensao
+        FROM fin_receivables r
+        LEFT JOIN fin_people fp ON fp.asaas_id = r.customer_id
+        LEFT JOIN clients c ON c.id = fp.grapehub_client_id
+        WHERE r.status IN ('PENDING', 'OVERDUE')
+          AND r.due_date IS NOT NULL
+          AND COALESCE(r.billing_type, '') != 'CREDIT_CARD'
+          AND (c.crm_status IS NULL OR c.crm_status = '')
       `);
       
-      const row = result.rows[0] || { preventivo: 0, vencimento: 0, reativo: 0, humano: 0 };
+      const row = result.rows[0] || { preventivo: 0, vencimento: 0, reativo: 0, humano: 0, suspensao: 0 };
       
       res.json({
         preventivo: parseInt(row.preventivo || '0', 10),
         vencimento: parseInt(row.vencimento || '0', 10),
         reativo: parseInt(row.reativo || '0', 10),
-        humano: parseInt(row.humano || '0', 10)
+        humano: parseInt(row.humano || '0', 10),
+        suspensao: parseInt(row.suspensao || '0', 10)
       });
     } catch (err) {
       console.error('[fin_collection] Summary GET error:', err);
@@ -348,10 +387,11 @@ export function setupCollectionRoutes(app: Express, pool: Pool) {
   app.get('/api/fin/collection/summary/:phase', async (req, res) => {
     const { phase } = req.params;
     const conditions: Record<string, string> = {
-      preventivo: '(CURRENT_DATE - due_date) BETWEEN -5 AND -1',
-      vencimento: '(CURRENT_DATE - due_date) = 0',
-      reativo:    '(CURRENT_DATE - due_date) BETWEEN 1 AND 10',
-      humano:     '(CURRENT_DATE - due_date) > 10',
+      preventivo: '(CURRENT_DATE - r.due_date) BETWEEN -5 AND -1',
+      vencimento: '(CURRENT_DATE - r.due_date) = 0',
+      reativo:    '(CURRENT_DATE - r.due_date) BETWEEN 1 AND 9',
+      humano:     '(CURRENT_DATE - r.due_date) BETWEEN 10 AND 14',
+      suspensao:  '(CURRENT_DATE - r.due_date) >= 15',
     };
     const where = conditions[phase];
     if (!where) return res.status(400).json({ error: 'Invalid phase' });
@@ -366,9 +406,12 @@ export function setupCollectionRoutes(app: Express, pool: Pool) {
           (CURRENT_DATE - r.due_date) as days_offset
         FROM fin_receivables r
         LEFT JOIN fin_people p ON p.asaas_id = r.customer_id
+        LEFT JOIN clients c ON c.id = p.grapehub_client_id
         WHERE r.status IN ('PENDING', 'OVERDUE')
           AND r.due_date IS NOT NULL
-          AND (CURRENT_DATE - r.due_date) ${phase === 'preventivo' ? 'BETWEEN -5 AND -1' : phase === 'vencimento' ? '= 0' : phase === 'reativo' ? 'BETWEEN 1 AND 10' : '> 10'}
+          AND COALESCE(r.billing_type, '') != 'CREDIT_CARD'
+          AND (c.crm_status IS NULL OR c.crm_status = '')
+          AND ${where}
         ORDER BY r.due_date ASC
         LIMIT 100
       `);

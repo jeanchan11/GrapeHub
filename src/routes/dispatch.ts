@@ -42,6 +42,20 @@ function renderMessage(template: string, item: Record<string, any>): string {
     .replace(/{{telefone}}/gi, item.customer_phone || '');
 }
 
+/** Salva o envio como comentário COBRANÇA no histórico do cliente (crm_comments) */
+async function saveDispatchComment(pool: Pool, item: Record<string, any>, mensagem: string): Promise<void> {
+  try {
+    if (!item.grapehub_client_id) return;
+    await pool.query(
+      `INSERT INTO crm_comments (client_id, user_id, type, content, images)
+       VALUES ($1, 'sistema', 'COBRANÇA', $2, '{}')`,
+      [item.grapehub_client_id, `Mensagem de cobrança enviada:\n${mensagem}`]
+    );
+  } catch (e) {
+    console.warn('[dispatch] Falha ao salvar comentário no histórico:', e);
+  }
+}
+
 async function sendViaN8n(webhookUrl: string, payload: object): Promise<any> {
   const ctrl = new AbortController();
   const timeout = setTimeout(() => ctrl.abort(), 30000);
@@ -139,6 +153,24 @@ async function runDailyBatchIfNeeded(pool: Pool) {
             AND fr.status IN ('RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH')
         )
     `);
+    // 4) Remove itens AGENDADOS além da janela de 15 dias
+    await pool.query(`
+      DELETE FROM fin_dispatch_queue
+      WHERE status = 'AGENDADO'
+        AND scheduled_date > CURRENT_DATE + INTERVAL '15 days'
+    `);
+    // 5) Cancela regras automáticas (day_offset < 10) para clientes de cartão de crédito
+    await pool.query(`
+      UPDATE fin_dispatch_queue dq
+      SET status = 'CANCELADO', updated_at = NOW()
+      WHERE dq.status = 'AGENDADO'
+        AND dq.day_offset < 10
+        AND EXISTS (
+          SELECT 1 FROM fin_receivables fr
+          WHERE fr.asaas_id = dq.receivable_asaas_id
+            AND fr.billing_type = 'CREDIT_CARD'
+        )
+    `);
     const populated = await pool.query(`
       INSERT INTO fin_dispatch_queue (
         customer_name, customer_phone, amount, due_date, day_offset,
@@ -158,7 +190,11 @@ async function runDailyBatchIfNeeded(pool: Pool) {
       LEFT JOIN clients c ON c.id = fp.grapehub_client_id
       WHERE fr.status IN ('PENDING','OVERDUE')
         AND fr.due_date IS NOT NULL
+        -- Só insere dentro da janela de 15 dias
         AND fr.due_date::date + fcr.day_offset >= CURRENT_DATE
+        AND fr.due_date::date + fcr.day_offset <= CURRENT_DATE + INTERVAL '15 days'
+        -- Cartão de crédito só entra a partir do Contato Humano
+        AND NOT (fr.billing_type = 'CREDIT_CARD' AND fcr.day_offset < 10)
         AND NOT (c.crm_status IS NOT NULL AND c.crm_status != '')
         AND NOT EXISTS (
           SELECT 1 FROM fin_dispatch_queue dq
@@ -204,6 +240,7 @@ async function runDailyBatchIfNeeded(pool: Pool) {
            WHERE id = $1`,
           [item.id, resp?.ticket_id || null, resp?.contato_id || null, resp?.contato_novo ?? null, resp?.ticket_novo ?? null]
         );
+        await saveDispatchComment(pool, item, mensagem);
         console.log(`[dispatch-scheduler] ✅ Enviado: ${item.customer_name} (${item.id})`);
       } catch (err: any) {
         await pool.query(
@@ -337,6 +374,7 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
         const resp = await sendViaN8n(cfg.n8n_webhook_url, payload);
         await pool.query(`UPDATE fin_dispatch_queue SET status = 'ENVIADO', sent_at = NOW(), updated_at = NOW(), n8n_ticket_id = $2, n8n_contato_id = $3, n8n_contato_novo = $4, n8n_ticket_novo = $5 WHERE id = $1`,
           [id, resp?.ticket_id || null, resp?.contato_id || null, resp?.contato_novo ?? null, resp?.ticket_novo ?? null]);
+        await saveDispatchComment(pool, item, mensagem);
       } catch (err: any) {
         await pool.query(`UPDATE fin_dispatch_queue SET status = 'ERRO', error_message = $2, updated_at = NOW() WHERE id = $1`, [id, err?.message]);
       }
@@ -403,6 +441,7 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
           const resp = await sendViaN8n(cfg.n8n_webhook_url, payload);
           await pool.query(`UPDATE fin_dispatch_queue SET status = 'ENVIADO', sent_at = NOW(), updated_at = NOW(), n8n_ticket_id = $2, n8n_contato_id = $3, n8n_contato_novo = $4, n8n_ticket_novo = $5 WHERE id = $1`,
             [item.id, resp?.ticket_id || null, resp?.contato_id || null, resp?.contato_novo ?? null, resp?.ticket_novo ?? null]);
+          await saveDispatchComment(pool, item, mensagem);
         } catch (err: any) {
           await pool.query(`UPDATE fin_dispatch_queue SET status = 'ERRO', error_message = $2, updated_at = NOW() WHERE id = $1`, [item.id, err?.message]);
         }
@@ -523,6 +562,27 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
           )
       `);
 
+      // Remove itens AGENDADOS com scheduled_date além da janela de 15 dias
+      await pool.query(`
+        DELETE FROM fin_dispatch_queue
+        WHERE status = 'AGENDADO'
+          AND scheduled_date > CURRENT_DATE + INTERVAL '15 days'
+      `);
+
+      // Cancela regras automáticas (day_offset < 10) para clientes de cartão de crédito
+      // Cartão só entra a partir do Contato Humano (day_offset >= 10)
+      await pool.query(`
+        UPDATE fin_dispatch_queue dq
+        SET status = 'CANCELADO', updated_at = NOW()
+        WHERE dq.status = 'AGENDADO'
+          AND dq.day_offset < 10
+          AND EXISTS (
+            SELECT 1 FROM fin_receivables fr
+            WHERE fr.asaas_id = dq.receivable_asaas_id
+              AND fr.billing_type = 'CREDIT_CARD'
+          )
+      `);
+
       const r = await pool.query(`
         INSERT INTO fin_dispatch_queue (
           customer_name, customer_phone, amount, due_date,
@@ -552,11 +612,16 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
         LEFT JOIN clients c ON c.id = fp.grapehub_client_id
         WHERE fr.status IN ('PENDING','OVERDUE')
           AND fr.due_date IS NOT NULL
-          -- Só popula regras cuja data de envio é hoje ou futura
+          -- Só popula regras cuja data de envio é hoje ou nos próximos 15 dias
           AND fr.due_date::date + fcr.day_offset >= CURRENT_DATE
+          AND fr.due_date::date + fcr.day_offset <= CURRENT_DATE + INTERVAL '15 days'
           -- Exclui clientes que estão no CRM Financeiro (têm crm_status preenchido)
           AND NOT (
             c.crm_status IS NOT NULL AND c.crm_status != ''
+          )
+          -- Cartão de crédito: só entra a partir do Contato Humano (day_offset >= 10)
+          AND NOT (
+            fr.billing_type = 'CREDIT_CARD' AND fcr.day_offset < 10
           )
           -- Evita duplicar a mesma fatura + regra
           AND NOT EXISTS (
