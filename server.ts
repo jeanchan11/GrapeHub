@@ -11442,6 +11442,98 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
   // ── Dispatch Queue Routes ──────────────────────────────────────────────────
   setupDispatchRoutes(app, pool);
 
+  // ── Meeting Notes Routes ───────────────────────────────────────────────────
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS meeting_notes (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      page_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      meeting_date DATE NOT NULL DEFAULT CURRENT_DATE,
+      attendees JSONB DEFAULT '[]',
+      entries JSONB DEFAULT '[]',
+      notes_html TEXT DEFAULT '',
+      created_by TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`ALTER TABLE meeting_notes ADD COLUMN IF NOT EXISTS notes_html TEXT DEFAULT ''`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS meeting_notes_comments (
+      id SERIAL PRIMARY KEY,
+      session_id UUID REFERENCES meeting_notes(id) ON DELETE CASCADE,
+      text TEXT NOT NULL,
+      author_name TEXT DEFAULT 'Equipe',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  app.get('/api/meeting-notes/:pageId', async (req, res) => {
+    try {
+      const { pageId } = req.params;
+      const r = await pool.query(
+        `SELECT * FROM meeting_notes WHERE page_id = $1 ORDER BY meeting_date DESC, created_at DESC`,
+        [pageId]
+      );
+      res.json(r.rows);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.post('/api/meeting-notes', async (req, res) => {
+    try {
+      const { page_id, title, meeting_date, attendees = [], entries = [], notes_html = '', created_by } = req.body;
+      const r = await pool.query(
+        `INSERT INTO meeting_notes (page_id, title, meeting_date, attendees, entries, notes_html, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+        [page_id, title, meeting_date || new Date().toISOString().slice(0,10),
+         JSON.stringify(attendees), JSON.stringify(entries), notes_html, created_by]
+      );
+      res.json(r.rows[0]);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.put('/api/meeting-notes/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { title, meeting_date, attendees, entries, notes_html } = req.body;
+      const r = await pool.query(
+        `UPDATE meeting_notes SET title=$1, meeting_date=$2, attendees=$3, entries=$4, notes_html=$5, updated_at=NOW()
+         WHERE id=$6 RETURNING *`,
+        [title, meeting_date, JSON.stringify(attendees), JSON.stringify(entries || []), notes_html || '', id]
+      );
+      res.json(r.rows[0]);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.delete('/api/meeting-notes/:id', async (req, res) => {
+    try {
+      await pool.query(`DELETE FROM meeting_notes WHERE id = $1`, [req.params.id]);
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Comments sub-resource
+  app.get('/api/meeting-notes/:id/comments', async (req, res) => {
+    try {
+      const r = await pool.query(
+        `SELECT * FROM meeting_notes_comments WHERE session_id = $1 ORDER BY created_at ASC`,
+        [req.params.id]
+      );
+      res.json(r.rows);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.post('/api/meeting-notes/:id/comments', async (req, res) => {
+    try {
+      const { text, author_name = 'Equipe' } = req.body;
+      const r = await pool.query(
+        `INSERT INTO meeting_notes_comments (session_id, text, author_name) VALUES ($1,$2,$3) RETURNING *`,
+        [req.params.id, text, author_name]
+      );
+      res.json(r.rows[0]);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // Vite middleware for development
 
   const isDev = process.env.NODE_ENV === "development";

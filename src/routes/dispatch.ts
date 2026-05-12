@@ -128,7 +128,17 @@ async function runDailyBatchIfNeeded(pool: Pool) {
             AND c.crm_status IS NOT NULL AND c.crm_status != ''
         )
     `);
-    // 3) Insere novos itens que ainda não estão na fila
+    // 3) Cancela itens de faturas já pagas (RECEIVED / CONFIRMED / RECEIVED_IN_CASH)
+    await pool.query(`
+      UPDATE fin_dispatch_queue dq
+      SET status = 'CANCELADO', updated_at = NOW()
+      WHERE dq.status = 'AGENDADO'
+        AND EXISTS (
+          SELECT 1 FROM fin_receivables fr
+          WHERE fr.asaas_id = dq.receivable_asaas_id
+            AND fr.status IN ('RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH')
+        )
+    `);
     const populated = await pool.query(`
       INSERT INTO fin_dispatch_queue (
         customer_name, customer_phone, amount, due_date, day_offset,
@@ -449,7 +459,6 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
   app.post('/api/finance/dispatch/queue/populate', async (_req, res) => {
     try {
       // 1) Corrige itens já existentes com data errada (scheduled_date != due_date + day_offset)
-      //    e também cancela itens de clientes que estão no CRM Financeiro
       const fix = await pool.query(`
         UPDATE fin_dispatch_queue dq
         SET scheduled_date = dq.due_date::date + dq.day_offset,
@@ -458,6 +467,34 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
           AND dq.due_date IS NOT NULL
           AND dq.scheduled_date != dq.due_date::date + dq.day_offset
       `);
+
+      // 1b) Sync rápido: verifica status atual no Asaas para faturas AGENDADAS
+      //     Garante que pagamentos recentes sejam detectados sem esperar sync completo
+      const asaasKey = process.env.ASAAS_API_KEY?.replace(/\\\$/g, '$');
+      if (asaasKey) {
+        const agendados = await pool.query(`
+          SELECT DISTINCT receivable_asaas_id FROM fin_dispatch_queue
+          WHERE status = 'AGENDADO' AND receivable_asaas_id IS NOT NULL
+          LIMIT 100
+        `);
+        for (const row of agendados.rows) {
+          try {
+            const resp = await fetch(
+              `https://api.asaas.com/v3/payments/${row.receivable_asaas_id}`,
+              { headers: { 'access_token': asaasKey } }
+            );
+            if (resp.ok) {
+              const data = await resp.json() as { status?: string; paymentDate?: string };
+              if (data?.status) {
+                await pool.query(
+                  `UPDATE fin_receivables SET status = $1 WHERE asaas_id = $2`,
+                  [data.status, row.receivable_asaas_id]
+                );
+              }
+            }
+          } catch { /* ignora erros individuais */ }
+        }
+      }
 
       // Cancela itens AGENDADOS cujo cliente está no CRM Financeiro
       const cancel = await pool.query(`
@@ -471,6 +508,18 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
             WHERE fp.asaas_id = dq.customer_asaas_id
               AND c.crm_status IS NOT NULL
               AND c.crm_status != ''
+          )
+      `);
+
+      // Cancela itens AGENDADOS de faturas já pagas (RECEIVED / CONFIRMED / RECEIVED_IN_CASH)
+      const cancelPaid = await pool.query(`
+        UPDATE fin_dispatch_queue dq
+        SET status = 'CANCELADO', updated_at = NOW()
+        WHERE dq.status = 'AGENDADO'
+          AND EXISTS (
+            SELECT 1 FROM fin_receivables fr
+            WHERE fr.asaas_id = dq.receivable_asaas_id
+              AND fr.status IN ('RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH')
           )
       `);
 

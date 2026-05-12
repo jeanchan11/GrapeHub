@@ -305,9 +305,17 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
     fetchDispatch();
   };
 
+  const [isPopulating, setIsPopulating] = useState(false);
   const handlePopulateQueue = async () => {
-    await fetch('/api/finance/dispatch/queue/populate', { method: 'POST' });
-    fetchDispatch();
+    setIsPopulating(true);
+    try {
+      await fetch('/api/finance/dispatch/queue/populate', { method: 'POST' });
+      await fetchDispatch();
+      // Segunda atualização após 1s para pegar correções do backend
+      setTimeout(fetchDispatch, 1000);
+    } finally {
+      setIsPopulating(false);
+    }
   };
 
   const handleSaveConfig = async () => {
@@ -557,8 +565,9 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar..." className="pl-9 pr-3 py-1.5 bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-white/10 rounded-lg text-xs text-gray-900 dark:text-white focus:outline-none focus:border-violet-500/50" />
             </div>
-            <button onClick={handlePopulateQueue} className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-lg text-xs font-medium text-gray-600 dark:text-slate-300 hover:bg-gray-100 transition-colors">
-              <RefreshCw size={13} /> Popular Fila
+            <button onClick={handlePopulateQueue} disabled={isPopulating} className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-lg text-xs font-medium text-gray-600 dark:text-slate-300 hover:bg-gray-100 disabled:opacity-50 transition-colors">
+              <RefreshCw size={13} className={isPopulating ? 'animate-spin' : ''} />
+              {isPopulating ? 'Atualizando...' : 'Atualizar Fila'}
             </button>
             <button onClick={() => setShowSendAllConfirm(true)} disabled={sendingAll || dispatchItems.filter(i => i.status === 'AGENDADO').length === 0}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white rounded-lg text-xs font-bold transition-colors">

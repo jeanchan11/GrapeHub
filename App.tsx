@@ -34,6 +34,7 @@ import ContratacaoPage from './src/pages/ContratacaoPage';
 import ContasAPagar from './src/pages/ContasAPagar';
 import ContasAReceber from './src/pages/ContasAReceber';
 import DRE from './src/pages/DRE';
+import MeetingNotes from './src/pages/MeetingNotes';
 import CandidateApplicationForm from './src/pages/CandidateApplicationForm';
 import SaboteurTestPage from './src/pages/SaboteurTestPage';
 import DiscTestPage from './src/pages/DiscTestPage';
@@ -254,6 +255,22 @@ const AppContent: React.FC = () => {
         return <ContasAReceber />;
       case 'dre':
         return <DRE />;
+      case 'meeting-notes': {
+        // Find the page label from menu for the title
+        let pageLabel = '';
+        if (Array.isArray(menu)) {
+          outer: for (const sec of menu) {
+            for (const ss of sec.subSessions || []) {
+              for (const p of ss.pages || []) { if (p.id === activePage) { pageLabel = p.label; break outer; } }
+              for (const sss of ss.subSubSessions || []) {
+                for (const p of sss.pages || []) { if (p.id === activePage) { pageLabel = p.label; break outer; } }
+              }
+            }
+            for (const p of sec.pages || []) { if (p.id === activePage) { pageLabel = p.label; break outer; } }
+          }
+        }
+        return <MeetingNotes key={activePage} activePage={activePage} pageLabel={pageLabel} />;
+      }
       case 'welcome':
       default:
         return <WelcomePage />;
