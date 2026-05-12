@@ -10898,9 +10898,10 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
   // ── TODO Staff API ─────────────────────────────────────────────────────────
 
   // Tasks CRUD
-  app.get("/api/todo-staff/tasks", async (_req, res) => {
+  app.get("/api/todo-staff/tasks", async (req, res) => {
     try {
-      const { rows } = await pool.query("SELECT * FROM to_do_staff ORDER BY created_at DESC");
+      const pageId = req.query.page_id || 'default';
+      const { rows } = await pool.query("SELECT * FROM to_do_staff WHERE page_id = $1 ORDER BY created_at DESC", [pageId]);
       const items = rows.map(r => ({
         id: r.id, title: r.title, description: r.description || undefined,
         priority: r.priority, status: r.status, tags: r.tags || [],
@@ -10914,14 +10915,14 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
 
   app.post("/api/todo-staff/tasks", async (req, res) => {
     try {
-      const { id, title, description, priority, status, tags, assignee, dueDate, subtasks, comments, doneAt } = req.body;
+      const { id, title, description, priority, status, tags, assignee, dueDate, subtasks, comments, doneAt, page_id } = req.body;
       await pool.query(
-        `INSERT INTO to_do_staff (id, title, description, priority, status, tags, assignee, due_date, subtasks, comments, done_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        `INSERT INTO to_do_staff (id, title, description, priority, status, tags, assignee, due_date, subtasks, comments, done_at, page_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
         [id, title, description || null, priority || 'medium', status || 'todo',
          JSON.stringify(tags || []), assignee || null, dueDate || null,
          JSON.stringify(subtasks || []), JSON.stringify(comments || []),
-         doneAt || null]
+         doneAt || null, page_id || 'default']
       );
       res.json({ ok: true });
     } catch (err: any) { res.status(500).json({ error: err.message }); }
@@ -10950,9 +10951,10 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
   });
 
   // Recurring CRUD
-  app.get("/api/todo-staff/recurring", async (_req, res) => {
+  app.get("/api/todo-staff/recurring", async (req, res) => {
     try {
-      const { rows } = await pool.query("SELECT * FROM to_do_staff_recurring ORDER BY created_at DESC");
+      const pageId = req.query.page_id || 'default';
+      const { rows } = await pool.query("SELECT * FROM to_do_staff_recurring WHERE page_id = $1 ORDER BY created_at DESC", [pageId]);
       const items = rows.map(r => ({
         id: r.id, title: r.title, assignee: r.assignee || undefined,
         tags: r.tags || [], frequency: r.frequency,
@@ -10964,10 +10966,10 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
 
   app.post("/api/todo-staff/recurring", async (req, res) => {
     try {
-      const { id, title, assignee, tags, frequency, dayOfWeek } = req.body;
+      const { id, title, assignee, tags, frequency, dayOfWeek, page_id } = req.body;
       await pool.query(
-        `INSERT INTO to_do_staff_recurring (id, title, assignee, tags, frequency, day_of_week) VALUES ($1,$2,$3,$4,$5,$6)`,
-        [id, title, assignee || null, JSON.stringify(tags || []), frequency, dayOfWeek || null]
+        `INSERT INTO to_do_staff_recurring (id, title, assignee, tags, frequency, day_of_week, page_id) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [id, title, assignee || null, JSON.stringify(tags || []), frequency, dayOfWeek || null, page_id || 'default']
       );
       res.json({ ok: true });
     } catch (err: any) { res.status(500).json({ error: err.message }); }
@@ -10992,9 +10994,10 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
   });
 
   // Ideas CRUD
-  app.get("/api/todo-staff/ideas", async (_req, res) => {
+  app.get("/api/todo-staff/ideas", async (req, res) => {
     try {
-      const { rows } = await pool.query("SELECT * FROM to_do_staff_ideas ORDER BY created_at DESC");
+      const pageId = req.query.page_id || 'default';
+      const { rows } = await pool.query("SELECT * FROM to_do_staff_ideas WHERE page_id = $1 ORDER BY created_at DESC", [pageId]);
       const items = rows.map(r => ({
         id: r.id, title: r.title, description: r.description || undefined,
         status: r.status, tags: r.tags || [], comments: r.comments || [],
@@ -11006,10 +11009,10 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
 
   app.post("/api/todo-staff/ideas", async (req, res) => {
     try {
-      const { id, title, description, status, tags, comments } = req.body;
+      const { id, title, description, status, tags, comments, page_id } = req.body;
       await pool.query(
-        `INSERT INTO to_do_staff_ideas (id, title, description, status, tags, comments) VALUES ($1,$2,$3,$4,$5,$6)`,
-        [id, title, description || null, status || 'nova', JSON.stringify(tags || []), JSON.stringify(comments || [])]
+        `INSERT INTO to_do_staff_ideas (id, title, description, status, tags, comments, page_id) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [id, title, description || null, status || 'nova', JSON.stringify(tags || []), JSON.stringify(comments || []), page_id || 'default']
       );
       res.json({ ok: true });
     } catch (err: any) { res.status(500).json({ error: err.message }); }

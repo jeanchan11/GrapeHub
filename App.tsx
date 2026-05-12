@@ -244,7 +244,7 @@ const AppContent: React.FC = () => {
       case 'dashboard-operacional':
         return <DashboardOperacional />;
       case 'todo-staff':
-        return <TodoStaff />;
+        return <TodoStaff key={activePage} activePage={activePage} />;
       case 'onboarding-operacional':
         return <OnboardingOperacional />;
       case 'contratacao':

@@ -1774,13 +1774,13 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
                       <div key={opt.id} className="relative flex items-center justify-center">
                         {/* Timeline Dot */}
                         <div className="absolute left-1/2 -translate-x-1/2 z-10">
-                          <div className="w-8 h-8 rounded-full bg-light-card dark:bg-dark-card border border-violet-500/50 flex items-center justify-center shadow-[0_0_15px_rgba(139,92,246,0.3)]">
+                          <div className="w-8 h-8 rounded-full bg-white dark:bg-dark-card border border-violet-500/50 flex items-center justify-center shadow-[0_0_15px_rgba(139,92,246,0.3)]">
                             <Check size={14} className="text-violet-500" />
                           </div>
                         </div>
 
                         {/* Card */}
-                        <div className={`w-[40%] p-5 rounded-2xl border transition-all ${opt.isInternal ? 'bg-yellow-900/20 border-yellow-500/20' : 'bg-white dark:bg-white/5 border-slate-200 dark:border-white/5'} hover:border-violet-500/20 ${idx % 2 === 0 ? 'mr-auto text-left' : 'ml-auto text-left'}`}>
+                        <div className={`w-[40%] p-5 rounded-2xl border transition-all ${opt.isInternal ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-500/20' : 'bg-white dark:bg-white/5 border-slate-200 dark:border-white/5'} hover:border-violet-500/20 ${idx % 2 === 0 ? 'mr-auto text-left' : 'ml-auto text-left'}`}>
                           <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-2">
                               {opt.authorPhoto ? (
@@ -1790,7 +1790,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
                                   {opt.author.charAt(0).toUpperCase()}
                                 </div>
                               )}
-                              <p className={`text-sm font-bold ${opt.isInternal ? 'text-yellow-500' : 'text-slate-900 dark:text-white'}`}>
+                              <p className={`text-sm font-bold ${opt.isInternal ? 'text-amber-700 dark:text-amber-500' : 'text-slate-900 dark:text-white'}`}>
                                 {opt.author} <span className="text-slate-500 font-medium">({opt.role})</span>
                               </p>
                             </div>
@@ -1814,11 +1814,11 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
                             </div>
                           </div>
                           {opt.isInternal && (
-                            <div className="flex items-center gap-1 mb-2 text-[10px] font-bold text-yellow-500 uppercase tracking-wider">
+                            <div className="flex items-center gap-1 mb-2 text-[10px] font-bold text-amber-600 dark:text-amber-500 uppercase tracking-wider">
                               <span className="opacity-70">🔒</span> MENSAGEM INTERNA
                             </div>
                           )}
-                          <p className={`text-xs ${opt.isInternal ? 'text-yellow-200' : 'text-slate-600 dark:text-slate-400'} leading-relaxed whitespace-pre-line`}>
+                          <p className={`text-xs ${opt.isInternal ? 'text-amber-900 dark:text-amber-200' : 'text-slate-600 dark:text-slate-400'} leading-relaxed whitespace-pre-line`}>
                             {opt.message}
                           </p>
 
@@ -2264,7 +2264,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
       <header className="mb-10">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-4xl font-black text-light-text dark:text-white tracking-tight mb-1">
+            <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight mb-1">
               Projetos & <span className="text-violet-500">Parceiros</span>
             </h1>
             <p className="text-slate-500 text-sm">Gerenciamento centralizado de contas, performance e gargalos operacionais.</p>
@@ -2313,7 +2313,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
             <select 
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="appearance-none bg-slate-100 dark:bg-white/5 backdrop-blur-md border border-slate-200 dark:border-white/10 rounded-2xl py-3 pl-4 pr-10 text-sm text-light-text dark:text-white outline-none focus:ring-2 focus:ring-violet-500/20 transition-all cursor-pointer"
+              className="appearance-none bg-slate-100 dark:bg-white/5 backdrop-blur-md border border-slate-200 dark:border-white/10 rounded-2xl py-3 pl-4 pr-10 text-sm text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-violet-500/20 transition-all cursor-pointer"
             >
               <option className="bg-dark-input">Todos os Status</option>
               <option className="bg-dark-input">Operacional</option>
@@ -2327,7 +2327,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
             <select 
               value={resultFilter}
               onChange={(e) => setResultFilter(e.target.value)}
-              className="appearance-none bg-slate-100 dark:bg-white/5 backdrop-blur-md border border-slate-200 dark:border-white/10 rounded-2xl py-3 pl-4 pr-10 text-sm text-light-text dark:text-white outline-none focus:ring-2 focus:ring-violet-500/20 transition-all cursor-pointer"
+              className="appearance-none bg-slate-100 dark:bg-white/5 backdrop-blur-md border border-slate-200 dark:border-white/10 rounded-2xl py-3 pl-4 pr-10 text-sm text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-violet-500/20 transition-all cursor-pointer"
             >
               <option className="bg-dark-input">Todos os Resultados</option>
               <option className="bg-dark-input">RESULTADO BOM</option>
@@ -2828,32 +2828,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
                           )}
                         </div>
                       </div>
-                      {/* Grupo — select nativo */}
-                      <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-dark-card/60 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-white/10">
-                        <div className="flex items-center gap-3 text-slate-400">
-                          <span className="text-sm">Grupo</span>
-                        </div>
-                        <select
-                          value={selectedProject.group || ''}
-                          onChange={(e) => {
-                            const updated = { ...selectedProject, group: e.target.value };
-                            setSelectedProject(updated);
-                            const updatedProjects = projects.map(p => p.id === selectedProject.id ? updated : p);
-                            setProjects(updatedProjects);
-                            saveProjects(updatedProjects);
-                          }}
-                          className={`text-sm font-bold bg-transparent outline-none cursor-pointer border-none appearance-none ${
-                            selectedProject.group === 'Grupo 1' ? 'text-blue-500' :
-                            selectedProject.group === 'Grupo 2' ? 'text-green-500' :
-                            selectedProject.group === 'Quarentena' ? 'text-red-500' : 'text-slate-400'
-                          }`}
-                        >
-                          <option value="">Sem grupo</option>
-                          <option value="Grupo 1">Grupo 1</option>
-                          <option value="Grupo 2">Grupo 2</option>
-                          <option value="Quarentena">Quarentena</option>
-                        </select>
-                      </div>
+
                       <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-dark-card/60 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-white/10">
                         <div className="flex items-center gap-3 text-slate-500">
                           <DollarSign size={16} />
@@ -2897,7 +2872,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
                           <div key={opt.id} className="relative flex items-center justify-center">
                             {/* Timeline Dot */}
                             <div className="absolute left-1/2 -translate-x-1/2 z-10">
-                              <div className="w-8 h-8 rounded-full bg-light-card dark:bg-dark-card border border-violet-500/50 flex items-center justify-center shadow-[0_0_15px_rgba(139,92,246,0.3)]">
+                              <div className="w-8 h-8 rounded-full bg-white dark:bg-dark-card border border-violet-500/50 flex items-center justify-center shadow-[0_0_15px_rgba(139,92,246,0.3)]">
                                 <Check size={14} className="text-violet-500" />
                               </div>
                             </div>

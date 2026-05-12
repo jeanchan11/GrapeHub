@@ -1327,7 +1327,7 @@ const EmptyCol = ({ onAdd, label }: { onAdd: () => void; label: string }) => (
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-const TodoStaff: React.FC = () => {
+const TodoStaff: React.FC<{ activePage?: string }> = ({ activePage }) => {
   const [todos,      setTodos]      = useState<TodoItem[]>([]);
   const [recurring,  setRecurring]  = useState<RecurringItem[]>([]);
   const [ideas,      setIdeas]      = useState<IdeaItem[]>([]);
@@ -1351,10 +1351,11 @@ const TodoStaff: React.FC = () => {
 
   // ── Load data from API on mount ──
   useEffect(() => {
+    const queryStr = activePage ? `?page_id=${encodeURIComponent(activePage)}` : '';
     Promise.all([
-      fetch('/api/todo-staff/tasks').then(r => r.ok ? r.json() : []),
-      fetch('/api/todo-staff/recurring').then(r => r.ok ? r.json() : []),
-      fetch('/api/todo-staff/ideas').then(r => r.ok ? r.json() : []),
+      fetch(`/api/todo-staff/tasks${queryStr}`).then(r => r.ok ? r.json() : []),
+      fetch(`/api/todo-staff/recurring${queryStr}`).then(r => r.ok ? r.json() : []),
+      fetch(`/api/todo-staff/ideas${queryStr}`).then(r => r.ok ? r.json() : []),
     ]).then(([tasks, recs, ideasData]) => {
       setTodos(tasks);
       setRecurring(recs);
@@ -1399,7 +1400,7 @@ const TodoStaff: React.FC = () => {
   const todoToApi = (t: TodoItem) => ({
     id: t.id, title: t.title, description: t.description, priority: t.priority,
     status: t.status, tags: t.tags, assignee: t.assignee, dueDate: t.dueDate,
-    subtasks: t.subtasks, comments: t.comments, doneAt: t.doneAt,
+    subtasks: t.subtasks, comments: t.comments, doneAt: t.doneAt, page_id: activePage || 'default'
   });
 
   // Handlers — todos
@@ -1487,7 +1488,7 @@ const TodoStaff: React.FC = () => {
   const createRec = (data: Omit<RecurringItem, 'id' | 'createdAt'>) => {
     const item: RecurringItem = { ...data, id: uid(), createdAt: new Date().toISOString() };
     setRecurring(p => [item, ...p]);
-    apiCall('POST', '/api/todo-staff/recurring', item);
+    apiCall('POST', '/api/todo-staff/recurring', { ...item, page_id: activePage || 'default' });
   };
   const updateRec = (data: Omit<RecurringItem, 'id' | 'createdAt'>) => {
     if (!editingRec) return;
@@ -1505,7 +1506,7 @@ const TodoStaff: React.FC = () => {
   const createIdea = (data: Omit<IdeaItem, 'id' | 'createdAt'>) => {
     const item: IdeaItem = { ...data, comments: data.comments ?? [], id: uid(), createdAt: new Date().toISOString() };
     setIdeas(p => [item, ...p]);
-    apiCall('POST', '/api/todo-staff/ideas', item);
+    apiCall('POST', '/api/todo-staff/ideas', { ...item, page_id: activePage || 'default' });
   };
   const updateIdea = (data: Omit<IdeaItem, 'id' | 'createdAt'>) => {
     if (!editingIdea) return;

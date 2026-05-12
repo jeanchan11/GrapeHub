@@ -410,6 +410,7 @@ const templates = [
   { id: 'blank', label: 'Em Branco' },
   { id: 'projects', label: 'Projetos & Parceiros' },
   { id: 'todo', label: 'Tarefas' },
+  { id: 'todo-staff', label: 'To Do (Staff)' },
   { id: 'crm-comercial', label: 'CRM Comercial' },
   { id: 'crm-atividades', label: 'CRM Atividades' },
   { id: 'crm-pessoas', label: 'CRM Pessoas' },
