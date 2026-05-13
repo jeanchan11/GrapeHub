@@ -8,9 +8,44 @@ import { DetailsContent } from '@tiptap/extension-details';
 import { DetailsSummary } from '@tiptap/extension-details';
 import { Heading1, Heading2, Heading3, Type, List, ListOrdered, CheckSquare, ChevronRight } from 'lucide-react';
 
+import { Node, mergeAttributes } from '@tiptap/core';
+
+const MentionNode = Node.create({
+  name: 'mention',
+  group: 'inline',
+  inline: true,
+  selectable: false,
+  atom: true,
+
+  addAttributes() {
+    return {
+      name: { default: null },
+      picture: { default: null },
+      email: { default: null },
+    }
+  },
+
+  parseHTML() {
+    return [{ tag: 'span[data-type="mention"]' }]
+  },
+
+  renderHTML({ node, HTMLAttributes }) {
+    return [
+      'span',
+      mergeAttributes({
+        'data-type': 'mention',
+        style: 'display:inline-flex;align-items:center;gap:6px;background:rgba(139,92,246,0.15);color:#8b5cf6;padding:2px 8px;border-radius:12px;font-size:0.85em;font-weight:700;vertical-align:middle;line-height:1;margin:0 2px;user-select:none;'
+      }, HTMLAttributes),
+      node.attrs.picture ? ['img', { src: node.attrs.picture, style: 'width:16px;height:16px;border-radius:50%;object-fit:cover;margin:0;display:inline-block;' }] : ['span', {style:'display:none'}],
+      node.attrs.name
+    ]
+  }
+})
+
 interface RichTextEditorProps {
   content: string;
   onChange: (content: string) => void;
+  systemUsers?: {name: string, email: string, picture?: string}[];
 }
 
 const SLASH_COMMANDS = [
@@ -30,10 +65,16 @@ function isMarkdown(t: string) {
 
 interface MenuPos { top: number; left: number; }
 
-export default function RichTextEditor({ content, onChange }: RichTextEditorProps) {
+export default function RichTextEditor({ content, onChange, systemUsers = [] }: RichTextEditorProps) {
   const [slashOpen, setSlashOpen] = useState(false);
   const [slashFrom, setSlashFrom] = useState(0);
   const [selectedIndex, setSelectedIndex] = useState(0);
+
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionFrom, setMentionFrom] = useState(0);
+  const [mentionQuery, setMentionQuery] = useState('');
+  const [mentionSelectedIndex, setMentionSelectedIndex] = useState(0);
+
   const [menuPos, setMenuPos] = useState<MenuPos>({ top: 0, left: 0 });
   const initialized = useRef(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -47,6 +88,7 @@ export default function RichTextEditor({ content, onChange }: RichTextEditorProp
       Details.configure({ persist: true, HTMLAttributes: { class: 'details' } }),
       DetailsSummary,
       DetailsContent,
+      MentionNode,
     ],
     content: initialHTML,
     editorProps: {
@@ -58,7 +100,19 @@ export default function RichTextEditor({ content, onChange }: RichTextEditorProp
       const textBefore = editor.state.doc.textBetween(Math.max(0, from - 60), from, '\n');
       const currentLine = textBefore.slice(textBefore.lastIndexOf('\n') + 1);
       
-      if (currentLine === '/') {
+      const mentionMatch = /(?:^|\s)@([^\s]*)$/.exec(textBefore);
+
+      if (mentionMatch) {
+        setMentionQuery(mentionMatch[1]);
+        setMentionFrom(from - mentionMatch[1].length - 1);
+        try {
+          const coords = editor.view.coordsAtPos(from);
+          const left = Math.min(coords.left, window.innerWidth - 272);
+          setMenuPos({ top: coords.bottom + 6, left: Math.max(8, left) });
+        } catch {}
+        setMentionOpen(true);
+        setSlashOpen(false);
+      } else if (currentLine === '/') {
         setSlashFrom(from - 1);
         try {
           const coords = editor.view.coordsAtPos(from);
@@ -67,8 +121,10 @@ export default function RichTextEditor({ content, onChange }: RichTextEditorProp
         } catch {}
         setSlashOpen(true);
         setSelectedIndex(0);
-      } else if (!currentLine.startsWith('/')) {
-        setSlashOpen(false);
+        setMentionOpen(false);
+      } else {
+        if (!currentLine.startsWith('/')) setSlashOpen(false);
+        setMentionOpen(false);
       }
     },
   });
@@ -91,6 +147,31 @@ export default function RichTextEditor({ content, onChange }: RichTextEditorProp
     window.addEventListener('keydown', h, true);
     return () => window.removeEventListener('keydown', h, true);
   }, [slashOpen, selectedIndex]);
+
+  const filteredUsers = systemUsers.filter(u => (u.name || u.email).toLowerCase().includes(mentionQuery.toLowerCase())).slice(0, 5);
+
+  useEffect(() => {
+    if (!mentionOpen || filteredUsers.length === 0) return;
+    const h = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setMentionOpen(false); return; }
+      if (e.key === 'ArrowDown') { e.preventDefault(); setMentionSelectedIndex(i => (i + 1) % filteredUsers.length); }
+      if (e.key === 'ArrowUp')   { e.preventDefault(); setMentionSelectedIndex(i => (i - 1 + filteredUsers.length) % filteredUsers.length); }
+      if (e.key === 'Enter')     { e.preventDefault(); runMention(filteredUsers[mentionSelectedIndex]); }
+    };
+    window.addEventListener('keydown', h, true);
+    return () => window.removeEventListener('keydown', h, true);
+  }, [mentionOpen, mentionSelectedIndex, filteredUsers]);
+
+  const runMention = useCallback((user: {name: string, email: string, picture?: string}) => {
+    if (!editor) return;
+    const displayName = user.name && user.name.trim() !== '' ? user.name : user.email;
+    editor.chain().focus()
+      .deleteRange({ from: mentionFrom, to: editor.state.selection.from })
+      .insertContent({ type: 'mention', attrs: { name: displayName, email: user.email, picture: user.picture } })
+      .insertContent(' ')
+      .run();
+    setMentionOpen(false);
+  }, [editor, mentionFrom]);
 
   const run = useCallback((cmd: typeof SLASH_COMMANDS[0]) => {
     if (!editor) return;
@@ -136,6 +217,35 @@ export default function RichTextEditor({ content, onChange }: RichTextEditorProp
               })}
             </div>
           ))}
+        </div>
+      )}
+      
+      {mentionOpen && filteredUsers.length > 0 && (
+        <div
+          className="fixed z-[9999] w-64 bg-dark-card border border-white/10 rounded-xl shadow-2xl overflow-y-auto flex flex-col py-2"
+          style={{ top: menuPos.top, left: menuPos.left, maxHeight: '300px' }}
+          onMouseDown={e => e.preventDefault()}
+        >
+          <div className="px-3 pt-2 pb-1">
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Membros</span>
+          </div>
+          {filteredUsers.map((u, idx) => {
+            const active = mentionSelectedIndex === idx;
+            const displayName = u.name && u.name.trim() !== '' ? u.name : u.email;
+            return (
+              <button key={u.email} onMouseDown={e => { e.preventDefault(); runMention(u); }}
+                className={`flex items-center gap-3 px-4 py-2 w-full text-left transition-colors ${active ? 'bg-violet-600/20' : 'hover:bg-white/5'}`}>
+                {u.picture ? (
+                  <img src={u.picture} className="w-6 h-6 rounded-full object-cover shrink-0" alt={displayName} />
+                ) : (
+                  <div className="w-6 h-6 rounded-full bg-violet-500/30 text-violet-400 flex items-center justify-center text-[10px] font-bold shrink-0">
+                    {displayName.slice(0, 2).toUpperCase()}
+                  </div>
+                )}
+                <span className={`text-xs font-medium ${active ? 'text-violet-400' : 'text-dark-text'}`}>{displayName}</span>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>

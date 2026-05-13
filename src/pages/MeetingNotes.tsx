@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, ChevronDown, ChevronUp, Trash2, Save, X, Edit2, Calendar, Clock, CheckSquare, FileText, Users, Loader2 } from 'lucide-react';
+import { Plus, ChevronDown, ChevronUp, Trash2, Save, X, Edit2, Calendar, Clock, CheckSquare, FileText, Users, Loader2, Paperclip, ImageIcon } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -21,6 +21,7 @@ interface Comment {
   text: string;
   author_name: string;
   created_at: string;
+  files?: { name: string; url: string; type: string }[];
 }
 
 function fmtDate(d: string) {
@@ -29,10 +30,17 @@ function fmtDate(d: string) {
   return `${day}/${m}/${y}`;
 }
 
-function Avatar({ name, size = 28 }: { name: string; size?: number }) {
+function UserAvatar({ name, picture, size = 28 }: { name: string; picture?: string; size?: number }) {
+  if (picture) {
+    return (
+      <div style={{ width: size, height: size, borderRadius: '50%', overflow: 'hidden', flexShrink: 0, border: '2px solid rgba(255,255,255,0.08)' }}>
+        <img src={picture} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      </div>
+    );
+  }
   const initials = name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
   const colors = ['#6366f1','#8b5cf6','#ec4899','#f59e0b','#10b981','#3b82f6','#f43f5e'];
-  const color = colors[name.charCodeAt(0) % colors.length];
+  const color = colors[(name.charCodeAt(0) || 0) % colors.length];
   return (
     <div style={{ width: size, height: size, background: color, borderRadius: '50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize: size*0.38, fontWeight: 700, color:'#fff', flexShrink:0, border:'2px solid rgba(255,255,255,0.08)' }}>
       {initials}
@@ -41,7 +49,7 @@ function Avatar({ name, size = 28 }: { name: string; size?: number }) {
 }
 
 export default function MeetingNotes({ activePage, pageLabel }: { activePage: string; pageLabel?: string }) {
-  const { user } = useAuth();
+  const { user, userData } = useAuth();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -52,12 +60,31 @@ export default function MeetingNotes({ activePage, pageLabel }: { activePage: st
   const [newAttendees, setNewAttendees] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
+  const [systemUsers, setSystemUsers] = useState<{name: string, email: string, picture?: string}[]>([]);
+  const [showUserDropdown, setShowUserDropdown] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
+
   const load = async () => {
     setLoading(true);
     try {
-      const r = await fetch(`/api/meeting-notes/${activePage}`);
-      const data = await r.json();
-      setSessions(Array.isArray(data) ? data : []);
+      const [rSessions, rUsers] = await Promise.all([
+        fetch(`/api/meeting-notes/${activePage}`),
+        fetch(`/api/users`)
+      ]);
+      const data = await rSessions.json();
+      const sessionsData = Array.isArray(data) ? data : [];
+      setSessions(sessionsData);
+      
+      if (rUsers.ok) {
+        const usersData = await rUsers.json();
+        setSystemUsers(Array.isArray(usersData) ? usersData : []);
+      }
+      
+      const dates = sessionsData.map((s: any) => s.meeting_date?.slice(0, 7)).filter(Boolean);
+      if (dates.length > 0) {
+        dates.sort((a: any, b: any) => b.localeCompare(a));
+        setExpandedGroups(prev => prev.length === 0 ? [dates[0]] : prev);
+      }
     } catch { setSessions([]); } finally { setLoading(false); }
   };
 
@@ -98,6 +125,16 @@ export default function MeetingNotes({ activePage, pageLabel }: { activePage: st
   // Stats
   const thisMonth = sessions.filter(s => s.meeting_date?.slice(0,7) === new Date().toISOString().slice(0,7)).length;
   const totalAttendees = new Set(sessions.flatMap(s => s.attendees || [])).size;
+
+  const groupedSessions = sessions.reduce((acc, session) => {
+    if (!session.meeting_date) return acc;
+    const key = session.meeting_date.slice(0, 7); // YYYY-MM
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(session);
+    return acc;
+  }, {} as Record<string, Session[]>);
+
+  const sortedGroupsKeys = Object.keys(groupedSessions).sort((a, b) => b.localeCompare(a));
 
   return (
     <div className="p-8 max-w-5xl mx-auto">
@@ -153,24 +190,49 @@ export default function MeetingNotes({ activePage, pageLabel }: { activePage: st
                 className="w-full bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-gray-900 dark:text-white outline-none focus:border-violet-500/50" />
             </div>
           </div>
-          <div className="mb-4">
+          <div className="mb-4 relative">
             <label className="text-xs text-gray-500 font-medium mb-1 block">Participantes</label>
             <div className="flex gap-2">
-              <input value={newAttendee} onChange={e => setNewAttendee(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && newAttendee.trim()) { setNewAttendees(p => [...p, newAttendee.trim()]); setNewAttendee(''); }}}
-                placeholder="Nome + Enter"
-                className="flex-1 bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-gray-900 dark:text-white outline-none focus:border-violet-500/50" />
-              <button onClick={() => { if (newAttendee.trim()) { setNewAttendees(p => [...p, newAttendee.trim()]); setNewAttendee(''); }}}
+              <div className="flex-1 relative">
+                <input value={newAttendee} 
+                  onChange={e => { setNewAttendee(e.target.value); setShowUserDropdown(true); }}
+                  onFocus={() => setShowUserDropdown(true)}
+                  onBlur={() => setTimeout(() => setShowUserDropdown(false), 200)}
+                  onKeyDown={e => { if (e.key === 'Enter' && newAttendee.trim()) { const val = newAttendee.trim(); setNewAttendees(p => p.includes(val) ? p : [...p, val]); setNewAttendee(''); setShowUserDropdown(false); }}}
+                  placeholder="Nome + Enter ou selecione na lista"
+                  className="w-full bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-gray-900 dark:text-white outline-none focus:border-violet-500/50" />
+                
+                {showUserDropdown && systemUsers.length > 0 && (
+                  <div className="absolute z-50 left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-xl shadow-xl">
+                    {systemUsers.filter(u => (u.name || u.email).toLowerCase().includes(newAttendee.toLowerCase())).map(u => {
+                      const displayName = u.name && u.name.trim() !== '' ? u.name : u.email;
+                      return (
+                        <div key={u.email} 
+                          onClick={() => { setNewAttendees(p => p.includes(displayName) ? p : [...p, displayName]); setNewAttendee(''); setShowUserDropdown(false); }}
+                          className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer border-b border-gray-100 dark:border-white/5 last:border-0"
+                        >
+                          <UserAvatar name={displayName} picture={u.picture} size={24} />
+                          <span className="text-sm font-medium text-gray-900 dark:text-white">{displayName}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              <button onClick={() => { if (newAttendee.trim()) { const val = newAttendee.trim(); setNewAttendees(p => p.includes(val) ? p : [...p, val]); setNewAttendee(''); }}}
                 className="px-3 py-2 bg-violet-600 text-white rounded-xl"><Plus size={14} /></button>
             </div>
             {newAttendees.length > 0 && (
               <div className="flex flex-wrap gap-2 mt-2">
-                {newAttendees.map((a, i) => (
-                  <span key={i} className="flex items-center gap-1.5 px-2.5 py-1 bg-violet-500/10 text-violet-600 dark:text-violet-400 rounded-full text-xs font-medium">
-                    <Avatar name={a} size={16} />{a}
-                    <button onClick={() => setNewAttendees(p => p.filter((_, j) => j !== i))}><X size={10} /></button>
-                  </span>
-                ))}
+                {newAttendees.map((a, i) => {
+                  const matchingUser = systemUsers.find(u => (u.name || u.email) === a);
+                  return (
+                    <span key={i} className="flex items-center gap-1.5 px-2.5 py-1 bg-violet-500/10 text-violet-600 dark:text-violet-400 rounded-full text-xs font-medium">
+                      <UserAvatar name={a} picture={matchingUser?.picture} size={16} />{a}
+                      <button onClick={() => setNewAttendees(p => p.filter((_, j) => j !== i))}><X size={10} /></button>
+                    </span>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -198,16 +260,52 @@ export default function MeetingNotes({ activePage, pageLabel }: { activePage: st
           <button onClick={() => setShowNew(true)} className="mt-3 text-violet-500 hover:text-violet-400 text-sm font-medium">+ Criar primeira reunião</button>
         </div>
       ) : (
-        <div className="space-y-3">
-          {sessions.map(session => (
-            <SessionCard key={session.id} session={session}
-              expanded={expandedId === session.id}
-              onToggle={() => setExpandedId(expandedId === session.id ? null : session.id)}
-              onDelete={() => deleteSession(session.id)}
-              onUpdate={updateSession}
-              currentUser={user?.displayName || user?.email || 'Equipe'}
-            />
-          ))}
+        <div className="space-y-6">
+          {sortedGroupsKeys.map(groupKey => {
+            const [y, m] = groupKey.split('-');
+            const dateObj = new Date(parseInt(y), parseInt(m) - 1, 1);
+            let monthName = dateObj.toLocaleString('pt-BR', { month: 'long' });
+            monthName = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+            const groupTitle = `${monthName} ${y}`;
+            const groupSessions = groupedSessions[groupKey];
+            const isExpanded = expandedGroups.includes(groupKey);
+
+            return (
+              <div key={groupKey} className="bg-white/50 dark:bg-dark-card/50 rounded-2xl border border-gray-100 dark:border-white/5 overflow-hidden">
+                <div 
+                  className="px-6 py-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+                  onClick={() => setExpandedGroups(prev => prev.includes(groupKey) ? prev.filter(k => k !== groupKey) : [...prev, groupKey])}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-violet-500/10 flex items-center justify-center text-violet-500">
+                      <Calendar size={16} />
+                    </div>
+                    <h3 className="font-bold text-gray-900 dark:text-white">{groupTitle}</h3>
+                    <span className="text-xs font-medium text-gray-400 dark:text-slate-500 bg-gray-100 dark:bg-white/10 px-2 py-0.5 rounded-md">
+                      {groupSessions.length} {groupSessions.length === 1 ? 'reunião' : 'reuniões'}
+                    </span>
+                  </div>
+                  {isExpanded ? <ChevronUp size={18} className="text-gray-400" /> : <ChevronDown size={18} className="text-gray-400" />}
+                </div>
+                
+                {isExpanded && (
+                  <div className="p-4 border-t border-gray-100 dark:border-white/5 space-y-3">
+                    {groupSessions.map(session => (
+                      <SessionCard key={session.id} session={session}
+                        expanded={expandedId === session.id}
+                        onToggle={() => setExpandedId(expandedId === session.id ? null : session.id)}
+                        onDelete={() => deleteSession(session.id)}
+                        onUpdate={updateSession}
+                        currentUser={user?.displayName || user?.email || 'Equipe'}
+                        systemUsers={systemUsers}
+                        userRole={userData?.role}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -215,10 +313,12 @@ export default function MeetingNotes({ activePage, pageLabel }: { activePage: st
 }
 
 /* ── Session Card ── */
-function SessionCard({ session, expanded, onToggle, onDelete, onUpdate, currentUser }: {
+function SessionCard({ session, expanded, onToggle, onDelete, onUpdate, currentUser, systemUsers, userRole }: {
   session: Session; expanded: boolean;
   onToggle: () => void; onDelete: () => void;
   onUpdate: (s: Session) => void; currentUser: string;
+  systemUsers: {name: string, email: string, picture?: string}[];
+  userRole?: string;
 }) {
   const [notesHtml, setNotesHtml] = useState(session.notes_html || '');
   const [notesDirty, setNotesDirty] = useState(false);
@@ -228,6 +328,37 @@ function SessionCard({ session, expanded, onToggle, onDelete, onUpdate, currentU
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [newComment, setNewComment] = useState('');
   const [commenting, setCommenting] = useState(false);
+  const [newFiles, setNewFiles] = useState<{name: string, url: string, type: string}[]>([]);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const url = event.target?.result as string;
+      setNewFiles(prev => [...prev, { name: file.name, type: file.type, url }]);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData.items;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1) {
+        const file = items[i].getAsFile();
+        if (!file) continue;
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const url = event.target?.result as string;
+          const name = `Colado_${new Date().getTime()}.png`;
+          setNewFiles(prev => [...prev, { name, type: file.type, url }]);
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+  };
 
   const [editingMeta, setEditingMeta] = useState(false);
   const [metaTitle, setMetaTitle] = useState(session.title);
@@ -272,20 +403,31 @@ function SessionCard({ session, expanded, onToggle, onDelete, onUpdate, currentU
   };
 
   const addComment = async () => {
-    if (!newComment.trim()) return;
+    if (!newComment.trim() && newFiles.length === 0) return;
     setCommenting(true);
     try {
       const r = await fetch(`/api/meeting-notes/${session.id}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: newComment, author_name: currentUser })
+        body: JSON.stringify({ text: newComment, author_name: currentUser, files: newFiles })
       });
       if (r.ok) {
         const c = await r.json();
         setComments(prev => [...prev, c]);
         setNewComment('');
+        setNewFiles([]);
       }
     } finally { setCommenting(false); }
+  };
+
+  const deleteComment = async (commentId: number) => {
+    if (!confirm('Excluir este comentário?')) return;
+    try {
+      const r = await fetch(`/api/meeting-notes/${session.id}/comments/${commentId}`, { method: 'DELETE' });
+      if (r.ok) {
+        setComments(prev => prev.filter(c => c.id !== commentId));
+      }
+    } catch {}
   };
 
   const hasNotes = notesHtml && notesHtml !== '<p></p>' && notesHtml !== '';
@@ -306,7 +448,10 @@ function SessionCard({ session, expanded, onToggle, onDelete, onUpdate, currentU
           {(session.attendees || []).length > 0 && (
             <div className="flex items-center gap-2 mt-1">
               <div className="flex -space-x-1.5">
-                {(session.attendees || []).slice(0,5).map((a, i) => <Avatar key={i} name={a} size={20} />)}
+                {(session.attendees || []).slice(0,5).map((a, i) => {
+                  const matchingUser = systemUsers.find(u => (u.name || u.email) === a);
+                  return <UserAvatar key={i} name={a} picture={matchingUser?.picture} size={20} />;
+                })}
                 {(session.attendees || []).length > 5 && (
                   <div className="w-5 h-5 rounded-full bg-gray-200 dark:bg-white/10 flex items-center justify-center text-[9px] font-bold text-gray-500 dark:text-slate-400" style={{border:'2px solid'}}>
                     +{(session.attendees||[]).length-5}
@@ -358,20 +503,64 @@ function SessionCard({ session, expanded, onToggle, onDelete, onUpdate, currentU
                     <input type="date" value={metaDate} onChange={e => setMetaDate(e.target.value)} className="w-full bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-lg px-3 py-1.5 text-xs text-gray-900 dark:text-white outline-none focus:border-violet-500/50" />
                   </div>
                 </div>
-                <div className="mb-3">
+                <div className="mb-3 relative">
                   <label className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1 block">Participantes</label>
                   <div className="flex flex-wrap gap-1.5 mb-1.5">
-                    {metaAttendees.map((a, i) => (
-                      <span key={i} className="flex items-center gap-1 px-2 py-0.5 bg-violet-500/10 text-violet-600 dark:text-violet-400 rounded-full text-[10px] font-medium">
-                        <Avatar name={a} size={14} />{a}
-                        <button onClick={() => setMetaAttendees(p => p.filter((_, j) => j !== i))}><X size={9} /></button>
-                      </span>
-                    ))}
+                    {metaAttendees.map((a, i) => {
+                      const matchingUser = systemUsers.find(u => (u.name || u.email) === a);
+                      return (
+                        <span key={i} className="flex items-center gap-1 px-2 py-0.5 bg-violet-500/10 text-violet-600 dark:text-violet-400 rounded-full text-[10px] font-medium">
+                          <UserAvatar name={a} picture={matchingUser?.picture} size={14} />{a}
+                          <button onClick={() => setMetaAttendees(p => p.filter((_, j) => j !== i))}><X size={9} /></button>
+                        </span>
+                      );
+                    })}
                   </div>
-                  <input value={metaAttendee} onChange={e => setMetaAttendee(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter' && metaAttendee.trim()) { setMetaAttendees(p => [...p, metaAttendee.trim()]); setMetaAttendee(''); }}}
-                    placeholder="Nome + Enter"
-                    className="w-full bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-lg px-3 py-1.5 text-xs text-gray-900 dark:text-white outline-none focus:border-violet-500/50" />
+                  <div className="relative">
+                    <input id={`meta-attendee-${session.id}`} value={metaAttendee} 
+                      onChange={e => setMetaAttendee(e.target.value)}
+                      onFocus={() => {
+                        const el = document.getElementById(`meta-dropdown-${session.id}`);
+                        if (el) el.style.display = 'block';
+                      }}
+                      onBlur={() => {
+                        setTimeout(() => {
+                          const el = document.getElementById(`meta-dropdown-${session.id}`);
+                          if (el) el.style.display = 'none';
+                        }, 200);
+                      }}
+                      onKeyDown={e => { 
+                        if (e.key === 'Enter' && metaAttendee.trim()) { 
+                          const val = metaAttendee.trim();
+                          setMetaAttendees(p => p.includes(val) ? p : [...p, val]); 
+                          setMetaAttendee(''); 
+                          const el = document.getElementById(`meta-dropdown-${session.id}`);
+                          if (el) el.style.display = 'none';
+                        }
+                      }}
+                      placeholder="Nome + Enter ou selecione"
+                      className="w-full bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-lg px-3 py-1.5 text-xs text-gray-900 dark:text-white outline-none focus:border-violet-500/50" />
+                    
+                    <div id={`meta-dropdown-${session.id}`} style={{display: 'none'}} className="absolute z-50 left-0 right-0 mt-1 max-h-40 overflow-y-auto bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-xl shadow-xl">
+                      {systemUsers.filter(u => (u.name || u.email).toLowerCase().includes(metaAttendee.toLowerCase())).map(u => {
+                        const displayName = u.name && u.name.trim() !== '' ? u.name : u.email;
+                        return (
+                          <div key={u.email} 
+                            onClick={() => { 
+                              setMetaAttendees(p => p.includes(displayName) ? p : [...p, displayName]); 
+                              setMetaAttendee(''); 
+                              const el = document.getElementById(`meta-dropdown-${session.id}`);
+                              if (el) el.style.display = 'none';
+                            }}
+                            className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer border-b border-gray-100 dark:border-white/5 last:border-0"
+                          >
+                            <UserAvatar name={displayName} picture={u.picture} size={20} />
+                            <span className="text-[11px] font-medium text-gray-900 dark:text-white">{displayName}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
                 <button onClick={saveMeta} className="px-3 py-1.5 bg-violet-600 hover:bg-violet-500 text-white rounded-lg text-xs font-bold">Salvar informações</button>
               </div>
@@ -381,6 +570,7 @@ function SessionCard({ session, expanded, onToggle, onDelete, onUpdate, currentU
             <div className="flex-1 px-6 pb-6">
               <RichTextEditor
                 content={notesHtml}
+                systemUsers={systemUsers}
                 onChange={html => { setNotesHtml(html); setNotesDirty(html !== (session.notes_html || '')); }}
               />
               {notesDirty && (
@@ -411,22 +601,63 @@ function SessionCard({ session, expanded, onToggle, onDelete, onUpdate, currentU
                   <div key={c.id} className="bg-white dark:bg-dark-card border border-gray-100 dark:border-white/5 rounded-xl px-4 py-3">
                     <div className="flex items-center justify-between mb-1.5">
                       <span className="text-[10px] font-bold text-violet-500">{c.author_name || 'Usuário'}</span>
-                      <span className="text-[10px] text-gray-400 dark:text-slate-500">
-                        {new Date(c.created_at).toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-gray-400 dark:text-slate-500">
+                          {new Date(c.created_at).toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })}
+                        </span>
+                        {(userRole === 'superadmin' || userRole === 'diretor-operacional') && (
+                          <button onClick={() => deleteComment(c.id)} className="text-gray-400 hover:text-red-500 transition-colors" title="Excluir">
+                            <Trash2 size={10} />
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <p className="text-xs text-gray-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">{c.text}</p>
+                    {c.text && <p className="text-xs text-gray-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">{c.text}</p>}
+                    {c.files && c.files.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {c.files.map((f, i) => (
+                          <div key={i} className="relative group">
+                            {f.type.startsWith('image/') ? (
+                              <img src={f.url} alt={f.name} className="h-20 w-auto rounded-lg object-cover border border-gray-200 dark:border-white/10 cursor-pointer" onClick={() => window.open(f.url, '_blank')} />
+                            ) : (
+                              <a href={f.url} download={f.name} className="flex items-center gap-1.5 px-3 py-2 bg-gray-50 dark:bg-white/5 rounded-lg border border-gray-200 dark:border-white/10 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors">
+                                <FileText size={14} className="text-violet-500" />
+                                <span className="text-[10px] text-gray-600 dark:text-slate-300 max-w-[120px] truncate">{f.name}</span>
+                              </a>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))
               )}
             </div>
 
             <div className="p-4 border-t border-gray-100 dark:border-white/5 shrink-0">
+              {newFiles.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {newFiles.map((f, i) => (
+                    <div key={i} className="flex items-center gap-1.5 px-2.5 py-1 bg-violet-50 dark:bg-violet-500/10 rounded-lg border border-violet-100 dark:border-violet-500/20">
+                      {f.type.startsWith('image/') ? <ImageIcon size={12} className="text-violet-500" /> : <FileText size={12} className="text-violet-500" />}
+                      <span className="text-[10px] text-violet-700 dark:text-violet-300 max-w-[100px] truncate">{f.name}</span>
+                      <button onClick={() => setNewFiles(p => p.filter((_, idx) => idx !== i))} className="text-violet-400 hover:text-violet-600 dark:hover:text-violet-200 ml-1"><X size={10} /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
               <textarea value={newComment} onChange={e => setNewComment(e.target.value)}
-                placeholder="Escreva um comentário..."
+                onPaste={handlePaste}
+                placeholder="Escreva um comentário ou cole um print (Ctrl+V)..."
                 className="w-full bg-white dark:bg-dark-bg border border-gray-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-xs text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-slate-500 outline-none focus:border-violet-500/50 resize-none h-20 mb-2 transition-colors" />
-              <div className="flex justify-end">
-                <button onClick={addComment} disabled={!newComment.trim() || commenting}
+              <div className="flex items-center justify-between">
+                <div>
+                  <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
+                  <button onClick={() => fileInputRef.current?.click()} className="p-1.5 text-gray-400 hover:text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-500/10 rounded-lg transition-colors" title="Anexar arquivo ou imagem">
+                    <Paperclip size={16} />
+                  </button>
+                </div>
+                <button onClick={addComment} disabled={(!newComment.trim() && newFiles.length === 0) || commenting}
                   className="px-4 py-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5">
                   {commenting ? <Loader2 size={12} className="animate-spin" /> : null} Responder
                 </button>

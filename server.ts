@@ -11483,9 +11483,11 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
       session_id UUID REFERENCES meeting_notes(id) ON DELETE CASCADE,
       text TEXT NOT NULL,
       author_name TEXT DEFAULT 'Equipe',
-      created_at TIMESTAMPTZ DEFAULT NOW()
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      files JSONB DEFAULT '[]'
     )
   `);
+  await pool.query(`ALTER TABLE meeting_notes_comments ADD COLUMN IF NOT EXISTS files JSONB DEFAULT '[]'`);
 
   app.get('/api/meeting-notes/:pageId', async (req, res) => {
     try {
@@ -11544,12 +11546,22 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
 
   app.post('/api/meeting-notes/:id/comments', async (req, res) => {
     try {
-      const { text, author_name = 'Equipe' } = req.body;
+      const { text, author_name = 'Equipe', files = [] } = req.body;
       const r = await pool.query(
-        `INSERT INTO meeting_notes_comments (session_id, text, author_name) VALUES ($1,$2,$3) RETURNING *`,
-        [req.params.id, text, author_name]
+        `INSERT INTO meeting_notes_comments (session_id, text, author_name, files) VALUES ($1,$2,$3,$4) RETURNING *`,
+        [req.params.id, text, author_name, JSON.stringify(files)]
       );
       res.json(r.rows[0]);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.delete('/api/meeting-notes/:id/comments/:commentId', async (req, res) => {
+    try {
+      await pool.query(
+        `DELETE FROM meeting_notes_comments WHERE id = $1 AND session_id = $2`,
+        [req.params.commentId, req.params.id]
+      );
+      res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
