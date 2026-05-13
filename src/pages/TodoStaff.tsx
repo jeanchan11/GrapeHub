@@ -3,8 +3,9 @@ import {
   Plus, X, Check, Clock, AlertCircle, ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
   Trash2, Edit3, MoreHorizontal, Search, RefreshCw, Repeat,
   Circle, CheckCircle2, Tag, CalendarDays, MessageSquare, ListChecks, Send, GripVertical,
-  Lightbulb, Star, Sparkles
+  Lightbulb, Star, Sparkles, LayoutGrid, AlignJustify, FileText, Loader2, Save
 } from 'lucide-react';
+import RichTextEditor from '../components/RichTextEditor';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1333,6 +1334,10 @@ const TodoStaff: React.FC<{ activePage?: string }> = ({ activePage }) => {
   const [ideas,      setIdeas]      = useState<IdeaItem[]>([]);
   const [globalTags, setGlobalTags] = useState<string[]>([...AVAILABLE_TAGS]);
   const [activeTab,  setActiveTab]  = useState<'tarefas' | 'ideias'>('tarefas');
+  const [viewMode,   setViewMode]   = useState<'kanban' | 'list' | 'document'>('kanban');
+  const [notesHtml,  setNotesHtml]  = useState<string>('');
+  const [notesDirty, setNotesDirty] = useState(false);
+  const [notesSaving, setNotesSaving] = useState(false);
   const [todoModal,  setTodoModal]  = useState(false);
   const [recModal,   setRecModal]   = useState(false);
   const [ideaModal,  setIdeaModal]  = useState(false);
@@ -1353,13 +1358,15 @@ const TodoStaff: React.FC<{ activePage?: string }> = ({ activePage }) => {
   useEffect(() => {
     const queryStr = activePage ? `?page_id=${encodeURIComponent(activePage)}` : '';
     Promise.all([
-      fetch(`/api/todo-staff/tasks${queryStr}`).then(r => r.ok ? r.json() : []),
-      fetch(`/api/todo-staff/recurring${queryStr}`).then(r => r.ok ? r.json() : []),
-      fetch(`/api/todo-staff/ideas${queryStr}`).then(r => r.ok ? r.json() : []),
-    ]).then(([tasks, recs, ideasData]) => {
+      fetch(`/api/todo-staff/tasks${queryStr}`).then(r => r.ok ? r.json() : []).catch(() => []),
+      fetch(`/api/todo-staff/recurring${queryStr}`).then(r => r.ok ? r.json() : []).catch(() => []),
+      fetch(`/api/todo-staff/ideas${queryStr}`).then(r => r.ok ? r.json() : []).catch(() => []),
+      fetch(`/api/todo-staff/notes${queryStr}`).then(r => r.ok ? r.json() : { content: '' }).catch(() => ({ content: '' })),
+    ]).then(([tasks, recs, ideasData, notesData]) => {
       setTodos(tasks);
       setRecurring(recs);
       setIdeas(ideasData);
+      setNotesHtml(notesData.content || '');
       // Merge tags from tasks
       const allUsedTags = new Set<string>([...AVAILABLE_TAGS, ...tasks.flatMap((t: TodoItem) => t.tags)]);
       setGlobalTags(Array.from(allUsedTags));
@@ -1384,6 +1391,14 @@ const TodoStaff: React.FC<{ activePage?: string }> = ({ activePage }) => {
   // Handler to create a new global tag
   const handleTagCreated = (tag: string) => {
     setGlobalTags(prev => prev.includes(tag) ? prev : [...prev, tag]);
+  };
+
+  const saveNotes = async () => {
+    setNotesSaving(true);
+    const queryStr = activePage ? `?page_id=${encodeURIComponent(activePage)}` : '';
+    await apiCall('POST', `/api/todo-staff/notes${queryStr}`, { content: notesHtml });
+    setNotesDirty(false);
+    setNotesSaving(false);
   };
 
   // ── API helper ──
@@ -1685,11 +1700,60 @@ const TodoStaff: React.FC<{ activePage?: string }> = ({ activePage }) => {
             )}
           </div>
         )}
+
+        <div className="ml-auto inline-flex items-center gap-1 bg-dark-card border border-white/[0.06] rounded-xl p-1">
+          <button
+            onClick={() => setViewMode('kanban')}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              viewMode === 'kanban'
+                ? 'bg-violet-600/15 text-violet-500'
+                : 'text-dark-text/50 hover:text-dark-text/80'
+            }`}
+          >
+            <LayoutGrid size={13} /> Kanban
+          </button>
+          <button
+            onClick={() => setViewMode('list')}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              viewMode === 'list'
+                ? 'bg-violet-600/15 text-violet-500'
+                : 'text-dark-text/50 hover:text-dark-text/80'
+            }`}
+          >
+            <AlignJustify size={13} /> Lista
+          </button>
+          <button
+            onClick={() => setViewMode('document')}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              viewMode === 'document'
+                ? 'bg-violet-600/15 text-violet-500'
+                : 'text-dark-text/50 hover:text-dark-text/80'
+            }`}
+          >
+            <FileText size={13} /> Documento
+          </button>
+        </div>
       </div>
 
-      {/* ── Board: 4 colunas ─── */}
-      <div className="px-6 md:px-8 pb-10">
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      {viewMode === 'document' ? (
+        <div className="px-6 md:px-8 pb-10 max-w-4xl mx-auto">
+          <div className="bg-dark-card border border-white/[0.06] rounded-2xl overflow-hidden shadow-xl p-6">
+            <RichTextEditor
+              content={notesHtml}
+              onChange={html => { setNotesHtml(html); setNotesDirty(true); }}
+            />
+            {notesDirty && (
+              <div className="mt-4 flex justify-end">
+                <button onClick={saveNotes} disabled={notesSaving} className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-colors">
+                  {notesSaving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Salvar Documento
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="px-6 md:px-8 pb-10">
+          <div className={viewMode === 'kanban' ? "grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4" : "flex flex-col gap-6"}>
 
           {/* ── 3 colunas de status ─── */}
           {COLUMNS.map(col => {
@@ -1757,6 +1821,7 @@ const TodoStaff: React.FC<{ activePage?: string }> = ({ activePage }) => {
 
         </div>
       </div>
+      )}
       </>)}
 
       {/* ── Ideias tab content ─── */}

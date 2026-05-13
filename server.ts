@@ -439,6 +439,11 @@ async function startServer() {
         created_at TIMESTAMP DEFAULT NOW()
       );
 
+      CREATE TABLE IF NOT EXISTS to_do_staff_notes (
+        page_id TEXT PRIMARY KEY,
+        content TEXT
+      );
+
       CREATE TABLE IF NOT EXISTS crm_comercial_tasks (
         id SERIAL PRIMARY KEY,
         lead_id TEXT,
@@ -8786,9 +8791,23 @@ app.get("/api/todos", async (req, res) => {
       // Mapa de campos conhecidos: { coluna_db: valor_do_body }
       // Qualquer campo extra enviado pelo form é ignorado automaticamente.
       const finalCampaign = body.utm_campaign || body.umt_campaign || '';
-      const utmPlatform   = body.utm_source || body.utm_platform || '';
-      // Auto-origem: se a plataforma for FacebookAds → "Meta ads"
-      const autoOrigem    = utmPlatform.toLowerCase() === 'facebookads' ? 'Meta ads' : '';
+      // Auto-origem based primarily on utm_platform, falling back to utm_source
+      const utmPlatform   = body.utm_platform || body.utm_source || '';
+      let autoOrigem = utmPlatform;
+      
+      if (autoOrigem) {
+        const pLower = autoOrigem.toLowerCase();
+        if (pLower === 'facebookads' || pLower === 'facebook' || pLower === 'fb' || pLower === 'ig' || pLower === 'instagram') {
+          autoOrigem = 'Meta ads';
+        } else if (pLower === 'google' || pLower === 'googleads' || pLower === 'adwords') {
+          autoOrigem = 'Google ads';
+        } else if (pLower === 'tiktok' || pLower === 'tiktokads') {
+          autoOrigem = 'TikTok ads';
+        } else {
+          autoOrigem = autoOrigem.charAt(0).toUpperCase() + autoOrigem.slice(1);
+        }
+      }
+
       const finalOrigem   = body.origem || autoOrigem || body.formulario || body.source || 'Inbound Webhook';
       const tags          = body.tags;
 
