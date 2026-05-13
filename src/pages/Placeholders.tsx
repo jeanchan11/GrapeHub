@@ -271,6 +271,35 @@ export const SettingsPage = ({ onPageChange, isSuperAdmin }: { onPageChange?: (p
         runs: '∞',
         trigger_event: 'lead_won',
       },
+      {
+        id: 'novo-lead-pessoa',
+        trigger: 'Lead criado',
+        triggerColor: '#3b82f6',
+        triggerBg: 'rgba(59,130,246,0.1)',
+        name: 'Lead criado → Sincronizar Contato (Pessoas)',
+        description: 'Sempre que um novo lead entra no CRM Comercial (via Webhook Inbound ou adição manual), cadastra ou atualiza automaticamente o contato do cliente na página de Pessoas, centralizando a agenda.',
+        actions: [
+          { icon: UserPlus, label: 'Sincronizar contato em Pessoas', detail: 'Sincroniza: Nome, Email, Telefone' },
+        ],
+        status: 'Ativa',
+        runs: '∞',
+        trigger_event: 'lead_created',
+      },
+      {
+        id: 'webhook-inbound-lead',
+        trigger: 'Webhook Recebido',
+        triggerColor: '#8b5cf6',
+        triggerBg: 'rgba(139,92,246,0.1)',
+        name: 'Webhook Inbound → Criar Lead',
+        description: 'Recebe os dados enviados via Webhook (formulários, landing pages, Meta Ads, etc) e cria automaticamente um novo lead no funil de Vendas do Comercial. Extrai de forma inteligente a origem (utm_platform ou utm_source).',
+        actions: [
+          { icon: Zap, label: 'Receber e Processar Webhook', detail: 'Identifica campos: Nome, Email, Telefone, e Origem' },
+          { icon: CheckSquare, label: 'Criar lead no CRM Comercial', detail: 'Aloca na etapa: "Novos Leads"' },
+        ],
+        status: 'Ativa',
+        runs: '∞',
+        trigger_event: 'webhook_received',
+      },
     ];
 
     return (

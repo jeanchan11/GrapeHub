@@ -28,11 +28,13 @@ export default function CrmPessoas() {
   
   // Modal States
   const [showModal, setShowModal] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     nome: '', email: '', telefone: '', cargo: '', empresa: ''
   });
+  const [empresas, setEmpresas] = useState<any[]>([]);
 
   const fetchPessoas = async () => {
     if (!user?.email) return;
@@ -50,17 +52,59 @@ export default function CrmPessoas() {
     }
   };
 
+  const fetchEmpresas = async () => {
+    if (!user?.email) return;
+    try {
+      const res = await fetch(`/api/crm-empresas/list?user_id=${user.email}`);
+      if (res.ok) {
+        setEmpresas(await res.json());
+      }
+    } catch (err) {}
+  };
+
   useEffect(() => {
     fetchPessoas();
+    fetchEmpresas();
   }, [user]);
+
+  const openEditModal = (p: Pessoa) => {
+    setEditingId(p.id);
+    setFormData({
+      nome: p.nome || '',
+      email: p.email || '',
+      telefone: p.telefone || '',
+      cargo: p.cargo || '',
+      empresa: p.empresa || ''
+    });
+    setSaveError(null);
+    setShowModal(true);
+  };
 
   const handleSaveContact = async () => {
     if (!user?.email || !formData.nome.trim()) return;
     setSaveError(null);
     try {
       setSaving(true);
-      const res = await fetch('/api/crm-pessoas', {
-        method: 'POST',
+      
+      // Auto-create empresa se não existir
+      if (formData.empresa.trim()) {
+        const empName = formData.empresa.trim();
+        const exists = empresas.find(e => e.nome.toLowerCase() === empName.toLowerCase());
+        if (!exists) {
+           await fetch('/api/crm-empresas', {
+             method: 'POST',
+             headers: { 'Content-Type': 'application/json' },
+             body: JSON.stringify({ user_id: user.email, nome: empName, responsavel_id: user.email })
+           });
+           fetchEmpresas();
+        }
+      }
+
+      const method = editingId ? 'PUT' : 'POST';
+      const url = editingId ? `/api/crm-pessoas/${editingId}` : '/api/crm-pessoas';
+
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
@@ -73,6 +117,7 @@ export default function CrmPessoas() {
       
       if (res.ok) {
         setShowModal(false);
+        setEditingId(null);
         setFormData({ nome: '', email: '', telefone: '', cargo: '', empresa: '' });
         fetchPessoas();
       } else {
@@ -164,7 +209,7 @@ export default function CrmPessoas() {
             <span className="hidden sm:inline">Exportar</span>
           </button>
           <button 
-            onClick={() => { setShowModal(true); setSaveError(null); setFormData({ nome: '', email: '', telefone: '', cargo: '', empresa: '' }); }} 
+            onClick={() => { setShowModal(true); setEditingId(null); setSaveError(null); setFormData({ nome: '', email: '', telefone: '', cargo: '', empresa: '' }); }} 
             className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-lg text-sm font-medium transition-colors"
           >
             <Plus size={16} />
@@ -214,7 +259,7 @@ export default function CrmPessoas() {
                     </tr>
                  ) : (
                    filteredPessoas.map((p) => (
-                     <tr key={p.id} className="border-b border-slate-50 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors group">
+                     <tr key={p.id} onClick={() => openEditModal(p)} className="border-b border-slate-50 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors group cursor-pointer">
                         <td className="px-6 py-3">
                           <input type="checkbox" className="rounded border-slate-300 text-violet-600 focus:ring-violet-500" />
                         </td>
@@ -261,7 +306,7 @@ export default function CrmPessoas() {
       <Modal
         isOpen={showModal}
         onClose={() => setShowModal(false)}
-        title="Novo Contato"
+        title={editingId ? "Editar Contato" : "Novo Contato"}
         maxWidth="max-w-md"
         footer={
           <button
@@ -315,7 +360,7 @@ export default function CrmPessoas() {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="flex flex-col gap-4">
             <div>
               <label className={designSystem.input.label}>Cargo</label>
               <input 
@@ -330,11 +375,17 @@ export default function CrmPessoas() {
               <label className={designSystem.input.label}>Empresa</label>
               <input 
                 type="text" 
+                list="empresas-list"
                 value={formData.empresa} 
                 onChange={e => setFormData({...formData, empresa: e.target.value})}
                 className={designSystem.input.field}
                 placeholder="Ex: Grape Mídia"
               />
+              <datalist id="empresas-list">
+                {empresas.map((e, idx) => (
+                  <option key={idx} value={e.nome} />
+                ))}
+              </datalist>
             </div>
           </div>
         </div>

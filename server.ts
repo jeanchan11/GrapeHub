@@ -6807,6 +6807,25 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
+  app.put("/api/crm-pessoas/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { nome, email, telefone, cargo, empresa, responsavel_id } = req.body;
+      const result = await pool.query(`
+        UPDATE crm_pessoas 
+        SET nome = $1, email = $2, telefone = $3, cargo = $4, empresa = $5, responsavel_id = COALESCE($6, responsavel_id), updated_at = NOW()
+        WHERE id = $7
+        RETURNING *
+      `, [nome, email, telefone, cargo, empresa, responsavel_id, id]);
+      
+      if (result.rows.length === 0) return res.status(404).json({ error: "Pessoa não encontrada" });
+      res.json(result.rows[0]);
+    } catch(e: any) {
+      console.error(e);
+      res.status(500).json({ error: "Failed to update pessoa", details: e.message || String(e) });
+    }
+  });
+
   // ==========================================
   // CRM EMPRESAS
   // ==========================================
@@ -6848,6 +6867,25 @@ app.get("/api/todos", async (req, res) => {
     } catch(e: any) {
       console.error("[crm-empresas] Error:", e.message);
       res.status(500).json({ error: "Failed to create empresa", details: e.message });
+    }
+  });
+
+  app.put("/api/crm-empresas/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { nome, site, setor, telefone, email, cidade, responsavel_id } = req.body;
+      const result = await pool.query(`
+        UPDATE crm_empresas 
+        SET nome = $1, site = $2, setor = $3, telefone = $4, email = $5, cidade = $6, responsavel_id = COALESCE($7, responsavel_id), updated_at = NOW()
+        WHERE id = $8
+        RETURNING *
+      `, [nome, site, setor, telefone, email, cidade, responsavel_id, id]);
+      
+      if (result.rows.length === 0) return res.status(404).json({ error: "Empresa não encontrada" });
+      res.json(result.rows[0]);
+    } catch(e: any) {
+      console.error("[crm-empresas PUT] Error:", e.message);
+      res.status(500).json({ error: "Failed to update empresa", details: e.message });
     }
   });
 
@@ -7448,19 +7486,31 @@ app.get("/api/todos", async (req, res) => {
       );
       
       // Sincronizar com Pessoas
-      if (telefone && telefone.trim() !== '') {
+      if (nome) {
         try {
           const kanbanUserRes = await pool.query("SELECT user_id FROM crm_comercial_kanbans WHERE id = $1", [kanban_id]);
           if (kanbanUserRes.rows.length > 0) {
              const tenant_id = kanbanUserRes.rows[0].user_id;
-             await pool.query(`
-               INSERT INTO crm_pessoas (user_id, nome, telefone, responsavel_id)
-               VALUES ($1, $2, $3, $4)
-               ON CONFLICT (user_id, telefone) DO NOTHING
-             `, [tenant_id, nome || 'Desconhecido', telefone, responsavel_id]);
+             const telefoneVal = (telefone || '').trim();
+
+             let personId = null;
+             if (telefoneVal) {
+               const check = await pool.query(
+                 "SELECT id FROM crm_pessoas WHERE user_id = $1 AND telefone = $2 LIMIT 1",
+                 [tenant_id, telefoneVal]
+               );
+               if (check.rows.length > 0) personId = check.rows[0].id;
+             }
+
+             if (!personId) {
+               await pool.query(`
+                 INSERT INTO crm_pessoas (user_id, nome, telefone, responsavel_id)
+                 VALUES ($1, $2, $3, $4)
+               `, [tenant_id, nome, telefoneVal, responsavel_id]);
+             }
           }
-        } catch(personErr) {
-          console.error("Error syncing person from lead:", personErr);
+        } catch(personErr: any) {
+          console.error("Error syncing person from lead:", personErr.message);
         }
       }
 
@@ -8808,7 +8858,7 @@ app.get("/api/todos", async (req, res) => {
         }
       }
 
-      const finalOrigem   = body.origem || autoOrigem || body.formulario || body.source || 'Inbound Webhook';
+      const finalOrigem   = body.origem || autoOrigem || body.formulario || body.source || '';
       const tags          = body.tags;
 
 
@@ -8846,6 +8896,33 @@ app.get("/api/todos", async (req, res) => {
       );
 
       const newLead = insertResult.rows[0];
+
+      // Automaticamente criar uma pessoa na tabela de contatos comerciais
+      if (knownFields.nome) {
+        try {
+          const telefoneVal = knownFields.telefone.trim();
+          const emailVal = knownFields.email.trim();
+          
+          let personId = null;
+          if (telefoneVal || emailVal) {
+            const check = await pool.query(
+              `SELECT id FROM crm_pessoas WHERE user_id = $1 AND ((telefone != '' AND telefone = $2) OR (email != '' AND email = $3)) LIMIT 1`,
+              [user_id, telefoneVal, emailVal]
+            );
+            if (check.rows.length > 0) personId = check.rows[0].id;
+          }
+
+          if (!personId) {
+            await pool.query(
+              `INSERT INTO crm_pessoas (user_id, nome, email, telefone, responsavel_id)
+               VALUES ($1, $2, $3, $4, $5)`,
+              [user_id, knownFields.nome, emailVal, telefoneVal, user_id]
+            );
+          }
+        } catch (contactErr: any) {
+          console.error("Erro ao inserir pessoa via webhook na tabela crm_pessoas:", contactErr.message);
+        }
+      }
 
       try {
         await pool.query(

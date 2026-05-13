@@ -29,13 +29,22 @@ export default function CrmEmpresas() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Modal States
   const [showModal, setShowModal] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     nome: '', site: '', setor: '', telefone: '', email: '', cidade: ''
   });
+  const [pessoas, setPessoas] = useState<any[]>([]);
+
+  const fetchPessoas = async () => {
+    if (!user?.email) return;
+    try {
+      const res = await fetch(`/api/crm-pessoas/list?user_id=${user.email}`);
+      if (res.ok) setPessoas(await res.json());
+    } catch (err) {}
+  };
 
   const fetchEmpresas = async () => {
     if (!user?.email) return;
@@ -55,15 +64,33 @@ export default function CrmEmpresas() {
 
   useEffect(() => {
     fetchEmpresas();
+    fetchPessoas();
   }, [user]);
+
+  const openEditModal = (e: Empresa) => {
+    setEditingId(e.id);
+    setFormData({
+      nome: e.nome || '',
+      site: e.site || '',
+      setor: e.setor || '',
+      telefone: e.telefone || '',
+      email: e.email || '',
+      cidade: e.cidade || ''
+    });
+    setSaveError(null);
+    setShowModal(true);
+  };
 
   const handleSave = async () => {
     if (!user?.email || !formData.nome.trim()) return;
     setSaveError(null);
     try {
       setSaving(true);
-      const res = await fetch('/api/crm-empresas', {
-        method: 'POST',
+      const method = editingId ? 'PUT' : 'POST';
+      const url = editingId ? `/api/crm-empresas/${editingId}` : '/api/crm-empresas';
+
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
@@ -74,6 +101,7 @@ export default function CrmEmpresas() {
       const data = await res.json();
       if (res.ok) {
         setShowModal(false);
+        setEditingId(null);
         setFormData({ nome: '', site: '', setor: '', telefone: '', email: '', cidade: '' });
         fetchEmpresas();
       } else {
@@ -171,7 +199,7 @@ export default function CrmEmpresas() {
             <span className="hidden sm:inline">Exportar</span>
           </button>
           <button
-            onClick={() => { setShowModal(true); setSaveError(null); setFormData({ nome: '', site: '', setor: '', telefone: '', email: '', cidade: '' }); }}
+            onClick={() => { setShowModal(true); setEditingId(null); setSaveError(null); setFormData({ nome: '', site: '', setor: '', telefone: '', email: '', cidade: '' }); }}
             className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-lg text-sm font-medium transition-colors"
           >
             <Plus size={16} />
@@ -221,7 +249,7 @@ export default function CrmEmpresas() {
                   </tr>
                 ) : (
                   filteredEmpresas.map((e) => (
-                    <tr key={e.id} className="border-b border-slate-50 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors group">
+                    <tr key={e.id} onClick={() => openEditModal(e)} className="border-b border-slate-50 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors group cursor-pointer">
                       <td className="px-6 py-3">
                         <input type="checkbox" className="rounded border-slate-300 text-violet-600 focus:ring-violet-500" />
                       </td>
@@ -293,7 +321,7 @@ export default function CrmEmpresas() {
       <Modal
         isOpen={showModal}
         onClose={() => setShowModal(false)}
-        title="Nova Empresa"
+        title={editingId ? "Editar Empresa" : "Nova Empresa"}
         maxWidth="max-w-md"
         footer={
           <button
@@ -305,7 +333,7 @@ export default function CrmEmpresas() {
           </button>
         }
       >
-        <div className="space-y-4">
+        <div className="space-y-4 max-h-[70vh] overflow-y-auto px-1 pb-4">
           {saveError && (
             <div className="flex items-center gap-2 p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl text-sm text-rose-400">
               <AlertCircle size={16} className="shrink-0" />
@@ -381,6 +409,34 @@ export default function CrmEmpresas() {
               />
             </div>
           </div>
+
+          {editingId && pessoas.some(p => p.empresa?.toLowerCase().trim() === formData.nome.toLowerCase().trim()) && (
+            <div className="mt-6 pt-6 border-t border-slate-200 dark:border-white/10">
+              <h3 className="text-sm font-semibold mb-3 text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                <Users size={16} className="text-violet-500" />
+                Pessoas nesta empresa
+              </h3>
+              <div className="space-y-2">
+                {pessoas
+                  .filter(p => p.empresa?.toLowerCase().trim() === formData.nome.toLowerCase().trim())
+                  .map(p => (
+                  <div key={p.id} className="flex flex-col gap-1 p-3 bg-slate-50 dark:bg-white/5 rounded-lg border border-slate-100 dark:border-white/5">
+                    <div className="flex justify-between items-start">
+                      <div className="font-semibold text-sm text-slate-800 dark:text-slate-200">{p.nome}</div>
+                      <div className="text-xs text-slate-500 bg-white dark:bg-dark-bg px-2 py-0.5 rounded border border-slate-200 dark:border-white/5">
+                        {p.cargo || 'Sem cargo'}
+                      </div>
+                    </div>
+                    <div className="text-xs text-slate-500 flex flex-col gap-0.5 mt-1">
+                      {p.email && <div className="flex items-center gap-1"><Mail size={10}/> {p.email}</div>}
+                      {p.telefone && <div className="flex items-center gap-1"><Phone size={10}/> {p.telefone}</div>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
         </div>
       </Modal>
     </div>
