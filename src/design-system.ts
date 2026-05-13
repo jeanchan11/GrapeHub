@@ -31,7 +31,7 @@ export const designSystem = {
     container: 'modal-container w-full max-w-2xl mx-auto my-8 overflow-hidden flex flex-col max-h-[90vh]',
     header: 'p-6 border-b modal-divider flex items-center justify-between shrink-0',
     title: 'text-lg font-bold modal-title',
-    body: 'p-6 overflow-y-auto flex-1',
+    body: 'p-6 overflow-y-auto flex-1 scrollbar-hide',
     footer: 'p-6 border-t modal-divider flex justify-end gap-3 shrink-0',
   },
 

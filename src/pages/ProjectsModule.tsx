@@ -4,6 +4,7 @@ import ReactDOM from 'react-dom';
 import { auth, storage } from '../firebase';
 import { Modal } from '../components/ui/Modal';
 import { useAuth } from '../contexts/AuthContext';
+import { useMenu } from '../context/MenuContext';
 import { designSystem } from '../design-system';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { 
@@ -13,7 +14,7 @@ import {
   X, Calendar, User, Briefcase, DollarSign,
   Plus, ChevronRight, Target, Activity, 
   BarChart3, Wallet, MessageSquare, History,
-  Globe, Layout, CreditCard, Check,
+  Globe, Layout, CreditCard, Check, Clock,
   Gavel, Scale, HeartPulse, ShieldCheck, 
   Hammer, Landmark, Banknote, ShoppingCart, 
   Home, Stethoscope, Building2, Image as ImageIcon,
@@ -229,10 +230,12 @@ const initialProjects: Project[] = [
 
 interface Props {
   activePage: string;
+  modalOnly?: boolean;
 }
 
-const ProjectsModule: React.FC<Props> = ({ activePage }) => {
+const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
   const { userData } = useAuth();
+  const { menu, refreshMenu } = useMenu();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('Todos os Status');
   const [resultFilter, setResultFilter] = useState('Todos os Resultados');
@@ -470,6 +473,21 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
       }
     };
     fetchProjects();
+  }, [activePage]);
+
+  // Listen for global open project event
+  useEffect(() => {
+    const handleOpenProject = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const project = customEvent.detail;
+      if (project && project.page_id === activePage) {
+        setSelectedProject(project);
+        setIsProjectModalOpen(true);
+        setActiveProjectTab('resultado');
+      }
+    };
+    window.addEventListener('OPEN_PROJECT_MODAL', handleOpenProject);
+    return () => window.removeEventListener('OPEN_PROJECT_MODAL', handleOpenProject);
   }, [activePage]);
 
   // Fetch clients from Neon DB via API
@@ -1349,7 +1367,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
       {/* Product Modal */}
       <AnimatePresence>
         {isProductModalOpen && selectedProduct && tempProduct && (
-          <div className="fixed inset-0 z-[1000] flex items-start justify-center p-4 overflow-y-auto pt-10 pb-10 custom-scrollbar">
+          <div className="fixed inset-0 z-[1000] flex items-start justify-center p-4 overflow-y-auto pt-10 pb-10 scrollbar-hide">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -1498,22 +1516,34 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
                               initial={{ opacity: 0, y: 10 }}
                               animate={{ opacity: 1, y: 0 }}
                               exit={{ opacity: 0, y: 10 }}
-                              className="absolute top-full left-0 mt-2 w-full max-w-xs bg-light-sidebar dark:bg-dark-sidebar border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden"
+                              className="absolute top-full left-0 mt-2 w-max min-w-[220px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl z-[100] overflow-hidden"
                             >
                               <div className="max-h-60 overflow-y-auto custom-scrollbar">
+                                <button
+                                  onClick={() => handleUpdateProductResult('')}
+                                  className={`w-full px-4 py-3 flex items-center justify-between text-left text-xs font-bold transition-all hover:bg-slate-50 dark:hover:bg-white/5 ${
+                                    !selectedProduct.projectResult ? 'bg-violet-500/10 text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-3 pr-4">
+                                    <div className={`w-2 h-2 rounded-full flex-shrink-0 bg-slate-500`} />
+                                    <span className="whitespace-nowrap">SEM RESULTADO</span>
+                                  </div>
+                                  {!selectedProduct.projectResult && <Check size={14} className="text-violet-500 flex-shrink-0" />}
+                                </button>
                                 {projectResults.map((res) => (
                                   <button
                                     key={res.label}
                                     onClick={() => handleUpdateProductResult(res.label)}
-                                    className={`w-full px-4 py-3 flex items-center justify-between text-left text-xs font-bold transition-all hover:bg-slate-100 dark:hover:bg-white/5 ${
-                                      selectedProduct.projectResult === res.label ? 'bg-violet-500/10 text-slate-900 dark:text-white' : 'text-slate-400'
+                                    className={`w-full px-4 py-3 flex items-center justify-between text-left text-xs font-bold transition-all hover:bg-slate-50 dark:hover:bg-white/5 ${
+                                      selectedProduct.projectResult === res.label ? 'bg-violet-500/10 text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400'
                                     }`}
                                   >
-                                    <div className="flex items-center gap-3">
-                                      <div className={`w-2 h-2 rounded-full ${res.color}`} />
-                                      {res.label}
+                                    <div className="flex items-center gap-3 pr-4">
+                                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${res.color}`} />
+                                      <span className="whitespace-nowrap">{res.label}</span>
                                     </div>
-                                    {selectedProduct.projectResult === res.label && <Check size={14} className="text-violet-500" />}
+                                    {selectedProduct.projectResult === res.label && <Check size={14} className="text-violet-500 flex-shrink-0" />}
                                   </button>
                                 ))}
                               </div>
@@ -2092,7 +2122,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
       {/* Meeting Modal */}
       <AnimatePresence>
         {isMeetingModalOpen && (
-          <div className="fixed inset-0 z-[1000] flex items-start justify-center p-4 overflow-y-auto pt-10 pb-10 custom-scrollbar">
+          <div className="fixed inset-0 z-[1000] flex items-start justify-center p-4 overflow-y-auto pt-10 pb-10 scrollbar-hide">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -2261,6 +2291,8 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
       </AnimatePresence>
 
       {/* Header */}
+      {!modalOnly && (
+        <>
       <header className="mb-10">
         <div className="flex items-center justify-between mb-6">
           <div>
@@ -2269,20 +2301,149 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
             </h1>
             <p className="text-slate-500 text-sm">Gerenciamento centralizado de contas, performance e gargalos operacionais.</p>
           </div>
-          <button 
-            onClick={() => setIsAddPartnerModalOpen(true)}
-            className="px-6 py-3 bg-violet-600 hover:bg-violet-500 text-white font-bold rounded-xl transition-all shadow-lg shadow-violet-600/20 flex items-center gap-2"
-          >
-            <Plus size={20} />
-            Adicionar Parceiro
-          </button>
+          <div className="flex items-center gap-4 relative z-50">
+            <div className="flex items-center gap-2 bg-white dark:bg-dark-card/60 backdrop-blur-md px-4 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 shadow-sm">
+              <User size={16} className="text-slate-500" />
+              <span className="text-sm font-medium text-slate-600 dark:text-slate-300">Responsável:</span>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowResponsavelDropdown(!showResponsavelDropdown)}
+                  className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white hover:text-violet-500 transition-colors bg-slate-50 dark:bg-white/5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-white/10"
+                >
+                  {(() => {
+                    let pageData = null;
+                    if (menu) {
+                      for (const section of menu) {
+                        if (section.pages) { const p = section.pages.find((p: any) => p.id === activePage); if (p) pageData = p; }
+                        if (section.subSessions) {
+                          for (const sub of section.subSessions) {
+                            if (sub.pages) { const p = sub.pages.find((p: any) => p.id === activePage); if (p) pageData = p; }
+                            if (sub.subSubSessions) {
+                              for (const subsub of sub.subSubSessions) {
+                                if (subsub.pages) { const p = subsub.pages.find((p: any) => p.id === activePage); if (p) pageData = p; }
+                              }
+                            }
+                          }
+                        }
+                        if (section.subSubSessions) {
+                          for (const subsub of section.subSubSessions) {
+                            if (subsub.pages) { const p = subsub.pages.find((p: any) => p.id === activePage); if (p) pageData = p; }
+                          }
+                        }
+                      }
+                    }
+                    const gestor = gestores.find(g => g.id === pageData?.manager_id);
+                    if (gestor) {
+                      return (
+                        <>
+                          <div className="w-5 h-5 rounded-full overflow-hidden shrink-0 border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-white/5 flex items-center justify-center">
+                            {gestor.picture ? (
+                              <img src={gestor.picture} alt={gestor.name} className="w-full h-full object-cover" />
+                            ) : (
+                              <span className="text-[10px] font-bold text-violet-500">{gestor.name.substring(0, 2).toUpperCase()}</span>
+                            )}
+                          </div>
+                          <span>{gestor.name}</span>
+                        </>
+                      );
+                    }
+                    return <span>Atribuir responsável...</span>;
+                  })()}
+                  <ChevronDown size={14} className="ml-1" />
+                </button>
+                {showResponsavelDropdown && (
+                  <div className="absolute right-0 top-full mt-2 w-64 bg-white dark:bg-[#1a1625] border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl z-[9999] overflow-hidden">
+                    <div className="p-2 border-b border-slate-100 dark:border-white/5">
+                      <p className="text-xs font-bold text-slate-500 px-2 py-1 uppercase tracking-wider">Gestores Disponíveis</p>
+                    </div>
+                    <div className="max-h-60 overflow-y-auto p-1 bg-white dark:bg-[#1a1625]">
+                      {gestores.map(g => (
+                        <button
+                          key={g.id}
+                          onClick={async () => {
+                            try {
+                              const res = await fetch(`/api/menu-pages/${activePage}/manager`, {
+                                method: 'PATCH',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ manager_id: g.id, requester_email: userData?.email })
+                              });
+                              if (res.ok) {
+                                refreshMenu();
+                                setShowResponsavelDropdown(false);
+                              } else {
+                                const data = await res.json();
+                                alert(data.error || 'Erro ao definir gestor da página.');
+                              }
+                            } catch (err) {
+                              console.error(err);
+                              alert('Erro ao definir gestor da página.');
+                            }
+                          }}
+                          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-50 dark:hover:bg-white/5 text-left transition-colors"
+                        >
+                          <div className="w-8 h-8 rounded-full bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center shrink-0">
+                            {g.picture ? (
+                              <img src={g.picture} alt={g.name} className="w-8 h-8 rounded-full object-cover" />
+                            ) : (
+                              <span className="text-violet-600 dark:text-violet-400 font-bold text-xs">
+                                {g.name.substring(0, 2).toUpperCase()}
+                              </span>
+                            )}
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-slate-900 dark:text-white">{g.name}</p>
+                            <p className="text-xs text-slate-500">{g.email}</p>
+                          </div>
+                        </button>
+                      ))}
+                      <button
+                        onClick={async () => {
+                          try {
+                            const res = await fetch(`/api/menu-pages/${activePage}/manager`, {
+                              method: 'PATCH',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ manager_id: null, requester_email: userData?.email })
+                            });
+                            if (res.ok) {
+                              refreshMenu();
+                              setShowResponsavelDropdown(false);
+                            } else {
+                              const data = await res.json();
+                              alert(data.error || 'Erro ao remover gestor.');
+                            }
+                          } catch (err) {
+                            console.error(err);
+                            alert('Erro ao remover gestor.');
+                          }
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-500/10 text-left transition-colors text-rose-500 mt-1"
+                      >
+                        <div className="w-8 h-8 rounded-full bg-rose-100 dark:bg-rose-500/20 flex items-center justify-center shrink-0">
+                          <X size={14} />
+                        </div>
+                        <span className="text-sm font-bold">Remover Responsável</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+            <button 
+              onClick={() => setIsAddPartnerModalOpen(true)}
+              className="px-6 py-3 bg-violet-600 hover:bg-violet-500 text-white font-bold rounded-xl transition-all shadow-lg shadow-violet-600/20 flex items-center gap-2 shrink-0"
+            >
+              <Plus size={20} />
+              Adicionar Parceiro
+            </button>
+          </div>
         </div>
       </header>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-10">
         {dynamicStats.map((stat, i) => (
-          <div key={i} className="bg-white dark:bg-dark-card/60 backdrop-blur-md border border-slate-200 dark:border-white/10 rounded-3xl p-6 shadow-xl transition-all group">
+          <div key={i} className="bg-white dark:bg-dark-card/60 backdrop-blur-md border border-slate-200 dark:border-white/5 rounded-3xl p-6 shadow-xl transition-all group">
             <div className="flex items-center justify-between mb-4">
               <div className={`p-3 rounded-xl ${stat.bg}`}>
                 <stat.icon size={20} className={stat.color} />
@@ -2296,7 +2457,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
       </div>
 
       {/* Filters */}
-      <div className="bg-white dark:bg-dark-card/60 backdrop-blur-md p-4 rounded-3xl border border-slate-200 dark:border-white/10 mb-6 flex flex-wrap items-center gap-4 shadow-sm transition-colors">
+      <div className="bg-white dark:bg-dark-card/60 backdrop-blur-md p-4 rounded-3xl border border-slate-200 dark:border-white/5 mb-6 flex flex-wrap items-center gap-4 shadow-sm transition-colors">
         <div className="flex-1 min-w-[240px] relative">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
           <input 
@@ -2343,7 +2504,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
       {/* Containers por grupo */}
       <div className="space-y-6">
         {Object.entries(groupedProjects).map(([groupName, projectsInGroup]) => (
-          <div key={groupName} className="bg-white dark:bg-dark-card/60 backdrop-blur-md rounded-3xl border border-slate-200 dark:border-white/10 overflow-hidden shadow-xl transition-colors duration-300">
+          <div key={groupName} className="bg-white dark:bg-dark-card/60 backdrop-blur-md rounded-3xl border border-slate-200 dark:border-white/5 overflow-hidden shadow-xl transition-colors duration-300">
             <div 
               className="px-6 py-4 bg-transparent cursor-pointer flex items-center justify-between relative z-10"
               onClick={() => toggleGroup(groupName)}
@@ -2534,16 +2695,16 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
 
                                     <div className="grid grid-cols-3 gap-3">
                                       <div className="p-3 rounded-2xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm transition-all hover:border-violet-500/20">
-                                        <p className="text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">Investimento Mensal</p>
-                                        <p className="text-sm font-bold text-slate-900">{prod.budget}</p>
+                                        <p className="text-[10px] font-bold text-slate-700 dark:text-slate-400 uppercase tracking-wider mb-1">Investimento Mensal</p>
+                                        <p className="text-sm font-bold text-slate-900 dark:text-white">{prod.budget}</p>
                                       </div>
                                       <div className="p-3 rounded-2xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm transition-all hover:border-violet-500/20">
-                                        <p className="text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">CPA</p>
-                                        <p className="text-sm font-bold text-emerald-700">{prod.cpa}</p>
+                                        <p className="text-[10px] font-bold text-slate-700 dark:text-slate-400 uppercase tracking-wider mb-1">CPA</p>
+                                        <p className="text-sm font-bold text-emerald-700 dark:text-emerald-400">{prod.cpa}</p>
                                       </div>
                                       <div className="p-3 rounded-2xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm transition-all hover:border-violet-500/20">
-                                        <p className="text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">CAC</p>
-                                        <p className="text-sm font-bold text-emerald-700">{prod.cac}</p>
+                                        <p className="text-[10px] font-bold text-slate-700 dark:text-slate-400 uppercase tracking-wider mb-1">CAC</p>
+                                        <p className="text-sm font-bold text-emerald-700 dark:text-emerald-400">{prod.cac}</p>
                                       </div>
                                     </div>
                                   </div>
@@ -2567,6 +2728,8 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
         <div className="p-6 border-t border-slate-200 dark:border-white/5 flex items-center justify-between">
           <p className="text-xs text-slate-500 font-medium">Mostrando 5 de 24 parceiros ativos</p>
         </div>
+        </>
+      )}
 
       {/* Project Modal Simulation */}
       {selectedProject && (
@@ -2577,6 +2740,16 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
             setIsEditing(false);
           }}
           title={selectedProject.partner || 'Detalhes do Projeto'}
+          headerContent={
+            <div className="flex items-center gap-3 ml-4 border-l border-slate-200 dark:border-white/10 pl-4">
+              <div className="w-7 h-7 rounded-lg bg-violet-600 flex items-center justify-center text-xs font-bold text-white shadow-sm">
+                {(selectedProject.partner || 'P').charAt(0)}
+              </div>
+              {selectedProject.product && (
+                <span className="text-[10px] text-slate-500 font-bold px-2 py-1 bg-slate-100 dark:bg-white/5 rounded-md border border-slate-200 dark:border-white/10">{selectedProject.product}</span>
+              )}
+            </div>
+          }
           maxWidth="max-w-6xl"
         >
         <div className="flex flex-col h-full">
@@ -2598,43 +2771,90 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
           </div>
 
           {/* Content based on active tab */}
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto scrollbar-hide">
             {activeProjectTab === 'resultado' && (
                   <>
-                    <div className="space-y-8">
-                      <div className="flex items-center gap-4 p-6 bg-slate-50 dark:bg-dark-card/60 backdrop-blur-md rounded-3xl border border-slate-200 dark:border-white/10">
-                        <div className="w-16 h-16 rounded-2xl bg-violet-600 flex items-center justify-center text-2xl font-bold text-slate-900 dark:text-white">
-                          {selectedProject.partner.charAt(0)}
-                        </div>
-                        <div>
-                          <h3 className="text-lg font-bold text-slate-900 dark:text-white">{selectedProject.partner}</h3>
-                          <p className="text-sm text-slate-500">{selectedProject.product}</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Status and Result Cards */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-8 items-start">
-                      <div className="p-6 bg-slate-50 dark:bg-dark-card/60 backdrop-blur-md rounded-3xl border border-slate-200 dark:border-white/10">
+                    {/* KPIs Dashboard */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-2 items-start">
+                      <div className="p-4 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm">
                         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Status do Projeto</p>
                         {getStatusBadge(selectedProject.status)}
                       </div>
-                      {/* Resultado do Projeto — select nativo */}
-                      <div className="p-6 bg-slate-50 dark:bg-dark-card/60 backdrop-blur-md rounded-3xl border border-slate-200 dark:border-white/10">
-                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Resultado do Projeto</p>
-                        <div className="flex items-center gap-2">
-                          <div className={`w-2 h-2 rounded-full flex-shrink-0 ${projectResults.find(r => r.label === selectedProject.projectResult)?.color || 'bg-slate-500'}`} />
-                          <select
-                            value={selectedProject.projectResult || ''}
-                            onChange={(e) => handleUpdateProjectResult(e.target.value)}
-                            className="text-sm font-bold text-slate-900 dark:text-white bg-transparent outline-none cursor-pointer border-none appearance-none w-full"
+                      
+                      <div className="p-4 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Resultado</p>
+                        <div className="flex items-center gap-2 mt-1 relative">
+                          <button 
+                            onClick={() => setIsProjectResultDropdownOpen(!isProjectResultDropdownOpen)}
+                            className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest cursor-pointer outline-none flex items-center gap-1.5 ${(() => {
+                              const res = projectResults.find(r => r.label === selectedProject.projectResult) || { color: 'bg-slate-500' };
+                              return `${res.color}/10 ${res.color.replace('bg-', 'text-')}`;
+                            })()}`}
                           >
-                            <option value="">Sem resultado</option>
-                            {projectResults.map((res) => (
-                              <option key={res.label} value={res.label}>{res.label}</option>
-                            ))}
-                          </select>
+                            {selectedProject.projectResult || 'SEM RESULTADO'}
+                            <ChevronDown size={12} className={isProjectResultDropdownOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
+                          </button>
+
+                          <AnimatePresence>
+                            {isProjectResultDropdownOpen && (
+                              <motion.div 
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: 10 }}
+                                className="absolute top-full left-0 mt-2 w-max min-w-[220px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl z-[100] overflow-hidden"
+                              >
+                                <div className="max-h-60 overflow-y-auto custom-scrollbar">
+                                  <button
+                                    onClick={() => handleUpdateProjectResult('')}
+                                    className={`w-full px-4 py-3 flex items-center justify-between text-left text-xs font-bold transition-all hover:bg-slate-50 dark:hover:bg-white/5 ${
+                                      !selectedProject.projectResult ? 'bg-violet-500/10 text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400'
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-3 pr-4">
+                                      <div className={`w-2 h-2 rounded-full flex-shrink-0 bg-slate-500`} />
+                                      <span className="whitespace-nowrap">SEM RESULTADO</span>
+                                    </div>
+                                    {!selectedProject.projectResult && <Check size={14} className="text-violet-500 flex-shrink-0" />}
+                                  </button>
+                                  {projectResults.map((res) => (
+                                    <button
+                                      key={res.label}
+                                      onClick={() => handleUpdateProjectResult(res.label)}
+                                      className={`w-full px-4 py-3 flex items-center justify-between text-left text-xs font-bold transition-all hover:bg-slate-50 dark:hover:bg-white/5 ${
+                                        selectedProject.projectResult === res.label ? 'bg-violet-500/10 text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400'
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-3 pr-4">
+                                        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${res.color}`} />
+                                        <span className="whitespace-nowrap">{res.label}</span>
+                                      </div>
+                                      {selectedProject.projectResult === res.label && <Check size={14} className="text-violet-500 flex-shrink-0" />}
+                                    </button>
+                                  ))}
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
                         </div>
+                      </div>
+
+                      <div className="p-4 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Investimento</p>
+                        <span className="text-sm font-bold text-slate-900 dark:text-white">{selectedProject.investment}</span>
+                      </div>
+
+                      <div className="p-4 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Última Atualização</p>
+                        <span className="text-sm font-bold text-slate-900 dark:text-white">
+                          {timelineItems.length > 0
+                            ? (() => {
+                                const d = new Date(timelineItems[0].createdAt);
+                                return isNaN(d.getTime())
+                                  ? selectedProject.lastUpdate
+                                  : `${d.toLocaleDateString('pt-BR')} às ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+                              })()
+                            : selectedProject.lastUpdate || '—'}
+                        </span>
                       </div>
                     </div>
 
@@ -2645,14 +2865,14 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
                           <div
                             key={prod.id}
                             onClick={() => handleProductClick(prod)}
-                            className="flex items-center gap-4 p-4 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 hover:border-violet-500/30 hover:bg-violet-500/5 cursor-pointer transition-all group"
+                            className="flex items-center gap-4 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/30 border border-slate-200 dark:border-white/5 hover:border-violet-500/30 hover:bg-white dark:hover:bg-white/5 cursor-pointer transition-all shadow-sm group"
                           >
-                            <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-to-br from-violet-600/30 to-violet-900/20 border border-violet-500/20 text-violet-500 flex-shrink-0">
+                            <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-violet-500/10 text-violet-500 flex-shrink-0">
                               {getProductIcon(prod.icon)}
                             </div>
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-bold text-slate-900 dark:text-white truncate group-hover:text-violet-400 transition-colors">{prod.name}</p>
-                              <span className={`inline-block mt-0.5 px-2 py-0.5 text-[10px] font-bold rounded-full bg-slate-200/70 dark:bg-white/10 text-slate-500 dark:text-slate-400`}>{prod.status}</span>
+                              <span className={`inline-block mt-0.5 px-2 py-0.5 ${(getCampaignStatusColor(prod.status) || '').replace('text-', 'bg-')}/20 ${getCampaignStatusColor(prod.status)} text-[10px] font-bold rounded-full`}>{prod.status}</span>
                             </div>
                             <p className="text-sm font-bold text-emerald-500 flex-shrink-0">{prod.budget}</p>
                           </div>
@@ -2685,22 +2905,34 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
                                 initial={{ opacity: 0, y: 10 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 exit={{ opacity: 0, y: 10 }}
-                                className="absolute top-full left-0 mt-2 w-full bg-light-sidebar dark:bg-dark-sidebar border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden"
+                                className="absolute top-full left-0 mt-2 w-max min-w-[220px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl z-[100] overflow-hidden"
                               >
                                 <div className="max-h-60 overflow-y-auto custom-scrollbar">
+                                  <button
+                                    onClick={() => handleUpdateProjectResult('')}
+                                    className={`w-full px-4 py-3 flex items-center justify-between text-left text-xs font-bold transition-all hover:bg-slate-50 dark:hover:bg-white/5 ${
+                                      !selectedProject.projectResult ? 'bg-violet-500/10 text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400'
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-3 pr-4">
+                                      <div className={`w-2 h-2 rounded-full flex-shrink-0 bg-slate-500`} />
+                                      <span className="whitespace-nowrap">SEM RESULTADO</span>
+                                    </div>
+                                    {!selectedProject.projectResult && <Check size={14} className="text-violet-500 flex-shrink-0" />}
+                                  </button>
                                   {projectResults.map((res) => (
                                     <button
                                       key={res.label}
                                       onClick={() => handleUpdateProjectResult(res.label)}
-                                      className={`w-full px-4 py-3 flex items-center justify-between text-left text-xs font-bold transition-all hover:bg-slate-100 dark:hover:bg-white/5 ${
-                                        selectedProject.projectResult === res.label ? 'bg-violet-500/10 text-light-text dark:text-white' : 'text-slate-400'
+                                      className={`w-full px-4 py-3 flex items-center justify-between text-left text-xs font-bold transition-all hover:bg-slate-50 dark:hover:bg-white/5 ${
+                                        selectedProject.projectResult === res.label ? 'bg-violet-500/10 text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400'
                                       }`}
                                     >
-                                      <div className="flex items-center gap-3">
-                                        <div className={`w-2 h-2 rounded-full ${res.color}`} />
-                                        {res.label}
+                                      <div className="flex items-center gap-3 pr-4">
+                                        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${res.color}`} />
+                                        <span className="whitespace-nowrap">{res.label}</span>
                                       </div>
-                                      {selectedProject.projectResult === res.label && <Check size={14} className="text-violet-500" />}
+                                      {selectedProject.projectResult === res.label && <Check size={14} className="text-violet-500 flex-shrink-0" />}
                                     </button>
                                   ))}
                                 </div>
@@ -2713,148 +2945,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
                   </>
                 )}
                 
-                {activeProjectTab === 'resultado' && (
-                  <div className="space-y-4 mt-8">
-                    <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Informações Gerais</h4>
-                    <div className="space-y-3">
-                      {/* Responsável — dropdown com gestores de tráfego */}
-                      <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-dark-card/60 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-white/10">
-                        <div className="flex items-center gap-3 text-slate-400">
-                          <User size={16} />
-                          <span className="text-sm">Responsável</span>
-                        </div>
-                        <div className="relative">
-                          {/* Trigger button */}
-                          <button
-                            ref={responsavelBtnRef}
-                            onClick={() => {
-                              if (!showResponsavelDropdown && responsavelBtnRef.current) {
-                                const rect = responsavelBtnRef.current.getBoundingClientRect();
-                                setResponsavelDropdownPos({
-                                  top: rect.bottom + 6,
-                                  right: window.innerWidth - rect.right,
-                                });
-                              }
-                              setShowResponsavelDropdown(!showResponsavelDropdown);
-                            }}
-                            className="flex items-center gap-2 hover:opacity-80 transition-opacity"
-                          >
-                            {(() => {
-                              const gestor = gestores.find(g => g.name === selectedProject.responsible);
-                              return gestor?.picture ? (
-                                <img src={gestor.picture} alt={gestor.name} className="w-6 h-6 rounded-full object-cover border border-white/20" />
-                              ) : selectedProject.responsible ? (
-                                <div className="w-6 h-6 rounded-full bg-violet-500/20 flex items-center justify-center text-violet-400 text-[10px] font-black">
-                                  {selectedProject.responsible.charAt(0)}
-                                </div>
-                              ) : null;
-                            })()}
-                            <span className="text-sm font-bold text-slate-900 dark:text-white">
-                              {selectedProject.responsible || 'Selecionar...'}
-                            </span>
-                            <svg width={12} height={12} viewBox="0 0 12 12" fill="none" className="text-slate-400">
-                              <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
-                          </button>
 
-                          {/* Dropdown — renderizado via portal para escapar do overflow:hidden do modal */}
-                          {showResponsavelDropdown && ReactDOM.createPortal(
-                            <>
-                              {/* Overlay to close */}
-                              <div className="fixed inset-0 z-[9998]" onClick={() => setShowResponsavelDropdown(false)} />
-                              <div
-                                className="fixed z-[9999] w-[320px] bg-[#0f1119] border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
-                                style={{ top: responsavelDropdownPos.top, right: responsavelDropdownPos.right }}
-                              >
-                                <div className="px-4 py-3 border-b border-white/5 flex items-center gap-2">
-                                  <div className="w-1.5 h-1.5 rounded-full bg-violet-500" />
-                                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Gestores de Tráfego</span>
-                                </div>
-                                {gestores.length === 0 ? (
-                                  <div className="px-4 py-3 text-xs text-slate-500">Nenhum gestor encontrado</div>
-                                ) : (
-                                   <div className="py-2 space-y-1">
-                                    {gestores.map(g => (
-                                      <button
-                                        key={g.id}
-                                        onClick={() => {
-                                          const updated = { ...selectedProject, responsible: g.name };
-                                          setSelectedProject(updated);
-                                          const updatedProjects = projects.map(p => p.id === selectedProject.id ? updated : p);
-                                          setProjects(updatedProjects);
-                                          saveProjects(updatedProjects);
-                                          setShowResponsavelDropdown(false);
-                                        }}
-                                        className={`w-full flex items-center gap-4 px-4 py-3 hover:bg-white/5 transition-all text-left rounded-xl mx-2 ${
-                                          selectedProject.responsible === g.name ? 'bg-violet-500/10 border border-violet-500/20' : 'border border-transparent'
-                                        }`}
-                                        style={{ width: 'calc(100% - 16px)' }}
-                                      >
-                                        {/* Avatar grande */}
-                                        {g.picture ? (
-                                          <img
-                                            src={g.picture}
-                                            alt={g.name || ''}
-                                            className="w-12 h-12 rounded-full object-cover flex-shrink-0"
-                                            style={{ border: `2px solid ${selectedProject.responsible === g.name ? '#7c3aed' : 'rgba(255,255,255,0.1)'}` }}
-                                          />
-                                        ) : (
-                                          <div className="w-12 h-12 rounded-full bg-violet-500/20 flex items-center justify-center text-violet-400 text-lg font-black flex-shrink-0">
-                                            {(g.name || '?').charAt(0).toUpperCase()}
-                                          </div>
-                                        )}
-                                        {/* Info */}
-                                        <div className="flex-1 min-w-0">
-                                          <p className="text-sm font-bold text-white truncate">{g.name || '—'}</p>
-                                          <p className="text-xs text-slate-500 truncate mt-0.5">{g.email || ''}</p>
-                                          <span className="inline-flex items-center mt-1 text-[9px] font-bold text-violet-400 bg-violet-500/10 px-2 py-0.5 rounded-full uppercase tracking-wide">Gestor de Tráfego</span>
-                                        </div>
-                                        {/* Checkmark */}
-                                        {selectedProject.responsible === g.name && (
-                                          <div className="w-6 h-6 rounded-full bg-violet-500 flex items-center justify-center flex-shrink-0">
-                                            <svg width={12} height={12} viewBox="0 0 14 14" fill="none">
-                                              <path d="M2 7l3.5 3.5L12 3" stroke="white" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-                                            </svg>
-                                          </div>
-                                        )}
-                                      </button>
-                                    ))}
-                                  </div>
-
-                                )}
-                              </div>
-                            </>,
-                            document.body
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-dark-card/60 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-white/10">
-                        <div className="flex items-center gap-3 text-slate-500">
-                          <DollarSign size={16} />
-                          <span className="text-sm">Investimento Mensal</span>
-                        </div>
-                        <span className="text-sm font-bold text-slate-900 dark:text-white">{selectedProject.investment}</span>
-                      </div>
-                      <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-dark-card/60 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-white/10">
-                        <div className="flex items-center gap-3 text-slate-500">
-                          <Calendar size={16} />
-                          <span className="text-sm">Última Atualização</span>
-                        </div>
-                        <span className="text-sm font-bold text-slate-900 dark:text-white">
-                          {timelineItems.length > 0
-                            ? (() => {
-                                const d = new Date(timelineItems[0].createdAt);
-                                return isNaN(d.getTime())
-                                  ? selectedProject.lastUpdate
-                                  : `${d.toLocaleDateString('pt-BR')} às ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
-                              })()
-                            : selectedProject.lastUpdate || '—'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                )}
 
                 {activeProjectTab === 'resultado' && (
                   <div className="space-y-4 mt-8">
@@ -2870,10 +2961,12 @@ const ProjectsModule: React.FC<Props> = ({ activePage }) => {
 
                         {timelineItems.map((opt, idx) => (
                           <div key={opt.id} className="relative flex items-center justify-center">
-                            {/* Timeline Dot */}
+                            {/* Timeline Clock */}
                             <div className="absolute left-1/2 -translate-x-1/2 z-10">
-                              <div className="w-8 h-8 rounded-full bg-white dark:bg-dark-card border border-violet-500/50 flex items-center justify-center shadow-[0_0_15px_rgba(139,92,246,0.3)]">
-                                <Check size={14} className="text-violet-500" />
+                              <div className="w-8 h-8 rounded-full bg-white dark:bg-[#1a1625]">
+                                <div className="w-full h-full rounded-full bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/20 flex items-center justify-center shadow-sm">
+                                  <Clock size={16} className="text-violet-500" />
+                                </div>
                               </div>
                             </div>
 

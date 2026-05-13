@@ -218,7 +218,7 @@ const AppContent: React.FC = () => {
       case 'kpis-squad':
         return <div className="p-8 text-center text-slate-500">Página de KPIs do Squad em construção.</div>;
       case 'parceiros-squad':
-        return <ParceirosSquad />;
+        return <ParceirosSquad onPageChange={setActivePage} />;
       case 'blank':
         return <div className="p-8 text-center text-slate-500">Esta é uma página em branco.</div>;
       case 'task-templates':

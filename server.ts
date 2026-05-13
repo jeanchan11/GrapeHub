@@ -242,6 +242,8 @@ async function startServer() {
       ALTER TABLE optimizations ADD COLUMN IF NOT EXISTS optimization TEXT;
       ALTER TABLE optimizations ADD COLUMN IF NOT EXISTS time TEXT;
       ALTER TABLE optimizations ADD COLUMN IF NOT EXISTS author_photo TEXT;
+      
+      ALTER TABLE menu_pages ADD COLUMN IF NOT EXISTS responsavel_id TEXT;
 
       -- Migration: Ensure all columns exist if table was created before they were added
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS partner TEXT NOT NULL DEFAULT '';
@@ -2183,7 +2185,8 @@ async function startServer() {
                 label: p.label,
                 icon: p.icon,
                 icon_color: p.icon_color,
-                template: p.template
+                template: p.template,
+                manager_id: p.manager_id
               }))
           }));
 
@@ -2199,7 +2202,8 @@ async function startServer() {
               label: p.label,
               icon: p.icon,
               icon_color: p.icon_color,
-              template: p.template
+              template: p.template,
+              manager_id: p.manager_id
             })),
           subSubSessions: sectionSubSubSessions,
           subSessions: subsessions
@@ -2225,7 +2229,8 @@ async function startServer() {
                           label: p.label,
                           icon: p.icon,
                           icon_color: p.icon_color,
-                          template: p.template
+                          template: p.template,
+                          manager_id: p.manager_id
                         }))
                     };
                   }),
@@ -2236,7 +2241,8 @@ async function startServer() {
                     label: p.label,
                     icon: p.icon,
                     icon_color: p.icon_color,
-                    template: p.template
+                    template: p.template,
+                    manager_id: p.manager_id
                   }))
               };
             })
@@ -2287,6 +2293,18 @@ async function startServer() {
     } catch (err) {
       console.error("Error updating menu page:", err);
       res.status(500).json({ error: "Failed to update menu page", details: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  app.put("/api/menu/pages/:id/responsavel", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { responsavel_id } = req.body;
+      await pool.query("UPDATE menu_pages SET responsavel_id = $1 WHERE id = $2", [responsavel_id || null, id]);
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Error updating page responsible:", err);
+      res.status(500).json({ error: "Failed to update page responsible" });
     }
   });
 
