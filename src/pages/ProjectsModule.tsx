@@ -246,7 +246,8 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
   const [groupModalProjectId, setGroupModalProjectId] = useState<string | null>(null);
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const [activeProductTab, setActiveProductTab] = useState<'resultado' | 'kpis'>('resultado');
-  const [activeProjectTab, setActiveProjectTab] = useState<'resultado' | 'reunioes' | 'arquivos' | 'roteiros' | 'comentarios' | 'analise'>('resultado');
+  const [activeProjectTab, setActiveProjectTab] = useState<'resultado' | 'reunioes' | 'arquivos' | 'comentarios' | 'analise'>('resultado');
+  const [timelineFilter, setTimelineFilter] = useState('Todos');
   const [isEditing, setIsEditing] = useState(false);
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -361,7 +362,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [clients, setClients] = useState<{ id: string, name: string }[]>([]);
+  const [clients, setClients] = useState<{ id: string, name: string, status?: string }[]>([]);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [filterPerson, setFilterPerson] = useState('Pessoa');
   const [filterType, setFilterType] = useState('Tipo');
@@ -1466,7 +1467,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-4xl modal-container overflow-hidden mb-10 transition-colors duration-300"
+              className="relative w-full max-w-4xl min-h-[800px] flex flex-col modal-container overflow-hidden mb-10 transition-colors duration-300"
             >
               {/* Modal Header */}
               <div className="p-8 border-b border-slate-200 dark:border-white/10">
@@ -1796,10 +1797,11 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                       onChange={(e) => setFilterType(e.target.value)}
                       className="bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-1.5 text-xs text-slate-600 dark:text-slate-400"
                     >
-                      <option>Tipo</option>
-                      <option value="Status">Status</option>
-                      <option value="Mudança de Métricas">Mudança de Métricas</option>
-                      <option value="Otimização">Otimização</option>
+                      <option value="Todos">Todos</option>
+                      <option value="Reuniões">Reuniões</option>
+                      <option value="Otimizações">Otimizações</option>
+                      <option value="Saldos">Saldos</option>
+                      <option value="Resultado">Resultado</option>
                     </select>
                     <button 
                       onClick={() => setIsAddingNote(!isAddingNote)}
@@ -1951,14 +1953,11 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                       .filter(opt => {
                         const matchesPerson = filterPerson === 'Pessoa' || opt.author === filterPerson;
                         let matchesType = true;
-                        if (filterType !== 'Tipo') {
-                          if (filterType === 'Status') {
-                            matchesType = opt.status === 'Mudança de Status';
-                          } else if (filterType === 'Mudança de Métricas') {
-                            matchesType = opt.type === 'Mudança de Métricas';
-                          } else if (filterType === 'Otimização') {
-                            matchesType = opt.optimization === 'Otimização';
-                          }
+                        if (filterType !== 'Tipo' && filterType !== 'Todos') {
+                          if (filterType === 'Reuniões') matchesType = opt.type === 'meeting';
+                          else if (filterType === 'Otimizações') matchesType = (opt.optimization === 'Otimização' || opt.status === 'Otimização' || opt.type === 'Otimização' || opt.status === 'Mudança de Métricas' || opt.type === 'optimization') && !opt.message?.includes('Saldo Atual') && !opt.message?.includes('Forma de Pagamento') && !opt.message?.includes('Cartão');
+                          else if (filterType === 'Saldos') matchesType = !!(opt.message?.includes('Saldo Atual') || opt.message?.includes('Forma de Pagamento') || opt.message?.includes('Cartão'));
+                          else if (filterType === 'Resultado') matchesType = opt.status === 'Mudança de Status' || !!opt.message?.includes('Resultado') || !!opt.message?.includes('Status do Projeto');
                         }
                         
                         return matchesPerson && matchesType && 
@@ -1968,8 +1967,10 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                       <div key={opt.id} className="relative flex items-center justify-center">
                         {/* Timeline Dot */}
                         <div className="absolute left-1/2 -translate-x-1/2 z-10">
-                          <div className="w-8 h-8 rounded-full bg-white dark:bg-dark-card border border-violet-500/50 flex items-center justify-center shadow-[0_0_15px_rgba(139,92,246,0.3)]">
-                            <Check size={14} className="text-violet-500" />
+                          <div className="w-8 h-8 rounded-full bg-white dark:bg-[#1a1625]">
+                            <div className="w-full h-full rounded-full bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/20 flex items-center justify-center shadow-sm">
+                              <Clock size={16} className="text-violet-500" />
+                            </div>
                           </div>
                         </div>
 
@@ -2469,7 +2470,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                       className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-slate-900 dark:text-white outline-none focus:border-violet-500 transition-all appearance-none"
                     >
                       <option value="">Selecione um cliente...</option>
-                      {clients.map(client => (
+                      {clients.filter(c => c.status !== 'Inativo' && c.status !== 'churn').map(client => (
                         <option key={client.id} value={client.id}>{client.name}</option>
                       ))}
                     </select>
@@ -3000,10 +3001,10 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
           }
           maxWidth="max-w-6xl"
         >
-        <div className="flex flex-col h-full">
+        <div className="flex flex-col h-[75vh] min-h-[600px]">
           {/* Tabs */}
           <div className="flex items-center gap-6 mb-6 border-b modal-divider shrink-0">
-            {(['resultado', 'reunioes', 'comentarios', 'analise', 'arquivos', 'roteiros'] as const).map((tab) => (
+            {(['resultado', 'reunioes', 'comentarios', 'analise', 'arquivos'] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveProjectTab(tab as any)}
@@ -3013,7 +3014,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     : 'text-slate-500 hover:text-gray-900 dark:hover:text-white'
                 }`}
               >
-                {tab === 'resultado' ? 'Resultado do projeto' : tab === 'reunioes' ? 'Reuniões' : tab === 'arquivos' ? 'Arquivos do projeto' : tab === 'roteiros' ? 'Roteiros' : tab === 'comentarios' ? 'Comentários' : 'Análise de Leads'}
+                {tab === 'resultado' ? 'Resultado do projeto' : tab === 'reunioes' ? 'Reuniões' : tab === 'arquivos' ? 'Arquivos do projeto' : tab === 'comentarios' ? 'Comentários' : 'Análise de Leads'}
               </button>
             ))}
           </div>
@@ -3197,8 +3198,19 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
 
                 {activeProjectTab === 'resultado' && (
                   <div className="space-y-4 mt-8">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between mb-4">
                       <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Histórico Consolidado</h4>
+                      <select 
+                        value={timelineFilter}
+                        onChange={(e) => setTimelineFilter(e.target.value)}
+                        className="bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-2 text-sm text-slate-700 dark:text-white font-bold outline-none"
+                      >
+                        <option value="Todos">Todos</option>
+                        <option value="Reuniões">Reuniões</option>
+                        <option value="Otimizações">Otimizações</option>
+                        <option value="Saldos">Saldos</option>
+                        <option value="Resultado">Resultado</option>
+                      </select>
                     </div>
                     
                     {/* Timeline */}
@@ -3207,7 +3219,14 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                         {/* Vertical Line */}
                         <div className="absolute left-1/2 top-0 bottom-0 w-px bg-slate-200 dark:bg-white/10 -translate-x-1/2" />
 
-                        {timelineItems.map((opt, idx) => (
+                        {timelineItems.filter(opt => {
+                          if (timelineFilter === 'Todos') return true;
+                          if (timelineFilter === 'Reuniões') return opt.type === 'meeting';
+                          if (timelineFilter === 'Otimizações') return opt.optimization === 'Otimização' || opt.status === 'Otimização' || opt.type === 'Otimização' || opt.type === 'optimization';
+                          if (timelineFilter === 'Saldos') return opt.message?.includes('Saldo Atual') || opt.message?.includes('Forma de Pagamento') || opt.message?.includes('Cartão');
+                          if (timelineFilter === 'Resultado') return opt.status === 'Mudança de Status' || opt.message?.includes('Resultado') || opt.message?.includes('Status do Projeto');
+                          return true;
+                        }).map((opt, idx) => (
                           <div key={opt.id} className="relative flex items-center justify-center">
                             {/* Timeline Clock */}
                             <div className="absolute left-1/2 -translate-x-1/2 z-10">
@@ -3478,11 +3497,6 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                   </div>
                 )}
 
-                {activeProjectTab === 'roteiros' && (
-                  <div className="p-8 text-center text-slate-500">
-                    Roteiros em breve.
-                  </div>
-                )}
 
                 {activeProjectTab === 'comentarios' && (() => {
                   const allComments = projectComments[selectedProject.id] || [];
