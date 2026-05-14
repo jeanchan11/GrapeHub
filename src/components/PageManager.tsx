@@ -408,8 +408,8 @@ const IconSelector = ({ value, onChange }: { value: string, onChange: (icon: str
 
 const templates = [
   { id: 'blank', label: 'Em Branco' },
-  { id: 'projects', label: 'Projetos & Parceiros' },
-  { id: 'todo', label: 'Tarefas' },
+  { id: 'projects', label: 'Projetos (Projects)' },
+  { id: 'todo', label: 'Tarefas (Todo)' },
   { id: 'todo-staff', label: 'To Do (Staff)' },
   { id: 'crm-comercial', label: 'CRM Comercial' },
   { id: 'crm-atividades', label: 'CRM Atividades' },

@@ -33,7 +33,7 @@ import OnboardingOperacional from './src/pages/OnboardingOperacional';
 import ContratacaoPage from './src/pages/ContratacaoPage';
 import ContasAPagar from './src/pages/ContasAPagar';
 import ContasAReceber from './src/pages/ContasAReceber';
-import DRE from './src/pages/DRE';
+
 import MeetingNotes from './src/pages/MeetingNotes';
 import CandidateApplicationForm from './src/pages/CandidateApplicationForm';
 import SaboteurTestPage from './src/pages/SaboteurTestPage';
@@ -253,8 +253,7 @@ const AppContent: React.FC = () => {
         return <ContasAPagar />;
       case 'contas-a-receber':
         return <ContasAReceber />;
-      case 'dre':
-        return <DRE />;
+
       case 'meeting-notes': {
         // Find the page label from menu for the title
         let pageLabel = '';

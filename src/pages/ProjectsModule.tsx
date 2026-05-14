@@ -70,7 +70,7 @@ interface Project {
   id: string;
   partner: string;
   product: string;
-  status: 'Operacional' | 'Gargalo' | 'Pausado';
+  status: 'Rodando' | 'Operacional' | 'Gargalo' | 'Pausado';
   roi: string;
   investment: string;
   responsible: string;
@@ -112,7 +112,7 @@ const initialProjects: Project[] = [
         budget: 'R$ 5.000',
         platform: 'Google Ads',
         status: 'Rodando',
-        delivery: 'Brasil',
+        delivery: 'Full Time',
         aiService: 'Ativado',
         bottleneck: 'Nenhum',
         history: '3 alterações',
@@ -242,8 +242,10 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
-  const [activeProductTab, setActiveProductTab] = useState<'resultado' | 'kpis'>('resultado');
+  const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
+  const [groupModalProjectId, setGroupModalProjectId] = useState<string | null>(null);
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
+  const [activeProductTab, setActiveProductTab] = useState<'resultado' | 'kpis'>('resultado');
   const [activeProjectTab, setActiveProjectTab] = useState<'resultado' | 'reunioes' | 'arquivos' | 'roteiros' | 'comentarios' | 'analise'>('resultado');
   const [isEditing, setIsEditing] = useState(false);
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
@@ -266,6 +268,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
   const [isEditingMetrics, setIsEditingMetrics] = useState(false);
   const [tempProduct, setTempProduct] = useState<Product | null>(null);
   const [isResultDropdownOpen, setIsResultDropdownOpen] = useState(false);
+  const [isStatusDropdownOpen, setIsStatusDropdownOpen] = useState(false);
   const [isProjectResultDropdownOpen, setIsProjectResultDropdownOpen] = useState(false);
   const [isGrupoDropdownOpen, setIsGrupoDropdownOpen] = useState(false);
   const [editingResponsavel, setEditingResponsavel] = useState(false);
@@ -346,6 +349,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
   const [openProjectMenuId, setOpenProjectMenuId] = useState<string | null>(null);
   const [isPaymentMethodDropdownOpen, setIsPaymentMethodDropdownOpen] = useState(false);
   const [isAddProductModalOpen, setIsAddProductModalOpen] = useState(false);
+  const [isIconDropdownOpen, setIsIconDropdownOpen] = useState(false);
   const [isAddPartnerModalOpen, setIsAddPartnerModalOpen] = useState(false);
   const [isGoalsModalOpen, setIsGoalsModalOpen] = useState(false);
   const [isMeetingModalOpen, setIsMeetingModalOpen] = useState(false);
@@ -728,7 +732,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     platform: 'Meta Ads',
     status: 'Rodando',
     aiService: 'Ativado',
-    delivery: 'Brasil',
+    delivery: 'Full Time',
     balance: 'Limite Disponível',
     paymentMethod: 'Cartão',
     kpis: 'CTR 0% | CPC R$ 0',
@@ -748,7 +752,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
 
   const getDynamicStats = (projectsList: Project[]) => [
     { label: 'Total de Projetos', value: projectsList.length.toString(), icon: Briefcase, color: 'text-blue-500', bg: 'bg-blue-500/10' },
-    { label: 'Operacionais', value: projectsList.filter(p => p.status === 'Operacional').length.toString(), icon: CheckCircle2, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
+    { label: 'Rodando', value: projectsList.filter(p => p.status === 'Operacional' || p.status === 'Rodando').length.toString(), icon: CheckCircle2, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
     { label: 'Pausados', value: projectsList.filter(p => p.status === 'Pausado').length.toString(), icon: PauseCircle, color: 'text-slate-500', bg: 'bg-slate-500/10' },
     { label: 'Gargalo', value: projectsList.filter(p => p.status === 'Gargalo').length.toString(), icon: AlertTriangle, color: 'text-rose-500', bg: 'bg-rose-500/10' },
     { label: 'Investimento Total', value: `R$ ${projectsList.reduce((acc, p) => acc + parseCurrency(p.investment || '0'), 0).toLocaleString('pt-BR')}`, icon: DollarSign, color: 'text-violet-500', bg: 'bg-violet-500/10' },
@@ -758,7 +762,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     if (project.products && project.products.length > 0) {
       const productNames = project.products.map(p => p.name).join(', ');
       
-      let derivedStatus: Project['status'] = 'Operacional';
+      let derivedStatus: Project['status'] = 'Rodando';
       const productStatuses = project.products.map(p => p.status);
       
       if (productStatuses.some(s => s === 'Bloqueio' || s === 'Falta de saldo')) {
@@ -790,11 +794,12 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
 
   const getStatusBadge = (status: Project['status']) => {
     switch (status) {
+      case 'Rodando':
       case 'Operacional':
         return (
           <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-500 text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5 w-fit">
             <CheckCircle2 size={12} />
-            Operacional
+            Rodando
           </span>
         );
       case 'Gargalo':
@@ -991,7 +996,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       platform: 'Meta Ads',
       status: 'Rodando',
       aiService: 'Ativado',
-      delivery: 'Brasil',
+      delivery: 'Full Time',
       balance: 'Limite Disponível',
       kpis: 'CTR 0% | CPC R$ 0',
       bottleneck: 'Nenhum',
@@ -1016,7 +1021,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       platform: newProductData.platform || 'Meta Ads',
       status: newProductData.status || 'Rodando',
       aiService: newProductData.aiService || 'Ativado',
-      delivery: newProductData.delivery || 'Brasil',
+      delivery: newProductData.delivery || 'Full Time',
       balance: newProductData.balance || 'Limite Disponível',
       paymentMethod: newProductData.paymentMethod || 'Cartão',
       kpis: newProductData.kpis || 'CTR 0% | CPC R$ 0',
@@ -1047,7 +1052,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       id: Math.random().toString(36).substr(2, 9),
       partner: newPartnerData.partner,
       product: '',
-      status: newPartnerData.status as Project['status'] || 'Operacional',
+      status: newPartnerData.status as Project['status'] || 'Rodando',
       roi: newPartnerData.roi || '0.0x',
       investment: newPartnerData.investment || 'R$ 0',
       responsible: newPartnerData.responsible || 'Lucas Lima',
@@ -1064,7 +1069,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     setIsAddPartnerModalOpen(false);
     setNewPartnerData({
       partner: '',
-      status: 'Operacional',
+      status: 'Rodando',
       responsible: 'Lucas Lima',
       investment: 'R$ 0',
       roi: '0.0x',
@@ -1175,13 +1180,95 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       products: proj.products?.map(p => p.id === selectedProduct.id ? updatedProduct : p)
     })));
     
-    // Save to database
     saveProjects(projects.map(proj => ({
       ...proj,
       products: proj.products?.map(p => p.id === selectedProduct.id ? updatedProduct : p)
     })));
     
     setIsResultDropdownOpen(false);
+  };
+
+  const handleUpdateProductStatus = (status: string) => {
+    if (!selectedProduct) return;
+    if (selectedProduct.status === status) {
+      setIsStatusDropdownOpen(false);
+      return;
+    }
+
+    const now = new Date();
+    const note: Optimization = {
+      id: Math.random().toString(36).substr(2, 9),
+      author: userData?.name || 'João',
+      authorPhoto: userData?.picture || auth.currentUser?.photoURL || '',
+      role: userData?.role || 'Gestor',
+      date: now.toLocaleDateString('pt-BR'),
+      time: now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+      message: `Status da Campanha alterado: de "${selectedProduct.status || '-'}" para "${status}"`,
+      status: 'Mudança de Status'
+    };
+
+    const updatedProduct = { 
+      ...selectedProduct, 
+      status: status,
+      optimizations: [note, ...(selectedProduct.optimizations || [])]
+    };
+
+    setSelectedProduct(updatedProduct);
+    setTempProduct(updatedProduct);
+
+    setProjects(prev => prev.map(proj => ({
+      ...proj,
+      products: proj.products?.map(p => p.id === selectedProduct.id ? updatedProduct : p)
+    })));
+    
+    saveProjects(projects.map(proj => ({
+      ...proj,
+      products: proj.products?.map(p => p.id === selectedProduct.id ? updatedProduct : p)
+    })));
+    
+    setIsStatusDropdownOpen(false);
+  };
+
+  const handleUpdateResultField = (field: keyof Product, newValue: string, label: string) => {
+    if (!selectedProduct) return;
+    
+    const currentValue = selectedProduct[field] || '';
+    if (currentValue === newValue) return;
+
+    const now = new Date();
+    const note: Optimization = {
+      id: Math.random().toString(36).substr(2, 9),
+      author: userData?.name || 'João',
+      authorPhoto: userData?.picture || auth.currentUser?.photoURL || '',
+      role: userData?.role || 'Gestor',
+      date: now.toLocaleDateString('pt-BR'),
+      time: now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+      message: `Configuração atualizada: ${label} de "${currentValue}" para "${newValue}"`,
+      status: 'Mudança de Métricas'
+    };
+
+    let updatedProduct = { 
+      ...selectedProduct, 
+      [field]: newValue,
+      optimizations: [note, ...(selectedProduct.optimizations || [])]
+    };
+
+    if (field === 'paymentMethod') {
+      updatedProduct.balance = newValue === 'Cartão' ? 'Limite Disponível' : 'R$ 0';
+    }
+
+    setSelectedProduct(updatedProduct);
+    setTempProduct(updatedProduct);
+
+    setProjects(prev => prev.map(proj => ({
+      ...proj,
+      products: proj.products?.map(p => p.id === selectedProduct.id ? updatedProduct : p)
+    })));
+    
+    saveProjects(projects.map(proj => ({
+      ...proj,
+      products: proj.products?.map(p => p.id === selectedProduct.id ? updatedProduct : p)
+    })));
   };
 
   const handleUpdateProjectResult = (result: string) => {
@@ -1439,13 +1526,6 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                           <Plus size={16} />
                           Adicionar Métricas
                         </button>
-                        <button 
-                          onClick={handleOpenGoals}
-                          className="px-4 py-2 bg-violet-600/10 hover:bg-violet-600/20 text-violet-500 text-sm font-bold rounded-xl transition-all border border-violet-500/20 flex items-center gap-2"
-                        >
-                          <Target size={16} />
-                          Metas
-                        </button>
                       </>
                     )}
                     {isEditingMetrics ? (
@@ -1495,13 +1575,18 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                 {/* Content based on active tab */}
                 {activeProductTab === 'resultado' && (
                   <>
-                    {/* Project Result Selector - Refined Dropdown */}
-                    <div className="pt-2 border-b border-slate-200 dark:border-white/5 relative mb-8">
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Resultado do Projeto</p>
-                      <div className="relative">
+                    {/* Selectors Area */}
+                    <div className="pt-2 pb-8 border-b border-slate-200 dark:border-white/5 relative mb-8 flex gap-6">
+                      
+                      {/* Project Result Selector */}
+                      <div className="flex-1 max-w-xs relative">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Resultado do Projeto</p>
                         <button 
-                          onClick={() => setIsResultDropdownOpen(!isResultDropdownOpen)}
-                          className="flex items-center justify-between w-full max-w-xs px-4 py-3 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-bold text-slate-900 dark:text-white hover:bg-slate-200 dark:hover:bg-white/10 transition-all"
+                          onClick={() => {
+                            setIsResultDropdownOpen(!isResultDropdownOpen);
+                            setIsStatusDropdownOpen(false);
+                          }}
+                          className="flex items-center justify-between w-full px-4 py-3 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-bold text-slate-900 dark:text-white hover:bg-slate-200 dark:hover:bg-white/10 transition-all"
                         >
                           <div className="flex items-center gap-2">
                             <div className={`w-2 h-2 rounded-full ${projectResults.find(r => r.label === selectedProduct.projectResult)?.color || 'bg-slate-500'}`} />
@@ -1551,52 +1636,104 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                           )}
                         </AnimatePresence>
                       </div>
+
+                      {/* Status Campanha Selector */}
+                      <div className="flex-1 max-w-xs relative">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Status Campanha</p>
+                        <button 
+                          onClick={() => {
+                            setIsStatusDropdownOpen(!isStatusDropdownOpen);
+                            setIsResultDropdownOpen(false);
+                          }}
+                          className="flex items-center justify-between w-full px-4 py-3 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-bold text-slate-900 dark:text-white hover:bg-slate-200 dark:hover:bg-white/10 transition-all"
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className={`w-2 h-2 rounded-full ${campaignStatusOptions.find(r => r.label === selectedProduct.status)?.color?.replace('text-', 'bg-') || 'bg-slate-500'}`} />
+                            <span className={campaignStatusOptions.find(r => r.label === selectedProduct.status)?.color || 'text-slate-500'}>
+                              {selectedProduct.status || 'Selecionar Status'}
+                            </span>
+                          </div>
+                          <ChevronDown size={16} className={`text-slate-500 transition-transform ${isStatusDropdownOpen ? 'rotate-180' : ''}`} />
+                        </button>
+
+                        <AnimatePresence>
+                          {isStatusDropdownOpen && (
+                            <motion.div 
+                              initial={{ opacity: 0, y: 10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: 10 }}
+                              className="absolute top-full left-0 mt-2 w-max min-w-[220px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl z-[100] overflow-hidden"
+                            >
+                              <div className="max-h-60 overflow-y-auto custom-scrollbar">
+                                {campaignStatusOptions.map((res) => (
+                                  <button
+                                    key={res.label}
+                                    onClick={() => handleUpdateProductStatus(res.label)}
+                                    className={`w-full px-4 py-3 flex items-center justify-between text-left text-xs font-bold transition-all hover:bg-slate-50 dark:hover:bg-white/5 ${
+                                      selectedProduct.status === res.label ? 'bg-violet-500/10 text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400'
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-3 pr-4">
+                                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${res.color.replace('text-', 'bg-')}`} />
+                                      <span className={`whitespace-nowrap ${res.color}`}>{res.label}</span>
+                                    </div>
+                                    {selectedProduct.status === res.label && <Check size={14} className="text-violet-500 flex-shrink-0" />}
+                                  </button>
+                                ))}
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+
                     </div>
 
                     {/* Detailed Metrics Grid */}
                     <div className="mt-8 grid grid-cols-3 gap-4">
                       {[
-                        { label: 'Orçamento Investido', value: 'investmentMonthly', icon: DollarSign, color: 'text-slate-900 dark:text-white', type: 'text', editable: false },
-                        { label: 'Leads', value: 'leads', icon: Users, color: 'text-slate-900 dark:text-white', type: 'text', editable: false },
-                        { label: 'Contratos', value: 'contracts', icon: FileText, color: 'text-slate-900 dark:text-white', type: 'text', editable: false },
-                        { label: 'CAC', value: 'cac', icon: Target, color: 'text-emerald-500', type: 'text', editable: false },
-                        { label: 'CPA', value: 'cpa', icon: Target, color: 'text-emerald-500', type: 'text', editable: false },
-                        { label: 'KPIs Campanha', value: 'kpis', icon: Activity, color: 'text-slate-900 dark:text-white', type: 'text', editable: false },
                         { label: 'Investimento Mensal', value: 'budget', icon: DollarSign, color: 'text-slate-900 dark:text-white', type: 'text', editable: true },
                         { label: 'Plataforma', value: 'platform', icon: Globe, color: 'text-violet-400', type: 'select', options: platformOptions, editable: true },
-                        { label: 'Status Campanha', value: 'status', icon: Activity, color: 'dynamic', type: 'select', options: campaignStatusOptions.map(o => o.label), editable: true },
                         { label: 'Dias de veiculação', value: 'delivery', icon: Globe, color: 'text-slate-900 dark:text-white', type: 'select', options: ['Full Time', 'Seg a Sex', 'Somente Horário Comercial', 'Seg a Sex + Domingo', 'Seg a Sab', 'Seg a Sex - Ter'], editable: true },
                         { label: 'IA de Atendimento', value: 'aiService', icon: MessageSquare, color: 'text-slate-900 dark:text-white', type: 'select', options: aiServiceOptions, editable: true },
-                        { label: 'Gargalo do Produto', value: 'bottleneck', icon: AlertTriangle, color: 'text-rose-500', type: 'text', editable: true },
-                      ].map((metric) => (
-                        <div key={metric.label} className="p-4 bg-white dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
+                        { label: 'Forma de Pagamento', value: 'paymentMethod', icon: CreditCard, color: 'text-slate-900 dark:text-white', type: 'select', options: ['Cartão', 'Boleto/pix'], editable: true },
+                        ...((tempProduct?.paymentMethod ?? selectedProduct?.paymentMethod) === 'Boleto/pix' ? [
+                          { label: 'Saldo Atual', value: 'balance', icon: DollarSign, color: 'text-emerald-500', type: 'text', editable: true }
+                        ] : [])
+                      ].map((metric: any) => (
+                        <div key={metric.label} className="p-4 bg-white dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5 hover:border-violet-500/20 transition-all">
                           <div className="flex items-center gap-2 text-slate-500 mb-1">
                             <metric.icon size={14} />
                             <span className="text-[10px] font-bold uppercase tracking-wider">{metric.label}</span>
                           </div>
-                          {isEditingMetrics && metric.editable ? (
-                            metric.type === 'select' ? (
+                          {metric.type === 'select' ? (
+                            <div className="relative group/select">
                               <select
-                                value={(tempProduct as any)[metric.value] || ''}
-                                onChange={(e) => setTempProduct({ ...tempProduct, [metric.value]: e.target.value })}
-                                className="w-full bg-light-sidebar dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-lg px-2 py-1 text-xs text-slate-900 dark:text-white focus:border-violet-500 outline-none mt-1"
+                                value={(tempProduct as any)[metric.value] ?? (selectedProduct as any)[metric.value] ?? ''}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setTempProduct({ ...tempProduct!, [metric.value]: val });
+                                  handleUpdateResultField(metric.value as keyof Product, val, metric.label);
+                                }}
+                                className={`w-full bg-transparent appearance-none outline-none cursor-pointer hover:underline ${
+                                  metric.color === 'dynamic' ? getCampaignStatusColor((selectedProduct as any)[metric.value]) : metric.color
+                                } text-sm font-bold`}
                               >
-                                {metric.options?.map(opt => (
-                                  <option key={opt} value={opt}>{opt}</option>
+                                {metric.options?.map((opt: string) => (
+                                  <option key={opt} value={opt} className="bg-light-sidebar dark:bg-dark-input text-slate-900 dark:text-white">{opt}</option>
                                 ))}
                               </select>
-                            ) : (
-                              <input 
-                                type="text" 
-                                value={(tempProduct as any)[metric.value] || ''}
-                                onChange={(e) => setTempProduct({ ...tempProduct, [metric.value]: e.target.value })}
-                                className="w-full bg-light-sidebar dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-lg px-2 py-1 text-xs text-slate-900 dark:text-white focus:border-violet-500 outline-none mt-1"
-                              />
-                            )
+                              <ChevronDown size={14} className="absolute right-0 top-1/2 -translate-y-1/2 text-slate-400 opacity-0 group-hover/select:opacity-100 transition-opacity pointer-events-none" />
+                            </div>
                           ) : (
-                            <p className={`text-sm font-bold ${metric.color === 'dynamic' ? getCampaignStatusColor((selectedProduct as any)[metric.value]) : metric.color}`}>
-                              {(selectedProduct as any)[metric.value]}
-                            </p>
+                            <input 
+                              type="text" 
+                              value={(tempProduct as any)[metric.value] ?? (selectedProduct as any)[metric.value] ?? ''}
+                              onChange={(e) => setTempProduct({ ...tempProduct!, [metric.value]: e.target.value })}
+                              onBlur={(e) => handleUpdateResultField(metric.value as keyof Product, e.target.value, metric.label)}
+                              className={`w-full bg-transparent outline-none ${
+                                metric.color === 'dynamic' ? getCampaignStatusColor((selectedProduct as any)[metric.value]) : metric.color
+                              } text-sm font-bold placeholder:text-slate-500/50 border-b border-transparent hover:border-slate-300 dark:hover:border-white/20 focus:border-violet-500 transition-all`}
+                            />
                           )}
                         </div>
                       ))}
@@ -1605,14 +1742,41 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                 )}
 
                 {activeProductTab === 'kpis' && (
-                  <div className="mt-8">
-                    {/* Página vazia */}
+                  <div className="mt-8 grid grid-cols-3 gap-4">
+                    {[
+                      { label: 'Orçamento Investido', value: 'investmentMonthly', icon: DollarSign, color: 'text-slate-900 dark:text-white', type: 'text', editable: false },
+                      { label: 'Leads', value: 'leads', icon: Users, color: 'text-slate-900 dark:text-white', type: 'text', editable: false },
+                      { label: 'Contratos', value: 'contracts', icon: FileText, color: 'text-slate-900 dark:text-white', type: 'text', editable: false },
+                      { label: 'CAC', value: 'cac', icon: Target, color: 'text-emerald-500', type: 'text', editable: false },
+                      { label: 'CPA', value: 'cpa', icon: Target, color: 'text-emerald-500', type: 'text', editable: false },
+                      { label: 'KPIs Campanha', value: 'kpis', icon: Activity, color: 'text-slate-900 dark:text-white', type: 'text', editable: false },
+                    ].map((metric: any) => (
+                      <div key={metric.label} className="p-4 bg-white dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
+                        <div className="flex items-center gap-2 text-slate-500 mb-1">
+                          <metric.icon size={14} />
+                          <span className="text-[10px] font-bold uppercase tracking-wider">{metric.label}</span>
+                        </div>
+                        {isEditingMetrics && metric.editable ? (
+                          <input 
+                            type="text" 
+                            value={(tempProduct as any)[metric.value] || ''}
+                            onChange={(e) => setTempProduct({ ...tempProduct, [metric.value]: e.target.value })}
+                            className="w-full bg-light-sidebar dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-lg px-2 py-1 text-xs text-slate-900 dark:text-white focus:border-violet-500 outline-none mt-1"
+                          />
+                        ) : (
+                          <p className={`text-sm font-bold ${metric.color === 'dynamic' ? getCampaignStatusColor((selectedProduct as any)[metric.value]) : metric.color}`}>
+                            {(selectedProduct as any)[metric.value]}
+                          </p>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
 
               {/* Modal Content - Optimization History */}
-              <div className="p-8 overflow-y-visible">
+              {activeProductTab === 'resultado' && (
+                <div className="p-8 overflow-y-visible">
                 <div className="flex items-center justify-between mb-10">
                   <div className="flex items-center gap-3">
                     <Activity size={20} className="text-violet-500" />
@@ -1873,6 +2037,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                   </div>
                 </div>
               </div>
+              )}
               {/* Add Metrics Modal */}
               <AnimatePresence>
                 {isAddMetricsModalOpen && (
@@ -1987,25 +2152,39 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                   <div className="col-span-2">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Nome do Produto</label>
                     <div className="flex gap-3">
-                      <div className="relative group">
+                      <div className="relative z-50 shrink-0 w-[50px] h-[50px]">
                         <button 
-                          className="p-3 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-violet-500 hover:bg-slate-200 dark:hover:bg-white/10 transition-all"
+                          type="button"
+                          onClick={() => setIsIconDropdownOpen(!isIconDropdownOpen)}
+                          className="absolute inset-0 flex items-center justify-center bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-violet-500 hover:bg-slate-200 dark:hover:bg-white/10 transition-all"
                           title="Escolher Ícone"
                         >
                           {getProductIcon(newProductData.icon)}
                         </button>
-                        <div className="absolute top-full left-0 mt-2 w-64 bg-light-sidebar dark:bg-dark-sidebar border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl z-[110] p-2 hidden group-hover:grid grid-cols-4 gap-1">
-                          {productIcons.map((item) => (
-                            <button
-                              key={item.name}
-                              onClick={() => setNewProductData({ ...newProductData, icon: item.name })}
-                              className={`p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 transition-all flex items-center justify-center ${newProductData.icon === item.name ? 'bg-violet-500/20 text-violet-500' : 'text-slate-400'}`}
-                              title={item.label}
-                            >
-                              <item.icon size={18} />
-                            </button>
-                          ))}
-                        </div>
+                        {isIconDropdownOpen && (
+                          <>
+                            <div 
+                              className="fixed inset-0 z-[105]" 
+                              onClick={() => setIsIconDropdownOpen(false)}
+                            ></div>
+                            <div className="absolute top-full left-0 mt-2 w-64 bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl z-[110] p-2 grid grid-cols-4 gap-1">
+                              {productIcons.map((item) => (
+                                <button
+                                  type="button"
+                                  key={item.name}
+                                  onClick={() => {
+                                    setNewProductData({ ...newProductData, icon: item.name });
+                                    setIsIconDropdownOpen(false);
+                                  }}
+                                  className={`p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 transition-all flex items-center justify-center ${newProductData.icon === item.name ? 'bg-violet-500/20 text-violet-500' : 'text-slate-400'}`}
+                                  title={item.label}
+                                >
+                                  <item.icon size={18} />
+                                </button>
+                              ))}
+                            </div>
+                          </>
+                        )}
                       </div>
                       <input 
                         type="text" 
@@ -2054,16 +2233,6 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     />
                   </div>
 
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">CPA/CAC</label>
-                    <input 
-                      type="text" 
-                      placeholder="Ex: R$ 45,00"
-                      value={newProductData.cac || ''}
-                      onChange={(e) => setNewProductData({ ...newProductData, cac: e.target.value })}
-                      className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-slate-900 dark:text-white placeholder:text-slate-400 focus:border-violet-500 outline-none transition-all"
-                    />
-                  </div>
 
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Forma de Pagamento</label>
@@ -2081,6 +2250,19 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     >
                       <option value="Cartão" className="bg-light-sidebar dark:bg-dark-input">Cartão (Automático)</option>
                       <option value="Boleto/pix" className="bg-light-sidebar dark:bg-dark-input">Boleto/pix (Manual)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Dias de veiculação</label>
+                    <select
+                      value={newProductData.delivery || 'Full Time'}
+                      onChange={(e) => setNewProductData({ ...newProductData, delivery: e.target.value })}
+                      className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:border-violet-500 outline-none transition-all appearance-none"
+                    >
+                      {['Full Time', 'Seg a Sex', 'Somente Horário Comercial', 'Seg a Sex + Domingo', 'Seg a Sab', 'Seg a Sex - Ter'].map(opt => (
+                        <option key={opt} value={opt} className="bg-light-sidebar dark:bg-dark-input">{opt}</option>
+                      ))}
                     </select>
                   </div>
 
@@ -2113,6 +2295,60 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     Cadastrar Produto
                   </button>
                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Group Modal */}
+      <AnimatePresence>
+        {isGroupModalOpen && (
+          <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-slate-900/20 dark:bg-black/40 backdrop-blur-sm"
+              onClick={() => setIsGroupModalOpen(false)}
+            ></motion.div>
+            
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="relative w-full max-w-sm bg-white dark:bg-dark-card rounded-2xl shadow-xl overflow-hidden border border-slate-200 dark:border-white/10"
+            >
+              <div className="p-6 border-b border-slate-200 dark:border-white/5 flex items-center justify-between">
+                <h3 className="text-lg font-bold text-light-text dark:text-white">Mudar Grupo</h3>
+                <button 
+                  onClick={() => setIsGroupModalOpen(false)}
+                  className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-2">
+                {['Quarentena', 'Grupo 1', 'Grupo 2'].map(group => (
+                  <button
+                    key={group}
+                    onClick={() => {
+                      if (!groupModalProjectId) return;
+                      const proj = projects.find(p => p.id === groupModalProjectId);
+                      if (proj) {
+                        const updated = { ...proj, group };
+                        setProjects(prev => prev.map(p => p.id === proj.id ? updated : p));
+                        handleSaveProject([updated]);
+                      }
+                      setIsGroupModalOpen(false);
+                      setGroupModalProjectId(null);
+                    }}
+                    className="w-full text-left px-4 py-3 rounded-xl hover:bg-violet-50 dark:hover:bg-violet-500/10 text-slate-700 dark:text-slate-300 hover:text-violet-600 dark:hover:text-violet-400 transition-colors font-medium"
+                  >
+                    {group}
+                  </button>
+                ))}
               </div>
             </motion.div>
           </div>
@@ -2248,7 +2484,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                         onChange={(e) => setNewPartnerData({ ...newPartnerData, status: e.target.value as any })}
                         className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-slate-900 dark:text-white outline-none focus:border-violet-500 transition-all appearance-none"
                       >
-                        <option value="Operacional">Operacional</option>
+                        <option value="Rodando">Rodando</option>
                         <option value="Gargalo">Gargalo</option>
                         <option value="Pausado">Pausado</option>
                       </select>
@@ -2477,7 +2713,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
               className="appearance-none bg-slate-100 dark:bg-white/5 backdrop-blur-md border border-slate-200 dark:border-white/10 rounded-2xl py-3 pl-4 pr-10 text-sm text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-violet-500/20 transition-all cursor-pointer"
             >
               <option className="bg-dark-input">Todos os Status</option>
-              <option className="bg-dark-input">Operacional</option>
+              <option className="bg-dark-input">Rodando</option>
               <option className="bg-dark-input">Gargalo</option>
               <option className="bg-dark-input">Pausado</option>
             </select>
@@ -2564,7 +2800,6 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                         </div>
                         <div>
                           <p className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-violet-400 transition-colors">{project.partner}</p>
-                          <p className="text-[10px] text-slate-500 font-medium">{project.responsible}</p>
                         </div>
                       </div>
                     </td>
@@ -2595,25 +2830,36 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                         >
                           <Eye size={16} />
                         </button>
-                        <div className="relative">
+                        <div className="relative flex items-center justify-center w-8 h-8">
                           <button 
                             onClick={(e) => {
                               e.stopPropagation();
                               setOpenProjectMenuId(openProjectMenuId === project.id ? null : project.id);
                             }}
-                            className="p-2 rounded-lg hover:bg-slate-200 dark:hover:bg-white/10 text-slate-500 hover:text-light-text dark:hover:text-white transition-all"
+                            className="absolute inset-0 flex items-center justify-center rounded-lg hover:bg-slate-200 dark:hover:bg-white/10 text-slate-500 hover:text-light-text dark:hover:text-white transition-all"
                           >
                             <MoreHorizontal size={16} />
                           </button>
                           {openProjectMenuId === project.id && (
-                            <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-dark-card rounded-xl shadow-lg border border-slate-200 dark:border-white/10 z-10">
+                            <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-dark-card rounded-xl shadow-lg border border-slate-200 dark:border-white/10 z-[100] overflow-hidden" style={{ minWidth: '160px' }}>
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setGroupModalProjectId(project.id);
+                                  setIsGroupModalOpen(true);
+                                  setOpenProjectMenuId(null);
+                                }}
+                                className="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5"
+                              >
+                                Mudar Grupo
+                              </button>
                               <button 
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleDeleteProject(project.id);
                                   setOpenProjectMenuId(null);
                                 }}
-                                className="w-full text-left px-4 py-2 text-sm text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-xl"
+                                className="w-full text-left px-4 py-2 text-sm text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20"
                               >
                                 Excluir Projeto
                               </button>
@@ -2699,12 +2945,14 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                         <p className="text-sm font-bold text-slate-900 dark:text-white">{prod.budget}</p>
                                       </div>
                                       <div className="p-3 rounded-2xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm transition-all hover:border-violet-500/20">
-                                        <p className="text-[10px] font-bold text-slate-700 dark:text-slate-400 uppercase tracking-wider mb-1">CPA</p>
-                                        <p className="text-sm font-bold text-emerald-700 dark:text-emerald-400">{prod.cpa}</p>
+                                        <p className="text-[10px] font-bold text-slate-700 dark:text-slate-400 uppercase tracking-wider mb-1">Forma de Pagamento</p>
+                                        <p className={`text-sm font-bold ${prod.paymentMethod === 'Boleto/pix' ? 'text-orange-500' : 'text-blue-500'}`}>
+                                          {prod.paymentMethod === 'Boleto/pix' ? (prod.balance || 'R$ 0') : 'Cartão'}
+                                        </p>
                                       </div>
                                       <div className="p-3 rounded-2xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm transition-all hover:border-violet-500/20">
-                                        <p className="text-[10px] font-bold text-slate-700 dark:text-slate-400 uppercase tracking-wider mb-1">CAC</p>
-                                        <p className="text-sm font-bold text-emerald-700 dark:text-emerald-400">{prod.cac}</p>
+                                        <p className="text-[10px] font-bold text-slate-700 dark:text-slate-400 uppercase tracking-wider mb-1">Dias de veiculação</p>
+                                        <p className="text-sm font-bold text-slate-900 dark:text-white">{prod.delivery || 'Full Time'}</p>
                                       </div>
                                     </div>
                                   </div>
