@@ -53,6 +53,7 @@ interface Product {
   status: string;
   delivery: string;
   aiService: string;
+  aiKeyword?: string;
   bottleneck: string;
   history: string;
   balance: string;
@@ -250,6 +251,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
   const [timelineFilter, setTimelineFilter] = useState('Todos');
   const [isEditing, setIsEditing] = useState(false);
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
+  const [activeProductsFilter, setActiveProductsFilter] = useState<'ativos' | 'inativos'>('ativos');
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -457,7 +459,15 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
           const data = await response.json();
           console.log("ProjectsModule: Data fetched:", data);
           if (data && data.length > 0) {
-            setProjects(data);
+            // Auto-recalculate project status based on product campaign statuses
+            const correctedData = data.map((proj: any) => {
+              if (proj.products && proj.products.length > 0) {
+                const hasNonRodando = proj.products.some((p: any) => p.status && p.status !== 'Rodando');
+                return { ...proj, status: hasNonRodando ? 'Gargalo' : (proj.status === 'Gargalo' ? 'Rodando' : proj.status) };
+              }
+              return proj;
+            });
+            setProjects(correctedData);
           } else {
             // If DB is empty, use initial projects
             setProjects(initialProjects);
@@ -643,11 +653,9 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       console.log("Enviando fetch...");
       const response = await fetch('/api/projects', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: body,
-        signal: controller.signal,
-        mode: 'cors',
-        credentials: 'include'
+        signal: controller.signal
       });
       console.log("Fetch concluído.");
       
@@ -766,10 +774,8 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       let derivedStatus: Project['status'] = 'Rodando';
       const productStatuses = project.products.map(p => p.status);
       
-      if (productStatuses.some(s => s === 'Bloqueio' || s === 'Falta de saldo')) {
+      if (productStatuses.some(s => s && s !== 'Rodando')) {
         derivedStatus = 'Gargalo';
-      } else if (productStatuses.every(s => s === 'Pausado')) {
-        derivedStatus = 'Pausado';
       }
       
       const totalInvestment = project.products.reduce((acc, p) => acc + parseCurrency(p.budget), 0);
@@ -833,6 +839,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
   const toggleRow = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setExpandedRowId(expandedRowId === id ? null : id);
+    setActiveProductsFilter('ativos');
   };
 
   const handleRowClick = (project: Project) => {
@@ -859,6 +866,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     { label: 'Pausado', color: 'text-slate-500' },
     { label: 'Falta de saldo', color: 'text-amber-500' },
     { label: 'Bloqueio', color: 'text-rose-500' },
+    { label: 'Inativo', color: 'text-slate-400' },
   ];
 
   const aiServiceOptions = ['Ativado', 'Desativado'];
@@ -1148,6 +1156,31 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     setIsEditingMetrics(false);
   };
 
+  const handleDeleteNote = (noteId: string) => {
+    if (!selectedProduct) return;
+    if (!window.confirm("Tem certeza que deseja apagar esta nota?")) return;
+    
+    const updatedProduct = {
+      ...selectedProduct,
+      optimizations: selectedProduct.optimizations?.filter(opt => opt.id !== noteId)
+    };
+    
+    setSelectedProduct(updatedProduct);
+    
+    const updatedProjects = projects.map(proj => {
+      if (proj.products?.some(p => p.id === selectedProduct.id)) {
+        return {
+          ...proj,
+          products: proj.products.map(p => p.id === selectedProduct.id ? updatedProduct : p)
+        };
+      }
+      return proj;
+    });
+    
+    setProjects(updatedProjects);
+    saveProjects(updatedProjects);
+  };
+
   const handleUpdateProductResult = (result: string) => {
     if (!selectedProduct) return;
     if (selectedProduct.projectResult === result) {
@@ -1217,15 +1250,20 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     setSelectedProduct(updatedProduct);
     setTempProduct(updatedProduct);
 
-    setProjects(prev => prev.map(proj => ({
-      ...proj,
-      products: proj.products?.map(p => p.id === selectedProduct.id ? updatedProduct : p)
-    })));
+    const updatedProjects = projects.map(proj => {
+      const updatedProducts = proj.products?.map(p => p.id === selectedProduct.id ? updatedProduct : p);
+      // If any product is NOT "Rodando", project becomes "Gargalo"
+      const hasNonRodando = updatedProducts?.some(p => p.status && p.status !== 'Rodando');
+      const newProjectStatus = hasNonRodando ? 'Gargalo' : 'Rodando';
+      return {
+        ...proj,
+        products: updatedProducts,
+        status: proj.products?.some(p => p.id === selectedProduct.id) ? newProjectStatus : proj.status
+      };
+    });
     
-    saveProjects(projects.map(proj => ({
-      ...proj,
-      products: proj.products?.map(p => p.id === selectedProduct.id ? updatedProduct : p)
-    })));
+    setProjects(updatedProjects as Project[]);
+    saveProjects(updatedProjects as Project[]);
     
     setIsStatusDropdownOpen(false);
   };
@@ -1695,7 +1733,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                         { label: 'Investimento Mensal', value: 'budget', icon: DollarSign, color: 'text-slate-900 dark:text-white', type: 'text', editable: true },
                         { label: 'Plataforma', value: 'platform', icon: Globe, color: 'text-violet-400', type: 'select', options: platformOptions, editable: true },
                         { label: 'Dias de veiculação', value: 'delivery', icon: Globe, color: 'text-slate-900 dark:text-white', type: 'select', options: ['Full Time', 'Seg a Sex', 'Somente Horário Comercial', 'Seg a Sex + Domingo', 'Seg a Sab', 'Seg a Sex - Ter'], editable: true },
-                        { label: 'IA de Atendimento', value: 'aiService', icon: MessageSquare, color: 'text-slate-900 dark:text-white', type: 'select', options: aiServiceOptions, editable: true },
+                        { label: 'IA de Atendimento', value: 'aiService', icon: MessageSquare, color: 'text-slate-900 dark:text-white', type: 'select', options: aiServiceOptions, editable: true, hasKeyword: true },
                         { label: 'Forma de Pagamento', value: 'paymentMethod', icon: CreditCard, color: 'text-slate-900 dark:text-white', type: 'select', options: ['Cartão', 'Boleto/pix'], editable: true },
                         ...((tempProduct?.paymentMethod ?? selectedProduct?.paymentMethod) === 'Boleto/pix' ? [
                           { label: 'Saldo Atual', value: 'balance', icon: DollarSign, color: 'text-emerald-500', type: 'text', editable: true }
@@ -1735,6 +1773,19 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                 metric.color === 'dynamic' ? getCampaignStatusColor((selectedProduct as any)[metric.value]) : metric.color
                               } text-sm font-bold placeholder:text-slate-500/50 border-b border-transparent hover:border-slate-300 dark:hover:border-white/20 focus:border-violet-500 transition-all`}
                             />
+                          )}
+                          {metric.hasKeyword && (
+                            <div className="mt-3 pt-3 border-t border-slate-100 dark:border-white/5">
+                              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Palavra-chave</span>
+                              <input 
+                                type="text" 
+                                placeholder="Ex: quero saber mais"
+                                value={(tempProduct as any).aiKeyword ?? (selectedProduct as any).aiKeyword ?? ''}
+                                onChange={(e) => setTempProduct({ ...tempProduct!, aiKeyword: e.target.value })}
+                                onBlur={(e) => handleUpdateResultField('aiKeyword' as keyof Product, e.target.value, 'Palavra-chave IA')}
+                                className="w-full bg-transparent outline-none text-xs font-medium text-violet-500 placeholder:text-slate-400/50 border-b border-transparent hover:border-slate-300 dark:hover:border-white/20 focus:border-violet-500 transition-all mt-0.5"
+                              />
+                            </div>
                           )}
                         </div>
                       ))}
@@ -2005,7 +2056,25 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                   {opt.status}
                                 </span>
                               )}
-                              <p className="text-[10px] text-slate-500 font-medium">{opt.date} {opt.time && `às ${opt.time}`}</p>
+                              <div className="flex items-center">
+                                <p className="text-[10px] text-slate-500 font-medium">{opt.date} {opt.time && `às ${opt.time}`}</p>
+                                {(userData?.role?.toLowerCase() === 'superadmin' || 
+                                  userData?.role?.toLowerCase() === 'super admin' || 
+                                  userData?.role?.toLowerCase() === 'diretor operacional' || 
+                                  userData?.role?.toLowerCase() === 'diretor-operacional' || 
+                                  userData?.role?.toLowerCase() === 'diretoria') && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteNote(opt.id);
+                                    }}
+                                    className="ml-2 text-slate-400 hover:text-rose-500 transition-colors p-1 rounded-md hover:bg-rose-500/10"
+                                    title="Apagar nota"
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           </div>
                           {opt.isInternal && (
@@ -2477,7 +2546,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     <p className="mt-2 text-[10px] text-slate-500 italic">* Vincule este parceiro a um registro da página de Clientes Ativos.</p>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div>
                     <div>
                       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Status Inicial</label>
                       <select 
@@ -2488,19 +2557,6 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                         <option value="Rodando">Rodando</option>
                         <option value="Gargalo">Gargalo</option>
                         <option value="Pausado">Pausado</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Responsável</label>
-                      <select 
-                        value={newPartnerData.responsible}
-                        onChange={(e) => setNewPartnerData({ ...newPartnerData, responsible: e.target.value })}
-                        className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-slate-900 dark:text-white outline-none focus:border-violet-500 transition-all appearance-none"
-                      >
-                        <option value="Lucas Lima">Lucas Lima</option>
-                        <option value="Ana Souza">Ana Souza</option>
-                        <option value="Pedro Rocha">Pedro Rocha</option>
-                        <option value="Mariana Costa">Mariana Costa</option>
                       </select>
                     </div>
                   </div>
@@ -2767,7 +2823,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     <tr className="border-b border-slate-200 dark:border-white/5 bg-transparent">
                       <th className="px-6 py-5 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest w-10"></th>
                       <th className="px-6 py-5 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Parceiro</th>
-                      <th className="px-6 py-5 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Produto Ativo</th>
+                      <th className="px-6 py-5 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest"></th>
                       <th className="px-6 py-5 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Resultado</th>
                       <th className="px-6 py-5 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Status</th>
                       <th className="px-6 py-5 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Investimento Mensal</th>
@@ -2804,8 +2860,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-5" onClick={() => handleRowClick(project)}>
-                      <p className="text-sm text-slate-600 dark:text-slate-300 cursor-pointer">{project.product}</p>
+                    <td className="px-6 py-5">
                     </td>
                     <td className="px-6 py-5" onClick={() => handleRowClick(project)}>
                       <div className="cursor-pointer">
@@ -2888,30 +2943,53 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                 <div className="flex items-center gap-2">
                                   <div className="w-1.5 h-6 bg-violet-600 rounded-full"></div>
                                   <h4 className="text-sm font-bold text-light-text dark:text-white uppercase tracking-widest">Produtos do Parceiro</h4>
-                                  <span className="ml-2 px-2 py-0.5 rounded-md bg-violet-500/10 text-violet-500 text-[10px] font-bold">
-                                    {project.products?.length || 0}
-                                  </span>
-                                </div>
-                              </div>
-
-                              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                                {/* Add Product Card */}
-                                <button 
-                                  onClick={() => handleOpenAddProduct(project.id)}
-                                  className="group relative flex flex-col items-center justify-center gap-3 p-8 rounded-2xl border-2 border-dashed border-slate-200 dark:border-white/5 hover:border-violet-500/30 hover:bg-violet-500/5 transition-all min-h-[200px]"
-                                >
-                                  <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-white/5 group-hover:bg-violet-600 flex items-center justify-center transition-all">
-                                    <Plus size={24} className="text-slate-400 group-hover:text-white" />
+                                    
+                                    <div className="ml-6 flex items-center bg-slate-100 dark:bg-[#1a1625] rounded-xl p-1 border border-slate-200 dark:border-white/5">
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setActiveProductsFilter('ativos');
+                                        }}
+                                        className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                          activeProductsFilter === 'ativos'
+                                            ? 'bg-white dark:bg-white/10 text-violet-500 shadow-sm'
+                                            : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                                        }`}
+                                      >
+                                        Ativos ({project.products?.filter(p => p.status !== 'Inativo').length || 0})
+                                      </button>
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setActiveProductsFilter('inativos');
+                                        }}
+                                        className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                          activeProductsFilter === 'inativos'
+                                            ? 'bg-white dark:bg-white/10 text-violet-500 shadow-sm'
+                                            : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                                        }`}
+                                      >
+                                        Inativos ({project.products?.filter(p => p.status === 'Inativo').length || 0})
+                                      </button>
+                                    </div>
                                   </div>
-                                  <p className="text-sm font-bold text-slate-500 group-hover:text-light-text dark:group-hover:text-white transition-colors">Adicionar Novo Produto</p>
-                                </button>
+                                </div>
 
-                                {/* Product Cards */}
-                                {project.products?.map((prod) => (
+                                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                                  {/* Product Cards */}
+                                  {project.products
+                                    ?.filter(prod => activeProductsFilter === 'ativos' ? prod.status !== 'Inativo' : prod.status === 'Inativo')
+                                    .map((prod) => (
                                   <div 
                                     key={prod.id} 
                                     onClick={() => handleProductClick(prod)}
-                                    className="bg-dark-card backdrop-blur-md rounded-2xl border border-violet-500/10 p-6 shadow-xl relative overflow-hidden before:absolute before:inset-0 before:bg-gradient-to-br before:from-violet-500/5 before:to-transparent before:opacity-50 before:pointer-events-none transition-all cursor-pointer group/prod"
+                                    className={`bg-dark-card backdrop-blur-md rounded-2xl border p-6 shadow-xl relative overflow-hidden before:absolute before:inset-0 before:bg-gradient-to-br before:to-transparent before:opacity-50 before:pointer-events-none transition-all cursor-pointer group/prod ${
+                                      prod.status === 'Inativo'
+                                        ? 'opacity-40 hover:opacity-70 border-slate-500/20 before:from-slate-500/5 hover:border-slate-500/40'
+                                        : prod.status && prod.status !== 'Rodando' 
+                                          ? 'border-rose-500/30 before:from-rose-500/10 hover:border-rose-500/50' 
+                                          : 'border-violet-500/10 before:from-violet-500/5 hover:border-violet-500/30'
+                                    }`}
                                   >
                                     <div className="flex items-center justify-between mb-6">
                                       <div className="flex items-center gap-3">
@@ -2958,6 +3036,17 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                     </div>
                                   </div>
                                 ))}
+
+                                {/* Add Product Card */}
+                                <button 
+                                  onClick={() => handleOpenAddProduct(project.id)}
+                                  className="group relative flex flex-col items-center justify-center gap-3 p-8 rounded-2xl border-2 border-dashed border-slate-200 dark:border-white/5 hover:border-violet-500/30 hover:bg-violet-500/5 transition-all min-h-[200px]"
+                                >
+                                  <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-white/5 group-hover:bg-violet-600 flex items-center justify-center transition-all">
+                                    <Plus size={24} className="text-slate-400 group-hover:text-white" />
+                                  </div>
+                                  <p className="text-sm font-bold text-slate-500 group-hover:text-light-text dark:group-hover:text-white transition-colors">Adicionar Novo Produto</p>
+                                </button>
                               </div>
                             </div>
                           </motion.div>

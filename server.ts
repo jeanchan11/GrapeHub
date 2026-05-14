@@ -354,6 +354,7 @@ async function startServer() {
       ALTER TABLE products ADD COLUMN IF NOT EXISTS status TEXT;
       ALTER TABLE products ADD COLUMN IF NOT EXISTS delivery TEXT;
       ALTER TABLE products ADD COLUMN IF NOT EXISTS ai_service TEXT;
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS ai_keyword TEXT;
       ALTER TABLE products ADD COLUMN IF NOT EXISTS bottleneck TEXT;
       ALTER TABLE products ADD COLUMN IF NOT EXISTS history TEXT;
       ALTER TABLE products ADD COLUMN IF NOT EXISTS balance TEXT;
@@ -1694,6 +1695,7 @@ async function startServer() {
             status: prodRow.status,
             delivery: prodRow.delivery,
             aiService: prodRow.ai_service,
+            aiKeyword: prodRow.ai_keyword,
             bottleneck: prodRow.bottleneck,
             history: prodRow.history,
             balance: prodRow.balance,
@@ -1851,8 +1853,8 @@ async function startServer() {
             for (const prod of p.products) {
               try {
                 await pool.query(
-                  `INSERT INTO products (id, project_id, name, icon, cac, results, kpis, budget, platform, status, delivery, ai_service, bottleneck, history, balance, payment_method, project_result, cpa_goal, leads_goal, cac_goal, fechamentos_goal)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+                  `INSERT INTO products (id, project_id, name, icon, cac, results, kpis, budget, platform, status, delivery, ai_service, ai_keyword, bottleneck, history, balance, payment_method, project_result, cpa_goal, leads_goal, cac_goal, fechamentos_goal)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
                    ON CONFLICT (id) DO UPDATE SET
                      name = EXCLUDED.name,
                      icon = EXCLUDED.icon,
@@ -1864,6 +1866,7 @@ async function startServer() {
                      status = EXCLUDED.status,
                      delivery = EXCLUDED.delivery,
                      ai_service = EXCLUDED.ai_service,
+                     ai_keyword = EXCLUDED.ai_keyword,
                      bottleneck = EXCLUDED.bottleneck,
                      history = EXCLUDED.history,
                      balance = EXCLUDED.balance,
@@ -1875,9 +1878,9 @@ async function startServer() {
                      fechamentos_goal = EXCLUDED.fechamentos_goal`,
                   [
                     prod.id, p.id, prod.name, prod.icon, prod.cac, prod.results, prod.kpis, prod.budget, 
-                    prod.platform, prod.status, prod.delivery, prod.aiService, prod.bottleneck, 
-                    prod.history, prod.balance, prod.paymentMethod, prod.projectResult, prod.cpaGoal, 
-                    prod.leadsGoal, prod.cacGoal, prod.fechamentosGoal
+                    prod.platform, prod.status, prod.delivery, prod.aiService, prod.aiKeyword,
+                    prod.bottleneck, prod.history, prod.balance, prod.paymentMethod, prod.projectResult, 
+                    prod.cpaGoal, prod.leadsGoal, prod.cacGoal, prod.fechamentosGoal
                   ]
                 );
               } catch (err) {
