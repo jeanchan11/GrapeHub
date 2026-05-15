@@ -350,6 +350,12 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     }
   };
   const [openProjectMenuId, setOpenProjectMenuId] = useState<string | null>(null);
+  const [openProductMenuId, setOpenProductMenuId] = useState<string | null>(null);
+  const [productToDelete, setProductToDelete] = useState<string | null>(null);
+  const [projectSortColumn, setProjectSortColumn] = useState<'partner' | 'projectResult' | 'status' | 'investment' | null>(null);
+  const [projectSortDirection, setProjectSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [projectResultFilter, setProjectResultFilter] = useState<string | null>(null);
+  const [isResultFilterOpen, setIsResultFilterOpen] = useState(false);
   const [isPaymentMethodDropdownOpen, setIsPaymentMethodDropdownOpen] = useState(false);
   const [isAddProductModalOpen, setIsAddProductModalOpen] = useState(false);
   const [isIconDropdownOpen, setIsIconDropdownOpen] = useState(false);
@@ -462,7 +468,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
             // Auto-recalculate project status based on product campaign statuses
             const correctedData = data.map((proj: any) => {
               if (proj.products && proj.products.length > 0) {
-                const hasNonRodando = proj.products.some((p: any) => p.status && p.status !== 'Rodando');
+                const hasNonRodando = proj.products.some((p: any) => p.status && p.status !== 'Rodando' && p.status !== 'Inativo');
                 return { ...proj, status: hasNonRodando ? 'Gargalo' : (proj.status === 'Gargalo' ? 'Rodando' : proj.status) };
               }
               return proj;
@@ -732,6 +738,30 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       setProjectToDelete(null);
     }
   };
+
+  const confirmDeleteProduct = async () => {
+    if (!productToDelete) return;
+    console.log(`[DELETE PRODUCT] Confirmando exclusão do produto: ${productToDelete}`);
+    try {
+      const response = await fetch(`/api/products/${productToDelete}`, { method: 'DELETE' });
+      if (response.ok) {
+        setProjects(prev => prev.map(p => ({
+          ...p,
+          products: p.products?.filter((prod: any) => prod.id !== productToDelete) || []
+        })));
+      } else {
+        const errorText = await response.text();
+        console.error(`[DELETE PRODUCT] Erro: ${response.status} - ${errorText}`);
+        alert('Erro ao excluir produto');
+      }
+    } catch (err) {
+      console.error('Failed to delete product:', err);
+      alert('Erro ao excluir produto');
+    } finally {
+      setProductToDelete(null);
+    }
+  };
+
   const [newProductData, setNewProductData] = useState<Partial<Product>>({
     name: '',
     icon: 'Layout',
@@ -772,9 +802,10 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       const productNames = project.products.map(p => p.name).join(', ');
       
       let derivedStatus: Project['status'] = 'Rodando';
-      const productStatuses = project.products.map(p => p.status);
+      const activeProducts = project.products.filter(p => p.status !== 'Inativo');
+      const productStatuses = activeProducts.map(p => p.status);
       
-      if (productStatuses.some(s => s && s !== 'Rodando')) {
+      if (productStatuses.length > 0 && productStatuses.some(s => s && s !== 'Rodando')) {
         derivedStatus = 'Gargalo';
       }
       
@@ -1252,8 +1283,8 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
 
     const updatedProjects = projects.map(proj => {
       const updatedProducts = proj.products?.map(p => p.id === selectedProduct.id ? updatedProduct : p);
-      // If any product is NOT "Rodando", project becomes "Gargalo"
-      const hasNonRodando = updatedProducts?.some(p => p.status && p.status !== 'Rodando');
+      // If any active (non-Inativo) product is NOT "Rodando", project becomes "Gargalo"
+      const hasNonRodando = updatedProducts?.some(p => p.status && p.status !== 'Rodando' && p.status !== 'Inativo');
       const newProjectStatus = hasNonRodando ? 'Gargalo' : 'Rodando';
       return {
         ...proj,
@@ -1505,7 +1536,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-4xl min-h-[800px] flex flex-col modal-container overflow-hidden mb-10 transition-colors duration-300"
+              className="relative w-full max-w-5xl min-h-[800px] flex flex-col modal-container overflow-hidden mb-10 transition-colors duration-300"
             >
               {/* Modal Header */}
               <div className="p-8 border-b border-slate-200 dark:border-white/10">
@@ -1731,7 +1762,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     <div className="mt-8 grid grid-cols-3 gap-4">
                       {[
                         { label: 'Investimento Mensal', value: 'budget', icon: DollarSign, color: 'text-slate-900 dark:text-white', type: 'text', editable: true },
-                        { label: 'Plataforma', value: 'platform', icon: Globe, color: 'text-violet-400', type: 'select', options: platformOptions, editable: true },
+                        { label: 'Plataforma', value: 'platform', icon: Globe, color: 'platformColor', type: 'select', options: platformOptions, editable: true },
                         { label: 'Dias de veiculação', value: 'delivery', icon: Globe, color: 'text-slate-900 dark:text-white', type: 'select', options: ['Full Time', 'Seg a Sex', 'Somente Horário Comercial', 'Seg a Sex + Domingo', 'Seg a Sab', 'Seg a Sex - Ter'], editable: true },
                         { label: 'IA de Atendimento', value: 'aiService', icon: MessageSquare, color: 'text-slate-900 dark:text-white', type: 'select', options: aiServiceOptions, editable: true, hasKeyword: true },
                         { label: 'Forma de Pagamento', value: 'paymentMethod', icon: CreditCard, color: 'text-slate-900 dark:text-white', type: 'select', options: ['Cartão', 'Boleto/pix'], editable: true },
@@ -1754,7 +1785,14 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                   handleUpdateResultField(metric.value as keyof Product, val, metric.label);
                                 }}
                                 className={`w-full bg-transparent appearance-none outline-none cursor-pointer hover:underline ${
-                                  metric.color === 'dynamic' ? getCampaignStatusColor((selectedProduct as any)[metric.value]) : metric.color
+                                  metric.color === 'dynamic' ? getCampaignStatusColor((selectedProduct as any)[metric.value]) 
+                                  : metric.color === 'platformColor' ? (
+                                    ((tempProduct as any)[metric.value] ?? (selectedProduct as any)[metric.value]) === 'Meta Ads' ? 'text-blue-500' 
+                                    : ((tempProduct as any)[metric.value] ?? (selectedProduct as any)[metric.value]) === 'Google Ads' ? 'text-amber-500' 
+                                    : ((tempProduct as any)[metric.value] ?? (selectedProduct as any)[metric.value]) === 'Tiktok Ads' ? 'text-purple-500' 
+                                    : ((tempProduct as any)[metric.value] ?? (selectedProduct as any)[metric.value]) === 'Linkedin Ads' ? 'text-sky-400' 
+                                    : 'text-slate-400'
+                                  ) : metric.color
                                 } text-sm font-bold`}
                               >
                                 {metric.options?.map((opt: string) => (
@@ -2037,7 +2075,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                 </div>
                               )}
                               <p className={`text-sm font-bold ${opt.isInternal ? 'text-amber-700 dark:text-amber-500' : 'text-slate-900 dark:text-white'}`}>
-                                {opt.author} <span className="text-slate-500 font-medium">({opt.role})</span>
+                                {opt.author}
                               </p>
                             </div>
                             <div className="flex items-center gap-2">
@@ -2052,8 +2090,12 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                 </span>
                               )}
                               {opt.status && (
-                                <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 text-[10px] font-bold uppercase tracking-wider">
-                                  {opt.status}
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                                  opt.status === 'Mudança de Status' 
+                                    ? 'bg-emerald-500/10 text-emerald-500' 
+                                    : 'bg-violet-500/10 text-violet-500'
+                                }`}>
+                                  {opt.status === 'Mudança de Status' ? 'STATUS' : 'MÉTRICAS'}
                                 </span>
                               )}
                               <div className="flex items-center">
@@ -2822,16 +2864,110 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                   <thead>
                     <tr className="border-b border-slate-200 dark:border-white/5 bg-transparent">
                       <th className="px-6 py-5 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest w-10"></th>
-                      <th className="px-6 py-5 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Parceiro</th>
-                      <th className="px-6 py-5 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest"></th>
-                      <th className="px-6 py-5 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Resultado</th>
-                      <th className="px-6 py-5 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Status</th>
-                      <th className="px-6 py-5 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Investimento Mensal</th>
+                      {[
+                        { key: 'partner' as const, label: 'Parceiro' },
+                        { key: null, label: '' },
+                        { key: 'projectResult' as const, label: 'Resultado' },
+                        { key: 'status' as const, label: 'Status' },
+                        { key: 'investment' as const, label: 'Investimento Mensal' },
+                      ].map((col, idx) => (
+                        <th
+                          key={idx}
+                          className={`px-6 py-5 text-[10px] font-bold uppercase tracking-widest ${
+                            col.key && projectSortColumn === col.key ? 'text-violet-500' : 'text-slate-500 dark:text-slate-400'
+                          } ${col.key ? 'cursor-pointer select-none hover:text-violet-400 transition-colors' : ''} ${col.key === 'projectResult' ? 'relative' : ''}`}
+                          onClick={() => {
+                            if (!col.key) return;
+                            if (projectSortColumn === col.key) {
+                              setProjectSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+                            } else {
+                              setProjectSortColumn(col.key);
+                              setProjectSortDirection('asc');
+                            }
+                          }}
+                        >
+                          <div className="flex items-center gap-1">
+                            {col.label}
+                            {col.key && projectSortColumn === col.key && (
+                              <ChevronDown size={12} className={`transition-transform ${projectSortDirection === 'asc' ? 'rotate-180' : ''}`} />
+                            )}
+                            {col.key === 'projectResult' && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setIsResultFilterOpen(!isResultFilterOpen); }}
+                                className={`ml-1 p-0.5 rounded transition-colors ${projectResultFilter ? 'text-violet-500' : 'text-slate-400 hover:text-violet-400'}`}
+                              >
+                                <Filter size={10} />
+                              </button>
+                            )}
+                          </div>
+                          {col.key === 'projectResult' && isResultFilterOpen && (
+                            <>
+                              <div className="fixed inset-0 z-[98]" onClick={(e) => { e.stopPropagation(); setIsResultFilterOpen(false); }} />
+                              <div className="absolute left-0 top-full mt-1 w-48 bg-white dark:bg-dark-card rounded-xl shadow-lg border border-slate-200 dark:border-white/10 z-[99] overflow-hidden">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); setProjectResultFilter(null); setIsResultFilterOpen(false); }}
+                                  className={`w-full text-left px-3 py-2 text-xs font-medium transition-colors ${
+                                    !projectResultFilter ? 'text-violet-500 bg-violet-50 dark:bg-violet-900/20' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5'
+                                  }`}
+                                >
+                                  Todos
+                                </button>
+                                {projectResults.map(r => (
+                                  <button
+                                    key={r.label}
+                                    onClick={(e) => { e.stopPropagation(); setProjectResultFilter(r.label); setIsResultFilterOpen(false); }}
+                                    className={`w-full text-left px-3 py-2 text-xs font-medium flex items-center gap-2 transition-colors ${
+                                      projectResultFilter === r.label ? 'text-violet-500 bg-violet-50 dark:bg-violet-900/20' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5'
+                                    }`}
+                                  >
+                                    <div className={`w-2 h-2 rounded-full ${r.color}`} />
+                                    {r.label}
+                                  </button>
+                                ))}
+                              </div>
+                            </>
+                          )}
+                        </th>
+                      ))}
                       <th className="px-6 py-5 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest text-right">Ações</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {projectsInGroup.map((project) => (
+                    {(() => {
+                      const resultPriority: Record<string, number> = {
+                        'RESULTADO BOM': 1,
+                        'RESULTADO OK': 2,
+                        'TESTANDO': 3,
+                        'RESULTADO RUIM': 4,
+                        'AGUARDANDO CRIATIVOS': 5,
+                        'AGUARDANDO ARTIGO': 5,
+                        'AGUARDANDO LP': 5,
+                        'SUBIR CAMPANHA': 5,
+                        'CAMPANHA PAUSADA': 6,
+                        '-': 7,
+                        '': 8,
+                      };
+                      return [...projectsInGroup]
+                        .filter(p => !projectResultFilter || (p.projectResult || '-') === projectResultFilter)
+                        .sort((a, b) => {
+                          if (!projectSortColumn) return 0;
+                          const dir = projectSortDirection === 'asc' ? 1 : -1;
+                          switch (projectSortColumn) {
+                            case 'partner':
+                              return dir * (a.partner || '').localeCompare(b.partner || '');
+                            case 'projectResult': {
+                              const aPri = resultPriority[a.projectResult || ''] ?? 99;
+                              const bPri = resultPriority[b.projectResult || ''] ?? 99;
+                              return dir * (aPri - bPri);
+                            }
+                            case 'status':
+                              return dir * (a.status || '').localeCompare(b.status || '');
+                            case 'investment':
+                              return dir * (parseCurrency(a.investment || '0') - parseCurrency(b.investment || '0'));
+                            default:
+                              return 0;
+                          }
+                        }).map((project) => (
                     <React.Fragment key={project.id}>
                       <tr 
                         className={`border-b border-slate-200 dark:border-white/5 transition-colors group ${
@@ -2850,11 +2986,23 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     </td>
                     <td className="px-6 py-5" onClick={(e) => toggleRow(project.id, e)}>
                       <div className="flex items-center gap-3 cursor-pointer">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg font-bold ${
-                          project.status === 'Gargalo' ? 'bg-rose-500/20 text-rose-500' : 'bg-violet-500/20 text-violet-500'
-                        }`}>
-                          {project.partner.charAt(0)}
-                        </div>
+                        {(() => {
+                          const colorMap: Record<string, { bg: string; text: string }> = {
+                            'bg-emerald-500': { bg: 'bg-emerald-500/20', text: 'text-emerald-500' },
+                            'bg-amber-500':   { bg: 'bg-amber-500/20',   text: 'text-amber-500' },
+                            'bg-rose-500':    { bg: 'bg-rose-500/20',    text: 'text-rose-500' },
+                            'bg-blue-500':    { bg: 'bg-blue-500/20',    text: 'text-blue-500' },
+                            'bg-slate-500':   { bg: 'bg-slate-500/20',   text: 'text-slate-500' },
+                            'bg-slate-400':   { bg: 'bg-slate-400/20',   text: 'text-slate-400' },
+                          };
+                          const resultBg = projectResults.find(r => r.label === project.projectResult)?.color || 'bg-slate-500';
+                          const c = colorMap[resultBg] || colorMap['bg-slate-500'];
+                          return (
+                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${c.bg} ${c.text}`}>
+                              <Scale size={20} />
+                            </div>
+                          );
+                        })()}
                         <div>
                           <p className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-violet-400 transition-colors">{project.partner}</p>
                         </div>
@@ -3000,9 +3148,35 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                         </div>
                                         <h5 className="font-bold text-slate-900 dark:text-white">{prod.name}</h5>
                                       </div>
-                                      <button className="text-slate-500 hover:text-light-text dark:hover:text-white transition-colors">
-                                        <MoreHorizontal size={18} />
-                                      </button>
+                                      <div className="relative">
+                                        <button 
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setOpenProductMenuId(openProductMenuId === prod.id ? null : prod.id);
+                                          }}
+                                          className="text-slate-500 hover:text-light-text dark:hover:text-white transition-colors p-1 rounded-lg hover:bg-white/10"
+                                        >
+                                          <MoreHorizontal size={18} />
+                                        </button>
+                                        {openProductMenuId === prod.id && (
+                                          <>
+                                            <div className="fixed inset-0 z-[98]" onClick={(e) => { e.stopPropagation(); setOpenProductMenuId(null); }} />
+                                            <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-dark-card rounded-xl shadow-lg border border-slate-200 dark:border-white/10 z-[99] overflow-hidden">
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setProductToDelete(prod.id);
+                                                  setOpenProductMenuId(null);
+                                                }}
+                                                className="w-full text-left px-4 py-2.5 text-sm text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 flex items-center gap-2 transition-colors"
+                                              >
+                                                <Trash2 size={14} />
+                                                Excluir Produto
+                                              </button>
+                                            </div>
+                                          </>
+                                        )}
+                                      </div>
                                     </div>
 
                                     <div className="flex items-center justify-between mb-4">
@@ -3018,20 +3192,30 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                       )}
                                     </div>
 
-                                    <div className="grid grid-cols-3 gap-3">
-                                      <div className="p-3 rounded-2xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm transition-all hover:border-violet-500/20">
-                                        <p className="text-[10px] font-bold text-slate-700 dark:text-slate-400 uppercase tracking-wider mb-1">Investimento Mensal</p>
-                                        <p className="text-sm font-bold text-slate-900 dark:text-white">{prod.budget}</p>
+                                    <div className="grid grid-cols-4 gap-2">
+                                      <div className="p-2 rounded-xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm transition-all hover:border-violet-500/20">
+                                        <p className="text-[8px] font-bold text-slate-700 dark:text-white uppercase tracking-wider mb-0.5 min-h-[24px]">Investimento Mensal</p>
+                                        <p className="text-xs font-bold text-slate-900 dark:text-white">{prod.budget}</p>
                                       </div>
-                                      <div className="p-3 rounded-2xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm transition-all hover:border-violet-500/20">
-                                        <p className="text-[10px] font-bold text-slate-700 dark:text-slate-400 uppercase tracking-wider mb-1">Forma de Pagamento</p>
-                                        <p className={`text-sm font-bold ${prod.paymentMethod === 'Boleto/pix' ? 'text-orange-500' : 'text-blue-500'}`}>
+                                      <div className="p-2 rounded-xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm transition-all hover:border-violet-500/20">
+                                        <p className="text-[8px] font-bold text-slate-700 dark:text-white uppercase tracking-wider mb-0.5 min-h-[24px]">Plataforma</p>
+                                        <p className={`text-xs font-bold ${
+                                          prod.platform === 'Meta Ads' ? 'text-blue-500' 
+                                          : prod.platform === 'Google Ads' ? 'text-amber-500' 
+                                          : prod.platform === 'Tiktok Ads' ? 'text-purple-500' 
+                                          : prod.platform === 'Linkedin Ads' ? 'text-sky-400' 
+                                          : 'text-slate-400'
+                                        }`}>{prod.platform || '-'}</p>
+                                      </div>
+                                      <div className="p-2 rounded-xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm transition-all hover:border-violet-500/20">
+                                        <p className="text-[8px] font-bold text-slate-700 dark:text-white uppercase tracking-wider mb-0.5 min-h-[24px]">Forma de Pagamento</p>
+                                        <p className={`text-xs font-bold ${prod.paymentMethod === 'Boleto/pix' ? 'text-orange-500' : 'text-blue-500'}`}>
                                           {prod.paymentMethod === 'Boleto/pix' ? (prod.balance || 'R$ 0') : 'Cartão'}
                                         </p>
                                       </div>
-                                      <div className="p-3 rounded-2xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm transition-all hover:border-violet-500/20">
-                                        <p className="text-[10px] font-bold text-slate-700 dark:text-slate-400 uppercase tracking-wider mb-1">Dias de veiculação</p>
-                                        <p className="text-sm font-bold text-slate-900 dark:text-white">{prod.delivery || 'Full Time'}</p>
+                                      <div className="p-2 rounded-xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm transition-all hover:border-violet-500/20">
+                                        <p className="text-[8px] font-bold text-slate-700 dark:text-white uppercase tracking-wider mb-0.5 min-h-[24px]">Dias de veiculação</p>
+                                        <p className="text-xs font-bold text-slate-900 dark:text-white">{prod.delivery || 'Full Time'}</p>
                                       </div>
                                     </div>
                                   </div>
@@ -3055,8 +3239,8 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     )}
                   </AnimatePresence>
                 </React.Fragment>
-              ))}
-            </tbody>
+              ))})()}
+              </tbody>
           </table>
         </div>
         )}
@@ -3088,7 +3272,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
               )}
             </div>
           }
-          maxWidth="max-w-6xl"
+          maxWidth="max-w-5xl"
         >
         <div className="flex flex-col h-[75vh] min-h-[600px]">
           {/* Tabs */}
@@ -3370,7 +3554,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                         </div>
                                       )}
                                       <p className="text-sm font-bold text-slate-900 dark:text-white">
-                                        {opt.author} <span className="text-slate-500 font-medium">({opt.role})</span>
+                                        {opt.author}
                                       </p>
                                     </div>
                                     <div className="flex items-center gap-2">
@@ -3379,7 +3563,11 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                   </div>
                                   <div className="flex items-center gap-2 mb-2">
                                     <p className="text-xs font-bold text-violet-600 dark:text-violet-400 uppercase tracking-wide">{opt.productName}</p>
-                                    <span className="px-2 py-0.5 text-[10px] font-bold text-violet-700 bg-violet-100 dark:bg-violet-900/30 rounded-full uppercase">MUDANÇA DE MÉTRICAS</span>
+                                    <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full uppercase whitespace-nowrap ${
+                                      opt.status === 'Mudança de Status' 
+                                        ? 'text-emerald-700 bg-emerald-100 dark:bg-emerald-900/30' 
+                                        : 'text-violet-700 bg-violet-100 dark:bg-violet-900/30'
+                                    }`}>{opt.status === 'Mudança de Status' ? 'STATUS' : 'MÉTRICAS'}</span>
                                   </div>
                                   <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed whitespace-pre-line">
                                     {opt.message}
@@ -3784,6 +3972,32 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       >
         <p className="text-slate-600 dark:text-slate-300">
           Tem certeza que deseja excluir este projeto?
+        </p>
+      </Modal>
+      <Modal
+        isOpen={!!productToDelete}
+        onClose={() => setProductToDelete(null)}
+        title="Confirmar exclusão do produto"
+        maxWidth="max-w-md"
+        footer={
+          <>
+            <button 
+              onClick={() => setProductToDelete(null)}
+              className={designSystem.button.secondary}
+            >
+              Cancelar
+            </button>
+            <button 
+              onClick={confirmDeleteProduct}
+              className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+            >
+              Excluir
+            </button>
+          </>
+        }
+      >
+        <p className="text-slate-600 dark:text-slate-300">
+          Tem certeza que deseja excluir este produto? Todas as otimizações vinculadas também serão removidas.
         </p>
       </Modal>
     </div>

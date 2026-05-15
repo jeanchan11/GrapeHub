@@ -4,7 +4,10 @@ import {
   X, UserPlus, CheckCircle2, AlertCircle, Link as LinkIcon, 
   ChevronDown, Search, Check, Unlink, FileText, MessageSquare,
   ShieldAlert, AlertTriangle, Calendar, Clock, User, Edit2,
-  CreditCard
+  CreditCard, Briefcase, Package, Layout,
+  Gavel, Scale, HeartPulse, ShieldCheck, Hammer, Landmark,
+  Banknote, ShoppingCart, Home, Stethoscope, Building2,
+  Globe, Activity, DollarSign, ArrowLeft
 } from 'lucide-react';
 import { Modal } from './ui/Modal';
 import { designSystem } from '../design-system';
@@ -70,7 +73,7 @@ interface ClientModalProps {
 }
 
 const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientModalProps) => {
-  const [activeTab, setActiveTab] = useState<'client' | 'finance' | 'churn'>('client');
+  const [activeTab, setActiveTab] = useState<'client' | 'finance' | 'churn' | 'projeto'>('client');
   const [finSubTab, setFinSubTab] = useState<'cadastro' | 'assinatura'>('cadastro');
   const finSearchRef = React.useRef<HTMLDivElement>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -113,6 +116,11 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
   const [isSubDropdownOpen, setIsSubDropdownOpen] = useState(false);
   const [isFetchingSubs, setIsFetchingSubs] = useState(false);
 
+  // Project state
+  const [projectData, setProjectData] = useState<any>(null);
+  const [isLoadingProject, setIsLoadingProject] = useState(false);
+  const [selectedProductView, setSelectedProductView] = useState<any>(null);
+
   useEffect(() => {
     if (editingClient) {
       setFormData({
@@ -151,6 +159,8 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
     // Reset local fin_people link from the current client
     setLocalFinPeopleGuid(editingClient?.finPeopleGuid || null);
     setSelectedFinPersonId(null);
+    setProjectData(null);
+    setSelectedProductView(null);
   }, [editingClient, isOpen]);
 
   // Fetch churn data when switching to churn tab
@@ -225,6 +235,28 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
       fetchMovements();
     }
   }, [isOpen, activeTab, selectedFinPersonId]);
+
+  // Fetch project data when switching to projeto tab
+  useEffect(() => {
+    if (isOpen && activeTab === 'projeto' && editingClient) {
+      const fetchProject = async () => {
+        setIsLoadingProject(true);
+        try {
+          const res = await fetch('/api/projects');
+          if (res.ok) {
+            const allProjects = await res.json();
+            const linked = allProjects.find((p: any) => p.activeClientId === editingClient.id);
+            setProjectData(linked || null);
+          }
+        } catch (err) {
+          console.error('Failed to fetch project:', err);
+        } finally {
+          setIsLoadingProject(false);
+        }
+      };
+      fetchProject();
+    }
+  }, [isOpen, activeTab, editingClient]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -307,13 +339,36 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
 
   const squads = ['Able', 'Baker', 'Charlie', 'Delta'];
 
+  const productIcons: { name: string; icon: any }[] = [
+    { name: 'Gavel', icon: Gavel },
+    { name: 'Scale', icon: Scale },
+    { name: 'HeartPulse', icon: HeartPulse },
+    { name: 'ShieldCheck', icon: ShieldCheck },
+    { name: 'Hammer', icon: Hammer },
+    { name: 'Landmark', icon: Landmark },
+    { name: 'Banknote', icon: Banknote },
+    { name: 'ShoppingCart', icon: ShoppingCart },
+    { name: 'Home', icon: Home },
+    { name: 'Stethoscope', icon: Stethoscope },
+    { name: 'Building2', icon: Building2 },
+    { name: 'Briefcase', icon: Briefcase },
+    { name: 'Layout', icon: Layout },
+  ];
+
+  const getProductIcon = (iconName?: string) => {
+    const iconObj = productIcons.find(i => i.name === iconName);
+    const IconComponent = iconObj ? iconObj.icon : Layout;
+    return <IconComponent size={18} />;
+  };
+
   return (
+    <>
     <Modal
       isOpen={isOpen}
       onClose={() => { setIsEditing(false); onClose(); }}
       title={editingClient ? (isEditing ? 'Editar Cliente' : editingClient.name) : 'Novo Cliente'}
       icon={<UserPlus size={24} />}
-      maxWidth="max-w-2xl"
+      maxWidth="max-w-5xl"
       footer={
         activeTab === 'client' && isEditing ? (
           <>
@@ -356,6 +411,14 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
               className={`px-8 py-4 text-sm font-bold transition-all ${activeTab === 'churn' ? 'modal-tab-active' : 'text-slate-500 hover:text-gray-900 dark:hover:text-white'}`}
             >
               Motivo de Saída
+            </button>
+          )}
+          {editingClient && (
+            <button 
+              onClick={() => setActiveTab('projeto')}
+              className={`px-8 py-4 text-sm font-bold transition-all ${activeTab === 'projeto' ? 'modal-tab-active' : 'text-slate-500 hover:text-gray-900 dark:hover:text-white'}`}
+            >
+              Projeto
             </button>
           )}
         </div>
@@ -1029,9 +1092,340 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
                     )}
                   </div>
           )}
+          {activeTab === 'projeto' && (
+            <div className="space-y-6">
+              {isLoadingProject ? (
+                <div className="py-20 flex flex-col items-center gap-3">
+                  <div className="w-8 h-8 border-4 border-violet-500/20 border-t-violet-500 rounded-full animate-spin"></div>
+                  <p className="text-slate-500 text-sm font-medium">Carregando projeto...</p>
+                </div>
+              ) : !projectData ? (
+                <div className="p-8 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl flex flex-col items-center gap-3 text-center">
+                  <Briefcase className="text-slate-400" size={32} />
+                  <p className="text-sm font-medium text-slate-500">
+                    Nenhum projeto vinculado a este cliente.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {/* Project Info Cards */}
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
+                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">Status</p>
+                      <span className={`inline-flex px-3 py-1 rounded-lg text-xs font-bold ${
+                        projectData.status === 'Rodando' ? 'bg-emerald-500/10 text-emerald-500' :
+                        projectData.status === 'Gargalo' ? 'bg-rose-500/10 text-rose-500' :
+                        'bg-amber-500/10 text-amber-500'
+                      }`}>{projectData.status || '-'}</span>
+                    </div>
+                    <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
+                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">Resultado</p>
+                      <span className={`inline-flex px-3 py-1 rounded-lg text-[10px] font-bold ${
+                        (projectData.projectResult || '').includes('BOM') ? 'bg-emerald-500/10 text-emerald-500' :
+                        (projectData.projectResult || '').includes('OK') ? 'bg-blue-500/10 text-blue-500' :
+                        (projectData.projectResult || '').includes('RUIM') ? 'bg-rose-500/10 text-rose-500' :
+                        'bg-slate-500/10 text-slate-500'
+                      }`}>{projectData.projectResult || '-'}</span>
+                    </div>
+                    <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
+                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">Investimento</p>
+                      <p className="text-sm font-bold text-light-text dark:text-white">R$ {projectData.investment || '0'}</p>
+                    </div>
+                    <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
+                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">Última Atualização</p>
+                      <p className="text-xs font-bold text-light-text dark:text-white">{projectData.lastUpdate || '-'}</p>
+                    </div>
+                  </div>
+
+                  {/* Products */}
+                  {projectData.products && projectData.products.length > 0 && (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <Package size={16} className="text-violet-500" />
+                        <h3 className="text-sm font-bold text-light-text dark:text-white uppercase tracking-widest">Produtos ({projectData.products.length})</h3>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {projectData.products.map((prod: any) => (
+                          <div key={prod.id} onClick={() => setSelectedProductView(prod)} className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5 flex items-center gap-3 cursor-pointer hover:border-violet-500/30 hover:bg-violet-500/5 transition-all">
+                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-violet-500 ${
+                              prod.status === 'Rodando' ? 'bg-emerald-500/10' :
+                              prod.status === 'Inativo' ? 'bg-slate-500/10' : 'bg-amber-500/10'
+                            }`}>
+                              {getProductIcon(prod.icon)}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-bold text-light-text dark:text-white truncate">{prod.name}</p>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className={`text-[9px] font-bold px-2 py-0.5 rounded-md ${
+                                  prod.status === 'Rodando' ? 'bg-emerald-500/10 text-emerald-500' :
+                                  prod.status === 'Inativo' ? 'bg-slate-500/10 text-slate-400' :
+                                  'bg-amber-500/10 text-amber-500'
+                                }`}>{prod.status || '-'}</span>
+                                {prod.platform && (
+                                  <span className={`text-[9px] font-bold ${
+                                    prod.platform?.includes('Meta') ? 'text-blue-500' :
+                                    prod.platform?.includes('Google') ? 'text-amber-500' :
+                                    prod.platform?.includes('Tiktok') ? 'text-purple-500' :
+                                    prod.platform?.includes('Linkedin') ? 'text-sky-400' : 'text-slate-400'
+                                  }`}>{prod.platform}</span>
+                                )}
+                              </div>
+                            </div>
+                            <p className="text-xs font-bold text-emerald-500 whitespace-nowrap">R$ {prod.budget || '0'}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Timeline - Histórico Consolidado (same design as ProjectsModule) */}
+                  {(() => {
+                    const allOpts = (projectData.products || []).flatMap((p: any) =>
+                      (p.optimizations || []).map((o: any) => ({ ...o, productName: p.name }))
+                    ).sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 10);
+                    if (allOpts.length === 0) return null;
+                    return (
+                      <div className="space-y-4">
+                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Histórico Consolidado</h4>
+                        <div className="relative max-h-[500px] overflow-y-auto custom-scrollbar pr-2">
+                          <div className="relative space-y-12 py-4">
+                            {/* Vertical Line */}
+                            <div className="absolute left-1/2 top-0 bottom-0 w-px bg-slate-200 dark:bg-white/10 -translate-x-1/2" />
+
+                            {allOpts.map((opt: any, idx: number) => (
+                              <div key={idx} className="relative flex items-center justify-center">
+                                {/* Timeline Clock */}
+                                <div className="absolute left-1/2 -translate-x-1/2 z-10">
+                                  <div className="w-8 h-8 rounded-full bg-white dark:bg-[#1a1625]">
+                                    <div className="w-full h-full rounded-full bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/20 flex items-center justify-center shadow-sm">
+                                      <Clock size={16} className="text-violet-500" />
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Card */}
+                                <div className={`w-[40%] p-5 rounded-2xl border transition-all bg-white dark:bg-white/5 border-slate-200 dark:border-white/5 hover:border-violet-500/20 ${idx % 2 === 0 ? 'mr-auto text-left' : 'ml-auto text-left'}`}>
+                                  <div className="flex items-center justify-between mb-3">
+                                    <div className="flex items-center gap-2">
+                                      {opt.authorPhoto ? (
+                                        <img src={opt.authorPhoto} alt={opt.author} className="w-6 h-6 rounded-full object-cover" referrerPolicy="no-referrer" />
+                                      ) : (
+                                        <div className="w-6 h-6 rounded-full bg-violet-500/20 flex items-center justify-center text-violet-500 text-xs font-bold">
+                                          {(opt.author || 'U').charAt(0).toUpperCase()}
+                                        </div>
+                                      )}
+                                      <p className="text-sm font-bold text-slate-900 dark:text-white">
+                                        {opt.author}
+                                      </p>
+                                    </div>
+                                    <p className="text-[10px] text-slate-500 font-medium">{opt.date} {opt.time && `às ${opt.time}`}</p>
+                                  </div>
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <p className="text-xs font-bold text-violet-600 dark:text-violet-400 uppercase tracking-wide">{opt.productName}</p>
+                                    <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full uppercase whitespace-nowrap ${
+                                      opt.status === 'Mudança de Status' 
+                                        ? 'text-emerald-700 bg-emerald-100 dark:bg-emerald-900/30' 
+                                        : 'text-violet-700 bg-violet-100 dark:bg-violet-900/30'
+                                    }`}>{opt.status === 'Mudança de Status' ? 'STATUS' : 'MÉTRICAS'}</span>
+                                  </div>
+                                  <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed whitespace-pre-line">
+                                    {opt.message}
+                                  </p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </Modal>
+
+      {/* Product Detail Popup - overlay on top of ClientModal */}
+      <AnimatePresence>
+        {selectedProductView && (
+          <div className="fixed inset-0 z-[1100] flex items-start justify-center p-4 overflow-y-auto pt-10 pb-10">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSelectedProductView(null)}
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-5xl modal-container overflow-hidden mb-10 transition-colors duration-300"
+            >
+              {/* Header */}
+              <div className="p-8 border-b border-slate-200 dark:border-white/10">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="p-3 bg-violet-600/20 rounded-xl">
+                      <div className="text-violet-600">
+                        {getProductIcon(selectedProductView.icon)}
+                      </div>
+                    </div>
+                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{selectedProductView.name}</h2>
+                    <span className={`px-3 py-1 text-xs font-bold rounded-full flex items-center gap-1.5 ${
+                      selectedProductView.status === 'Rodando' ? 'bg-emerald-500/20 text-emerald-500' :
+                      selectedProductView.status === 'Pausado' ? 'bg-amber-500/20 text-amber-500' :
+                      selectedProductView.status === 'Inativo' ? 'bg-slate-500/20 text-slate-400' :
+                      'bg-rose-500/20 text-rose-500'
+                    }`}>
+                      <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${
+                        selectedProductView.status === 'Rodando' ? 'bg-emerald-500' :
+                        selectedProductView.status === 'Pausado' ? 'bg-amber-500' :
+                        selectedProductView.status === 'Inativo' ? 'bg-slate-400' : 'bg-rose-500'
+                      }`} />
+                      {selectedProductView.status}
+                    </span>
+                  </div>
+                  <button 
+                    onClick={() => setSelectedProductView(null)}
+                    className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl text-slate-500 hover:text-slate-900 dark:hover:text-white transition-all"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+
+                {/* Resultado do Produto */}
+                {selectedProductView.projectResult && (
+                  <div className="flex items-center gap-3 mt-4">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Resultado:</p>
+                    <span className={`inline-flex px-3 py-1 rounded-lg text-xs font-bold ${
+                      (selectedProductView.projectResult || '').includes('BOM') ? 'bg-emerald-500/10 text-emerald-500' :
+                      (selectedProductView.projectResult || '').includes('OK') ? 'bg-blue-500/10 text-blue-500' :
+                      (selectedProductView.projectResult || '').includes('RUIM') ? 'bg-rose-500/10 text-rose-500' :
+                      'bg-slate-500/10 text-slate-500'
+                    }`}>{selectedProductView.projectResult}</span>
+                  </div>
+                )}
+
+                {/* Metrics Grid */}
+                <div className="mt-8 grid grid-cols-3 gap-4">
+                  {[
+                    { label: 'Investimento Mensal', value: selectedProductView.budget, icon: DollarSign },
+                    { label: 'Plataforma', value: selectedProductView.platform, icon: Globe },
+                    { label: 'Dias de Veiculação', value: selectedProductView.delivery, icon: Calendar },
+                    { label: 'IA de Atendimento', value: selectedProductView.aiService, icon: MessageSquare, keyword: selectedProductView.aiKeyword },
+                    { label: 'Forma de Pagamento', value: selectedProductView.paymentMethod, icon: CreditCard },
+                    ...(selectedProductView.paymentMethod === 'Boleto/pix' ? [{ label: 'Saldo Atual', value: selectedProductView.balance, icon: DollarSign }] : []),
+                  ].map((m: any, i: number) => (
+                    <div key={i} className="p-4 bg-white dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5 hover:border-violet-500/20 transition-all">
+                      <div className="flex items-center gap-2 text-slate-500 mb-1">
+                        <m.icon size={14} />
+                        <span className="text-[10px] font-bold uppercase tracking-wider">{m.label}</span>
+                      </div>
+                      <p className={`text-sm font-bold ${
+                        m.label === 'Plataforma' ? (
+                          (m.value || '').includes('Meta') ? 'text-blue-500' :
+                          (m.value || '').includes('Google') ? 'text-amber-500' :
+                          (m.value || '').includes('Tiktok') ? 'text-purple-500' :
+                          (m.value || '').includes('Linkedin') ? 'text-sky-400' : 'text-slate-400'
+                        ) : 'text-light-text dark:text-white'
+                      }`}>{m.value || '-'}</p>
+                      {m.keyword && (
+                        <div className="mt-3 pt-3 border-t border-slate-100 dark:border-white/5">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Palavra-chave</span>
+                          <p className="text-xs font-medium text-violet-500 mt-0.5">{m.keyword}</p>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Optimization History */}
+              <div className="p-8 overflow-y-visible">
+                <div className="flex items-center justify-between mb-10">
+                  <div className="flex items-center gap-3">
+                    <Activity size={20} className="text-violet-500" />
+                    <h3 className="text-lg font-bold text-light-text dark:text-white">Histórico de Otimizações</h3>
+                  </div>
+                </div>
+                {selectedProductView.optimizations && selectedProductView.optimizations.length > 0 ? (
+                  <div className="relative max-h-[900px] overflow-y-auto custom-scrollbar pr-2">
+                    <div className="relative space-y-12 py-4">
+                      {/* Vertical Line */}
+                      <div className="absolute left-1/2 top-0 bottom-0 w-px bg-slate-200 dark:bg-white/10 -translate-x-1/2" />
+
+                      {[...selectedProductView.optimizations]
+                        .sort((a: any, b: any) => {
+                          const dateA = new Date(a.date.split('/').reverse().join('-') + 'T' + (a.time || '00:00'));
+                          const dateB = new Date(b.date.split('/').reverse().join('-') + 'T' + (b.time || '00:00'));
+                          return dateB.getTime() - dateA.getTime();
+                        })
+                        .map((opt: any, idx: number) => (
+                        <div key={idx} className="relative flex items-center justify-center">
+                          {/* Timeline Dot */}
+                          <div className="absolute left-1/2 -translate-x-1/2 z-10">
+                            <div className="w-8 h-8 rounded-full bg-white dark:bg-[#1a1625]">
+                              <div className="w-full h-full rounded-full bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/20 flex items-center justify-center shadow-sm">
+                                <Clock size={16} className="text-violet-500" />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Card */}
+                          <div className={`w-[40%] p-5 rounded-2xl border transition-all bg-white dark:bg-white/5 border-slate-200 dark:border-white/5 hover:border-violet-500/20 ${idx % 2 === 0 ? 'mr-auto text-left' : 'ml-auto text-left'}`}>
+                            <div className="flex items-center justify-between mb-3">
+                              <div className="flex items-center gap-2">
+                                {opt.authorPhoto ? (
+                                  <img src={opt.authorPhoto} alt={opt.author} className="w-6 h-6 rounded-full object-cover" referrerPolicy="no-referrer" />
+                                ) : (
+                                  <div className="w-6 h-6 rounded-full bg-violet-500/20 flex items-center justify-center text-violet-500 text-xs font-bold">
+                                    {(opt.author || 'U').charAt(0).toUpperCase()}
+                                  </div>
+                                )}
+                                <p className="text-sm font-bold text-slate-900 dark:text-white">
+                                  {opt.author}
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {opt.status && (
+                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                                    opt.status === 'Mudança de Status' 
+                                      ? 'bg-emerald-500/10 text-emerald-500' 
+                                      : 'bg-violet-500/10 text-violet-500'
+                                  }`}>
+                                    {opt.status === 'Mudança de Status' ? 'STATUS' : 'MÉTRICAS'}
+                                  </span>
+                                )}
+                                <p className="text-[10px] text-slate-500 font-medium">{opt.date} {opt.time && `às ${opt.time}`}</p>
+                              </div>
+                            </div>
+                            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed whitespace-pre-line">
+                              {opt.message}
+                            </p>
+                            {opt.images && opt.images.length > 0 && (
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                {opt.images.map((img: string, i: number) => (
+                                  <img key={i} src={img} alt="Nota" className="w-20 h-20 object-cover rounded-lg cursor-pointer hover:opacity-80 transition-opacity" referrerPolicy="no-referrer" />
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500 italic text-center py-8">Nenhum histórico de otimizações disponível.</p>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </>
   );
 };
 

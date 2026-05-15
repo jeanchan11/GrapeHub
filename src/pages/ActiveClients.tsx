@@ -8,11 +8,12 @@ import {
   Download, UserPlus, ArrowUpDown, FileText,
   Link as LinkIcon, Unlink, Check, ChevronDown,
   UserMinus, MessageSquare, AlertTriangle, ShieldAlert,
-  CreditCard, Package, RefreshCcw, Upload
+  CreditCard, Package, RefreshCcw, Upload, Eye, EyeOff, DollarSign
 } from 'lucide-react';
 
 import { PageHeader } from '../components/ui/PageHeader';
 import ClientModal from '../components/ClientModal';
+import { useAuth } from '../contexts/AuthContext';
 
 interface Client {
   id: string;
@@ -36,6 +37,7 @@ interface Client {
   subscriptionBillingType?: string;
   subscriptionCycle?: string;
   finPeopleGuid?: string;
+  finSubscriptionId?: string;
   managerId?: string | null;
 }
 
@@ -47,9 +49,12 @@ interface FinPerson {
 }
 
 const ActiveClients: React.FC = () => {
+  const { userData } = useAuth();
+  const isSuperAdmin = userData?.role?.toLowerCase() === 'superadmin' || userData?.role?.toLowerCase() === 'super admin';
   const [clients, setClients] = useState<Client[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showValues, setShowValues] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
@@ -497,8 +502,8 @@ const ActiveClients: React.FC = () => {
         return dir * (ac - bc);
       }
       case 'subscription': {
-        const av = a.hasActiveSubscription ? 1 : 0;
-        const bv = b.hasActiveSubscription ? 1 : 0;
+        const av = a.subscriptionValue || 0;
+        const bv = b.subscriptionValue || 0;
         return dir * (av - bv);
       }
       case 'manager': {
@@ -727,6 +732,40 @@ const ActiveClients: React.FC = () => {
             {churnClients.length}
           </span>
         </button>
+
+        {isSuperAdmin && (
+          <div className="ml-auto flex items-center gap-3 px-4 py-2 bg-white dark:bg-dark-card/80 rounded-xl border border-slate-200 dark:border-white/10 shadow-sm">
+            <div className="flex flex-col">
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Assinaturas Ativas</span>
+              <span className="text-sm font-black text-emerald-500">
+                {showValues 
+                  ? `R$ ${(() => {
+                      const seenSubs = new Set<string>();
+                      let total = 0;
+                      activeClients.forEach(c => {
+                        if (c.hasActiveSubscription && c.subscriptionValue) {
+                          const key = c.finSubscriptionId || c.id;
+                          if (!seenSubs.has(key)) {
+                            seenSubs.add(key);
+                            total += c.subscriptionValue!;
+                          }
+                        }
+                      });
+                      return total.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+                    })()}`
+                  : 'R$ •••••'
+                }
+              </span>
+            </div>
+            <button
+              onClick={() => setShowValues(!showValues)}
+              className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 transition-colors text-slate-400 hover:text-violet-500"
+              title={showValues ? 'Ocultar valores' : 'Mostrar valores'}
+            >
+              {showValues ? <Eye size={16} /> : <EyeOff size={16} />}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Table Section */}
@@ -740,7 +779,8 @@ const ActiveClients: React.FC = () => {
                 <th className="px-8 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Local do Escritório</th>
                 <SortHeader col="squad" label="Squad" />
                 <SortHeader col="product" label="Produto" />
-                <SortHeader col="financial" label="Financeiro" className="text-center" />
+                {isSuperAdmin && <SortHeader col="financial" label="Financeiro" className="text-center" />}
+                {isSuperAdmin && <SortHeader col="subscription" label="Valor" />}
                 <SortHeader col="project" label="Projeto" className="text-center" />
                 <SortHeader col="contracts" label="Contratos" />
                 <th className="px-8 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right">Ações</th>
@@ -749,7 +789,7 @@ const ActiveClients: React.FC = () => {
             <tbody className="divide-y divide-slate-200 dark:divide-white/5">
               {isLoading ? (
                 <tr>
-                  <td colSpan={10} className="px-8 py-20 text-center">
+                  <td colSpan={11} className="px-8 py-20 text-center">
                     <div className="flex flex-col items-center gap-3">
                       <div className="w-10 h-10 border-4 border-violet-500/20 border-t-violet-500 rounded-full animate-spin"></div>
                       <p className="text-slate-500 font-medium">Carregando clientes...</p>
@@ -812,43 +852,67 @@ const ActiveClients: React.FC = () => {
                         <span className="text-[10px] text-slate-400 italic">-</span>
                       )}
                     </td>
+                    {isSuperAdmin && (
                     <td className="px-4 py-3 text-center">
-                      <div className="flex items-center justify-center gap-1.5">
-                        {/* Financeiro icon */}
-                        <div title={client.hasFinancialLink ? "Vinculado ao financeiro" : "Sem vínculo financeiro"}>
-                          {client.hasFinancialLink ? (
-                            <CheckCircle2 size={15} className="text-emerald-500" />
-                          ) : (
-                            <AlertCircle size={15} className="text-slate-300 dark:text-slate-600" />
-                          )}
-                        </div>
-                        <span className="text-slate-400 dark:text-slate-600 text-[10px] font-bold select-none">/</span>
-                        {/* Assinatura icon */}
-                        <div className="relative group/sub">
-                          {client.hasActiveSubscription ? (
-                            <>
-                              <CreditCard size={15} className="text-emerald-500" />
-                              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover/sub:block z-50">
-                                <div className="bg-slate-900 dark:bg-slate-800 text-white text-[10px] rounded-xl px-3 py-2 whitespace-nowrap shadow-xl border border-white/10">
-                                  <p className="font-bold text-emerald-400 mb-0.5">
-                                    R$ {client.subscriptionValue?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} / {client.subscriptionCycle === 'MONTHLY' ? 'mês' : client.subscriptionCycle === 'YEARLY' ? 'ano' : client.subscriptionCycle?.toLowerCase() || 'mês'}
-                                  </p>
-                                  {client.subscriptionNextDue && (
-                                    <p className="text-slate-300">Vence em {new Date(client.subscriptionNextDue + 'T12:00:00').toLocaleDateString('pt-BR')}</p>
-                                  )}
-                                  <p className="text-slate-400">
-                                    {client.subscriptionBillingType === 'BOLETO' ? 'Boleto' : client.subscriptionBillingType === 'CREDIT_CARD' ? 'Cartão' : client.subscriptionBillingType === 'PIX' ? 'Pix' : client.subscriptionBillingType || '-'}
-                                  </p>
-                                  <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-900 dark:border-t-slate-800" />
+                      <div className="flex flex-col items-center gap-1">
+                        <div className="flex items-center justify-center gap-1.5">
+                          {/* Financeiro icon */}
+                          <div title={client.hasFinancialLink ? "Vinculado ao financeiro" : "Sem vínculo financeiro"}>
+                            {client.hasFinancialLink ? (
+                              <CheckCircle2 size={15} className="text-emerald-500" />
+                            ) : (
+                              <AlertCircle size={15} className="text-slate-300 dark:text-slate-600" />
+                            )}
+                          </div>
+                          <span className="text-slate-400 dark:text-slate-600 text-[10px] font-bold select-none">/</span>
+                          {/* Assinatura icon */}
+                          <div className="relative group/sub">
+                            {client.hasActiveSubscription ? (
+                              <>
+                                <CreditCard size={15} className="text-emerald-500" />
+                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover/sub:block z-50">
+                                  <div className="bg-slate-900 dark:bg-slate-800 text-white text-[10px] rounded-xl px-3 py-2 whitespace-nowrap shadow-xl border border-white/10">
+                                    <p className="font-bold text-emerald-400 mb-0.5">
+                                      R$ {client.subscriptionValue?.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} / {client.subscriptionCycle === 'MONTHLY' ? 'mês' : client.subscriptionCycle === 'YEARLY' ? 'ano' : client.subscriptionCycle?.toLowerCase() || 'mês'}
+                                    </p>
+                                    {client.subscriptionNextDue && (
+                                      <p className="text-slate-300">Vence em {new Date(client.subscriptionNextDue + 'T12:00:00').toLocaleDateString('pt-BR')}</p>
+                                    )}
+                                    <p className="text-slate-400">
+                                      {client.subscriptionBillingType === 'BOLETO' ? 'Boleto' : client.subscriptionBillingType === 'CREDIT_CARD' ? 'Cartão' : client.subscriptionBillingType === 'PIX' ? 'Pix' : client.subscriptionBillingType || '-'}
+                                    </p>
+                                    <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-900 dark:border-t-slate-800" />
+                                  </div>
                                 </div>
-                              </div>
-                            </>
-                          ) : (
-                            <CreditCard size={15} className="text-slate-300 dark:text-slate-600" />
-                          )}
+                              </>
+                            ) : (
+                              <CreditCard size={15} className="text-slate-300 dark:text-slate-600" />
+                            )}
+                          </div>
                         </div>
                       </div>
                     </td>
+                    )}
+                    {isSuperAdmin && (
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {(() => {
+                        // Only show value for the first client using this subscription
+                        const isFirstWithSub = client.hasActiveSubscription && client.subscriptionValue && 
+                          (!client.finSubscriptionId || 
+                           filteredClients.findIndex(c => c.finSubscriptionId === client.finSubscriptionId) === filteredClients.indexOf(client));
+                        return isFirstWithSub ? (
+                          <span className="text-xs font-bold text-emerald-500">
+                            {showValues 
+                              ? `R$ ${client.subscriptionValue!.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+                              : 'R$ •••••'
+                            }
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-400">-</span>
+                        );
+                      })()}
+                    </td>
+                    )}
                     <td className="px-4 py-3 text-center">
                       <div className="flex justify-center" title={client.hasProjectLink ? (client.projectName || "Projeto vinculado") : "Sem projeto vinculado"}>
                         {client.hasProjectLink ? (

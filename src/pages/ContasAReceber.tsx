@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Calendar, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Clock, CreditCard, Zap, FileText, ExternalLink, Settings, AlertTriangle, Pause, Play, Check, X, ShieldAlert, Activity, CheckCircle2, Send, Settings2, Search, TrendingUp, Banknote, BarChart2, MessageCircle, Copy, Phone, Mail, Users, DollarSign, Filter, RefreshCw, MoreHorizontal, RotateCcw } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────
@@ -1225,16 +1226,25 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
           </div>
         );
       })()}
-      {openMenuId && menuPos && menuItem && (
+      {openMenuId && menuPos && menuItem && typeof document !== 'undefined' && createPortal(
         <>
-          <div className="fixed inset-0 z-[99990]" onClick={closeMenu} />
-          <div className="fixed z-[99999] min-w-[180px] bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-xl shadow-xl overflow-hidden" style={{ top: menuPos.y + 4, right: window.innerWidth - menuPos.x }}>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 99990 }} onClick={closeMenu} />
+          <div style={{
+            position: 'fixed',
+            zIndex: 99999,
+            top: menuPos.y + 4,
+            left: menuPos.x,
+            transform: 'translateX(-100%)',
+            minWidth: 180,
+          }} className="bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-xl shadow-xl overflow-hidden">
             <button onClick={() => { handleDispatchReopen(menuItem.id); closeMenu(); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-500/10 transition-colors">
               <RotateCcw size={13} /> Reagendar envio
             </button>
           </div>
-        </>
+        </>,
+        document.body
       )}
+
     </div>
   );
 };

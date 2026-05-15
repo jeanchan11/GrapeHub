@@ -1989,6 +1989,31 @@ async function startServer() {
     }
   });
 
+  // DELETE /api/products/:id — Excluir um produto individual
+  app.delete("/api/products/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      console.log(`[DELETE PRODUCT] Tentando excluir produto com ID: ${id}`);
+
+      await pool.query("BEGIN");
+
+      // 1. Excluir otimizações vinculadas ao produto
+      await pool.query("DELETE FROM optimizations WHERE product_id = $1", [id]);
+
+      // 2. Excluir o produto
+      const result = await pool.query("DELETE FROM products WHERE id = $1", [id]);
+
+      await pool.query("COMMIT");
+
+      console.log(`[DELETE PRODUCT] Resultado: ${result.rowCount} linhas afetadas`);
+      res.json({ success: true, deletedCount: result.rowCount });
+    } catch (err) {
+      await pool.query("ROLLBACK");
+      console.error("Error deleting product:", err);
+      res.status(500).json({ error: "Failed to delete product", details: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
   // Comercial Data API
   app.get("/api/comercial-data", async (req, res) => {
     try {
