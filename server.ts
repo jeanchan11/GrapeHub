@@ -447,6 +447,16 @@ async function startServer() {
         content TEXT
       );
 
+      CREATE TABLE IF NOT EXISTS to_do_staff_doc_pages (
+        id TEXT PRIMARY KEY,
+        page_id TEXT NOT NULL DEFAULT 'default',
+        title TEXT NOT NULL,
+        content TEXT DEFAULT '',
+        sort_order INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+
       CREATE TABLE IF NOT EXISTS crm_comercial_tasks (
         id SERIAL PRIMARY KEY,
         lead_id TEXT,
@@ -10538,6 +10548,52 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
   app.delete("/api/todo-staff/ideas/:id", async (req, res) => {
     try {
       await pool.query("DELETE FROM to_do_staff_ideas WHERE id=$1", [req.params.id]);
+      res.json({ ok: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // ── Todo Staff Document Pages API ──────────────────────────────────────────
+
+  // GET all doc pages for a page_id
+  app.get("/api/todo-staff/doc-pages", async (req, res) => {
+    try {
+      const pageId = (req.query.page_id as string) || 'default';
+      const { rows } = await pool.query(
+        "SELECT * FROM to_do_staff_doc_pages WHERE page_id = $1 ORDER BY sort_order ASC, created_at ASC",
+        [pageId]
+      );
+      res.json(rows);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // POST create a doc page
+  app.post("/api/todo-staff/doc-pages", async (req, res) => {
+    try {
+      const { id, page_id, title, content, sort_order } = req.body;
+      await pool.query(
+        `INSERT INTO to_do_staff_doc_pages (id, page_id, title, content, sort_order) VALUES ($1,$2,$3,$4,$5)`,
+        [id, page_id || 'default', title, content || '', sort_order || 0]
+      );
+      res.json({ ok: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // PUT update a doc page
+  app.put("/api/todo-staff/doc-pages/:id", async (req, res) => {
+    try {
+      const { title, content } = req.body;
+      await pool.query(
+        `UPDATE to_do_staff_doc_pages SET title=$1, content=$2, updated_at=NOW() WHERE id=$3`,
+        [title, content, req.params.id]
+      );
+      res.json({ ok: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // DELETE a doc page
+  app.delete("/api/todo-staff/doc-pages/:id", async (req, res) => {
+    try {
+      await pool.query("DELETE FROM to_do_staff_doc_pages WHERE id=$1", [req.params.id]);
       res.json({ ok: true });
     } catch (err: any) { res.status(500).json({ error: err.message }); }
   });

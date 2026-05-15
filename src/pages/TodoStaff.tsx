@@ -1338,6 +1338,14 @@ const TodoStaff: React.FC<{ activePage?: string }> = ({ activePage }) => {
   const [notesHtml,  setNotesHtml]  = useState<string>('');
   const [notesDirty, setNotesDirty] = useState(false);
   const [notesSaving, setNotesSaving] = useState(false);
+
+  // Document pages state
+  const [docPages, setDocPages] = useState<{ id: string; page_id: string; title: string; content: string; sort_order: number; created_at: string; updated_at: string }[]>([]);
+  const [activeDocPageId, setActiveDocPageId] = useState<string | null>(null);
+  const [docPageDirty, setDocPageDirty] = useState(false);
+  const [docPageSaving, setDocPageSaving] = useState(false);
+  const [editingDocTitle, setEditingDocTitle] = useState<string | null>(null);
+  const [docTitleInput, setDocTitleInput] = useState('');
   const [todoModal,  setTodoModal]  = useState(false);
   const [recModal,   setRecModal]   = useState(false);
   const [ideaModal,  setIdeaModal]  = useState(false);
@@ -1362,11 +1370,14 @@ const TodoStaff: React.FC<{ activePage?: string }> = ({ activePage }) => {
       fetch(`/api/todo-staff/recurring${queryStr}`).then(r => r.ok ? r.json() : []).catch(() => []),
       fetch(`/api/todo-staff/ideas${queryStr}`).then(r => r.ok ? r.json() : []).catch(() => []),
       fetch(`/api/todo-staff/notes${queryStr}`).then(r => r.ok ? r.json() : { content: '' }).catch(() => ({ content: '' })),
-    ]).then(([tasks, recs, ideasData, notesData]) => {
+      fetch(`/api/todo-staff/doc-pages${queryStr}`).then(r => r.ok ? r.json() : []).catch(() => []),
+    ]).then(([tasks, recs, ideasData, notesData, docPagesData]) => {
       setTodos(tasks);
       setRecurring(recs);
       setIdeas(ideasData);
       setNotesHtml(notesData.content || '');
+      setDocPages(docPagesData);
+      if (docPagesData.length > 0) setActiveDocPageId(docPagesData[0].id);
       // Merge tags from tasks
       const allUsedTags = new Set<string>([...AVAILABLE_TAGS, ...tasks.flatMap((t: TodoItem) => t.tags)]);
       setGlobalTags(Array.from(allUsedTags));
@@ -1736,19 +1747,190 @@ const TodoStaff: React.FC<{ activePage?: string }> = ({ activePage }) => {
       </div>
 
       {viewMode === 'document' ? (
-        <div className="px-6 md:px-8 pb-10 max-w-4xl mx-auto">
-          <div className="bg-dark-card border border-white/[0.06] rounded-2xl overflow-hidden shadow-xl p-6">
-            <RichTextEditor
-              content={notesHtml}
-              onChange={html => { setNotesHtml(html); setNotesDirty(true); }}
-            />
-            {notesDirty && (
-              <div className="mt-4 flex justify-end">
-                <button onClick={saveNotes} disabled={notesSaving} className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-colors">
-                  {notesSaving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Salvar Documento
+        <div className="px-6 md:px-8 pb-10">
+          <div className="flex gap-0 bg-dark-card border border-white/[0.06] rounded-2xl overflow-hidden shadow-xl" style={{ minHeight: '70vh' }}>
+            {/* Sidebar */}
+            <div className="w-56 flex-shrink-0 border-r border-white/[0.06] flex flex-col">
+              <div className="px-4 py-4 border-b border-white/[0.06]">
+                <p className="text-[10px] font-bold text-dark-text/40 uppercase tracking-widest">Páginas</p>
+              </div>
+              <div className="flex-1 overflow-y-auto custom-scrollbar py-2 px-2 space-y-0.5">
+                {docPages.map(page => (
+                  <div
+                    key={page.id}
+                    className={`group flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer transition-all ${
+                      activeDocPageId === page.id
+                        ? 'bg-violet-600/15 text-violet-400'
+                        : 'text-dark-text/60 hover:bg-white/[0.04] hover:text-dark-text'
+                    }`}
+                    onClick={() => {
+                      // Save current page before switching
+                      if (docPageDirty && activeDocPageId) {
+                        const currentPage = docPages.find(p => p.id === activeDocPageId);
+                        if (currentPage) {
+                          apiCall('PUT', `/api/todo-staff/doc-pages/${activeDocPageId}`, { title: currentPage.title, content: currentPage.content });
+                        }
+                      }
+                      setActiveDocPageId(page.id);
+                      setDocPageDirty(false);
+                    }}
+                  >
+                    <FileText size={13} className="flex-shrink-0 opacity-50" />
+                    {editingDocTitle === page.id ? (
+                      <input
+                        autoFocus
+                        value={docTitleInput}
+                        onChange={e => setDocTitleInput(e.target.value)}
+                        onBlur={() => {
+                          if (docTitleInput.trim()) {
+                            setDocPages(prev => prev.map(p => p.id === page.id ? { ...p, title: docTitleInput.trim() } : p));
+                            apiCall('PUT', `/api/todo-staff/doc-pages/${page.id}`, { title: docTitleInput.trim(), content: page.content });
+                          }
+                          setEditingDocTitle(null);
+                        }}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                          if (e.key === 'Escape') setEditingDocTitle(null);
+                        }}
+                        className="flex-1 min-w-0 bg-transparent text-xs font-medium text-dark-text outline-none border-b border-violet-500"
+                        onClick={e => e.stopPropagation()}
+                      />
+                    ) : (
+                      <span
+                        className="flex-1 min-w-0 text-xs font-medium truncate"
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          setEditingDocTitle(page.id);
+                          setDocTitleInput(page.title);
+                        }}
+                      >{page.title}</span>
+                    )}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (confirm('Excluir esta página?')) {
+                          const newPages = docPages.filter(p => p.id !== page.id);
+                          setDocPages(newPages);
+                          if (activeDocPageId === page.id) {
+                            setActiveDocPageId(newPages.length > 0 ? newPages[0].id : null);
+                          }
+                          apiCall('DELETE', `/api/todo-staff/doc-pages/${page.id}`);
+                        }
+                      }}
+                      className="opacity-0 group-hover:opacity-100 p-0.5 rounded-md text-dark-text/30 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                    >
+                      <Trash2 size={11} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <div className="px-2 py-3 border-t border-white/[0.06]">
+                <button
+                  onClick={() => {
+                    const newId = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+                    const today = new Date();
+                    const title = `${String(today.getDate()).padStart(2, '0')}.${String(today.getMonth() + 1).padStart(2, '0')}.${String(today.getFullYear()).slice(2)}`;
+                    const newPage = {
+                      id: newId,
+                      page_id: activePage || 'default',
+                      title,
+                      content: '',
+                      sort_order: docPages.length,
+                      created_at: new Date().toISOString(),
+                      updated_at: new Date().toISOString()
+                    };
+                    setDocPages(prev => [...prev, newPage]);
+                    setActiveDocPageId(newId);
+                    setDocPageDirty(false);
+                    apiCall('POST', '/api/todo-staff/doc-pages', newPage);
+                  }}
+                  className="flex items-center gap-2 w-full px-3 py-2 rounded-xl text-xs font-medium text-dark-text/40 hover:text-violet-400 hover:bg-violet-500/10 transition-all"
+                >
+                  <Plus size={13} />
+                  Adicionar página
                 </button>
               </div>
-            )}
+            </div>
+
+            {/* Editor Area */}
+            <div className="flex-1 flex flex-col min-w-0">
+              {activeDocPageId && docPages.find(p => p.id === activeDocPageId) ? (
+                <>
+                  {/* Page Header */}
+                  <div className="px-8 pt-6 pb-4 border-b border-white/[0.06]">
+                    <input
+                      value={docPages.find(p => p.id === activeDocPageId)?.title || ''}
+                      onChange={e => {
+                        setDocPages(prev => prev.map(p => p.id === activeDocPageId ? { ...p, title: e.target.value } : p));
+                        setDocPageDirty(true);
+                      }}
+                      className="text-2xl font-black text-dark-text bg-transparent outline-none w-full placeholder:text-dark-text/20"
+                      placeholder="Título da página..."
+                    />
+                    <p className="text-[10px] text-dark-text/30 mt-1">
+                      Atualizado por último {new Date(docPages.find(p => p.id === activeDocPageId)?.updated_at || '').toLocaleDateString('pt-BR')}
+                    </p>
+                  </div>
+                  {/* Editor */}
+                  <div className="flex-1 px-8 py-6 overflow-y-auto custom-scrollbar">
+                    <RichTextEditor
+                      content={docPages.find(p => p.id === activeDocPageId)?.content || ''}
+                      onChange={html => {
+                        setDocPages(prev => prev.map(p => p.id === activeDocPageId ? { ...p, content: html, updated_at: new Date().toISOString() } : p));
+                        setDocPageDirty(true);
+                      }}
+                    />
+                  </div>
+                  {/* Save bar */}
+                  {docPageDirty && (
+                    <div className="px-8 py-3 border-t border-white/[0.06] flex justify-end">
+                      <button
+                        onClick={async () => {
+                          setDocPageSaving(true);
+                          const page = docPages.find(p => p.id === activeDocPageId);
+                          if (page) {
+                            await apiCall('PUT', `/api/todo-staff/doc-pages/${activeDocPageId}`, { title: page.title, content: page.content });
+                          }
+                          setDocPageDirty(false);
+                          setDocPageSaving(false);
+                        }}
+                        disabled={docPageSaving}
+                        className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-colors"
+                      >
+                        {docPageSaving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Salvar
+                      </button>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="flex-1 flex flex-col items-center justify-center text-dark-text/30 gap-3">
+                  <FileText size={40} className="opacity-20" />
+                  <p className="text-sm font-medium">Selecione uma página ou crie uma nova</p>
+                  <button
+                    onClick={() => {
+                      const newId = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+                      const today = new Date();
+                      const title = `${String(today.getDate()).padStart(2, '0')}.${String(today.getMonth() + 1).padStart(2, '0')}.${String(today.getFullYear()).slice(2)}`;
+                      const newPage = {
+                        id: newId,
+                        page_id: activePage || 'default',
+                        title,
+                        content: '',
+                        sort_order: docPages.length,
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString()
+                      };
+                      setDocPages(prev => [...prev, newPage]);
+                      setActiveDocPageId(newId);
+                      apiCall('POST', '/api/todo-staff/doc-pages', newPage);
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-xl text-xs font-bold transition-all"
+                  >
+                    <Plus size={13} /> Criar primeira página
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       ) : (
