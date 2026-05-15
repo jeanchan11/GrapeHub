@@ -1381,17 +1381,17 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                                           {matchMeeting.notes && (
                                             <div className="mt-4 pt-4 border-t border-gray-100 dark:border-white/5">
                                               <h5 className="text-[10px] font-bold text-gray-500/80 uppercase tracking-widest mb-3" style={{ color: '#6b7280' }}>Informações da Reunião:</h5>
-                                              <ul className="space-y-2">
+                                              <ul className="space-y-3">
                                                 {matchMeeting.notes.split('\n').filter((l: string) => l.trim().length > 0).map((line: string, i: number) => {
                                                   const isCheck = line.trim().startsWith('-');
                                                   return (
-                                                    <li key={i} className="flex items-start gap-2.5 text-[11px] text-gray-600 dark:text-slate-300">
+                                                    <li key={i} className="flex items-start gap-2.5 text-xs text-gray-700 dark:text-slate-200">
                                                       {isCheck ? (
-                                                        <Check size={14} className="text-emerald-500 shrink-0 mt-0.5 opacity-80" />
+                                                        <Check size={15} className="text-emerald-500 shrink-0 mt-0.5" />
                                                       ) : (
-                                                        <span className="w-1 h-3 mt-1.5 shrink-0" />
+                                                        <span className="w-1.5 h-3 shrink-0" />
                                                       )}
-                                                      <span className="leading-relaxed font-medium" style={{ color: '#4b5563' }}>{line.replace(/^- /, '')}</span>
+                                                      <span className="leading-relaxed font-medium">{line.replace(/^- /, '')}</span>
                                                     </li>
                                                   );
                                                 })}
@@ -1988,17 +1988,17 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                                       {(notesLines.length > 0) && (
                                         <div className="mt-4 pt-4 border-t border-gray-100 dark:border-white/5">
                                           <h5 className="text-[10px] font-bold text-gray-500/80 uppercase tracking-widest mb-3" style={{ color: '#6b7280' }}>Informações da Reunião:</h5>
-                                          <ul className="space-y-2">
+                                          <ul className="space-y-3">
                                             {notesLines.map((line: string, i: number) => {
                                               const isCheck = line.trim().startsWith('-');
                                               return (
-                                                <li key={i} className="flex items-start gap-2.5 text-[11px] text-gray-600 dark:text-slate-300">
+                                                <li key={i} className="flex items-start gap-2.5 text-xs text-gray-700 dark:text-slate-200">
                                                   {isCheck ? (
-                                                    <Check size={14} className="text-emerald-500 shrink-0 mt-0.5 opacity-80" />
+                                                    <Check size={15} className="text-emerald-500 shrink-0 mt-0.5" />
                                                   ) : (
-                                                    <span className="w-1 h-3 mt-1.5 shrink-0" />
+                                                    <span className="w-1.5 h-3 shrink-0" />
                                                   )}
-                                                  <span className="leading-relaxed font-medium" style={{ color: '#4b5563' }}>{line.replace(/^- /, '')}</span>
+                                                  <span className="leading-relaxed font-medium">{line.replace(/^- /, '')}</span>
                                                 </li>
                                               );
                                             })}

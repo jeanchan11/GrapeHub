@@ -8,7 +8,7 @@ import {
   Download, UserPlus, ArrowUpDown, FileText,
   Link as LinkIcon, Unlink, Check, ChevronDown,
   UserMinus, MessageSquare, AlertTriangle, ShieldAlert,
-  CreditCard, Package, RefreshCcw, Upload, Eye, EyeOff, DollarSign
+  CreditCard, Package, RefreshCcw, Upload, Eye, EyeOff, DollarSign, GripVertical
 } from 'lucide-react';
 
 import { PageHeader } from '../components/ui/PageHeader';
@@ -39,6 +39,7 @@ interface Client {
   finPeopleGuid?: string;
   finSubscriptionId?: string;
   managerId?: string | null;
+  sortOrder?: number;
 }
 
 interface FinPerson {

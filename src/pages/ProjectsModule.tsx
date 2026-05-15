@@ -18,10 +18,46 @@ import {
   Gavel, Scale, HeartPulse, ShieldCheck, 
   Hammer, Landmark, Banknote, ShoppingCart, 
   Home, Stethoscope, Building2, Image as ImageIcon,
-  Folder, File, Eye, Download, Trash2, Upload, FileText
+  Folder, File, Eye, Download, Trash2, Upload, FileText, GripVertical
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+
+const DragHandleContext = React.createContext<any>(null);
+
+const DragHandle = () => {
+  const { attributes, listeners } = React.useContext(DragHandleContext);
+  return (
+    <div
+      className="cursor-grab active:cursor-grabbing text-slate-300 dark:text-slate-600 hover:text-violet-500 transition-colors p-1"
+      {...attributes}
+      {...listeners}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <GripVertical size={16} />
+    </div>
+  );
+};
+
+const SortableRowWrapper = ({ id, children, className }: any) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    ...(isDragging ? { position: 'relative' as any, zIndex: 99, opacity: 0.8 } : {})
+  };
+
+  return (
+    <DragHandleContext.Provider value={{ attributes, listeners }}>
+      <tr ref={setNodeRef} style={style} className={`${className} ${isDragging ? 'bg-slate-50 dark:bg-white/[0.05] shadow-xl border-t-2 border-violet-500' : ''}`}>
+        {children}
+      </tr>
+    </DragHandleContext.Provider>
+  );
+};
 
 interface Optimization {
   id: string;
@@ -81,6 +117,7 @@ interface Project {
   page_id?: string;
   group?: string;
   projectResult?: string;
+  sortOrder?: number;
   files?: { name: string; date: string; size: string; url: string; sender: string }[];
 }
 
@@ -357,6 +394,8 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
   const [projectResultFilter, setProjectResultFilter] = useState<string | null>(null);
   const [isResultFilterOpen, setIsResultFilterOpen] = useState(false);
   const [isPaymentMethodDropdownOpen, setIsPaymentMethodDropdownOpen] = useState(false);
+  const [dragFromIndex, setDragFromIndex] = useState<{group: string, id: string} | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<{group: string, id: string} | null>(null);
   const [isAddProductModalOpen, setIsAddProductModalOpen] = useState(false);
   const [isIconDropdownOpen, setIsIconDropdownOpen] = useState(false);
   const [isAddPartnerModalOpen, setIsAddPartnerModalOpen] = useState(false);
@@ -737,6 +776,37 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       alert('Erro ao excluir projeto');
       setProjectToDelete(null);
     }
+  };
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    setProjectSortColumn(null);
+
+    setProjects(prev => {
+      const oldIndex = prev.findIndex(p => p.id === active.id);
+      const newIndex = prev.findIndex(p => p.id === over.id);
+      
+      if (oldIndex < 0 || newIndex < 0) return prev;
+      
+      const newArray = arrayMove(prev, oldIndex, newIndex);
+      const updated = newArray.map((p, i) => ({ ...p, sortOrder: i }));
+      
+      // Persist order
+      fetch('/api/projects/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projects: updated.map(p => ({ id: p.id, sort_order: p.sortOrder })) })
+      }).catch(err => console.error('Failed to reorder projects:', err));
+      
+      return updated;
+    });
   };
 
   const confirmDeleteProduct = async () => {
@@ -2860,6 +2930,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
             
             {expandedGroups[groupName] && (
               <div className="overflow-x-auto">
+                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={() => setExpandedRowId(null)} onDragEnd={handleDragEnd}>
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="border-b border-slate-200 dark:border-white/5 bg-transparent">
@@ -2947,10 +3018,10 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                         '-': 7,
                         '': 8,
                       };
-                      return [...projectsInGroup]
+                      const sortedProjects = [...projectsInGroup]
                         .filter(p => !projectResultFilter || (p.projectResult || '-') === projectResultFilter)
                         .sort((a, b) => {
-                          if (!projectSortColumn) return 0;
+                          if (!projectSortColumn) return (a.sortOrder || 0) - (b.sortOrder || 0);
                           const dir = projectSortDirection === 'asc' ? 1 : -1;
                           switch (projectSortColumn) {
                             case 'partner':
@@ -2967,22 +3038,30 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                             default:
                               return 0;
                           }
-                        }).map((project) => (
-                    <React.Fragment key={project.id}>
-                      <tr 
-                        className={`border-b border-slate-200 dark:border-white/5 transition-colors group ${
-                          project.status === 'Gargalo' ? 'bg-rose-500/5' : ''
-                        }`}
-                      >
-                    <td className="px-6 py-5">
-                      <button 
-                        onClick={(e) => toggleRow(project.id, e)}
-                        className={`p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-white/10 transition-all ${
+                        });
+
+                      return (
+                        <SortableContext items={sortedProjects.map(p => p.id)} strategy={verticalListSortingStrategy}>
+                          {sortedProjects.map((project) => (
+                            <React.Fragment key={project.id}>
+                              <SortableRowWrapper 
+                                id={project.id}
+                                className={`border-b border-slate-200 dark:border-white/5 transition-colors group ${
+                                  project.status === 'Gargalo' ? 'bg-rose-500/5' : ''
+                                } hover:bg-slate-50 dark:hover:bg-white/[0.02]`}
+                              >
+                                <td className="px-6 py-5">
+                                  <div className="flex items-center gap-2">
+                                    <DragHandle />
+                                    <button 
+                          onClick={(e) => toggleRow(project.id, e)}
+                          className={`p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-white/10 transition-all ${
                           expandedRowId === project.id ? 'rotate-90 text-violet-500' : 'text-slate-500'
                         }`}
                       >
                         <ChevronRight size={18} />
                       </button>
+                      </div>
                     </td>
                     <td className="px-6 py-5" onClick={(e) => toggleRow(project.id, e)}>
                       <div className="flex items-center gap-3 cursor-pointer">
@@ -3072,7 +3151,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                         </div>
                       </div>
                     </td>
-                  </tr>
+                  </SortableRowWrapper>
                   
                   {/* Expanded Row */}
                   <AnimatePresence>
@@ -3239,9 +3318,13 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     )}
                   </AnimatePresence>
                 </React.Fragment>
-              ))})()}
-              </tbody>
+              ))}
+              </SortableContext>
+            );
+          })()}
+          </tbody>
           </table>
+          </DndContext>
         </div>
         )}
       </div>

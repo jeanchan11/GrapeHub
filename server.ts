@@ -160,6 +160,7 @@ async function startServer() {
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS project_result TEXT;
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS files JSONB DEFAULT '[]';
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS squad TEXT;
+      ALTER TABLE projects ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
 
       -- Backfill squad from linked client for existing projects
       UPDATE projects p
@@ -180,10 +181,12 @@ async function startServer() {
         squad TEXT,
         tags TEXT,
         contracts TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        sort_order INTEGER DEFAULT 0
       );
       
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS aviso_previo_date TEXT;
+      ALTER TABLE clients ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
 
       ALTER TABLE churn ADD COLUMN IF NOT EXISTS comments TEXT;
 
@@ -429,8 +432,10 @@ async function startServer() {
         tags JSONB DEFAULT '[]',
         frequency TEXT NOT NULL DEFAULT 'semanal',
         day_of_week TEXT,
-        created_at TIMESTAMP DEFAULT NOW()
+        created_at TIMESTAMP DEFAULT NOW(),
+        last_completed TIMESTAMP
       );
+      ALTER TABLE to_do_staff_recurring ADD COLUMN IF NOT EXISTS last_completed TIMESTAMP;
 
       CREATE TABLE IF NOT EXISTS to_do_staff_ideas (
         id TEXT PRIMARY KEY,
@@ -1676,7 +1681,7 @@ async function startServer() {
         query += " WHERE p.page_id = $1";
         params.push(page_id);
       }
-      query += " ORDER BY p.partner ASC";
+      query += " ORDER BY p.sort_order ASC, p.partner ASC";
       
       console.log("Executing query:", query, params);
       const projectsResult = await pool.query(query, params);
@@ -1759,6 +1764,7 @@ async function startServer() {
             }
             return row.files || [];
           })(),
+          sortOrder: row.sort_order,
           products: products
         });
       }
@@ -1963,6 +1969,25 @@ async function startServer() {
         res.status(500).json({ error: "Failed to save projects", details: err instanceof Error ? err.message : String(err) });
         return; // Failure
       }
+    }
+  });
+
+  app.post("/api/projects/reorder", async (req, res) => {
+    try {
+      const { projects } = req.body;
+      if (!Array.isArray(projects)) return res.status(400).json({ error: 'Invalid payload' });
+
+      await pool.query("BEGIN");
+      for (const p of projects) {
+        if (!p.id || typeof p.sort_order !== 'number') continue;
+        await pool.query('UPDATE projects SET sort_order = $1 WHERE id = $2', [p.sort_order, p.id]);
+      }
+      await pool.query("COMMIT");
+      res.json({ success: true });
+    } catch (err) {
+      await pool.query("ROLLBACK");
+      console.error('Failed to reorder projects:', err);
+      res.status(500).json({ error: 'Failed to reorder' });
     }
   });
 
@@ -3171,7 +3196,7 @@ app.get("/api/todos", async (req, res) => {
           (c.fin_subscription_id IS NOT NULL AND fs.id::text = c.fin_subscription_id) OR
           (c.fin_subscription_id IS NULL AND fs.customer_id = fp_link.asaas_id AND fs.status = 'ACTIVE')
         ${whereClause}
-        ORDER BY c.name ASC
+        ORDER BY c.sort_order ASC, c.name ASC
       `, params);
       
       const clients = result.rows.map(row => {
@@ -3205,7 +3230,8 @@ app.get("/api/todos", async (req, res) => {
           finPeopleGuid: row.fin_people_guid_resolved || row.fin_people_guid,
           finSubscriptionId: row.fin_subscription_id,
           subscriptionStatus: row.subscription_status || null,
-          managerId: row.manager_id || null
+          managerId: row.manager_id || null,
+          sortOrder: row.sort_order
         };
       });
       res.json(clients);
@@ -3369,6 +3395,25 @@ app.get("/api/todos", async (req, res) => {
       await pool.query("ROLLBACK");
       console.error("Error saving clients:", err);
       res.status(500).json({ error: "Failed to save clients" });
+    }
+  });
+
+  app.post("/api/clients/reorder", async (req, res) => {
+    try {
+      const { clients } = req.body;
+      if (!Array.isArray(clients)) return res.status(400).json({ error: 'Invalid payload' });
+
+      await pool.query("BEGIN");
+      for (const client of clients) {
+        if (!client.id || typeof client.sort_order !== 'number') continue;
+        await pool.query('UPDATE clients SET sort_order = $1 WHERE id = $2', [client.sort_order, client.id]);
+      }
+      await pool.query("COMMIT");
+      res.json({ success: true });
+    } catch (err) {
+      await pool.query("ROLLBACK");
+      console.error('Failed to reorder clients:', err);
+      res.status(500).json({ error: 'Failed to reorder' });
     }
   });
 
@@ -10493,10 +10538,10 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
 
   app.put("/api/todo-staff/recurring/:id", async (req, res) => {
     try {
-      const { title, assignee, tags, frequency, dayOfWeek } = req.body;
+      const { title, assignee, tags, frequency, dayOfWeek, last_completed } = req.body;
       await pool.query(
-        `UPDATE to_do_staff_recurring SET title=$1, assignee=$2, tags=$3, frequency=$4, day_of_week=$5 WHERE id=$6`,
-        [title, assignee || null, JSON.stringify(tags || []), frequency, dayOfWeek || null, req.params.id]
+        `UPDATE to_do_staff_recurring SET title=$1, assignee=$2, tags=$3, frequency=$4, day_of_week=$5, last_completed=$6 WHERE id=$7`,
+        [title, assignee || null, JSON.stringify(tags || []), frequency, dayOfWeek || null, last_completed || null, req.params.id]
       );
       res.json({ ok: true });
     } catch (err: any) { res.status(500).json({ error: err.message }); }
