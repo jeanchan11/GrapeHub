@@ -7151,7 +7151,7 @@ app.get("/api/todos", async (req, res) => {
 
   app.post("/api/crm-comercial/leads", async (req, res) => {
     try {
-      const { nome, telefone, origem, responsavel_id, valor, observacoes, kanban_id, coluna } = req.body;
+      const { nome, email, telefone, origem, responsavel_id, valor, observacoes, kanban_id, coluna } = req.body;
       
       // Se não foi passada uma coluna, busca a primeira coluna do kanban automaticamente
       let colunaId = coluna || null;
@@ -7166,9 +7166,9 @@ app.get("/api/todos", async (req, res) => {
       }
 
       const result = await pool.query(
-        `INSERT INTO crm_comercial_leads (nome, telefone, origem, responsavel_id, valor, observacoes, kanban_id, coluna) 
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-        [nome, telefone, origem || 'Outro', responsavel_id, valor || 0, observacoes, kanban_id, colunaId]
+        `INSERT INTO crm_comercial_leads (nome, email, telefone, origem, responsavel_id, valor, observacoes, kanban_id, coluna) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+        [nome, email || null, telefone, origem || 'Outro', responsavel_id, valor || 0, observacoes, kanban_id, colunaId]
       );
       
       // Sincronizar com Pessoas
@@ -7178,6 +7178,7 @@ app.get("/api/todos", async (req, res) => {
           if (kanbanUserRes.rows.length > 0) {
              const tenant_id = kanbanUserRes.rows[0].user_id;
              const telefoneVal = (telefone || '').trim();
+             const emailVal = (email || '').trim();
 
              let personId = null;
              if (telefoneVal) {
@@ -7188,11 +7189,20 @@ app.get("/api/todos", async (req, res) => {
                if (check.rows.length > 0) personId = check.rows[0].id;
              }
 
-             if (!personId) {
+             if (personId) {
+               // Atualiza contato existente (Sincroniza: Nome, Email)
                await pool.query(`
-                 INSERT INTO crm_pessoas (user_id, nome, telefone, responsavel_id)
-                 VALUES ($1, $2, $3, $4)
-               `, [tenant_id, nome, telefoneVal, responsavel_id]);
+                 UPDATE crm_pessoas 
+                 SET nome = COALESCE(NULLIF($2, ''), nome), 
+                     email = COALESCE(NULLIF($3, ''), email) 
+                 WHERE id = $1
+               `, [personId, nome, emailVal]);
+             } else {
+               // Cadastra novo contato
+               await pool.query(`
+                 INSERT INTO crm_pessoas (user_id, nome, email, telefone, responsavel_id)
+                 VALUES ($1, $2, $3, $4, $5)
+               `, [tenant_id, nome, emailVal || null, telefoneVal, responsavel_id]);
              }
           }
         } catch(personErr: any) {
@@ -8331,7 +8341,42 @@ app.get("/api/todos", async (req, res) => {
   });
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // NOTES ENDPOINTS
+  // ── CALL STATUS ENDPOINTS ──
+  app.get("/api/crm-comercial/call-status", async (req, res) => {
+    try {
+      const callIds = req.query.callIds ? (req.query.callIds as string).split(',') : [];
+      if (callIds.length === 0) return res.json([]);
+      const result = await pool.query(
+        "SELECT call_id, is_attended FROM crm_comercial_call_status WHERE call_id = ANY($1)",
+        [callIds]
+      );
+      res.json(result.rows);
+    } catch (err: any) {
+      console.error("Error fetching call status:", err.message);
+      res.status(500).json({ error: "Failed to fetch call status" });
+    }
+  });
+
+  app.post("/api/crm-comercial/call-status", async (req, res) => {
+    try {
+      const { call_id, is_attended } = req.body;
+      if (!call_id) return res.status(400).json({ error: "call_id is required" });
+      
+      const result = await pool.query(`
+        INSERT INTO crm_comercial_call_status (call_id, is_attended, updated_at)
+        VALUES ($1, $2, NOW())
+        ON CONFLICT (call_id) 
+        DO UPDATE SET is_attended = EXCLUDED.is_attended, updated_at = NOW()
+        RETURNING *
+      `, [call_id, is_attended === true]);
+      res.json(result.rows[0]);
+    } catch (err: any) {
+      console.error("Error saving call status:", err.message);
+      res.status(500).json({ error: "Failed to save call status" });
+    }
+  });
+
+  // ── TASKS ENDPOINTS ──
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   app.get("/api/crm-comercial/notes", async (req, res) => {

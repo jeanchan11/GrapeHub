@@ -469,6 +469,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'atividades' | 'histórico' | 'notas' | 'ligações' | 'arquivos'>('atividades');
   const [callLogs, setCallLogs] = useState<any[]>([]);
+  const [callStatuses, setCallStatuses] = useState<Record<string, boolean>>({});
   const [callLogsLoading, setCallLogsLoading] = useState(false);
   const [callLogsFetched, setCallLogsFetched] = useState(false);
   const [showMoveMenu, setShowMoveMenu] = useState(false);
@@ -574,8 +575,26 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
     const userId = encodeURIComponent(currentUserEmail || '');
     fetch(`/api/api4com/calls?user_id=${userId}&phone=${phone}&page=1`)
       .then(r => r.json())
-      .then(data => {
-        setCallLogs(Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : []);
+      .then(async data => {
+        const logs = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
+        setCallLogs(logs);
+        
+        // Buscar status (atendida/não atendida) para essas ligações
+        if (logs.length > 0) {
+          const callIds = logs.map((c: any) => c.id).join(',');
+          try {
+            const statusRes = await fetch(`/api/crm-comercial/call-status?callIds=${callIds}`);
+            if (statusRes.ok) {
+              const statusData = await statusRes.json();
+              const newStatuses: Record<string, boolean> = {};
+              statusData.forEach((s: any) => { newStatuses[s.call_id] = s.is_attended; });
+              setCallStatuses(newStatuses);
+            }
+          } catch (e) {
+            console.error("Failed to fetch call statuses", e);
+          }
+        }
+        
         setCallLogsFetched(true);
       })
       .catch(() => setCallLogs([]))
@@ -2205,6 +2224,22 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                       {!callLogsLoading && callLogs.map((call: any, index: number) => {
                         const success = isSuccess(call);
                         const dotColor = success ? 'bg-emerald-500' : 'bg-red-500';
+                        const isAttended = callStatuses[call.id] === true;
+
+                        const handleToggleAttended = async () => {
+                          const newStatus = !isAttended;
+                          setCallStatuses(prev => ({ ...prev, [call.id]: newStatus }));
+                          try {
+                            await fetch('/api/crm-comercial/call-status', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ call_id: String(call.id), is_attended: newStatus })
+                            });
+                          } catch (err) {
+                            console.error('Failed to update call status', err);
+                            setCallStatuses(prev => ({ ...prev, [call.id]: isAttended }));
+                          }
+                        };
 
                         return (
                           <div key={call.id} className="relative pl-6 pb-6 last:pb-0">
@@ -2216,14 +2251,18 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                             {/* Timeline Dot */}
                             <div className={`absolute left-0 top-1 w-[16px] h-[16px] rounded-full border-4 border-white dark:border-[#1A1625] shadow-sm z-10 flex items-center justify-center ${dotColor}`} />
 
-                            <div className="bg-white/50 dark:bg-white/5 border border-gray-100 dark:border-white/10 rounded-2xl p-4 shadow-sm transition-all hover:shadow-md">
+                            <div className={`border rounded-2xl p-4 shadow-sm transition-all hover:shadow-md ${isAttended ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/20' : 'bg-white/50 dark:bg-white/5 border-gray-100 dark:border-white/10'}`}>
                               <div className="flex items-start gap-3">
-                                <div className="flex-shrink-0 w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.12)' }}>
-                                  <Phone size={18} style={{ color: '#7c3aed' }} />
-                                </div>
+                                <button 
+                                  onClick={handleToggleAttended}
+                                  className={`flex-shrink-0 w-10 h-10 rounded-2xl flex items-center justify-center transition-colors border ${isAttended ? 'bg-emerald-500 border-emerald-600 text-white shadow-lg shadow-emerald-500/20' : 'bg-white dark:bg-white/5 border-gray-200 dark:border-white/10 hover:border-emerald-500/50 hover:bg-emerald-50 dark:hover:bg-emerald-500/10'}`}
+                                  title={isAttended ? 'Marcar como não atendida' : 'Marcar como atendida'}
+                                >
+                                  {isAttended ? <Check size={18} /> : <Phone size={18} className="text-gray-400 dark:text-slate-500" />}
+                                </button>
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-2 flex-wrap mb-1">
-                                    <span className="font-semibold text-[13px] text-gray-800 dark:text-slate-100">Ligação</span>
+                                    <span className="font-semibold text-[13px] text-gray-800 dark:text-slate-100">Ligação {isAttended && <span className="text-emerald-500 font-bold ml-1">(Atendida)</span>}</span>
                                     <span className="text-[10px] px-2 py-0.5 rounded-full font-medium"
                                       style={{ background: success ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', color: success ? '#059669' : '#dc2626' }}>
                                       {success ? '✓' : '✕'} {getCallTypeLabel(call)}
@@ -2238,10 +2277,10 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                                   )}
 
                                   {call.record_url && (
-                                    <div className="mt-2.5 rounded-lg p-1.5 flex items-center gap-2 max-w-[350px]" style={{ background: 'rgba(0,0,0,0.03)', border: '1px solid rgba(0,0,0,0.06)' }}>
+                                    <div className="mt-2.5 rounded-lg p-1.5 flex items-center gap-2 max-w-[350px] bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10">
                                       <audio controls src={call.record_url} className="w-full h-7" style={{ minWidth: 0, flex: 1 }} preload="none" />
-                                      <a href={call.record_url} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 p-1 rounded hover:bg-purple-50 transition-colors" title="Abrir gravação">
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>
+                                      <a href={call.record_url} target="_blank" rel="noopener noreferrer" className={`flex-shrink-0 p-1 rounded transition-colors ${isAttended ? 'text-emerald-600 hover:bg-emerald-500/20' : 'text-purple-600 hover:bg-purple-500/20'}`} title="Abrir gravação">
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>
                                       </a>
                                     </div>
                                   )}

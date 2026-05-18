@@ -36,6 +36,7 @@ export default function CrmLigacoes() {
   const [viewMode, setViewMode] = useState<'dashboard' | 'historico'>('dashboard');
   const [loading, setLoading] = useState(true);
   const [calls, setCalls] = useState<CallRecord[]>([]);
+  const [callStatuses, setCallStatuses] = useState<Record<string, boolean>>({});
   const [dateRange, setDateRange] = useState<DateRange>('30d');
   
   // Dashboard Fetch States
@@ -66,15 +67,16 @@ export default function CrmLigacoes() {
     return new Date(safeStr);
   };
 
-  const getCallTypeLabel = (call: CallRecord) => {
-    if (call.call_type === 'inbound') return 'Recebida';
-    if (call.hangup_cause === 'NORMAL_CLEARING') return 'Atendida';
-    if (call.hangup_cause === 'NO_ANSWER' || call.hangup_cause === 'ORIGINATOR_CANCEL') return 'Não atendida';
-    if (call.hangup_cause === 'USER_BUSY' || call.hangup_cause === 'CALL_REJECTED') return 'Ocupado';
-    return 'Chamada Ext.';
+  const isSuccess = (call: CallRecord) => {
+    return callStatuses[call.id] === true;
   };
 
-  const isSuccess = (call: CallRecord) => call.hangup_cause === 'NORMAL_CLEARING' || call.duration > 0;
+  const getCallTypeLabel = (call: CallRecord) => {
+    if (callStatuses[call.id] === true) return 'Atendida';
+    if (call.call_type === 'inbound') return 'Recebida';
+    if (call.hangup_cause === 'USER_BUSY' || call.hangup_cause === 'CALL_REJECTED') return 'Ocupado';
+    return 'Não atendida';
+  };
 
   // Data Fetching
   const fetchCalls = async (manualStart?: string, manualEnd?: string) => {
@@ -126,6 +128,23 @@ export default function CrmLigacoes() {
             extension: c.extension || ''
           };
         });
+        
+        // Fetch custom statuses
+        if (mappedList.length > 0) {
+          const callIds = mappedList.map(c => c.id).join(',');
+          try {
+            const statusRes = await fetch(`/api/crm-comercial/call-status?callIds=${callIds}`);
+            if (statusRes.ok) {
+              const statusData = await statusRes.json();
+              const newStatuses: Record<string, boolean> = {};
+              statusData.forEach((s: any) => { newStatuses[s.call_id] = s.is_attended; });
+              setCallStatuses(newStatuses);
+            }
+          } catch (e) {
+            console.error("Failed to fetch call statuses", e);
+          }
+        }
+
         setCalls(mappedList);
       }
     } catch (e) {
@@ -135,9 +154,17 @@ export default function CrmLigacoes() {
     }
   };
 
+  const [users, setUsers] = useState<any[]>([]);
+
   useEffect(() => {
     // Only fire automatic fetch if viewing dashboard logic
     fetchCalls();
+    
+    // Fetch users for avatars
+    fetch('/api/users')
+      .then(res => res.json())
+      .then(data => setUsers(Array.isArray(data) ? data : []))
+      .catch(err => console.error("Failed to fetch users", err));
   }, [user?.email, dateRange]);
 
   const handleApplyCustomDates = () => {
@@ -202,7 +229,7 @@ export default function CrmLigacoes() {
     const hoursCount: Record<number, number> = {};
     const daysCount: Record<number, number> = {};
 
-    calls.forEach(c => {
+    answered.forEach(c => {
       totalSecs += Number(c.duration || 0);
       const phone = c.call_type === 'inbound' ? c.caller_id_number : c.to;
       if (phone) uniquePhones.add(phone);
@@ -217,8 +244,8 @@ export default function CrmLigacoes() {
     });
 
     const avgDuration = answered.length > 0 ? (totalSecs / answered.length) : 0;
-    const peakHour = Object.keys(hoursCount).reduce((a, b) => hoursCount[a as any] > hoursCount[b as any] ? a : b, '0');
-    const busiestDayInt = Object.keys(daysCount).reduce((a, b) => daysCount[a as any] > daysCount[b as any] ? a : b, '0');
+    const peakHour = Object.keys(hoursCount).length > 0 ? Object.keys(hoursCount).reduce((a, b) => hoursCount[a as any] > hoursCount[b as any] ? a : b) : '0';
+    const busiestDayInt = Object.keys(daysCount).length > 0 ? Object.keys(daysCount).reduce((a, b) => daysCount[a as any] > daysCount[b as any] ? a : b) : '0';
     
     const dayNames = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
@@ -234,12 +261,12 @@ export default function CrmLigacoes() {
       busiestDay: dayNames[Number(busiestDayInt)] || '-',
       totalMinutes: Math.floor(totalSecs / 60)
     };
-  }, [calls]);
+  }, [calls, callStatuses]);
 
   // Chart Data: Volume Trend
   const volumeData = useMemo(() => {
     const map = new Map<string, number>();
-    [...calls].reverse().forEach(c => {
+    [...calls].filter(isSuccess).reverse().forEach(c => {
       const d = parseISO(c.started_at);
       if (d) {
         const key = d.toLocaleDateString('pt-BR', { month: 'short', day: 'numeric' });
@@ -247,7 +274,7 @@ export default function CrmLigacoes() {
       }
     });
     return Array.from(map.entries()).map(([date, calls]) => ({ date, calls }));
-  }, [calls]);
+  }, [calls, callStatuses]);
 
   // Chart Data: Status Pie
   const statusData = useMemo(() => {
@@ -269,25 +296,25 @@ export default function CrmLigacoes() {
     return Object.entries(map)
       .map(([name, data]) => ({ name, ...data }))
       .sort((a, b) => b.total - a.total).slice(0, 5); // top 5
-  }, [calls]);
+  }, [calls, callStatuses]);
 
   // Chart Data: Hourly Distribution Bar
   const hourlyData = useMemo(() => {
     const hours = Array.from({length: 24}, (_, i) => ({ hour: `${i}h`, count: 0 }));
-    calls.forEach(c => {
+    calls.filter(isSuccess).forEach(c => {
       const d = parseISO(c.started_at);
       if (d) {
         hours[d.getHours()].count += 1;
       }
     });
     return hours;
-  }, [calls]);
+  }, [calls, callStatuses]);
 
   // Heatmap Data (Days x Hours)
   const heatmapData = useMemo(() => {
     const grid: number[][] = Array(7).fill(0).map(() => Array(24).fill(0));
     let max = 0;
-    calls.forEach(c => {
+    calls.filter(isSuccess).forEach(c => {
       const d = parseISO(c.started_at);
       if (d) {
         grid[d.getDay()][d.getHours()]++;
@@ -295,7 +322,7 @@ export default function CrmLigacoes() {
       }
     });
     return { grid, max };
-  }, [calls]);
+  }, [calls, callStatuses]);
 
   const MetricCard = ({ icon: Icon, title, value, subValue, color }: any) => (
     <div className="bg-dark-card border border-white/10 rounded-2xl p-5 flex flex-col items-center text-center transition-colors duration-200">
@@ -611,12 +638,26 @@ export default function CrmLigacoes() {
                               return (
                                 <tr key={c.id} className="border-b border-slate-50 dark:border-white/5 hover:bg-slate-50/50 dark:hover:bg-white/5 transition-colors group">
                                   <td className="py-3">
-                                    <div className="flex items-center gap-2">
-                                      <div className="w-7 h-7 rounded-full bg-slate-100 dark:bg-white/10 flex items-center justify-center text-xs font-bold text-slate-600 dark:text-slate-300">
-                                        {c.vendedor.substring(0, 2).toUpperCase()}
-                                      </div>
-                                      <span className="font-medium text-slate-700 dark:text-slate-300">{c.vendedor}</span>
-                                    </div>
+                                    {(() => {
+                                      const matchedUser = users.find(u => 
+                                        u.name?.toLowerCase() === c.vendedor?.toLowerCase() || 
+                                        u.email?.toLowerCase() === c.vendedor?.toLowerCase() ||
+                                        (c.extension && u.api4com_extension === c.extension) // Match by ramal if available
+                                      );
+                                      const displayName = matchedUser?.name || c.vendedor;
+                                      return (
+                                        <div className="flex items-center gap-2">
+                                          {matchedUser?.picture ? (
+                                            <img src={matchedUser.picture} alt={displayName} className="w-7 h-7 rounded-full object-cover shadow-sm" />
+                                          ) : (
+                                            <div className="w-7 h-7 rounded-full bg-slate-100 dark:bg-white/10 flex items-center justify-center text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                                              {displayName.substring(0, 2).toUpperCase()}
+                                            </div>
+                                          )}
+                                          <span className="font-medium text-slate-700 dark:text-slate-300">{displayName}</span>
+                                        </div>
+                                      );
+                                    })()}
                                   </td>
                                   <td className="py-3 font-medium text-slate-600 dark:text-slate-300">{c.to || c.caller_id_number}</td>
                                   <td className="py-3">
