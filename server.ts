@@ -7388,6 +7388,9 @@ app.get("/api/todos", async (req, res) => {
             const dt = (destColCheck.rows[0]?.title || '').toLowerCase();
             if (dt.includes('ganho') || dt.includes('fechado')) {
               setImmediate(() => runAutomations('lead_won', result.rows[0]));
+              // Quando ganha, deleta atividades em aberto
+              await pool.query(`DELETE FROM crm_comercial_tasks WHERE lead_id = $1 AND completed = false`, [id]);
+              console.log(`[TASKS] Open tasks deleted for WON lead ${id}`);
             }
           } catch (_) {}
         }
@@ -7395,6 +7398,9 @@ app.get("/api/todos", async (req, res) => {
         // 'lead_updated' para qualquer atualização de campo
         if (is_lost === true) {
           setImmediate(() => runAutomations('lead_lost', result.rows[0]));
+          // Quando perde, deleta atividades em aberto
+          await pool.query(`DELETE FROM crm_comercial_tasks WHERE lead_id = $1 AND completed = false`, [id]);
+          console.log(`[TASKS] Open tasks deleted for LOST lead ${id}`);
         } else if (coluna === undefined) {
           // Atualização de campo (não é movimentação de coluna)
           setImmediate(() => runAutomations('lead_updated', result.rows[0]));
