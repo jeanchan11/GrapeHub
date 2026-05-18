@@ -45,7 +45,7 @@ const SECTION_META: Record<string, { label: string; color: string; icon: string;
   operacional: { label: 'Especialista Operacional', color: '#FBBF24', icon: '⚙️',   fredMode: 'operacional' },
   general:     { label: 'Sócio Grape',              color: '#A78BFA', icon: '🍇',   fredMode: 'grape'       },
 };
-const HISTORY_KEY = 'fred_conversation_history';
+const HISTORY_KEY_PREFIX = 'fred_conversation_history';
 const MAX_SESSIONS = 30;
 
 interface Session {
@@ -55,12 +55,13 @@ interface Session {
   messages: Message[];
 }
 
-function useChatHistory() {
+function useChatHistory(section: string) {
+  const key = `${HISTORY_KEY_PREFIX}_${section}`;
   function load(): Session[] {
-    try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); } catch { return []; }
+    try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; }
   }
   function save(sessions: Session[]) {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(sessions.slice(0, MAX_SESSIONS)));
+    localStorage.setItem(key, JSON.stringify(sessions.slice(0, MAX_SESSIONS)));
   }
   function createSession(messages: Message[]): string {
     if (messages.length < 2) return '';
@@ -372,12 +373,13 @@ export function AIChat({ activePage, userName, floatingButton = true, externalOp
   const [showHistory, setShowHistory] = useState(false);
   const [historySessions, setHistorySessions] = useState<Session[]>([]);
   const { config, updateField, saveConfig, resetConfig } = usePersonalityConfig();
-  const history = useChatHistory();
+
+  const activeSection = PAGE_SECTION_MAP[activePage] || 'general';
+  const history = useChatHistory(activeSection);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const currentSessionId = useRef<string>('');
 
-  const activeSection = PAGE_SECTION_MAP[activePage] || 'general';
   const isFinancialPage = activeSection === 'financial'; // mantido para compatibilidade
   const sectionMeta = SECTION_META[activeSection] || SECTION_META.general;
   const fredMode = sectionMeta.fredMode;

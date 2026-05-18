@@ -270,6 +270,31 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
     setTimeout(fetchDispatch, 3000);
   };
 
+  const handleDispatchMarkManual = async (id: string) => {
+    setSendingId(id);
+    await fetch(`/api/finance/dispatch/queue/${id}/mark-manual`, { method: 'POST' });
+    setSendingId(null);
+    fetchDispatch();
+  };
+
+  const [copiedDispatchId, setCopiedDispatchId] = useState<string | null>(null);
+  const copyDispatchMessage = (item: any) => {
+    const hora = new Date().getHours();
+    const saudacao = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite';
+    const msg = (item.message_template || `Olá! Sua fatura de {{valor}} vence em {{vencimento}}. {{link}}`)
+      .replace(/\\n/g, '\n')
+      .replace(/\{\{saudacao\}\}/gi, saudacao)
+      .replace(/\{\{nome\}\}/gi, item.customer_name || '')
+      .replace(/\{\{valor\}\}/gi, formatCurrency(item.amount || item.value))
+      .replace(/\{\{vencimento\}\}/gi, fmtDate(item.due_date))
+      .replace(/\{\{link\}\}/gi, item.invoice_url || '')
+      .replace(/\{\{telefone\}\}/gi, item.customer_phone || '');
+      
+    navigator.clipboard.writeText(msg);
+    setCopiedDispatchId(item.id);
+    setTimeout(() => setCopiedDispatchId(null), 2000);
+  };
+
   const handleDispatchCancel = async (id: string) => {
     await fetch(`/api/finance/dispatch/queue/${id}/cancel`, { method: 'POST' });
     fetchDispatch();
@@ -884,6 +909,9 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                                   );
                                 })()}
                                 <span className="text-xs text-gray-600 dark:text-slate-400">{item.rule_triggered || '—'}</span>
+                                <button onClick={() => copyDispatchMessage(item)} title="Copiar mensagem" className="p-1 rounded-md hover:bg-gray-200 dark:hover:bg-white/10 text-gray-400 hover:text-emerald-500 transition-colors ml-1">
+                                  {copiedDispatchId === item.id ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
+                                </button>
                               </div>
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap">
@@ -903,6 +931,9 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                                   <>
                                     <button onClick={() => handleDispatchSend(item.id)} disabled={sendingId === item.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors">
                                       <Play size={10} /> Enviar
+                                    </button>
+                                    <button onClick={() => handleDispatchMarkManual(item.id)} disabled={sendingId === item.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 hover:bg-violet-100 dark:hover:bg-violet-500/20 transition-colors" title="Marcar como enviado manualmente">
+                                      <CheckCircle2 size={10} /> Manual
                                     </button>
                                     <button onClick={() => handleDispatchCancel(item.id)} className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold text-gray-400 hover:text-rose-500 transition-colors">
                                       <X size={10} />
@@ -985,8 +1016,8 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
               <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-white/5 rounded-xl">
                 <span className="text-sm font-medium text-gray-700 dark:text-slate-300">Disparos automáticos</span>
                 <button onClick={() => setCfgForm(f => ({ ...f, dispatch_enabled: !f.dispatch_enabled }))}
-                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${cfgForm.dispatch_enabled ? 'bg-violet-500' : 'bg-gray-300 dark:bg-slate-700'}`}>
-                  <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${cfgForm.dispatch_enabled ? 'translate-x-4.5' : 'translate-x-1'}`} />
+                  className={`relative inline-flex h-5 w-10 items-center rounded-full transition-colors ${cfgForm.dispatch_enabled ? 'bg-violet-500' : 'bg-gray-300 dark:bg-slate-700'}`}>
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${cfgForm.dispatch_enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
                 </button>
               </div>
               <div>

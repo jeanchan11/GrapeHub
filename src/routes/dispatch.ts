@@ -383,6 +383,34 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
     }
   });
 
+  // POST mark manual (no webhook)
+  app.post('/api/finance/dispatch/queue/:id/mark-manual', async (req, res) => {
+    const { id } = req.params;
+    try {
+      const itemRes = await pool.query('SELECT * FROM fin_dispatch_queue WHERE id = $1', [id]);
+      if (!itemRes.rows.length) return res.status(404).json({ error: 'Item not found' });
+      const item = itemRes.rows[0];
+
+      if (['ENVIANDO', 'ENVIADO'].includes(item.status)) {
+        return res.status(409).json({ error: `Item já está com status ${item.status}` });
+      }
+
+      const mensagem = renderMessage(item.message_template || '', item);
+      await pool.query(
+        `UPDATE fin_dispatch_queue 
+         SET status = 'ENVIADO', sent_at = NOW(), updated_at = NOW(), n8n_ticket_id = 'MANUAL', message_rendered = $2 
+         WHERE id = $1`,
+        [id, mensagem]
+      );
+      await saveDispatchComment(pool, item, mensagem);
+
+      res.json({ ok: true, status: 'ENVIADO' });
+    } catch (e) {
+      console.error('[mark-manual error]', e);
+      res.status(500).json({ error: 'Failed to mark as manual' });
+    }
+  });
+
   // POST cancel
   app.post('/api/finance/dispatch/queue/:id/cancel', async (req, res) => {
     const { id } = req.params;

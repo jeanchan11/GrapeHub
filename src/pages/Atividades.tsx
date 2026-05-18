@@ -346,7 +346,14 @@ const ActivityCard = ({
 }) => {
   const cfg = getTypeConfig(activity.type);
   const Icon = cfg.icon;
-  const isOverdue = !activity.completed && activity.due_date && new Date(activity.due_date) < new Date();
+  const isOverdue = (() => {
+    if (activity.completed || !activity.due_date) return false;
+    const d = parseLocalDate(activity.due_date);
+    const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return day < today;
+  })();
   const dateLabel = formatDateTime(activity.due_date, activity.start_time);
 
   return (
@@ -384,28 +391,28 @@ const ActivityCard = ({
           </span>
         </div>
 
-        <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+        <div className="flex items-center gap-3 mt-1.5 flex-wrap">
           {dateLabel && (
             <span className={`flex items-center gap-1 text-xs font-medium ${isOverdue ? 'text-rose-500' : 'text-violet-500 dark:text-violet-400'}`}>
               <Calendar size={11} />
               {dateLabel}
             </span>
           )}
+          {activity.lead_name && (
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-violet-500/10 border border-violet-500/20 text-[10px] font-bold text-violet-500 dark:text-violet-400 truncate max-w-[180px]">
+              <UserCircle size={11} className="shrink-0" />
+              {activity.lead_name}
+            </span>
+          )}
          </div>
       </div>
 
-      {/* Lead name + Kanban — right side */}
-      {activity.lead_name && (
+      {/* Kanban — right side */}
+      {activity.kanban_name && (
         <div className="flex items-center gap-1.5 shrink-0">
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-violet-500/10 border border-violet-500/20 text-xs font-bold text-violet-500 dark:text-violet-400 truncate max-w-[180px]">
-            <UserCircle size={11} className="shrink-0" />
-            {activity.lead_name}
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide">
+            {activity.kanban_name}
           </span>
-          {activity.kanban_name && (
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide">
-              {activity.kanban_name}
-            </span>
-          )}
         </div>
       )}
 

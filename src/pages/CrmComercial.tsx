@@ -39,6 +39,8 @@ import { designSystem } from '../design-system';
 import { useAuth } from '../contexts/AuthContext';
 import confetti from 'canvas-confetti';
 import { useSoftphone, formatCallTime } from '../hooks/useSoftphone';
+import { AIChat } from '../components/AIChat/AIChat';
+import fredImg from '../assets/fred.png';
 
 interface Lead {
   id: string;
@@ -61,8 +63,11 @@ interface Lead {
 interface User {
   id: string;
   name: string;
+  email?: string;
   avatar?: string;
   picture?: string;
+  role?: string;
+  allowedPages?: string[];
 }
 
 const COLUMN_HEADER_COLORS: Record<string, string> = {
@@ -1133,13 +1138,47 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                           return isNaN(t) ? 0 : t;
                         };
 
-                        const unifiedItems = [
+                        const rawUnified = [
                           ...history
                             .filter(item => item.action_type !== 'call_initiated' && item.action_type !== 'call_completed')
                             .map(item => ({ ...item, _rawType: 'history', _date: parseDateSafe(item.created_at) })),
                           ...comments.map(c => ({ ...c, _rawType: 'comment', _date: parseDateSafe(c.created_at) })),
                           ...callLogs.map(call => ({ ...call, _rawType: 'call', _date: parseDateSafe(call.started_at || call.created_at) }))
                         ].sort((a, b) => b._date - a._date);
+
+                        const unifiedItems: any[] = [];
+                        let currentGroup: any = null;
+
+                        for (const item of rawUnified) {
+                          const isGroupable = item._rawType === 'history' && (item.action_type === 'task_deleted' || item.action_type === 'task_created');
+                          
+                          if (isGroupable) {
+                            if (!currentGroup || currentGroup.action_type !== item.action_type) {
+                              if (currentGroup) {
+                                unifiedItems.push(currentGroup.items.length === 1 ? currentGroup.items[0] : currentGroup);
+                              }
+                              currentGroup = {
+                                _rawType: 'grouped_events',
+                                action_type: item.action_type,
+                                _date: item._date,
+                                items: [item],
+                                created_at: item.created_at,
+                                user_name: item.user_name
+                              };
+                            } else {
+                              currentGroup.items.push(item);
+                            }
+                          } else {
+                            if (currentGroup) {
+                              unifiedItems.push(currentGroup.items.length === 1 ? currentGroup.items[0] : currentGroup);
+                              currentGroup = null;
+                            }
+                            unifiedItems.push(item);
+                          }
+                        }
+                        if (currentGroup) {
+                          unifiedItems.push(currentGroup.items.length === 1 ? currentGroup.items[0] : currentGroup);
+                        }
 
                         return (
                           <>
@@ -1231,6 +1270,91 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                                             </div>
                                           </div>
                                           <p className="text-sm text-gray-600 dark:text-slate-300 mt-1 whitespace-pre-wrap">{comment.content}</p>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              } else if (unifiedItem._rawType === 'grouped_events') {
+                                const group = unifiedItem;
+                                const count = group.items.length;
+                                const isDeletion = group.action_type === 'task_deleted';
+                                
+                                const themeColor = isDeletion ? 'rose' : 'blue';
+                                const dotBg = isDeletion ? 'bg-rose-500' : 'bg-blue-500';
+                                const cardBg = isDeletion ? 'bg-rose-50/30 dark:bg-rose-500/5 border-rose-100 dark:border-rose-500/10' : 'bg-blue-50/30 dark:bg-blue-500/5 border-blue-100 dark:border-blue-500/10';
+                                const iconContainerBg = isDeletion ? 'bg-rose-100 dark:bg-rose-500/10 text-rose-500' : 'bg-blue-100 dark:bg-blue-500/10 text-blue-500';
+                                const badgeBg = isDeletion ? 'bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400' : 'bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400';
+                                const moreTextColor = isDeletion ? 'text-rose-400 dark:text-rose-500/70' : 'text-blue-400 dark:text-blue-500/70';
+                                const dividerColor = isDeletion ? 'border-rose-100/50 dark:border-rose-500/10' : 'border-blue-100/50 dark:border-blue-500/10';
+                                
+                                const titleText = isDeletion ? 'Exclusão em Lote' : 'Sequência Aplicada';
+                                const descriptionText = isDeletion ? `${count} tarefas excluídas` : `${count} tarefas criadas`;
+
+                                return (
+                                  <div key={`group-${group._date}`} className="relative pl-6 pb-6 last:pb-0">
+                                    {index !== unifiedItems.length - 1 && (
+                                      <div className="absolute left-[7px] top-[14px] w-[2px] h-full bg-gray-100 dark:bg-white/5" />
+                                    )}
+                                    <div className={`absolute left-0 top-1 w-[16px] h-[16px] rounded-full ${dotBg} border-4 border-white dark:border-[#1A1625] shadow-sm z-10 flex items-center justify-center`}>
+                                      {isDeletion ? <Trash2 size={8} className="text-white" /> : <Plus size={8} className="text-white" />}
+                                    </div>
+
+                                    <div className={`border rounded-2xl p-4 shadow-sm transition-all hover:shadow-md ${cardBg}`}>
+                                      <div className="flex items-start gap-3">
+                                        <div className={`flex-shrink-0 w-10 h-10 rounded-2xl flex items-center justify-center shadow-sm ${iconContainerBg}`}>
+                                          {isDeletion ? <Trash2 size={18} /> : <Plus size={18} />}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                                            <span className={`px-2 py-0.5 rounded font-black text-[10px] uppercase tracking-wider ${badgeBg}`}>
+                                              {titleText}
+                                            </span>
+                                            <span className="font-semibold text-[13px] text-gray-800 dark:text-slate-100">
+                                              {descriptionText}
+                                            </span>
+                                          </div>
+                                          
+                                          <div className="mt-2 space-y-1">
+                                            {group.items.slice(0, 3).map((it: any, i: number) => {
+                                              const descParts = it.description ? it.description.split(':') : [];
+                                              const title = descParts[1] ? descParts[1].replace(/"/g, '').trim() : (it.task_title || 'Tarefa sem nome');
+                                              return (
+                                                <div key={i} className="text-[11px] text-gray-500 dark:text-slate-400 truncate">
+                                                  • {title}
+                                                </div>
+                                              );
+                                            })}
+                                            {count > 3 && (
+                                              <div className={`text-[10px] font-bold italic pl-2 pt-1 ${moreTextColor}`}>
+                                                e mais {count - 3} tarefas...
+                                              </div>
+                                            )}
+                                          </div>
+
+                                          <div className={`flex items-center gap-1.5 mt-3 pt-3 border-t ${dividerColor}`}>
+                                            <Clock size={11} className="text-gray-400" />
+                                            <span className="text-[11px]" style={{ color: '#9ca3af' }}>
+                                              {formatRelativeTime(group.created_at)}
+                                            </span>
+                                            {group.user_name && (() => {
+                                              const userMatch = users?.find((u: any) => u.email === group.user_name || u.name === group.user_name);
+                                              const displayName = userMatch?.name || group.user_name;
+                                              const avatarSrc = userMatch?.picture;
+                                              return (
+                                                <div className="flex items-center gap-1.5 ml-2 border-l border-gray-200 dark:border-white/10 pl-2">
+                                                  {avatarSrc ? (
+                                                    <img src={avatarSrc} alt={displayName} className="w-4 h-4 rounded-full object-cover" />
+                                                  ) : (
+                                                    <div className="w-4 h-4 rounded-full bg-violet-100 dark:bg-violet-500/20 text-violet-600 flex items-center justify-center font-bold text-[7px]">
+                                                      {displayName.substring(0, 2).toUpperCase()}
+                                                    </div>
+                                                  )}
+                                                  <span className="text-[11px] font-medium text-gray-600 dark:text-slate-400">{displayName}</span>
+                                                </div>
+                                              );
+                                            })()}
+                                          </div>
                                         </div>
                                       </div>
                                     </div>
@@ -1468,11 +1592,24 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                                             <Clock size={11} className="text-gray-400" />
                                             <span className="text-[11px]" style={{ color: '#9ca3af' }}>
                                               {formatRelativeTime(item.created_at)}
-                                              {item.user_name && (() => {
-                                                const userMatch = users?.find((u: any) => u.email === item.user_name || u.name === item.user_name);
-                                                return <> por <strong className="font-medium text-gray-600 dark:text-slate-400">{userMatch?.name || item.user_name}</strong></>;
-                                              })()}
                                             </span>
+                                            {item.user_name && (() => {
+                                              const userMatch = users?.find((u: any) => u.email === item.user_name || u.name === item.user_name);
+                                              const displayName = userMatch?.name || item.user_name;
+                                              const avatarSrc = userMatch?.picture;
+                                              return (
+                                                <div className="flex items-center gap-1.5 ml-2 border-l border-gray-200 dark:border-white/10 pl-2">
+                                                  {avatarSrc ? (
+                                                    <img src={avatarSrc} alt={displayName} className="w-4 h-4 rounded-full object-cover" />
+                                                  ) : (
+                                                    <div className="w-4 h-4 rounded-full bg-violet-100 dark:bg-violet-500/20 text-violet-600 flex items-center justify-center font-bold text-[7px]">
+                                                      {displayName.substring(0, 2).toUpperCase()}
+                                                    </div>
+                                                  )}
+                                                  <span className="text-[11px] font-medium text-gray-600 dark:text-slate-400">{displayName}</span>
+                                                </div>
+                                              );
+                                            })()}
                                           </div>
                                         </div>
                                       </div>
@@ -1523,6 +1660,23 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                                       <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-slate-400">
                                         <Clock size={12} />
                                         <span>{new Date(item.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                                        {item.user_name && (() => {
+                                          const userMatch = users?.find((u: any) => u.email === item.user_name || u.name === item.user_name);
+                                          const displayName = userMatch?.name || item.user_name;
+                                          const avatarSrc = userMatch?.picture;
+                                          return (
+                                            <div className="flex items-center gap-1.5 ml-1 border-l border-gray-200 dark:border-white/10 pl-2">
+                                              {avatarSrc ? (
+                                                <img src={avatarSrc} alt={displayName} className="w-4 h-4 rounded-full object-cover" />
+                                              ) : (
+                                                <div className="w-4 h-4 rounded-full bg-violet-100 dark:bg-violet-500/20 text-violet-600 flex items-center justify-center font-bold text-[7px]">
+                                                  {displayName.substring(0, 2).toUpperCase()}
+                                                </div>
+                                              )}
+                                              <span className="text-[11px] font-medium text-gray-600 dark:text-slate-400">{displayName}</span>
+                                            </div>
+                                          );
+                                        })()}
                                       </div>
                                       <div className="text-[11px] text-gray-400 dark:text-slate-500 italic">
                                         Tempo na etapa anterior: {duration}
@@ -1825,7 +1979,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                               const dateObj = new Date(n.created_at || new Date());
                               const nMonth = dateObj.toLocaleString('pt-BR', { month: 'short' }).toUpperCase();
                               const nDay = String(dateObj.getDate()).padStart(2, '0');
-                              const uResp = users.find(u => u.name === n.user_name);
+                              const uResp = users.find(u => u.email === n.user_name || u.name === n.user_name);
                               const getInitials = (num?: string) => num ? num.substring(0, 2).toUpperCase() : '??';
 
                               return (
@@ -2918,7 +3072,8 @@ const GerenciarKanbansModal = ({ isOpen, onClose, kanbans, columns, leads, onRen
 };
 
 const CrmComercial = () => {
-  const { user } = useAuth();
+  const { user, userData } = useAuth();
+  const [showAI, setShowAI] = useState(false);
   const kanbanBoardRef = useRef<HTMLDivElement>(null);
   const [celebrationDetails, setCelebrationDetails] = useState<{ gif: string, value: number, name: string } | null>(null);
 
@@ -2964,6 +3119,14 @@ const CrmComercial = () => {
 
   const [leads, setLeads] = useState<Lead[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const availableUsers = useMemo(() => {
+    const activePage = localStorage.getItem('activePage') || 'crm-comercial';
+    return users.filter(u => 
+      u.role === 'superadmin' || 
+      u.role === 'gerente-operacional' || 
+      (u.allowedPages && u.allowedPages.includes(activePage))
+    );
+  }, [users]);
   const [kanbans, setKanbans] = useState<any[]>([]);
   const [columns, setColumns] = useState<any[]>([]);
   const [tags, setTags] = useState<any[]>([]);
@@ -4051,6 +4214,22 @@ const CrmComercial = () => {
       >
         <div className="flex items-center gap-3">
 
+          {/* Botão Consultar Fred IA */}
+          <button
+            onClick={() => setShowAI(o => !o)}
+            className={`flex items-center gap-2 px-3 py-2 rounded-xl border font-bold text-xs transition-all ${
+              showAI
+                ? 'bg-violet-500 border-violet-500 text-white shadow-lg shadow-violet-500/30'
+                : 'bg-white dark:bg-dark-card border-gray-200 dark:border-white/10 text-violet-400 hover:border-violet-500/50 hover:bg-violet-500/10'
+            }`}
+            title="Perguntar ao Fred (especialista financeiro IA)"
+          >
+            <div style={{ width: 22, height: 22, flexShrink: 0 }}>
+              <img src={fredImg} alt="Fred" style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
+            </div>
+            <span>Consultar Fred</span>
+          </button>
+
           {/* Gear + telephony status badge */}
           <div className="flex items-center gap-1.5">
             <button
@@ -4689,7 +4868,7 @@ const CrmComercial = () => {
                 className={designSystem.input.field}
               >
                 <option value="" className="bg-light-sidebar dark:bg-dark-sidebar">Selecione...</option>
-                {users.map(u => (
+                {availableUsers.map(u => (
                   <option key={u.id} value={u.id} className="bg-light-sidebar dark:bg-dark-sidebar">{u.name}</option>
                 ))}
               </select>
@@ -5925,6 +6104,14 @@ const CrmComercial = () => {
           </motion.div>
         )}
       </AnimatePresence>
+      {/* AIChat — modo inline, sem botão flutuante, controlado pelo header */}
+      <AIChat
+        activePage="crm-comercial"
+        userName={userData?.nome || userData?.name || user?.displayName || user?.email || undefined}
+        floatingButton={false}
+        externalOpen={showAI}
+        onExternalToggle={() => setShowAI(o => !o)}
+      />
     </div>
   );
 };

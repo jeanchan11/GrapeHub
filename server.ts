@@ -7400,6 +7400,93 @@ app.get("/api/todos", async (req, res) => {
           setImmediate(() => runAutomations('lead_updated', result.rows[0]));
         }
 
+        // ── Auto-populate reunioes table based on kanban movement ──
+        try {
+          const today = new Date().toISOString().slice(0, 10);
+          let targetReuniaoCol = null;
+          
+          if (coluna !== undefined && coluna !== currentColuna && !kanban_id) {
+            const destColResult = await pool.query(`SELECT title FROM crm_comercial_columns WHERE id = $1`, [coluna]);
+            const destTitle = (destColResult.rows[0]?.title || '').toLowerCase().trim();
+            if (destTitle.includes('reunião marcada') || destTitle.includes('reuniao marcada')) targetReuniaoCol = 'marcada';
+            else if (destTitle.includes('noshow') || destTitle.includes('no-show') || destTitle.includes('no show')) targetReuniaoCol = 'noshow';
+            else if (destTitle.includes('reagendamento')) targetReuniaoCol = 'reagendamento';
+          }
+
+          if (kanban_id !== undefined && kanban_id !== currentResult.rows[0].kanban_id) {
+            const kanbansRes = await pool.query(
+              "SELECT id, nome FROM crm_comercial_kanbans WHERE id = $1 OR id = $2", 
+              [currentResult.rows[0].kanban_id, kanban_id]
+            );
+            let prevK = '', newK = '';
+            kanbansRes.rows.forEach((r: any) => {
+              if (r.id === currentResult.rows[0].kanban_id) prevK = r.nome.toLowerCase();
+              if (r.id === kanban_id) newK = r.nome.toLowerCase();
+            });
+            if (prevK.includes('pré') && (newK.includes('vendas') || newK.includes('comercial'))) {
+              targetReuniaoCol = 'realizada';
+            }
+          }
+
+          if (targetReuniaoCol) {
+            // Evita contar duplicado verificando se o lead já passou por essa mesma condição no histórico
+            let shouldSkip = false;
+            if (targetReuniaoCol === 'realizada') {
+              // Verifica se já esteve em um Kanban de Vendas antes (se count > 1, já esteve, pois a atual conta como 1)
+              const pastVendas = await pool.query(`
+                SELECT h.id FROM crm_comercial_history h
+                JOIN crm_comercial_columns c ON h.to_coluna = c.id
+                JOIN crm_comercial_kanbans k ON c.kanban_id = k.id
+                WHERE h.lead_id = $1 AND (LOWER(k.nome) LIKE '%vendas%' OR LOWER(k.nome) LIKE '%comercial%')
+              `, [id]);
+              if (pastVendas.rows.length > 1) shouldSkip = true;
+            } else {
+              // Verifica se já passou por esta mesma coluna antes
+              const pastCol = await pool.query(`
+                SELECT id FROM crm_comercial_history 
+                WHERE lead_id = $1 AND to_coluna = $2
+              `, [id, coluna]);
+              if (pastCol.rows.length > 1) shouldSkip = true;
+            }
+
+            if (!shouldSkip) {
+              const reunCols = await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name='reunioes' ORDER BY ordinal_position");
+              const rCols = reunCols.rows.map((r: any) => r.column_name);
+              const rMarcadas   = rCols.find((c: string) => c.toLowerCase().includes('marca')) || rCols[2];
+              const rRealizadas = rCols.find((c: string) => c.toLowerCase().includes('realiz')) || rCols[5];
+              const rNoshow     = rCols.find((c: string) => c.toLowerCase().includes('noshow') || c.toLowerCase().includes('no-show') || c.toLowerCase() === 'noshow') || rCols[3];
+              const rReagend    = rCols.find((c: string) => c.toLowerCase().includes('reagend')) || rCols[4];
+              const rDay        = rCols.find((c: string) => c.toLowerCase() === 'day') || rCols[1];
+
+              let colToUpdate = null;
+              if (targetReuniaoCol === 'marcada') colToUpdate = rMarcadas;
+              if (targetReuniaoCol === 'realizada') colToUpdate = rRealizadas;
+              if (targetReuniaoCol === 'noshow') colToUpdate = rNoshow;
+              if (targetReuniaoCol === 'reagendamento') colToUpdate = rReagend;
+
+              if (colToUpdate) {
+                const existing = await pool.query(`SELECT id FROM reunioes WHERE "${rDay}" = $1`, [today]);
+                if (existing.rows.length === 0) {
+                  await pool.query(
+                    `INSERT INTO reunioes ("${rDay}", "${rMarcadas}", "${rRealizadas}", "${rNoshow}", "${rReagend}") VALUES ($1, '0', '0', '0', '0')`,
+                    [today]
+                  );
+                }
+                await pool.query(
+                  `UPDATE reunioes SET "${colToUpdate}" = (COALESCE(NULLIF("${colToUpdate}", ''), '0')::integer + 1)::text WHERE "${rDay}" = $1`,
+                  [today]
+                );
+                console.log(`[REUNIOES] Auto-incremented "${colToUpdate}" for today (${today}) on lead ${id}`);
+              }
+            } else {
+              console.log(`[REUNIOES] Skipped incrementing "${targetReuniaoCol}" for lead ${id} (already counted in the past)`);
+            }
+          }
+        } catch (rErr: any) {
+          console.error('[REUNIOES] Error auto-populating reunioes:', rErr.message);
+        }
+        // ──────────────────────────────────────────────────────────
+
         res.json(result.rows[0]);
       } else {
         res.json({ message: "No updates provided" });
@@ -9365,18 +9452,145 @@ app.get("/api/todos", async (req, res) => {
         WHERE day >= $1 AND day <= $2
       `, [startDate, endDate]);
 
-      // Motivos de Perda do mês
-      const lossReasonsMonth = await pool.query(`
+      // Motivos de Perda do mês (apenas Vendas/Comercial)
+      const comercialKanban = await pool.query(
+        `SELECT id FROM crm_comercial_kanbans WHERE LOWER(nome) LIKE '%comercial%' OR (LOWER(nome) LIKE '%vendas%' AND LOWER(nome) NOT LIKE '%pr%') LIMIT 1`
+      ).catch(() => ({ rows: [] as any[] }));
+      const comercialKanbanId = comercialKanban.rows[0]?.id || null;
+
+      const lossReasonsMonth = comercialKanbanId ? await pool.query(`
         SELECT
           COALESCE(lr.name, 'Sem motivo') AS name,
           COUNT(cl.id) AS total
         FROM crm_comercial_leads cl
         LEFT JOIN crm_comercial_loss_reasons lr ON cl.loss_reason_id = lr.id
         WHERE cl.is_lost = true
+          AND cl.kanban_id::text = $3::text
           AND cl.updated_at >= $1 AND cl.updated_at <= ($2::date + interval '1 day')
         GROUP BY lr.name
         ORDER BY total DESC
+      `, [startDate, endDate, comercialKanbanId]) : { rows: [] as any[] };
+
+      // Motivos de Perda — apenas Pré-vendas
+      const preVendasKanban = await pool.query(
+        `SELECT id FROM crm_comercial_kanbans WHERE LOWER(nome) LIKE '%pr_-vendas%' OR LOWER(nome) LIKE '%pr__vendas%' OR LOWER(nome) LIKE '%pre vendas%' OR LOWER(nome) LIKE '%pré vendas%' LIMIT 1`
+      ).catch(() => ({ rows: [] as any[] }));
+      const preVendasKanbanId = preVendasKanban.rows[0]?.id || null;
+
+      const lossReasonsPreVendas = preVendasKanbanId ? await pool.query(`
+        SELECT
+          COALESCE(lr.name, 'Sem motivo') AS name,
+          COUNT(cl.id) AS total
+        FROM crm_comercial_leads cl
+        LEFT JOIN crm_comercial_loss_reasons lr ON cl.loss_reason_id = lr.id
+        WHERE cl.is_lost = true
+          AND cl.kanban_id::text = $3::text
+          AND cl.updated_at >= $1 AND cl.updated_at <= ($2::date + interval '1 day')
+        GROUP BY lr.name
+        ORDER BY total DESC
+      `, [startDate, endDate, preVendasKanbanId]) : { rows: [] as any[] };
+
+      // Leads do mês (quantidade criada no período)
+      const leadsMonth = await pool.query(`
+        SELECT COUNT(*) AS total
+        FROM crm_comercial_leads
+        WHERE created_at >= $1 AND created_at <= ($2::date + interval '1 day')
       `, [startDate, endDate]);
+
+      // Leads do mês anterior
+      const leadsPrev = await pool.query(`
+        SELECT COUNT(*) AS total
+        FROM crm_comercial_leads
+        WHERE created_at >= $1 AND created_at <= ($2::date + interval '1 day')
+      `, [prevStart, prevEnd]);
+
+      // Leads por dia (para gráfico diário)
+      const leadsPerDay = await pool.query(`
+        SELECT
+          created_at::date AS dia,
+          COUNT(*) AS total
+        FROM crm_comercial_leads
+        WHERE created_at >= $1 AND created_at <= ($2::date + interval '1 day')
+        GROUP BY created_at::date
+        ORDER BY dia ASC
+      `, [startDate, endDate]);
+
+      // Reuniões do mês anterior (comparativo)
+      const reunioesPrev = await pool.query(`
+        SELECT
+          SUM(CAST(COALESCE(NULLIF("${rMarcadas}",''), '0') AS INTEGER)) AS marcadas,
+          SUM(CAST(COALESCE(NULLIF("${rRealizadas}",''), '0') AS INTEGER)) AS realizadas,
+          SUM(CAST(COALESCE(NULLIF("${rNoshow}",''), '0') AS INTEGER)) AS noshow,
+          SUM(CAST(COALESCE(NULLIF("${rReagend}",''), '0') AS INTEGER)) AS reagendamento
+        FROM reunioes
+        WHERE "${rDay}" >= $1 AND "${rDay}" <= $2
+      `, [prevStart, prevEnd]);
+
+      // Funil de Pré-vendas
+      const funilPreVendas = preVendasKanbanId ? await pool.query(`
+        WITH lead_columns AS (
+          SELECT id as lead_id, coluna::text as col_id 
+          FROM crm_comercial_leads 
+          WHERE kanban_id::text = $3::text AND created_at >= $1 AND created_at <= ($2::date + interval '1 day')
+          UNION
+          SELECT l.id as lead_id, h.to_coluna::text as col_id 
+          FROM crm_comercial_leads l 
+          JOIN crm_comercial_history h ON h.lead_id = l.id 
+          WHERE l.kanban_id::text = $3::text AND l.created_at >= $1 AND l.created_at <= ($2::date + interval '1 day') AND h.to_coluna IS NOT NULL
+          UNION
+          SELECT l.id as lead_id, h.from_coluna::text as col_id 
+          FROM crm_comercial_leads l 
+          JOIN crm_comercial_history h ON h.lead_id = l.id 
+          WHERE l.kanban_id::text = $3::text AND l.created_at >= $1 AND l.created_at <= ($2::date + interval '1 day') AND h.from_coluna IS NOT NULL
+        )
+        SELECT c.title, c.order_index, COUNT(DISTINCT lc.lead_id) as total
+        FROM crm_comercial_columns c
+        LEFT JOIN lead_columns lc ON lc.col_id = c.id::text
+        WHERE c.kanban_id::text = $3::text
+        GROUP BY c.id, c.title, c.order_index
+        ORDER BY c.order_index ASC
+      `, [startDate, endDate, preVendasKanbanId]) : { rows: [] as any[] };
+
+      // Conversão por origem
+      const origemPreVendas = preVendasKanbanId ? await pool.query(`
+        SELECT COALESCE(NULLIF(origem, ''), 'Desconhecido') as origem, COUNT(id) as total
+        FROM crm_comercial_leads
+        WHERE kanban_id::text = $3::text
+          AND created_at >= $1 AND created_at <= ($2::date + interval '1 day')
+        GROUP BY COALESCE(NULLIF(origem, ''), 'Desconhecido')
+        ORDER BY total DESC
+      `, [startDate, endDate, preVendasKanbanId]) : { rows: [] as any[] };
+
+      // Tentativas de contato do mês
+      const tentativasContato = preVendasKanbanId ? await pool.query(`
+        SELECT t.lead_id, count(t.id) as attempts
+        FROM crm_comercial_tasks t
+        JOIN crm_comercial_leads l ON t.lead_id = l.id
+        WHERE t.completed = true 
+          AND t.type IN ('WhatsApp', 'Ligação')
+          AND l.kanban_id::text = $3::text
+          AND l.created_at >= $1 AND l.created_at <= ($2::date + interval '1 day')
+        GROUP BY t.lead_id
+      `, [startDate, endDate, preVendasKanbanId]) : { rows: [] as any[] };
+
+      // Tentativas de contato do mês anterior (para comparativo)
+      const tentativasPrev = preVendasKanbanId ? await pool.query(`
+        SELECT t.lead_id, count(t.id) as attempts
+        FROM crm_comercial_tasks t
+        JOIN crm_comercial_leads l ON t.lead_id = l.id
+        WHERE t.completed = true 
+          AND t.type IN ('WhatsApp', 'Ligação')
+          AND l.kanban_id::text = $3::text
+          AND l.created_at >= $1 AND l.created_at <= ($2::date + interval '1 day')
+        GROUP BY t.lead_id
+      `, [prevStart, prevEnd, preVendasKanbanId]) : { rows: [] as any[] };
+
+      // Aging dos leads em andamento
+      const agingLeads = preVendasKanbanId ? await pool.query(`
+        SELECT EXTRACT(DAY FROM (NOW() - updated_at)) as dias
+        FROM crm_comercial_leads
+        WHERE kanban_id::text = $1::text AND is_lost = false
+      `, [preVendasKanbanId]) : { rows: [] as any[] };
 
       const totalPerdas = lossReasonsMonth.rows.reduce((s: number, r: any) => s + Number(r.total), 0);
 
@@ -9388,7 +9602,17 @@ app.get("/api/todos", async (req, res) => {
         fechamentos_year: fechamentosYear.rows,
         reunioes_year: reunioesYear.rows,
         reunioes_month: reunioesMonth.rows[0],
+        reunioes_prev: reunioesPrev.rows[0],
+        leads_month: Number(leadsMonth.rows[0]?.total) || 0,
+        leads_prev: Number(leadsPrev.rows[0]?.total) || 0,
+        leads_per_day: leadsPerDay.rows,
         loss_reasons_month: lossReasonsMonth.rows,
+        loss_reasons_pre_vendas: lossReasonsPreVendas.rows,
+        funil_pre_vendas: funilPreVendas.rows,
+        origem_pre_vendas: origemPreVendas.rows,
+        tentativas_contato: tentativasContato.rows,
+        tentativas_prev: tentativasPrev.rows,
+        aging_leads: agingLeads.rows,
         total_perdas: totalPerdas,
         _debug_cols: { fechamentos: colNames, reunioes: rCols },
       });
@@ -9922,16 +10146,23 @@ app.get("/api/todos", async (req, res) => {
       const activeSection: string = pageContext?.section || 'general';
       let sectionContext: any = null;
 
-      // ── CRM ──
+      // ── CRM (Comercial + Marketing) ──
       if (activeSection === 'crm') {
         try {
-          const [statusRes, inadimRes, leadsRes] = await Promise.all([
+          const [
+            statusRes, inadimRes, leadsRes, columnsRes, tasksRes,
+            historyRes, meetingsRes, notesRes, sequencesRes, tagsRes,
+            lossReasonsRes, pessoasRes, empresasRes, kanbansRes,
+            marketingCampaignsRes, marketingAcoesRes
+          ] = await Promise.all([
+            // Clientes por status
             pool.query(`
               SELECT crm_status, COUNT(*) AS qtd
               FROM clients
               WHERE crm_status IS NOT NULL AND crm_status != ''
               GROUP BY crm_status ORDER BY qtd DESC
             `),
+            // Inadimplentes
             pool.query(`
               SELECT
                 COALESCE(fp.name, r.customer_name) AS name,
@@ -9945,19 +10176,127 @@ app.get("/api/todos", async (req, res) => {
               GROUP BY fp.name, r.customer_name, c.crm_status
               ORDER BY valor_em_aberto DESC LIMIT 10
             `),
+            // Leads com detalhes
             pool.query(`
               SELECT
-                nome, telefone, origem, valor, coluna, tags,
-                created_at::date AS criado_em
-              FROM crm_comercial_leads
-              ORDER BY created_at DESC LIMIT 20
+                l.id, l.nome, l.telefone, l.origem, l.valor, l.coluna, l.tags,
+                l.responsavel_id, l.observacoes, l.kanban_id,
+                l.form_nome_fantasia, l.form_cidade, l.nicho, l.faturamento,
+                l.created_at::date AS criado_em,
+                u.name AS responsavel_nome,
+                c.title AS etapa_funil
+              FROM crm_comercial_leads l
+              LEFT JOIN users u ON u.id::text = l.responsavel_id::text
+              LEFT JOIN crm_comercial_columns c ON c.id::text = l.coluna::text
+              ORDER BY l.created_at DESC LIMIT 50
             `),
+            // Colunas do pipeline
+            pool.query(`
+              SELECT c.id, c.title, c.kanban_id, c.order_index,
+                     k.nome AS kanban_nome,
+                     COUNT(l.id) AS total_leads,
+                     COALESCE(SUM(l.valor), 0)::numeric(14,2) AS valor_total
+              FROM crm_comercial_columns c
+              LEFT JOIN crm_comercial_kanbans k ON k.id = c.kanban_id
+              LEFT JOIN crm_comercial_leads l ON l.coluna::text = c.id::text
+              GROUP BY c.id, c.title, c.kanban_id, c.order_index, k.nome
+              ORDER BY c.kanban_id, c.order_index ASC
+            `),
+            // Tarefas do CRM (pendentes e recentes)
+            pool.query(`
+              SELECT t.id, t.lead_id, t.title, t.type, t.priority, t.due_date::date AS vencimento,
+                     t.completed, l.nome AS lead_nome
+              FROM crm_comercial_tasks t
+              LEFT JOIN crm_comercial_leads l ON l.id = t.lead_id
+              WHERE t.completed = FALSE
+              ORDER BY t.due_date ASC NULLS LAST LIMIT 30
+            `),
+            // Histórico recente (movimentações de funil, etc)
+            pool.query(`
+              SELECT h.action_type, h.description, h.user_name, h.created_at::date AS data,
+                     l.nome AS lead_nome
+              FROM crm_comercial_history h
+              LEFT JOIN crm_comercial_leads l ON l.id = h.lead_id
+              ORDER BY h.created_at DESC LIMIT 30
+            `),
+            // Reuniões agendadas
+            pool.query(`
+              SELECT m.title, m.meeting_date::date AS data, m.responsible_name,
+                     m.office_location, m.notes, l.nome AS lead_nome
+              FROM crm_comercial_meetings m
+              LEFT JOIN crm_comercial_leads l ON l.id = m.lead_id
+              WHERE m.meeting_date >= CURRENT_DATE
+              ORDER BY m.meeting_date ASC LIMIT 15
+            `),
+            // Notas recentes
+            pool.query(`
+              SELECT n.content, n.user_name, n.created_at::date AS data,
+                     l.nome AS lead_nome
+              FROM crm_comercial_notes n
+              LEFT JOIN crm_comercial_leads l ON l.id = n.lead_id
+              ORDER BY n.created_at DESC LIMIT 15
+            `),
+            // Sequências de automação (tabela pode não existir)
+            pool.query(`
+              SELECT id, name, steps, is_active, created_at::date AS criado_em
+              FROM crm_comercial_task_sequences
+              ORDER BY created_at DESC
+            `).catch(() => ({ rows: [] as any[] })),
+            // Tags
+            pool.query(`
+              SELECT name, color FROM crm_comercial_tags ORDER BY name ASC
+            `).catch(() => ({ rows: [] as any[] })),
+            // Motivos de perda
+            pool.query(`
+              SELECT name, order_index FROM crm_comercial_loss_reasons ORDER BY order_index ASC
+            `).catch(() => ({ rows: [] as any[] })),
+            // Pessoas (contatos)
+            pool.query(`
+              SELECT nome, email, telefone, cargo, empresa, responsavel_id, created_at::date AS criado_em
+              FROM crm_pessoas
+              ORDER BY created_at DESC LIMIT 30
+            `).catch(() => ({ rows: [] as any[] })),
+            // Empresas
+            pool.query(`
+              SELECT nome, site, setor, telefone, email, cidade, responsavel_id, created_at::date AS criado_em
+              FROM crm_empresas
+              ORDER BY created_at DESC LIMIT 20
+            `).catch(() => ({ rows: [] as any[] })),
+            // Kanbans
+            pool.query(`
+              SELECT id, nome, is_default, created_at::date AS criado_em
+              FROM crm_comercial_kanbans
+              ORDER BY created_at ASC
+            `).catch(() => ({ rows: [] as any[] })),
+            // Marketing — Dados gerais (resumo apenas)
+            pool.query(`
+              SELECT id, created_at::date FROM marketing_data ORDER BY id DESC LIMIT 20
+            `).catch(() => ({ rows: [] as any[] })),
+            // Marketing — Ações (apenas resumo, sem campo data que é muito grande)
+            pool.query(`
+              SELECT page_id, updated_at::date AS atualizado_em
+              FROM marketing_acoes
+              ORDER BY updated_at DESC LIMIT 10
+            `).catch(() => ({ rows: [] as any[] })),
           ]);
           sectionContext = {
             secao: 'CRM',
             clientes_por_status: statusRes.rows,
             inadimplentes_top10: inadimRes.rows,
-            leads_recentes: leadsRes.rows,
+            leads_detalhados: leadsRes.rows,
+            pipeline_colunas: columnsRes.rows,
+            tarefas_pendentes: tasksRes.rows,
+            historico_recente: historyRes.rows,
+            reunioes_agendadas: meetingsRes.rows,
+            notas_recentes: notesRes.rows,
+            sequencias: sequencesRes.rows,
+            tags: tagsRes.rows,
+            motivos_perda: lossReasonsRes.rows,
+            pessoas_contatos: pessoasRes.rows,
+            empresas: empresasRes.rows,
+            kanbans: kanbansRes.rows,
+            marketing_dados: marketingCampaignsRes.rows,
+            marketing_acoes: marketingAcoesRes.rows,
             gerado_em: new Date().toISOString(),
           };
         } catch (e) {
@@ -10236,17 +10575,58 @@ Para análise financeira detalhada, o usuário deve acessar o Dashboard Financei
           const s = sectionContext;
           if (s.erro) return `\n## ⚠️ Contexto ${s.secao}: ${s.erro}\n`;
           if (s.secao === 'CRM') return `
-## 🤝 DADOS DO CRM EM TEMPO REAL
-> Dados carregados agora do banco. Use como base para análise de carteira.
+## 🤝 DADOS DO CRM COMERCIAL + MARKETING EM TEMPO REAL
+> Dados carregados agora do banco. Use como base para análise de carteira, pipeline, atividades e marketing.
 
-### Clientes por status CRM
+### Kanbans (funis)
+${JSON.stringify(s.kanbans, null, 2)}
+
+### Pipeline — Colunas e distribuição de leads
+${JSON.stringify(s.pipeline_colunas, null, 2)}
+
+### Clientes por status CRM (financeiro)
 ${JSON.stringify(s.clientes_por_status, null, 2)}
 
 ### Top inadimplentes
 ${JSON.stringify(s.inadimplentes_top10, null, 2)}
 
-### Leads recentes (últimos 20)
-${JSON.stringify(s.leads_recentes, null, 2)}
+### Leads detalhados (últimos 50)
+> Cada lead tem: nome, telefone, origem, valor, etapa do funil, responsável, tags, nicho, faturamento, cidade
+${JSON.stringify(s.leads_detalhados, null, 2)}
+
+### Tarefas pendentes do CRM (próximas 30)
+${JSON.stringify(s.tarefas_pendentes, null, 2)}
+
+### Histórico recente (últimas 30 ações)
+> Movimentações de funil, criação de tarefas, notas, etc.
+${JSON.stringify(s.historico_recente, null, 2)}
+
+### Reuniões agendadas
+${JSON.stringify(s.reunioes_agendadas, null, 2)}
+
+### Notas recentes
+${JSON.stringify(s.notas_recentes, null, 2)}
+
+### Sequências de automação
+${JSON.stringify(s.sequencias, null, 2)}
+
+### Tags disponíveis
+${JSON.stringify(s.tags, null, 2)}
+
+### Motivos de perda cadastrados
+${JSON.stringify(s.motivos_perda, null, 2)}
+
+### Pessoas / Contatos (últimos 30)
+${JSON.stringify(s.pessoas_contatos, null, 2)}
+
+### Empresas cadastradas (últimas 20)
+${JSON.stringify(s.empresas, null, 2)}
+
+### 📣 Marketing — Dados
+${JSON.stringify(s.marketing_dados, null, 2)}
+
+### 📣 Marketing — Ações recentes
+${JSON.stringify(s.marketing_acoes, null, 2)}
 
 > Gerado em: ${s.gerado_em}
 `;

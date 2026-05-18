@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   BarChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  ComposedChart, PieChart, Pie, Cell
+  ComposedChart, PieChart, Pie, Cell, AreaChart, Area
 } from 'recharts';
 import {
   Calendar, TrendingUp, DollarSign, Users, Target, RefreshCw,
-  ChevronDown, Award, PhoneCall, UserCheck, RotateCcw
+  ChevronDown, Award, PhoneCall, UserCheck, RotateCcw,
+  Filter, ChevronRight, PieChart as PieChartIcon, Phone, Clock, Globe, Share2
 } from 'lucide-react';
 
 const MESES       = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
@@ -213,6 +214,7 @@ export default function CrmMetricas() {
   const [loading, setLoading] = useState(true);
   const [spinning, setSpinning] = useState(false);
   const [error, setError]   = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'pre-vendas' | 'vendas'>('pre-vendas');
 
   const fetchData = useCallback(async (m: string, silent = false) => {
     if (!silent) setLoading(true);
@@ -250,6 +252,15 @@ export default function CrmMetricas() {
   const noshow            = Number(reunM.noshow) || 0;
   const reagend           = Number(reunM.reagendamento) || 0;
 
+  const leadsMonth         = Number(data?.leads_month) || 0;
+  const leadsPrev          = Number(data?.leads_prev) || 0;
+
+  const reunPrev           = data?.reunioes_prev || {};
+  const prevMarcadas       = Number(reunPrev.marcadas) || 0;
+  const prevRealizadas     = Number(reunPrev.realizadas) || 0;
+  const prevNoshow         = Number(reunPrev.noshow) || 0;
+  const prevReagend        = Number(reunPrev.reagendamento) || 0;
+
   const fechamentosChart  = buildChartData(data?.fechamentos_year || [], 'quantidade');
   const valoresChart      = buildChartData(data?.fechamentos_year || [], 'total_valor');
   const fechamentosList: any[] = data?.fechamentos_list || [];
@@ -283,6 +294,11 @@ export default function CrmMetricas() {
     );
   }
 
+  const TABS = [
+    { id: 'pre-vendas' as const, label: 'Pré vendas' },
+    { id: 'vendas' as const, label: 'Vendas' },
+  ];
+
   return (
     <div className="min-h-screen bg-dark-bg transition-colors duration-300">
 
@@ -303,6 +319,25 @@ export default function CrmMetricas() {
         </div>
       </div>
 
+      {/* ── Tabs ──────────────────────────────────────────────────────────── */}
+      <div className="px-6 md:px-8 mb-5">
+        <div className="flex gap-1 bg-dark-card border border-white/10 rounded-xl p-1 w-fit">
+          {TABS.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-5 py-2 rounded-lg text-sm font-bold transition-all duration-200 ${
+                activeTab === tab.id
+                  ? 'bg-violet-600 text-white shadow-lg shadow-violet-500/25'
+                  : 'text-slate-400 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* ── Error ────────────────────────────────────────────────────────── */}
       {error && (
         <div className="mx-6 md:mx-8 mb-4 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-red-400 dark:text-red-300 text-sm">
@@ -314,6 +349,421 @@ export default function CrmMetricas() {
       {loading && !data ? (
         <div className="flex items-center justify-center h-64">
           <div className="w-10 h-10 border-4 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
+        </div>
+      ) : activeTab === 'pre-vendas' ? (
+        /* ── PRÉ VENDAS TAB ─────────────────────────────────────────────── */
+        <div className="px-6 md:px-8 pb-10 space-y-5">
+
+          {/* ── KPI Cards Pré vendas ──────────────────────────────────── */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+            <KpiCard
+              iconBg="bg-violet-500/15"
+              icon={<Users size={17} className="text-violet-500" />}
+              label="Número de Leads"
+              value={String(leadsMonth)}
+              sub="Leads recebidos no mês"
+              extra={<div className="text-[10px] text-slate-500 mt-0.5">vs. anterior: <DeltaBadge curr={leadsMonth} prev={leadsPrev} /></div>}
+            />
+            <KpiCard
+              iconBg="bg-emerald-500/15"
+              icon={<Calendar size={17} className="text-emerald-500" />}
+              label="Reuniões Marcadas"
+              value={String(marcadas)}
+              sub={`Taxa de agendamento: ${pct(marcadas, leadsMonth)}`}
+              extra={<div className="text-[10px] text-slate-500 mt-0.5">vs. anterior: <DeltaBadge curr={marcadas} prev={prevMarcadas} /></div>}
+            />
+            <KpiCard
+              iconBg="bg-cyan-500/15"
+              icon={<UserCheck size={17} className="text-cyan-500" />}
+              label="Reuniões Realizadas"
+              value={String(realizadas)}
+              sub={`Taxa de comparecimento: ${pct(realizadas, marcadas)}`}
+              extra={<div className="text-[10px] text-slate-500 mt-0.5">vs. anterior: <DeltaBadge curr={realizadas} prev={prevRealizadas} /></div>}
+            />
+            <KpiCard
+              iconBg="bg-orange-500/15"
+              icon={<PhoneCall size={17} className="text-orange-500" />}
+              label="No-Show"
+              value={String(noshow)}
+              sub={`Taxa de no-show: ${pct(noshow, marcadas)}`}
+              extra={<div className="text-[10px] text-slate-500 mt-0.5">vs. anterior: <DeltaBadge curr={noshow} prev={prevNoshow} inverted /></div>}
+            />
+            <KpiCard
+              iconBg="bg-pink-500/15"
+              icon={<RotateCcw size={17} className="text-pink-500" />}
+              label="Reagendamento"
+              value={String(reagend)}
+              sub={`Taxa: ${pct(reagend, marcadas)}`}
+              extra={<div className="text-[10px] text-slate-500 mt-0.5">vs. anterior: <DeltaBadge curr={reagend} prev={prevReagend} inverted /></div>}
+            />
+          </div>
+
+          {/* ── Leads por Dia (gráfico de área — alinhado aos 3 primeiros cards) */}
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+            <div className="lg:col-span-3">
+            {(() => {
+              const rawDays: { dia: string; total: string | number }[] = data?.leads_per_day || [];
+              const daysInMonth = new Date(parseInt(yStr), parseInt(mStr), 0).getDate();
+              const chartData = [];
+              for (let d = 1; d <= daysInMonth; d++) {
+                const dayStr = `${yStr}-${mStr}-${String(d).padStart(2, '0')}`;
+                const match = rawDays.find(r => (r.dia || '').slice(0, 10) === dayStr);
+                chartData.push({
+                  dia: `${String(d).padStart(2, '0')}/${mStr}`,
+                  leads: match ? Number(match.total) : 0,
+                });
+              }
+              return (
+                <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200 h-full">
+                  <h2 className="text-sm font-bold text-dark-text">Leads por Dia</h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-5 mt-0.5">
+                    Evolução de leads recebidos — {`01/${mStr}/${yStr}`} → {`${String(daysInMonth).padStart(2, '0')}/${mStr}/${yStr}`}
+                  </p>
+                  <ResponsiveContainer width="100%" height={210}>
+                    <AreaChart data={chartData} margin={{ top: 8, right: 12, left: -16, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="leadsFill" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="rgb(var(--accent-color))" stopOpacity={0.35} />
+                          <stop offset="100%" stopColor="rgb(var(--accent-color))" stopOpacity={0.02} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(100,100,120,0.15)" vertical={false} />
+                      <XAxis
+                        dataKey="dia"
+                        tick={{ fill: '#94a3b8', fontSize: 11 }}
+                        axisLine={false}
+                        tickLine={false}
+                        interval={Math.max(0, Math.floor(daysInMonth / 8) - 1)}
+                      />
+                      <YAxis
+                        tick={{ fill: '#94a3b8', fontSize: 11 }}
+                        axisLine={false}
+                        tickLine={false}
+                        allowDecimals={false}
+                      />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Area
+                        type="monotone"
+                        dataKey="leads"
+                        stroke="rgb(var(--accent-color))"
+                        strokeWidth={2.5}
+                        fill="url(#leadsFill)"
+                        dot={false}
+                        activeDot={{ r: 5, fill: 'rgb(var(--accent-color))', stroke: '#1a1a2e', strokeWidth: 2 }}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              );
+            })()}
+            </div>
+
+            {/* ── Motivos de Perda Pré-vendas (donut — 2 colunas) ────── */}
+            <div className="lg:col-span-2">
+              {(() => {
+                const pvLossData: { name: string; total: number }[] = (data?.loss_reasons_pre_vendas || []).map((r: any) => ({ ...r, total: Number(r.total) }));
+                const RED_SHADES = ['#ef4444','#dc2626','#b91c1c','#991b1b','#7f1d1d','#fca5a5','#fecaca'];
+                const totalNum = pvLossData.reduce((s, r) => s + r.total, 0);
+                const topMotivo = pvLossData[0];
+                const topPct = totalNum && topMotivo ? Math.round((topMotivo.total / totalNum) * 100) : 0;
+
+                return (
+                  <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200 h-full flex flex-col" style={{ minHeight: 260 }}>
+                    <h2 className="text-sm font-bold text-dark-text">Motivos de Perda</h2>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-4 mt-0.5">Pré-vendas — {monthLabel}</p>
+
+                    {pvLossData.length === 0 ? (
+                      <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center">
+                        <span className="text-4xl opacity-30">❌</span>
+                        <p className="text-sm text-slate-500">Nenhuma perda neste período</p>
+                      </div>
+                    ) : (
+                      <div className="flex-1 flex flex-col items-center justify-between gap-4">
+                        <div className="relative flex items-center justify-center" style={{ width: 180, height: 180 }}>
+                          <PieChart width={180} height={180}>
+                            <Pie
+                              data={pvLossData}
+                              cx={85} cy={85}
+                              innerRadius={55} outerRadius={82}
+                              dataKey="total"
+                              strokeWidth={0}
+                              paddingAngle={pvLossData.length > 1 ? 3 : 0}
+                              startAngle={90} endAngle={-270}
+                              isAnimationActive={true}
+                            >
+                              {pvLossData.map((_: any, idx: number) => (
+                                <Cell key={idx} fill={RED_SHADES[idx % RED_SHADES.length]} />
+                              ))}
+                            </Pie>
+                            <Tooltip content={<LossTooltip />} />
+                          </PieChart>
+                          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                            <span className="text-3xl font-black text-dark-text">{topPct}%</span>
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center leading-tight px-4">{topMotivo?.name}</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-x-4 gap-y-2 justify-center">
+                          {pvLossData.map((r: any, idx: number) => (
+                            <div key={r.name} className="flex items-center gap-1.5">
+                              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: RED_SHADES[idx % RED_SHADES.length] }} />
+                              <span className="text-xs text-slate-400">{r.name}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                </div>
+              );
+            })()}
+            </div>
+          </div>
+
+          {/* ── SEGUNDA LINHA: Funil e Origens ─────────────────────────── */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Funil */}
+            <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200 flex flex-col h-full">
+              <div className="flex items-center gap-2 mb-1 text-dark-text">
+                <div className="bg-violet-500/20 p-1.5 rounded-lg">
+                  <Filter size={16} className="text-violet-500" />
+                </div>
+                <h2 className="text-sm font-bold uppercase tracking-wider">Funil de Pré-vendas</h2>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">Progressão de leads no período</p>
+              
+              {(() => {
+                const rawFunnel = data?.funil_pre_vendas || [];
+                if (rawFunnel.length === 0) return (
+                  <div className="flex-1 flex flex-col items-center justify-center gap-2 min-h-[200px]">
+                    <Filter size={32} className="opacity-20 text-slate-400" />
+                    <span className="text-sm text-slate-500">Sem dados para o período</span>
+                  </div>
+                );
+                const funilColors = ['bg-violet-500', 'bg-emerald-500', 'bg-cyan-500', 'bg-teal-500', 'bg-amber-500', 'bg-pink-500'];
+                const maxVal = Math.max(...rawFunnel.map((x: any) => Number(x.total)), 1);
+
+                return (
+                  <div className="flex-1 flex items-end justify-between gap-1 overflow-x-auto pb-2 min-h-[200px]">
+                    {rawFunnel.map((item: any, idx: number) => {
+                      const val = Number(item.total);
+                      const barHeight = Math.max((val / maxVal) * 120, 24); // Máximo de 120px, mínimo de 24px
+                      const nextItem = rawFunnel[idx + 1];
+                      const nextVal = nextItem ? Number(nextItem.total) : 0;
+                      const conversion = val > 0 ? Math.round((nextVal / val) * 100) : 0;
+                      const color = funilColors[idx % funilColors.length];
+                      
+                      return (
+                        <React.Fragment key={item.title}>
+                          <div className="flex flex-col items-center flex-1 min-w-[60px] max-w-[120px]">
+                            <div className="text-xl font-bold text-dark-text mb-2">{val}</div>
+                            <div 
+                              className={`w-full rounded-t-lg transition-all duration-500 ${color} opacity-90`}
+                              style={{ height: `${barHeight}px` }}
+                            />
+                            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wide text-center mt-3 h-8 flex items-start justify-center">
+                              {item.title}
+                            </div>
+                          </div>
+                          {idx < rawFunnel.length - 1 && (
+                            <div className="flex flex-col items-center justify-center mb-12 px-1">
+                              <span className="text-[10px] font-bold text-slate-500 mb-1">{conversion}%</span>
+                              <ChevronRight size={14} className="text-slate-600" />
+                            </div>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Origem */}
+            <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200 flex flex-col h-full">
+              <div className="flex items-center gap-2 mb-1 text-dark-text">
+                <div className="bg-emerald-500/20 p-1.5 rounded-lg">
+                  <PieChartIcon size={16} className="text-emerald-500" />
+                </div>
+                <h2 className="text-sm font-bold uppercase tracking-wider">Conversão por Origem</h2>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">Fontes de aquisição dos leads</p>
+
+              {(() => {
+                const rawOrigem = data?.origem_pre_vendas || [];
+                const totalOrigem = rawOrigem.reduce((s: number, r: any) => s + Number(r.total), 0);
+                if (totalOrigem === 0) return (
+                  <div className="flex-1 flex flex-col items-center justify-center gap-2 min-h-[200px]">
+                    <PieChartIcon size={32} className="opacity-20 text-slate-400" />
+                    <span className="text-sm text-slate-500">Sem dados para o período</span>
+                  </div>
+                );
+                
+                return (
+                  <div className="flex-1 flex flex-col gap-4 justify-center min-h-[200px]">
+                    {rawOrigem.slice(0, 6).map((item: any, idx: number) => {
+                      const val = Number(item.total);
+                      const pctStr = pct(val, totalOrigem);
+                      const isMeta = item.origem.toLowerCase().includes('meta') || item.origem.toLowerCase().includes('facebook') || item.origem.toLowerCase().includes('instagram');
+                      const isGoogle = item.origem.toLowerCase().includes('google');
+                      const isIndic = item.origem.toLowerCase().includes('indica');
+                      let Icon = Globe;
+                      if (isMeta) Icon = Share2; 
+                      if (isGoogle) Icon = Target;
+                      if (isIndic) Icon = Users;
+                      
+                      return (
+                        <div key={item.origem} className="flex items-center justify-between gap-4">
+                          <div className="flex items-center gap-3 w-32 shrink-0">
+                            <div className="bg-white/5 p-1.5 rounded text-slate-400">
+                              <Icon size={14} />
+                            </div>
+                            <span className="text-xs font-bold text-slate-300 truncate" title={item.origem}>{item.origem}</span>
+                          </div>
+                          <div className="flex-1 bg-white/5 h-2 rounded-full overflow-hidden">
+                            <div className="bg-emerald-500 h-full rounded-full" style={{ width: pctStr }} />
+                          </div>
+                          <div className="flex items-center justify-end gap-2 w-16 shrink-0">
+                            <span className="text-sm font-bold text-dark-text">{val}</span>
+                            <span className="text-[10px] text-slate-500 w-8 text-right">{pctStr}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+
+          {/* ── TERCEIRA LINHA: Tentativas e Aging ───────────────────────── */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Tentativas */}
+            <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200 flex flex-col h-full">
+              <div className="flex items-center gap-2 mb-1 text-dark-text">
+                <div className="bg-cyan-500/20 p-1.5 rounded-lg">
+                  <Phone size={16} className="text-cyan-500" />
+                </div>
+                <h2 className="text-sm font-bold uppercase tracking-wider">Tentativas de Contato</h2>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">Esforço necessário por lead no período</p>
+
+              {(() => {
+                const rawTent = data?.tentativas_contato || [];
+                if (rawTent.length === 0) return (
+                  <div className="flex-1 flex flex-col items-center justify-center gap-2 min-h-[160px]">
+                    <Phone size={32} className="opacity-20 text-slate-400" />
+                    <span className="text-sm text-slate-500">Sem contatos registrados</span>
+                  </div>
+                );
+                
+                let t1=0, t2=0, t3=0, t4=0, total=0;
+                rawTent.forEach((r: any) => {
+                  const a = Number(r.attempts);
+                  total += a;
+                  if (a===1) t1++;
+                  else if (a===2) t2++;
+                  else if (a===3) t3++;
+                  else if (a>=4) t4++;
+                });
+                const avg = (total / rawTent.length).toFixed(1);
+
+                const rawPrev = data?.tentativas_prev || [];
+                const prevTotal = rawPrev.reduce((s: number, r: any) => s + Number(r.attempts), 0);
+                const prevAvg = rawPrev.length ? (prevTotal / rawPrev.length).toFixed(1) : '0.0';
+
+                return (
+                  <div className="flex-1 flex flex-col justify-between gap-6 min-h-[160px]">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className="bg-white/5 border border-emerald-500/20 rounded-xl p-3 text-center flex flex-col items-center justify-center gap-1">
+                        <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest">1ª TENT.</span>
+                        <span className="text-xl font-black text-dark-text">{t1}</span>
+                      </div>
+                      <div className="bg-white/5 border border-cyan-500/20 rounded-xl p-3 text-center flex flex-col items-center justify-center gap-1">
+                        <span className="text-[10px] font-bold text-cyan-500 uppercase tracking-widest">2ª TENT.</span>
+                        <span className="text-xl font-black text-dark-text">{t2}</span>
+                      </div>
+                      <div className="bg-white/5 border border-amber-500/20 rounded-xl p-3 text-center flex flex-col items-center justify-center gap-1">
+                        <span className="text-[10px] font-bold text-amber-500 uppercase tracking-widest">3ª TENT.</span>
+                        <span className="text-xl font-black text-dark-text">{t3}</span>
+                      </div>
+                      <div className="bg-white/5 border border-red-500/20 rounded-xl p-3 text-center flex flex-col items-center justify-center gap-1">
+                        <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest">4+ TENT.</span>
+                        <span className="text-xl font-black text-dark-text">{t4}</span>
+                      </div>
+                    </div>
+                    <div className="bg-white/5 rounded-lg py-3 px-4 flex items-center justify-center gap-3">
+                      <span className="text-sm font-medium text-slate-300">Média de tentativas:</span>
+                      <span className="text-lg font-black text-dark-text">{avg} / lead</span>
+                      {Number(prevAvg) > 0 && (
+                        <div className="text-[10px] text-slate-500 ml-2 border-l border-white/10 pl-3">vs. {prevAvg} prev.</div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Aging */}
+            <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200 flex flex-col h-full">
+              <div className="flex items-center gap-2 mb-1 text-dark-text">
+                <div className="bg-amber-500/20 p-1.5 rounded-lg">
+                  <Clock size={16} className="text-amber-500" />
+                </div>
+                <h2 className="text-sm font-bold uppercase tracking-wider">Aging dos Leads</h2>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">Tempo desde a última interação (leads abertos)</p>
+
+              {(() => {
+                const rawAging = data?.aging_leads || [];
+                const totalAging = rawAging.length;
+                if (totalAging === 0) return (
+                  <div className="flex-1 flex flex-col items-center justify-center gap-2 min-h-[160px]">
+                    <Clock size={32} className="opacity-20 text-slate-400" />
+                    <span className="text-sm text-slate-500">Sem leads em andamento</span>
+                  </div>
+                );
+
+                let a0=0, a1_2=0, a3_5=0, a6_10=0, a10=0;
+                rawAging.forEach((r: any) => {
+                  const dias = Number(r.dias) || 0;
+                  if (dias === 0) a0++;
+                  else if (dias <= 2) a1_2++;
+                  else if (dias <= 5) a3_5++;
+                  else if (dias <= 10) a6_10++;
+                  else a10++;
+                });
+
+                const agingData = [
+                  { label: 'Hoje', val: a0, color: 'bg-emerald-500' },
+                  { label: '1-2 dias', val: a1_2, color: 'bg-cyan-500' },
+                  { label: '3-5 dias', val: a3_5, color: 'bg-amber-500' },
+                  { label: '6-10 dias', val: a6_10, color: 'bg-orange-500' },
+                  { label: '10+ dias', val: a10, color: 'bg-red-500' },
+                ];
+                const maxVal = Math.max(...agingData.map(x => x.val), 1);
+
+                return (
+                  <div className="flex-1 flex flex-col gap-3 justify-center min-h-[160px]">
+                    {agingData.map((item) => {
+                      const pctStr = pct(item.val, totalAging);
+                      const wPct = Math.max((item.val / maxVal) * 100, 2);
+                      return (
+                        <div key={item.label} className="flex items-center gap-3">
+                          <div className="w-16 shrink-0 text-right text-xs font-bold text-slate-400">{item.label}</div>
+                          <div className="flex-1 h-6 bg-white/5 rounded-r overflow-hidden relative group">
+                            <div className={`h-full ${item.color} transition-all duration-500 flex items-center px-2`} style={{ width: `${wPct}%` }}>
+                              {item.val > 0 && <span className="text-[10px] font-bold text-white/90 drop-shadow-md">{item.val}</span>}
+                            </div>
+                          </div>
+                          <div className="w-10 shrink-0 text-right text-[10px] text-slate-500">{pctStr}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+
         </div>
       ) : (
         <div className="px-6 md:px-8 pb-10 space-y-5">
@@ -560,40 +1010,6 @@ export default function CrmMetricas() {
             </div>
           </div>
 
-          {/* ── Sessão de Reuniões ──────────────────────────────────────── */}
-          <div>
-            <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3">Sessão de Reuniões</p>
-            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <SessaoCard
-                iconBg="bg-violet-500/15"
-                icon={<Calendar size={17} className="text-violet-500" />}
-                label="Reuniões Marcadas"
-                value={marcadas}
-                sub={`Taxa de agendamento: ${pct(marcadas, marcadas + noshow)}`}
-              />
-              <SessaoCard
-                iconBg="bg-emerald-500/15"
-                icon={<UserCheck size={17} className="text-emerald-500" />}
-                label="Reuniões Realizadas"
-                value={realizadas}
-                sub={`Taxa de comparecimento: ${pct(realizadas, marcadas)}`}
-              />
-              <SessaoCard
-                iconBg="bg-orange-500/15"
-                icon={<PhoneCall size={17} className="text-orange-500" />}
-                label="No-Show"
-                value={noshow}
-                sub={`Taxa de no-show: ${pct(noshow, marcadas)}`}
-              />
-              <SessaoCard
-                iconBg="bg-cyan-500/15"
-                icon={<RotateCcw size={17} className="text-cyan-500" />}
-                label="Reagendamento"
-                value={reagend}
-                sub={`Taxa: ${pct(reagend, marcadas)}`}
-              />
-            </div>
-          </div>
 
           {/* ── Lista de Fechamentos ────────────────────────────────────── */}
           <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200">
