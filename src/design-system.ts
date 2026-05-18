@@ -28,7 +28,7 @@ export const designSystem = {
 
   modal: {
     overlay: 'fixed inset-0 z-50 modal-overlay',
-    container: 'modal-container w-full max-w-2xl mx-auto my-8 overflow-hidden flex flex-col max-h-[90vh]',
+    container: 'modal-container w-full mx-auto my-8 overflow-hidden flex flex-col',
     header: 'p-6 border-b modal-divider flex items-center justify-between shrink-0',
     title: 'text-lg font-bold modal-title',
     body: 'p-6 overflow-y-auto flex-1 scrollbar-hide',

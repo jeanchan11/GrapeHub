@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   Plus, X, Check, Clock, AlertCircle, ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
-  Trash2, Edit3, MoreHorizontal, Search, RefreshCw, Repeat, Filter,
+  Trash2, Edit3, MoreHorizontal, Search, RefreshCw, Repeat, Filter, ArrowUpDown,
   Circle, CheckCircle2, Tag, CalendarDays, MessageSquare, ListChecks, Send, GripVertical,
   Lightbulb, Star, Sparkles, LayoutGrid, AlignJustify, FileText, Loader2, Save
 } from 'lucide-react';
@@ -1404,6 +1404,8 @@ const TodoStaff: React.FC<{ activePage?: string }> = ({ activePage }) => {
   const [activePriority, setActivePriority] = useState<Priority | ''>('');
   const [activeDate, setActiveDate] = useState<string>('');
   const [collapsed,  setCollapsed]  = useState<Record<string, boolean>>({});
+  const [todoSort, setTodoSort] = useState<'manual' | 'date' | 'priority'>('manual');
+  const [sortDropdownOpen, setSortDropdownOpen] = useState(false);
   const [defaultStatus, setDefaultStatus] = useState<Status>('todo');
   const [tagFilterOpen, setTagFilterOpen] = useState(false);
   const tagFilterRef = useRef<HTMLDivElement>(null);
@@ -1672,7 +1674,29 @@ const TodoStaff: React.FC<{ activePage?: string }> = ({ activePage }) => {
     return matchSearch && matchTag && matchPriority && matchDate;
   });
   const byStatus = (s: Status) => filtered.filter(t => t.status === s);
-  const filteredRec = recurring.filter(r => !search || r.title.toLowerCase().includes(search.toLowerCase()));
+
+  // Map JS getDay() (0=Sun) to Portuguese day names used in DAYS_OF_WEEK
+  const todayDayName = (() => {
+    const map = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+    return map[new Date().getDay()];
+  })();
+
+  const filteredRec = recurring.filter(r => {
+    const matchSearch = !search || r.title.toLowerCase().includes(search.toLowerCase());
+    if (!matchSearch) return false;
+
+    // Diário: always show
+    if (r.frequency === 'diario') return true;
+
+    // Semanal: only show on the configured day
+    if (r.frequency === 'semanal') {
+      if (!r.dayOfWeek) return true; // no day configured = show always
+      return r.dayOfWeek === todayDayName;
+    }
+
+    // Mensal: always show (or could add day-of-month logic later)
+    return true;
+  });
 
   const stats = {
     total:  todos.length,
@@ -2078,19 +2102,70 @@ const TodoStaff: React.FC<{ activePage?: string }> = ({ activePage }) => {
         </div>
       ) : (
         <div className="px-6 md:px-8 pb-10">
-          <div className={viewMode === 'kanban' ? "grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4" : "flex flex-col gap-6"}>
+          <div className={viewMode === 'kanban' ? "grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4" : "flex flex-col gap-6"}>
 
           {/* ── 3 colunas de status ─── */}
           {COLUMNS.map(col => {
-            const items = byStatus(col.id);
+            let items = byStatus(col.id);
+            
+            // Sort "A Fazer" items
+            if (col.id === 'todo' && todoSort !== 'manual') {
+              items = [...items].sort((a, b) => {
+                if (todoSort === 'date') {
+                  if (!a.dueDate && !b.dueDate) return 0;
+                  if (!a.dueDate) return 1;
+                  if (!b.dueDate) return -1;
+                  return a.dueDate.localeCompare(b.dueDate);
+                }
+                if (todoSort === 'priority') {
+                  const order: Record<Priority, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
+                  return (order[a.priority] ?? 3) - (order[b.priority] ?? 3);
+                }
+                return 0;
+              });
+            }
+            
             const isCollapsed = collapsed[col.id];
             return (
               <div key={col.id} className="flex flex-col gap-2">
-                <ColHeader
-                  label={col.label} count={items.length} color={col.color} icon={col.icon}
-                  collapsed={isCollapsed} onToggle={() => toggleCol(col.id)}
-                  onAdd={() => openNewTodo(col.id)}
-                />
+                <div className={`flex items-center justify-between px-3 py-2.5 rounded-xl bg-gradient-to-r ${col.color} border border-white/[0.06]`}>
+                  <div className="flex items-center gap-2">
+                    <span className="text-dark-text/40">{col.icon}</span>
+                    <span className="text-[11px] font-bold text-dark-text uppercase tracking-widest">{col.label}</span>
+                    <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-dark-text/10 flex items-center justify-center text-[10px] font-black text-dark-text/50">{items.length + (col.id === 'todo' ? filteredRec.length : 0)}</span>
+                  </div>
+                  <div className="flex items-center gap-0.5">
+                    {col.id === 'todo' && (
+                      <div className="relative">
+                        <button 
+                          onClick={() => setSortDropdownOpen(p => !p)}
+                          className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all ${todoSort !== 'manual' ? 'text-violet-400 bg-violet-500/15' : 'text-dark-text/40 hover:text-violet-500 hover:bg-violet-500/10'}`}
+                        >
+                          <ArrowUpDown size={12} />
+                        </button>
+                        {sortDropdownOpen && (
+                          <div className="absolute right-0 top-full mt-1 w-36 bg-dark-bg border border-dark-text/10 rounded-xl shadow-2xl shadow-black/30 z-30 overflow-hidden">
+                            {([['manual', 'Manual'], ['date', 'Data'], ['priority', 'Prioridade']] as const).map(([key, label]) => (
+                              <button
+                                key={key}
+                                onClick={() => { setTodoSort(key); setSortDropdownOpen(false); }}
+                                className={`w-full px-3 py-2 text-left text-[11px] font-semibold transition-colors ${
+                                  todoSort === key ? 'text-violet-400 bg-violet-500/10' : 'text-dark-text/60 hover:bg-dark-text/5 hover:text-dark-text'
+                                }`}
+                              >
+                                {todoSort === key && <Check size={10} className="inline mr-1.5" />}{label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <button onClick={() => openNewTodo(col.id)} className="w-6 h-6 rounded-lg flex items-center justify-center text-dark-text/40 hover:text-violet-500 hover:bg-violet-500/10 transition-all"><Plus size={13} /></button>
+                    <button onClick={() => toggleCol(col.id)} className="w-6 h-6 rounded-lg flex items-center justify-center text-dark-text/40 hover:text-dark-text hover:bg-dark-text/10 transition-all">
+                      {isCollapsed ? <ChevronDown size={13} /> : <ChevronUp size={13} />}
+                    </button>
+                  </div>
+                </div>
                 {!isCollapsed && (
                   <div
                     className={`flex flex-col gap-1.5 min-h-[100px] p-1 -m-1 rounded-2xl transition-colors ${dragOverState === `col-${col.id}` ? 'bg-white/5 border border-dashed border-white/10' : ''}`}
@@ -2103,7 +2178,20 @@ const TodoStaff: React.FC<{ activePage?: string }> = ({ activePage }) => {
                     }}
                     onDrop={e => handleColDrop(col.id, e)}
                   >
-                    {items.length === 0
+                    {/* Recurring items inside A Fazer */}
+                    {col.id === 'todo' && filteredRec.length > 0 && (
+                      <>
+                        {filteredRec.map(item => (
+                          <RecRow
+                            key={item.id} item={item}
+                            onEdit={item => { setEditingRec(item); setRecModal(true); }}
+                            onDelete={deleteRec}
+                            onToggle={toggleRec}
+                          />
+                        ))}
+                      </>
+                    )}
+                    {items.length === 0 && (col.id !== 'todo' || filteredRec.length === 0)
                       ? <EmptyCol onAdd={() => openNewTodo(col.id)} label="Adicionar" />
                       : items.map((item, idx) => (
                         <React.Fragment key={item.id}>
@@ -2127,33 +2215,6 @@ const TodoStaff: React.FC<{ activePage?: string }> = ({ activePage }) => {
               </div>
             );
           })}
-
-          {/* ── Coluna Recorrentes ─── */}
-          <div className="flex flex-col gap-2">
-            <ColHeader
-              label="Recorrentes" count={filteredRec.length}
-              color="from-blue-500/20 to-blue-600/10"
-              icon={<Repeat size={13} />}
-              collapsed={!!collapsed['recurring']} onToggle={() => toggleCol('recurring')}
-              onAdd={openNewRec}
-              accentClass="hover:text-blue-400 hover:bg-blue-500/10"
-            />
-            {!collapsed['recurring'] && (
-              <div className="flex flex-col gap-1.5">
-                {filteredRec.length === 0
-                  ? <EmptyCol onAdd={openNewRec} label="Adicionar" />
-                  : filteredRec.map(item => (
-                    <RecRow
-                      key={item.id} item={item}
-                      onEdit={item => { setEditingRec(item); setRecModal(true); }}
-                      onDelete={deleteRec}
-                      onToggle={toggleRec}
-                    />
-                  ))
-                }
-              </div>
-            )}
-          </div>
 
         </div>
       </div>

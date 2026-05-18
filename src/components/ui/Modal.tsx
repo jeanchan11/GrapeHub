@@ -10,6 +10,7 @@ interface ModalProps {
   children: React.ReactNode;
   footer?: React.ReactNode;
   maxWidth?: string;
+  minHeight?: string;
   headerContent?: React.ReactNode;
   headerActions?: React.ReactNode;
   tabs?: React.ReactNode;
@@ -23,6 +24,7 @@ export const Modal: React.FC<ModalProps> = ({
   children, 
   footer,
   maxWidth = 'max-w-2xl',
+  minHeight = '',
   headerContent,
   headerActions,
   tabs
@@ -30,8 +32,8 @@ export const Modal: React.FC<ModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className={`${designSystem.modal.overlay} flex items-center justify-center p-4`}>
-      <div className={`${designSystem.modal.container} ${maxWidth} animate-in zoom-in-95 duration-200`}>
+    <div className={`${designSystem.modal.overlay} flex items-start justify-center p-4 overflow-y-auto pt-10 pb-10`}>
+      <div className={`${designSystem.modal.container} ${maxWidth} ${minHeight} animate-in zoom-in-95 duration-200`}>
         <div className={designSystem.modal.header}>
           <div className="flex items-center gap-3 min-w-0">
             {icon && <div className="text-purple-500 flex-shrink-0">{icon}</div>}

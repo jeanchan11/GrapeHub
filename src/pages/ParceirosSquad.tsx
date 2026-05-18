@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { RefreshCw, ChevronDown, Check } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useMenu } from '../context/MenuContext';
 import ProjectsModule from './ProjectsModule';
 
 interface ProjectRow {
@@ -41,8 +42,9 @@ function fmtBRL(val: number): string {
   return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
 }
 
-export default function ParceirosSquad({ onPageChange }: { onPageChange?: (page: string) => void }) {
+export default function ParceirosSquad({ activePage, onPageChange }: { activePage?: string; onPageChange?: (page: string) => void }) {
   const { userData } = useAuth();
+  const { menu } = useMenu();
   const isAdmin = userData?.role === 'superadmin' || userData?.role === 'admin';
 
   const [projects, setProjects] = useState<ProjectRow[]>([]);
@@ -56,6 +58,33 @@ export default function ParceirosSquad({ onPageChange }: { onPageChange?: (page:
   const [savingPageId, setSavingPageId] = useState<string | null>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
 
+  // Resolve the squad name from the menu hierarchy
+  const squadName = useMemo(() => {
+    if (!activePage || !Array.isArray(menu)) return 'Able'; // fallback
+    for (const section of menu) {
+      for (const ss of section.subSessions || []) {
+        // Check pages directly inside subsession
+        for (const p of ss.pages || []) {
+          if (p.id === activePage) {
+            // The parent subsession label is typically "Squad Baker"
+            const match = ss.label?.match(/Squad\s+(.+)/i);
+            return match ? match[1] : ss.label || 'Able';
+          }
+        }
+        // Check inside sub-sub-sessions
+        for (const sss of ss.subSubSessions || []) {
+          for (const p of sss.pages || []) {
+            if (p.id === activePage) {
+              const match = ss.label?.match(/Squad\s+(.+)/i);
+              return match ? match[1] : ss.label || 'Able';
+            }
+          }
+        }
+      }
+    }
+    return 'Able'; // fallback
+  }, [activePage, menu]);
+
   const fetchData = async (silent = false) => {
     if (!silent) setLoading(true);
     setSpinning(true);
@@ -67,7 +96,7 @@ export default function ParceirosSquad({ onPageChange }: { onPageChange?: (page:
       
       if (resProj.ok) {
         const all: ProjectRow[] = await resProj.json();
-        const relevant = all.filter(p => p.squad === 'Able');
+        const relevant = all.filter(p => p.squad === squadName);
         setProjects(relevant);
       }
       
@@ -82,7 +111,7 @@ export default function ParceirosSquad({ onPageChange }: { onPageChange?: (page:
     }
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { fetchData(); }, [squadName]);
 
   // Close picker on outside click
   useEffect(() => {
@@ -132,7 +161,7 @@ export default function ParceirosSquad({ onPageChange }: { onPageChange?: (page:
             Parceiros <span className="text-violet-500">Squad</span>
           </h1>
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">
-            Todos os projetos · Squad Able
+            Todos os projetos · Squad {squadName}
           </p>
         </div>
         <button

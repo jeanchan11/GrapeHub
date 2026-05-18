@@ -3356,8 +3356,9 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
             </div>
           }
           maxWidth="max-w-5xl"
+          minHeight="min-h-[800px]"
         >
-        <div className="flex flex-col h-[75vh] min-h-[600px]">
+        <div className="flex flex-col min-h-[750px]">
           {/* Tabs */}
           <div className="flex items-center gap-6 mb-6 border-b modal-divider shrink-0">
             {(['resultado', 'reunioes', 'comentarios', 'analise', 'arquivos'] as const).map((tab) => (
@@ -4089,7 +4090,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     {/* Image Preview Modal */}
     <AnimatePresence>
       {previewImage && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4">
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
