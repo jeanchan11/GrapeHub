@@ -9346,39 +9346,43 @@ app.get("/api/todos", async (req, res) => {
 
       // After responding successfully to the client, silently trigger webhook
       try {
-        if (updatedLead.responsavel_id) {
-          const webhookRes = await pool.query(`
-            SELECT ws.form_webhook_url 
-            FROM crm_webhook_settings ws
-            JOIN users u ON u.email = ws.user_id
-            WHERE u.id = $1
-          `, [updatedLead.responsavel_id]);
+        // Find any configured form webhook URL (not per-user, just the first one set)
+        const webhookRes = await pool.query(`
+          SELECT form_webhook_url 
+          FROM crm_webhook_settings 
+          WHERE form_webhook_url IS NOT NULL AND form_webhook_url != ''
+          LIMIT 1
+        `);
+        
+        if (webhookRes.rows.length > 0 && webhookRes.rows[0].form_webhook_url) {
+          const webhookUrl = webhookRes.rows[0].form_webhook_url;
+          console.log(`[WEBHOOK] Firing form_submitted webhook to: ${webhookUrl} for lead ${id}`);
           
-          if (webhookRes.rows.length > 0 && webhookRes.rows[0].form_webhook_url) {
-            const webhookUrl = webhookRes.rows[0].form_webhook_url;
-            
-            // Fire and forget
-            fetch(webhookUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                event: 'form_submitted',
-                lead_id: id,
-                nome: updatedLead.nome,
-                telefone: updatedLead.telefone,
-                nicho: updatedLead.nicho,
-                responsavel_id: updatedLead.responsavel_id,
-                formData: {
-                  form_nome_completo,
-                  form_nome_fantasia,
-                  form_telefone_whatsapp,
-                  form_cep,
-                  form_cidade,
-                  form_estado
-                }
-              })
-            }).catch(e => console.error("Error firing webhook:", e.message));
-          }
+          // Fire and forget
+          fetch(webhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              event: 'form_submitted',
+              lead_id: id,
+              nome: updatedLead.nome,
+              telefone: updatedLead.telefone,
+              nicho: updatedLead.nicho,
+              responsavel_id: updatedLead.responsavel_id,
+              formData: {
+                form_nome_completo,
+                form_nome_fantasia,
+                form_telefone_whatsapp,
+                form_cnpj_cpf,
+                form_cep,
+                form_cidade,
+                form_estado
+              }
+            })
+          }).then(r => console.log(`[WEBHOOK] Response status: ${r.status}`))
+            .catch(e => console.error("[WEBHOOK] Error firing webhook:", e.message));
+        } else {
+          console.log(`[WEBHOOK] No form_webhook_url configured, skipping webhook for lead ${id}`);
         }
       } catch (webhookErr) {
         console.error("Error in webhook logic:", webhookErr);
