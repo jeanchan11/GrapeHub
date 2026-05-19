@@ -3769,10 +3769,10 @@ app.get("/api/todos", async (req, res) => {
 
   app.patch("/api/crm-checklist-template/:id", async (req, res) => {
     const { id } = req.params;
-    const { item, order_index, active } = req.body;
+    const { item, order_index, active, block } = req.body;
     try {
-      const updates = [];
-      const values = [];
+      const updates: string[] = [];
+      const values: any[] = [];
       let paramCount = 1;
 
       if (item !== undefined) {
@@ -3788,6 +3788,11 @@ app.get("/api/todos", async (req, res) => {
       if (active !== undefined) {
         updates.push(`active = $${paramCount}`);
         values.push(active);
+        paramCount++;
+      }
+      if (block !== undefined) {
+        updates.push(`block = $${paramCount}`);
+        values.push(block);
         paramCount++;
       }
 

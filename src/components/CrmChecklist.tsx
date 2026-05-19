@@ -92,20 +92,33 @@ const TemplateModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     setDragOverId(null);
   };
 
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
   const handleSaveOrder = async () => {
     setSaving(true);
+    setSaveSuccess(false);
     try {
-      // Save order_index for all items
-      await Promise.all(
+      const results = await Promise.all(
         items.map((item, index) =>
           fetch(`/api/crm-checklist-template/${item.id}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ order_index: index })
+            body: JSON.stringify({ order_index: index, block: item.block })
+          }).then(async r => {
+            if (!r.ok) {
+              const text = await r.text();
+              console.error(`PATCH failed for item ${item.id}:`, text);
+            }
+            return r;
           })
         )
       );
-      onClose();
+
+      const allOk = results.every(r => r.ok);
+      if (allOk) {
+        setSaveSuccess(true);
+        setTimeout(() => onClose(), 600);
+      }
     } catch (err) {
       console.error('Failed to save order:', err);
     } finally {
@@ -217,11 +230,20 @@ const TemplateModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           </button>
           <button
             onClick={handleSaveOrder}
-            disabled={saving}
-            className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-violet-500 hover:bg-violet-600 text-white transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+            disabled={saving || saveSuccess}
+            className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2 ${
+              saveSuccess
+                ? 'bg-emerald-500 text-white'
+                : 'bg-violet-500 hover:bg-violet-600 text-white disabled:opacity-50'
+            }`}
           >
-            <Save size={14} />
-            {saving ? 'Salvando...' : 'Salvar'}
+            {saveSuccess ? (
+              <><Check size={14} /> Salvo!</>
+            ) : saving ? (
+              <><div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Salvando...</>
+            ) : (
+              <><Save size={14} /> Salvar</>
+            )}
           </button>
         </div>
       </div>
