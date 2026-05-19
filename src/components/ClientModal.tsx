@@ -27,6 +27,10 @@ interface Client {
   crmStatus?: string;
   product?: string;
   contracts?: string;
+  billingName?: string;
+  billingEmail?: string;
+  billingPhone?: string;
+  billingMethod?: string;
   hasActiveSubscription?: boolean;
   subscriptionValue?: number;
   subscriptionNextDue?: string;
@@ -95,7 +99,11 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
     status: 'Ativo' as 'Ativo' | 'Inativo',
     crmStatus: '',
     product: '',
-    finSubscriptionId: ''
+    finSubscriptionId: '',
+    billingName: '',
+    billingEmail: '',
+    billingPhone: '',
+    billingMethod: ''
   });
 
   // Finance state
@@ -134,7 +142,11 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
         status: editingClient.status || 'Ativo',
         crmStatus: editingClient.crmStatus || '',
         product: editingClient.product || '',
-        finSubscriptionId: editingClient.finSubscriptionId || ''
+        finSubscriptionId: editingClient.finSubscriptionId || '',
+        billingName: editingClient.billingName || '',
+        billingEmail: editingClient.billingEmail || '',
+        billingPhone: editingClient.billingPhone || '',
+        billingMethod: editingClient.billingMethod || ''
       });
     } else {
       setFormData({
@@ -148,7 +160,11 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
         status: 'Ativo',
         crmStatus: '',
         product: '',
-        finSubscriptionId: ''
+        finSubscriptionId: '',
+        billingName: '',
+        billingEmail: '',
+        billingPhone: '',
+        billingMethod: ''
       });
     }
     setActiveTab('client');
@@ -261,24 +277,80 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
-    
-    const clientData = {
-      id: editingClient?.id || Math.random().toString(36).substr(2, 9),
-      ...formData,
-      contracts: editingClient?.contracts || '[]',
-      createdAt: editingClient?.createdAt || new Date().toISOString()
-    };
 
     try {
-      const response = await fetch('/api/clients', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify([clientData])
-      });
+      if (editingClient) {
+        // Step 1: Update core fields via PATCH
+        const corePayload: Record<string, any> = {
+          name: formData.name,
+          start_date: formData.startDate,
+          location: formData.location,
+          squad: formData.squad,
+          tags: formData.tags,
+          email: formData.email,
+          phone: formData.phone,
+          product: formData.product,
+        };
 
-      if (response.ok) {
-        onSaveSuccess();
-        onClose();
+        const response = await fetch(`/api/clients/${editingClient.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(corePayload)
+        });
+
+        if (response.ok) {
+          // Step 2: Try to save billing fields (may fail if DB columns don't exist yet)
+          try {
+            const billingPayload: Record<string, any> = {};
+            if (formData.billingName !== undefined) billingPayload.billing_name = formData.billingName;
+            if (formData.billingEmail !== undefined) billingPayload.billing_email = formData.billingEmail;
+            if (formData.billingPhone !== undefined) billingPayload.billing_phone = formData.billingPhone;
+            if (formData.billingMethod !== undefined) billingPayload.billing_method = formData.billingMethod;
+
+            if (Object.keys(billingPayload).length > 0) {
+              await fetch(`/api/clients/${editingClient.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(billingPayload)
+              });
+            }
+          } catch (billingErr) {
+            console.warn('Billing fields not saved (DB columns may not exist yet):', billingErr);
+          }
+
+          onSaveSuccess();
+          onClose();
+        } else {
+          const errorText = await response.text();
+          console.error('Failed to save client:', errorText);
+        }
+      } else {
+        // Create new client via POST
+        const clientData = {
+          id: Math.random().toString(36).substr(2, 9),
+          name: formData.name,
+          startDate: formData.startDate,
+          location: formData.location,
+          squad: formData.squad,
+          tags: formData.tags,
+          email: formData.email,
+          phone: formData.phone,
+          status: formData.status,
+          crmStatus: formData.crmStatus,
+          product: formData.product,
+          finSubscriptionId: formData.finSubscriptionId,
+          contracts: '[]',
+          createdAt: new Date().toISOString()
+        };
+        const response = await fetch('/api/clients', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify([clientData])
+        });
+        if (response.ok) {
+          onSaveSuccess();
+          onClose();
+        }
       }
     } catch (err) {
       console.error("Failed to save client:", err);
@@ -519,23 +591,55 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <label className={designSystem.input.label}>Status</label>
-                <div className="flex gap-3">
-                  {['Ativo', 'Inativo'].map((status) => (
-                    <button
-                      key={status}
-                      type="button"
-                      onClick={() => setFormData({ ...formData, status: status as 'Ativo' | 'Inativo' })}
-                      className={`flex-1 py-4 rounded-xl font-bold transition-all ${
-                        formData.status === status
-                          ? 'bg-violet-600 text-white shadow-lg shadow-violet-500/20'
-                          : 'bg-slate-100 dark:bg-white/5 text-slate-500 hover:bg-slate-200 dark:hover:bg-white/10'
-                      }`}
+              <div className="pt-6 border-t border-slate-200 dark:border-white/10">
+                <h4 className="text-sm font-bold text-light-text dark:text-white mb-4 flex items-center gap-2">
+                  <CreditCard size={18} className="text-violet-500" /> Informações de Cobrança
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                  <div className="space-y-2">
+                    <label className={designSystem.input.label}>Nome de Cobrança</label>
+                    <input 
+                      type="text"
+                      value={formData.billingName}
+                      onChange={(e) => setFormData({ ...formData, billingName: e.target.value })}
+                      placeholder="Ex: Financeiro Empresa"
+                      className={designSystem.input.field}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className={designSystem.input.label}>Meio de Cobrança</label>
+                    <select 
+                      value={formData.billingMethod}
+                      onChange={(e) => setFormData({ ...formData, billingMethod: e.target.value })}
+                      className={designSystem.input.field}
                     >
-                      {status}
-                    </button>
-                  ))}
+                      <option value="" className="bg-light-sidebar dark:bg-dark-sidebar">Selecionar...</option>
+                      <option value="Whatsapp" className="bg-light-sidebar dark:bg-dark-sidebar">Whatsapp</option>
+                      <option value="E-mail" className="bg-light-sidebar dark:bg-dark-sidebar">E-mail</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className={designSystem.input.label}>Email de Cobrança</label>
+                    <input 
+                      type="email"
+                      value={formData.billingEmail}
+                      onChange={(e) => setFormData({ ...formData, billingEmail: e.target.value })}
+                      placeholder="financeiro@empresa.com"
+                      className={designSystem.input.field}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className={designSystem.input.label}>Whatsapp de Cobrança</label>
+                    <input 
+                      type="text"
+                      value={formData.billingPhone}
+                      onChange={(e) => setFormData({ ...formData, billingPhone: e.target.value })}
+                      placeholder="(00) 00000-0000"
+                      className={designSystem.input.field}
+                    />
+                  </div>
                 </div>
               </div>
             </form>
@@ -592,6 +696,32 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
                 <span className={`inline-flex px-3 py-1 rounded-lg text-xs font-bold ${
                   formData.status === 'Ativo' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'
                 }`}>{formData.status}</span>
+              </div>
+
+              <div className="pt-6 border-t border-slate-200 dark:border-white/10">
+                <h4 className="text-sm font-bold text-light-text dark:text-white mb-4 flex items-center gap-2">
+                  <CreditCard size={18} className="text-violet-500" /> Informações de Cobrança
+                </h4>
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Nome</p>
+                    <p className="text-sm text-light-text dark:text-white">{formData.billingName || '-'}</p>
+                  </div>
+                  <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Meio de Cobrança</p>
+                    <p className="text-sm font-medium text-light-text dark:text-white">{formData.billingMethod || '-'}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Email</p>
+                    <p className="text-sm text-light-text dark:text-white">{formData.billingEmail || '-'}</p>
+                  </div>
+                  <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Whatsapp</p>
+                    <p className="text-sm text-light-text dark:text-white">{formData.billingPhone || '-'}</p>
+                  </div>
+                </div>
               </div>
               <button
                 onClick={() => setIsEditing(true)}

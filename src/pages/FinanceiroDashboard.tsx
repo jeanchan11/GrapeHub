@@ -237,8 +237,6 @@ export default function FinanceiroDashboard() {
   const [resumo, setResumo] = useState<Resumo | null>(null);
   const [fluxo, setFluxo] = useState<FluxoDiario[]>([]);
   const [saldoAnterior, setSaldoAnterior] = useState<number>(0);
-  const [clientes, setClientes] = useState<ClienteRecente[]>([]);
-  const [inadimplentes, setInadimplentes] = useState<Inadimplente[]>([]);
   const [previsto, setPrevisto] = useState<Previsto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -250,15 +248,13 @@ export default function FinanceiroDashboard() {
       try {
         setLoading(true);
         const m = selectedMonth;
-        const [resResumo, resFluxo, resClientes, resInadimplentes, resPrevisto] = await Promise.all([
+        const [resResumo, resFluxo, resPrevisto] = await Promise.all([
           fetch(`/api/financeiro/resumo?mes=${m}`),
           fetch(`/api/financeiro/fluxo-diario?mes=${m}`),
-          fetch(`/api/financeiro/clientes-recentes?mes=${m}`),
-          fetch(`/api/financeiro/inadimplentes?mes=${m}`),
           fetch(`/api/financeiro/previsto?mes=${m}`),
         ]);
 
-        if (!resResumo.ok || !resFluxo.ok || !resClientes.ok || !resInadimplentes.ok || !resPrevisto.ok) {
+        if (!resResumo.ok || !resFluxo.ok || !resPrevisto.ok) {
           throw new Error('Falha ao carregar dados financeiros');
         }
 
@@ -267,8 +263,6 @@ export default function FinanceiroDashboard() {
         setResumo(await resResumo.json());
         setFluxo(fluxoData.diario || (Array.isArray(fluxoData) ? fluxoData : []));
         setSaldoAnterior(fluxoData.saldo_anterior || 0);
-        setClientes(await resClientes.json());
-        setInadimplentes(await resInadimplentes.json());
         setPrevisto(await resPrevisto.json());
       } catch (err: any) {
         setError(err.message || 'Erro desconhecido');
@@ -410,6 +404,13 @@ export default function FinanceiroDashboard() {
   const lineChartOptions = {
     responsive: true,
     maintainAspectRatio: false,
+    interaction: {
+      mode: 'index' as const,
+      intersect: false,
+    },
+    onHover: (_: any, elements: any[]) => {
+      // handled via wrapper onMouseMove
+    },
     plugins: {
       legend: { 
         display: true,
@@ -463,8 +464,6 @@ export default function FinanceiroDashboard() {
     return 'bg-slate-500';
   };
 
-  const totalInadimplencia = inadimplentes.reduce((acc, curr) => acc + parseFloat(curr.valor), 0);
-  const maxAtraso = inadimplentes.length > 0 ? Math.max(...inadimplentes.map(i => i.dias_atraso)) : 0;
 
   // ── Bar click handler ──────────────────────────────────────────────────
   const handleBarClick = (barData: any) => {
@@ -474,13 +473,33 @@ export default function FinanceiroDashboard() {
     const [year] = selectedMonth.split('-');
     const iso = `${year}-${mm}-${dd}`;
     const label = `${dd}/${mm}/${year}`;
-    setDayPopup({ iso, label, items: [] });
+
+    const today = new Date(); today.setHours(0,0,0,0);
+    const clickedDate = new Date(`${iso}T00:00:00`);
+    const isFuture = clickedDate > today;
+
+    setDayPopup({ iso, label, items: [], isPrevisto: isFuture } as any);
     setDayLoading(true);
-    fetch(`/api/financeiro/extrato?start=${iso}&end=${iso}`)
-      .then(res => res.ok ? res.json() : [])
-      .then(items => setDayPopup({ iso, label, items: Array.isArray(items) ? items : [] }))
-      .catch(() => setDayPopup({ iso, label, items: [] }))
-      .finally(() => setDayLoading(false));
+
+    if (isFuture) {
+      fetch(`/api/financeiro/previsto-dia?dia=${iso}`)
+        .then(res => res.ok ? res.json() : { recebimentos: [], pagamentos: [] })
+        .then(data => {
+          const all = [
+            ...(data.recebimentos || []),
+            ...(data.pagamentos || []),
+          ];
+          setDayPopup({ iso, label, items: all, isPrevisto: true, recebimentos: data.recebimentos || [], pagamentos: data.pagamentos || [] } as any);
+        })
+        .catch(() => setDayPopup({ iso, label, items: [], isPrevisto: true, recebimentos: [], pagamentos: [] } as any))
+        .finally(() => setDayLoading(false));
+    } else {
+      fetch(`/api/financeiro/extrato?start=${iso}&end=${iso}`)
+        .then(res => res.ok ? res.json() : [])
+        .then(items => setDayPopup({ iso, label, items: Array.isArray(items) ? items : [], isPrevisto: false } as any))
+        .catch(() => setDayPopup({ iso, label, items: [], isPrevisto: false } as any))
+        .finally(() => setDayLoading(false));
+    }
   };
 
   // Valores do resumo (agora vêm direto do backend)
@@ -504,8 +523,8 @@ export default function FinanceiroDashboard() {
         
         {/* Header */}
         <PageHeader 
-          title="Finan" 
-          titleAccent="ceiro" 
+          title="" 
+          titleAccent="Financeiro" 
           subtitle="Gestão integrada de caixa e indicadores de saúde do negócio"
         >
           <div className="flex items-center gap-2">
@@ -588,24 +607,7 @@ export default function FinanceiroDashboard() {
                     </span>
                   </div>
                 </div>
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 h-1.5 bg-slate-100 dark:bg-white/10 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all duration-500 ${
-                          saldoAcumulado >= saldoCaixa ? 'bg-violet-500' : 'bg-rose-400'
-                        }`}
-                        style={{ width: `${Math.min(100, Math.max(0, saldoCaixa > 0 ? (saldoAcumulado / saldoCaixa) * 100 : 0))}%` }}
-                      />
-                    </div>
-                    <span className="text-[10px] font-bold text-slate-400">
-                      {saldoCaixa > 0
-                        ? `${saldoAcumulado >= saldoCaixa ? '+' : ''}${Math.round(((saldoAcumulado - saldoCaixa) / saldoCaixa) * 100)}%`
-                        : '—'
-                      }
-                    </span>
-                  </div>
-                </div>
+                <div className="h-[22px]" />
               </div>
             }
             colorClass="bg-emerald-600"
@@ -682,10 +684,22 @@ export default function FinanceiroDashboard() {
             title="Saldo do Período" 
             value={formatCurrency(saldoPeriodo)} 
             subtitle={
-              <div className="pt-1">
-                <span className={`text-sm font-semibold ${saldoPeriodo >= 0 ? 'text-emerald-500' : 'text-rose-400'}`}>
-                  {saldoPeriodo >= 0 ? "Positivo" : "Negativo"}
-                </span>
+              <div className="space-y-3">
+                <div className="flex flex-col gap-2">
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-slate-500">Realizado</span>
+                    <span className={`font-semibold ${saldoPeriodo >= 0 ? 'text-emerald-500' : 'text-rose-400'}`}>
+                      {formatCurrency(saldoPeriodo)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-slate-500">Previsto</span>
+                    <span className={`font-semibold ${(faturamentoTotal - totalDespesasMes) >= 0 ? 'text-violet-400' : 'text-rose-400'}`}>
+                      {formatCurrency(faturamentoTotal - totalDespesasMes)}
+                    </span>
+                  </div>
+                </div>
+                <div className="h-[22px]" />
               </div>
             }
             colorClass="bg-violet-500"
@@ -700,13 +714,18 @@ export default function FinanceiroDashboard() {
               <h2 className="text-lg font-bold text-slate-900 dark:text-white">Movimentação Diária</h2>
               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Entradas (Verde) vs Saídas (Vermelho)</p>
             </div>
-            <div className="h-[300px]" style={{ userSelect: 'none' }}>
+            <div className="h-[300px]" style={{ userSelect: 'none' }} onMouseDown={(e) => e.preventDefault()}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   data={todosOsDias}
                   barSize={18}
                   barCategoryGap="20%"
                   style={{ cursor: 'pointer' }}
+                  onClick={(data: any) => {
+                    if (data && data.activePayload && data.activePayload.length > 0) {
+                      handleBarClick(data.activePayload[0].payload);
+                    }
+                  }}
                 >
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(150, 150, 150, 0.1)" />
                   <XAxis
@@ -749,66 +768,24 @@ export default function FinanceiroDashboard() {
                 </h3>
               </div>
             </div>
-            <div className="h-[300px]">
-              <Chart type="line" data={chartSaudeData} options={lineChartOptions} />
+            <div
+              className="h-[300px]"
+              style={{ cursor: 'pointer' }}
+              onMouseDown={(e) => e.preventDefault()}
+            >
+              <Chart
+                type="line"
+                data={chartSaudeData}
+                options={lineChartOptions}
+                onClick={(_event: any, elements: any[]) => {
+                  if (elements.length > 0) {
+                    const idx = elements[0].index;
+                    const dayItem = todosOsDias[idx];
+                    if (dayItem?.dia) handleBarClick({ dia: dayItem.dia });
+                  }
+                }}
+              />
             </div>
-          </div>
-        </div>
-
-        {/* Linha 3 - Clientes e Inadimplência */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Clientes Recentes */}
-          <div className="bg-dark-card border border-white/10 rounded-2xl p-6 flex flex-col transition-colors duration-200">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-widest">Clientes recentes</h2>
-              <button className="text-[10px] font-bold text-[#7C3AED] uppercase tracking-widest hover:underline">ver todos</button>
-            </div>
-            <div className="flex-1 overflow-y-auto pr-2 space-y-4 max-h-[300px]">
-              {clientes.map((cliente, idx) => (
-                <div key={idx} className="flex items-center justify-between p-3 bg-dark-bg border border-white/10 rounded-xl">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white ${getStatusDotColor(cliente.status)}`}>
-                      {getInitials(cliente.fantasy_name || cliente.name)}
-                    </div>
-                    <div>
-                      <p className="text-sm font-bold text-slate-900 dark:text-white truncate max-w-[150px]">{cliente.fantasy_name || cliente.name}</p>
-                      <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate max-w-[150px] uppercase tracking-wider">Parc. {cliente.installment_number || '1'} • {cliente.payment_method || 'N/A'}</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm font-bold text-slate-900 dark:text-white">{formatCurrency(cliente.valor)}</p>
-                    <span className={`inline-block mt-1 px-2 py-0.5 text-[10px] font-bold rounded-full uppercase tracking-wider ${getStatusColor(cliente.status)}`}>
-                      {cliente.status}
-                    </span>
-                  </div>
-                </div>
-              ))}
-              {clientes.length === 0 && (
-                <p className="text-sm text-slate-500 dark:text-slate-400 text-center py-4">Nenhum cliente recente.</p>
-              )}
-            </div>
-          </div>
-
-          {/* Inadimplência */}
-          <div className="bg-dark-card border border-white/10 rounded-2xl p-6 flex flex-col transition-colors duration-200">
-            <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-widest mb-6">Inadimplência</h2>
-            <div className="space-y-4 flex-1">
-            <div className="flex justify-between items-center p-4 bg-dark-bg border border-white/10 rounded-xl">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Clientes atrasados</span>
-              <span className="text-xl font-black text-dark-text">{inadimplentes.length}</span>
-            </div>
-            <div className="flex justify-between items-center p-4 bg-dark-bg border border-white/10 rounded-xl">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Valor em risco</span>
-              <span className="text-xl font-black text-red-500">{formatCurrency(totalInadimplencia)}</span>
-            </div>
-            <div className="flex justify-between items-center p-4 bg-dark-bg border border-white/10 rounded-xl">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Maior atraso</span>
-              <span className="text-xl font-black text-dark-text">{maxAtraso} dias</span>
-            </div>
-            </div>
-            <button className="w-full mt-6 py-3 bg-[#EDE9FE] dark:bg-[#7C3AED]/20 text-[#7C3AED] dark:text-[#A78BFA] font-bold text-[11px] uppercase tracking-widest rounded-xl hover:bg-[#DDD6FE] dark:hover:bg-[#7C3AED]/30 transition-colors">
-              Ver inadimplentes
-            </button>
           </div>
         </div>
           </>
@@ -850,18 +827,19 @@ export default function FinanceiroDashboard() {
             {!dayLoading && dayPopup.items.length > 0 && (() => {
               const ent = dayPopup.items.filter((i: any) => i.type === 1).reduce((s: number, i: any) => s + parseFloat(i.value || i.movement_value || '0'), 0);
               const sai = dayPopup.items.filter((i: any) => i.type === -1).reduce((s: number, i: any) => s + parseFloat(i.value || i.movement_value || '0'), 0);
+              const isPrev = (dayPopup as any).isPrevisto;
               return (
                 <div className="grid grid-cols-3 gap-3 px-6 py-4 border-b border-slate-100 dark:border-white/10">
                   <div>
-                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">↑ Entradas</p>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">{isPrev ? '↑ A Receber' : '↑ Entradas'}</p>
                     <p className="text-base font-black text-emerald-500">{formatCurrency(ent)}</p>
                   </div>
                   <div>
-                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">↓ Saídas</p>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">{isPrev ? '↓ A Pagar' : '↓ Saídas'}</p>
                     <p className="text-base font-black text-rose-500">{formatCurrency(sai)}</p>
                   </div>
                   <div>
-                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Saldo do dia</p>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Saldo previsto</p>
                     <p className={`text-base font-black ${ent - sai >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
                       {ent - sai >= 0 ? '+' : ''}{formatCurrency(ent - sai)}
                     </p>
@@ -875,13 +853,60 @@ export default function FinanceiroDashboard() {
               {dayLoading ? (
                 <div className="flex flex-col items-center justify-center py-16 gap-3">
                   <div className="w-8 h-8 border-4 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
-                  <p className="text-sm text-slate-400">Carregando movimentações...</p>
+                  <p className="text-sm text-slate-400">Carregando provisionamentos...</p>
                 </div>
               ) : dayPopup.items.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16">
-                  <p className="text-sm font-bold text-slate-400">Nenhuma movimentação neste dia</p>
+                  <p className="text-sm font-bold text-slate-400">Nenhum lançamento neste dia</p>
+                </div>
+              ) : (dayPopup as any).isPrevisto ? (
+                // ── Dias futuros: duas seções separadas ──
+                <div className="divide-y divide-white/5">
+                  {/* A Receber */}
+                  {((dayPopup as any).recebimentos || []).length > 0 && (
+                    <>
+                      <div className="px-6 py-2 bg-emerald-500/5">
+                        <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest">↑ A Receber</p>
+                      </div>
+                      {((dayPopup as any).recebimentos || []).map((item: any, idx: number) => (
+                        <div key={item.id || idx} className="flex items-center gap-4 px-6 py-3.5 hover:bg-white/[0.02] transition-colors">
+                          <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 bg-emerald-500/10">
+                            <ArrowUp size={14} className="text-emerald-500" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-dark-text truncate">{item.description || '—'}</p>
+                            {item.person_name && <p className="text-[11px] text-slate-400 truncate">{item.person_name}</p>}
+                          </div>
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-bold shrink-0 bg-emerald-500/10 text-emerald-400">Previsto</span>
+                          <span className="text-sm font-bold shrink-0 text-emerald-500">+{formatCurrency(Math.abs(item.value))}</span>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                  {/* A Pagar */}
+                  {((dayPopup as any).pagamentos || []).length > 0 && (
+                    <>
+                      <div className="px-6 py-2 bg-rose-500/5">
+                        <p className="text-[10px] font-bold text-rose-500 uppercase tracking-widest">↓ A Pagar</p>
+                      </div>
+                      {((dayPopup as any).pagamentos || []).map((item: any, idx: number) => (
+                        <div key={item.id || idx} className="flex items-center gap-4 px-6 py-3.5 hover:bg-white/[0.02] transition-colors">
+                          <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 bg-rose-500/10">
+                            <ArrowDown size={14} className="text-rose-500" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-dark-text truncate">{item.description || '—'}</p>
+                            {item.person_name && <p className="text-[11px] text-slate-400 truncate">{item.person_name}</p>}
+                          </div>
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-bold shrink-0 bg-rose-500/10 text-rose-400">Previsto</span>
+                          <span className="text-sm font-bold shrink-0 text-rose-500">-{formatCurrency(Math.abs(item.value))}</span>
+                        </div>
+                      ))}
+                    </>
+                  )}
                 </div>
               ) : (
+                // ── Dias passados: lista normal do extrato ──
                 <div className="divide-y divide-slate-100 dark:divide-white/5">
                   {dayPopup.items.map((item: any, idx: number) => {
                     const valor = parseFloat(item.value || item.movement_value || '0');

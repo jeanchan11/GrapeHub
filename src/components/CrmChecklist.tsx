@@ -92,6 +92,27 @@ const TemplateModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     setDragOverId(null);
   };
 
+  const handleSaveOrder = async () => {
+    setSaving(true);
+    try {
+      // Save order_index for all items
+      await Promise.all(
+        items.map((item, index) =>
+          fetch(`/api/crm-checklist-template/${item.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ order_index: index })
+          })
+        )
+      );
+      onClose();
+    } catch (err) {
+      console.error('Failed to save order:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <div className="bg-white dark:bg-[#18181b] border border-gray-200 dark:border-white/10 rounded-2xl w-full max-w-lg max-h-[85vh] flex flex-col shadow-2xl">
@@ -184,6 +205,24 @@ const TemplateModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
               <Plus size={14} />
             </button>
           </div>
+        </div>
+
+        {/* Footer - Save button */}
+        <div className="px-4 pb-4 pt-0 flex gap-2">
+          <button
+            onClick={onClose}
+            className="flex-1 py-2.5 rounded-xl text-sm font-bold border border-gray-200 dark:border-white/10 text-slate-500 hover:text-gray-900 dark:hover:text-white transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleSaveOrder}
+            disabled={saving}
+            className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-violet-500 hover:bg-violet-600 text-white transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            <Save size={14} />
+            {saving ? 'Salvando...' : 'Salvar'}
+          </button>
         </div>
       </div>
     </div>

@@ -465,14 +465,11 @@ const ActiveClients: React.FC = () => {
 
   const activeClients = clients.filter(c => c.status === 'Ativo');
   const churnClients = clients.filter(c => c.status === 'Inativo');
-  const tcvClients = activeClients.filter(c => c.product === 'TCV' && !c.tags?.includes('quarentena'));
-  const recorrenteClients = activeClients.filter(c => c.product === 'Recorrência Mensal' && !c.tags?.includes('quarentena'));
+
   const quarentenaClients = activeClients.filter(c => c.tags?.includes('quarentena'));
 
   const baseList = 
     activeTab === 'ativos' ? activeClients :
-    activeTab === 'tcv' ? tcvClients :
-    activeTab === 'recorrente' ? recorrenteClients :
     activeTab === 'quarentena' ? quarentenaClients :
     churnClients;
   const filteredClients = baseList.filter(client => 
@@ -669,38 +666,7 @@ const ActiveClients: React.FC = () => {
             {activeClients.length}
           </span>
         </button>
-        <button
-          onClick={() => setActiveTab('tcv')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-            activeTab === 'tcv'
-              ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/25'
-              : 'text-slate-500 hover:text-light-text dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5'
-          }`}
-        >
-          <Package size={14} />
-          TCV
-          <span className={`min-w-[22px] h-[22px] flex items-center justify-center rounded-full text-[10px] font-black ${
-            activeTab === 'tcv' ? 'bg-white/20 text-white' : 'bg-blue-500/10 text-blue-500'
-          }`}>
-            {tcvClients.length}
-          </span>
-        </button>
-        <button
-          onClick={() => setActiveTab('recorrente')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-            activeTab === 'recorrente'
-              ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/25'
-              : 'text-slate-500 hover:text-light-text dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5'
-          }`}
-        >
-          <RefreshCcw size={14} />
-          Recorrente
-          <span className={`min-w-[22px] h-[22px] flex items-center justify-center rounded-full text-[10px] font-black ${
-            activeTab === 'recorrente' ? 'bg-white/20 text-white' : 'bg-emerald-500/10 text-emerald-500'
-          }`}>
-            {recorrenteClients.length}
-          </span>
-        </button>
+
         <button
           onClick={() => setActiveTab('quarentena')}
           className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
