@@ -736,8 +736,8 @@ const CrmFinanceiro = () => {
   return (
     <div className="p-8 w-full">
       <PageHeader 
-        title="CRM" 
-        titleAccent="Financeiro" 
+        title="" 
+        titleAccent="Retenção" 
         subtitle="Gestão de inadimplência e negociações ativas."
       >
         <button

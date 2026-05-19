@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Calendar, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Clock, CreditCard, Zap, FileText, ExternalLink, Settings, AlertTriangle, Pause, Play, Check, X, ShieldAlert, Activity, CheckCircle2, Send, Settings2, Search, TrendingUp, Banknote, BarChart2, MessageCircle, Copy, Phone, Mail, Users, DollarSign, Filter, RefreshCw, MoreHorizontal, RotateCcw } from 'lucide-react';
+import { Calendar, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Clock, CreditCard, Zap, FileText, ExternalLink, Settings, AlertTriangle, Pause, Play, Check, X, ShieldAlert, Activity, CheckCircle2, Send, Settings2, Search, TrendingUp, Banknote, BarChart2, MessageCircle, MessageSquare, Copy, Phone, Mail, Users, DollarSign, Filter, RefreshCw, MoreHorizontal, RotateCcw } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────
 interface InvoiceItem {
@@ -213,6 +213,7 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
   const [pollingActive, setPollingActive] = useState(false);
   const [dispatchSubTab, setDispatchSubTab] = useState<'agendados'|'enviados'|'humano'|'suspensao'|'cancelados'>('agendados');
   const [overdueClients, setOverdueClients] = useState<any[]>([]);
+  const [clientsMap, setClientsMap] = useState<Map<string, any>>(new Map());
 
   const fetchDispatch = async () => {
     try {
@@ -236,6 +237,14 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
       // Overdue clients (Contato Humano + Suspensão) — all, regardless of CRM status
       const odRes = await fetch('/api/fin/collection/overdue-clients');
       if (odRes.ok) setOverdueClients(await odRes.json());
+      // Load clients for billing info cross-reference
+      const clRes = await fetch('/api/clients');
+      if (clRes.ok) {
+        const clData = await clRes.json();
+        const map = new Map<string, any>();
+        for (const c of clData) map.set((c.name || '').toLowerCase().trim(), c);
+        setClientsMap(map);
+      }
     } catch (e) { /* silent */ }
   };
 
@@ -874,7 +883,7 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                     <table className="w-full text-left border-collapse">
                       <thead>
                         <tr className="bg-gray-50 dark:bg-dark-bg/50 border-b border-gray-100 dark:border-white/5">
-                          {['Cliente / Valor','Telefone','Regra','Canal','Agendado','Fatura','Status'].map(h => (
+                          {['Cliente / Valor','Contato','Obs','Regra','Canal','Agendado','Fatura','Status'].map(h => (
                             <th key={h} className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap">{h}</th>
                           ))}
                         </tr>
@@ -882,15 +891,42 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                       <tbody className="divide-y divide-gray-100 dark:divide-white/5">
                         {currentItems.length === 0 ? (
                           <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-400 dark:text-slate-500">Nenhum item nesta categoria.</td></tr>
-                        ) : currentItems.map((item) => (
+                        ) : currentItems.map((item) => {
+                          return (
 
                           <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
                             <td className="px-4 py-3">
                               <p className="text-sm font-bold text-gray-900 dark:text-white truncate max-w-[200px]">{item.customer_name}</p>
                               <p className="text-xs text-gray-500 dark:text-slate-400">{formatCurrency(item.amount)} • {fmtDate(item.due_date)}</p>
                             </td>
+                            {/* Coluna Contato — mostra e-mail ou telefone conforme billing_method */}
                             <td className="px-4 py-3 whitespace-nowrap">
-                              <span className="text-xs font-medium text-gray-700 dark:text-slate-300">{item.customer_phone || '—'}</span>
+                              {(() => {
+                                const cl = clientsMap.get((item.customer_name || '').toLowerCase().trim());
+                                const method = cl?.billingMethod;
+                                const contact = method === 'E-mail' ? (cl?.billingEmail || item.customer_phone || '—')
+                                              : method === 'Whatsapp' ? (cl?.billingPhone || item.customer_phone || '—')
+                                              : (item.customer_phone || '—');
+                                return <span className="text-xs font-medium text-gray-700 dark:text-slate-300">{contact}</span>;
+                              })()}
+                            </td>
+                            {/* Coluna Obs — ícone com tooltip de billing_notes */}
+                            <td className="px-4 py-3">
+                              {(() => {
+                                const cl = clientsMap.get((item.customer_name || '').toLowerCase().trim());
+                                const notes = cl?.billingNotes;
+                                if (!notes) return <span className="text-gray-300 dark:text-white/10"><MessageSquare size={13} /></span>;
+                                return (
+                                  <div className="relative group inline-flex">
+                                    <MessageSquare size={13} className="text-violet-500 cursor-default" />
+                                    <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 hidden group-hover:flex">
+                                      <div className="bg-gray-900 dark:bg-gray-800 text-white text-[11px] rounded-xl px-3 py-2 shadow-xl max-w-[240px] whitespace-pre-wrap leading-relaxed border border-white/10">
+                                        {notes}
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap">
                               <div className="flex items-center gap-2">
@@ -915,7 +951,20 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                               </div>
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap">
-                              <span className="text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase bg-gray-100 dark:bg-white/5 px-2 py-1 rounded-md">{item.channel}</span>
+                              {(() => {
+                                const cl = clientsMap.get((item.customer_name || '').toLowerCase().trim());
+                                const method = cl?.billingMethod;
+                                const label = method || item.channel || '—';
+                                const isEmail = method === 'E-mail';
+                                const isWA = method === 'Whatsapp' || (!method && item.channel === 'WHATSAPP');
+                                return (
+                                  <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-md ${
+                                    isEmail ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
+                                    : isWA   ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                                    : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-slate-400'
+                                  }`}>{label}</span>
+                                );
+                              })()}
                             </td>
                             <td className="px-4 py-3 whitespace-nowrap text-xs text-gray-600 dark:text-slate-400">
                               {fmtDate(item.scheduled_date)}
@@ -993,7 +1042,8 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                               </div>
                             </td>
                           </tr>
-                        ))}
+                        ); })}
+
                       </tbody>
                     </table>
                   </div>
