@@ -3221,6 +3221,7 @@ app.get("/api/todos", async (req, res) => {
           billingEmail: row.billing_email,
           billingPhone: row.billing_phone,
           billingMethod: row.billing_method,
+          billingNotes: row.billing_notes,
           valorDisplay: row.valor_display ? parseFloat(row.valor_display) : 0,
           diasAtraso: row.dias_atraso,
           proximaCobranca: row.proxima_cobranca,
@@ -3449,7 +3450,7 @@ app.get("/api/todos", async (req, res) => {
       crm_status, status, aviso_previo_date, contracts, product, 
       fin_people_guid, fin_subscription_id, tags, manager_id,
       name, start_date, location, squad, email, phone,
-      billing_name, billing_email, billing_phone, billing_method
+      billing_name, billing_email, billing_phone, billing_method, billing_notes
     } = req.body;
     try {
       console.log(`[CLIENT PATCH] ID: ${id}, Body:`, req.body);
@@ -3556,6 +3557,10 @@ app.get("/api/todos", async (req, res) => {
       if (billing_method !== undefined) {
         updates.push(`billing_method = $${i++}`);
         values.push(billing_method);
+      }
+      if (billing_notes !== undefined) {
+        updates.push(`billing_notes = $${i++}`);
+        values.push(billing_notes);
       }
 
       if (updates.length > 0) {
@@ -3769,7 +3774,7 @@ app.get("/api/todos", async (req, res) => {
 
   app.patch("/api/crm-checklist-template/:id", async (req, res) => {
     const { id } = req.params;
-    const { item, order_index, active, block } = req.body;
+    const { item, order_index, active, block, notes } = req.body;
     try {
       const updates: string[] = [];
       const values: any[] = [];
@@ -3793,6 +3798,11 @@ app.get("/api/todos", async (req, res) => {
       if (block !== undefined) {
         updates.push(`block = $${paramCount}`);
         values.push(block);
+        paramCount++;
+      }
+      if (notes !== undefined) {
+        updates.push(`notes = $${paramCount}`);
+        values.push(notes);
         paramCount++;
       }
 
@@ -3874,11 +3884,11 @@ app.get("/api/todos", async (req, res) => {
   });
 
   app.post("/api/crm-checklist", async (req, res) => {
-    const { client_id, item, block } = req.body;
+    const { client_id, item, block, notes } = req.body;
     try {
       const result = await pool.query(
-        "INSERT INTO crm_checklist (client_id, item, block) VALUES ($1, $2, $3) RETURNING *",
-        [client_id, item, block || 'diretoria']
+        "INSERT INTO crm_checklist (client_id, item, block, notes) VALUES ($1, $2, $3, $4) RETURNING *",
+        [client_id, item, block || 'diretoria', notes || null]
       );
       res.json(result.rows[0]);
     } catch (err) {
@@ -3889,7 +3899,7 @@ app.get("/api/todos", async (req, res) => {
 
   app.patch("/api/crm-checklist/:id", async (req, res) => {
     const { id } = req.params;
-    const { completed, completed_by, completed_at, block, item } = req.body;
+    const { completed, completed_by, completed_at, block, item, notes } = req.body;
     try {
       const updates: string[] = [];
       const values: any[] = [];
@@ -3899,6 +3909,7 @@ app.get("/api/todos", async (req, res) => {
       if (completed_at !== undefined) { updates.push(`completed_at = $${p++}`); values.push(completed_at); }
       if (block !== undefined) { updates.push(`block = $${p++}`); values.push(block); }
       if (item !== undefined) { updates.push(`item = $${p++}`); values.push(item); }
+      if (notes !== undefined) { updates.push(`notes = $${p++}`); values.push(notes); }
       if (updates.length === 0) return res.status(400).json({ error: 'No fields' });
       values.push(id);
       const result = await pool.query(`UPDATE crm_checklist SET ${updates.join(', ')} WHERE id = $${p} RETURNING *`, values);
@@ -3908,6 +3919,42 @@ app.get("/api/todos", async (req, res) => {
       res.status(500).json({ error: "Failed to update checklist item" });
     }
   });
+  // Delete single checklist item
+  app.delete("/api/crm-checklist/:id", async (req, res) => {
+    const { id } = req.params;
+    try {
+      await pool.query("DELETE FROM crm_checklist WHERE id = $1", [id]);
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Error deleting checklist item:", err);
+      res.status(500).json({ error: "Failed to delete checklist item" });
+    }
+  });
+
+  // Apply template to a client: delete all existing items then recreate from template
+  app.post("/api/crm-checklist/apply-template/:client_id", async (req, res) => {
+    const { client_id } = req.params;
+    try {
+      // Delete all existing items for this client
+      await pool.query("DELETE FROM crm_checklist WHERE client_id = $1", [client_id]);
+      // Get current template
+      const tmpl = await pool.query("SELECT * FROM crm_checklist_template WHERE active = TRUE ORDER BY order_index ASC");
+      // Recreate from template
+      const created = [];
+      for (const t of tmpl.rows) {
+        const result = await pool.query(
+          "INSERT INTO crm_checklist (client_id, item, block, notes) VALUES ($1, $2, $3, $4) RETURNING *",
+          [client_id, t.item, t.block || 'diretoria', t.notes || null]
+        );
+        created.push(result.rows[0]);
+      }
+      res.json(created);
+    } catch (err) {
+      console.error("Error applying template to client:", err);
+      res.status(500).json({ error: "Failed to apply template" });
+    }
+  });
+
   // ------------------------------
 
   // ── Diagnóstico Asaas (temporário) ──

@@ -31,6 +31,7 @@ interface Client {
   billingEmail?: string;
   billingPhone?: string;
   billingMethod?: string;
+  billingNotes?: string;
   hasActiveSubscription?: boolean;
   subscriptionValue?: number;
   subscriptionNextDue?: string;
@@ -103,7 +104,8 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
     billingName: '',
     billingEmail: '',
     billingPhone: '',
-    billingMethod: ''
+    billingMethod: '',
+    billingNotes: ''
   });
 
   // Finance state
@@ -146,7 +148,8 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
         billingName: editingClient.billingName || '',
         billingEmail: editingClient.billingEmail || '',
         billingPhone: editingClient.billingPhone || '',
-        billingMethod: editingClient.billingMethod || ''
+        billingMethod: editingClient.billingMethod || '',
+        billingNotes: editingClient.billingNotes || ''
       });
     } else {
       setFormData({
@@ -164,7 +167,8 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
         billingName: '',
         billingEmail: '',
         billingPhone: '',
-        billingMethod: ''
+        billingMethod: '',
+        billingNotes: ''
       });
     }
     setActiveTab('client');
@@ -306,6 +310,7 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
             if (formData.billingEmail !== undefined) billingPayload.billing_email = formData.billingEmail;
             if (formData.billingPhone !== undefined) billingPayload.billing_phone = formData.billingPhone;
             if (formData.billingMethod !== undefined) billingPayload.billing_method = formData.billingMethod;
+            if (formData.billingNotes !== undefined) billingPayload.billing_notes = formData.billingNotes;
 
             if (Object.keys(billingPayload).length > 0) {
               await fetch(`/api/clients/${editingClient.id}`, {
@@ -641,6 +646,16 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
                     />
                   </div>
                 </div>
+                <div className="space-y-2 mt-4">
+                  <label className={designSystem.input.label}>Comentários de Cobrança</label>
+                  <textarea
+                    value={formData.billingNotes}
+                    onChange={(e) => setFormData({ ...formData, billingNotes: e.target.value })}
+                    placeholder="Observações sobre a cobrança deste cliente..."
+                    rows={3}
+                    className={`${designSystem.input.field} resize-none`}
+                  />
+                </div>
               </div>
             </form>
             ) : (
@@ -722,6 +737,12 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
                     <p className="text-sm text-light-text dark:text-white">{formData.billingPhone || '-'}</p>
                   </div>
                 </div>
+                {formData.billingNotes && (
+                  <div className="mt-4 p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Comentários</p>
+                    <p className="text-sm text-light-text dark:text-white whitespace-pre-wrap">{formData.billingNotes}</p>
+                  </div>
+                )}
               </div>
               <button
                 onClick={() => setIsEditing(true)}

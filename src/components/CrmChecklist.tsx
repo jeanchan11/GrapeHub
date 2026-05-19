@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { CheckCircle2, Circle, Plus, Trash2, Check, GripVertical, X, Settings, Save, ChevronDown } from 'lucide-react';
+import { CheckCircle2, Circle, Plus, Trash2, Check, GripVertical, X, Settings, Save, ChevronDown, MessageSquare, FileText } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 interface ChecklistItem {
@@ -10,6 +10,7 @@ interface ChecklistItem {
   completed_by?: string;
   completed_at?: string;
   block: 'diretoria' | 'gerente';
+  notes?: string;
 }
 
 interface TemplateItem {
@@ -18,6 +19,7 @@ interface TemplateItem {
   order_index: number;
   active: boolean;
   block: 'diretoria' | 'gerente';
+  notes?: string;
 }
 
 interface CrmChecklistProps {
@@ -38,6 +40,9 @@ const TemplateModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [saving, setSaving] = useState(false);
   const [draggingId, setDraggingId] = useState<number | null>(null);
   const [dragOverId, setDragOverId] = useState<number | null>(null);
+  const [editingNotes, setEditingNotes] = useState<TemplateItem | null>(null);
+  const [editingNotesText, setEditingNotesText] = useState('');
+  const [savingNotesTmpl, setSavingNotesTmpl] = useState(false);
 
   useEffect(() => {
     fetch('/api/crm-checklist-template')
@@ -127,6 +132,7 @@ const TemplateModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   };
 
   return (
+    <>
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <div className="bg-white dark:bg-[#18181b] border border-gray-200 dark:border-white/10 rounded-2xl w-full max-w-lg max-h-[85vh] flex flex-col shadow-2xl">
         {/* Header */}
@@ -168,7 +174,25 @@ const TemplateModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                     }`}
                   >
                     <GripVertical size={14} className="text-slate-400 shrink-0" />
-                    <span className="text-sm text-gray-700 dark:text-slate-300 flex-1 leading-snug">{item.item}</span>
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm text-gray-700 dark:text-slate-300 leading-snug block">{item.item}</span>
+                      {item.notes && (
+                        <p className="text-[10px] text-slate-500 mt-0.5 truncate">{item.notes}</p>
+                      )}
+                    </div>
+                    <button
+                      title="Editar observação"
+                      onClick={e => {
+                        e.stopPropagation();
+                        setEditingNotes(item);
+                        setEditingNotesText(item.notes || '');
+                      }}
+                      className={`shrink-0 transition-colors ${
+                        item.notes ? 'text-violet-500 hover:text-violet-400' : 'text-slate-300 hover:text-violet-500'
+                      }`}
+                    >
+                      <MessageSquare size={13} />
+                    </button>
                     <select
                       value={item.block}
                       onChange={e => handleChangeBlock(item, e.target.value as any)}
@@ -248,6 +272,64 @@ const TemplateModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         </div>
       </div>
     </div>
+
+    {/* Notes Edit Modal (Template) */}
+    {editingNotes && (
+      <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div className="bg-white dark:bg-[#18181b] border border-gray-200 dark:border-white/10 rounded-2xl w-full max-w-sm shadow-2xl">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-white/10">
+            <div className="flex items-center gap-2">
+              <MessageSquare size={16} className="text-violet-500" />
+              <span className="text-sm font-bold text-gray-900 dark:text-white">Observação do Template</span>
+            </div>
+            <button onClick={() => setEditingNotes(null)} className="text-slate-400 hover:text-gray-900 dark:hover:text-white">
+              <X size={16} />
+            </button>
+          </div>
+          <div className="px-5 py-3">
+            <p className="text-xs text-slate-500 mb-2 font-medium">{editingNotes.item}</p>
+            <textarea
+              autoFocus
+              value={editingNotesText}
+              onChange={e => setEditingNotesText(e.target.value)}
+              placeholder="Adicione uma observação para este item do template..."
+              rows={4}
+              className="w-full text-sm bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-gray-900 dark:text-white placeholder:text-slate-400 outline-none focus:border-violet-500/50 resize-none transition-all"
+            />
+          </div>
+          <div className="px-5 pb-4 flex gap-2">
+            <button
+              onClick={() => setEditingNotes(null)}
+              className="flex-1 py-2 rounded-xl text-sm font-bold border border-gray-200 dark:border-white/10 text-slate-500 hover:text-gray-900 dark:hover:text-white transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={async () => {
+                setSavingNotesTmpl(true);
+                setItems(prev => prev.map(i => i.id === editingNotes.id ? { ...i, notes: editingNotesText } : i));
+                await fetch(`/api/crm-checklist-template/${editingNotes.id}`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ notes: editingNotesText })
+                });
+                setSavingNotesTmpl(false);
+                setEditingNotes(null);
+              }}
+              disabled={savingNotesTmpl}
+              className="flex-1 py-2 rounded-xl text-sm font-bold bg-violet-500 hover:bg-violet-600 text-white transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
+            >
+              {savingNotesTmpl ? (
+                <><div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Salvando...</>
+              ) : (
+                <><Check size={13} /> Salvar</>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 };
 
@@ -258,10 +340,14 @@ const ChecklistBlock: React.FC<{
   onToggle: (item: ChecklistItem) => void;
   onDrop: (itemId: number, targetBlock: 'diretoria' | 'gerente') => void;
   onAddItem: (text: string, block: 'diretoria' | 'gerente') => void;
-}> = ({ block, items, onToggle, onDrop, onAddItem }) => {
+  onSaveNotes: (item: ChecklistItem, notes: string) => void;
+}> = ({ block, items, onToggle, onDrop, onAddItem, onSaveNotes }) => {
   const [isDragOver, setIsDragOver] = useState(false);
   const [newText, setNewText] = useState('');
   const [isAdding, setIsAdding] = useState(false);
+  const [notesItem, setNotesItem] = useState<ChecklistItem | null>(null);
+  const [notesText, setNotesText] = useState('');
+  const [savingNotes, setSavingNotes] = useState(false);
 
   const completedCount = items.filter(i => i.completed).length;
 
@@ -273,6 +359,7 @@ const ChecklistBlock: React.FC<{
   };
 
   return (
+    <>
     <div
       onDragOver={e => { e.preventDefault(); setIsDragOver(true); }}
       onDragLeave={() => setIsDragOver(false)}
@@ -315,16 +402,33 @@ const ChecklistBlock: React.FC<{
                 <Circle size={18} />
               )}
             </button>
-            <div className="flex-1 min-w-0">
+            <div
+              className="flex-1 min-w-0 cursor-pointer"
+              onClick={() => { setNotesItem(item); setNotesText(item.notes || ''); }}
+            >
               <p className={`text-sm font-medium leading-snug ${item.completed ? 'text-slate-400 line-through' : 'text-gray-800 dark:text-white'}`}>
                 {item.item}
               </p>
-              {item.completed && item.completed_by && (
-                <p className="text-[10px] text-slate-400 mt-0.5">
-                  por {item.completed_by}
+              {item.notes ? (
+                <p className="text-[10px] text-violet-500 mt-0.5 flex items-center gap-1">
+                  <MessageSquare size={10} /> {item.notes.length > 60 ? item.notes.slice(0, 60) + '...' : item.notes}
+                </p>
+              ) : item.completed && item.completed_by ? (
+                <p className="text-[10px] text-slate-400 mt-0.5">por {item.completed_by}</p>
+              ) : (
+                <p className="text-[10px] text-slate-400 mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                  <MessageSquare size={10} /> Adicionar observação...
                 </p>
               )}
             </div>
+            <button
+              onClick={() => { setNotesItem(item); setNotesText(item.notes || ''); }}
+              className={`shrink-0 mt-0.5 transition-colors opacity-0 group-hover:opacity-100 ${
+                item.notes ? 'text-violet-500' : 'text-slate-400 hover:text-violet-500'
+              }`}
+            >
+              <MessageSquare size={14} />
+            </button>
           </div>
         ))}
       </div>
@@ -363,6 +467,34 @@ const ChecklistBlock: React.FC<{
         )}
       </div>
     </div>
+
+    {/* Notes Popup */}
+    {notesItem && (
+      <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div className="bg-white dark:bg-[#18181b] border border-gray-200 dark:border-white/10 rounded-2xl w-full max-w-sm shadow-2xl">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-white/10">
+            <div className="flex items-center gap-2">
+              <MessageSquare size={16} className="text-violet-500" />
+              <span className="text-sm font-bold text-gray-900 dark:text-white">Observação</span>
+            </div>
+            <button onClick={() => setNotesItem(null)} className="text-slate-400 hover:text-gray-900 dark:hover:text-white">
+              <X size={16} />
+            </button>
+          </div>
+          <div className="px-5 py-3">
+            <p className="text-xs text-slate-500 mb-3 font-medium">{notesItem.item}</p>
+            {notesText ? (
+              <p className="text-sm text-gray-900 dark:text-white whitespace-pre-wrap leading-relaxed">
+                {notesText}
+              </p>
+            ) : (
+              <p className="text-sm text-slate-400 italic">Sem observação para esta tarefa</p>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 };
 
@@ -372,6 +504,8 @@ const CrmChecklist: React.FC<CrmChecklistProps> = ({ clientId, onCompleteExit })
   const [items, setItems] = useState<ChecklistItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [isApplying, setIsApplying] = useState(false);
+  const [showApplyConfirm, setShowApplyConfirm] = useState(false);
 
   const fetchItems = async () => {
     try {
@@ -400,7 +534,7 @@ const CrmChecklist: React.FC<CrmChecklistProps> = ({ clientId, onCompleteExit })
         const res = await fetch('/api/crm-checklist', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ client_id: clientId, item: t.item, block: t.block || 'diretoria' })
+          body: JSON.stringify({ client_id: clientId, item: t.item, block: t.block || 'diretoria', notes: t.notes || null })
         });
         if (res.ok) created.push(await res.json());
       }
@@ -456,6 +590,35 @@ const CrmChecklist: React.FC<CrmChecklistProps> = ({ clientId, onCompleteExit })
     } catch (err) { console.error(err); }
   };
 
+  const handleSaveNotes = async (item: ChecklistItem, notes: string) => {
+    // Update local state
+    setItems(prev => prev.map(i => i.id === item.id ? { ...i, notes } : i));
+    // Persist to DB
+    await fetch(`/api/crm-checklist/${item.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notes })
+    });
+  };
+
+  const handleApplyTemplate = async () => {
+    setIsApplying(true);
+    setShowApplyConfirm(false);
+    try {
+      const res = await fetch(`/api/crm-checklist/apply-template/${clientId}`, {
+        method: 'POST'
+      });
+      if (res.ok) {
+        const newItems: ChecklistItem[] = await res.json();
+        setItems(newItems.map(i => ({ ...i, block: (i.block as any) || 'diretoria' })));
+      }
+    } catch (err) {
+      console.error('Error applying template:', err);
+    } finally {
+      setIsApplying(false);
+    }
+  };
+
   const completedCount = items.filter(i => i.completed).length;
   const totalCount = items.length;
   const progress = totalCount === 0 ? 0 : Math.round((completedCount / totalCount) * 100);
@@ -482,13 +645,26 @@ const CrmChecklist: React.FC<CrmChecklistProps> = ({ clientId, onCompleteExit })
             <div className="h-full bg-violet-500 transition-all duration-500 ease-out rounded-full" style={{ width: `${progress}%` }} />
           </div>
         </div>
-        <button
-          onClick={() => setShowTemplateModal(true)}
-          className="ml-4 flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 hover:border-violet-500/40 text-xs font-bold text-slate-500 hover:text-violet-500 rounded-xl transition-all shrink-0"
-        >
-          <Settings size={13} />
-          Modelo Padrão
-        </button>
+        <div className="ml-4 flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => setShowApplyConfirm(true)}
+            disabled={isApplying}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 hover:border-emerald-500/40 text-xs font-bold text-slate-500 hover:text-emerald-500 rounded-xl transition-all disabled:opacity-50"
+          >
+            {isApplying ? (
+              <><div className="w-3 h-3 border-2 border-slate-300 border-t-emerald-500 rounded-full animate-spin" /> Aplicando...</>
+            ) : (
+              <><FileText size={13} /> Aplicar Modelo</>
+            )}
+          </button>
+          <button
+            onClick={() => setShowTemplateModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 hover:border-violet-500/40 text-xs font-bold text-slate-500 hover:text-violet-500 rounded-xl transition-all"
+          >
+            <Settings size={13} />
+            Modelo Padrão
+          </button>
+        </div>
       </div>
 
       {/* Two blocks */}
@@ -501,6 +677,7 @@ const CrmChecklist: React.FC<CrmChecklistProps> = ({ clientId, onCompleteExit })
             onToggle={handleToggle}
             onDrop={handleDrop}
             onAddItem={handleAddItem}
+            onSaveNotes={handleSaveNotes}
           />
         ))}
       </div>
@@ -519,6 +696,42 @@ const CrmChecklist: React.FC<CrmChecklistProps> = ({ clientId, onCompleteExit })
 
       {/* Template Modal */}
       {showTemplateModal && <TemplateModal onClose={() => setShowTemplateModal(false)} />}
+
+      {/* Apply Template Confirm Modal */}
+      {showApplyConfirm && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-[#18181b] border border-gray-200 dark:border-white/10 rounded-2xl w-full max-w-sm shadow-2xl">
+            <div className="px-6 py-5">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center shrink-0">
+                  <FileText size={18} className="text-amber-500" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900 dark:text-white">Aplicar Modelo Padrão</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Esta ação não pode ser desfeita</p>
+                </div>
+              </div>
+              <p className="text-sm text-slate-500 leading-relaxed">
+                O checklist atual será <span className="text-rose-500 font-semibold">apagado</span> e substituído pelo Modelo Padrão. Itens já concluídos serão perdidos.
+              </p>
+            </div>
+            <div className="px-6 pb-5 flex gap-2">
+              <button
+                onClick={() => setShowApplyConfirm(false)}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold border border-gray-200 dark:border-white/10 text-slate-500 hover:text-gray-900 dark:hover:text-white transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleApplyTemplate}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-emerald-500 hover:bg-emerald-600 text-white transition-colors"
+              >
+                Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
