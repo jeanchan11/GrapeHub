@@ -365,7 +365,11 @@ export default function FinanceiroDashboard() {
     }
   }
 
-  const saldoAcumulado = resumo?.previsto_fim_mes ?? saldoPrevistoData[saldoPrevistoData.length - 1] ?? saldoRealizadoData[saldoRealizadoData.length - 1] ?? 0;
+  // Saldo projetado = último ponto do gráfico (linha tracejada), em sincronia visual
+  const lastPrevisto = [...saldoPrevistoData].reverse().find(v => v !== null) ?? null;
+  const lastRealizado = [...saldoRealizadoData].reverse().find(v => v !== null) ?? null;
+  const saldoAcumulado = lastPrevisto ?? lastRealizado ?? resumo?.previsto_fim_mes ?? 0;
+
 
   const chartSaudeData = {
     labels,

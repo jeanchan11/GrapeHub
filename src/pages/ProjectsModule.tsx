@@ -868,27 +868,34 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
   ];
 
   const filteredProjects = projects.map(project => {
-    if (project.products && project.products.length > 0) {
-      const productNames = project.products.map(p => p.name).join(', ');
+    // Resolve partner name dynamically from clients list when linked
+    const clientsMap = new Map(clients.map(c => [c.id, c.name]));
+    const resolvedPartner = project.activeClientId
+      ? (clientsMap.get(project.activeClientId) ?? project.partner)
+      : project.partner;
+    const projectWithResolvedPartner = { ...project, partner: resolvedPartner };
+
+    if (projectWithResolvedPartner.products && projectWithResolvedPartner.products.length > 0) {
+      const productNames = projectWithResolvedPartner.products.map(p => p.name).join(', ');
       
       let derivedStatus: Project['status'] = 'Rodando';
-      const activeProducts = project.products.filter(p => p.status !== 'Inativo');
+      const activeProducts = projectWithResolvedPartner.products.filter(p => p.status !== 'Inativo');
       const productStatuses = activeProducts.map(p => p.status);
       
       if (productStatuses.length > 0 && productStatuses.some(s => s && s !== 'Rodando')) {
         derivedStatus = 'Gargalo';
       }
       
-      const totalInvestment = project.products.reduce((acc, p) => acc + parseCurrency(p.budget), 0);
+      const totalInvestment = projectWithResolvedPartner.products.reduce((acc, p) => acc + parseCurrency(p.budget), 0);
       
       return {
-        ...project,
+        ...projectWithResolvedPartner,
         product: productNames,
         status: derivedStatus,
         investment: `R$ ${totalInvestment.toLocaleString('pt-BR')}`
       };
     }
-    return project;
+    return projectWithResolvedPartner;
   }).filter(project => {
     const query = searchQuery.toLowerCase();
     const matchesSearch = (project.partner || '').toLowerCase().includes(query) || 
@@ -897,6 +904,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     const matchesResult = resultFilter === 'Todos os Resultados' || (project.projectResult || 'Sem Resultado') === resultFilter;
     return matchesSearch && matchesStatus && matchesResult;
   });
+
 
   const dynamicStats = useMemo(() => getDynamicStats(filteredProjects), [filteredProjects]);
 
