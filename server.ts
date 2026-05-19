@@ -7229,7 +7229,8 @@ app.get("/api/todos", async (req, res) => {
         coluna, valor, responsavel_id, moved_by, kanban_id, previsao, tags, origem, instagram, nicho, tempo_oab, faturamento,
         reunion_date, office_location, monthly_closings, closing_goal, reunion_link,
         utm_platform, utm_campaign, utm_set, utm_creative, utm_position,
-        nome, telefone, observacoes
+        nome, telefone, observacoes,
+        form_nome_completo, form_nome_fantasia, form_telefone_whatsapp, form_cnpj_cpf, form_cep, form_cidade, form_estado
       } = req.body;
       
       const currentResult = await pool.query("SELECT coluna, kanban_id FROM crm_comercial_leads WHERE id = $1", [id]);
@@ -7315,6 +7316,14 @@ app.get("/api/todos", async (req, res) => {
       if (utm_set !== undefined) { updates.push(`utm_set = $${paramIdx++}`); params.push(utm_set); }
       if (utm_creative !== undefined) { updates.push(`utm_creative = $${paramIdx++}`); params.push(utm_creative); }
       if (utm_position !== undefined) { updates.push(`utm_position = $${paramIdx++}`); params.push(utm_position); }
+
+      if (form_nome_completo !== undefined) { updates.push(`form_nome_completo = $${paramIdx++}`); params.push(form_nome_completo); }
+      if (form_nome_fantasia !== undefined) { updates.push(`form_nome_fantasia = $${paramIdx++}`); params.push(form_nome_fantasia); }
+      if (form_telefone_whatsapp !== undefined) { updates.push(`form_telefone_whatsapp = $${paramIdx++}`); params.push(form_telefone_whatsapp); }
+      if (form_cnpj_cpf !== undefined) { updates.push(`form_cnpj_cpf = $${paramIdx++}`); params.push(form_cnpj_cpf); }
+      if (form_cep !== undefined) { updates.push(`form_cep = $${paramIdx++}`); params.push(form_cep); }
+      if (form_cidade !== undefined) { updates.push(`form_cidade = $${paramIdx++}`); params.push(form_cidade); }
+      if (form_estado !== undefined) { updates.push(`form_estado = $${paramIdx++}`); params.push(form_estado); }
 
       const { is_lost, loss_reason_id } = req.body;
       if (is_lost !== undefined) { updates.push(`is_lost = $${paramIdx++}`); params.push(is_lost); }
