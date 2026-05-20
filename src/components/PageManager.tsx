@@ -430,6 +430,7 @@ const templates = [
   { id: 'sdr', label: 'Calculadora SDR' },
   { id: 'gerente-operacional', label: 'Calculadora Gerente Operacional' },
   { id: 'meeting-notes', label: '📋 Notas de Reunião' },
+  { id: 'colaboradores', label: 'Colaboradores' },
 ];
 
 const SortablePage = ({ page, parentId, parentType, editingPage, editPageData, setEditPageData, setEditingPage, handleSaveEditPage, handleDeletePage, handleEditPage, menu }: any) => {

@@ -33,9 +33,11 @@ import OnboardingOperacional from './src/pages/OnboardingOperacional';
 import ContratacaoPage from './src/pages/ContratacaoPage';
 import ContasAPagar from './src/pages/ContasAPagar';
 import ContasAReceber from './src/pages/ContasAReceber';
+import ColaboradoresPage from './src/pages/ColaboradoresPage';
 
 import MeetingNotes from './src/pages/MeetingNotes';
 import CandidateApplicationForm from './src/pages/CandidateApplicationForm';
+import CollaboratorOnboardingForm from './src/pages/CollaboratorOnboardingForm';
 import SaboteurTestPage from './src/pages/SaboteurTestPage';
 import DiscTestPage from './src/pages/DiscTestPage';
 import Login from './src/components/LoginView';
@@ -253,6 +255,8 @@ const AppContent: React.FC = () => {
         return <ContasAPagar />;
       case 'contas-a-receber':
         return <ContasAReceber />;
+      case 'colaboradores':
+        return <ColaboradoresPage />;
 
       case 'meeting-notes': {
         // Find the page label from menu for the title
@@ -328,6 +332,10 @@ const App: React.FC = () => {
 
   if (window.location.search.includes('?apply=')) {
     return <CandidateApplicationForm />;
+  }
+
+  if (window.location.search.includes('?onboarding=')) {
+    return <CollaboratorOnboardingForm />;
   }
 
   return (

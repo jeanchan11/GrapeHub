@@ -11183,6 +11183,107 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
     }
   });
 
+  // ── Collaborators ───────────────────────────────────────────────────────────
+
+  app.get("/api/collaborators", async (_req, res) => {
+    try {
+      const { rows } = await pool.query("SELECT * FROM collaborators ORDER BY created_at DESC");
+      res.json(rows);
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: "Erro ao buscar colaboradores." });
+    }
+  });
+
+  // Settings endpoints
+  app.get("/api/collaborator-settings", async (req, res) => {
+    try {
+      const { rows } = await pool.query("SELECT * FROM collaborator_settings ORDER BY type, name");
+      res.json(rows);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/collaborator-settings", async (req, res) => {
+    const { type, name, color } = req.body;
+    try {
+      const { rows } = await pool.query(
+        "INSERT INTO collaborator_settings (type, name, color) VALUES ($1, $2, $3) RETURNING *",
+        [type, name, color || '#8b5cf6']
+      );
+      res.status(201).json(rows[0]);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/collaborator-settings/:id", async (req, res) => {
+    try {
+      await pool.query("DELETE FROM collaborator_settings WHERE id = $1", [req.params.id]);
+      res.status(204).end();
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/collaborators", async (req, res) => {
+    const { name, group_name, role, seniority_level, pix_key, remuneration, transport_voucher, benefits, birth_date, start_date, end_date, level_junior, level_pleno, level_senior, leadership_role, ai_role, status, form_data } = req.body;
+    try {
+      const { rows } = await pool.query(
+        `INSERT INTO collaborators (name, group_name, role, seniority_level, pix_key, remuneration, transport_voucher, benefits, birth_date, start_date, end_date, level_junior, level_pleno, level_senior, leadership_role, ai_role, status, form_data)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING *`,
+        [name, group_name, role, seniority_level, pix_key, remuneration, transport_voucher, benefits, birth_date, start_date, end_date, level_junior || false, level_pleno || false, level_senior || false, leadership_role || false, ai_role || false, status || 'Efetivado', form_data || {}]
+      );
+      res.status(201).json(rows[0]);
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: "Erro ao criar colaborador." });
+    }
+  });
+
+  app.put("/api/collaborators/:id", async (req, res) => {
+    const id = req.params.id;
+    const { name, group_name, role, seniority_level, pix_key, remuneration, transport_voucher, benefits, birth_date, start_date, end_date, level_junior, level_pleno, level_senior, leadership_role, ai_role, status, form_data } = req.body;
+    try {
+      const { rows } = await pool.query(
+        `UPDATE collaborators
+         SET name=$1, group_name=$2, role=$3, seniority_level=$4, pix_key=$5, remuneration=$6, transport_voucher=$7, benefits=$8, birth_date=$9, start_date=$10, end_date=$11, level_junior=$12, level_pleno=$13, level_senior=$14, leadership_role=$15, ai_role=$16, status=$17, form_data=$18, updated_at=CURRENT_TIMESTAMP
+         WHERE id=$19 RETURNING *`,
+        [name, group_name, role, seniority_level, pix_key, remuneration, transport_voucher, benefits, birth_date, start_date, end_date, level_junior, level_pleno, level_senior, leadership_role, ai_role, status, form_data, id]
+      );
+      if (rows.length === 0) return res.status(404).json({ error: "Colaborador não encontrado." });
+      res.json(rows[0]);
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: "Erro ao atualizar colaborador." });
+    }
+  });
+
+  app.delete("/api/collaborators/:id", async (req, res) => {
+    try {
+      await pool.query("DELETE FROM collaborators WHERE id=$1", [req.params.id]);
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: "Erro ao deletar colaborador." });
+    }
+  });
+
+  app.post("/api/public/collaborators", async (req, res) => {
+    const { name, form_data } = req.body;
+    try {
+      const { rows } = await pool.query(
+        `INSERT INTO collaborators (name, form_data, status) VALUES ($1, $2, 'Efetivado') RETURNING *`,
+        [name, form_data || {}]
+      );
+      res.status(201).json({ success: true, collaborator: rows[0] });
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: "Erro ao enviar formulário." });
+    }
+  });
+
   // ── Collection Routes (Regua de Cobranca) ─────────────────────────────────
   setupCollectionRoutes(app, pool);
 

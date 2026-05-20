@@ -48,13 +48,12 @@ export default function CandidateApplicationForm() {
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
-  const [currentStep, setCurrentStep] = useState(-1); // -1 = intro screen
+  const [currentStep, setCurrentStep] = useState(-1);
   const [direction, setDirection] = useState<'next' | 'prev'>('next');
   const [animating, setAnimating] = useState(false);
 
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(null);
 
-  // Dynamic steps: use folder's custom fields or fall back to default
   const steps = React.useMemo(() => {
     if (folder?.form_fields && folder.form_fields.length > 0) return folder.form_fields;
     return FORM_STEPS;
@@ -62,7 +61,6 @@ export default function CandidateApplicationForm() {
 
   const [formData, setFormData] = useState<Record<string, string>>({});
 
-  // Re-initialize formData when steps change
   React.useEffect(() => {
     const init: Record<string, string> = {};
     steps.forEach(f => { init[f.key] = ''; });
@@ -78,7 +76,6 @@ export default function CandidateApplicationForm() {
       .finally(() => setLoading(false));
   }, [folderId]);
 
-  // Auto-focus input on step change
   useEffect(() => {
     if (currentStep >= 0) {
       setTimeout(() => inputRef.current?.focus(), 350);
@@ -156,11 +153,13 @@ export default function CandidateApplicationForm() {
     }
   };
 
-  // ── Error / Invalid States ──
   if (!folderId) {
     return (
-      <div className="min-h-screen bg-[#0d0d15] flex items-center justify-center p-6">
-        <div className="bg-[#16162a] border border-white/10 rounded-2xl p-10 max-w-md w-full text-center">
+      <div className="min-h-screen bg-black flex items-center justify-center p-6 relative overflow-hidden font-sans">
+        <div className="absolute top-1/4 -left-48 w-96 h-96 bg-violet-600/10 rounded-full blur-[120px] pointer-events-none" />
+        <div className="absolute bottom-1/4 -right-48 w-96 h-96 bg-fuchsia-600/10 rounded-full blur-[120px] pointer-events-none" />
+
+        <div className="bg-dark-card border border-white/10 rounded-2xl p-10 max-w-md w-full text-center relative z-10">
           <Briefcase className="w-12 h-12 text-violet-500 mx-auto mb-4" />
           <h1 className="text-xl font-bold text-white mb-2">Página Inválida</h1>
           <p className="text-slate-400 text-sm">O link requer o identificador da vaga. Verifique o link recebido.</p>
@@ -171,7 +170,7 @@ export default function CandidateApplicationForm() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#0d0d15] flex items-center justify-center">
+      <div className="min-h-screen bg-black flex items-center justify-center relative overflow-hidden">
         <div className="w-8 h-8 rounded-full border-2 border-violet-500/30 border-t-violet-500 animate-spin" />
       </div>
     );
@@ -179,8 +178,11 @@ export default function CandidateApplicationForm() {
 
   if (error || !folder) {
     return (
-      <div className="min-h-screen bg-[#0d0d15] flex items-center justify-center p-6">
-        <div className="bg-[#16162a] border border-white/10 rounded-2xl p-10 max-w-md w-full text-center">
+      <div className="min-h-screen bg-black flex items-center justify-center p-6 relative overflow-hidden font-sans">
+        <div className="absolute top-1/4 -left-48 w-96 h-96 bg-violet-600/10 rounded-full blur-[120px] pointer-events-none" />
+        <div className="absolute bottom-1/4 -right-48 w-96 h-96 bg-fuchsia-600/10 rounded-full blur-[120px] pointer-events-none" />
+
+        <div className="bg-dark-card border border-white/10 rounded-2xl p-10 max-w-md w-full text-center relative z-10">
           <Briefcase className="w-12 h-12 text-rose-500 mx-auto mb-4" />
           <h1 className="text-xl font-bold text-white mb-2">Vaga Inativa</h1>
           <p className="text-slate-400 text-sm">{error || 'Não foi possível encontrar a vaga.'}</p>
@@ -189,18 +191,20 @@ export default function CandidateApplicationForm() {
     );
   }
 
-  // ── Success Screen ──
   if (success) {
     return (
-      <div className="min-h-screen bg-[#0d0d15] flex items-center justify-center p-6">
-        <div className="text-center max-w-lg w-full">
+      <div className="min-h-screen bg-black flex items-center justify-center p-6 relative overflow-hidden">
+        <div className="absolute top-1/4 -left-48 w-96 h-96 bg-violet-600/10 rounded-full blur-[120px] pointer-events-none" />
+        <div className="absolute bottom-1/4 -right-48 w-96 h-96 bg-fuchsia-600/10 rounded-full blur-[120px] pointer-events-none" />
+
+        <div className="text-center max-w-lg w-full relative z-10 font-sans">
           <div className="relative inline-block mb-8">
             <div className="absolute inset-0 bg-emerald-500/20 rounded-full blur-2xl scale-150" />
             <CheckCircle2 className="w-20 h-20 text-emerald-400 relative" />
           </div>
-          <h1 className="text-3xl font-extrabold text-white mb-4">Inscrição Enviada!</h1>
-          <p className="text-slate-400 text-lg leading-relaxed">
-            Seus dados foram registrados no processo seletivo para{' '}
+          <h1 className="text-4xl font-extrabold text-white mb-4 tracking-tight">Inscrição Enviada!</h1>
+          <p className="text-slate-400 text-base leading-relaxed max-w-md mx-auto">
+            Seus dados foram registrados com sucesso no processo seletivo para{' '}
             <span className="text-white font-semibold">{folder.nome}</span>.
             <br />Nossa equipe entrará em contato em breve!
           </p>
@@ -209,62 +213,62 @@ export default function CandidateApplicationForm() {
     );
   }
 
-  // ── Intro Screen (step = -1) ──
   if (currentStep === -1) {
     return (
-      <div className="min-h-screen bg-[#0d0d15] flex flex-col">
-        {/* Progress bar */}
+      <div className="min-h-screen bg-black flex flex-col relative overflow-hidden font-sans">
+        <div className="absolute top-1/4 -left-48 w-96 h-96 bg-violet-600/10 rounded-full blur-[120px] pointer-events-none" />
+        <div className="absolute bottom-1/4 -right-48 w-96 h-96 bg-fuchsia-600/10 rounded-full blur-[120px] pointer-events-none" />
+
         <div className="fixed top-0 left-0 right-0 h-1 bg-white/5 z-50">
           <div className="h-full bg-violet-500 transition-all duration-500 ease-out" style={{ width: '0%' }} />
         </div>
 
-        <div className="flex-1 flex items-center justify-center p-6">
+        <div className="flex-1 flex items-center justify-center p-6 relative z-10">
           <div className="max-w-xl w-full text-center">
-            {/* Logo */}
-            <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 shadow-[0_0_60px_rgba(124,58,237,0.3)] mb-10">
-              <img src="/logobranca.png" alt="Grape Mídia" className="w-10 h-10 object-contain" referrerPolicy="no-referrer" />
+            <div className="relative inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-violet-950/40 border border-violet-500/20 text-violet-400 shadow-[0_0_50px_rgba(139,92,246,0.15)] mb-8">
+              <Briefcase className="w-6 h-6 text-violet-400" />
             </div>
 
-            <h1 className="text-3xl sm:text-5xl font-extrabold text-white mb-4 tracking-tight leading-tight">
-              Formulário de{' '}
-              <span className="bg-gradient-to-r from-violet-400 to-indigo-400 bg-clip-text text-transparent">Inscrição</span>
+            <h1 className="text-4xl sm:text-5xl font-black text-white tracking-tight leading-tight max-w-xl mx-auto">
+              Formulário de Inscrição
             </h1>
 
-            <p className="text-slate-400 text-lg mb-2">
-              Você está se candidatando para:
+            <p className="text-slate-400 text-sm sm:text-base max-w-md mx-auto mt-4 font-normal leading-relaxed">
+              Você está iniciando sua candidatura para a oportunidade de:
             </p>
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-violet-500/10 border border-violet-500/20 rounded-full mb-10">
-              <Briefcase size={16} className="text-violet-400" />
-              <span className="text-violet-300 font-semibold">{folder.cargo || folder.nome}</span>
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-violet-500/10 border border-violet-500/20 rounded-full mt-4 mb-6">
+              <Briefcase size={14} className="text-violet-400" />
+              <span className="text-violet-300 text-xs font-semibold">{folder.cargo || folder.nome}</span>
             </div>
 
             <div>
               <button
                 onClick={() => goTo(0, 'next')}
-                className="group px-10 py-4 bg-violet-600 hover:bg-violet-500 text-white font-bold text-lg rounded-xl transition-all shadow-[0_4px_30px_rgba(124,58,237,0.4)] hover:shadow-[0_4px_40px_rgba(124,58,237,0.6)] hover:scale-[1.02] active:scale-[0.98]"
+                className="group bg-violet-600 hover:bg-violet-700 text-white font-bold px-8 py-3.5 rounded-xl transition-all shadow-lg hover:shadow-violet-600/20 flex items-center justify-center gap-2 mx-auto hover:scale-[1.02] active:scale-[0.98]"
               >
-                Começar <ArrowRight className="inline ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                Começar <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
               </button>
             </div>
 
-            <p className="text-slate-600 text-sm mt-8">
-              ⏱ Leva aproximadamente 3 minutos
-            </p>
+            <span className="text-slate-500 text-xs mt-4 font-normal block">
+              Leva aproximadamente 3 minutos
+            </span>
           </div>
         </div>
       </div>
     );
   }
 
-  // ── Question Steps ──
   const stepNumber = currentStep + 1;
   const isLastStep = currentStep === totalSteps - 1;
   const field = steps[currentStep];
   const value = formData[field.key];
 
   return (
-    <div className="min-h-screen bg-[#0d0d15] flex flex-col" onKeyDown={handleKeyDown}>
-      {/* Progress bar */}
+    <div className="min-h-screen bg-black flex flex-col relative overflow-hidden font-sans" onKeyDown={handleKeyDown}>
+      <div className="absolute top-1/4 -left-48 w-96 h-96 bg-violet-600/10 rounded-full blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-1/4 -right-48 w-96 h-96 bg-fuchsia-600/10 rounded-full blur-[120px] pointer-events-none" />
+
       <div className="fixed top-0 left-0 right-0 h-1 bg-white/5 z-50">
         <div
           className="h-full bg-gradient-to-r from-violet-500 to-indigo-500 transition-all duration-500 ease-out"
@@ -272,21 +276,19 @@ export default function CandidateApplicationForm() {
         />
       </div>
 
-      {/* Top nav */}
-      <div className="flex items-center justify-between px-6 py-4 relative z-10">
+      <div className="flex items-center justify-between px-8 py-6 relative z-10">
         <button
           onClick={handlePrev}
-          className="flex items-center gap-1 text-sm text-slate-500 hover:text-white transition-colors"
+          className="flex items-center gap-2 text-sm text-slate-400 hover:text-white transition-colors bg-white/5 hover:bg-white/10 px-4 py-2 rounded-xl border border-white/5"
         >
           <ArrowLeft size={16} /> Voltar
         </button>
-        <span className="text-xs text-slate-600 font-mono">
+        <span className="text-xs text-slate-400 font-semibold bg-white/5 px-3 py-1.5 rounded-xl border border-white/5 font-mono">
           {stepNumber} / {totalSteps}
         </span>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 flex items-center justify-center px-6 pb-16">
+      <div className="flex-1 flex items-center justify-center px-8 pb-20 relative z-10">
         <div
           className={`max-w-2xl w-full transition-all duration-300 ease-out ${
             animating
@@ -296,73 +298,70 @@ export default function CandidateApplicationForm() {
               : 'opacity-100 translate-y-0'
           }`}
         >
-          {/* Counter */}
           <div className="flex items-center gap-3 mb-6">
-            <span className="text-violet-500 font-bold text-sm">{stepNumber}</span>
-            <ArrowRight size={14} className="text-violet-500/50" />
+            <span className="text-violet-400 font-extrabold text-sm tracking-widest uppercase">Questão {stepNumber}</span>
+            <ArrowRight size={14} className="text-violet-500/40" />
           </div>
 
-          {/* Question Label */}
-          <h2 className="text-2xl sm:text-3xl font-bold text-white mb-8 leading-snug">
+          <h2 className="text-3xl sm:text-4xl font-extrabold text-white mb-8 tracking-tight leading-snug">
             {field.label}
-            {field.required && <span className="text-violet-500 ml-1">*</span>}
+            {field.required && <span className="text-violet-500 ml-1.5">*</span>}
           </h2>
 
-          {/* Input */}
-          {field.type === 'select' && field.options ? (
-            <div className="space-y-3">
-              {field.options.map(opt => (
-                <button
-                  key={opt}
-                  onClick={() => {
-                    setFormData(prev => ({ ...prev, [field.key]: opt }));
-                    // Auto-advance after selection
-                    setTimeout(() => handleNext(), 400);
-                  }}
-                  className={`w-full text-left px-6 py-4 rounded-xl border text-base font-medium transition-all duration-200 flex items-center gap-3 ${
-                    value === opt
-                      ? 'bg-violet-500/15 border-violet-500 text-violet-300'
-                      : 'bg-white/[0.03] border-white/10 text-slate-300 hover:bg-white/[0.06] hover:border-white/20'
-                  }`}
-                >
-                  <span className={`w-6 h-6 rounded-md border-2 flex items-center justify-center text-xs font-bold shrink-0 transition-colors ${
-                    value === opt ? 'border-violet-500 bg-violet-500 text-white' : 'border-white/20 text-white/40'
-                  }`}>
-                    {String.fromCharCode(65 + field.options!.indexOf(opt))}
-                  </span>
-                  {opt}
-                </button>
-              ))}
-            </div>
-          ) : field.type === 'textarea' ? (
-            <textarea
-              ref={inputRef as React.RefObject<HTMLTextAreaElement>}
-              value={value}
-              onChange={e => setFormData(prev => ({ ...prev, [field.key]: e.target.value }))}
-              placeholder={field.placeholder}
-              rows={4}
-              className="w-full bg-transparent border-b-2 border-white/20 focus:border-violet-500 text-white text-xl placeholder:text-slate-600 py-3 px-1 resize-none focus:outline-none transition-colors"
-            />
-          ) : (
-            <input
-              ref={inputRef as React.RefObject<HTMLInputElement>}
-              type={field.type}
-              value={value}
-              onChange={e => setFormData(prev => ({ ...prev, [field.key]: e.target.value }))}
-              placeholder={field.placeholder}
-              className="w-full bg-transparent border-b-2 border-white/20 focus:border-violet-500 text-white text-xl sm:text-2xl placeholder:text-slate-600 py-3 px-1 focus:outline-none transition-colors"
-            />
-          )}
+          <div className="relative">
+            {field.type === 'select' && field.options ? (
+              <div className="space-y-3">
+                {field.options.map(opt => (
+                  <button
+                    key={opt}
+                    onClick={() => {
+                      setFormData(prev => ({ ...prev, [field.key]: opt }));
+                      setTimeout(() => handleNext(), 400);
+                    }}
+                    className={`w-full text-left px-6 py-4 rounded-xl border text-base font-semibold transition-all duration-200 flex items-center gap-3 ${
+                      value === opt
+                        ? 'bg-violet-500/10 border-violet-500 text-violet-300 shadow-[0_0_20px_rgba(139,92,246,0.1)]'
+                        : 'bg-white/[0.01] border-white/10 text-slate-300 hover:bg-white/[0.03] hover:border-white/20'
+                    }`}
+                  >
+                    <span className={`w-6 h-6 rounded-md border flex items-center justify-center text-xs font-bold shrink-0 transition-colors ${
+                      value === opt ? 'border-violet-500 bg-violet-500 text-white' : 'border-white/20 text-white/40'
+                    }`}>
+                      {String.fromCharCode(65 + field.options!.indexOf(opt))}
+                    </span>
+                    {opt}
+                  </button>
+                ))}
+              </div>
+            ) : field.type === 'textarea' ? (
+              <textarea
+                ref={inputRef as React.RefObject<HTMLTextAreaElement>}
+                value={value || ''}
+                onChange={e => setFormData(prev => ({ ...prev, [field.key]: e.target.value }))}
+                placeholder={field.placeholder}
+                rows={3}
+                className="w-full bg-transparent border-b border-white/10 focus:border-violet-500 text-white text-xl sm:text-2xl py-4 focus:outline-none transition-all duration-300 resize-none placeholder:text-slate-700"
+              />
+            ) : (
+              <input
+                ref={inputRef as React.RefObject<HTMLInputElement>}
+                type={field.type}
+                value={value || ''}
+                onChange={e => setFormData(prev => ({ ...prev, [field.key]: e.target.value }))}
+                placeholder={field.placeholder}
+                className="w-full bg-transparent border-b border-white/10 focus:border-violet-500 text-white text-2xl sm:text-3xl py-4 focus:outline-none transition-all duration-300 placeholder:text-slate-700"
+              />
+            )}
+          </div>
 
-          {/* Action Button */}
-          <div className="mt-10 flex items-center gap-4">
+          <div className="mt-10 flex items-center gap-5">
             <button
               onClick={handleNext}
               disabled={!canAdvance() || submitting}
               className={`group px-8 py-3.5 rounded-xl font-bold text-base flex items-center gap-2 transition-all ${
                 canAdvance()
-                  ? 'bg-violet-600 hover:bg-violet-500 text-white shadow-[0_4px_20px_rgba(124,58,237,0.3)] hover:shadow-[0_4px_30px_rgba(124,58,237,0.5)] hover:scale-[1.02] active:scale-[0.98]'
-                  : 'bg-white/5 text-slate-600 cursor-not-allowed'
+                  ? 'bg-violet-600 hover:bg-violet-700 text-white shadow-lg hover:shadow-violet-600/20 hover:scale-[1.02] active:scale-[0.98]'
+                  : 'bg-white/5 text-slate-500 cursor-not-allowed border border-white/5'
               }`}
             >
               {submitting ? (
@@ -375,8 +374,8 @@ export default function CandidateApplicationForm() {
             </button>
 
             {field.type !== 'select' && (
-              <span className="text-xs text-slate-600">
-                Pressione <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-slate-400 font-mono text-[10px]">Enter ↵</kbd>
+              <span className="text-xs text-slate-500 font-medium">
+                pressione <kbd className="px-2 py-1 bg-white/5 border border-white/5 rounded text-slate-400 font-mono text-[10px] uppercase shadow-sm">Enter ↵</kbd>
               </span>
             )}
           </div>
