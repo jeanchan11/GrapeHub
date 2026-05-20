@@ -13,6 +13,35 @@ import {
   ChevronRight, ChevronLeft, LogOut,
   ChevronDown, Sun, Moon, Zap, Folder, Camera, Phone, User as UserIcon, Save, X
 } from 'lucide-react';
+import Cropper from 'react-easy-crop';
+
+const getCroppedImg = async (imageSrc: string, pixelCrop: any): Promise<string> => {
+  const image = new Image();
+  image.src = imageSrc;
+  await new Promise(resolve => image.onload = resolve);
+  
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  
+  canvas.width = 250;
+  canvas.height = 250;
+  
+  if (ctx) {
+    ctx.drawImage(
+      image,
+      pixelCrop.x,
+      pixelCrop.y,
+      pixelCrop.width,
+      pixelCrop.height,
+      0,
+      0,
+      250,
+      250
+    );
+  }
+  
+  return canvas.toDataURL('image/jpeg', 0.8);
+};
 
 interface SidebarProps {
   activePage: string;
@@ -37,6 +66,12 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
   });
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  
+  const [cropImage, setCropImage] = useState<string | null>(null);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
+
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
     try {
       const saved = localStorage.getItem('sidebar-expanded');
@@ -624,12 +659,65 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
               className="bg-white dark:bg-[#1e1b29] border border-slate-200 dark:border-white/10 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden"
             >
               <div className="p-6 border-b border-slate-100 dark:border-white/5 flex items-center justify-between">
-                <h2 className="text-xl font-bold text-light-text dark:text-white">Editar Perfil</h2>
-                <button onClick={() => setShowProfileModal(false)} className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors rounded-lg hover:bg-slate-100 dark:hover:bg-white/5">
+                <h2 className="text-xl font-bold text-light-text dark:text-white">
+                  {cropImage ? 'Ajustar Foto' : 'Editar Perfil'}
+                </h2>
+                <button onClick={() => {
+                  if (cropImage) {
+                    setCropImage(null);
+                  } else {
+                    setShowProfileModal(false);
+                  }
+                }} className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors rounded-lg hover:bg-slate-100 dark:hover:bg-white/5">
                   <X size={20} />
                 </button>
               </div>
-              <div className="p-6 space-y-4">
+              
+              {cropImage ? (
+                <div className="p-6 flex flex-col">
+                  <div className="relative w-full h-[300px] bg-black/10 dark:bg-black/40 rounded-2xl overflow-hidden mb-6">
+                    <Cropper
+                      image={cropImage}
+                      crop={crop}
+                      zoom={zoom}
+                      aspect={1}
+                      cropShape="round"
+                      showGrid={false}
+                      onCropChange={setCrop}
+                      onCropComplete={(_, croppedPixels) => setCroppedAreaPixels(croppedPixels)}
+                      onZoomChange={setZoom}
+                    />
+                  </div>
+                  <div className="mb-4 px-2">
+                    <label className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-2 block">Zoom</label>
+                    <input
+                      type="range"
+                      value={zoom}
+                      min={1}
+                      max={3}
+                      step={0.1}
+                      onChange={(e) => setZoom(Number(e.target.value))}
+                      className="w-full accent-violet-600 cursor-pointer"
+                    />
+                  </div>
+                  <div className="flex justify-end gap-3 mt-2 border-t border-slate-100 dark:border-white/5 pt-6">
+                    <button onClick={() => setCropImage(null)} className="px-4 py-2 text-sm font-bold text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors">
+                      Cancelar
+                    </button>
+                    <button onClick={async () => {
+                      if (croppedAreaPixels) {
+                        const croppedImage = await getCroppedImg(cropImage, croppedAreaPixels);
+                        setProfileData({...profileData, picture: croppedImage});
+                        setCropImage(null);
+                      }
+                    }} className="px-6 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-violet-600/20 transition-all">
+                      Aplicar Foto
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="p-6 space-y-4">
                 <div className="flex flex-col items-center justify-center gap-4 mb-2">
                   <div 
                     className="relative w-28 h-28 rounded-full bg-[#4285F4]/20 flex items-center justify-center overflow-hidden cursor-pointer group shadow-xl border-4 border-slate-100 dark:border-[#1e1b29]"
@@ -654,19 +742,9 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                       if (file) {
                         const reader = new FileReader();
                         reader.onload = (ev) => {
-                          const img = new Image();
-                          img.onload = () => {
-                            const canvas = document.createElement('canvas');
-                            const size = Math.min(img.width, img.height);
-                            canvas.width = 250;
-                            canvas.height = 250;
-                            const ctx = canvas.getContext('2d');
-                            if (ctx) {
-                              ctx.drawImage(img, (img.width - size) / 2, (img.height - size) / 2, size, size, 0, 0, 250, 250);
-                              setProfileData({...profileData, picture: canvas.toDataURL(file.type || 'image/jpeg', 0.8)});
-                            }
-                          };
-                          img.src = ev.target?.result as string;
+                          setCropImage(ev.target?.result as string);
+                          setCrop({ x: 0, y: 0 });
+                          setZoom(1);
                         };
                         reader.readAsDataURL(file);
                       }
@@ -721,20 +799,22 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                     className="w-full bg-slate-50 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-light-text dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500/50 resize-none"
                   />
                 </div>
-              </div>
-              <div className="p-6 border-t border-slate-100 dark:border-white/5 bg-slate-50 dark:bg-white/5 flex justify-end gap-3">
-                <button onClick={() => setShowProfileModal(false)} className="px-4 py-2 text-sm font-bold text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors">
-                  Cancelar
-                </button>
-                <button 
-                  onClick={handleSaveProfile} 
-                  disabled={isSavingProfile}
-                  className="px-6 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-sm font-bold transition-all disabled:opacity-50 flex items-center gap-2 shadow-lg shadow-violet-600/20"
-                >
-                  {isSavingProfile ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Save size={16} />}
-                  Salvar
-                </button>
-              </div>
+                </div>
+                <div className="p-6 border-t border-slate-100 dark:border-white/5 bg-slate-50 dark:bg-white/5 flex justify-end gap-3">
+                  <button onClick={() => setShowProfileModal(false)} className="px-4 py-2 text-sm font-bold text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors">
+                    Cancelar
+                  </button>
+                  <button 
+                    onClick={handleSaveProfile} 
+                    disabled={isSavingProfile}
+                    className="px-6 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-sm font-bold transition-all disabled:opacity-50 flex items-center gap-2 shadow-lg shadow-violet-600/20"
+                  >
+                    {isSavingProfile ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Save size={16} />}
+                    Salvar
+                  </button>
+                </div>
+              </>
+              )}
             </motion.div>
           </div>
         )}

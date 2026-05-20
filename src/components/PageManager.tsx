@@ -408,6 +408,11 @@ const IconSelector = ({ value, onChange }: { value: string, onChange: (icon: str
 
 const templates = [
   { id: 'blank', label: 'Em Branco' },
+  { id: 'checklist-integracao', label: 'Checklist Integração' },
+  { id: 'checklist-saida', label: 'Checklist Saída' },
+  { id: 'contratacao', label: 'Contratação' },
+  { id: 'contas-a-pagar', label: 'Contas a Pagar' },
+  { id: 'contas-a-receber', label: 'Contas a Receber' },
   { id: 'projects', label: 'Projetos (Projects)' },
   { id: 'todo', label: 'Tarefas (Todo)' },
   { id: 'todo-staff', label: 'To Do (Staff)' },

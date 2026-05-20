@@ -11199,6 +11199,29 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
 
   // ── Collaborators ───────────────────────────────────────────────────────────
 
+  // Org Chart Endpoints
+  app.get("/api/org-chart", async (_req, res) => {
+    try {
+      const { rows } = await pool.query("SELECT data FROM org_chart_state WHERE id = 1");
+      res.json(rows[0]?.data || { nodes: [], edges: [] });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/org-chart", async (req, res) => {
+    try {
+      const { data } = req.body;
+      await pool.query(
+        "INSERT INTO org_chart_state (id, data) VALUES (1, $1) ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data",
+        [data]
+      );
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.get("/api/collaborators", async (_req, res) => {
     try {
       const { rows } = await pool.query("SELECT * FROM collaborators ORDER BY created_at DESC");

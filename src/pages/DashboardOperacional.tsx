@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   Users, TrendingUp, DollarSign, AlertTriangle,
-  CheckCircle, Cpu, RefreshCw, Clock,
+  CheckCircle, Cpu, RefreshCw, Clock, MessageSquare
 } from 'lucide-react';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -113,10 +113,11 @@ function daysSince(p: ProjectRow): number {
     }
   }
 
-  // Se não foi encontrada nenhuma data válida, assumimos 0 dias (projeto recém-criado)
-  if (maxTime === 0) return 0;
-
-  return Math.max(0, Math.floor((Date.now() - maxTime) / (1000 * 60 * 60 * 24)));
+  // Se não foi encontrada nenhuma data válida, consideramos que não há histórico e está crítico
+  if (maxTime === 0) return 999;
+  
+  const diff = Date.now() - maxTime;
+  return Math.floor(diff / (1000 * 60 * 60 * 24));
 }
 
 function parseMoney(val: string | null | undefined): number {
@@ -137,7 +138,7 @@ function calcKPIs(projects: ProjectRow[]) {
     ['Operacional', 'Ativo', 'ativo', 'active', 'Rodando'].includes(p.status)
   ).length;
 
-  const resultadoRuim = projects.filter(p => p.projectResult === 'Resultado Ruim').length;
+  const resultadoRuim = projects.filter(p => p.projectResult?.toLowerCase() === 'resultado ruim').length;
 
   const investments = projects.map(p => parseMoney(p.investment)).filter(n => n > 0);
   const orcamentoMedio = investments.length
@@ -148,7 +149,7 @@ function calcKPIs(projects: ProjectRow[]) {
   const atrasados = projects.filter(p => daysSince(p) > 7).length;
 
   const slaBom = projects.filter(p =>
-    p.projectResult !== 'Resultado Ruim' && p.projectResult !== 'Campanha Pausada'
+    p.projectResult?.toLowerCase() !== 'resultado ruim' && p.projectResult?.toLowerCase() !== 'campanha pausada'
   ).length;
   const slaPct = projects.length ? Math.round((slaBom / projects.length) * 100) : 0;
 
@@ -184,7 +185,7 @@ function groupByResponsible(projects: ProjectRow[]) {
     if (!map[r]) map[r] = { name: r, total: 0, orcamento: 0, ruim: 0, results: {} };
     map[r].total++;
     map[r].orcamento += parseMoney(p.investment);
-    if (p.projectResult === 'Resultado Ruim') map[r].ruim++;
+    if (p.projectResult?.toLowerCase() === 'resultado ruim') map[r].ruim++;
     const res = p.projectResult || '-';
     map[r].results[res] = (map[r].results[res] || 0) + 1;
   }
@@ -193,18 +194,18 @@ function groupByResponsible(projects: ProjectRow[]) {
 
 function getAtencaoList(projects: ProjectRow[]) {
   return projects
-    .filter(p => p.projectResult === 'Resultado Ruim' || daysSince(p) > 15)
+    .filter(p => p.projectResult?.toLowerCase() === 'resultado ruim' || daysSince(p) > 15)
     .map(p => {
       const dias = daysSince(p);
       const alertas: string[] = [];
-      if (p.projectResult === 'Resultado Ruim') alertas.push('Resultado Ruim');
+      if (p.projectResult?.toLowerCase() === 'resultado ruim') alertas.push('Resultado Ruim');
       if (dias > 15) alertas.push(`${dias}d sem update`);
       if (parseMoney(p.investment) > 3000) alertas.push('Alto $');
       return { ...p, diasSemUpdate: dias, alerta: alertas.join(' · ') };
     })
     .sort((a, b) => {
-      const aR = a.projectResult === 'Resultado Ruim' ? 1 : 0;
-      const bR = b.projectResult === 'Resultado Ruim' ? 1 : 0;
+      const aR = a.projectResult?.toLowerCase() === 'resultado ruim' ? 1 : 0;
+      const bR = b.projectResult?.toLowerCase() === 'resultado ruim' ? 1 : 0;
       return bR - aR || b.diasSemUpdate - a.diasSemUpdate;
     })
     .slice(0, 12);
@@ -215,7 +216,51 @@ function getCriticas(projects: ProjectRow[]) {
     .filter(p => daysSince(p) > 7)
     .map(p => ({ ...p, diasSemUpdate: daysSince(p) }))
     .sort((a, b) => b.diasSemUpdate - a.diasSemUpdate)
-    .slice(0, 8);
+    .slice(0, 15);
+}
+
+function getRecentComments(projects: ProjectRow[]) {
+  const allComments: any[] = [];
+  
+  for (const p of projects) {
+    if (p.products && Array.isArray(p.products)) {
+      for (const prod of p.products) {
+        if ((prod as any).optimizations && Array.isArray((prod as any).optimizations)) {
+          for (const opt of (prod as any).optimizations) {
+            if (opt.message) {
+              let optDate = new Date(0);
+              if (opt.date) {
+                const match = opt.date.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+                if (match) {
+                  const day = parseInt(match[1], 10);
+                  const month = parseInt(match[2], 10) - 1;
+                  const year = parseInt(match[3], 10);
+                  let h = 0, m = 0;
+                  if (opt.time) {
+                    const tm = opt.time.match(/(\d{2}):(\d{2})/);
+                    if (tm) {
+                      h = parseInt(tm[1], 10);
+                      m = parseInt(tm[2], 10);
+                    }
+                  }
+                  optDate = new Date(year, month, day, h, m);
+                }
+              }
+              allComments.push({
+                id: opt.id || Math.random().toString(),
+                project: p,
+                productName: prod.name,
+                opt,
+                time: optDate.getTime()
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  return allComments.sort((a, b) => b.time - a.time);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -281,7 +326,7 @@ function DonutChart({ data }: { data: { label: string; count: number; color: str
   };
 
   return (
-    <div className="flex gap-8 items-center justify-between w-full">
+    <div className="flex gap-8 items-center justify-between w-full h-full">
       {/* Donut SVG wrapped in relative div for tooltip positioning */}
       <div
         ref={wrapRef}
@@ -364,7 +409,7 @@ function DonutChart({ data }: { data: { label: string; count: number; color: str
       </div>
 
       {/* Legend */}
-      <div className="space-y-3 flex-1 min-w-0">
+      <div className="space-y-3 flex-1 min-w-0 h-full overflow-y-auto pr-1">
         {data.map((d, i) => (
           <div
             key={d.label}
@@ -428,7 +473,10 @@ function Spinner() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Main Component
 // ─────────────────────────────────────────────────────────────────────────────
-export default function DashboardOperacional() {
+export default function DashboardOperacional({ activePage = '' }: { activePage?: string }) {
+  const parts = activePage.split('-');
+  const squadNameRaw = parts[parts.length - 1] || 'able';
+  const squadName = squadNameRaw.charAt(0).toUpperCase() + squadNameRaw.slice(1).toLowerCase();
   const [projects, setProjects] = useState<ProjectRow[]>([]);
   const [users, setUsers]       = useState<{name: string, picture: string, email: string}[]>([]);
   const [loading, setLoading]   = useState(true);
@@ -454,8 +502,8 @@ export default function DashboardOperacional() {
         setUsers(usersData);
       }
 
-      // Filter to Squad Able only
-      const relevant = all.filter(p => p.squad === 'Able');
+      // Filter to the dynamic Squad
+      const relevant = all.filter(p => p.squad === squadName);
 
       setProjects(relevant);
     } catch (e) {
@@ -467,7 +515,7 @@ export default function DashboardOperacional() {
     }
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { fetchData(); }, [squadName]);
 
   if (loading) return <Spinner />;
 
@@ -481,6 +529,7 @@ export default function DashboardOperacional() {
   const gestores = groupByResponsible(filteredProjects);
   const atencao  = getAtencaoList(filteredProjects);
   const criticas = getCriticas(filteredProjects);
+  const recentComments = getRecentComments(filteredProjects);
 
   // Product summary
   const allProducts = filteredProjects.flatMap(p => p.products || []);
@@ -505,7 +554,7 @@ export default function DashboardOperacional() {
             Dashboard <span className="text-violet-500">Operacional</span>
           </h1>
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">
-            Visão geral de projetos · Squad Able
+            Visão geral de projetos · Squad {squadName}
           </p>
         </div>
         <button
@@ -578,13 +627,20 @@ export default function DashboardOperacional() {
 
       <div className="px-6 md:px-8 pb-10 space-y-5">
         {/* ── KPI Cards ──────────────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
           <KpiCard
             iconBg="bg-violet-500/15"
             icon={<Users size={17} className="text-violet-500" />}
-            label="Projetos Filtrados"
+            label="Projetos"
             value={String(filteredProjects.length)}
             sub={<span><span className="text-violet-400 font-bold">{kpis.totalAtivos}</span> operacionais</span>}
+          />
+          <KpiCard
+            iconBg="bg-indigo-500/15"
+            icon={<Cpu size={17} className="text-indigo-500" />}
+            label="Produtos"
+            value={String(allProducts.length)}
+            sub={<span>em <span className="text-indigo-400 font-bold">{projects.length}</span> projetos</span>}
           />
           <KpiCard
             iconBg="bg-red-500/15"
@@ -607,62 +663,47 @@ export default function DashboardOperacional() {
             value={String(kpis.atrasados)}
             sub={<span className="text-amber-500 font-bold">Projetos parados</span>}
           />
-          <KpiCard
-            iconBg="bg-cyan-500/15"
-            icon={<CheckCircle size={17} className="text-cyan-500" />}
-            label="SLA Cumprido"
-            value={`${kpis.slaPct}%`}
-            sub={<span className="text-cyan-400 font-bold">Fora de Ruim/Pausado</span>}
-          />
-          <KpiCard
-            iconBg="bg-indigo-500/15"
-            icon={<Cpu size={17} className="text-indigo-500" />}
-            label="Produtos Ativos"
-            value={String(allProducts.length)}
-            sub={<span>em <span className="text-indigo-400 font-bold">{projects.length}</span> projetos</span>}
-          />
         </div>
 
-        {/* ── Linha 2 — Alertas + Distribuição ──────────────────────────── */}
+        {/* ── Linha 2 & 3 — Comentários, Distribuição e Radar ──────────────────────────── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
 
-          {/* Clientes em Resultado Ruim */}
-          <div className="bg-dark-card border border-red-500/20 border-l-4 border-l-red-500 rounded-2xl p-6 transition-colors duration-200">
-            <h2 className="text-sm font-bold text-dark-text mb-1">Clientes em Resultado Ruim</h2>
-            <p className="text-xs text-slate-500 mb-4">
-              {kpis.resultadoRuim} projeto(s) com resultado crítico
+          {/* Histórico de Comentários */}
+          <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200 flex flex-col lg:row-span-2 lg:h-[780px] h-[380px]">
+            <h2 className="text-sm font-bold text-dark-text mb-1">Últimos Comentários</h2>
+            <p className="text-xs text-slate-500 mb-4 shrink-0">
+              Histórico consolidado dos projetos
             </p>
-            {kpis.resultadoRuim === 0 ? (
-              <div className="text-center text-slate-500 text-sm py-6">Nenhum projeto em resultado ruim 🎉</div>
+            {recentComments.length === 0 ? (
+              <div className="text-center text-slate-500 text-sm py-6">Nenhum comentário registrado 📝</div>
             ) : (
-              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                {projects.filter(p => p.projectResult === 'Resultado Ruim').map(p => {
-                  const dias = daysSince(p);
-                  const inv  = parseMoney(p.investment);
-                  const dbUser = users.find(u => (u.name && u.name.toLowerCase() === p.responsible?.toLowerCase()) || (u.email && u.email.toLowerCase().includes(p.responsible?.toLowerCase()?.split(' ')[0] || '')));
+              <div className="space-y-3 flex-1 overflow-y-auto pr-1 min-h-0">
+                {recentComments.slice(0, 40).map(c => {
+                  const dbUser = users.find(u => (u.name && u.name.toLowerCase() === c.opt.author?.toLowerCase()) || (u.email && u.email.toLowerCase().includes(c.opt.author?.toLowerCase()?.split(' ')[0] || '')));
                   return (
-                    <div key={p.id} className="flex items-center justify-between py-2.5 px-3 rounded-xl bg-red-500/5 border border-red-500/10">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold text-dark-text truncate">{p.partner}</p>
-                        <div className="flex items-center gap-1.5 mt-1">
-                          <div className="w-4 h-4 rounded-full overflow-hidden bg-slate-800 shrink-0 opacity-90 border border-white/10">
+                    <div key={c.id} className="p-3 rounded-xl bg-white/5 border border-white/5 hover:border-white/10 transition-all">
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-full overflow-hidden bg-slate-800 shrink-0 border border-white/10">
                             {dbUser?.picture ? (
-                              <img src={dbUser.picture} alt={p.responsible || ''} className="w-full h-full object-cover" />
+                              <img src={dbUser.picture} alt={c.opt.author || ''} className="w-full h-full object-cover" />
                             ) : (
-                              <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${p.responsible}`} alt={p.responsible || ''} className="w-full h-full object-cover" />
+                              <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${c.opt.author}`} alt={c.opt.author || ''} className="w-full h-full object-cover" />
                             )}
                           </div>
-                          <p className="text-xs text-slate-500">{p.responsible} · {p.page_id}</p>
+                          <div>
+                            <p className="text-xs font-bold text-dark-text leading-tight">{c.opt.author}</p>
+                            <p className="text-[10px] text-slate-500">{c.project.partner} · {c.productName}</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-[10px] font-bold text-slate-400">{c.opt.date}</p>
+                          {c.opt.time && <p className="text-[9px] text-slate-500">{c.opt.time}</p>}
                         </div>
                       </div>
-                      <div className="flex gap-1 flex-shrink-0 ml-3 flex-wrap justify-end">
-                        {dias > 14 && (
-                          <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-red-500/15 text-red-400">{dias}d</span>
-                        )}
-                        {inv > 3000 && (
-                          <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400">Alto $</span>
-                        )}
-                      </div>
+                      <p className="text-xs text-slate-300 leading-relaxed bg-black/20 p-2.5 rounded-lg border border-white/5 whitespace-pre-wrap">
+                        {c.opt.message}
+                      </p>
                     </div>
                   );
                 })}
@@ -671,59 +712,23 @@ export default function DashboardOperacional() {
           </div>
 
           {/* Distribuição de Resultados */}
-          <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200">
-            <h2 className="text-sm font-bold text-dark-text mb-1">Distribuição de Resultados</h2>
-            <p className="text-xs text-slate-500 mb-4">Todos os projetos por resultado atual</p>
-            <DonutChart data={distrib} />
+          <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200 flex flex-col h-[380px]">
+            <h2 className="text-sm font-bold text-dark-text mb-1 shrink-0">Distribuição de Resultados</h2>
+            <p className="text-xs text-slate-500 mb-4 shrink-0">Todos os projetos por resultado atual</p>
+            <div className="flex-1 min-h-0">
+              <DonutChart data={distrib} />
+            </div>
           </div>
-        </div>
-
-        {/* ── Linha 3 — Gestores + Radar ─────────────────────────────────── */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-
-          {/* Performance por Gestor */}
-          <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200">
-            <h2 className="text-sm font-bold text-dark-text mb-1">Performance por Gestor</h2>
-            <p className="text-xs text-slate-500 mb-5">Mix de resultados por responsável</p>
-            {gestores.length === 0 ? (
-              <p className="text-slate-500 text-sm text-center py-6">Sem dados</p>
-            ) : (
-              <div className="space-y-5">
-                {gestores.map(g => (
-                  <div key={g.name}>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-lg bg-violet-500/15 flex items-center justify-center text-violet-500 text-xs font-black">
-                          {g.name.charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                          <p className="text-sm font-bold text-dark-text leading-tight">{g.name}</p>
-                          <p className="text-[10px] text-slate-500">{g.total} projetos · {fmtBRL(g.orcamento)}/dia</p>
-                        </div>
-                      </div>
-                      {g.ruim > 0 && (
-                        <span className="text-[10px] font-bold text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full">
-                          {g.ruim} com resultado ruim
-                        </span>
-                      )}
-                    </div>
-                    <GestorBar results={g.results} total={g.total} />
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
           {/* Radar de Atenção */}
-          <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200">
-            <h2 className="text-sm font-bold text-dark-text mb-1">Radar de Atenção</h2>
-            <p className="text-xs text-slate-500 mb-4">Projetos críticos ordenados por urgência</p>
+          <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200 flex flex-col h-[380px]">
+            <h2 className="text-sm font-bold text-dark-text mb-1 shrink-0">Radar de Atenção</h2>
+            <p className="text-xs text-slate-500 mb-4 shrink-0">Projetos críticos ordenados por urgência</p>
             {atencao.length === 0 ? (
               <div className="text-center text-slate-500 text-sm py-10">Nenhum projeto crítico 🎉</div>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="flex-1 overflow-auto pr-1 min-h-0">
                 <table className="w-full text-xs">
-                  <thead>
+                  <thead className="sticky top-0 bg-dark-card z-10">
                     <tr className="border-b" style={{ borderColor: 'rgba(100,100,120,0.15)' }}>
                       {['Cliente', 'Gestor', 'Resultado', 'Alertas'].map(h => (
                         <th key={h} className="text-[9px] font-bold text-slate-500 uppercase tracking-widest pb-2 pr-2 text-left">{h}</th>
@@ -831,12 +836,12 @@ export default function DashboardOperacional() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2 ml-3">
-                      {c.projectResult && (
+                      {c.projectResult && c.projectResult !== '-' && (
                         <span
                           className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
                           style={{
-                            background: (RESULT_COLORS[c.projectResult] || '#64748b') + '22',
-                            color: RESULT_COLORS[c.projectResult] || '#94a3b8',
+                            background: (getResultColor(c.projectResult) || '#64748b') + '22',
+                            color: getResultColor(c.projectResult) || '#94a3b8',
                           }}
                         >
                           {c.projectResult}
@@ -845,7 +850,7 @@ export default function DashboardOperacional() {
                       <span className={`flex-shrink-0 text-[11px] font-black px-2.5 py-1 rounded-full ${
                         c.diasSemUpdate > 14 ? 'bg-red-500/15 text-red-400' : 'bg-amber-500/15 text-amber-400'
                       }`}>
-                        {c.diasSemUpdate}d
+                        {c.diasSemUpdate === 999 ? 'Sem histórico' : `${c.diasSemUpdate}d`}
                       </span>
                     </div>
                   </div>
@@ -857,7 +862,7 @@ export default function DashboardOperacional() {
         </div>
 
         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center pt-2">
-          {projects.length} projetos · {allProducts.length} produtos · Squad Able
+          {projects.length} projetos · {allProducts.length} produtos · Squad {squadName}
         </p>
 
       </div>

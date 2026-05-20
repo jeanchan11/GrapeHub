@@ -31,6 +31,7 @@ import ParceirosSquad from './src/pages/ParceirosSquad';
 import TodoStaff from './src/pages/TodoStaff';
 import OnboardingOperacional from './src/pages/OnboardingOperacional';
 import ChecklistIntegracao from './src/pages/ChecklistIntegracao';
+import ChecklistSaida from './src/pages/ChecklistSaida';
 import ContratacaoPage from './src/pages/ContratacaoPage';
 import ContasAPagar from './src/pages/ContasAPagar';
 import ContasAReceber from './src/pages/ContasAReceber';
@@ -245,13 +246,15 @@ const AppContent: React.FC = () => {
       case 'marketing-acoes':
         return <MarketingAcoes key={activePage} activePage={activePage} />;
       case 'dashboard-operacional':
-        return <DashboardOperacional />;
+        return <DashboardOperacional activePage={activePage} />;
       case 'todo-staff':
         return <TodoStaff key={activePage} activePage={activePage} />;
       case 'onboarding-operacional':
         return <OnboardingOperacional />;
       case 'checklist-integracao':
         return <ChecklistIntegracao />;
+      case 'checklist-saida':
+        return <ChecklistSaida />;
       case 'contratacao':
         return <ContratacaoPage />;
       case 'contas-a-pagar':

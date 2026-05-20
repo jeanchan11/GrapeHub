@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Search, GripVertical, ChevronDown, ChevronRight, Edit, Trash2, CheckCircle2, Copy, Check, Settings, X, Link } from 'lucide-react';
 import LoadingSpinner from '../components/LoadingSpinner';
+import Organograma from '../components/Organograma';
 
 interface Collaborator {
   id: number;
@@ -40,6 +41,7 @@ export default function ColaboradoresPage() {
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
     'Efetivado': true
   });
+  const [mainTab, setMainTab] = useState<'dados' | 'organograma'>('dados');
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -248,108 +250,135 @@ export default function ColaboradoresPage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto">
-        <div className="min-w-max">
-          {statuses.map(status => {
-            const list = filtered(grouped[status]);
-            const isExpanded = expandedGroups[status] !== false;
-            
-            // Only show empty default statuses if there's no search
-            if (list.length === 0 && search) return null;
-
-            return (
-              <div key={status} className="mb-6 bg-light-card dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl overflow-hidden shadow-sm">
-                {/* Group Header */}
-                <div 
-                  className="flex items-center gap-3 px-4 py-3 bg-slate-50 dark:bg-white/[0.02] cursor-pointer border-b border-slate-100 dark:border-white/5 select-none"
-                  onClick={() => toggleGroup(status)}
-                >
-                  <div className="flex items-center gap-2 flex-1">
-                    {isExpanded ? <ChevronDown size={16} className="text-slate-400 dark:text-slate-500" /> : <ChevronRight size={16} className="text-slate-400 dark:text-slate-500" />}
-                    <div className={`w-2.5 h-2.5 rounded-full ${getStatusColor(status)}`} />
-                    <h2 className="text-sm font-bold text-slate-800 dark:text-white uppercase tracking-wider">{status}</h2>
-                    <span className="text-xs text-slate-500 ml-2">{list.length}</span>
-                  </div>
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); openAddModal(status); }}
-                    className="p-1.5 hover:bg-slate-200 dark:hover:bg-white/10 rounded-lg text-slate-500 dark:text-slate-400 transition-colors"
-                  >
-                    <Plus size={14} />
-                  </button>
-                </div>
-
-                {/* Table */}
-                {isExpanded && (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="border-b border-slate-100 dark:border-white/5 text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider">
-                          <th className="py-2.5 px-4 font-semibold w-[250px]">Nome</th>
-                          <th className="py-2.5 px-4 font-semibold w-[150px]">Grupo</th>
-                          <th className="py-2.5 px-4 font-semibold w-[150px]">Cargo</th>
-                          <th className="py-2.5 px-4 font-semibold w-[120px]">Senioridade</th>
-                          <th className="py-2.5 px-4 font-semibold w-[150px]">Data Aniversário</th>
-                          <th className="py-2.5 px-4 w-[60px]"></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {list.length === 0 ? (
-                          <tr>
-                            <td colSpan={15} className="py-4 text-center text-sm text-slate-500">Nenhum colaborador nesta lista.</td>
-                          </tr>
-                        ) : (
-                          list.map((c) => (
-                            <tr key={c.id} onClick={() => openEditModal(c)} className="border-b border-slate-100 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-white/[0.02] cursor-pointer group transition-colors">
-                              <td className="py-2.5 px-4">
-                                <div className="flex items-center gap-2">
-                                  <GripVertical size={14} className="text-slate-400 dark:text-slate-600 opacity-0 group-hover:opacity-100 cursor-grab shrink-0" />
-                                  <div className="w-6 h-6 rounded-full bg-violet-500/20 text-violet-600 dark:text-violet-400 flex items-center justify-center text-xs font-bold shrink-0">
-                                    {c.name.charAt(0).toUpperCase()}
-                                  </div>
-                                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap overflow-hidden text-ellipsis">{c.name}</span>
-                                </div>
-                              </td>
-                              <td className="py-2.5 px-4">
-                                {(() => {
-                                  const s = settings.find(set => set.type === 'group' && set.name === c.group_name);
-                                  if (s) return <span className="text-xs font-bold px-2 py-0.5 rounded" style={{ backgroundColor: `${s.color}20`, color: s.color }}>{c.group_name}</span>;
-                                  return <span className="text-xs bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 px-2 py-0.5 rounded-md text-slate-700 dark:text-slate-300">{c.group_name || '-'}</span>;
-                                })()}
-                              </td>
-                              <td className="py-2.5 px-4 text-xs text-slate-700 dark:text-slate-300 font-medium">
-                                {(() => {
-                                  const s = settings.find(set => set.type === 'role' && set.name === c.role);
-                                  if (s) return <span className="text-xs font-bold px-2 py-0.5 rounded" style={{ backgroundColor: `${s.color}20`, color: s.color }}>{c.role}</span>;
-                                  return c.role || '-';
-                                })()}
-                              </td>
-                              <td className="py-2.5 px-4">
-                                {(() => {
-                                  const s = settings.find(set => set.type === 'seniority' && set.name === c.seniority_level);
-                                  if (s) return <span className="text-xs font-bold px-2 py-0.5 rounded" style={{ backgroundColor: `${s.color}20`, color: s.color }}>{c.seniority_level}</span>;
-                                  return <span className="text-xs bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 px-2 py-0.5 rounded text-slate-600 dark:text-slate-400">{c.seniority_level || '-'}</span>;
-                                })()}
-                              </td>
-                              <td className="py-2.5 px-4 text-xs text-slate-600 dark:text-slate-400">{c.birth_date || '-'}</td>
-                              
-                              <td className="py-2.5 px-4" onClick={e => e.stopPropagation()}>
-                                <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <button onClick={() => openEditModal(c)} className="w-6 h-6 rounded hover:bg-slate-200 dark:hover:bg-white/10 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white transition-colors"><Edit size={12} /></button>
-                                  <button onClick={() => handleDelete(c.id)} className="w-6 h-6 rounded hover:bg-rose-500/10 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors"><Trash2 size={12} /></button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+      <div className="flex gap-4 mb-6 border-b border-slate-200 dark:border-white/10 pb-px">
+        <button
+          onClick={() => setMainTab('dados')}
+          className={`pb-4 px-2 text-sm font-bold transition-all border-b-2 ${
+            mainTab === 'dados' 
+              ? 'border-violet-500 text-violet-600 dark:text-violet-400' 
+              : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+          }`}
+        >
+          Dados
+        </button>
+        <button
+          onClick={() => setMainTab('organograma')}
+          className={`pb-4 px-2 text-sm font-bold transition-all border-b-2 ${
+            mainTab === 'organograma' 
+              ? 'border-violet-500 text-violet-600 dark:text-violet-400' 
+              : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+          }`}
+        >
+          Organograma
+        </button>
       </div>
+
+      {mainTab === 'dados' ? (
+        <div className="flex-1 overflow-auto">
+          <div className="min-w-max">
+            {statuses.map(status => {
+              const list = filtered(grouped[status]);
+              const isExpanded = expandedGroups[status] !== false;
+              
+              // Only show empty default statuses if there's no search
+              if (list.length === 0 && search) return null;
+
+              return (
+                <div key={status} className="mb-6 bg-light-card dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl overflow-hidden shadow-sm">
+                  {/* Group Header */}
+                  <div 
+                    className="flex items-center gap-3 px-4 py-3 bg-slate-50 dark:bg-white/[0.02] cursor-pointer border-b border-slate-100 dark:border-white/5 select-none"
+                    onClick={() => toggleGroup(status)}
+                  >
+                    <div className="flex items-center gap-2 flex-1">
+                      {isExpanded ? <ChevronDown size={16} className="text-slate-400 dark:text-slate-500" /> : <ChevronRight size={16} className="text-slate-400 dark:text-slate-500" />}
+                      <div className={`w-2.5 h-2.5 rounded-full ${getStatusColor(status)}`} />
+                      <h2 className="text-sm font-bold text-slate-800 dark:text-white uppercase tracking-wider">{status}</h2>
+                      <span className="text-xs text-slate-500 ml-2">{list.length}</span>
+                    </div>
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); openAddModal(status); }}
+                      className="p-1.5 hover:bg-slate-200 dark:hover:bg-white/10 rounded-lg text-slate-500 dark:text-slate-400 transition-colors"
+                    >
+                      <Plus size={14} />
+                    </button>
+                  </div>
+
+                  {/* Table */}
+                  {isExpanded && (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="border-b border-slate-100 dark:border-white/5 text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider">
+                            <th className="py-2.5 px-4 font-semibold w-[250px]">Nome</th>
+                            <th className="py-2.5 px-4 font-semibold w-[150px]">Grupo</th>
+                            <th className="py-2.5 px-4 font-semibold w-[150px]">Cargo</th>
+                            <th className="py-2.5 px-4 font-semibold w-[120px]">Senioridade</th>
+                            <th className="py-2.5 px-4 font-semibold w-[150px]">Data Aniversário</th>
+                            <th className="py-2.5 px-4 w-[60px]"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {list.length === 0 ? (
+                            <tr>
+                              <td colSpan={15} className="py-4 text-center text-sm text-slate-500">Nenhum colaborador nesta lista.</td>
+                            </tr>
+                          ) : (
+                            list.map((c) => (
+                              <tr key={c.id} onClick={() => openEditModal(c)} className="border-b border-slate-100 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-white/[0.02] cursor-pointer group transition-colors">
+                                <td className="py-2.5 px-4">
+                                  <div className="flex items-center gap-2">
+                                    <GripVertical size={14} className="text-slate-400 dark:text-slate-600 opacity-0 group-hover:opacity-100 cursor-grab shrink-0" />
+                                    <div className="w-6 h-6 rounded-full bg-violet-500/20 text-violet-600 dark:text-violet-400 flex items-center justify-center text-xs font-bold shrink-0">
+                                      {c.name.charAt(0).toUpperCase()}
+                                    </div>
+                                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap overflow-hidden text-ellipsis">{c.name}</span>
+                                  </div>
+                                </td>
+                                <td className="py-2.5 px-4">
+                                  {(() => {
+                                    const s = settings.find(set => set.type === 'group' && set.name === c.group_name);
+                                    if (s) return <span className="text-xs font-bold px-2 py-0.5 rounded" style={{ backgroundColor: `${s.color}20`, color: s.color }}>{c.group_name}</span>;
+                                    return <span className="text-xs bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 px-2 py-0.5 rounded-md text-slate-700 dark:text-slate-300">{c.group_name || '-'}</span>;
+                                  })()}
+                                </td>
+                                <td className="py-2.5 px-4 text-xs text-slate-700 dark:text-slate-300 font-medium">
+                                  {(() => {
+                                    const s = settings.find(set => set.type === 'role' && set.name === c.role);
+                                    if (s) return <span className="text-xs font-bold px-2 py-0.5 rounded" style={{ backgroundColor: `${s.color}20`, color: s.color }}>{c.role}</span>;
+                                    return c.role || '-';
+                                  })()}
+                                </td>
+                                <td className="py-2.5 px-4">
+                                  {(() => {
+                                    const s = settings.find(set => set.type === 'seniority' && set.name === c.seniority_level);
+                                    if (s) return <span className="text-xs font-bold px-2 py-0.5 rounded" style={{ backgroundColor: `${s.color}20`, color: s.color }}>{c.seniority_level}</span>;
+                                    return <span className="text-xs bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 px-2 py-0.5 rounded text-slate-600 dark:text-slate-400">{c.seniority_level || '-'}</span>;
+                                  })()}
+                                </td>
+                                <td className="py-2.5 px-4 text-xs text-slate-600 dark:text-slate-400">{c.birth_date || '-'}</td>
+                                
+                                <td className="py-2.5 px-4" onClick={e => e.stopPropagation()}>
+                                  <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button onClick={() => openEditModal(c)} className="w-6 h-6 rounded hover:bg-slate-200 dark:hover:bg-white/10 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white transition-colors"><Edit size={12} /></button>
+                                    <button onClick={() => handleDelete(c.id)} className="w-6 h-6 rounded hover:bg-rose-500/10 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors"><Trash2 size={12} /></button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        <Organograma collaborators={collaborators.filter(c => c.status === 'Efetivado')} settings={settings} />
+      )}
 
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setIsModalOpen(false)}>
