@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, GripVertical, ChevronDown, ChevronRight, Edit, Trash2, CheckCircle2, Copy, Settings, X, Link } from 'lucide-react';
+import { Plus, Search, GripVertical, ChevronDown, ChevronRight, Edit, Trash2, CheckCircle2, Copy, Check, Settings, X, Link } from 'lucide-react';
 import LoadingSpinner from '../components/LoadingSpinner';
 
 interface Collaborator {
@@ -48,6 +48,7 @@ export default function ColaboradoresPage() {
   const [formData, setFormData] = useState<Partial<Collaborator>>({});
 
   const [copyToast, setCopyToast] = useState(false);
+  const [copiedPix, setCopiedPix] = useState(false);
 
   const copyFormLink = () => {
     const url = `${window.location.origin}/?onboarding=colaborador`;
@@ -123,7 +124,7 @@ export default function ColaboradoresPage() {
     setExpandedGroups(prev => ({ ...prev, [status]: !prev[status] }));
   };
 
-  const openAddModal = (status = 'Ativando') => {
+  const openAddModal = (status = 'Efetivado') => {
     setEditingItem(null);
     setFormData({ status, name: '', group_name: '', role: '' });
     setModalTab('geral');
@@ -212,13 +213,13 @@ export default function ColaboradoresPage() {
   if (loading) return <div className="flex justify-center items-center h-full"><LoadingSpinner size="lg" /></div>;
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 bg-dark-bg p-6 font-sans">
+    <div className="flex-1 flex flex-col min-h-0 bg-light-bg dark:bg-dark-bg p-6 font-sans">
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-black text-white flex items-center gap-2">
+          <h1 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-2">
             Colaboradores <span className="text-violet-500">Grape</span>
           </h1>
-          <p className="text-slate-400 text-sm font-medium mt-1">Gestão centralizada do time Grape Mídia</p>
+          <p className="text-slate-500 dark:text-slate-400 text-sm font-medium mt-1">Gestão centralizada do time Grape Mídia</p>
         </div>
         <div className="flex items-center gap-4">
           <div className="relative">
@@ -227,10 +228,10 @@ export default function ColaboradoresPage() {
               value={search} 
               onChange={e => setSearch(e.target.value)} 
               placeholder="Buscar colaborador..."
-              className="bg-dark-card border border-white/10 rounded-xl pl-9 pr-4 py-2 text-sm text-white focus:outline-none focus:border-violet-500 transition-colors w-64"
+              className="bg-light-card dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl pl-9 pr-4 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500 transition-colors w-64"
             />
           </div>
-          <button onClick={copyFormLink} title="Copiar link do formulário" className="relative bg-white/5 hover:bg-white/10 text-slate-300 hover:text-violet-400 w-10 h-10 rounded-xl flex items-center justify-center transition-colors">
+          <button onClick={copyFormLink} title="Copiar link do formulário" className="relative bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 text-slate-700 dark:text-slate-300 hover:text-violet-500 dark:hover:text-violet-400 w-10 h-10 rounded-xl flex items-center justify-center transition-colors">
             <Link size={18} />
             {copyToast && (
               <span className="absolute -top-10 left-1/2 -translate-x-1/2 bg-violet-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg whitespace-nowrap shadow-lg animate-bounce">
@@ -238,7 +239,7 @@ export default function ColaboradoresPage() {
               </span>
             )}
           </button>
-          <button onClick={() => setIsSettingsModalOpen(true)} className="bg-white/5 hover:bg-white/10 text-slate-300 w-10 h-10 rounded-xl flex items-center justify-center transition-colors">
+          <button onClick={() => setIsSettingsModalOpen(true)} className="bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 text-slate-700 dark:text-slate-300 w-10 h-10 rounded-xl flex items-center justify-center transition-colors">
             <Settings size={18} />
           </button>
           <button onClick={() => openAddModal()} className="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors">
@@ -257,21 +258,21 @@ export default function ColaboradoresPage() {
             if (list.length === 0 && search) return null;
 
             return (
-              <div key={status} className="mb-6 bg-dark-card border border-white/10 rounded-2xl overflow-hidden">
+              <div key={status} className="mb-6 bg-light-card dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl overflow-hidden shadow-sm">
                 {/* Group Header */}
                 <div 
-                  className="flex items-center gap-3 px-4 py-3 bg-white/[0.02] cursor-pointer border-b border-white/5 select-none"
+                  className="flex items-center gap-3 px-4 py-3 bg-slate-50 dark:bg-white/[0.02] cursor-pointer border-b border-slate-100 dark:border-white/5 select-none"
                   onClick={() => toggleGroup(status)}
                 >
                   <div className="flex items-center gap-2 flex-1">
-                    {isExpanded ? <ChevronDown size={16} className="text-slate-400" /> : <ChevronRight size={16} className="text-slate-400" />}
+                    {isExpanded ? <ChevronDown size={16} className="text-slate-400 dark:text-slate-500" /> : <ChevronRight size={16} className="text-slate-400 dark:text-slate-500" />}
                     <div className={`w-2.5 h-2.5 rounded-full ${getStatusColor(status)}`} />
-                    <h2 className="text-sm font-bold text-white uppercase tracking-wider">{status}</h2>
+                    <h2 className="text-sm font-bold text-slate-800 dark:text-white uppercase tracking-wider">{status}</h2>
                     <span className="text-xs text-slate-500 ml-2">{list.length}</span>
                   </div>
                   <button 
                     onClick={(e) => { e.stopPropagation(); openAddModal(status); }}
-                    className="p-1.5 hover:bg-white/10 rounded-lg text-slate-400 transition-colors"
+                    className="p-1.5 hover:bg-slate-200 dark:hover:bg-white/10 rounded-lg text-slate-500 dark:text-slate-400 transition-colors"
                   >
                     <Plus size={14} />
                   </button>
@@ -282,7 +283,7 @@ export default function ColaboradoresPage() {
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                       <thead>
-                        <tr className="border-b border-white/5 text-[10px] uppercase font-bold text-slate-500 tracking-wider">
+                        <tr className="border-b border-slate-100 dark:border-white/5 text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider">
                           <th className="py-2.5 px-4 font-semibold w-[250px]">Nome</th>
                           <th className="py-2.5 px-4 font-semibold w-[150px]">Grupo</th>
                           <th className="py-2.5 px-4 font-semibold w-[150px]">Cargo</th>
@@ -298,24 +299,24 @@ export default function ColaboradoresPage() {
                           </tr>
                         ) : (
                           list.map((c) => (
-                            <tr key={c.id} onClick={() => openEditModal(c)} className="border-b border-white/5 hover:bg-white/[0.02] cursor-pointer group transition-colors">
+                            <tr key={c.id} onClick={() => openEditModal(c)} className="border-b border-slate-100 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-white/[0.02] cursor-pointer group transition-colors">
                               <td className="py-2.5 px-4">
                                 <div className="flex items-center gap-2">
-                                  <GripVertical size={14} className="text-slate-600 opacity-0 group-hover:opacity-100 cursor-grab shrink-0" />
-                                  <div className="w-6 h-6 rounded-full bg-violet-500/20 text-violet-400 flex items-center justify-center text-xs font-bold shrink-0">
+                                  <GripVertical size={14} className="text-slate-400 dark:text-slate-600 opacity-0 group-hover:opacity-100 cursor-grab shrink-0" />
+                                  <div className="w-6 h-6 rounded-full bg-violet-500/20 text-violet-600 dark:text-violet-400 flex items-center justify-center text-xs font-bold shrink-0">
                                     {c.name.charAt(0).toUpperCase()}
                                   </div>
-                                  <span className="text-sm font-medium text-slate-300 whitespace-nowrap overflow-hidden text-ellipsis">{c.name}</span>
+                                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap overflow-hidden text-ellipsis">{c.name}</span>
                                 </div>
                               </td>
                               <td className="py-2.5 px-4">
                                 {(() => {
                                   const s = settings.find(set => set.type === 'group' && set.name === c.group_name);
                                   if (s) return <span className="text-xs font-bold px-2 py-0.5 rounded" style={{ backgroundColor: `${s.color}20`, color: s.color }}>{c.group_name}</span>;
-                                  return <span className="text-xs bg-white/5 border border-white/10 px-2 py-0.5 rounded-md text-slate-300">{c.group_name || '-'}</span>;
+                                  return <span className="text-xs bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 px-2 py-0.5 rounded-md text-slate-700 dark:text-slate-300">{c.group_name || '-'}</span>;
                                 })()}
                               </td>
-                              <td className="py-2.5 px-4 text-xs text-slate-300 font-medium">
+                              <td className="py-2.5 px-4 text-xs text-slate-700 dark:text-slate-300 font-medium">
                                 {(() => {
                                   const s = settings.find(set => set.type === 'role' && set.name === c.role);
                                   if (s) return <span className="text-xs font-bold px-2 py-0.5 rounded" style={{ backgroundColor: `${s.color}20`, color: s.color }}>{c.role}</span>;
@@ -326,15 +327,15 @@ export default function ColaboradoresPage() {
                                 {(() => {
                                   const s = settings.find(set => set.type === 'seniority' && set.name === c.seniority_level);
                                   if (s) return <span className="text-xs font-bold px-2 py-0.5 rounded" style={{ backgroundColor: `${s.color}20`, color: s.color }}>{c.seniority_level}</span>;
-                                  return <span className="text-xs bg-white/5 border border-white/10 px-2 py-0.5 rounded text-slate-400">{c.seniority_level || '-'}</span>;
+                                  return <span className="text-xs bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 px-2 py-0.5 rounded text-slate-600 dark:text-slate-400">{c.seniority_level || '-'}</span>;
                                 })()}
                               </td>
-                              <td className="py-2.5 px-4 text-xs text-slate-400">{c.birth_date || '-'}</td>
+                              <td className="py-2.5 px-4 text-xs text-slate-600 dark:text-slate-400">{c.birth_date || '-'}</td>
                               
                               <td className="py-2.5 px-4" onClick={e => e.stopPropagation()}>
                                 <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <button onClick={() => openEditModal(c)} className="w-6 h-6 rounded hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-colors"><Edit size={12} /></button>
-                                  <button onClick={() => handleDelete(c.id)} className="w-6 h-6 rounded hover:bg-rose-500/10 flex items-center justify-center text-slate-400 hover:text-rose-400 transition-colors"><Trash2 size={12} /></button>
+                                  <button onClick={() => openEditModal(c)} className="w-6 h-6 rounded hover:bg-slate-200 dark:hover:bg-white/10 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white transition-colors"><Edit size={12} /></button>
+                                  <button onClick={() => handleDelete(c.id)} className="w-6 h-6 rounded hover:bg-rose-500/10 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors"><Trash2 size={12} /></button>
                                 </div>
                               </td>
                             </tr>
@@ -351,29 +352,29 @@ export default function ColaboradoresPage() {
       </div>
 
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setIsModalOpen(false)}>
-          <div className="bg-[#1e1e2e] border border-white/10 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
-            <div className="p-5 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
-              <h2 className="text-lg font-bold text-white">{editingItem ? 'Detalhes do Colaborador' : 'Novo Colaborador'}</h2>
-              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-white transition-colors"><Plus size={20} className="rotate-45" /></button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setIsModalOpen(false)}>
+          <div className="bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
+            <div className="p-5 border-b border-slate-200 dark:border-white/10 flex items-center justify-between bg-slate-50 dark:bg-white/[0.02]">
+              <h2 className="text-lg font-bold text-slate-800 dark:text-white">{editingItem ? 'Detalhes do Colaborador' : 'Novo Colaborador'}</h2>
+              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 dark:text-slate-500 hover:text-slate-800 dark:hover:text-white transition-colors"><Plus size={20} className="rotate-45" /></button>
             </div>
 
-            <div className="flex border-b border-white/10 bg-white/[0.01]">
+            <div className="flex border-b border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.01]">
               <button 
                 onClick={() => setModalTab('geral')} 
-                className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors ${modalTab === 'geral' ? 'border-violet-500 text-violet-400' : 'border-transparent text-slate-400 hover:text-slate-300'}`}
+                className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors ${modalTab === 'geral' ? 'border-violet-500 text-violet-600 dark:text-violet-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300'}`}
               >
                 Geral
               </button>
               <button 
                 onClick={() => setModalTab('formulario')} 
-                className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors ${modalTab === 'formulario' ? 'border-violet-500 text-violet-400' : 'border-transparent text-slate-400 hover:text-slate-300'}`}
+                className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors ${modalTab === 'formulario' ? 'border-violet-500 text-violet-600 dark:text-violet-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300'}`}
               >
                 Informações do Formulário
               </button>
               <button 
                 onClick={() => setModalTab('comentarios')} 
-                className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors ${modalTab === 'comentarios' ? 'border-violet-500 text-violet-400' : 'border-transparent text-slate-400 hover:text-slate-300'}`}
+                className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors ${modalTab === 'comentarios' ? 'border-violet-500 text-violet-600 dark:text-violet-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300'}`}
               >
                 Comentários
               </button>
@@ -385,131 +386,158 @@ export default function ColaboradoresPage() {
                   <div className="col-span-2 sm:col-span-1">
                     <label className="text-xs font-bold text-slate-400 uppercase mb-1.5 block">Nome</label>
                     {isEditMode ? (
-                      <input value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-dark-input border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500" />
+                      <input value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full bg-slate-50 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500" />
                     ) : (
-                      <div className="text-sm font-medium text-white">{formData.name || '-'}</div>
+                      <div className="text-sm font-medium text-slate-800 dark:text-white">{formData.name || '-'}</div>
                     )}
                   </div>
               
-              <div className="col-span-2 sm:col-span-1">
-                <label className="text-xs font-bold text-slate-400 uppercase mb-1.5 block">Status</label>
-                {isEditMode ? (
-                  <select value={formData.status || 'Efetivado'} onChange={e => setFormData({...formData, status: e.target.value})} className="w-full bg-dark-input border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500 appearance-none">
-                    <option value="Efetivado">Efetivado</option>
-                    <option value="Desligamento">Desligamento</option>
-                    <option value="Turnover">Turnover</option>
-                  </select>
-                ) : (
-                  <div className="text-sm font-medium text-white">{formData.status || '-'}</div>
-                )}
-              </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="text-xs font-bold text-slate-400 uppercase mb-1.5 block">Status</label>
+                    {isEditMode ? (
+                      <select value={formData.status || 'Efetivado'} onChange={e => setFormData({...formData, status: e.target.value})} className="w-full bg-slate-50 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500 appearance-none">
+                        <option value="Efetivado" className="text-slate-800 dark:text-white bg-white dark:bg-dark-card">Efetivado</option>
+                        <option value="Desligamento" className="text-slate-800 dark:text-white bg-white dark:bg-dark-card">Desligamento</option>
+                        <option value="Turnover" className="text-slate-800 dark:text-white bg-white dark:bg-dark-card">Turnover</option>
+                      </select>
+                    ) : (
+                      <div className="text-sm font-medium text-slate-800 dark:text-white">{formData.status || '-'}</div>
+                    )}
+                  </div>
 
-              <div className="col-span-2 sm:col-span-1">
-                <label className="text-xs font-bold text-slate-400 uppercase mb-1.5 block">Grupo</label>
-                {isEditMode ? (
-                  <select value={formData.group_name || ''} onChange={e => setFormData({...formData, group_name: e.target.value})} className="w-full bg-dark-input border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500 appearance-none">
-                    <option value="">Selecione...</option>
-                    {settings.filter(s => s.type === 'group').map(s => (
-                      <option key={s.id} value={s.name}>{s.name}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <div className="text-sm font-medium text-white">{formData.group_name || '-'}</div>
-                )}
-              </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="text-xs font-bold text-slate-400 uppercase mb-1.5 block">Grupo</label>
+                    {isEditMode ? (
+                      <select value={formData.group_name || ''} onChange={e => setFormData({...formData, group_name: e.target.value})} className="w-full bg-slate-50 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500 appearance-none">
+                        <option value="" className="text-slate-800 dark:text-white bg-white dark:bg-dark-card">Selecione...</option>
+                        {settings.filter(s => s.type === 'group').map(s => (
+                          <option key={s.id} value={s.name} className="text-slate-800 dark:text-white bg-white dark:bg-dark-card">{s.name}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="text-sm font-medium text-slate-800 dark:text-white">{formData.group_name || '-'}</div>
+                    )}
+                  </div>
 
-              <div className="col-span-2 sm:col-span-1">
-                <label className="text-xs font-bold text-slate-400 uppercase mb-1.5 block">Cargo</label>
-                {isEditMode ? (
-                  <select value={formData.role || ''} onChange={e => setFormData({...formData, role: e.target.value})} className="w-full bg-dark-input border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500 appearance-none">
-                    <option value="">Selecione...</option>
-                    {settings.filter(s => s.type === 'role').map(s => (
-                      <option key={s.id} value={s.name}>{s.name}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <div className="text-sm font-medium text-white">{formData.role || '-'}</div>
-                )}
-              </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="text-xs font-bold text-slate-400 uppercase mb-1.5 block">Cargo</label>
+                    {isEditMode ? (
+                      <select value={formData.role || ''} onChange={e => setFormData({...formData, role: e.target.value})} className="w-full bg-slate-50 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500 appearance-none">
+                        <option value="" className="text-slate-800 dark:text-white bg-white dark:bg-dark-card">Selecione...</option>
+                        {settings.filter(s => s.type === 'role').map(s => (
+                          <option key={s.id} value={s.name} className="text-slate-800 dark:text-white bg-white dark:bg-dark-card">{s.name}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="text-sm font-medium text-slate-800 dark:text-white">{formData.role || '-'}</div>
+                    )}
+                  </div>
 
-              <div className="col-span-2 sm:col-span-1">
-                <label className="text-xs font-bold text-slate-400 uppercase mb-1.5 block">Chave PIX</label>
-                {isEditMode ? (
-                  <input value={formData.pix_key || ''} onChange={e => setFormData({...formData, pix_key: e.target.value})} className="w-full bg-dark-input border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500" />
-                ) : (
-                  <div className="text-sm font-medium text-white">{formData.pix_key || '-'}</div>
-                )}
-              </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="text-xs font-bold text-slate-400 uppercase mb-1.5 block">Chave PIX</label>
+                    {isEditMode ? (
+                      <input value={formData.pix_key || ''} onChange={e => setFormData({...formData, pix_key: e.target.value})} className="w-full bg-slate-50 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500" />
+                    ) : (
+                      formData.pix_key ? (
+                        <div 
+                          onClick={() => {
+                            navigator.clipboard.writeText(formData.pix_key || '').then(() => {
+                              setCopiedPix(true);
+                              setTimeout(() => setCopiedPix(false), 2000);
+                            });
+                          }}
+                          className="group/pix relative flex items-start gap-2 bg-slate-50 dark:bg-white/[0.03] border border-slate-100 dark:border-white/5 hover:border-violet-500/30 dark:hover:border-violet-500/30 rounded-xl p-2.5 cursor-pointer transition-all active:scale-[0.98] overflow-hidden"
+                          title="Clique para copiar a chave PIX"
+                        >
+                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300 break-all flex-1 pr-6 select-all">
+                            {formData.pix_key}
+                          </span>
+                          <button 
+                            type="button" 
+                            className="absolute right-2 top-2.5 text-slate-400 hover:text-violet-500 dark:text-slate-500 dark:hover:text-violet-400 transition-colors shrink-0"
+                          >
+                            {copiedPix ? (
+                              <Check className="w-4 h-4 text-emerald-500 animate-scale-up" />
+                            ) : (
+                              <Copy className="w-4 h-4" />
+                            )}
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="text-sm font-medium text-slate-400 dark:text-slate-500">-</div>
+                      )
+                    )}
+                  </div>
 
-              <div className="col-span-2 sm:col-span-1">
-                <label className="text-xs font-bold text-slate-400 uppercase mb-1.5 block">Remuneração</label>
-                {isEditMode ? (
-                  <input value={formData.remuneration || ''} onChange={e => setFormData({...formData, remuneration: e.target.value})} className="w-full bg-dark-input border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500" placeholder="Ex: R$ 3.000,00" />
-                ) : (
-                  <div className="text-sm font-medium text-white">{formData.remuneration || '-'}</div>
-                )}
-              </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="text-xs font-bold text-slate-400 uppercase mb-1.5 block">Remuneração</label>
+                    {isEditMode ? (
+                      <input value={formData.remuneration || ''} onChange={e => setFormData({...formData, remuneration: e.target.value})} className="w-full bg-slate-50 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500" placeholder="Ex: R$ 3.000,00" />
+                    ) : (
+                      <div className="text-sm font-medium text-slate-800 dark:text-white">{formData.remuneration || '-'}</div>
+                    )}
+                  </div>
 
-              <div className="col-span-2 sm:col-span-1">
-                <label className="text-xs font-bold text-slate-400 uppercase mb-1.5 block">Vale Transporte</label>
-                {isEditMode ? (
-                  <input value={formData.transport_voucher || ''} onChange={e => setFormData({...formData, transport_voucher: e.target.value})} className="w-full bg-dark-input border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500" />
-                ) : (
-                  <div className="text-sm font-medium text-white">{formData.transport_voucher || '-'}</div>
-                )}
-              </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="text-xs font-bold text-slate-400 uppercase mb-1.5 block">Vale Transporte</label>
+                    {isEditMode ? (
+                      <input value={formData.transport_voucher || ''} onChange={e => setFormData({...formData, transport_voucher: e.target.value})} className="w-full bg-slate-50 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500" />
+                    ) : (
+                      <div className="text-sm font-medium text-slate-800 dark:text-white">{formData.transport_voucher || '-'}</div>
+                    )}
+                  </div>
 
-              <div className="col-span-2 sm:col-span-1">
-                <label className="text-xs font-bold text-slate-400 uppercase mb-1.5 block">Data Nasc.</label>
-                {isEditMode ? (
-                  <input type="date" value={formData.birth_date || ''} onChange={e => setFormData({...formData, birth_date: e.target.value})} className="w-full bg-dark-input border border-white/10 rounded-xl px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-violet-500" />
-                ) : (
-                  <div className="text-sm font-medium text-white">{formData.birth_date || '-'}</div>
-                )}
-              </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="text-xs font-bold text-slate-400 uppercase mb-1.5 block">Data Nasc.</label>
+                    {isEditMode ? (
+                      <input type="date" value={formData.birth_date || ''} onChange={e => setFormData({...formData, birth_date: e.target.value})} className="w-full bg-slate-50 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-700 dark:text-slate-300 focus:outline-none focus:border-violet-500" />
+                    ) : (
+                      <div className="text-sm font-medium text-slate-800 dark:text-white">{formData.birth_date || '-'}</div>
+                    )}
+                  </div>
 
-              <div className="col-span-2 sm:col-span-1">
-                <label className="text-xs font-bold text-slate-400 uppercase mb-1.5 block">Dia de Início</label>
-                {isEditMode ? (
-                  <input type="date" value={formData.start_date || ''} onChange={e => setFormData({...formData, start_date: e.target.value})} className="w-full bg-dark-input border border-white/10 rounded-xl px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-violet-500" />
-                ) : (
-                  <div className="text-sm font-medium text-white">{formData.start_date || '-'}</div>
-                )}
-              </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="text-xs font-bold text-slate-400 uppercase mb-1.5 block">Dia de Início</label>
+                    {isEditMode ? (
+                      <input type="date" value={formData.start_date || ''} onChange={e => setFormData({...formData, start_date: e.target.value})} className="w-full bg-slate-50 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-700 dark:text-slate-300 focus:outline-none focus:border-violet-500" />
+                    ) : (
+                      <div className="text-sm font-medium text-slate-800 dark:text-white">{formData.start_date || '-'}</div>
+                    )}
+                  </div>
 
-              <div className="col-span-2 sm:col-span-1">
-                <label className="text-xs font-bold text-slate-400 uppercase mb-1.5 block">Data de Saída</label>
-                {isEditMode ? (
-                  <input type="date" value={formData.end_date || ''} onChange={e => setFormData({...formData, end_date: e.target.value})} className="w-full bg-dark-input border border-white/10 rounded-xl px-3 py-2 text-sm text-slate-300 focus:outline-none focus:border-violet-500" />
-                ) : (
-                  <div className="text-sm font-medium text-white">{formData.end_date || '-'}</div>
-                )}
-              </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="text-xs font-bold text-slate-400 uppercase mb-1.5 block">Data de Saída</label>
+                    {isEditMode ? (
+                      <input type="date" value={formData.end_date || ''} onChange={e => setFormData({...formData, end_date: e.target.value})} className="w-full bg-slate-50 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-700 dark:text-slate-300 focus:outline-none focus:border-violet-500" />
+                    ) : (
+                      <div className="text-sm font-medium text-slate-800 dark:text-white">{formData.end_date || '-'}</div>
+                    )}
+                  </div>
 
-              <div className="col-span-2">
-                <label className="text-xs font-bold text-slate-400 uppercase mb-1.5 block">Benefícios</label>
-                {isEditMode ? (
-                  <textarea value={formData.benefits || ''} onChange={e => setFormData({...formData, benefits: e.target.value})} className="w-full bg-dark-input border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500 resize-none h-20" />
-                ) : (
-                  <div className="text-sm font-medium text-white whitespace-pre-wrap">{formData.benefits || '-'}</div>
-                )}
-              </div>
+                  <div className="col-span-2">
+                    <label className="text-xs font-bold text-slate-400 uppercase mb-1.5 block">Benefícios</label>
+                    {isEditMode ? (
+                      <textarea value={formData.benefits || ''} onChange={e => setFormData({...formData, benefits: e.target.value})} className="w-full bg-slate-50 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500 resize-none h-20" />
+                    ) : (
+                      <div className="text-sm font-medium text-slate-800 dark:text-white whitespace-pre-wrap">{formData.benefits || '-'}</div>
+                    )}
+                  </div>
 
-              <div className="col-span-2">
-                <label className="text-xs font-bold text-slate-400 uppercase mb-3 block">Senioridade</label>
-                {isEditMode ? (
-                  <select value={formData.seniority_level || ''} onChange={e => setFormData({...formData, seniority_level: e.target.value})} className="w-full bg-dark-input border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500 appearance-none">
-                    <option value="">Selecione a senioridade...</option>
-                    {settings.filter(s => s.type === 'seniority').map(s => (
-                      <option key={s.id} value={s.name}>{s.name}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <div className="text-sm font-medium text-white">{formData.seniority_level || '-'}</div>
-                )}
-              </div>
-            </div>
-          )}
+                  <div className="col-span-2">
+                    <label className="text-xs font-bold text-slate-400 uppercase mb-3 block">Senioridade</label>
+                    {isEditMode ? (
+                      <select value={formData.seniority_level || ''} onChange={e => setFormData({...formData, seniority_level: e.target.value})} className="w-full bg-slate-50 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500 appearance-none">
+                        <option value="" className="text-slate-800 dark:text-white bg-white dark:bg-dark-card">Selecione a senioridade...</option>
+                        {settings.filter(s => s.type === 'seniority').map(s => (
+                          <option key={s.id} value={s.name} className="text-slate-800 dark:text-white bg-white dark:bg-dark-card">{s.name}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="text-sm font-medium text-slate-800 dark:text-white">{formData.seniority_level || '-'}</div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {modalTab === 'formulario' && (
                 <div className="flex-1">
@@ -523,12 +551,12 @@ export default function ColaboradoresPage() {
                         // Tratar chaves de arquivo
                         if (val && typeof val === 'object' && val.name && val.data) {
                           return (
-                            <div key={key} className="border border-white/10 rounded-xl p-4 bg-white/[0.02]">
+                            <div key={key} className="border border-slate-200 dark:border-white/10 rounded-xl p-4 bg-slate-50 dark:bg-white/[0.02]">
                               <p className="text-xs font-bold text-slate-400 uppercase mb-2">
                                 {key.replace(/_/g, ' ')}
                               </p>
                               <div className="flex items-center gap-3">
-                                <span className="text-sm text-slate-300 flex-1 truncate">{val.name}</span>
+                                <span className="text-sm text-slate-700 dark:text-slate-300 flex-1 truncate">{val.name}</span>
                                 <button 
                                   onClick={() => {
                                     const a = document.createElement('a');
@@ -558,10 +586,10 @@ export default function ColaboradoresPage() {
                                   ...formData, 
                                   form_data: { ...formData.form_data, [key]: e.target.value }
                                 })}
-                                className="w-full bg-dark-input border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500"
+                                className="w-full bg-slate-50 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500"
                               />
                             ) : (
-                              <div className="text-sm font-medium text-white whitespace-pre-wrap">
+                              <div className="text-sm font-medium text-slate-800 dark:text-white whitespace-pre-wrap">
                                 {String(val || '-')}
                               </div>
                             )}
@@ -586,12 +614,12 @@ export default function ColaboradoresPage() {
                         form_data: { ...(formData.form_data || {}), comments: e.target.value }
                       })}
                       placeholder="Adicione observações, notas de feedback ou comentários importantes sobre o colaborador..."
-                      className="w-full flex-1 bg-dark-input border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-violet-500 placeholder-slate-500 resize-none min-h-[200px]"
+                      className="w-full flex-1 bg-slate-50 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500 placeholder-slate-500 resize-none min-h-[200px]"
                     />
                   ) : (
-                    <div className="flex-1 bg-white/[0.02] border border-white/5 rounded-xl p-4 min-h-[200px] overflow-y-auto">
+                    <div className="flex-1 bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/5 rounded-xl p-4 min-h-[200px] overflow-y-auto">
                       {formData.form_data?.comments ? (
-                        <p className="text-sm text-slate-300 whitespace-pre-wrap leading-relaxed">
+                        <p className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">
                           {formData.form_data.comments}
                         </p>
                       ) : (
@@ -605,7 +633,7 @@ export default function ColaboradoresPage() {
               )}
             </div>
             
-            <div className="p-5 border-t border-white/10 flex justify-end gap-3 bg-white/[0.02]">
+            <div className="p-5 border-t border-slate-200 dark:border-white/10 flex justify-end gap-3 bg-slate-50 dark:bg-white/[0.02]">
               {isEditMode ? (
                 <>
                   <button onClick={() => {
@@ -615,13 +643,13 @@ export default function ColaboradoresPage() {
                     } else {
                       setIsModalOpen(false);
                     }
-                  }} className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-white transition-colors">Cancelar</button>
+                  }} className="px-4 py-2 text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white transition-colors">Cancelar</button>
                   <button onClick={handleSave} className="bg-violet-600 hover:bg-violet-700 text-white px-6 py-2 rounded-xl text-sm font-bold transition-colors">Salvar</button>
                 </>
               ) : (
                 <>
-                  <button onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-white transition-colors">Fechar</button>
-                  <button onClick={() => setIsEditMode(true)} className="bg-white/10 hover:bg-white/20 text-white px-6 py-2 rounded-xl text-sm font-bold transition-colors flex items-center gap-2">
+                  <button onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white transition-colors">Fechar</button>
+                  <button onClick={() => setIsEditMode(true)} className="bg-slate-100 hover:bg-slate-200 dark:bg-white/10 dark:hover:bg-white/20 text-slate-800 dark:text-white px-6 py-2 rounded-xl text-sm font-bold transition-colors flex items-center gap-2 border border-slate-200 dark:border-transparent">
                     <Edit size={16} /> Editar
                   </button>
                 </>
@@ -634,30 +662,30 @@ export default function ColaboradoresPage() {
       {/* Modal de Configurações */}
       {isSettingsModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-dark-bg border border-white/10 rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh] overflow-hidden">
-            <div className="p-5 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
+          <div className="bg-white dark:bg-dark-bg border border-slate-200 dark:border-white/10 rounded-3xl shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh] overflow-hidden">
+            <div className="p-5 border-b border-slate-200 dark:border-white/10 flex items-center justify-between bg-slate-50 dark:bg-white/[0.02]">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-violet-500/20 flex items-center justify-center text-violet-400">
                   <Settings size={20} />
                 </div>
                 <div>
-                  <h2 className="text-lg font-bold text-white">Configurações</h2>
+                  <h2 className="text-lg font-bold text-slate-800 dark:text-white">Configurações</h2>
                   <p className="text-xs text-slate-400">Gerencie Grupos, Cargos e Senioridade</p>
                 </div>
               </div>
-              <button onClick={() => setIsSettingsModalOpen(false)} className="text-slate-400 hover:text-white transition-colors w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10">
+              <button onClick={() => setIsSettingsModalOpen(false)} className="text-slate-400 dark:text-slate-500 hover:text-slate-800 dark:hover:text-white transition-colors w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-200 dark:hover:bg-white/10">
                 <X size={20} />
               </button>
             </div>
 
             <div className="p-6 overflow-y-auto flex-1">
               <div className="flex gap-2 mb-6 items-center">
-                <select value={newSettingType} onChange={e => setNewSettingType(e.target.value as any)} className="bg-dark-input border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500 appearance-none w-32">
+                <select value={newSettingType} onChange={e => setNewSettingType(e.target.value as any)} className="bg-slate-50 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500 appearance-none w-32">
                   <option value="group">Grupo</option>
                   <option value="role">Cargo</option>
                   <option value="seniority">Senioridade</option>
                 </select>
-                <input value={newSettingName} onChange={e => setNewSettingName(e.target.value)} onKeyDown={e => e.key === 'Enter' && addSetting()} placeholder="Novo item..." className="flex-1 bg-dark-input border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500" />
+                <input value={newSettingName} onChange={e => setNewSettingName(e.target.value)} onKeyDown={e => e.key === 'Enter' && addSetting()} placeholder="Novo item..." className="flex-1 bg-slate-50 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500" />
                 <label className="relative w-10 h-10 flex-shrink-0 cursor-pointer" title="Selecionar cor">
                   <span className="block w-10 h-10 rounded-lg border-2 border-white/20 shadow-lg" style={{ backgroundColor: newSettingColor }} />
                   <input type="color" value={newSettingColor} onChange={e => setNewSettingColor(e.target.value)} style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%', cursor: 'pointer' }} />
@@ -669,7 +697,7 @@ export default function ColaboradoresPage() {
 
               <div className="space-y-6">
                 <div>
-                  <h3 className="text-xs font-bold text-slate-400 uppercase mb-3 border-b border-white/10 pb-2">Grupos</h3>
+                  <h3 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase mb-3 border-b border-slate-200 dark:border-white/10 pb-2">Grupos</h3>
                   <div className="flex flex-wrap gap-2">
                     {settings.filter(s => s.type === 'group').map(s => (
                       <span key={s.id} className="text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-2" style={{ backgroundColor: `${s.color || '#8b5cf6'}20`, color: s.color || '#8b5cf6' }}>
@@ -682,7 +710,7 @@ export default function ColaboradoresPage() {
                 </div>
 
                 <div>
-                  <h3 className="text-xs font-bold text-slate-400 uppercase mb-3 border-b border-white/10 pb-2">Cargos</h3>
+                  <h3 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase mb-3 border-b border-slate-200 dark:border-white/10 pb-2">Cargos</h3>
                   <div className="flex flex-wrap gap-2">
                     {settings.filter(s => s.type === 'role').map(s => (
                       <span key={s.id} className="text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-2" style={{ backgroundColor: `${s.color || '#8b5cf6'}20`, color: s.color || '#8b5cf6' }}>
@@ -695,7 +723,7 @@ export default function ColaboradoresPage() {
                 </div>
 
                 <div>
-                  <h3 className="text-xs font-bold text-slate-400 uppercase mb-3 border-b border-white/10 pb-2">Senioridades</h3>
+                  <h3 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase mb-3 border-b border-slate-200 dark:border-white/10 pb-2">Senioridades</h3>
                   <div className="flex flex-wrap gap-2">
                     {settings.filter(s => s.type === 'seniority').map(s => (
                       <span key={s.id} className="text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-2" style={{ backgroundColor: `${s.color || '#8b5cf6'}20`, color: s.color || '#8b5cf6' }}>
@@ -709,8 +737,8 @@ export default function ColaboradoresPage() {
               </div>
             </div>
 
-            <div className="p-5 border-t border-white/10 flex justify-end bg-white/[0.02]">
-              <button onClick={() => setIsSettingsModalOpen(false)} className="px-6 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-sm font-bold transition-colors">Fechar</button>
+            <div className="p-5 border-t border-slate-200 dark:border-white/10 flex justify-end bg-slate-50 dark:bg-white/[0.02]">
+              <button onClick={() => setIsSettingsModalOpen(false)} className="px-6 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-white/10 dark:hover:bg-white/20 text-slate-800 dark:text-white rounded-xl text-sm font-bold transition-colors border border-slate-200 dark:border-transparent">Fechar</button>
             </div>
           </div>
         </div>

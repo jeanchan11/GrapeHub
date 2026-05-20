@@ -9531,35 +9531,39 @@ app.get("/api/todos", async (req, res) => {
   // ── GET tasks ──
   app.get('/api/onboarding-tasks', async (req, res) => {
     try {
+      const type = req.query.type || 'operacional';
       const result = await pool.query(
-        'SELECT * FROM onboarding_tasks ORDER BY status_group, created_at DESC'
+        'SELECT * FROM onboarding_tasks WHERE type = $1 ORDER BY status_group, created_at DESC',
+        [type]
       );
       res.json(result.rows);
     } catch (err) {
       console.error('GET /api/onboarding-tasks error:', err);
-      res.status(500).json({ error: 'Erro ao buscar tarefas de onboarding.' });
+      res.status(500).json({ error: 'Erro ao buscar tarefas.' });
     }
   });
 
   // ── POST task (auto-creates subtasks from template) ──
   app.post('/api/onboarding-tasks', async (req, res) => {
     try {
-      const { client_name, squad, responsible_id, responsible_name, responsible_avatar, start_date, due_date, status_group, tags, nome_completo, nome_fantasia, telefone_whatsapp, cnpj_cpf, cep, cidade, uf, meeting_info } = req.body;
+      const { client_name, squad, responsible_id, responsible_name, responsible_avatar, start_date, due_date, status_group, tags, nome_completo, nome_fantasia, telefone_whatsapp, cnpj_cpf, cep, cidade, uf, meeting_info, type } = req.body;
+      const taskType = type || 'operacional';
       if (!client_name) return res.status(400).json({ error: 'client_name é obrigatório.' });
 
       // 1. Create the task
       const result = await pool.query(
-        `INSERT INTO onboarding_tasks (client_name, squad, responsible_id, responsible_name, responsible_avatar, start_date, due_date, status_group, tags, nome_completo, nome_fantasia, telefone_whatsapp, cnpj_cpf, cep, cidade, uf, meeting_info)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *`,
+        `INSERT INTO onboarding_tasks (client_name, squad, responsible_id, responsible_name, responsible_avatar, start_date, due_date, status_group, tags, nome_completo, nome_fantasia, telefone_whatsapp, cnpj_cpf, cep, cidade, uf, meeting_info, type)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *`,
         [client_name, squad || null, responsible_id || null, responsible_name || null, responsible_avatar || null,
-         start_date || null, due_date || null, status_group || 'briefing-realizado', tags || [],
-         nome_completo || null, nome_fantasia || null, telefone_whatsapp || null, cnpj_cpf || null, cep || null, cidade || null, uf || null, meeting_info || null]
+         start_date || null, due_date || null, status_group || (taskType === 'integracao' ? 'reuniao-coleta-acessos' : 'briefing-realizado'), tags || [],
+         nome_completo || null, nome_fantasia || null, telefone_whatsapp || null, cnpj_cpf || null, cep || null, cidade || null, uf || null, meeting_info || null, taskType]
       );
       const newTask = result.rows[0];
 
       // 2. Copy template items as subtasks
       const template = await pool.query(
-        'SELECT title, order_index, description, internal_doc FROM onboarding_template_items ORDER BY order_index ASC'
+        'SELECT title, order_index, description, internal_doc FROM onboarding_template_items WHERE type = $1 ORDER BY order_index ASC',
+        [taskType]
       );
       if (template.rows.length > 0) {
         const values: string[] = [];
@@ -9584,7 +9588,7 @@ app.get("/api/todos", async (req, res) => {
       res.status(201).json(newTask);
     } catch (err) {
       console.error('POST /api/onboarding-tasks error:', err);
-      res.status(500).json({ error: 'Erro ao criar tarefa de onboarding.' });
+      res.status(500).json({ error: 'Erro ao criar tarefa.' });
     }
   });
 
@@ -9767,8 +9771,10 @@ app.get("/api/todos", async (req, res) => {
   // ── Template CRUD ──
   app.get('/api/onboarding-template', async (req, res) => {
     try {
+      const type = req.query.type || 'operacional';
       const result = await pool.query(
-        'SELECT * FROM onboarding_template_items ORDER BY order_index ASC'
+        'SELECT * FROM onboarding_template_items WHERE type = $1 ORDER BY order_index ASC',
+        [type]
       );
       res.json(result.rows);
     } catch (err) {
@@ -9779,14 +9785,18 @@ app.get("/api/todos", async (req, res) => {
 
   app.post('/api/onboarding-template', async (req, res) => {
     try {
-      const { title } = req.body;
+      const { title, type } = req.body;
+      const taskType = type || 'operacional';
       if (!title?.trim()) return res.status(400).json({ error: 'title obrigatório.' });
       // Get next order_index
-      const maxRes = await pool.query('SELECT COALESCE(MAX(order_index), -1) + 1 AS next FROM onboarding_template_items');
+      const maxRes = await pool.query(
+        'SELECT COALESCE(MAX(order_index), -1) + 1 AS next FROM onboarding_template_items WHERE type = $1',
+        [taskType]
+      );
       const nextIdx = maxRes.rows[0].next;
       const result = await pool.query(
-        `INSERT INTO onboarding_template_items (title, order_index) VALUES ($1, $2) RETURNING *`,
-        [title.trim(), nextIdx]
+        `INSERT INTO onboarding_template_items (title, order_index, type) VALUES ($1, $2, $3) RETURNING *`,
+        [title.trim(), nextIdx, taskType]
       );
       res.status(201).json(result.rows[0]);
     } catch (err) {
@@ -9830,23 +9840,27 @@ app.get("/api/todos", async (req, res) => {
   // Bulk replace all template items
   app.put('/api/onboarding-template', async (req, res) => {
     try {
-      const { items } = req.body;
+      const { items, type } = req.body;
+      const taskType = type || 'operacional';
       if (!Array.isArray(items)) return res.status(400).json({ error: 'items deve ser um array.' });
-      await pool.query('DELETE FROM onboarding_template_items');
+      await pool.query('DELETE FROM onboarding_template_items WHERE type = $1', [taskType]);
       if (items.length > 0) {
         const values: string[] = [];
         const params: any[] = [];
         let idx = 1;
         items.forEach((item: any, i: number) => {
-          values.push(`($${idx++}, $${idx++}, $${idx++}, $${idx++})`);
-          params.push(item.title, i, item.description || null, item.internal_doc || null);
+          values.push(`($${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++})`);
+          params.push(item.title, i, item.description || null, item.internal_doc || null, taskType);
         });
         await pool.query(
-          `INSERT INTO onboarding_template_items (title, order_index, description, internal_doc) VALUES ${values.join(', ')}`,
+          `INSERT INTO onboarding_template_items (title, order_index, description, internal_doc, type) VALUES ${values.join(', ')}`,
           params
         );
       }
-      const result = await pool.query('SELECT * FROM onboarding_template_items ORDER BY order_index ASC');
+      const result = await pool.query(
+        'SELECT * FROM onboarding_template_items WHERE type = $1 ORDER BY order_index ASC',
+        [taskType]
+      );
       res.json(result.rows);
     } catch (err) {
       console.error('PUT /api/onboarding-template error:', err);
