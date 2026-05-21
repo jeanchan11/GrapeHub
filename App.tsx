@@ -24,6 +24,7 @@ import CrmEmpresas from './src/pages/CrmEmpresas';
 import CrmMetas from './src/pages/CrmMetas';
 import CrmMetricas from './src/pages/CrmMetricas';
 import Automacoes from './src/pages/Automacoes';
+import CrmSequencias from './src/pages/CrmSequencias';
 import MarketingDashboard from './src/pages/MarketingDashboard';
 import MarketingAcoes from './src/pages/MarketingAcoes';
 import DashboardOperacional from './src/pages/DashboardOperacional';
@@ -237,6 +238,8 @@ const AppContent: React.FC = () => {
         return <CrmMetas />;
       case 'crm-metricas':
         return <CrmMetricas />;
+      case 'crm-sequencias':
+        return <CrmSequencias />;
       case 'ligacoes-dashboard':
         return <CrmLigacoes />;
       case 'automacoes':

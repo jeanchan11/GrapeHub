@@ -417,6 +417,7 @@ const templates = [
   { id: 'todo', label: 'Tarefas (Todo)' },
   { id: 'todo-staff', label: 'To Do (Staff)' },
   { id: 'crm-comercial', label: 'CRM Comercial' },
+  { id: 'crm-sequencias', label: 'CRM Sequências' },
   { id: 'crm-atividades', label: 'CRM Atividades' },
   { id: 'crm-pessoas', label: 'CRM Pessoas' },
   { id: 'crm-empresas', label: 'CRM Empresas' },

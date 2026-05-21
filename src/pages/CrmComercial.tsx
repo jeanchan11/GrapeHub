@@ -331,8 +331,21 @@ const SortableCard = (props: SortableCardProps) => {
 
   const responsavel = users.find(u => u.id === lead.responsavel_id);
 
-  const isWon = isWonColumn(columns.find(c => c.id === lead.coluna)?.title);
-  const isLost = (lead as any).is_lost || isLostColumn(columns.find(c => c.id === lead.coluna)?.title);
+  const col = columns.find(c => c.id === lead.coluna);
+  const isWon = isWonColumn(col?.title);
+  const isLost = (lead as any).is_lost || isLostColumn(col?.title);
+  
+  let isOverdue = false;
+  const stageDate = (lead as any).etapa_updated_at || lead.updated_at;
+  if (col?.max_days && stageDate) {
+    const diffTime = Math.abs(new Date().getTime() - new Date(stageDate).getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    if (diffDays > col.max_days) {
+      isOverdue = true;
+    }
+  }
+
+  const isRed = isLost || isOverdue;
 
   // Próxima atividade pendente
   const leadTasks = tasks.filter(t => t.lead_id === lead.id && !t.completed);
@@ -381,7 +394,7 @@ const SortableCard = (props: SortableCardProps) => {
         onClick={() => onClick()}
         className={`rounded-xl p-3 pl-6 border shadow-sm cursor-pointer relative transition-all duration-200 ${isDragging ? 'ring-2 ring-violet-500 opacity-30' :
             isWon ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-500/30 shadow-[0_4px_15px_rgba(16,185,129,0.1)] hover:border-emerald-500/50 hover:shadow-emerald-500/20' :
-              isLost ? 'bg-red-50 dark:bg-red-500/10 border-red-300/50 shadow-[0_4px_15px_rgba(239,68,68,0.08)] hover:border-red-400/50 hover:shadow-red-500/15' :
+              isRed ? 'bg-red-50 dark:bg-red-500/10 border-red-300/50 shadow-[0_4px_15px_rgba(239,68,68,0.08)] hover:border-red-400/50 hover:shadow-red-500/15' :
                 'bg-white dark:bg-dark-card border-gray-200 dark:border-white/5 hover:border-violet-500/30 hover:shadow-md'
           }`}
       >
@@ -1555,7 +1568,85 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                                     {/* Dot */}
                                     <div className={`absolute left-0 top-1 w-[16px] h-[16px] rounded-full ${meta.bg} border-4 border-white dark:border-[#1A1625] shadow-sm z-10`} />
 
-                                    <div className="bg-white/50 dark:bg-white/5 border border-gray-100 dark:border-white/10 rounded-2xl p-4 shadow-sm transition-all hover:shadow-md">
+                                    {(() => {
+                                      let matchingTask = null;
+                                      if (isTaskAction && title) {
+                                        matchingTask = tasks.find(t => t.title === title && (!effectiveTaskType || t.type === effectiveTaskType));
+                                      }
+                                      
+                                      if (matchingTask) {
+                                        return (
+                                          <div
+                                            className={`group flex items-center gap-4 px-5 py-3.5 bg-white dark:bg-slate-800/60 border rounded-xl transition-all duration-200 ${matchingTask.completed
+                                                ? 'border-slate-100 dark:border-white/5 opacity-55'
+                                                : 'border-slate-200/70 dark:border-white/10 hover:border-violet-300/60 dark:hover:border-violet-500/30'
+                                              }`}
+                                          >
+                                            <div className="shrink-0">
+                                              {matchingTask.completed
+                                                ? <CheckCircle2 size={20} className="text-violet-500" />
+                                                : <Circle size={20} className="text-slate-300 dark:text-slate-600" />
+                                              }
+                                            </div>
+
+                                            <div className="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-white/5">
+                                              {matchingTask.type === 'WhatsApp' ? <MessageSquare size={15} className="text-slate-500 dark:text-slate-400" /> :
+                                                matchingTask.type === 'Ligação' ? <Phone size={15} className="text-slate-500 dark:text-slate-400" /> :
+                                                  matchingTask.type === 'Email' ? <Mail size={15} className="text-slate-500 dark:text-slate-400" /> :
+                                                    matchingTask.type === 'Reunião' ? <Users size={15} className="text-slate-500 dark:text-slate-400" /> :
+                                                      matchingTask.type === 'Videochamada' ? <Video size={15} className="text-slate-500 dark:text-slate-400" /> :
+                                                        <CheckSquare size={15} className="text-slate-500 dark:text-slate-400" />}
+                                            </div>
+
+                                            <div className="flex-1 min-w-0">
+                                              <div className="flex items-center gap-2 flex-wrap">
+                                                {matchingTask.start_time && (
+                                                  <span className="text-sm font-semibold text-slate-700 dark:text-white">
+                                                    {matchingTask.start_time.slice(0, 5)} -
+                                                  </span>
+                                                )}
+                                                <span className={`text-sm font-semibold ${matchingTask.completed ? 'line-through text-slate-400' : 'text-slate-800 dark:text-white'}`}>
+                                                  {matchingTask.title}
+                                                </span>
+                                              </div>
+                                              <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                                                {matchingTask.due_date && (
+                                                  <span className={`flex items-center gap-1 text-xs font-medium ${!matchingTask.completed && isPastDate(matchingTask.due_date) ? 'text-rose-500' : 'text-violet-500 dark:text-violet-400'}`}>
+                                                    <Calendar size={11} />
+                                                    {parseLocalDate(matchingTask.due_date).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }).replace('.', '')}. {matchingTask.start_time ? matchingTask.start_time.slice(0, 5) : '00:00'}
+                                                  </span>
+                                                )}
+                                                {!matchingTask.completed && isPastDate(matchingTask.due_date) && (
+                                                  <span className="text-[10px] font-bold text-rose-500 bg-rose-500/10 px-2 py-0.5 rounded-md">Atrasada</span>
+                                                )}
+                                                {!matchingTask.completed && isToday(matchingTask.due_date) && (
+                                                  <span className="text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-md">Hoje</span>
+                                                )}
+                                                {!matchingTask.completed && isTomorrowDate(matchingTask.due_date) && (
+                                                  <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-md">Amanhã</span>
+                                                )}
+                                                <span className="text-[11px] text-gray-400 flex items-center gap-1 ml-1">
+                                                  <Clock size={11} /> {formatRelativeTime(item.created_at)}
+                                                </span>
+                                              </div>
+                                              {matchingTask.observations && (
+                                                <div className="mt-2.5 text-xs text-slate-500 dark:text-slate-400 whitespace-pre-wrap border-l-2 border-violet-200 dark:border-violet-500/30 pl-2.5 italic">
+                                                  {matchingTask.observations}
+                                                </div>
+                                              )}
+                                            </div>
+
+                                            <div className="flex items-center gap-2 shrink-0">
+                                              <span className="text-xs font-medium px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                                                {matchingTask.type || 'Tarefa'}
+                                              </span>
+                                            </div>
+                                          </div>
+                                        );
+                                      }
+
+                                      return (
+                                        <div className="bg-white/50 dark:bg-white/5 border border-gray-100 dark:border-white/10 rounded-2xl p-4 shadow-sm transition-all hover:shadow-md">
                                       <div className="flex items-start gap-3">
                                         <div className="flex-shrink-0 w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: isWhatsappTrigger ? 'rgba(16,185,129,0.1)' : isAutomationAction ? 'rgba(139,92,246,0.12)' : 'rgba(124,58,237,0.12)' }}>
                                           {React.cloneElement(taskIcon as React.ReactElement, { size: 18, style: { color: isWhatsappTrigger ? '#10b981' : '#8b5cf6' } })}
@@ -1581,6 +1672,8 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                                           <p className="text-[11px]" style={{ color: '#9ca3af' }}>
                                             ORIGEM: {effectiveTaskType || 'Atividade'}
                                           </p>
+
+
 
                                           {item.action_type === 'note_created' && (
                                             <div
@@ -1630,9 +1723,11 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                                               );
                                             })()}
                                           </div>
+                                          </div>
                                         </div>
                                       </div>
-                                    </div>
+                                    );
+                                  })()}
                                   </div>
                                 );
                               }
@@ -1920,6 +2015,11 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                                     <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-md">Amanhã</span>
                                   )}
                                 </div>
+                                {task.observations && (
+                                  <div className="mt-2.5 text-xs text-slate-500 dark:text-slate-400 whitespace-pre-wrap border-l-2 border-violet-200 dark:border-violet-500/30 pl-2.5 italic">
+                                    {task.observations}
+                                  </div>
+                                )}
                               </div>
 
                               {/* Actions + Type badge */}
@@ -3207,11 +3307,12 @@ const CrmComercial = () => {
   const [newColumnData, setNewColumnData] = useState({
     title: '',
     color: 'orange',
-    icon: 'LayoutGrid'
+    icon: 'LayoutGrid',
+    max_days: '' as number | string
   });
 
   const [isEditColumnModalOpen, setIsEditColumnModalOpen] = useState(false);
-  const [editColumnData, setEditColumnData] = useState<{ id: string, title: string, color: string, icon: string } | null>(null);
+  const [editColumnData, setEditColumnData] = useState<{ id: string, title: string, color: string, icon: string, max_days?: number | string } | null>(null);
   const [columnToDelete, setColumnToDelete] = useState<string | null>(null);
 
   const handleUpdateColumn = async () => {
@@ -3223,7 +3324,8 @@ const CrmComercial = () => {
         body: JSON.stringify({
           title: editColumnData.title,
           color: editColumnData.color,
-          icon: editColumnData.icon
+          icon: editColumnData.icon,
+          max_days: editColumnData.max_days ? Number(editColumnData.max_days) : null
         })
       });
       if (res.ok) {
@@ -4230,7 +4332,8 @@ const CrmComercial = () => {
         body: JSON.stringify({
           ...newColumnData,
           kanban_id: activeKanbanId,
-          order_index: columns.length
+          order_index: columns.length,
+          max_days: newColumnData.max_days ? Number(newColumnData.max_days) : null
         })
       });
 
@@ -5074,6 +5177,18 @@ const CrmComercial = () => {
           </div>
 
           <div>
+            <label className={designSystem.input.label}>Dias na etapa (opcional)</label>
+            <input
+              type="number"
+              min="1"
+              value={newColumnData.max_days || ''}
+              onChange={e => setNewColumnData(prev => ({ ...prev, max_days: e.target.value }))}
+              className={designSystem.input.field}
+              placeholder="Ex: 5"
+            />
+          </div>
+
+          <div>
             <label className={designSystem.input.label}>Ícone</label>
             <div className="grid grid-cols-7 gap-2">
               {COLUMN_ICONS.map(iconName => (
@@ -5135,6 +5250,18 @@ const CrmComercial = () => {
                   </button>
                 ))}
               </div>
+            </div>
+
+            <div>
+              <label className={designSystem.input.label}>Dias na etapa (opcional)</label>
+              <input
+                type="number"
+                min="1"
+                value={editColumnData.max_days || ''}
+                onChange={e => setEditColumnData(prev => prev ? ({ ...prev, max_days: e.target.value }) : null)}
+                className={designSystem.input.field}
+                placeholder="Ex: 5"
+              />
             </div>
 
             <div>
@@ -5617,7 +5744,6 @@ const CrmComercial = () => {
               <div className="flex items-center gap-1 px-4 pt-3 shrink-0 border-b border-gray-200 dark:border-[#2d2b3d]">
                 {([
                   { key: 'webhook', label: 'Webhook' },
-                  { key: 'sequencias', label: 'Sequências' },
                   { key: 'motivos-perda', label: 'Motivos de Perda' },
                 ] as const).map(tab => (
                   <button
@@ -5842,167 +5968,6 @@ const CrmComercial = () => {
                     </div>
                   </div>
                 )}
-
-                {/* ── SEQUÊNCIAS ── */}
-                {settingsTab === 'sequencias' && (
-                  <div className="space-y-4">
-                    {seqMode === 'list' ? (
-                      <>
-                        {/* Header */}
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <h3 className="text-sm font-bold text-gray-900 dark:text-white">Sequências de Cadência</h3>
-                            <p className="text-xs text-gray-500 dark:text-slate-500 mt-0.5">Modelos de atividades automáticas para follow-up.</p>
-                          </div>
-                          <button
-                            onClick={() => { setSeqEditId(null); setSeqForm({ name: '', description: '', skip_weekends: true, steps: [] }); setSeqMode('form'); }}
-                            className="flex items-center gap-1.5 px-3 py-2 bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold rounded-xl transition-all"
-                          >
-                            <Plus size={13} /> Nova Sequência
-                          </button>
-                        </div>
-
-                        {/* List */}
-                        {sequences.length === 0 ? (
-                          <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
-                            <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.2)' }}>
-                              <span className="text-2xl">⚡</span>
-                            </div>
-                            <p className="text-sm text-gray-500 dark:text-slate-500">Nenhuma sequência criada ainda.</p>
-                          </div>
-                        ) : (
-                          <div className="space-y-2">
-                            {sequences.map(seq => (
-                              <div key={seq.id} className="rounded-xl p-4 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 hover:border-violet-500/40 transition-all">
-                                <div className="flex items-start justify-between gap-3">
-                                  <div className="flex-1 min-w-0">
-                                    <p className="font-bold text-gray-900 dark:text-white text-sm truncate">{seq.name}</p>
-                                    <p className="text-xs text-gray-500 dark:text-slate-500 mt-0.5">{seq.steps?.length || 0} {seq.steps?.length === 1 ? 'passo' : 'passos'}</p>
-                                    {seq.steps?.length > 0 && (
-                                      <div className="flex flex-wrap gap-1 mt-2">
-                                        {[...new Set(seq.steps.map((s: any) => s.type))].map((type: any) => (
-                                          <span key={type} className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${SEQ_TYPE_COLOR[type] || 'bg-slate-500/20 text-slate-600 dark:text-slate-400'}`}>{type}</span>
-                                        ))}
-                                      </div>
-                                    )}
-                                  </div>
-                                  <div className="flex items-center gap-1 shrink-0">
-                                    <button
-                                      onClick={() => { setSeqEditId(seq.id); setSeqForm({ name: seq.name, description: seq.description || '', skip_weekends: seq.skip_weekends, steps: seq.steps || [] }); setSeqMode('form'); }}
-                                      className="px-3 py-1.5 rounded-lg text-xs font-bold text-violet-600 dark:text-violet-400 border border-violet-500/30 hover:bg-violet-500/10 transition-all"
-                                    >
-                                      <Edit2 size={12} className="inline mr-1" />Editar
-                                    </button>
-                                    <button onClick={() => handleDeleteSequence(seq.id)} className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 dark:text-slate-500 hover:text-red-500 hover:bg-red-500/10 transition-all">
-                                      <Trash2 size={13} />
-                                    </button>
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      /* ── FORMULÁRIO ── */
-                      <div className="space-y-4">
-                        <div className="flex items-center gap-2">
-                          <button onClick={() => { setSeqMode('list'); setSeqEditId(null); }} className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-all">
-                            <ChevronLeft size={16} />
-                          </button>
-                          <h3 className="text-sm font-bold text-gray-900 dark:text-white">{seqEditId ? 'Editar Sequência' : 'Nova Sequência'}</h3>
-                        </div>
-
-                        {/* Nome */}
-                        <div>
-                          <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 dark:text-slate-500 block mb-1">Nome</label>
-                          <input type="text" value={seqForm.name} onChange={e => setSeqForm(f => ({ ...f, name: e.target.value }))}
-                            className="w-full px-3 py-2.5 rounded-xl bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-gray-900 dark:text-white text-sm focus:outline-none focus:border-violet-500/60"
-                            placeholder="Ex: Follow-up SDR 5 dias" />
-                        </div>
-
-                        {/* Descrição */}
-                        <div>
-                          <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 dark:text-slate-500 block mb-1">Descrição</label>
-                          <textarea value={seqForm.description} onChange={e => setSeqForm(f => ({ ...f, description: e.target.value }))}
-                            className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-gray-900 dark:text-white text-sm focus:outline-none focus:border-violet-500/60 resize-none h-16"
-                            placeholder="Opcional" />
-                        </div>
-
-                        {/* Skip weekends */}
-                        <label className="flex items-center gap-3 cursor-pointer select-none">
-                          <div
-                            onClick={() => setSeqForm(f => ({ ...f, skip_weekends: !f.skip_weekends }))}
-                            className={`w-10 h-5 rounded-full relative transition-all ${seqForm.skip_weekends ? 'bg-violet-600' : 'bg-gray-200 dark:bg-white/10'}`}
-                          >
-                            <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${seqForm.skip_weekends ? 'translate-x-5' : 'translate-x-0.5'}`} />
-                          </div>
-                          <div>
-                            <p className="text-sm font-semibold text-gray-900 dark:text-white">Pular finais de semana</p>
-                            <p className="text-xs text-gray-500 dark:text-slate-500">Atividades em sábado/domingo são movidas para segunda.</p>
-                          </div>
-                        </label>
-
-                        {/* Passos */}
-                        <div>
-                          <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 dark:text-slate-500 block mb-2">Passos</label>
-                          <div className="space-y-2">
-                            {seqForm.steps.map((step, idx) => (
-                              <div key={idx} className="rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 p-3 space-y-2">
-                                <div className="flex items-center justify-between gap-2">
-                                  <span className="text-xs font-bold text-gray-500 dark:text-slate-400">{idx + 1}.</span>
-                                  {/* Type chips */}
-                                  <div className="flex flex-wrap gap-1 flex-1">
-                                    {SEQ_TYPES.map(t => (
-                                      <button key={t}
-                                        onClick={() => setSeqForm(f => ({ ...f, steps: f.steps.map((s, i) => i === idx ? { ...s, type: t } : s) }))}
-                                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold transition-all border ${step.type === t ? (SEQ_TYPE_COLOR[t] || '') + ' border-current' : 'text-gray-500 dark:text-slate-500 border-gray-200 dark:border-white/10 hover:border-gray-300 dark:hover:border-white/20'}`}
-                                      >{t}</button>
-                                    ))}
-                                  </div>
-                                  <button onClick={() => setSeqForm(f => ({ ...f, steps: f.steps.filter((_, i) => i !== idx) }))} className="text-gray-400 dark:text-slate-600 hover:text-red-500 transition-all shrink-0">
-                                    <X size={13} />
-                                  </button>
-                                </div>
-                                <input type="text" value={step.title} onChange={e => setSeqForm(f => ({ ...f, steps: f.steps.map((s, i) => i === idx ? { ...s, title: e.target.value } : s) }))}
-                                  className="w-full px-2.5 py-1.5 rounded-lg bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 text-gray-900 dark:text-white text-sm focus:outline-none focus:border-violet-500/50"
-                                  placeholder={`${step.type || 'Atividade'} ${idx + 1}`} />
-                                <textarea value={step.observations} onChange={e => setSeqForm(f => ({ ...f, steps: f.steps.map((s, i) => i === idx ? { ...s, observations: e.target.value } : s) }))}
-                                  className="w-full px-2.5 py-1.5 rounded-lg bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 text-gray-900 dark:text-white text-xs focus:outline-none focus:border-violet-500/50 resize-none h-12"
-                                  placeholder="Observação (ex: script, instruções...)" />
-                                <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-slate-400">
-                                  <span>em</span>
-                                  <input type="number" min="0" value={step.day_offset}
-                                    onChange={e => setSeqForm(f => ({ ...f, steps: f.steps.map((s, i) => i === idx ? { ...s, day_offset: Number(e.target.value) } : s) }))}
-                                    className="w-14 px-2 py-1 rounded-lg bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 text-gray-900 dark:text-white text-center focus:outline-none" />
-                                  <span>dias</span>
-                                </div>
-
-                              </div>
-                            ))}
-                          </div>
-                          <button
-                            onClick={() => setSeqForm(f => ({ ...f, steps: [...f.steps, { type: 'Ligação', title: '', observations: '', day_offset: 1 }] }))}
-                            className="mt-2 text-violet-400 hover:text-violet-300 text-xs font-bold flex items-center gap-1 transition-all"
-                          >
-                            <Plus size={13} /> Adicionar passo
-                          </button>
-                        </div>
-
-                        {/* Actions */}
-                        <div className="flex gap-2 pt-2">
-                          <button onClick={handleSaveSequence} className="flex-1 py-2.5 bg-violet-600 hover:bg-violet-700 text-white font-bold text-sm rounded-xl transition-all">
-                            {seqEditId ? 'Salvar alterações' : 'Criar Sequência'}
-                          </button>
-                          <button onClick={() => { setSeqMode('list'); setSeqEditId(null); }} className="px-4 py-2.5 bg-white/5 hover:bg-white/10 text-slate-400 font-bold text-sm rounded-xl border border-white/10 transition-all">
-                            Cancelar
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
 
                 {/* ── MOTIVOS DE PERDA ── */}
                 {settingsTab === 'motivos-perda' && (

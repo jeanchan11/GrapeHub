@@ -53,56 +53,124 @@ function LossTooltip({ active, payload }: any) {
   );
 }
 
-// ── MonthPicker ───────────────────────────────────────────────────────────
-const ANOS = [new Date().getFullYear(), new Date().getFullYear() - 1, new Date().getFullYear() - 2];
+// ── DateRangePicker ─────────────────────────────────────────────────────
+const WEEK_DAYS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
 
-function MonthPicker({ month, onChange }: { month: string; onChange: (m: string) => void }) {
+function formatDateBR(iso: string) {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+function isoDate(y: number, m: number, d: number) {
+  return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+}
+
+function daysInMonth(y: number, m: number) {
+  return new Date(y, m, 0).getDate();
+}
+
+function firstDayOfMonth(y: number, m: number) {
+  return new Date(y, m - 1, 1).getDay();
+}
+
+interface DateRange { start: string; end: string; }
+
+function DateRangePicker({ range, onChange }: { range: DateRange; onChange: (r: DateRange) => void }) {
   const [open, setOpen] = useState(false);
+  const [hovered, setHovered] = useState('');
+  const [selecting, setSelecting] = useState<string>(''); // first click chosen
   const ref = useRef<HTMLDivElement>(null);
-  const [yStr, mStr] = month.split('-');
-  const selYear  = parseInt(yStr);
-  const selMonth = parseInt(mStr); // 1-12
-  const [pickerYear, setPickerYear] = useState(selYear);
 
-  // Close on outside click
+  const today = new Date();
+  const [viewYear, setViewYear]   = useState(today.getFullYear());
+  const [viewMonth, setViewMonth] = useState(today.getMonth() + 1);
+
   useEffect(() => {
     function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+        setSelecting('');
+      }
     }
     if (open) document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, [open]);
 
-  function selectMonth(m: number) {
-    const mm = String(m).padStart(2, '0');
-    onChange(`${pickerYear}-${mm}`);
-    setOpen(false);
-  }
-
-  const label = `${MESES_FULL[selMonth - 1]} ${yStr}`;
-
   function stepMonth(dir: 1 | -1) {
-    let y = selYear;
-    let m = selMonth + dir;
-    if (m > 12) { m = 1; y += 1; }
-    if (m < 1)  { m = 12; y -= 1; }
-    onChange(`${y}-${String(m).padStart(2, '0')}`);
+    let m = viewMonth + dir;
+    let y = viewYear;
+    if (m > 12) { m = 1; y++; }
+    if (m < 1)  { m = 12; y--; }
+    setViewYear(y); setViewMonth(m);
   }
+
+  function handleDayClick(iso: string) {
+    if (!selecting) {
+      // First click: set start
+      setSelecting(iso);
+    } else {
+      // Second click: set end
+      const s = selecting < iso ? selecting : iso;
+      const e = selecting < iso ? iso : selecting;
+      onChange({ start: s, end: e });
+      setSelecting('');
+      setOpen(false);
+    }
+  }
+
+  function isInRange(iso: string) {
+    const lo = selecting ? Math.min(...[selecting, hovered || selecting].map(d => +new Date(d))) : +new Date(range.start);
+    const hi = selecting ? Math.max(...[selecting, hovered || selecting].map(d => +new Date(d))) : +new Date(range.end);
+    const v  = +new Date(iso);
+    return v > lo && v < hi;
+  }
+
+  function isStart(iso: string) {
+    return selecting ? iso === selecting : iso === range.start;
+  }
+  function isEnd(iso: string) {
+    if (selecting) return hovered ? iso === (selecting < hovered ? hovered : selecting) : false;
+    return iso === range.end;
+  }
+
+  const days = daysInMonth(viewYear, viewMonth);
+  const firstDay = firstDayOfMonth(viewYear, viewMonth);
+  const cells: (string | null)[] = [
+    ...Array(firstDay).fill(null),
+    ...Array.from({ length: days }, (_, i) => isoDate(viewYear, viewMonth, i + 1)),
+  ];
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  const label = range.start && range.end
+    ? range.start === range.end
+      ? formatDateBR(range.start)
+      : `${formatDateBR(range.start)} → ${formatDateBR(range.end)}`
+    : 'Selecionar período';
+
+  // Quick presets
+  function preset(label: string, start: string, end: string) {
+    return (
+      <button
+        key={label}
+        onClick={() => { onChange({ start, end }); setOpen(false); setSelecting(''); }}
+        className="text-xs text-slate-400 hover:text-violet-400 hover:bg-violet-500/10 px-2 py-1 rounded-lg transition-colors text-left whitespace-nowrap"
+      >{label}</button>
+    );
+  }
+
+  const todayIso  = today.toISOString().slice(0, 10);
+  const d7 = new Date(today); d7.setDate(today.getDate() - 6);
+  const d30 = new Date(today); d30.setDate(today.getDate() - 29);
+  const mStart = isoDate(today.getFullYear(), today.getMonth() + 1, 1);
+  const mEnd   = isoDate(today.getFullYear(), today.getMonth() + 1, daysInMonth(today.getFullYear(), today.getMonth() + 1));
+  const pmStart = (() => { const d = new Date(today.getFullYear(), today.getMonth() - 1, 1); return isoDate(d.getFullYear(), d.getMonth() + 1, 1); })();
+  const pmEnd   = (() => { const d = new Date(today.getFullYear(), today.getMonth(), 0); return d.toISOString().slice(0,10); })();
 
   return (
-    <div ref={ref} className="relative flex items-center gap-1">
-      {/* Seta esquerda */}
+    <div ref={ref} className="relative">
       <button
-        onClick={() => stepMonth(-1)}
-        className="w-9 h-9 rounded-xl bg-dark-card border border-white/10 hover:border-violet-500/60 flex items-center justify-center transition-all hover:bg-dark-card-hover"
-        title="Mês anterior"
-      >
-        <ChevronDown size={14} className="text-slate-400 rotate-90" />
-      </button>
-
-      {/* Trigger button */}
-      <button
-        onClick={() => { setPickerYear(selYear); setOpen(o => !o); }}
+        onClick={() => setOpen(o => !o)}
         className="flex items-center gap-2.5 bg-dark-card border border-violet-500/60 rounded-xl px-4 py-2.5 transition-all hover:border-violet-500"
       >
         <Calendar size={14} className="text-violet-500" />
@@ -110,63 +178,82 @@ function MonthPicker({ month, onChange }: { month: string; onChange: (m: string)
         <ChevronDown size={14} className={`text-slate-400 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
       </button>
 
-      {/* Seta direita */}
-      <button
-        onClick={() => stepMonth(1)}
-        className="w-9 h-9 rounded-xl bg-dark-card border border-white/10 hover:border-violet-500/60 flex items-center justify-center transition-all hover:bg-dark-card-hover"
-        title="Próximo mês"
-      >
-        <ChevronDown size={14} className="text-slate-400 -rotate-90" />
-      </button>
-
-      {/* Dropdown */}
       {open && (
-        <div className="absolute right-0 top-full mt-2 z-50 w-72 bg-dark-card border border-white/10 rounded-2xl shadow-2xl p-4 animate-in fade-in slide-in-from-top-2 duration-150">
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Selecionar Período</p>
+        <div className="absolute right-0 top-full mt-2 z-50 bg-dark-card border border-white/10 rounded-2xl shadow-2xl p-4" style={{ minWidth: 320 }}>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">
+            {selecting ? 'Clique na data final' : 'Selecionar Período'}
+          </p>
 
-          {/* Ano */}
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Ano</p>
-          <div className="flex flex-wrap gap-2 mb-4">
-            {ANOS.map(a => (
-              <button
-                key={a}
-                onClick={() => {
-                  setPickerYear(a);
-                  // Atualiza imediatamente os gráficos com o novo ano (mesmo mês)
-                  const mm = String(selMonth).padStart(2, '0');
-                  onChange(`${a}-${mm}`);
-                }}
-                className={`flex-1 min-w-[72px] py-2 rounded-xl text-sm font-bold transition-all ${
-                  a === pickerYear
-                    ? 'bg-violet-600 text-white shadow-lg shadow-violet-500/20'
-                    : 'bg-dark-bg text-slate-400 hover:bg-dark-card-hover hover:text-dark-text'
-                }`}
-              >
-                {a}
-              </button>
+          {/* Presets */}
+          <div className="flex flex-wrap gap-1 mb-3 pb-3 border-b border-white/10">
+            {preset('Hoje', todayIso, todayIso)}
+            {preset('Últ. 7 dias', d7.toISOString().slice(0,10), todayIso)}
+            {preset('Últ. 30 dias', d30.toISOString().slice(0,10), todayIso)}
+            {preset('Este mês', mStart, mEnd)}
+            {preset('Mês passado', pmStart, pmEnd)}
+          </div>
+
+          {/* Month nav */}
+          <div className="flex items-center justify-between mb-3">
+            <button onClick={() => stepMonth(-1)} className="w-7 h-7 rounded-lg hover:bg-white/10 flex items-center justify-center transition-colors">
+              <ChevronDown size={13} className="text-slate-400 rotate-90" />
+            </button>
+            <span className="text-sm font-bold text-dark-text">{MESES_FULL[viewMonth - 1]} {viewYear}</span>
+            <button onClick={() => stepMonth(1)} className="w-7 h-7 rounded-lg hover:bg-white/10 flex items-center justify-center transition-colors">
+              <ChevronDown size={13} className="text-slate-400 -rotate-90" />
+            </button>
+          </div>
+
+          {/* Day headers */}
+          <div className="grid grid-cols-7 mb-1">
+            {WEEK_DAYS.map((d, i) => (
+              <div key={i} className="text-center text-[10px] font-bold text-slate-500 pb-1">{d}</div>
             ))}
           </div>
 
-          {/* Mês */}
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Mês</p>
-          <div className="grid grid-cols-3 gap-2">
-            {MESES.map((m, i) => {
-              const isSelected = i + 1 === selMonth && pickerYear === selYear;
+          {/* Calendar grid */}
+          <div className="grid grid-cols-7 gap-y-0.5">
+            {cells.map((iso, idx) => {
+              if (!iso) return <div key={idx} />;
+              const start  = isStart(iso);
+              const end    = isEnd(iso);
+              const inRng  = isInRange(iso);
+              const isToday = iso === todayIso;
               return (
                 <button
-                  key={m}
-                  onClick={() => selectMonth(i + 1)}
-                  className={`py-2 rounded-xl text-sm font-bold transition-all ${
-                    isSelected
-                      ? 'bg-violet-600 text-white shadow-lg shadow-violet-500/20'
-                      : 'bg-dark-bg text-slate-400 hover:bg-dark-card-hover hover:text-dark-text'
-                  }`}
+                  key={iso}
+                  onClick={() => handleDayClick(iso)}
+                  onMouseEnter={() => selecting && setHovered(iso)}
+                  onMouseLeave={() => selecting && setHovered('')}
+                  className={`relative h-8 w-full text-xs font-semibold transition-all
+                    ${start || end ? 'text-white z-10' : inRng ? 'text-violet-700 dark:text-violet-200' : 'text-dark-text hover:text-violet-600'}
+                    ${inRng ? 'bg-violet-500/15' : ''}
+                    ${start ? 'rounded-l-full' : ''}
+                    ${end ? 'rounded-r-full' : ''}
+                    ${!start && !end ? 'rounded-full' : ''}
+                  `}
                 >
-                  {m}
+                  <span className={`absolute inset-0.5 flex items-center justify-center rounded-full text-xs
+                    ${start || end ? 'bg-violet-600 shadow-md shadow-violet-500/30' : ''}
+                    ${isToday && !start && !end ? 'ring-1 ring-violet-500/60' : ''}
+                  `}>
+                    {parseInt(iso.slice(8))}
+                  </span>
                 </button>
               );
             })}
           </div>
+
+          {/* Footer */}
+          {range.start && range.end && (
+            <div className="mt-3 pt-3 border-t border-white/10 flex items-center justify-between text-xs">
+              <span className="text-slate-500">{formatDateBR(range.start)} → {formatDateBR(range.end)}</span>
+              <button
+                onClick={() => { onChange({ start: mStart, end: mEnd }); setSelecting(''); }}
+                className="text-violet-400 hover:text-violet-300 transition-colors"
+              >Limpar</button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -209,19 +296,27 @@ function SessaoCard({ icon, iconBg, label, value, sub }: {
 
 // ── Main Component ────────────────────────────────────────────────────────
 export default function CrmMetricas() {
-  const [month, setMonth]   = useState(() => new Date().toISOString().slice(0, 7));
+  const today = new Date();
+  const defaultRange = (): DateRange => {
+    const y = today.getFullYear(), m = today.getMonth() + 1;
+    const start = `${y}-${String(m).padStart(2,'0')}-01`;
+    const end   = `${y}-${String(m).padStart(2,'0')}-${String(daysInMonth(y, m)).padStart(2,'0')}`;
+    return { start, end };
+  };
+
+  const [range, setRange]       = useState<DateRange>(defaultRange);
   const [data, setData]     = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [spinning, setSpinning] = useState(false);
   const [error, setError]   = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'pre-vendas' | 'vendas'>('pre-vendas');
 
-  const fetchData = useCallback(async (m: string, silent = false) => {
+  const fetchData = useCallback(async (r: DateRange, silent = false) => {
     if (!silent) setLoading(true);
     setSpinning(true);
     setError(null);
     try {
-      const res = await fetch(`/api/crm-metricas-dashboard?month=${m}`);
+      const res = await fetch(`/api/crm-metricas-dashboard?start=${r.start}&end=${r.end}`);
       if (!res.ok) throw new Error((await res.json()).detail || 'Erro ao carregar dados');
       setData(await res.json());
     } catch (e: any) {
@@ -232,10 +327,15 @@ export default function CrmMetricas() {
     }
   }, []);
 
-  useEffect(() => { fetchData(month); }, [month, fetchData]);
+  useEffect(() => { fetchData(range); }, [range, fetchData]);
 
-  const [yStr, mStr]  = month.split('-');
-  const monthLabel     = `${MESES_FULL[parseInt(mStr) - 1]} ${yStr}`;
+  const rangeLabel = range.start && range.end
+    ? range.start === range.end
+      ? formatDateBR(range.start)
+      : `${formatDateBR(range.start)} → ${formatDateBR(range.end)}`
+    : '';
+  
+  const [yStr] = range.start ? range.start.split('-') : [new Date().getFullYear().toString()];
 
   const kpis              = data?.kpis || {};
   const vendas            = Number(kpis.vendas) || 0;
@@ -309,9 +409,9 @@ export default function CrmMetricas() {
           <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5">Performance de Vendas</p>
         </div>
         <div className="flex items-center gap-2">
-          <MonthPicker month={month} onChange={setMonth} />
+          <DateRangePicker range={range} onChange={setRange} />
           <button
-            onClick={() => fetchData(month, true)}
+            onClick={() => fetchData(range, true)}
             className={`w-9 h-9 rounded-xl bg-dark-card border border-white/10 hover:bg-dark-card-hover flex items-center justify-center transition-colors ${spinning ? 'animate-spin' : ''}`}
           >
             <RefreshCw size={14} className="text-slate-400" />
@@ -403,21 +503,30 @@ export default function CrmMetricas() {
             <div className="lg:col-span-3">
             {(() => {
               const rawDays: { dia: string; total: string | number }[] = data?.leads_per_day || [];
-              const daysInMonth = new Date(parseInt(yStr), parseInt(mStr), 0).getDate();
               const chartData = [];
-              for (let d = 1; d <= daysInMonth; d++) {
-                const dayStr = `${yStr}-${mStr}-${String(d).padStart(2, '0')}`;
-                const match = rawDays.find(r => (r.dia || '').slice(0, 10) === dayStr);
-                chartData.push({
-                  dia: `${String(d).padStart(2, '0')}/${mStr}`,
-                  leads: match ? Number(match.total) : 0,
-                });
+              if (range.start && range.end) {
+                const currD = new Date(range.start + "T12:00:00");
+                const targetD = new Date(range.end + "T12:00:00");
+                
+                while (currD <= targetD) {
+                  const y = currD.getFullYear();
+                  const m = String(currD.getMonth() + 1).padStart(2, '0');
+                  const d = String(currD.getDate()).padStart(2, '0');
+                  const dayStr = `${y}-${m}-${d}`;
+                  
+                  const match = rawDays.find(r => (r.dia || '').slice(0, 10) === dayStr);
+                  chartData.push({
+                    dia: `${d}/${m}`,
+                    leads: match ? Number(match.total) : 0,
+                  });
+                  currD.setDate(currD.getDate() + 1);
+                }
               }
               return (
                 <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200 h-full">
                   <h2 className="text-sm font-bold text-dark-text">Leads por Dia</h2>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mb-5 mt-0.5">
-                    Evolução de leads recebidos — {`01/${mStr}/${yStr}`} → {`${String(daysInMonth).padStart(2, '0')}/${mStr}/${yStr}`}
+                    Evolução de leads recebidos — {rangeLabel}
                   </p>
                   <ResponsiveContainer width="100%" height={210}>
                     <AreaChart data={chartData} margin={{ top: 8, right: 12, left: -16, bottom: 0 }}>
@@ -470,7 +579,7 @@ export default function CrmMetricas() {
                 return (
                   <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200 h-full flex flex-col" style={{ minHeight: 260 }}>
                     <h2 className="text-sm font-bold text-dark-text">Motivos de Perda</h2>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-4 mt-0.5">Pré-vendas — {monthLabel}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-4 mt-0.5">Pré-vendas — {rangeLabel}</p>
 
                     {pvLossData.length === 0 ? (
                       <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center">
@@ -952,7 +1061,7 @@ export default function CrmMetricas() {
             {/* Motivos de Perda — donut grande (DIREITA) */}
             <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200 flex flex-col" style={{ minHeight: 260 }}>
               <h2 className="text-sm font-bold text-dark-text">Motivos de Perda</h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mb-4 mt-0.5">Distribuição por motivo — {monthLabel}</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-4 mt-0.5">Distribuição por motivo — {rangeLabel}</p>
 
               {lossReasonsData.length === 0 ? (
                 <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center">
@@ -1014,7 +1123,7 @@ export default function CrmMetricas() {
           {/* ── Lista de Fechamentos ────────────────────────────────────── */}
           <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200">
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-sm font-bold text-dark-text">Lista de Fechamentos — {monthLabel}</h2>
+              <h2 className="text-sm font-bold text-dark-text">Lista de Fechamentos — {rangeLabel}</h2>
               <span className="bg-violet-500/15 text-violet-500 text-[10px] font-bold px-3 py-1 rounded-full">
                 {fechamentosList.length} Fechamentos
               </span>

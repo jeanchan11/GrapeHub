@@ -6090,11 +6090,11 @@ app.get("/api/todos", async (req, res) => {
 
   app.post("/api/crm-comercial/columns", async (req, res) => {
     try {
-      const { kanban_id, title, color, order_index, icon } = req.body;
+      const { kanban_id, title, color, order_index, icon, max_days } = req.body;
       const result = await pool.query(
-        `INSERT INTO crm_comercial_columns (kanban_id, title, color, order_index, icon) 
-         VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-        [kanban_id, title, color || 'orange', order_index || 0, icon || 'LayoutGrid']
+        `INSERT INTO crm_comercial_columns (kanban_id, title, color, order_index, icon, max_days) 
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+        [kanban_id, title, color || 'orange', order_index || 0, icon || 'LayoutGrid', max_days || null]
       );
       res.status(201).json(result.rows[0]);
     } catch (err) {
@@ -6106,11 +6106,11 @@ app.get("/api/todos", async (req, res) => {
   app.patch("/api/crm-comercial/columns/:id", async (req, res) => {
     try {
       const { id } = req.params;
-      const { title, color, icon } = req.body;
+      const { title, color, icon, max_days } = req.body;
       
       const result = await pool.query(
-        "UPDATE crm_comercial_columns SET title = $1, color = $2, icon = $3 WHERE id = $4 RETURNING *",
-        [title, color, icon || 'LayoutGrid', id]
+        "UPDATE crm_comercial_columns SET title = $1, color = $2, icon = $3, max_days = $4 WHERE id = $5 RETURNING *",
+        [title, color, icon || 'LayoutGrid', max_days || null, id]
       );
       if (result.rows.length === 0) {
         return res.status(404).json({ error: "Column not found" });
@@ -9093,11 +9093,26 @@ app.get("/api/todos", async (req, res) => {
   // ══════════════════════════════════════════════════════════════════
   app.get("/api/crm-metricas-dashboard", async (req, res) => {
     try {
-      const { month } = req.query;
-      const selectedMonth = typeof month === 'string' && month ? month : new Date().toISOString().slice(0, 7);
-      const [year, mon] = selectedMonth.split('-').map(Number);
-      const startDate = `${selectedMonth}-01`;
-      const endDate = new Date(year, mon, 0).toISOString().slice(0, 10);
+      const { month, start, end } = req.query;
+      let startDate = '';
+      let endDate = '';
+      let year = new Date().getFullYear();
+      let mon = new Date().getMonth() + 1;
+      
+      if (typeof start === 'string' && typeof end === 'string' && start && end) {
+        startDate = start;
+        endDate = end;
+        const startObj = new Date(start);
+        year = startObj.getFullYear();
+        mon = startObj.getMonth() + 1;
+      } else {
+        const selectedMonth = typeof month === 'string' && month ? month : new Date().toISOString().slice(0, 7);
+        const [y, m] = selectedMonth.split('-').map(Number);
+        year = y;
+        mon = m;
+        startDate = `${selectedMonth}-01`;
+        endDate = new Date(year, mon, 0).toISOString().slice(0, 10);
+      }
 
       // Descobrir nomes reais das colunas de fechamentos
       const fechCols = await pool.query(`
@@ -9176,11 +9191,28 @@ app.get("/api/todos", async (req, res) => {
       `, [startDate, endDate]);
 
       // KPIs do mês anterior (para comparativo)
-      const prevDate = new Date(year, mon - 2, 1); // mês anterior
-      const prevYear = prevDate.getFullYear();
-      const prevMon  = prevDate.getMonth() + 1;
-      const prevStart = `${prevYear}-${String(prevMon).padStart(2,'0')}-01`;
-      const prevEnd   = new Date(prevYear, prevMon, 0).toISOString().slice(0, 10);
+      let prevStart = '';
+      let prevEnd = '';
+      if (typeof start === 'string' && typeof end === 'string' && start && end) {
+        const sDate = new Date(startDate);
+        const eDate = new Date(endDate);
+        const diffTime = Math.abs(eDate.getTime() - sDate.getTime());
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+        
+        const prevStartObj = new Date(sDate);
+        prevStartObj.setDate(prevStartObj.getDate() - diffDays);
+        const prevEndObj = new Date(eDate);
+        prevEndObj.setDate(prevEndObj.getDate() - diffDays);
+        
+        prevStart = prevStartObj.toISOString().slice(0, 10);
+        prevEnd = prevEndObj.toISOString().slice(0, 10);
+      } else {
+        const prevDate = new Date(year, mon - 2, 1); // mês anterior
+        const prevYear = prevDate.getFullYear();
+        const prevMon  = prevDate.getMonth() + 1;
+        prevStart = `${prevYear}-${String(prevMon).padStart(2,'0')}-01`;
+        prevEnd   = new Date(prevYear, prevMon, 0).toISOString().slice(0, 10);
+      }
 
       const kpisPrev = await pool.query(`
         SELECT
@@ -9352,7 +9384,7 @@ app.get("/api/todos", async (req, res) => {
       const totalPerdas = lossReasonsMonth.rows.reduce((s: number, r: any) => s + Number(r.total), 0);
 
       res.json({
-        month: selectedMonth,
+        month: startDate.slice(0, 7),
         kpis: kpisMonth.rows[0],
         kpis_prev: kpisPrev.rows[0],
         fechamentos_list: fechamentosMonth.rows,
