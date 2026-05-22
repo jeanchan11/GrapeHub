@@ -4009,9 +4009,12 @@ app.get("/api/todos", async (req, res) => {
       // 2) Entradas realizadas (recebido)
       const entradasRes = await pool.query(`
         SELECT COALESCE(SUM(value), 0) AS total
-        FROM fin_movements_asaas
-        WHERE transaction_date >= $1 AND transaction_date < $2
-          AND type = 1 AND account = 'asaas' AND is_anticipation_pair = false
+        FROM fin_receivables
+        WHERE due_date >= $1 AND due_date < $2
+          AND (
+            status IN ('Confirmado', 'CONFIRMED', 'RECEIVED', 'RECEIVED_IN_CASH')
+            OR (raw_json->>'anticipated')::boolean = true
+          )
       `, [inicio, fim]);
       const recebido = parseFloat(entradasRes.rows[0].total);
 
@@ -4021,6 +4024,7 @@ app.get("/api/todos", async (req, res) => {
         FROM fin_movements_asaas
         WHERE transaction_date >= $1 AND transaction_date < $2
           AND type = -1 AND account = 'asaas' AND is_anticipation_pair = false
+          AND transaction_type != 'RECEIVABLE_ANTICIPATION_DEBIT'
       `, [inicio, fim]);
       const pago = parseFloat(saidasRes.rows[0].total);
 
@@ -4030,6 +4034,7 @@ app.get("/api/todos", async (req, res) => {
         FROM fin_receivables
         WHERE due_date >= $1 AND due_date < $2
           AND status IN ('Pendente', 'PENDING')
+          AND COALESCE((raw_json->>'anticipated')::boolean, false) = false
       `, [inicio, fim]);
       const a_receber = parseFloat(aReceberRes.rows[0].total);
 

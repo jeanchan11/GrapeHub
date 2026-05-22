@@ -463,10 +463,10 @@ const ActiveClients: React.FC = () => {
     }
   };
 
-  const activeClients = clients.filter(c => c.status === 'Ativo');
+  const allActiveClients = clients.filter(c => c.status === 'Ativo');
+  const quarentenaClients = allActiveClients.filter(c => c.tags?.includes('quarentena'));
+  const activeClients = allActiveClients.filter(c => !c.tags?.includes('quarentena'));
   const churnClients = clients.filter(c => c.status === 'Inativo');
-
-  const quarentenaClients = activeClients.filter(c => c.tags?.includes('quarentena'));
 
   const baseList = 
     activeTab === 'ativos' ? activeClients :
@@ -556,7 +556,7 @@ const ActiveClients: React.FC = () => {
       </PageHeader>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-10">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
         {/* 1. Clientes Ativos */}
         <div className="bg-white dark:bg-dark-card/60 backdrop-blur-md p-5 rounded-3xl border border-slate-200 dark:border-white/10 hover:border-emerald-500/30 transition-all group shadow-sm">
           <div className="flex items-center justify-between mb-3">
@@ -566,36 +566,22 @@ const ActiveClients: React.FC = () => {
             {statsLoading && <div className="w-3 h-3 border-2 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />}
           </div>
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Clientes Ativos</p>
-          <h3 className="text-3xl font-bold text-light-text dark:text-white">{stats.ativos}</h3>
+          <h3 className="text-3xl font-bold text-light-text dark:text-white">{allActiveClients.length}</h3>
           <p className="text-[10px] text-emerald-500 mt-1">
-            {clients.filter(c => c.status === 'Ativo' && c.hasActiveSubscription).length} com assinatura Asaas
+            {allActiveClients.filter(c => c.hasActiveSubscription).length} com assinatura Asaas
           </p>
         </div>
 
-        {/* 2. TCV */}
-        <div className="bg-white dark:bg-dark-card/60 backdrop-blur-md p-5 rounded-3xl border border-slate-200 dark:border-white/10 hover:border-cyan-500/30 transition-all group shadow-sm">
+        {/* 2. Quarentena */}
+        <div className="bg-white dark:bg-dark-card/60 backdrop-blur-md p-5 rounded-3xl border border-slate-200 dark:border-white/10 hover:border-amber-500/30 transition-all group shadow-sm">
           <div className="flex items-center justify-between mb-3">
-            <div className="p-2.5 rounded-xl bg-cyan-500/10">
-              <Package size={18} className="text-cyan-500" />
+            <div className="p-2.5 rounded-xl bg-amber-500/10">
+              <ShieldAlert size={18} className="text-amber-500" />
             </div>
-            {statsLoading && <div className="w-3 h-3 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin" />}
           </div>
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">TCV</p>
-          <h3 className="text-3xl font-bold text-light-text dark:text-white">{stats.tcv}</h3>
-          <p className="text-[10px] text-cyan-500 mt-1">Clientes em TCV</p>
-        </div>
-
-        {/* 3. FEE */}
-        <div className="bg-white dark:bg-dark-card/60 backdrop-blur-md p-5 rounded-3xl border border-slate-200 dark:border-white/10 hover:border-violet-500/30 transition-all group shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <div className="p-2.5 rounded-xl bg-violet-500/10">
-              <RefreshCcw size={18} className="text-violet-500" />
-            </div>
-            {statsLoading && <div className="w-3 h-3 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />}
-          </div>
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">FEE</p>
-          <h3 className="text-3xl font-bold text-light-text dark:text-white">{stats.fee}</h3>
-          <p className="text-[10px] text-violet-500 mt-1">Recorrência mensal</p>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Quarentena</p>
+          <h3 className="text-3xl font-bold text-light-text dark:text-white">{quarentenaClients.length}</h3>
+          <p className="text-[10px] text-amber-500 mt-1">Clientes em quarentena</p>
         </div>
 
         {/* 4. Entradas do Mês */}

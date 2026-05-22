@@ -571,15 +571,15 @@ export default function DashboardOperacional({ activePage = '' }: { activePage?:
           onClick={() => setSelectedGestor(null)}
           className={`flex items-center gap-2.5 px-4 py-2 rounded-xl border transition-all ${
             selectedGestor === null 
-              ? 'bg-violet-500/20 border-violet-500/30 shadow-[0_0_15px_rgba(124,58,237,0.15)]' 
-              : 'bg-dark-card border-white/5 hover:bg-white/5'
+              ? 'bg-violet-500/10 dark:bg-violet-500/20 border-violet-500/30 shadow-[0_0_15px_rgba(124,58,237,0.15)]' 
+              : 'bg-white dark:bg-dark-card border-slate-200 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-white/5'
           }`}
         >
-          <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-400">
+          <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 dark:text-slate-400">
             <Users size={14} />
           </div>
           <div className="text-left">
-            <p className={`text-sm font-bold leading-tight ${selectedGestor === null ? 'text-violet-400' : 'text-slate-300'}`}>Todos</p>
+            <p className={`text-sm font-bold leading-tight ${selectedGestor === null ? 'text-violet-600 dark:text-violet-400' : 'text-slate-700 dark:text-slate-300'}`}>Todos</p>
             <p className="text-[10px] text-slate-500 uppercase tracking-widest">{projects.length} projetos</p>
           </div>
         </button>
@@ -597,11 +597,11 @@ export default function DashboardOperacional({ activePage = '' }: { activePage?:
               onClick={() => setSelectedGestor(g.name)}
               className={`flex items-center gap-2.5 px-4 py-2 rounded-xl border transition-all ${
                 selectedGestor === g.name 
-                  ? 'bg-violet-500/20 border-violet-500/30 shadow-[0_0_15px_rgba(124,58,237,0.15)]' 
-                  : 'bg-dark-card border-white/5 hover:bg-white/5'
+                  ? 'bg-violet-500/10 dark:bg-violet-500/20 border-violet-500/30 shadow-[0_0_15px_rgba(124,58,237,0.15)]' 
+                  : 'bg-white dark:bg-dark-card border-slate-200 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-white/5'
               }`}
             >
-              <div className="w-8 h-8 rounded-full border border-white/10 overflow-hidden bg-slate-800 flex items-center justify-center shrink-0">
+              <div className="w-8 h-8 rounded-full border border-slate-200 dark:border-white/10 overflow-hidden bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
                 {dbUser?.picture ? (
                   <img src={dbUser.picture} alt={g.name} className="w-full h-full object-cover" />
                 ) : (
@@ -609,7 +609,7 @@ export default function DashboardOperacional({ activePage = '' }: { activePage?:
                 )}
               </div>
               <div className="text-left">
-                <p className={`text-sm font-bold leading-tight ${selectedGestor === g.name ? 'text-violet-400' : 'text-white'}`}>
+                <p className={`text-sm font-bold leading-tight ${selectedGestor === g.name ? 'text-violet-600 dark:text-violet-400' : 'text-slate-700 dark:text-white'}`}>
                   {dbUser?.name || g.name}
                 </p>
                 <p className="text-[10px] text-slate-500 uppercase tracking-widest">{g.total} projetos</p>
@@ -681,10 +681,10 @@ export default function DashboardOperacional({ activePage = '' }: { activePage?:
                 {recentComments.slice(0, 40).map(c => {
                   const dbUser = users.find(u => (u.name && u.name.toLowerCase() === c.opt.author?.toLowerCase()) || (u.email && u.email.toLowerCase().includes(c.opt.author?.toLowerCase()?.split(' ')[0] || '')));
                   return (
-                    <div key={c.id} className="p-3 rounded-xl bg-white/5 border border-white/5 hover:border-white/10 transition-all">
+                    <div key={c.id} className="p-3 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5 hover:border-slate-300 dark:hover:border-white/10 transition-all">
                       <div className="flex items-start justify-between mb-2">
                         <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-full overflow-hidden bg-slate-800 shrink-0 border border-white/10">
+                          <div className="w-7 h-7 rounded-full overflow-hidden bg-slate-200 dark:bg-slate-800 shrink-0 border border-slate-300 dark:border-white/10">
                             {dbUser?.picture ? (
                               <img src={dbUser.picture} alt={c.opt.author || ''} className="w-full h-full object-cover" />
                             ) : (
@@ -701,7 +701,7 @@ export default function DashboardOperacional({ activePage = '' }: { activePage?:
                           {c.opt.time && <p className="text-[9px] text-slate-500">{c.opt.time}</p>}
                         </div>
                       </div>
-                      <p className="text-xs text-slate-300 leading-relaxed bg-black/20 p-2.5 rounded-lg border border-white/5 whitespace-pre-wrap">
+                      <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed bg-white dark:bg-black/20 p-2.5 rounded-lg border border-slate-200 dark:border-white/5 whitespace-pre-wrap shadow-sm dark:shadow-none">
                         {c.opt.message}
                       </p>
                     </div>
@@ -739,11 +739,11 @@ export default function DashboardOperacional({ activePage = '' }: { activePage?:
                     {atencao.map(a => {
                       const dbUser = users.find(u => (u.name && u.name.toLowerCase() === a.responsible?.toLowerCase()) || (u.email && u.email.toLowerCase().includes(a.responsible?.toLowerCase()?.split(' ')[0] || '')));
                       return (
-                      <tr key={a.id} className="border-b transition-colors hover:bg-white/5" style={{ borderColor: 'rgba(100,100,120,0.08)' }}>
+                      <tr key={a.id} className="border-b transition-colors hover:bg-slate-50 dark:hover:bg-white/5" style={{ borderColor: 'rgba(100,100,120,0.08)' }}>
                         <td className="py-2.5 pr-2 font-bold text-dark-text truncate max-w-[110px]">{a.partner}</td>
                         <td className="py-2.5 pr-2">
                           <div className="flex items-center gap-1.5">
-                            <div className="w-4 h-4 rounded-full overflow-hidden bg-slate-800 shrink-0 border border-white/10">
+                            <div className="w-4 h-4 rounded-full overflow-hidden bg-slate-200 dark:bg-slate-800 shrink-0 border border-slate-300 dark:border-white/10">
                               {dbUser?.picture ? (
                                 <img src={dbUser.picture} alt={a.responsible || ''} className="w-full h-full object-cover" />
                               ) : (
@@ -821,11 +821,11 @@ export default function DashboardOperacional({ activePage = '' }: { activePage?:
                 {criticas.map(c => {
                   const dbUser = users.find(u => (u.name && u.name.toLowerCase() === c.responsible?.toLowerCase()) || (u.email && u.email.toLowerCase().includes(c.responsible?.toLowerCase()?.split(' ')[0] || '')));
                   return (
-                  <div key={c.id} className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/5 hover:border-white/10 transition-all">
+                  <div key={c.id} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5 hover:border-slate-300 dark:hover:border-white/10 transition-all">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-dark-text truncate">{c.partner}</p>
                       <div className="flex items-center gap-1.5 mt-1">
-                        <div className="w-4 h-4 rounded-full overflow-hidden bg-slate-800 shrink-0 border border-white/10">
+                        <div className="w-4 h-4 rounded-full overflow-hidden bg-slate-200 dark:bg-slate-800 shrink-0 border border-slate-300 dark:border-white/10">
                           {dbUser?.picture ? (
                             <img src={dbUser.picture} alt={c.responsible || ''} className="w-full h-full object-cover" />
                           ) : (
