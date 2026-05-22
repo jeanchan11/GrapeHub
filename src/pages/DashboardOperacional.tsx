@@ -122,8 +122,7 @@ function daysSince(p: ProjectRow): number {
 
 function parseMoney(val: string | null | undefined): number {
   if (!val) return 0;
-  const n = parseFloat(val.replace(/[^\d.,]/g, '').replace(',', '.'));
-  return isNaN(n) ? 0 : n;
+  return parseFloat(val.replace(/[^\d,]/g, '').replace('.', '').replace(',', '.')) || 0;
 }
 
 function fmtBRL(val: number): string {
@@ -140,7 +139,14 @@ function calcKPIs(projects: ProjectRow[]) {
 
   const resultadoRuim = projects.filter(p => p.projectResult?.toLowerCase() === 'resultado ruim').length;
 
-  const investments = projects.map(p => parseMoney(p.investment)).filter(n => n > 0);
+  const investments = projects.map(p => {
+    let total = parseMoney(p.investment);
+    if (total <= 0 && p.products && p.products.length > 0) {
+      total = p.products.reduce((acc, prod) => acc + parseMoney((prod as any).budget), 0);
+    }
+    return total;
+  }).filter(n => n > 0);
+
   const orcamentoMedio = investments.length
     ? investments.reduce((a, b) => a + b, 0) / investments.length
     : 0;
@@ -176,19 +182,25 @@ function groupByResult(projects: ProjectRow[]) {
 }
 
 function groupByResponsible(projects: ProjectRow[]) {
-  const map: Record<string, {
-    name: string; total: number; orcamento: number; ruim: number;
-    results: Record<string, number>;
-  }> = {};
-  for (const p of projects) {
-    const r = p.responsible || 'Sem responsável';
-    if (!map[r]) map[r] = { name: r, total: 0, orcamento: 0, ruim: 0, results: {} };
-    map[r].total++;
-    map[r].orcamento += parseMoney(p.investment);
-    if (p.projectResult?.toLowerCase() === 'resultado ruim') map[r].ruim++;
-    const res = p.projectResult || '-';
-    map[r].results[res] = (map[r].results[res] || 0) + 1;
-  }
+    const map: Record<string, {
+      name: string; total: number; orcamento: number; ruim: number;
+      results: Record<string, number>;
+    }> = {};
+    for (const p of projects) {
+      const r = p.responsible || 'Sem responsável';
+      if (!map[r]) map[r] = { name: r, total: 0, orcamento: 0, ruim: 0, results: {} };
+      map[r].total++;
+      
+      let totalInvest = parseMoney(p.investment);
+      if (totalInvest <= 0 && p.products && p.products.length > 0) {
+        totalInvest = p.products.reduce((acc, prod) => acc + parseMoney((prod as any).budget), 0);
+      }
+      map[r].orcamento += totalInvest;
+      
+      if (p.projectResult?.toLowerCase() === 'resultado ruim') map[r].ruim++;
+      const res = p.projectResult || '-';
+      map[r].results[res] = (map[r].results[res] || 0) + 1;
+    }
   return Object.values(map).sort((a, b) => b.total - a.total);
 }
 
@@ -356,12 +368,15 @@ function DonutChart({ data }: { data: { label: string; count: number; color: str
           ))}
 
           {/* Center — updates on hover */}
-          <text x={cx} y={cy - 6} textAnchor="middle" fill={centerFill}
+          <text x={cx} y={cy - 6} textAnchor="middle" 
+            fill={hoveredSlice ? hoveredSlice.color : undefined}
+            className={hoveredSlice ? "" : "fill-slate-800 dark:fill-white"}
             fontSize={hovered !== null ? 32 : 36} fontWeight={900}
             style={{ transition: 'all 0.12s ease' }}>
             {centerVal}
           </text>
-          <text x={cx} y={cy + 16} textAnchor="middle" fill={hovered !== null ? centerFill + 'bb' : '#64748b'}
+          <text x={cx} y={cy + 16} textAnchor="middle" 
+            fill={hovered !== null && hoveredSlice ? hoveredSlice.color + 'bb' : '#64748b'}
             fontSize={10} fontWeight={800} letterSpacing={1.5}
             style={{ transition: 'all 0.12s ease' }}>
             {centerSub}
@@ -379,17 +394,15 @@ function DonutChart({ data }: { data: { label: string; count: number; color: str
             }}
           >
             <div
-              className="rounded-xl px-4 py-3 shadow-2xl border"
+              className="rounded-xl px-4 py-3 shadow-2xl border bg-white/95 dark:bg-[#0a0c14]/95 backdrop-blur-md"
               style={{
-                background: 'rgba(10,12,20,0.97)',
                 borderColor: `${hoveredSlice.color}44`,
-                boxShadow: `0 8px 32px ${hoveredSlice.color}33, 0 4px 12px rgba(0,0,0,0.6)`,
-                backdropFilter: 'blur(8px)',
+                boxShadow: `0 8px 32px ${hoveredSlice.color}33, 0 4px 12px rgba(0,0,0,0.1)`,
               }}
             >
               <div className="flex items-center gap-2 mb-1.5">
                 <div className="w-3 h-3 rounded-sm" style={{ background: hoveredSlice.color, boxShadow: `0 0 8px ${hoveredSlice.color}` }} />
-                <span className="text-sm font-bold text-white capitalize">
+                <span className="text-sm font-bold text-slate-800 dark:text-white capitalize">
                   {hoveredSlice.label === '-' ? 'Sem resultado' : hoveredSlice.label.charAt(0) + hoveredSlice.label.slice(1).toLowerCase()}
                 </span>
               </div>
@@ -413,11 +426,11 @@ function DonutChart({ data }: { data: { label: string; count: number; color: str
         {data.map((d, i) => (
           <div
             key={d.label}
-            className="flex items-center gap-4 rounded-xl px-4 py-2.5 cursor-default transition-all duration-100"
+            className="flex items-center gap-4 rounded-xl px-4 py-2.5 cursor-default transition-all duration-100 border"
             style={{
-              background: hovered === i ? `${d.color}18` : 'rgba(255,255,255,0.02)',
+              background: hovered === i ? `${d.color}18` : undefined,
+              borderColor: hovered === i ? d.color + '33' : 'transparent',
               opacity: hovered === null || hovered === i ? 1 : 0.4,
-              border: `1px solid ${hovered === i ? d.color + '33' : 'transparent'}`,
             }}
             onMouseEnter={() => setHovered(i)}
             onMouseLeave={() => setHovered(null)}
@@ -434,7 +447,7 @@ function DonutChart({ data }: { data: { label: string; count: number; color: str
                 {d.label === '-' ? 'Sem resultado' : d.label.charAt(0) + d.label.slice(1).toLowerCase()}
               </span>
               <div className="flex items-center gap-3">
-                <span className="text-sm font-black text-white">{d.count}</span>
+                <span className="text-sm font-black text-slate-800 dark:text-white">{d.count}</span>
                 <span className="text-xs font-bold text-slate-500 min-w-[36px] text-right">
                   {Math.round((d.count / total) * 100)}%
                 </span>
@@ -652,9 +665,9 @@ export default function DashboardOperacional({ activePage = '' }: { activePage?:
           <KpiCard
             iconBg="bg-emerald-500/15"
             icon={<DollarSign size={17} className="text-emerald-500" />}
-            label="Orçamento Médio/Dia"
-            value={fmtBRL(kpis.orcamentoMedio)}
-            sub={<span>Total: <span className="text-emerald-400 font-bold">{fmtBRL(kpis.orcamentoTotal)}</span></span>}
+            label="Investimento Diário"
+            value={fmtBRL(kpis.orcamentoTotal / 30)}
+            sub={<span>Mensal: <span className="text-emerald-400 font-bold">{fmtBRL(kpis.orcamentoTotal)}</span></span>}
           />
           <KpiCard
             iconBg="bg-amber-500/15"
