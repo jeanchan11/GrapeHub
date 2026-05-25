@@ -205,22 +205,22 @@ function groupByResponsible(projects: ProjectRow[]) {
 }
 
 function getAtencaoList(projects: ProjectRow[]) {
+  const isGargalo     = (p: ProjectRow) => (p.status || '').toLowerCase() === 'gargalo'      || (p.projectResult || '').toLowerCase() === 'gargalo';
+  const isResultRuim  = (p: ProjectRow) => (p.projectResult || '').toLowerCase() === 'resultado ruim';
+  const isTestando    = (p: ProjectRow) => (p.projectResult || '').toLowerCase() === 'testando';
+
   return projects
-    .filter(p => p.projectResult?.toLowerCase() === 'resultado ruim' || daysSince(p) > 15)
+    .filter(p => isGargalo(p) || isResultRuim(p) || isTestando(p))
     .map(p => {
-      const dias = daysSince(p);
+      let priority = 99;
       const alertas: string[] = [];
-      if (p.projectResult?.toLowerCase() === 'resultado ruim') alertas.push('Resultado Ruim');
-      if (dias > 15) alertas.push(`${dias}d sem update`);
-      if (parseMoney(p.investment) > 3000) alertas.push('Alto $');
-      return { ...p, diasSemUpdate: dias, alerta: alertas.join(' · ') };
+      if (isGargalo(p))    { priority = Math.min(priority, 0); alertas.push('Gargalo'); }
+      if (isResultRuim(p)) { priority = Math.min(priority, 1); alertas.push('Resultado Ruim'); }
+      if (isTestando(p))   { priority = Math.min(priority, 2); alertas.push('Testando'); }
+      return { ...p, diasSemUpdate: 0, alerta: alertas.join(' · '), _priority: priority };
     })
-    .sort((a, b) => {
-      const aR = a.projectResult?.toLowerCase() === 'resultado ruim' ? 1 : 0;
-      const bR = b.projectResult?.toLowerCase() === 'resultado ruim' ? 1 : 0;
-      return bR - aR || b.diasSemUpdate - a.diasSemUpdate;
-    })
-    .slice(0, 12);
+    .sort((a, b) => (a as any)._priority - (b as any)._priority)
+    .slice(0, 20);
 }
 
 function getCriticas(projects: ProjectRow[]) {
@@ -747,7 +747,7 @@ export default function DashboardOperacional({ activePage = '', subsessionId }: 
                 <table className="w-full text-xs">
                   <thead className="sticky top-0 bg-dark-card z-10">
                     <tr className="border-b" style={{ borderColor: 'rgba(100,100,120,0.15)' }}>
-                      {['Cliente', 'Gestor', 'Resultado', 'Alertas'].map(h => (
+                      {['Cliente', 'Gestor', 'Critério'].map(h => (
                         <th key={h} className="text-[9px] font-bold text-slate-500 uppercase tracking-widest pb-2 pr-2 text-left">{h}</th>
                       ))}
                     </tr>
@@ -771,17 +771,22 @@ export default function DashboardOperacional({ activePage = '', subsessionId }: 
                           </div>
                         </td>
                         <td className="py-2.5 pr-2">
-                          <span
-                            className="text-[9px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap"
-                            style={{
-                              background: (RESULT_COLORS[a.projectResult || '-'] || '#64748b') + '22',
-                              color: RESULT_COLORS[a.projectResult || '-'] || '#94a3b8',
-                            }}
-                          >
-                            {a.projectResult || '-'}
-                          </span>
+                          <div className="flex flex-wrap gap-1">
+                            {(a.alerta || '').split(' · ').filter(Boolean).map(b => {
+                              const colors: Record<string, { bg: string; color: string }> = {
+                                'Gargalo':        { bg: '#f59e0b22', color: '#f59e0b' },
+                                'Resultado Ruim': { bg: '#f74c4c22', color: '#f74c4c' },
+                                'Testando':       { bg: '#4c8ef722', color: '#4c8ef7' },
+                              };
+                              const c = colors[b] || { bg: '#64748b22', color: '#94a3b8' };
+                              return (
+                                <span key={b} className="text-[9px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap" style={{ background: c.bg, color: c.color }}>
+                                  {b}
+                                </span>
+                              );
+                            })}
+                          </div>
                         </td>
-                        <td className="py-2.5 text-slate-500 text-[10px]">{a.alerta || '—'}</td>
                       </tr>
                       );
                     })}

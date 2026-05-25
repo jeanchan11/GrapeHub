@@ -3,13 +3,138 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
-import Details from '@tiptap/extension-details';
-import { DetailsContent } from '@tiptap/extension-details';
-import { DetailsSummary } from '@tiptap/extension-details';
 import { Heading1, Heading2, Heading3, Type, List, ListOrdered, CheckSquare, ChevronRight } from 'lucide-react';
 
 import { Node, mergeAttributes } from '@tiptap/core';
 
+// ── ToggleTitle: headline editável sempre visível ──────────────────────────────
+const ToggleTitle = Node.create({
+  name: 'toggleTitle',
+  group: 'block',
+  content: 'inline*',
+  defining: true,
+
+  parseHTML() { return [{ tag: 'div[data-type="toggleTitle"]' }]; },
+  renderHTML({ HTMLAttributes }) {
+    return ['div', mergeAttributes(HTMLAttributes, { 'data-type': 'toggleTitle' }), 0];
+  },
+  addNodeView() {
+    return () => {
+      const dom = document.createElement('div');
+      dom.setAttribute('data-type', 'toggleTitle');
+      dom.style.cssText = [
+        'flex:1;min-width:0;font-size:11px;font-weight:700;',
+        'letter-spacing:0.08em;text-transform:uppercase;',
+        'line-height:20px;outline:none;',
+      ].join('');
+      return { dom, contentDOM: dom };
+    };
+  },
+});
+
+// ── ToggleContent: corpo colapsável ────────────────────────────────────────────
+const ToggleContent = Node.create({
+  name: 'toggleContent',
+  group: 'block',
+  content: 'block+',
+  defining: true,
+
+  parseHTML() { return [{ tag: 'div[data-type="toggleContent"]' }]; },
+  renderHTML({ HTMLAttributes }) {
+    return ['div', mergeAttributes(HTMLAttributes, { 'data-type': 'toggleContent' }), 0];
+  },
+  addNodeView() {
+    return () => {
+      const dom = document.createElement('div');
+      dom.setAttribute('data-type', 'toggleContent');
+      dom.style.cssText = 'padding-left:22px;margin-top:2px;border-left:2px solid rgba(139,92,246,0.2);';
+      return { dom, contentDOM: dom };
+    };
+  },
+});
+
+// ── ToggleBlock: wrapper que gerencia abrir/fechar ─────────────────────────────
+const ToggleBlock = Node.create({
+  name: 'toggleBlock',
+  group: 'block',
+  content: 'toggleTitle toggleContent',
+  defining: true,
+
+  addAttributes() {
+    return { open: { default: true } };
+  },
+
+  parseHTML() { return [{ tag: 'div[data-type="toggleBlock"]' }]; },
+  renderHTML({ HTMLAttributes }) {
+    return ['div', mergeAttributes(HTMLAttributes, { 'data-type': 'toggleBlock' }), 0];
+  },
+
+  addNodeView() {
+    return ({ node, getPos, editor }) => {
+      // Outer wrapper — flex row: [button] [contentWrapper]
+      const dom = document.createElement('div');
+      dom.setAttribute('data-type', 'toggleBlock');
+      dom.style.cssText = 'margin:4px 0;display:flex;flex-direction:row;align-items:flex-start;gap:4px;';
+
+      // ── Arrow button (flex item, no overlap) ──
+      const arrowBtn = document.createElement('button');
+      arrowBtn.type = 'button';
+      arrowBtn.setAttribute('tabindex', '-1');
+      arrowBtn.setAttribute('contenteditable', 'false');
+      arrowBtn.style.cssText = [
+        'display:inline-flex;align-items:center;justify-content:center;',
+        'flex-shrink:0;width:16px;height:20px;',
+        'background:none;border:none;padding:0;',
+        'cursor:pointer;color:inherit;opacity:0.6;',
+        'transition:transform 0.15s ease;',
+        'z-index:1;user-select:none;',
+      ].join('');
+      arrowBtn.innerHTML = `<svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor"><path d="M1 1l6 3-6 3V1z"/></svg>`;
+
+      // ── Content wrapper (title + body, rendered by ProseMirror) ──
+      const contentWrapper = document.createElement('div');
+      contentWrapper.style.cssText = 'flex:1;min-width:0;';
+
+      dom.appendChild(arrowBtn);
+      dom.appendChild(contentWrapper);
+
+      const applyOpen = (isOpen: boolean) => {
+        arrowBtn.style.transform = isOpen ? 'rotate(90deg)' : 'rotate(0deg)';
+        const tc = contentWrapper.querySelector('div[data-type="toggleContent"]') as HTMLElement | null;
+        if (tc) tc.style.display = isOpen ? '' : 'none';
+      };
+
+      applyOpen(node.attrs.open);
+
+      arrowBtn.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (typeof getPos === 'function' && editor.isEditable) {
+          const pos = getPos() as number;
+          const currentOpen = editor.state.doc.nodeAt(pos)?.attrs?.open ?? true;
+          editor.view.dispatch(
+            editor.view.state.tr.setNodeMarkup(pos, undefined, { open: !currentOpen })
+          );
+        }
+      });
+
+      return {
+        dom,
+        contentDOM: contentWrapper,
+        update(updatedNode) {
+          if (updatedNode.type.name !== 'toggleBlock') return false;
+          applyOpen(updatedNode.attrs.open);
+          return true;
+        },
+      };
+    };
+  },
+});
+
+
+
+
+// ── MentionNode ────────────────────────────────────────────────────────────────
 const MentionNode = Node.create({
   name: 'mention',
   group: 'inline',
@@ -22,11 +147,11 @@ const MentionNode = Node.create({
       name: { default: null },
       picture: { default: null },
       email: { default: null },
-    }
+    };
   },
 
   parseHTML() {
-    return [{ tag: 'span[data-type="mention"]' }]
+    return [{ tag: 'span[data-type="mention"]' }];
   },
 
   renderHTML({ node, HTMLAttributes }) {
@@ -36,16 +161,19 @@ const MentionNode = Node.create({
         'data-type': 'mention',
         style: 'display:inline-flex;align-items:center;gap:6px;background:rgba(139,92,246,0.15);color:#8b5cf6;padding:2px 8px;border-radius:12px;font-size:0.85em;font-weight:700;vertical-align:middle;line-height:1;margin:0 2px;user-select:none;'
       }, HTMLAttributes),
-      node.attrs.picture ? ['img', { src: node.attrs.picture, style: 'width:16px;height:16px;border-radius:50%;object-fit:cover;margin:0;display:inline-block;' }] : ['span', {style:'display:none'}],
-      node.attrs.name
-    ]
-  }
-})
+      node.attrs.picture
+        ? ['img', { src: node.attrs.picture, style: 'width:16px;height:16px;border-radius:50%;object-fit:cover;margin:0;display:inline-block;' }]
+        : ['span', { style: 'display:none' }],
+      node.attrs.name,
+    ];
+  },
+});
 
 interface RichTextEditorProps {
   content: string;
   onChange: (content: string) => void;
   systemUsers?: {name: string, email: string, picture?: string}[];
+  placeholder?: string;
 }
 
 const SLASH_COMMANDS = [
@@ -56,7 +184,15 @@ const SLASH_COMMANDS = [
   { label: 'Lista com marcadores', icon: List,          group: 'Listas', action: (e: any) => e.chain().focus().toggleBulletList().run() },
   { label: 'Lista numerada',       icon: ListOrdered,  group: 'Listas', action: (e: any) => e.chain().focus().toggleOrderedList().run() },
   { label: 'Checklist',            icon: CheckSquare,  group: 'Listas', action: (e: any) => e.chain().focus().toggleTaskList().run() },
-  { label: 'Lista Alternada',      icon: ChevronRight, group: 'Listas', action: (e: any) => e.chain().focus().setDetails().run() },
+  { label: 'Lista Alternada',      icon: ChevronRight, group: 'Listas', action: (e: any) => {
+    e.chain().focus().insertContent({
+      type: 'toggleBlock',
+      content: [
+        { type: 'toggleTitle',   content: [{ type: 'text', text: 'Título' }] },
+        { type: 'toggleContent', content: [{ type: 'paragraph' }] },
+      ],
+    }).run();
+  }},
 ];
 
 function isMarkdown(t: string) {
@@ -85,9 +221,9 @@ export default function RichTextEditor({ content, onChange, systemUsers = [] }: 
       StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
       TaskList,
       TaskItem.configure({ nested: true }),
-      Details.configure({ persist: true, HTMLAttributes: { class: 'details' } }),
-      DetailsSummary,
-      DetailsContent,
+      ToggleTitle,
+      ToggleContent,
+      ToggleBlock,
       MentionNode,
     ],
     content: initialHTML,
@@ -190,6 +326,12 @@ export default function RichTextEditor({ content, onChange, systemUsers = [] }: 
 
   return (
     <div ref={wrapperRef} className="relative w-full bg-dark-bg border border-white/10 rounded-xl px-5 py-4 tiptap-wrapper focus-within:border-violet-500/50 transition-colors">
+      <style>{`
+        /* ── Lista Alternada: remove marcador nativo de <summary> caso ainda exista ── */
+        .tiptap-editor summary { list-style: none !important; }
+        .tiptap-editor summary::-webkit-details-marker { display: none !important; }
+        .tiptap-editor summary::marker { display: none !important; }
+      `}</style>
       <EditorContent editor={editor} />
       {slashOpen && (
         <div
