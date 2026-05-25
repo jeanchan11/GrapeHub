@@ -23,6 +23,17 @@ interface Collaborator {
   ai_role: boolean;
   status: string;
   form_data: any;
+  linked_user_id?: string | null;
+  linked_picture?: string | null;
+  linked_user_name?: string | null;
+  linked_user_email?: string | null;
+}
+
+interface SystemUser {
+  id: string;
+  name: string;
+  email: string;
+  picture?: string | null;
 }
 
 interface CollaboratorSetting {
@@ -66,6 +77,10 @@ export default function ColaboradoresPage() {
   const [newSettingType, setNewSettingType] = useState<'group' | 'role' | 'seniority'>('group');
   const [newSettingColor, setNewSettingColor] = useState('#8b5cf6');
 
+  const [systemUsers, setSystemUsers] = useState<SystemUser[]>([]);
+  const [userSearch, setUserSearch] = useState('');
+  const [showUserDropdown, setShowUserDropdown] = useState(false);
+
   const loadCollaborators = async () => {
     try {
       const res = await fetch('/api/collaborators');
@@ -89,6 +104,13 @@ export default function ColaboradoresPage() {
     } catch (e) {
       console.error(e);
     }
+  };
+
+  const fetchSystemUsers = async () => {
+    try {
+      const res = await fetch('/api/system-users');
+      if (res.ok) setSystemUsers(await res.json());
+    } catch (e) { console.error(e); }
   };
 
   const addSetting = async () => {
@@ -120,6 +142,7 @@ export default function ColaboradoresPage() {
   useEffect(() => {
     loadCollaborators();
     fetchSettings();
+    fetchSystemUsers();
   }, []);
 
   const toggleGroup = (status: string) => {
@@ -139,6 +162,8 @@ export default function ColaboradoresPage() {
     setFormData({ ...collab });
     setModalTab('geral');
     setIsEditMode(false);
+    setUserSearch('');
+    setShowUserDropdown(false);
     setIsModalOpen(true);
   };
 
@@ -329,8 +354,11 @@ export default function ColaboradoresPage() {
                                 <td className="py-2.5 px-4">
                                   <div className="flex items-center gap-2">
                                     <GripVertical size={14} className="text-slate-400 dark:text-slate-600 opacity-0 group-hover:opacity-100 cursor-grab shrink-0" />
-                                    <div className="w-6 h-6 rounded-full bg-violet-500/20 text-violet-600 dark:text-violet-400 flex items-center justify-center text-xs font-bold shrink-0">
-                                      {c.name.charAt(0).toUpperCase()}
+                                    <div className="w-6 h-6 rounded-full bg-violet-500/20 text-violet-600 dark:text-violet-400 flex items-center justify-center text-xs font-bold shrink-0 overflow-hidden">
+                                      {c.linked_picture
+                                        ? <img src={c.linked_picture} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                        : c.name.charAt(0).toUpperCase()
+                                      }
                                     </div>
                                     <span className="text-sm font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap overflow-hidden text-ellipsis">{c.name}</span>
                                   </div>
@@ -565,6 +593,97 @@ export default function ColaboradoresPage() {
                       <div className="text-sm font-medium text-slate-800 dark:text-white">{formData.seniority_level || '-'}</div>
                     )}
                   </div>
+                  {/* Usuário Vinculado */}
+                  <div className="col-span-2">
+                    <label className="text-xs font-bold text-slate-400 uppercase mb-1.5 block">Usuário Vinculado</label>
+                    {isEditMode ? (
+                      <div className="relative">
+                        {formData.linked_user_id ? (
+                          // Vinculado — mostrar card com desvincular
+                          <div className="flex items-center gap-3 bg-violet-500/10 border border-violet-500/30 rounded-xl px-3 py-2">
+                            <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 bg-violet-500/20">
+                              {formData.linked_picture
+                                ? <img src={formData.linked_picture} className="w-full h-full object-cover" referrerPolicy="no-referrer" alt="" />
+                                : <div className="w-full h-full flex items-center justify-center text-violet-600 text-xs font-bold">{(formData.linked_user_name || '?')[0]}</div>
+                              }
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-semibold text-slate-800 dark:text-white truncate">{formData.linked_user_name}</div>
+                              <div className="text-xs text-slate-500 truncate">{formData.linked_user_email}</div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setFormData({...formData, linked_user_id: null, linked_picture: null, linked_user_name: null, linked_user_email: null})}
+                              className="text-slate-400 hover:text-rose-500 transition-colors"
+                              title="Desvincular"
+                            ><X size={16} /></button>
+                          </div>
+                        ) : (
+                          // Busca de usuário
+                          <div>
+                            <input
+                              value={userSearch}
+                              onChange={e => { setUserSearch(e.target.value); setShowUserDropdown(true); }}
+                              onFocus={() => setShowUserDropdown(true)}
+                              placeholder="Buscar usuário do sistema..."
+                              className="w-full bg-slate-50 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500"
+                            />
+                            {showUserDropdown && (
+                              <div className="absolute z-50 left-0 right-0 mt-1 bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl shadow-xl max-h-48 overflow-y-auto">
+                                {systemUsers
+                                  .filter(u => !userSearch || u.name?.toLowerCase().includes(userSearch.toLowerCase()) || u.email?.toLowerCase().includes(userSearch.toLowerCase()))
+                                  .map(u => (
+                                    <button
+                                      key={u.id}
+                                      type="button"
+                                      onMouseDown={() => {
+                                        setFormData({...formData, linked_user_id: u.id, linked_picture: u.picture || null, linked_user_name: u.name, linked_user_email: u.email});
+                                        setUserSearch('');
+                                        setShowUserDropdown(false);
+                                      }}
+                                      className="w-full flex items-center gap-3 px-3 py-2 hover:bg-violet-500/10 transition-colors text-left"
+                                    >
+                                      <div className="w-7 h-7 rounded-full overflow-hidden shrink-0 bg-violet-500/20">
+                                        {u.picture
+                                          ? <img src={u.picture} className="w-full h-full object-cover" referrerPolicy="no-referrer" alt="" />
+                                          : <div className="w-full h-full flex items-center justify-center text-violet-600 text-xs font-bold">{(u.name || '?')[0]}</div>
+                                        }
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="text-sm font-medium text-slate-800 dark:text-white truncate">{u.name}</div>
+                                        <div className="text-xs text-slate-500 truncate">{u.email}</div>
+                                      </div>
+                                    </button>
+                                  ))
+                                }
+                                {systemUsers.filter(u => !userSearch || u.name?.toLowerCase().includes(userSearch.toLowerCase()) || u.email?.toLowerCase().includes(userSearch.toLowerCase())).length === 0 && (
+                                  <div className="px-3 py-3 text-sm text-slate-500 text-center">Nenhum usuário encontrado.</div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      formData.linked_user_id ? (
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-full overflow-hidden shrink-0 bg-violet-500/20">
+                            {formData.linked_picture
+                              ? <img src={formData.linked_picture} className="w-full h-full object-cover" referrerPolicy="no-referrer" alt="" />
+                              : <div className="w-full h-full flex items-center justify-center text-violet-600 text-xs font-bold">{(formData.linked_user_name || '?')[0]}</div>
+                            }
+                          </div>
+                          <div>
+                            <div className="text-sm font-medium text-slate-800 dark:text-white">{formData.linked_user_name}</div>
+                            <div className="text-xs text-slate-500">{formData.linked_user_email}</div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-sm text-slate-400">Nenhum usuário vinculado</div>
+                      )
+                    )}
+                  </div>
+
                 </div>
               )}
 

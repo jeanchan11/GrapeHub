@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   ReactFlow,
-  Controls,
   Background,
   applyNodeChanges,
   applyEdgeChanges,
@@ -74,6 +73,15 @@ export default function Organograma({ collaborators, settings = [] }: { collabor
   const [edges, setEdges] = useState<Edge[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setIsDark(document.documentElement.classList.contains('dark'));
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
 
   // Filter only active collaborators if needed (or we just map all provided)
   // Assuming the parent component passes only active ones, but let's be safe.
@@ -99,7 +107,7 @@ export default function Organograma({ collaborators, settings = [] }: { collabor
               name: colab.name,
               role: colab.role,
               group_name: colab.group_name,
-              picture: colab.picture,
+              picture: (colab as any).linked_picture || colab.picture || null,
               group_color: settings.find((s: any) => s.type === 'group' && s.name === colab.group_name)?.color || null,
             }
           };
@@ -161,10 +169,17 @@ export default function Organograma({ collaborators, settings = [] }: { collabor
         onConnect={onConnect}
         nodeTypes={nodeTypes}
         fitView
+        colorMode="light"
+        proOptions={{ hideAttribution: true }}
         className="bg-light-bg dark:bg-dark-bg"
       >
-        <Background color="#8b5cf6" gap={16} size={1} opacity={0.05} />
-        <Controls className="bg-white dark:bg-dark-card border-slate-200 dark:border-white/10 text-slate-700 dark:text-white fill-slate-700 dark:fill-white" />
+        <style>{`
+          .dark .react-flow__background,
+          .deep-dark .react-flow__background {
+            opacity: 0.25 !important;
+          }
+        `}</style>
+        <Background color="#8b5cf6" gap={16} size={1} opacity={isDark ? 0.02 : 0.05} />
         <Panel position="top-right" className="m-4">
           <button
             onClick={saveChart}

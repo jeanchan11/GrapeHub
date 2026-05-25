@@ -11460,11 +11460,30 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
 
   app.get("/api/collaborators", async (_req, res) => {
     try {
-      const { rows } = await pool.query("SELECT * FROM collaborators ORDER BY created_at DESC");
+      const { rows } = await pool.query(`
+        SELECT c.*,
+               u.picture  AS linked_picture,
+               u.name     AS linked_user_name,
+               u.email    AS linked_user_email
+        FROM collaborators c
+        LEFT JOIN users u ON u.id = c.linked_user_id
+        ORDER BY c.created_at DESC
+      `);
       res.json(rows);
     } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: "Erro ao buscar colaboradores." });
+    }
+  });
+
+  app.get("/api/system-users", async (_req, res) => {
+    try {
+      const { rows } = await pool.query(
+        "SELECT id, name, email, picture FROM users ORDER BY name ASC"
+      );
+      res.json(rows);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
     }
   });
 
@@ -11501,12 +11520,12 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
   });
 
   app.post("/api/collaborators", async (req, res) => {
-    const { name, group_name, role, seniority_level, pix_key, remuneration, transport_voucher, benefits, birth_date, start_date, end_date, level_junior, level_pleno, level_senior, leadership_role, ai_role, status, form_data } = req.body;
+    const { name, group_name, role, seniority_level, pix_key, remuneration, transport_voucher, benefits, birth_date, start_date, end_date, level_junior, level_pleno, level_senior, leadership_role, ai_role, status, form_data, linked_user_id } = req.body;
     try {
       const { rows } = await pool.query(
-        `INSERT INTO collaborators (name, group_name, role, seniority_level, pix_key, remuneration, transport_voucher, benefits, birth_date, start_date, end_date, level_junior, level_pleno, level_senior, leadership_role, ai_role, status, form_data)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING *`,
-        [name, group_name, role, seniority_level, pix_key, remuneration, transport_voucher, benefits, birth_date, start_date, end_date, level_junior || false, level_pleno || false, level_senior || false, leadership_role || false, ai_role || false, status || 'Efetivado', form_data || {}]
+        `INSERT INTO collaborators (name, group_name, role, seniority_level, pix_key, remuneration, transport_voucher, benefits, birth_date, start_date, end_date, level_junior, level_pleno, level_senior, leadership_role, ai_role, status, form_data, linked_user_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) RETURNING *`,
+        [name, group_name, role, seniority_level, pix_key, remuneration, transport_voucher, benefits, birth_date, start_date, end_date, level_junior || false, level_pleno || false, level_senior || false, leadership_role || false, ai_role || false, status || 'Efetivado', form_data || {}, linked_user_id || null]
       );
       res.status(201).json(rows[0]);
     } catch (e: any) {
@@ -11517,13 +11536,13 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
 
   app.put("/api/collaborators/:id", async (req, res) => {
     const id = req.params.id;
-    const { name, group_name, role, seniority_level, pix_key, remuneration, transport_voucher, benefits, birth_date, start_date, end_date, level_junior, level_pleno, level_senior, leadership_role, ai_role, status, form_data } = req.body;
+    const { name, group_name, role, seniority_level, pix_key, remuneration, transport_voucher, benefits, birth_date, start_date, end_date, level_junior, level_pleno, level_senior, leadership_role, ai_role, status, form_data, linked_user_id } = req.body;
     try {
       const { rows } = await pool.query(
         `UPDATE collaborators
-         SET name=$1, group_name=$2, role=$3, seniority_level=$4, pix_key=$5, remuneration=$6, transport_voucher=$7, benefits=$8, birth_date=$9, start_date=$10, end_date=$11, level_junior=$12, level_pleno=$13, level_senior=$14, leadership_role=$15, ai_role=$16, status=$17, form_data=$18, updated_at=CURRENT_TIMESTAMP
-         WHERE id=$19 RETURNING *`,
-        [name, group_name, role, seniority_level, pix_key, remuneration, transport_voucher, benefits, birth_date, start_date, end_date, level_junior, level_pleno, level_senior, leadership_role, ai_role, status, form_data, id]
+         SET name=$1, group_name=$2, role=$3, seniority_level=$4, pix_key=$5, remuneration=$6, transport_voucher=$7, benefits=$8, birth_date=$9, start_date=$10, end_date=$11, level_junior=$12, level_pleno=$13, level_senior=$14, leadership_role=$15, ai_role=$16, status=$17, form_data=$18, linked_user_id=$19, updated_at=CURRENT_TIMESTAMP
+         WHERE id=$20 RETURNING *`,
+        [name, group_name, role, seniority_level, pix_key, remuneration, transport_voucher, benefits, birth_date, start_date, end_date, level_junior, level_pleno, level_senior, leadership_role, ai_role, status, form_data, linked_user_id !== undefined ? linked_user_id : null, id]
       );
       if (rows.length === 0) return res.status(404).json({ error: "Colaborador não encontrado." });
       res.json(rows[0]);
@@ -11590,6 +11609,7 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
     )
   `);
   await pool.query(`ALTER TABLE meeting_notes_comments ADD COLUMN IF NOT EXISTS files JSONB DEFAULT '[]'`);
+  await pool.query(`ALTER TABLE collaborators ADD COLUMN IF NOT EXISTS linked_user_id TEXT`);
 
   app.get('/api/meeting-notes/:pageId', async (req, res) => {
     try {
