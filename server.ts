@@ -170,6 +170,20 @@ async function startServer() {
         AND p.squad IS NULL
         AND c.squad IS NOT NULL;
       
+      CREATE TABLE IF NOT EXISTS nps_responses (
+        id SERIAL PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        office TEXT,
+        grape_satisfaction INTEGER,
+        response_time_score INTEGER,
+        project_result_score INTEGER,
+        paid_traffic_score INTEGER,
+        operations_manager_score INTEGER,
+        improvements TEXT,
+        other_services TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
       CREATE TABLE IF NOT EXISTS clients (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
@@ -969,6 +983,10 @@ async function startServer() {
     
     // Migração: Inserir Pessoas automaticamente a partir dos Leads existentes (basendo-se no telefone único)
     try {
+      await pool.query(`ALTER TABLE crm_comercial_kanbans ADD COLUMN IF NOT EXISTS user_id TEXT`);
+    } catch (e) {}
+
+    try {
       await pool.query(`
         INSERT INTO crm_pessoas (user_id, nome, email, telefone, responsavel_id)
         SELECT 
@@ -1352,6 +1370,50 @@ async function startServer() {
     }
   });
 
+  app.post('/api/nps/submit', async (req, res) => {
+    try {
+      const { 
+        project_id, 
+        office, 
+        grape_satisfaction, 
+        response_time_score, 
+        project_result_score, 
+        paid_traffic_score, 
+        operations_manager_score, 
+        improvements, 
+        other_services 
+      } = req.body;
+
+      if (!project_id) return res.status(400).json({ error: 'project_id is required' });
+
+      const result = await pool.query(
+        `INSERT INTO nps_responses 
+         (project_id, office, grape_satisfaction, response_time_score, project_result_score, paid_traffic_score, operations_manager_score, improvements, other_services)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         RETURNING *`,
+        [project_id, office, grape_satisfaction, response_time_score, project_result_score, paid_traffic_score, operations_manager_score, improvements, other_services]
+      );
+      res.status(201).json(result.rows[0]);
+    } catch (err) {
+      console.error('Error saving NPS response:', err);
+      res.status(500).json({ error: 'Failed to save NPS response' });
+    }
+  });
+
+  app.get('/api/nps/:projectId', async (req, res) => {
+    try {
+      const { projectId } = req.params;
+      const result = await pool.query(
+        `SELECT * FROM nps_responses WHERE project_id = $1 ORDER BY created_at DESC`,
+        [projectId]
+      );
+      res.json(result.rows);
+    } catch (err) {
+      console.error('Error fetching NPS responses:', err);
+      res.status(500).json({ error: 'Failed to fetch NPS responses' });
+    }
+  });
+
   app.delete('/api/project-comments/:commentId', async (req, res) => {
     try {
       const { commentId } = req.params;
@@ -1665,8 +1727,93 @@ async function startServer() {
     }
   });
 
+  // Projects by subsession — fetches all projects from pages within a subsession
+  app.get("/api/projects/by-subsession/:subsessionId", async (req: any, res: any) => {
+    try {
+      const { subsessionId } = req.params;
+
+      // Collect all page_ids that belong to this subsession:
+      //   1. pages directly linked (menu_pages.subsession_id = subsessionId)
+      //   2. pages in subsubsessions (menu_subsubsessions.subsession_id = subsessionId)
+      const pageIdsResult = await pool.query(`
+        SELECT mp.id as page_id
+        FROM menu_pages mp
+        WHERE mp.subsession_id = $1
+        UNION
+        SELECT mp.id as page_id
+        FROM menu_pages mp
+        JOIN menu_subsubsessions mss ON mss.id = mp.subsubsession_id
+        WHERE mss.subsession_id = $1
+      `, [subsessionId]);
+
+      const pageIds = pageIdsResult.rows.map((r: any) => r.page_id);
+
+      if (pageIds.length === 0) {
+        return res.json([]);
+      }
+
+      // Fetch all projects for those page_ids
+      const placeholders = pageIds.map((_: any, i: number) => `$${i + 1}`).join(', ');
+      const projectsResult = await pool.query(`
+        SELECT p.*, mp.manager_id as page_manager_id, u.name as page_manager_name, u.picture as page_manager_picture
+        FROM projects p
+        LEFT JOIN menu_pages mp ON mp.id = p.page_id
+        LEFT JOIN users u ON u.id::text = mp.manager_id
+        WHERE p.page_id IN (${placeholders})
+        ORDER BY p.sort_order ASC, p.partner ASC
+      `, pageIds);
+
+      const projects = [];
+      for (const row of projectsResult.rows) {
+        const productsResult = await pool.query("SELECT * FROM products WHERE project_id = $1", [row.id]);
+        const products = [];
+        for (const prodRow of productsResult.rows) {
+          const optimizationsResult = await pool.query("SELECT * FROM optimizations WHERE product_id = $1 ORDER BY date DESC", [prodRow.id]);
+          products.push({
+            id: prodRow.id,
+            name: prodRow.name,
+            icon: prodRow.icon,
+            cac: prodRow.cac,
+            results: prodRow.results,
+            kpis: prodRow.kpis,
+            budget: prodRow.budget,
+            platform: prodRow.platform,
+            status: prodRow.status,
+            delivery: prodRow.delivery,
+            aiService: prodRow.ai_service,
+            aiKeyword: prodRow.ai_keyword,
+            bottleneck: prodRow.bottleneck,
+            history: prodRow.history,
+            balance: prodRow.balance,
+            projectResult: prodRow.project_result,
+            optimizations: optimizationsResult.rows,
+          });
+        }
+        projects.push({
+          id: row.id,
+          partner: row.partner,
+          responsible: row.responsible,
+          group: row.group_name,
+          status: row.status,
+          investment: row.investment,
+          lastUpdate: row.last_update,
+          projectResult: row.project_result,
+          page_id: row.page_id,
+          squad: row.squad,
+          products,
+        });
+      }
+
+      res.json(projects);
+    } catch (e) {
+      console.error('Error in /api/projects/by-subsession:', e);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
   // Projects API
-  app.get("/api/projects", async (req, res) => {
+  app.get("/api/projects", async (req: any, res: any) => {
+
     console.log("!!! RECEBIDA REQUISIÇÃO GET /api/projects !!!");
     try {
       const { page_id } = req.query;
@@ -9565,6 +9712,58 @@ app.get("/api/todos", async (req, res) => {
     )
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS visual_hub_files (
+      id SERIAL PRIMARY KEY,
+      task_id INT NOT NULL REFERENCES onboarding_tasks(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      url TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'link',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  // ── Visual Hub Files API ──
+  app.get('/api/visual-hub-files', async (req, res) => {
+    try {
+      const { task_id } = req.query;
+      if (!task_id) return res.status(400).json({ error: 'task_id required' });
+      const result = await pool.query(
+        'SELECT * FROM visual_hub_files WHERE task_id = $1 ORDER BY created_at DESC',
+        [task_id]
+      );
+      res.json(result.rows);
+    } catch (err) {
+      console.error('GET /api/visual-hub-files error:', err);
+      res.status(500).json({ error: 'Erro ao buscar arquivos.' });
+    }
+  });
+
+  app.post('/api/visual-hub-files', async (req, res) => {
+    try {
+      const { task_id, name, url, type } = req.body;
+      if (!task_id || !name || !url) return res.status(400).json({ error: 'task_id, name e url obrigatórios.' });
+      const result = await pool.query(
+        `INSERT INTO visual_hub_files (task_id, name, url, type) VALUES ($1, $2, $3, $4) RETURNING *`,
+        [task_id, name, url, type || 'link']
+      );
+      res.status(201).json(result.rows[0]);
+    } catch (err) {
+      console.error('POST /api/visual-hub-files error:', err);
+      res.status(500).json({ error: 'Erro ao adicionar arquivo.' });
+    }
+  });
+
+  app.delete('/api/visual-hub-files/:id', async (req, res) => {
+    try {
+      await pool.query('DELETE FROM visual_hub_files WHERE id = $1', [req.params.id]);
+      res.json({ success: true });
+    } catch (err) {
+      console.error('DELETE /api/visual-hub-files error:', err);
+      res.status(500).json({ error: 'Erro ao deletar arquivo.' });
+    }
+  });
+
   // ── GET tasks ──
   app.get('/api/onboarding-tasks', async (req, res) => {
     try {
@@ -11478,10 +11677,42 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
       const { createServer: createViteServer } = await import("vite");
       const vite = await createViteServer({
         server: { middlewareMode: true },
-        appType: "spa",
+        appType: "custom",
       });
       app.use(vite.middlewares);
+
+      app.use("*all", async (req, res, next) => {
+        try {
+          let template = fs.readFileSync(path.resolve(__dirname, 'index.html'), 'utf-8');
+          template = await vite.transformIndexHtml(req.originalUrl, template);
+
+          const config = {
+            FIREBASE_API_KEY: process.env.VITE_FIREBASE_API_KEY || process.env.FIREBASE_API_KEY,
+            FIREBASE_AUTH_DOMAIN: process.env.VITE_FIREBASE_AUTH_DOMAIN || process.env.FIREBASE_AUTH_DOMAIN,
+            FIREBASE_PROJECT_ID: process.env.VITE_FIREBASE_PROJECT_ID || process.env.FIREBASE_PROJECT_ID,
+            FIREBASE_APP_ID: process.env.VITE_FIREBASE_APP_ID || process.env.FIREBASE_APP_ID,
+            FIREBASE_FIRESTORE_DATABASE_ID: process.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID || process.env.FIREBASE_FIRESTORE_DATABASE_ID || '(default)'
+          };
+
+          const injection = `
+            <script>
+              window.FIREBASE_CONFIG = ${JSON.stringify(config)};
+              window.FIREBASE_API_KEY = "${config.FIREBASE_API_KEY || ''}";
+              window.FIREBASE_AUTH_DOMAIN = "${config.FIREBASE_AUTH_DOMAIN || ''}";
+              window.FIREBASE_PROJECT_ID = "${config.FIREBASE_PROJECT_ID || ''}";
+              window.FIREBASE_APP_ID = "${config.FIREBASE_APP_ID || ''}";
+            </script>
+          `;
+
+          const html = template.replace('</head>', `${injection}</head>`);
+          res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
+        } catch (e) {
+          vite.ssrFixStacktrace(e as Error);
+          next(e);
+        }
+      });
     } catch (e) {
+      console.error("Vite setup failed:", e);
       console.warn("Vite not found, falling back to static serving");
       setupStaticServing(app);
     }

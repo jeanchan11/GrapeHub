@@ -309,6 +309,7 @@ const TodoModal: React.FC<TodoModalProps> = ({ initial, allColumns, globalTags, 
   const [tags, setTags]           = useState<string[]>(initial?.tags ?? []);
   const [subtasks, setSubtasks]   = useState<Subtask[]>(initial?.subtasks ?? []);
   const [newSubtask, setNewSubtask] = useState('');
+  const [editingSubId, setEditingSubId] = useState<string | null>(null);
   const [subDragFrom, setSubDragFrom] = useState<number | null>(null);
   const [subDragOver, setSubDragOver] = useState<number | null>(null);
   const [tagSearch, setTagSearch] = useState('');
@@ -323,6 +324,7 @@ const TodoModal: React.FC<TodoModalProps> = ({ initial, allColumns, globalTags, 
   };
 
   const removeSubtask = (id: string) => setSubtasks(p => p.filter(s => s.id !== id));
+  const renameSubtask = (id: string, title: string) => setSubtasks(p => p.map(s => s.id === id ? { ...s, title } : s));
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -500,7 +502,22 @@ const TodoModal: React.FC<TodoModalProps> = ({ initial, allColumns, globalTags, 
                     }`}>
                     {s.done && <Check size={9} className="text-white" />}
                   </button>
-                  <span className={`text-sm flex-1 text-dark-text ${s.done ? 'line-through opacity-40' : ''}`}>{s.title}</span>
+                  {editingSubId === s.id ? (
+                    <input
+                      autoFocus
+                      value={s.title}
+                      onChange={e => renameSubtask(s.id, e.target.value)}
+                      onBlur={() => setEditingSubId(null)}
+                      onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); setEditingSubId(null); } }}
+                      className="flex-1 bg-transparent border-b border-violet-500/50 text-sm text-dark-text focus:outline-none py-0.5"
+                    />
+                  ) : (
+                    <span
+                      className={`text-sm flex-1 text-dark-text cursor-text ${s.done ? 'line-through opacity-40' : ''}`}
+                      onDoubleClick={() => !s.done && setEditingSubId(s.id)}
+                      title="Clique duplo para editar"
+                    >{s.title}</span>
+                  )}
                   <button type="button" onClick={() => removeSubtask(s.id)}
                     className="opacity-0 group-hover/sub:opacity-100 text-dark-text/30 hover:text-red-400 transition-all">
                     <X size={11} />
@@ -1190,8 +1207,8 @@ const TodoRow: React.FC<RowProps> = ({ item, allColumns, onView, onEdit, onDelet
           {item.title}
         </span>
 
-        {/* Tag + Date row */}
-        {(item.tags.length > 0 || item.dueDate) && (
+        {/* Tag + Date + Subtask row */}
+        {(item.tags.length > 0 || item.dueDate || item.subtasks.length > 0) && (
           <div className="flex items-center gap-2 mt-1">
             {item.tags.length > 0 && (
               <span className="px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-violet-500/10 text-violet-400 border border-violet-500/15">
@@ -1209,6 +1226,21 @@ const TodoRow: React.FC<RowProps> = ({ item, allColumns, onView, onEdit, onDelet
                   overdue ? 'text-red-400' : isToday ? 'text-amber-400' : 'text-dark-text/30'
                 }`}>
                   {fmt}
+                </span>
+              );
+            })()}
+            {item.subtasks.length > 0 && (() => {
+              const done = item.subtasks.filter(s => s.done).length;
+              const all = item.subtasks.length;
+              const allDone = done === all;
+              return (
+                <span className={`flex items-center gap-0.5 text-[9px] font-semibold px-1.5 py-0.5 rounded-full border ${
+                  allDone
+                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                    : 'bg-dark-text/5 text-dark-text/40 border-dark-text/10'
+                }`}>
+                  <ListChecks size={9} />
+                  {done}/{all}
                 </span>
               );
             })()}

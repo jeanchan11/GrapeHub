@@ -432,6 +432,8 @@ const templates = [
   { id: 'marketing-dashboard', label: 'Dashboard Marketing' },
   { id: 'dashboard-operacional', label: 'Dashboard Operacional' },
   { id: 'onboarding-operacional', label: 'Onboarding Operacional' },
+  { id: 'implementacao-ia', label: 'Implementação IA' },
+  { id: 'visual-hub', label: 'VisualHub' },
   { id: 'closer', label: 'Calculadora Closer' },
   { id: 'sdr', label: 'Calculadora SDR' },
   { id: 'gerente-operacional', label: 'Calculadora Gerente Operacional' },

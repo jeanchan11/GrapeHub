@@ -414,7 +414,7 @@ const CrmFinanceiro = () => {
   
   // Slide-over state
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
-  const [activeTab, setActiveTab] = useState<'financeiro' | 'historico' | 'checklist'>('financeiro');
+  const [activeTab, setActiveTab] = useState<'tarefas' | 'historico' | 'checklist'>('tarefas');
   const [activeId, setActiveId] = useState<string | null>(null);
   
   // Archive state
@@ -486,7 +486,7 @@ const CrmFinanceiro = () => {
       if (selectedClient.crmStatus === 'processo_saida') {
         setActiveTab('checklist');
       } else {
-        setActiveTab('financeiro');
+        setActiveTab('tarefas');
       }
     }
   }, [selectedClient]);
@@ -1119,10 +1119,10 @@ const CrmFinanceiro = () => {
           selectedClient && (
             <>
               <button
-                onClick={() => setActiveTab('financeiro')}
-                className={`pb-4 text-sm font-bold transition-all ${activeTab === 'financeiro' ? 'modal-tab-active' : 'text-slate-500 hover:text-light-text dark:hover:text-white'}`}
+                onClick={() => setActiveTab('tarefas')}
+                className={`pb-4 text-sm font-bold transition-all ${activeTab === 'tarefas' ? 'modal-tab-active' : 'text-slate-500 hover:text-light-text dark:hover:text-white'}`}
               >
-                Financeiro
+                Tarefas
               </button>
               <button
                 onClick={() => setActiveTab('historico')}
@@ -1144,67 +1144,8 @@ const CrmFinanceiro = () => {
       >
         {selectedClient && (
           <div className="space-y-6">
-            {activeTab === 'financeiro' && (
+            {activeTab === 'tarefas' && (
                   <div className="space-y-6">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="bg-white dark:bg-white/5 p-4 rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm">
-                        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Valor</div>
-                        <div className="text-lg font-black text-light-text dark:text-white">
-                          {!selectedClient.finPeopleGuid ? '—' : formatCurrency(selectedClient.valorDisplay)}
-                        </div>
-                      </div>
-                      <div className={`p-4 rounded-2xl border shadow-sm ${
-                        selectedClient.paymentStatus === 'atrasada' 
-                          ? 'bg-rose-500/5 border-rose-500/20' 
-                          : selectedClient.paymentStatus === 'vence_em_breve'
-                            ? 'bg-amber-500/5 border-amber-500/20'
-                            : 'bg-emerald-500/5 border-emerald-500/20'
-                      }`}>
-                        <div className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${
-                          selectedClient.paymentStatus === 'atrasada'
-                            ? 'text-rose-600 dark:text-rose-500'
-                            : selectedClient.paymentStatus === 'vence_em_breve'
-                              ? 'text-amber-600 dark:text-amber-500'
-                              : 'text-emerald-600 dark:text-emerald-500'
-                        }`}>Status</div>
-                        <div className={`text-lg font-black ${
-                          selectedClient.paymentStatus === 'atrasada'
-                            ? 'text-rose-600 dark:text-rose-400'
-                            : selectedClient.paymentStatus === 'vence_em_breve'
-                              ? 'text-amber-600 dark:text-amber-400'
-                              : 'text-emerald-600 dark:text-emerald-400'
-                        }`}>
-                          {selectedClient.paymentStatus === 'atrasada' 
-                            ? `${selectedClient.diasAtraso} dias em atraso`
-                            : selectedClient.paymentStatus === 'vence_em_breve'
-                              ? 'Vence em breve'
-                              : !selectedClient.finPeopleGuid 
-                                ? 'Sem vínculo'
-                                : 'Em dia'}
-                        </div>
-                      </div>
-                      {(() => {
-                        const statusMap: Record<string, { label: string; badgeCls: string; dotCls: string; bgCls: string; borderCls: string }> = {
-                          'ACTIVE':   { label: 'Ativa',    badgeCls: 'text-emerald-700 dark:text-emerald-400', dotCls: 'bg-emerald-500', bgCls: 'bg-emerald-50 dark:bg-emerald-500/10', borderCls: 'border-emerald-200 dark:border-emerald-500/20' },
-                          'INACTIVE': { label: 'Inativa',  badgeCls: 'text-amber-700 dark:text-amber-400',   dotCls: 'bg-amber-500',   bgCls: 'bg-amber-50 dark:bg-amber-500/10',   borderCls: 'border-amber-200 dark:border-amber-500/20' },
-                          'EXPIRED':  { label: 'Expirada', badgeCls: 'text-rose-700 dark:text-rose-400',     dotCls: 'bg-rose-500',    bgCls: 'bg-rose-50 dark:bg-rose-500/10',     borderCls: 'border-rose-200 dark:border-rose-500/20' },
-                        };
-                        const subStatus = selectedClient.subscriptionStatus ? statusMap[selectedClient.subscriptionStatus] : null;
-                        return (
-                          <div className="bg-white dark:bg-white/5 p-4 rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm col-span-2 flex items-center justify-between">
-                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Status da Assinatura</div>
-                            {subStatus ? (
-                              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border ${subStatus.bgCls} ${subStatus.borderCls}`}>
-                                <div className={`w-2 h-2 rounded-full ${subStatus.dotCls} animate-pulse`} />
-                                <span className={`text-xs font-bold ${subStatus.badgeCls}`}>{subStatus.label}</span>
-                              </div>
-                            ) : (
-                              <span className="text-xs font-bold text-slate-400">Sem assinatura</span>
-                            )}
-                          </div>
-                        );
-                      })()}
-                    </div>
 
                     <div className="bg-white dark:bg-white/5 p-6 rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm">
                       <div className="flex justify-between items-center mb-4">

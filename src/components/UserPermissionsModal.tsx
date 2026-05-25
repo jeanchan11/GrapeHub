@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Check, Lock, Unlock, Users } from 'lucide-react';
+import { X, Check, Lock, Unlock, Users, Loader2 } from 'lucide-react';
 import { UserData, UserRole } from '../../types';
 
 import { Modal } from './ui/Modal';
@@ -54,7 +54,7 @@ export const UserPermissionsModal: React.FC<Props> = ({
             disabled={isSaving}
             className={designSystem.button.primary}
           >
-            {isSaving ? <LoadingSpinner size={16} /> : <Check size={16} />}
+            {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
             Salvar Alterações
           </button>
         </>

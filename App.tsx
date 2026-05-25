@@ -31,6 +31,8 @@ import DashboardOperacional from './src/pages/DashboardOperacional';
 import ParceirosSquad from './src/pages/ParceirosSquad';
 import TodoStaff from './src/pages/TodoStaff';
 import OnboardingOperacional from './src/pages/OnboardingOperacional';
+import ImplementacaoIA from './src/pages/ImplementacaoIA';
+import VisualHub from './src/pages/VisualHub';
 import ChecklistIntegracao from './src/pages/ChecklistIntegracao';
 import ChecklistSaida from './src/pages/ChecklistSaida';
 import ContratacaoPage from './src/pages/ContratacaoPage';
@@ -116,6 +118,30 @@ const AppContent: React.FC = () => {
       }
     }
     return resolved;
+  }, [activePage, menu]);
+
+  // Resolve o subsessionId da página ativa — usado pelo dashboard de squad
+  const activeSubsessionId = useMemo(() => {
+    if (!Array.isArray(menu)) return null;
+    for (const section of menu) {
+      if (Array.isArray(section.subSessions)) {
+        for (const ss of section.subSessions) {
+          // Page directly in subsession
+          if (Array.isArray(ss.pages)) {
+            if (ss.pages.some((p: any) => p.id === activePage)) return ss.id;
+          }
+          // Page inside a subsubsession of this subsession
+          if (Array.isArray(ss.subSubSessions)) {
+            for (const sss of ss.subSubSessions) {
+              if (Array.isArray(sss.pages)) {
+                if (sss.pages.some((p: any) => p.id === activePage)) return ss.id;
+              }
+            }
+          }
+        }
+      }
+    }
+    return null;
   }, [activePage, menu]);
 
   if (!isFirebaseConfigValid && import.meta.env.PROD) {
@@ -221,7 +247,7 @@ const AppContent: React.FC = () => {
       case 'fin-extrato':
         return <Extrato />;
       case 'kpis-squad':
-        return <div className="p-8 text-center text-slate-500">Página de KPIs do Squad em construção.</div>;
+        return <DashboardOperacional key={activePage} activePage={activePage} subsessionId={activeSubsessionId} />;
       case 'parceiros-squad':
         return <ParceirosSquad activePage={activePage} onPageChange={setActivePage} />;
       case 'blank':
@@ -254,6 +280,10 @@ const AppContent: React.FC = () => {
         return <TodoStaff key={activePage} activePage={activePage} />;
       case 'onboarding-operacional':
         return <OnboardingOperacional />;
+      case 'implementacao-ia':
+        return <ImplementacaoIA />;
+      case 'visual-hub':
+        return <VisualHub />;
       case 'checklist-integracao':
         return <ChecklistIntegracao />;
       case 'checklist-saida':
@@ -305,6 +335,17 @@ const AppContent: React.FC = () => {
     return (
       <React.Suspense fallback={<div className="min-h-screen bg-slate-950 flex items-center justify-center"><LoadingSpinner size="lg" /></div>}>
         <PublicFormModule leadId={leadId} />
+      </React.Suspense>
+    );
+  }
+
+  // Bypass Auth for NPS Form
+  if (window.location.pathname.startsWith('/nps/')) {
+    const projectId = window.location.pathname.split('/').pop() || '';
+    const NpsFormModule = React.lazy(() => import('./src/pages/NpsForm'));
+    return (
+      <React.Suspense fallback={<div className="min-h-screen bg-black flex items-center justify-center"><LoadingSpinner size="lg" /></div>}>
+        <NpsFormModule projectId={projectId} />
       </React.Suspense>
     );
   }

@@ -150,7 +150,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
     setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
 
   const isPageAllowed = (pageId: string) => {
-    if (userData?.role === 'superadmin' || userData?.role === 'gerente-operacional') return true;
+    if (userData?.role === 'superadmin') return true;
     return userData?.allowedPages?.includes(pageId);
   };
 

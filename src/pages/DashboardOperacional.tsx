@@ -486,7 +486,7 @@ function Spinner() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Main Component
 // ─────────────────────────────────────────────────────────────────────────────
-export default function DashboardOperacional({ activePage = '' }: { activePage?: string }) {
+export default function DashboardOperacional({ activePage = '', subsessionId }: { activePage?: string; subsessionId?: string | null }) {
   const parts = activePage.split('-');
   const squadNameRaw = parts[parts.length - 1] || 'able';
   const squadName = squadNameRaw.charAt(0).toUpperCase() + squadNameRaw.slice(1).toLowerCase();
@@ -503,7 +503,10 @@ export default function DashboardOperacional({ activePage = '' }: { activePage?:
     setError(null);
     try {
       const [resProjects, resUsers] = await Promise.all([
-        fetch('/api/projects'),
+        // Use subsession-aware endpoint when available, fallback to squad filter
+        subsessionId
+          ? fetch(`/api/projects/by-subsession/${encodeURIComponent(subsessionId)}`)
+          : fetch('/api/projects'),
         fetch('/api/users')
       ]);
       
@@ -515,8 +518,9 @@ export default function DashboardOperacional({ activePage = '' }: { activePage?:
         setUsers(usersData);
       }
 
-      // Filter to the dynamic Squad
-      const relevant = all.filter(p => p.squad === squadName);
+      // When using by-subsession API, all projects are already filtered.
+      // When using the fallback, filter by squad name.
+      const relevant = subsessionId ? all : all.filter(p => p.squad === squadName);
 
       setProjects(relevant);
     } catch (e) {
@@ -528,7 +532,7 @@ export default function DashboardOperacional({ activePage = '' }: { activePage?:
     }
   };
 
-  useEffect(() => { fetchData(); }, [squadName]);
+  useEffect(() => { fetchData(); }, [squadName, subsessionId]);
 
   if (loading) return <Spinner />;
 

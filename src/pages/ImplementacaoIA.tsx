@@ -114,9 +114,12 @@ const formatDate = (iso: string | null) => {
 const SQUAD_OPTIONS = ['Squad Able', 'Squad Baker'];
 
 const STATUS_GROUPS: Omit<StatusGroup, 'tasks'>[] = [
-  { id: 'reuniao-coleta-acessos', label: 'REUNIÃO - COLETA DE ACESSOS', color: '#3b82f6', emoji: '🗓️' },
-  { id: 'treinamento-comercial',  label: 'TREINAMENTO COMERCIAL',       color: '#8b5cf6', emoji: '🧠💰' },
-  { id: 'briefing-realizado',     label: 'REUNIÃO - BRIEFING',          color: '#10b981', emoji: '🗓️' },
+  { id: 'alteracoes',             label: 'ALTERAÇÕES',             color: '#ef4444', emoji: '🔄' },
+  { id: 'testes',                 label: 'TESTES',                 color: '#3b82f6', emoji: '⚙️🤖' },
+  { id: 'implementacao-n8n',      label: 'IMPLEMENTAÇÃO N8N',      color: '#ea580c', emoji: '⤵️🤖' },
+  { id: 'criando-prompt',         label: 'CRIANDO PROMPT',         color: '#d97706', emoji: '📜' },
+  { id: 'a-implementar',          label: 'A IMPLEMENTAR',          color: '#71717a', emoji: '⏳' },
+  { id: 'aguardando-informacoes', label: 'AGUARDANDO INFORMAÇÕES', color: '#eab308', emoji: '' },
 ];
 
 // ── Tag Badge ─────────────────────────────────────────────
@@ -838,6 +841,7 @@ const GroupBlock = ({ group, onUpdate, onAddTask, onOpenDetail, onOpenSubtask }:
         </button>
       </div>
 
+
       {/* Column headers */}
       {expanded && (
         <>
@@ -890,7 +894,7 @@ const AddTaskModal = ({ groupId, onClose, onSaved }: { groupId: string; onClose:
       await fetch('/api/onboarding-tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ client_name: clientName, squad, start_date: startDate || null, due_date: dueDate || null, status_group: groupId }),
+        body: JSON.stringify({ client_name: clientName, squad, start_date: startDate || null, due_date: dueDate || null, status_group: groupId, type: 'implementacao-ia' }),
       });
       onSaved();
       onClose();
@@ -900,7 +904,7 @@ const AddTaskModal = ({ groupId, onClose, onSaved }: { groupId: string; onClose:
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
-        <h3 className="text-sm font-bold text-dark-text mb-4">Adicionar Cliente ao Onboarding</h3>
+        <h3 className="text-sm font-bold text-dark-text mb-4">Adicionar Cliente à Implementação IA</h3>
         <div className="space-y-3">
           <input
             value={clientName} onChange={e => setClientName(e.target.value)}
@@ -946,7 +950,7 @@ const TemplateModal = ({ onClose }: { onClose: () => void }) => {
   const [newTitle, setNewTitle] = useState('');
 
   useEffect(() => {
-    fetch('/api/onboarding-template')
+    fetch('/api/onboarding-template?type=implementacao-ia')
       .then(r => r.ok ? r.json() : [])
       .then(data => { setItems(data); setLoading(false); })
       .catch(() => setLoading(false));
@@ -978,7 +982,7 @@ const TemplateModal = ({ onClose }: { onClose: () => void }) => {
       await fetch('/api/onboarding-template', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: items.map(i => ({ title: i.title, description: i.description || null, internal_doc: i.internal_doc || null })) }),
+        body: JSON.stringify({ items: items.map(i => ({ title: i.title, description: i.description || null, internal_doc: i.internal_doc || null })), type: 'implementacao-ia' }),
       });
       onClose();
     } catch { /* silent */ } finally { setSaving(false); }
@@ -1146,22 +1150,9 @@ const TemplateModal = ({ onClose }: { onClose: () => void }) => {
   );
 };// ── Task Detail Modal ─────────────────────────────────────
 const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; onClose: () => void; onUpdate: () => void }) => {
-  const [form, setForm] = useState({
-    nome_completo: task.nome_completo || '',
-    nome_fantasia: task.nome_fantasia || '',
-    telefone_whatsapp: task.telefone_whatsapp || '',
-    cnpj_cpf: task.cnpj_cpf || '',
-    cep: task.cep || '',
-    cidade: task.cidade || '',
-    uf: task.uf || '',
-  });
-  const [meetingInfo, setMeetingInfo] = useState(task.meeting_info || '');
-  const [meetingInfoSaving, setMeetingInfoSaving] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [loadingComments, setLoadingComments] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [formDirty, setFormDirty] = useState(false);
 
   useEffect(() => {
     fetch(`/api/onboarding-tasks/${task.id}/comments`)
@@ -1169,36 +1160,6 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
       .then(data => { setComments(data); setLoadingComments(false); })
       .catch(() => setLoadingComments(false));
   }, [task.id]);
-
-  const updateField = (key: string, value: string) => {
-    setForm(f => ({ ...f, [key]: value }));
-    setFormDirty(true);
-  };
-
-  const saveForm = async () => {
-    setSaving(true);
-    try {
-      await fetch(`/api/onboarding-tasks/${task.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      });
-      setFormDirty(false);
-      onUpdate();
-    } catch { /* silent */ } finally { setSaving(false); }
-  };
-
-  const saveMeetingInfo = async () => {
-    setMeetingInfoSaving(true);
-    try {
-      await fetch(`/api/onboarding-tasks/${task.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ meeting_info: meetingInfo }),
-      });
-      onUpdate();
-    } catch { /* silent */ } finally { setMeetingInfoSaving(false); }
-  };
 
   const addComment = async () => {
     if (!newComment.trim()) return;
@@ -1216,19 +1177,9 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
     } catch { /* silent */ }
   };
 
-  const FIELDS = [
-    { key: 'nome_completo', label: 'Nome Completo' },
-    { key: 'nome_fantasia', label: 'Nome Fantasia' },
-    { key: 'telefone_whatsapp', label: 'Telefone (WhatsApp)' },
-    { key: 'cnpj_cpf', label: 'CNPJ / CPF' },
-    { key: 'cep', label: 'CEP' },
-    { key: 'cidade', label: 'Cidade' },
-    { key: 'uf', label: 'UF' },
-  ];
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+      <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-black/5 dark:border-white/5">
           <div>
@@ -1244,7 +1195,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
               className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 text-xs font-bold rounded-lg transition-colors border border-emerald-500/20"
             >
               <Check size={14} />
-              Concluir Onboarding
+              Concluir Implementação
             </button>
             <button onClick={onClose} className="p-1.5 text-slate-500 hover:text-dark-text hover:bg-black/10 dark:hover:bg-white/10 rounded-lg transition-colors">
               <X size={16} />
@@ -1252,172 +1203,79 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
           </div>
         </div>
 
-        {/* Content - Two Columns */}
-        <div className="flex flex-1 overflow-hidden">
+        {/* Content - Comments Feed */}
+        <div className="flex flex-1 overflow-hidden flex-col">
           
-          {/* Left Column: Informações da Reunião */}
-          <div className="w-[60%] flex flex-col border-r border-black/5 dark:border-white/5 overflow-y-auto bg-black/[0.01] dark:bg-white/[0.01] p-6 relative">
-            <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 mb-6">
-              <FileText size={14} className="text-violet-500" />
-              Informações da Reunião
-            </h3>
-            
-            {(() => {
-              let parsed: any = null;
-              if (meetingInfo) {
-                try { parsed = JSON.parse(meetingInfo); } catch (e) { parsed = null; }
-              }
-              
-              if (!parsed) {
-                return (
-                  <div className="flex flex-col items-center justify-center py-16 text-slate-400">
-                    <FileText size={36} className="mb-3 opacity-30" />
-                    <p className="text-sm font-medium text-slate-500">Nenhuma reunião vinculada</p>
-                    <p className="text-xs mt-1 text-slate-600">As reuniões do CRM Comercial aparecerão aqui.</p>
+          {/* Comments list - scrollable */}
+          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+            {loadingComments ? (
+              <div className="flex justify-center py-12">
+                <div className="w-6 h-6 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
+              </div>
+            ) : comments.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-slate-600">
+                <CheckSquare size={40} className="mb-3 opacity-20" />
+                <p className="text-sm font-medium">Nenhum comentário ainda.</p>
+                <p className="text-xs mt-1 opacity-60">Seja o primeiro a comentar!</p>
+              </div>
+            ) : (
+              [...comments].reverse().map(c => (
+                <div key={c.id} className="flex gap-3">
+                  {/* Avatar */}
+                  <div className="w-8 h-8 rounded-full bg-violet-500/20 flex items-center justify-center text-violet-400 font-bold text-xs shrink-0 mt-0.5 uppercase">
+                    {(c.author_name || 'U').charAt(0)}
                   </div>
-                );
-              }
-
-              let dateObj = new Date(parsed.date);
-              if (isNaN(dateObj.getTime())) {
-                dateObj = new Date();
-              }
-              const mMonth = dateObj.toLocaleString('pt-BR', { month: 'short' }).toUpperCase();
-              const mDay = String(dateObj.getDate()).padStart(2, '0');
-              const notesLines = String(parsed.notes || '').split('\n').filter((l:string) => l.trim().length > 0);
-
-              return (
-                <div className="flex items-start w-full relative">
-                  <div className="w-full max-w-2xl mx-auto">
-                    <div className="p-6 rounded-2xl border border-black/5 dark:border-white/10 bg-dark-bg shadow-sm">
-                      
-                      <div className="flex items-start gap-4 mb-6">
-                        <div className="w-[60px] h-[60px] rounded-xl flex flex-col items-center justify-center bg-violet-500/10 text-violet-400 shrink-0 shadow-inner mt-0.5">
-                          <span className="text-[10px] font-black tracking-widest">{mMonth}.</span>
-                          <span className="text-xl font-bold leading-none mt-0.5">{mDay}</span>
-                        </div>
-                        
-                        <div className="flex-1 min-w-0 pr-1">
-                          <div className="flex items-start justify-between gap-2">
-                            <h4 className="font-bold text-dark-text text-[15px] leading-tight break-words pr-2">{parsed.title || 'Reunião'}</h4>
-                            <span className="text-[10px] font-medium text-slate-500 shrink-0 mt-0.5">{dateObj.toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric'})} às {dateObj.toLocaleString('pt-BR', { hour:'2-digit', minute:'2-digit'})}</span>
-                          </div>
-                          <div className="flex items-center gap-1.5 mt-2.5 text-[11px] text-slate-400 font-medium">
-                            <Users size={13} className="opacity-70" />
-                            <span className="truncate max-w-[200px]">{parsed.responsible || 'Sistema'}</span>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="mt-5 pt-5 border-t border-black/5 dark:border-white/5 space-y-4">
-                        <h5 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Detalhes:</h5>
-                        <div className="grid grid-cols-2 gap-y-4 gap-x-4 text-xs">
-                          <div><span className="text-slate-500 font-medium block text-[9px] uppercase tracking-wider mb-1">Local</span><span className="font-semibold text-dark-text">{parsed.local || '-'}</span></div>
-                          <div><span className="text-slate-500 font-medium block text-[9px] uppercase tracking-wider mb-1">Link</span>{parsed.link && typeof parsed.link === 'string' ? <a href={parsed.link.startsWith('http') ? parsed.link : `https://${parsed.link}`} target="_blank" rel="noreferrer" className="text-violet-500 hover:text-violet-400 font-semibold hover:underline truncate inline-block max-w-[150px]">{parsed.link}</a> : <span className="font-semibold text-dark-text">-</span>}</div>
-                          <div><span className="text-slate-500 font-medium block text-[9px] uppercase tracking-wider mb-1">Nicho</span><span className="font-semibold text-dark-text truncate max-w-[150px] inline-block">{parsed.niche || '-'}</span></div>
-                          <div><span className="text-slate-500 font-medium block text-[9px] uppercase tracking-wider mb-1">Fechamentos Mês</span><span className="font-semibold text-dark-text">{parsed.closings || '-'}</span></div>
-                          <div><span className="text-slate-500 font-medium block text-[9px] uppercase tracking-wider mb-1">Meta</span><span className="font-semibold text-dark-text">{parsed.goal || '-'}</span></div>
-                        </div>
-                      </div>
-                      
-                      {notesLines.length > 0 && (
-                        <div className="mt-6 pt-5 border-t border-black/5 dark:border-white/5">
-                          <h5 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4">Informações da Reunião:</h5>
-                          <ul className="space-y-3">
-                            {notesLines.map((line:string, i:number) => {
-                              const isCheck = line.trim().startsWith('-');
-                              return (
-                                <li key={i} className="flex items-start gap-3 text-[12px] text-slate-300">
-                                  {isCheck ? (
-                                    <Check size={14} className="text-emerald-500 shrink-0 mt-0.5 opacity-80" />
-                                  ) : (
-                                    <span className="w-1.5 h-3 mt-1.5 shrink-0" />
-                                  )}
-                                  <span className="leading-relaxed font-medium">{line.replace(/^- /, '')}</span>
-                                </li>
-                              );
-                            })}
-                          </ul>
-                        </div>
-                      )}
+                  {/* Bubble */}
+                  <div className="flex-1">
+                    <div className="flex items-baseline gap-2 mb-1">
+                      <span className="text-xs font-bold text-dark-text">{c.author_name || 'Usuário'}</span>
+                      <span className="text-[10px] text-slate-500">
+                        {new Date(c.created_at).toLocaleString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                    <div className="bg-dark-bg border border-white/5 rounded-2xl rounded-tl-sm px-4 py-3">
+                      <p className="text-sm text-slate-200 whitespace-pre-wrap leading-relaxed">{c.text}</p>
                     </div>
                   </div>
                 </div>
-              );
-            })()}
+              ))
+            )}
           </div>
 
-          {/* Right Column: Formulário & Comentários */}
-          <div className="w-[40%] flex flex-col overflow-y-auto">
-            {/* Form section */}
-            <div className="px-6 py-6 border-b border-black/5 dark:border-white/5">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                  <List size={14} className="text-violet-500" />
-                  Formulário de Cadastro
-                </h3>
+          {/* Input bar pinned to bottom */}
+          <div className="border-t border-white/5 px-6 py-4 bg-dark-card">
+            <div className="flex gap-3 items-end">
+              <div className="w-8 h-8 rounded-full bg-violet-500/20 flex items-center justify-center text-violet-400 font-bold text-xs shrink-0 uppercase">
+                G
               </div>
-              <div className="space-y-3">
-                {FIELDS.map(f => (
-                  <div key={f.key} className="flex flex-col gap-1.5">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider pl-1">{f.label}</label>
-                    <div className="w-full bg-dark-bg/50 border border-black/5 dark:border-white/5 rounded-lg px-3 py-2 text-sm text-dark-text min-h-[38px] flex items-center">
-                      {(form as any)[f.key] || <span className="text-slate-500">—</span>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Comments section */}
-            <div className="px-6 py-6 flex-1 flex flex-col">
-              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2">
-                <CheckSquare size={14} className="text-violet-500" />
-                Anotações
-              </h3>
-
-              {/* New comment */}
-              <div className="flex gap-2 mb-6">
-                <input
+              <div className="flex-1 relative">
+                <textarea
                   value={newComment}
                   onChange={e => setNewComment(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') addComment(); }}
-                  placeholder="Escreva uma anotação..."
-                  className="flex-1 bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-4 py-2 text-sm text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500/50 transition-colors"
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addComment(); } }}
+                  placeholder="Escreva um comentário..."
+                  rows={1}
+                  className="w-full bg-dark-bg border border-white/10 rounded-2xl px-4 py-3 text-sm text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500/50 transition-colors resize-none leading-relaxed"
+                  style={{ minHeight: '44px', maxHeight: '120px' }}
+                  onInput={e => {
+                    const el = e.currentTarget;
+                    el.style.height = 'auto';
+                    el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+                  }}
                 />
-                <button onClick={addComment} disabled={!newComment.trim()}
-                  className="px-4 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-30 text-white text-xs font-bold rounded-xl transition-colors">
-                  Enviar
-                </button>
               </div>
-
-              {/* Comments list */}
-              <div className="flex-1 overflow-y-auto pr-1 space-y-3">
-                {loadingComments ? (
-                  <div className="flex justify-center py-4">
-                    <Loader2 size={16} className="animate-spin text-slate-600" />
-                  </div>
-                ) : comments.length === 0 ? (
-                  <p className="text-center text-slate-600 text-xs py-8 border border-dashed border-black/10 dark:border-white/10 rounded-xl">Nenhuma anotação ainda.</p>
-                ) : (
-                  comments.map(c => (
-                    <div key={c.id} className="bg-dark-bg border border-black/5 dark:border-white/5 rounded-xl px-4 py-3">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-[10px] font-bold text-violet-400">
-                          {c.author_name || 'Usuário'}
-                        </span>
-                        <span className="text-[10px] text-slate-500">
-                          {new Date(c.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed">{c.text}</p>
-                    </div>
-                  ))
-                )}
-              </div>
+              <button
+                onClick={addComment}
+                disabled={!newComment.trim()}
+                className="h-10 w-10 rounded-full bg-violet-600 hover:bg-violet-500 disabled:opacity-30 disabled:cursor-not-allowed text-white flex items-center justify-center transition-all shrink-0"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
+                </svg>
+              </button>
             </div>
+            <p className="text-[10px] text-slate-600 mt-2 ml-11">Enter para enviar · Shift+Enter para nova linha</p>
           </div>
-
         </div>
       </div>
     </div>
@@ -1855,7 +1713,7 @@ const SubtaskDetailModal = ({ subtask, task, onClose, onUpdate }: { subtask: any
 
 
 // ── Main Component ────────────────────────────────────────
-export default function OnboardingOperacional() {
+export default function ImplementacaoIA() {
   const [tasks, setTasks] = useState<OnboardingTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [addingToGroup, setAddingToGroup] = useState<string | null>(null);
@@ -1868,7 +1726,7 @@ export default function OnboardingOperacional() {
   const fetchTasks = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/onboarding-tasks');
+      const res = await fetch('/api/onboarding-tasks?type=implementacao-ia');
       if (res.ok) {
         const data = await res.json();
         setTasks(data);

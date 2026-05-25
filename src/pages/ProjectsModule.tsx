@@ -18,7 +18,7 @@ import {
   Gavel, Scale, HeartPulse, ShieldCheck, 
   Hammer, Landmark, Banknote, ShoppingCart, 
   Home, Stethoscope, Building2, Image as ImageIcon,
-  Folder, File, Eye, Download, Trash2, Upload, FileText, GripVertical
+  Folder, File, Eye, Download, Trash2, Upload, FileText, GripVertical, Copy, Loader2, Star, Lock, LockOpen
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
@@ -27,6 +27,34 @@ import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSo
 import { CSS } from '@dnd-kit/utilities';
 
 const DragHandleContext = React.createContext<any>(null);
+
+// Smart title case: capitalizes first letter of each word,
+// but keeps single letters and common connectors lowercase (except at start).
+const LOWERCASE_WORDS = new Set(['de', 'da', 'do', 'das', 'dos', 'e', 'em', 'a', 'o', 'ao', 'aos', 'para', 'com', 'por', 'no', 'na', 'nos', 'nas', 'soc', 'indiv', 'ad', 'ltda', 'me', 'eireli']);
+const toTitleCase = (str: string): string => {
+  return str
+    .toLowerCase()
+    .split(/\s+/)
+    .map((word, i) => {
+      if (!word) return '';
+      // Always capitalize the first word
+      if (i === 0) return word.charAt(0).toUpperCase() + word.slice(1);
+      // Single letters stay lowercase
+      if (word.length === 1) return word;
+      // Connectors stay lowercase
+      if (LOWERCASE_WORDS.has(word)) return word;
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    })
+    .join(' ');
+};
+
+// Normalizes legacy payment method values to new labels
+const normalizePaymentMethod = (v?: string): string => {
+  if (!v) return 'Automático';
+  if (v === 'Cartão') return 'Automático';
+  if (v === 'Boleto/pix') return 'Manual';
+  return v;
+};
 
 const DragHandle = () => {
   const { attributes, listeners } = React.useContext(DragHandleContext);
@@ -93,7 +121,7 @@ interface Product {
   bottleneck: string;
   history: string;
   balance: string;
-  paymentMethod?: 'Cartão' | 'Boleto/pix';
+  paymentMethod?: 'Automático' | 'Manual';
   projectResult?: string;
   optimizations?: Optimization[];
   cpaGoal?: string;
@@ -155,7 +183,7 @@ const initialProjects: Project[] = [
         bottleneck: 'Nenhum',
         history: '3 alterações',
         balance: 'Limite Disponível',
-        paymentMethod: 'Cartão',
+        paymentMethod: 'Automático',
         projectResult: 'RESULTADO BOM',
         cpaGoal: 'R$ 50,00',
         leadsGoal: '15',
@@ -206,7 +234,7 @@ const initialProjects: Project[] = [
         bottleneck: 'Criativos saturados',
         history: '12 alterações',
         balance: 'R$ 450',
-        paymentMethod: 'Boleto/pix',
+        paymentMethod: 'Manual',
         projectResult: 'RESULTADO RUIM'
       }
     ]
@@ -249,7 +277,7 @@ const initialProjects: Project[] = [
         bottleneck: 'Nenhum',
         history: '5 alterações',
         balance: 'R$ 3.400',
-        paymentMethod: 'Boleto/pix'
+        paymentMethod: 'Manual'
       }
     ]
   },
@@ -284,8 +312,21 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
   const [groupModalProjectId, setGroupModalProjectId] = useState<string | null>(null);
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const [activeProductTab, setActiveProductTab] = useState<'resultado' | 'kpis'>('resultado');
-  const [activeProjectTab, setActiveProjectTab] = useState<'resultado' | 'reunioes' | 'arquivos' | 'comentarios' | 'analise'>('resultado');
+  const [activeProjectTab, setActiveProjectTab] = useState<'resultado' | 'reunioes' | 'arquivos' | 'comentarios' | 'analise' | 'nps'>('resultado');
+  const [npsResponses, setNpsResponses] = useState<any[]>([]);
+  const [isNpsLoading, setIsNpsLoading] = useState(false);
   const [timelineFilter, setTimelineFilter] = useState('Todos');
+
+  useEffect(() => {
+    if (selectedProject && activeProjectTab === 'nps') {
+      setIsNpsLoading(true);
+      fetch(`/api/nps/${selectedProject.id}`)
+        .then(res => res.json())
+        .then(data => setNpsResponses(Array.isArray(data) ? data : []))
+        .catch(console.error)
+        .finally(() => setIsNpsLoading(false));
+    }
+  }, [selectedProject, activeProjectTab]);
   const [isEditing, setIsEditing] = useState(false);
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
   const [activeProductsFilter, setActiveProductsFilter] = useState<'ativos' | 'inativos'>('ativos');
@@ -391,6 +432,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
   const [productToDelete, setProductToDelete] = useState<string | null>(null);
   const [projectSortColumn, setProjectSortColumn] = useState<'partner' | 'projectResult' | 'status' | 'investment' | null>(null);
   const [projectSortDirection, setProjectSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [lockedGroups, setLockedGroups] = useState<Record<string, boolean>>({});
   const [projectResultFilter, setProjectResultFilter] = useState<string | null>(null);
   const [isResultFilterOpen, setIsResultFilterOpen] = useState(false);
   const [isPaymentMethodDropdownOpen, setIsPaymentMethodDropdownOpen] = useState(false);
@@ -419,7 +461,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     fetch('/api/users')
       .then(r => r.json())
       .then((users: any[]) => {
-        setGestores(users.filter(u => u.role === 'gestor-trafego'));
+        setGestores(users.filter(u => u.role === 'gestor-trafego' || u.role === 'gerente-operacional'));
       })
       .catch(console.error);
   }, []);
@@ -787,6 +829,13 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
+    // Find which group the dragged project belongs to and check if it's locked
+    const draggedProject = projects.find(p => p.id === active.id);
+    if (draggedProject) {
+      const groupName = draggedProject.group || 'Sem Grupo';
+      if (lockedGroups[groupName]) return; // Group is locked, block reordering
+    }
+
     setProjectSortColumn(null);
 
     setProjects(prev => {
@@ -843,7 +892,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     aiService: 'Ativado',
     delivery: 'Full Time',
     balance: 'Limite Disponível',
-    paymentMethod: 'Cartão',
+    paymentMethod: 'Automático',
     kpis: 'CTR 0% | CPC R$ 0',
     bottleneck: 'Nenhum',
     projectResult: '-',
@@ -1141,7 +1190,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       aiService: newProductData.aiService || 'Ativado',
       delivery: newProductData.delivery || 'Full Time',
       balance: newProductData.balance || 'Limite Disponível',
-      paymentMethod: newProductData.paymentMethod || 'Cartão',
+      paymentMethod: newProductData.paymentMethod || 'Automático',
       kpis: newProductData.kpis || 'CTR 0% | CPC R$ 0',
       bottleneck: newProductData.bottleneck || 'Nenhum',
       projectResult: newProductData.projectResult || '-',
@@ -1402,7 +1451,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     };
 
     if (field === 'paymentMethod') {
-      updatedProduct.balance = newValue === 'Cartão' ? 'Limite Disponível' : 'R$ 0';
+      updatedProduct.balance = newValue === 'Automático' ? 'Limite Disponível' : 'R$ 0';
     }
 
     setSelectedProduct(updatedProduct);
@@ -1843,8 +1892,8 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                         { label: 'Plataforma', value: 'platform', icon: Globe, color: 'platformColor', type: 'select', options: platformOptions, editable: true },
                         { label: 'Dias de veiculação', value: 'delivery', icon: Globe, color: 'text-slate-900 dark:text-white', type: 'select', options: ['Full Time', 'Seg a Sex', 'Somente Horário Comercial', 'Seg a Sex + Domingo', 'Seg a Sab', 'Seg a Sex - Ter'], editable: true },
                         { label: 'IA de Atendimento', value: 'aiService', icon: MessageSquare, color: 'text-slate-900 dark:text-white', type: 'select', options: aiServiceOptions, editable: true, hasKeyword: true },
-                        { label: 'Forma de Pagamento', value: 'paymentMethod', icon: CreditCard, color: 'text-slate-900 dark:text-white', type: 'select', options: ['Cartão', 'Boleto/pix'], editable: true },
-                        ...((tempProduct?.paymentMethod ?? selectedProduct?.paymentMethod) === 'Boleto/pix' ? [
+                        { label: 'Forma de Pagamento', value: 'paymentMethod', icon: CreditCard, color: 'text-slate-900 dark:text-white', type: 'select', options: ['Automático', 'Manual'], editable: true },
+                        ...((tempProduct?.paymentMethod ?? selectedProduct?.paymentMethod) === 'Manual' ? [
                           { label: 'Saldo Atual', value: 'balance', icon: DollarSign, color: 'text-emerald-500', type: 'text', editable: true }
                         ] : [])
                       ].map((metric: any) => (
@@ -2020,7 +2069,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                           }
                         }}
                         placeholder="Descreva a otimização realizada... (digite / para opções)"
-                        className="w-full bg-transparent border-none outline-none text-sm text-light-text dark:text-white placeholder:text-slate-500 resize-none h-24"
+                        className="w-full bg-transparent border-none outline-none text-sm text-slate-800 dark:text-white placeholder:text-slate-500 resize-none h-24"
                       />
                       {slashMenuOpen && (
                         <div className="absolute top-full left-0 mt-2 w-48 bg-white dark:bg-dark-card rounded-xl shadow-lg border border-slate-200 dark:border-white/10 z-50">
@@ -2427,19 +2476,19 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Forma de Pagamento</label>
                     <select
-                      value={newProductData.paymentMethod || 'Cartão'}
+                      value={newProductData.paymentMethod || 'Automático'}
                       onChange={(e) => {
-                        const method = e.target.value as 'Cartão' | 'Boleto/pix';
+                        const method = e.target.value as 'Automático' | 'Manual';
                         setNewProductData({ 
                           ...newProductData, 
                           paymentMethod: method,
-                          balance: method === 'Cartão' ? 'Limite Disponível' : 'R$ 0'
+                          balance: method === 'Automático' ? 'Limite Disponível' : 'R$ 0'
                         });
                       }}
                       className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:border-violet-500 outline-none transition-all appearance-none"
                     >
-                      <option value="Cartão" className="bg-light-sidebar dark:bg-dark-input">Cartão (Automático)</option>
-                      <option value="Boleto/pix" className="bg-light-sidebar dark:bg-dark-input">Boleto/pix (Manual)</option>
+                      <option value="Automático" className="bg-light-sidebar dark:bg-dark-input">Automático</option>
+                      <option value="Manual" className="bg-light-sidebar dark:bg-dark-input">Manual</option>
                     </select>
                   </div>
 
@@ -2456,7 +2505,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     </select>
                   </div>
 
-                  {newProductData.paymentMethod === 'Boleto/pix' && (
+                  {newProductData.paymentMethod === 'Manual' && (
                     <div>
                       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Saldo Inicial</label>
                       <input 
@@ -2656,11 +2705,11 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                           partner: selectedClient ? selectedClient.name : ''
                         });
                       }}
-                      className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-slate-900 dark:text-white outline-none focus:border-violet-500 transition-all appearance-none"
+                      className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-slate-900 dark:text-white outline-none focus:border-violet-500 transition-all appearance-none"
                     >
-                      <option value="">Selecione um cliente...</option>
+                      <option value="" className="bg-white dark:bg-dark-input text-slate-900 dark:text-white">Selecione um cliente...</option>
                       {clients.filter(c => c.status !== 'Inativo' && c.status !== 'churn').map(client => (
-                        <option key={client.id} value={client.id}>{client.name}</option>
+                        <option key={client.id} value={client.id} className="bg-white dark:bg-dark-input text-slate-900 dark:text-white">{client.name}</option>
                       ))}
                     </select>
                     <p className="mt-2 text-[10px] text-slate-500 italic">* Vincule este parceiro a um registro da página de Clientes Ativos.</p>
@@ -2672,11 +2721,11 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                       <select 
                         value={newPartnerData.status}
                         onChange={(e) => setNewPartnerData({ ...newPartnerData, status: e.target.value as any })}
-                        className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-slate-900 dark:text-white outline-none focus:border-violet-500 transition-all appearance-none"
+                        className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-slate-900 dark:text-white outline-none focus:border-violet-500 transition-all appearance-none"
                       >
-                        <option value="Rodando">Rodando</option>
-                        <option value="Gargalo">Gargalo</option>
-                        <option value="Pausado">Pausado</option>
+                        <option value="Rodando" className="bg-white dark:bg-dark-input text-slate-900 dark:text-white">Rodando</option>
+                        <option value="Gargalo" className="bg-white dark:bg-dark-input text-slate-900 dark:text-white">Gargalo</option>
+                        <option value="Pausado" className="bg-white dark:bg-dark-input text-slate-900 dark:text-white">Pausado</option>
                       </select>
                     </div>
                   </div>
@@ -2919,10 +2968,9 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
         {Object.entries(groupedProjects).map(([groupName, projectsInGroup]) => (
           <div key={groupName} className="bg-white dark:bg-dark-card/60 backdrop-blur-md rounded-3xl border border-slate-200 dark:border-white/5 overflow-hidden shadow-xl transition-colors duration-300">
             <div 
-              className="px-6 py-4 bg-transparent cursor-pointer flex items-center justify-between relative z-10"
-              onClick={() => toggleGroup(groupName)}
+              className="px-6 py-4 bg-transparent flex items-center justify-between relative z-10"
             >
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 cursor-pointer flex-1" onClick={() => toggleGroup(groupName)}>
                 <ChevronDown size={16} className={`text-slate-400 transition-transform ${expandedGroups[groupName] ? '' : '-rotate-90'}`} />
                 <div className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider ${
                   groupName === 'Grupo 1' ? 'bg-blue-500/10 text-blue-500' :
@@ -2934,6 +2982,17 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                   {groupName} ({projectsInGroup.length})
                 </div>
               </div>
+              <button
+                onClick={(e) => { e.stopPropagation(); setLockedGroups(prev => ({ ...prev, [groupName]: !prev[groupName] })); }}
+                title={lockedGroups[groupName] ? 'Desbloquear classificação' : 'Bloquear classificação'}
+                className={`p-2 rounded-xl transition-all ${
+                  lockedGroups[groupName]
+                    ? 'bg-amber-500/15 text-amber-500 border border-amber-500/30'
+                    : 'text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5'
+                }`}
+              >
+                {lockedGroups[groupName] ? <Lock size={14} /> : <LockOpen size={14} />}
+              </button>
             </div>
             
             {expandedGroups[groupName] && (
@@ -2948,6 +3007,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                         { key: null, label: '' },
                         { key: 'projectResult' as const, label: 'Resultado' },
                         { key: 'status' as const, label: 'Status' },
+                        { key: null, label: 'Forma de Pag.' },
                         { key: 'investment' as const, label: 'Investimento Mensal' },
                       ].map((col, idx) => (
                         <th
@@ -3029,7 +3089,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                       const sortedProjects = [...projectsInGroup]
                         .filter(p => !projectResultFilter || (p.projectResult || '-') === projectResultFilter)
                         .sort((a, b) => {
-                          if (!projectSortColumn) return (a.sortOrder || 0) - (b.sortOrder || 0);
+                          if (lockedGroups[groupName] || !projectSortColumn) return (a.sortOrder || 0) - (b.sortOrder || 0);
                           const dir = projectSortDirection === 'asc' ? 1 : -1;
                           switch (projectSortColumn) {
                             case 'partner':
@@ -3091,7 +3151,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                           );
                         })()}
                         <div>
-                          <p className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-violet-400 transition-colors">{project.partner}</p>
+                          <p className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-violet-400 transition-colors">{toTitleCase(project.partner || '')}</p>
                         </div>
                       </div>
                     </td>
@@ -3105,6 +3165,27 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     <td className="px-6 py-5" onClick={() => handleRowClick(project)}>
                       <div className="cursor-pointer">
                         {getStatusBadge(project.status)}
+                      </div>
+                    </td>
+                    <td className="px-6 py-5" onClick={() => handleRowClick(project)}>
+                      <div className="cursor-pointer flex flex-col gap-1">
+                        {(project.products && project.products.length > 0) ? (
+                          [...new Set(project.products.map((prod: any) => normalizePaymentMethod(prod.paymentMethod)))].map((pm: string) => (
+                            <span
+                              key={pm}
+                              className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border w-fit ${
+                                pm === 'Manual'
+                                  ? 'bg-orange-500/10 text-orange-500 border-orange-500/20'
+                                  : 'bg-blue-500/10 text-blue-500 border-blue-500/20'
+                              }`}
+                            >
+                              <CreditCard size={9} />
+                              {pm}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
                       </div>
                     </td>
                     <td className="px-6 py-5" onClick={() => handleRowClick(project)}>
@@ -3296,8 +3377,8 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                       </div>
                                       <div className="p-2 rounded-xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm transition-all hover:border-violet-500/20">
                                         <p className="text-[8px] font-bold text-slate-700 dark:text-white uppercase tracking-wider mb-0.5 min-h-[24px]">Forma de Pagamento</p>
-                                        <p className={`text-xs font-bold ${prod.paymentMethod === 'Boleto/pix' ? 'text-orange-500' : 'text-blue-500'}`}>
-                                          {prod.paymentMethod === 'Boleto/pix' ? (prod.balance || 'R$ 0') : 'Cartão'}
+                                        <p className={`text-xs font-bold ${normalizePaymentMethod(prod.paymentMethod) === 'Manual' ? 'text-orange-500' : 'text-blue-500'}`}>
+                                          {normalizePaymentMethod(prod.paymentMethod) === 'Manual' ? (prod.balance || 'R$ 0') : 'Automático'}
                                         </p>
                                       </div>
                                       <div className="p-2 rounded-xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm transition-all hover:border-violet-500/20">
@@ -3352,11 +3433,11 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
             setIsProjectModalOpen(false);
             setIsEditing(false);
           }}
-          title={selectedProject.partner || 'Detalhes do Projeto'}
+          title={toTitleCase(selectedProject.partner || 'Detalhes do Projeto')}
           headerContent={
             <div className="flex items-center gap-3 ml-4 border-l border-slate-200 dark:border-white/10 pl-4">
               <div className="w-7 h-7 rounded-lg bg-violet-600 flex items-center justify-center text-xs font-bold text-white shadow-sm">
-                {(selectedProject.partner || 'P').charAt(0)}
+                {(selectedProject.partner || 'P').charAt(0).toUpperCase()}
               </div>
               {selectedProject.product && (
                 <span className="text-[10px] text-slate-500 font-bold px-2 py-1 bg-slate-100 dark:bg-white/5 rounded-md border border-slate-200 dark:border-white/10">{selectedProject.product}</span>
@@ -3369,7 +3450,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
         <div className="flex flex-col min-h-[750px]">
           {/* Tabs */}
           <div className="flex items-center gap-6 mb-6 border-b modal-divider shrink-0">
-            {(['resultado', 'reunioes', 'comentarios', 'analise', 'arquivos'] as const).map((tab) => (
+            {(['resultado', 'reunioes', 'comentarios', 'analise', 'arquivos', 'nps'] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveProjectTab(tab as any)}
@@ -3379,7 +3460,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     : 'text-slate-500 hover:text-gray-900 dark:hover:text-white'
                 }`}
               >
-                {tab === 'resultado' ? 'Resultado do projeto' : tab === 'reunioes' ? 'Reuniões' : tab === 'arquivos' ? 'Arquivos do projeto' : tab === 'comentarios' ? 'Comentários' : 'Análise de Leads'}
+                {tab === 'resultado' ? 'Resultado do projeto' : tab === 'reunioes' ? 'Reuniões' : tab === 'arquivos' ? 'Arquivos do projeto' : tab === 'comentarios' ? 'Comentários' : tab === 'nps' ? 'NPS' : 'Análise de Leads'}
               </button>
             ))}
           </div>
@@ -3850,6 +3931,116 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                           ))}
                         </tbody>
                       </table>
+                    </div>
+                  </div>
+                )}
+
+                {activeProjectTab === 'nps' && (
+                  <div className="flex flex-col py-8 px-4">
+                    <div className="flex flex-col items-center justify-center pb-12 gap-4 border-b border-slate-200 dark:border-white/5 mb-8">
+                      <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-2">Pesquisa de qualidade</h3>
+                      <p className="text-sm text-slate-500 mb-6 text-center max-w-md">Copie o link abaixo e envie para o cliente avaliar o projeto e a parceria.</p>
+                      <div className="flex items-center gap-2">
+                        <input 
+                          type="text" 
+                          readOnly 
+                          value={`${window.location.origin}/nps/${selectedProject.id}`} 
+                          className="px-4 py-3 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-sm w-96 text-slate-500 outline-none" 
+                        />
+                        <button 
+                          onClick={() => {
+                            navigator.clipboard.writeText(`${window.location.origin}/nps/${selectedProject.id}`);
+                            alert('Link copiado para a área de transferência!');
+                          }} 
+                          className="px-6 py-3 bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-bold transition-all flex items-center gap-2 shrink-0"
+                        >
+                          <Copy size={16} /> Copiar Link
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="w-full">
+                      <h4 className="text-lg font-bold text-slate-800 dark:text-white mb-6">Resultados ({npsResponses.length})</h4>
+                      
+                      {isNpsLoading ? (
+                        <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 text-violet-500 animate-spin" /></div>
+                      ) : npsResponses.length === 0 ? (
+                        <div className="text-center py-10 text-slate-500 bg-slate-100 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">Nenhuma avaliação recebida ainda.</div>
+                      ) : (
+                        <div className="space-y-6">
+                          {npsResponses.map((res, i) => (
+                            <div key={i} className="bg-slate-50 dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl p-6">
+                              <div className="flex justify-between items-start mb-8 pb-4 border-b border-slate-200 dark:border-white/5">
+                                <div>
+                                  <h5 className="font-bold text-slate-800 dark:text-white text-xl">{res.office}</h5>
+                                  <p className="text-sm text-slate-500 mt-1">{new Date(res.created_at).toLocaleString('pt-BR')}</p>
+                                </div>
+                                <div className="flex flex-col items-end">
+                                  <span className="text-sm text-slate-500 dark:text-slate-400 mb-2">Em uma escala de 0 a 5, o quão satisfeito está com a Grape Mídia?</span>
+                                  <div className="flex gap-1">
+                                    {[1, 2, 3, 4, 5].map(star => (
+                                      <Star key={star} size={20} className={res.grape_satisfaction >= star ? 'text-violet-500 fill-violet-500' : 'text-slate-300 dark:text-slate-700'} />
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                              
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                                <div className="bg-white dark:bg-white/5 rounded-2xl p-5 border border-slate-200 dark:border-white/5 relative overflow-hidden hover:border-slate-300 dark:hover:border-white/10 transition-colors">
+                                  <div className="absolute top-0 left-0 w-1 h-full bg-blue-500/50"></div>
+                                  <p className="text-sm text-slate-500 mb-3 pr-8">Qual nota que você daria ao tempo de resposta e ao atendimento prestado pela Grape?</p>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-3xl font-black text-slate-800 dark:text-white">{res.response_time_score}</span>
+                                    <span className="text-sm text-slate-400">/ 5</span>
+                                  </div>
+                                </div>
+
+                                <div className="bg-white dark:bg-white/5 rounded-2xl p-5 border border-slate-200 dark:border-white/5 relative overflow-hidden hover:border-slate-300 dark:hover:border-white/10 transition-colors">
+                                  <div className="absolute top-0 left-0 w-1 h-full bg-violet-500/50"></div>
+                                  <p className="text-sm text-slate-500 mb-3 pr-8">Em uma escala de 0 a 5, qual nota você daria para o resultado do projeto?</p>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-3xl font-black text-slate-800 dark:text-white">{res.project_result_score}</span>
+                                    <span className="text-sm text-slate-400">/ 5</span>
+                                  </div>
+                                </div>
+
+                                <div className="bg-white dark:bg-white/5 rounded-2xl p-5 border border-slate-200 dark:border-white/5 relative overflow-hidden hover:border-slate-300 dark:hover:border-white/10 transition-colors">
+                                  <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500/50"></div>
+                                  <p className="text-sm text-slate-500 mb-3 pr-8">Qual nota que você daria, com relação a sua satisfação, ao Tráfego Pago do nosso projeto?</p>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-3xl font-black text-slate-800 dark:text-white">{res.paid_traffic_score}</span>
+                                    <span className="text-sm text-slate-400">/ 5</span>
+                                  </div>
+                                </div>
+
+                                <div className="bg-white dark:bg-white/5 rounded-2xl p-5 border border-slate-200 dark:border-white/5 relative overflow-hidden hover:border-slate-300 dark:hover:border-white/10 transition-colors">
+                                  <div className="absolute top-0 left-0 w-1 h-full bg-amber-500/50"></div>
+                                  <p className="text-sm text-slate-500 mb-3 pr-8">Com qual nota você qualifica o nosso Gerente de Operações?</p>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-3xl font-black text-slate-800 dark:text-white">{res.operations_manager_score}</span>
+                                    <span className="text-sm text-slate-400">/ 5</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="space-y-6">
+                                {res.improvements && (
+                                  <div className="bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-2xl p-6">
+                                    <span className="text-xs font-semibold text-violet-600 dark:text-violet-400 uppercase tracking-wider block mb-3">Houve algum ponto que deixamos a desejar no nosso projeto e que gostaria que melhorássemos daqui em diante?</span>
+                                    <p className="text-base text-slate-700 dark:text-slate-300 leading-relaxed">{res.improvements}</p>
+                                  </div>
+                                )}
+                                {res.other_services && (
+                                  <div className="bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-2xl p-6">
+                                    <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider block mb-3">No momento atual do escritório, há algum outro serviço que gostaria que fosse realizado pela Grape?</span>
+                                    <p className="text-base text-slate-700 dark:text-slate-300 leading-relaxed">{res.other_services}</p>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

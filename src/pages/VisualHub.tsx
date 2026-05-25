@@ -114,9 +114,14 @@ const formatDate = (iso: string | null) => {
 const SQUAD_OPTIONS = ['Squad Able', 'Squad Baker'];
 
 const STATUS_GROUPS: Omit<StatusGroup, 'tasks'>[] = [
-  { id: 'reuniao-coleta-acessos', label: 'REUNIÃO - COLETA DE ACESSOS', color: '#3b82f6', emoji: '🗓️' },
-  { id: 'treinamento-comercial',  label: 'TREINAMENTO COMERCIAL',       color: '#8b5cf6', emoji: '🧠💰' },
-  { id: 'briefing-realizado',     label: 'REUNIÃO - BRIEFING',          color: '#10b981', emoji: '🗓️' },
+  { id: 'revisao-iii',        label: 'REVISÃO III',         color: '#7c3aed', emoji: '🔵' },
+  { id: 'alteracao-ii',       label: 'ALTERAÇÃO II',        color: '#6d28d9', emoji: '🔵' },
+  { id: 'revisao-ii',         label: 'REVISÃO II',          color: '#7c3aed', emoji: '🔵' },
+  { id: 'alteracao-i',        label: 'ALTERAÇÃO I',         color: '#6d28d9', emoji: '🔵' },
+  { id: 'revisao-i',          label: 'REVISÃO I',           color: '#7c3aed', emoji: '🔵' },
+  { id: 'em-desenvolvimento', label: 'EM DESENVOLVIMENTO',  color: '#ea580c', emoji: '🟠' },
+  { id: 'a-desenvolver',      label: 'A DESENVOLVER',       color: '#52525b', emoji: '⬜' },
+  { id: 'aguardando-copy',    label: 'AGUARDANDO COPY',     color: '#3f3f46', emoji: '⏳' },
 ];
 
 // ── Tag Badge ─────────────────────────────────────────────
@@ -306,6 +311,188 @@ const fetchUsersOnce = () => {
 };
 
 // ── Task Row ──────────────────────────────────────────────
+// ── Inline file cell + fullscreen preview ──────────────────────
+const TaskFilesCell = ({ taskId }: { taskId: number }) => {
+  const [files, setFiles] = React.useState<TaskFile[]>([]);
+  const [previewFile, setPreviewFile] = React.useState<TaskFile | null>(null);
+  const [isDragOver, setIsDragOver] = React.useState(false);
+  const [uploading, setUploading] = React.useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    fetch(`/api/visual-hub-files?task_id=${taskId}`)
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setFiles(data))
+      .catch(() => {});
+  }, [taskId]);
+
+  const uploadFile = (file: File) => {
+    setUploading(true);
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const base64 = reader.result as string;
+      const isImg = file.type.startsWith('image/');
+      const isPdf = file.type === 'application/pdf';
+      const type: TaskFile['type'] = isImg ? 'image' : isPdf ? 'doc' : 'link';
+      try {
+        const res = await fetch('/api/visual-hub-files', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ task_id: taskId, name: file.name, url: base64, type }),
+        });
+        if (res.ok) { const f = await res.json(); setFiles(prev => [...prev, f]); }
+      } catch { /**/ } finally { setUploading(false); }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const isImg = (f: TaskFile) => f.type === 'image' || f.url?.startsWith('data:image');
+  const isPdf = (f: TaskFile) => f.type === 'doc' || f.url?.startsWith('data:application/pdf');
+
+  const deleteFile = async (id: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    await fetch(`/api/visual-hub-files/${id}`, { method: 'DELETE' });
+    setFiles(prev => prev.filter(f => f.id !== id));
+  };
+
+  return (
+    <>
+      <div
+        className={`shrink-0 w-24 flex items-center gap-1 relative group/fc transition-all ${
+          isDragOver ? 'bg-violet-500/10 rounded-lg' : ''
+        }`}
+        onDragOver={e => { e.preventDefault(); setIsDragOver(true); }}
+        onDragLeave={() => setIsDragOver(false)}
+        onDrop={e => {
+          e.preventDefault(); setIsDragOver(false);
+          Array.from(e.dataTransfer.files).forEach(uploadFile);
+        }}
+      >
+        <input
+          ref={fileInputRef}
+          type="file" className="hidden"
+          accept="image/*,.pdf,.doc,.docx,.png,.jpg,.jpeg,.webp"
+          multiple
+          onChange={e => { Array.from(e.target.files || []).forEach(uploadFile); e.target.value = ''; }}
+        />
+
+        {/* Thumbnails */}
+        <div className="flex items-center gap-1 flex-wrap">
+          {files.slice(0, 3).map(f => (
+            <div key={f.id} className="group/thumb relative cursor-pointer" onClick={() => setPreviewFile(f)}>
+              {isImg(f) ? (
+                <div className="w-7 h-7 rounded-lg overflow-hidden border border-white/10 hover:border-violet-500/60 transition-colors bg-black/20">
+                  <img src={f.url} alt={f.name} className="w-full h-full object-cover" />
+                </div>
+              ) : (
+                <div className={`w-7 h-7 rounded-lg border border-white/10 hover:border-violet-500/60 transition-colors flex items-center justify-center ${isPdf(f) ? 'bg-rose-500/15 text-rose-400' : 'bg-violet-500/15 text-violet-400'}`}>
+                  <FileText size={12} />
+                </div>
+              )}
+              <button
+                onClick={e => deleteFile(f.id, e)}
+                className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-rose-500 text-white opacity-0 group-hover/thumb:opacity-100 flex items-center justify-center transition-all"
+              >
+                <X size={7} />
+              </button>
+            </div>
+          ))}
+          {files.length > 3 && (
+            <span className="text-[9px] text-slate-500 font-bold">+{files.length - 3}</span>
+          )}
+        </div>
+
+        {/* Add button — visible on row hover */}
+        <button
+          onClick={e => { e.stopPropagation(); fileInputRef.current?.click(); }}
+          className={`w-5 h-5 rounded-md border border-dashed border-slate-700 hover:border-violet-500/60 text-slate-700 hover:text-violet-400 flex items-center justify-center transition-all shrink-0 ${
+            files.length === 0 ? 'opacity-40 group-hover/fc:opacity-100' : 'opacity-0 group-hover/fc:opacity-100'
+          }`}
+          title="Adicionar arquivo"
+        >
+          {uploading
+            ? <div className="w-2.5 h-2.5 border border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
+            : <Plus size={9} />
+          }
+        </button>
+      </div>
+
+      {/* Fullscreen preview */}
+      {previewFile && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 backdrop-blur-xl" onClick={() => setPreviewFile(null)}>
+          <div
+            className="bg-[#0d0d14] border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+            style={{ width: '92vw', height: '92vh' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/5 shrink-0">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                  isImg(previewFile) ? 'bg-violet-500/15 text-violet-400' : isPdf(previewFile) ? 'bg-rose-500/15 text-rose-400' : 'bg-violet-500/15 text-violet-400'
+                }`}>
+                  <FileText size={14} />
+                </div>
+                <span className="text-sm font-bold text-white truncate">{previewFile.name}</span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {/* Navigate arrows */}
+                {files.length > 1 && (
+                  <>
+                    <button
+                      onClick={e => { e.stopPropagation(); const idx = files.findIndex(f => f.id === previewFile.id); setPreviewFile(files[(idx - 1 + files.length) % files.length]); }}
+                      className="p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+                    </button>
+                    <span className="text-[10px] text-slate-600">{files.findIndex(f => f.id === previewFile.id) + 1} / {files.length}</span>
+                    <button
+                      onClick={e => { e.stopPropagation(); const idx = files.findIndex(f => f.id === previewFile.id); setPreviewFile(files[(idx + 1) % files.length]); }}
+                      className="p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+                    </button>
+                  </>
+                )}
+                <a
+                  href={previewFile.url} download={previewFile.name}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold rounded-lg transition-colors"
+                  onClick={e => e.stopPropagation()}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  Baixar
+                </a>
+                <button onClick={() => setPreviewFile(null)} className="p-1.5 text-slate-500 hover:text-white hover:bg-white/10 rounded-lg transition-colors">
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+            {/* Content */}
+            <div className="flex-1 overflow-hidden">
+              {isImg(previewFile) ? (
+                <div className="w-full h-full flex items-center justify-center bg-black/40 p-6">
+                  <img src={previewFile.url} alt={previewFile.name} className="max-w-full max-h-full object-contain rounded-xl shadow-2xl" />
+                </div>
+              ) : isPdf(previewFile) ? (
+                <iframe src={previewFile.url} className="w-full h-full border-none" title={previewFile.name} />
+              ) : (
+                <div className="w-full h-full flex flex-col items-center justify-center gap-5 text-slate-500">
+                  <FileText size={80} className="opacity-10" />
+                  <p className="text-base">Visualização não disponível para este tipo de arquivo.</p>
+                  <a href={previewFile.url} download={previewFile.name} className="px-5 py-2.5 bg-violet-600 hover:bg-violet-500 text-white font-bold rounded-xl transition-colors">
+                    Baixar arquivo
+                  </a>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+    </>
+  );
+};
+
 const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: { 
   task: OnboardingTask; 
   onUpdate: () => void; 
@@ -626,6 +813,9 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
           <SingleDatePicker value={task.due_date || undefined} onChange={(v) => handleTaskDate('due_date', v)} align="right" checkOverdue />
         </div>
 
+        {/* Docs column */}
+        <TaskFilesCell taskId={task.id} />
+
         {/* More — dropdown com Arquivar e Excluir */}
         <div className="relative shrink-0" ref={menuRef}>
           <button
@@ -787,7 +977,7 @@ const GroupBlock = ({ group, onUpdate, onAddTask, onOpenDetail, onOpenSubtask }:
 }) => {
   const [expanded, setExpanded] = useState(group.tasks.length > 0);
 
-  // Auto-expand when tasks arrive after mount
+  // Keep expanded in sync when tasks arrive after initial mount
   const prevLenRef = React.useRef(group.tasks.length);
   React.useEffect(() => {
     if (prevLenRef.current === 0 && group.tasks.length > 0) {
@@ -838,10 +1028,11 @@ const GroupBlock = ({ group, onUpdate, onAddTask, onOpenDetail, onOpenSubtask }:
         </button>
       </div>
 
+
       {/* Column headers */}
       {expanded && (
         <>
-          <div className="flex items-center gap-2 px-8 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-white/5">
+          <div className="flex items-center gap-2 px-8 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-black/[0.07] dark:border-white/5">
             <div className="w-[14px] shrink-0" />
             <div className="w-4 shrink-0" />
             <div className="flex-1">Nome</div>
@@ -849,6 +1040,7 @@ const GroupBlock = ({ group, onUpdate, onAddTask, onOpenDetail, onOpenSubtask }:
             <div className="shrink-0 w-20 text-center">Resp.</div>
             <div className="shrink-0 w-24">Data Inicial</div>
             <div className="shrink-0 w-28">Vencimento</div>
+            <div className="shrink-0 w-24">Docs</div>
             <div className="shrink-0 w-[22px]" />
           </div>
 
@@ -890,7 +1082,7 @@ const AddTaskModal = ({ groupId, onClose, onSaved }: { groupId: string; onClose:
       await fetch('/api/onboarding-tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ client_name: clientName, squad, start_date: startDate || null, due_date: dueDate || null, status_group: groupId }),
+        body: JSON.stringify({ client_name: clientName, squad, start_date: startDate || null, due_date: dueDate || null, status_group: groupId, type: 'visual-hub' }),
       });
       onSaved();
       onClose();
@@ -900,7 +1092,7 @@ const AddTaskModal = ({ groupId, onClose, onSaved }: { groupId: string; onClose:
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
-        <h3 className="text-sm font-bold text-dark-text mb-4">Adicionar Cliente ao Onboarding</h3>
+        <h3 className="text-sm font-bold text-dark-text mb-4">Adicionar Cliente ao VisualHub</h3>
         <div className="space-y-3">
           <input
             value={clientName} onChange={e => setClientName(e.target.value)}
@@ -946,7 +1138,7 @@ const TemplateModal = ({ onClose }: { onClose: () => void }) => {
   const [newTitle, setNewTitle] = useState('');
 
   useEffect(() => {
-    fetch('/api/onboarding-template')
+    fetch('/api/onboarding-template?type=visual-hub')
       .then(r => r.ok ? r.json() : [])
       .then(data => { setItems(data); setLoading(false); })
       .catch(() => setLoading(false));
@@ -978,7 +1170,7 @@ const TemplateModal = ({ onClose }: { onClose: () => void }) => {
       await fetch('/api/onboarding-template', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: items.map(i => ({ title: i.title, description: i.description || null, internal_doc: i.internal_doc || null })) }),
+        body: JSON.stringify({ items: items.map(i => ({ title: i.title, description: i.description || null, internal_doc: i.internal_doc || null })), type: 'visual-hub' }),
       });
       onClose();
     } catch { /* silent */ } finally { setSaving(false); }
@@ -1145,23 +1337,19 @@ const TemplateModal = ({ onClose }: { onClose: () => void }) => {
     </div>
   );
 };// ── Task Detail Modal ─────────────────────────────────────
+
+interface TaskFile {
+  id: number;
+  name: string;
+  url: string;
+  type: 'link' | 'image' | 'doc';
+  created_at: string;
+}
+
 const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; onClose: () => void; onUpdate: () => void }) => {
-  const [form, setForm] = useState({
-    nome_completo: task.nome_completo || '',
-    nome_fantasia: task.nome_fantasia || '',
-    telefone_whatsapp: task.telefone_whatsapp || '',
-    cnpj_cpf: task.cnpj_cpf || '',
-    cep: task.cep || '',
-    cidade: task.cidade || '',
-    uf: task.uf || '',
-  });
-  const [meetingInfo, setMeetingInfo] = useState(task.meeting_info || '');
-  const [meetingInfoSaving, setMeetingInfoSaving] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [loadingComments, setLoadingComments] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [formDirty, setFormDirty] = useState(false);
 
   useEffect(() => {
     fetch(`/api/onboarding-tasks/${task.id}/comments`)
@@ -1169,36 +1357,6 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
       .then(data => { setComments(data); setLoadingComments(false); })
       .catch(() => setLoadingComments(false));
   }, [task.id]);
-
-  const updateField = (key: string, value: string) => {
-    setForm(f => ({ ...f, [key]: value }));
-    setFormDirty(true);
-  };
-
-  const saveForm = async () => {
-    setSaving(true);
-    try {
-      await fetch(`/api/onboarding-tasks/${task.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      });
-      setFormDirty(false);
-      onUpdate();
-    } catch { /* silent */ } finally { setSaving(false); }
-  };
-
-  const saveMeetingInfo = async () => {
-    setMeetingInfoSaving(true);
-    try {
-      await fetch(`/api/onboarding-tasks/${task.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ meeting_info: meetingInfo }),
-      });
-      onUpdate();
-    } catch { /* silent */ } finally { setMeetingInfoSaving(false); }
-  };
 
   const addComment = async () => {
     if (!newComment.trim()) return;
@@ -1216,26 +1374,17 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
     } catch { /* silent */ }
   };
 
-  const FIELDS = [
-    { key: 'nome_completo', label: 'Nome Completo' },
-    { key: 'nome_fantasia', label: 'Nome Fantasia' },
-    { key: 'telefone_whatsapp', label: 'Telefone (WhatsApp)' },
-    { key: 'cnpj_cpf', label: 'CNPJ / CPF' },
-    { key: 'cep', label: 'CEP' },
-    { key: 'cidade', label: 'Cidade' },
-    { key: 'uf', label: 'UF' },
-  ];
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+      <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-black/5 dark:border-white/5">
           <div>
             <h2 className="text-base font-bold text-dark-text">{task.client_name}</h2>
-            <p className="text-[10px] text-slate-500 mt-0.5 uppercase tracking-widest">Detalhes do cliente</p>
+            <p className="text-[10px] text-slate-500 mt-0.5 uppercase tracking-widest">Comentários</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <button
               onClick={() => {
                 fetch(`/api/onboarding-tasks/${task.id}/archive`, { method: 'POST' })
@@ -1243,8 +1392,8 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
               }}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 text-xs font-bold rounded-lg transition-colors border border-emerald-500/20"
             >
-              <Check size={14} />
-              Concluir Onboarding
+              <Check size={13} />
+              Concluir
             </button>
             <button onClick={onClose} className="p-1.5 text-slate-500 hover:text-dark-text hover:bg-black/10 dark:hover:bg-white/10 rounded-lg transition-colors">
               <X size={16} />
@@ -1252,179 +1401,69 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
           </div>
         </div>
 
-        {/* Content - Two Columns */}
-        <div className="flex flex-1 overflow-hidden">
-          
-          {/* Left Column: Informações da Reunião */}
-          <div className="w-[60%] flex flex-col border-r border-black/5 dark:border-white/5 overflow-y-auto bg-black/[0.01] dark:bg-white/[0.01] p-6 relative">
-            <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 mb-6">
-              <FileText size={14} className="text-violet-500" />
-              Informações da Reunião
-            </h3>
-            
-            {(() => {
-              let parsed: any = null;
-              if (meetingInfo) {
-                try { parsed = JSON.parse(meetingInfo); } catch (e) { parsed = null; }
-              }
-              
-              if (!parsed) {
-                return (
-                  <div className="flex flex-col items-center justify-center py-16 text-slate-400">
-                    <FileText size={36} className="mb-3 opacity-30" />
-                    <p className="text-sm font-medium text-slate-500">Nenhuma reunião vinculada</p>
-                    <p className="text-xs mt-1 text-slate-600">As reuniões do CRM Comercial aparecerão aqui.</p>
+        {/* Comments feed */}
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+          {loadingComments ? (
+            <div className="flex justify-center py-12">
+              <div className="w-6 h-6 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
+            </div>
+          ) : comments.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-slate-600">
+              <CheckSquare size={36} className="mb-3 opacity-20" />
+              <p className="text-sm font-medium">Nenhum comentário ainda.</p>
+              <p className="text-xs mt-1 opacity-60">Seja o primeiro a comentar!</p>
+            </div>
+          ) : (
+            [...comments].reverse().map(c => (
+              <div key={c.id} className="flex gap-3">
+                <div className="w-7 h-7 rounded-full bg-violet-500/20 flex items-center justify-center text-violet-400 font-bold text-xs shrink-0 mt-0.5 uppercase">
+                  {(c.author_name || 'U').charAt(0)}
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-baseline gap-2 mb-1">
+                    <span className="text-xs font-bold text-dark-text">{c.author_name || 'Usuário'}</span>
+                    <span className="text-[10px] text-slate-500">
+                      {new Date(c.created_at).toLocaleString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                    </span>
                   </div>
-                );
-              }
-
-              let dateObj = new Date(parsed.date);
-              if (isNaN(dateObj.getTime())) {
-                dateObj = new Date();
-              }
-              const mMonth = dateObj.toLocaleString('pt-BR', { month: 'short' }).toUpperCase();
-              const mDay = String(dateObj.getDate()).padStart(2, '0');
-              const notesLines = String(parsed.notes || '').split('\n').filter((l:string) => l.trim().length > 0);
-
-              return (
-                <div className="flex items-start w-full relative">
-                  <div className="w-full max-w-2xl mx-auto">
-                    <div className="p-6 rounded-2xl border border-black/5 dark:border-white/10 bg-dark-bg shadow-sm">
-                      
-                      <div className="flex items-start gap-4 mb-6">
-                        <div className="w-[60px] h-[60px] rounded-xl flex flex-col items-center justify-center bg-violet-500/10 text-violet-400 shrink-0 shadow-inner mt-0.5">
-                          <span className="text-[10px] font-black tracking-widest">{mMonth}.</span>
-                          <span className="text-xl font-bold leading-none mt-0.5">{mDay}</span>
-                        </div>
-                        
-                        <div className="flex-1 min-w-0 pr-1">
-                          <div className="flex items-start justify-between gap-2">
-                            <h4 className="font-bold text-dark-text text-[15px] leading-tight break-words pr-2">{parsed.title || 'Reunião'}</h4>
-                            <span className="text-[10px] font-medium text-slate-500 shrink-0 mt-0.5">{dateObj.toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric'})} às {dateObj.toLocaleString('pt-BR', { hour:'2-digit', minute:'2-digit'})}</span>
-                          </div>
-                          <div className="flex items-center gap-1.5 mt-2.5 text-[11px] text-slate-400 font-medium">
-                            <Users size={13} className="opacity-70" />
-                            <span className="truncate max-w-[200px]">{parsed.responsible || 'Sistema'}</span>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="mt-5 pt-5 border-t border-black/5 dark:border-white/5 space-y-4">
-                        <h5 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Detalhes:</h5>
-                        <div className="grid grid-cols-2 gap-y-4 gap-x-4 text-xs">
-                          <div><span className="text-slate-500 font-medium block text-[9px] uppercase tracking-wider mb-1">Local</span><span className="font-semibold text-dark-text">{parsed.local || '-'}</span></div>
-                          <div><span className="text-slate-500 font-medium block text-[9px] uppercase tracking-wider mb-1">Link</span>{parsed.link && typeof parsed.link === 'string' ? <a href={parsed.link.startsWith('http') ? parsed.link : `https://${parsed.link}`} target="_blank" rel="noreferrer" className="text-violet-500 hover:text-violet-400 font-semibold hover:underline truncate inline-block max-w-[150px]">{parsed.link}</a> : <span className="font-semibold text-dark-text">-</span>}</div>
-                          <div><span className="text-slate-500 font-medium block text-[9px] uppercase tracking-wider mb-1">Nicho</span><span className="font-semibold text-dark-text truncate max-w-[150px] inline-block">{parsed.niche || '-'}</span></div>
-                          <div><span className="text-slate-500 font-medium block text-[9px] uppercase tracking-wider mb-1">Fechamentos Mês</span><span className="font-semibold text-dark-text">{parsed.closings || '-'}</span></div>
-                          <div><span className="text-slate-500 font-medium block text-[9px] uppercase tracking-wider mb-1">Meta</span><span className="font-semibold text-dark-text">{parsed.goal || '-'}</span></div>
-                        </div>
-                      </div>
-                      
-                      {notesLines.length > 0 && (
-                        <div className="mt-6 pt-5 border-t border-black/5 dark:border-white/5">
-                          <h5 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4">Informações da Reunião:</h5>
-                          <ul className="space-y-3">
-                            {notesLines.map((line:string, i:number) => {
-                              const isCheck = line.trim().startsWith('-');
-                              return (
-                                <li key={i} className="flex items-start gap-3 text-[12px] text-slate-300">
-                                  {isCheck ? (
-                                    <Check size={14} className="text-emerald-500 shrink-0 mt-0.5 opacity-80" />
-                                  ) : (
-                                    <span className="w-1.5 h-3 mt-1.5 shrink-0" />
-                                  )}
-                                  <span className="leading-relaxed font-medium">{line.replace(/^- /, '')}</span>
-                                </li>
-                              );
-                            })}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
+                  <div className="bg-dark-bg border border-white/5 rounded-2xl rounded-tl-sm px-4 py-3">
+                    <p className="text-sm text-slate-200 whitespace-pre-wrap leading-relaxed">{c.text}</p>
                   </div>
                 </div>
-              );
-            })()}
-          </div>
+              </div>
+            ))
+          )}
+        </div>
 
-          {/* Right Column: Formulário & Comentários */}
-          <div className="w-[40%] flex flex-col overflow-y-auto">
-            {/* Form section */}
-            <div className="px-6 py-6 border-b border-black/5 dark:border-white/5">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                  <List size={14} className="text-violet-500" />
-                  Formulário de Cadastro
-                </h3>
-              </div>
-              <div className="space-y-3">
-                {FIELDS.map(f => (
-                  <div key={f.key} className="flex flex-col gap-1.5">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider pl-1">{f.label}</label>
-                    <div className="w-full bg-dark-bg/50 border border-black/5 dark:border-white/5 rounded-lg px-3 py-2 text-sm text-dark-text min-h-[38px] flex items-center">
-                      {(form as any)[f.key] || <span className="text-slate-500">—</span>}
-                    </div>
-                  </div>
-                ))}
-              </div>
+        {/* Input bar */}
+        <div className="border-t border-white/5 px-5 py-4 bg-dark-card">
+          <div className="flex gap-3 items-end">
+            <div className="w-7 h-7 rounded-full bg-violet-500/20 flex items-center justify-center text-violet-400 font-bold text-xs shrink-0 uppercase">G</div>
+            <div className="flex-1">
+              <textarea
+                value={newComment}
+                onChange={e => setNewComment(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addComment(); } }}
+                placeholder="Escreva um comentário..."
+                rows={1}
+                className="w-full bg-dark-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500/50 transition-colors resize-none"
+                style={{ minHeight: '40px', maxHeight: '100px' }}
+                onInput={e => { const el = e.currentTarget; el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 100) + 'px'; }}
+              />
             </div>
-
-            {/* Comments section */}
-            <div className="px-6 py-6 flex-1 flex flex-col">
-              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2">
-                <CheckSquare size={14} className="text-violet-500" />
-                Anotações
-              </h3>
-
-              {/* New comment */}
-              <div className="flex gap-2 mb-6">
-                <input
-                  value={newComment}
-                  onChange={e => setNewComment(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') addComment(); }}
-                  placeholder="Escreva uma anotação..."
-                  className="flex-1 bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-4 py-2 text-sm text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500/50 transition-colors"
-                />
-                <button onClick={addComment} disabled={!newComment.trim()}
-                  className="px-4 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-30 text-white text-xs font-bold rounded-xl transition-colors">
-                  Enviar
-                </button>
-              </div>
-
-              {/* Comments list */}
-              <div className="flex-1 overflow-y-auto pr-1 space-y-3">
-                {loadingComments ? (
-                  <div className="flex justify-center py-4">
-                    <Loader2 size={16} className="animate-spin text-slate-600" />
-                  </div>
-                ) : comments.length === 0 ? (
-                  <p className="text-center text-slate-600 text-xs py-8 border border-dashed border-black/10 dark:border-white/10 rounded-xl">Nenhuma anotação ainda.</p>
-                ) : (
-                  comments.map(c => (
-                    <div key={c.id} className="bg-dark-bg border border-black/5 dark:border-white/5 rounded-xl px-4 py-3">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-[10px] font-bold text-violet-400">
-                          {c.author_name || 'Usuário'}
-                        </span>
-                        <span className="text-[10px] text-slate-500">
-                          {new Date(c.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed">{c.text}</p>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
+            <button onClick={addComment} disabled={!newComment.trim()}
+              className="h-9 w-9 rounded-full bg-violet-600 hover:bg-violet-500 disabled:opacity-30 text-white flex items-center justify-center transition-all shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            </button>
           </div>
-
+          <p className="text-[10px] text-slate-600 mt-2 ml-10">Enter para enviar · Shift+Enter para nova linha</p>
         </div>
       </div>
     </div>
   );
 };
-
 const DocEditorModal = ({ file, onSave, onClose }: { file: any; onSave: (id: number, content: string) => Promise<void>; onClose: () => void }) => {
+
   const [content, setContent] = useState(file.content || '');
   const [saving, setSaving] = useState(false);
 
@@ -1855,7 +1894,7 @@ const SubtaskDetailModal = ({ subtask, task, onClose, onUpdate }: { subtask: any
 
 
 // ── Main Component ────────────────────────────────────────
-export default function OnboardingOperacional() {
+export default function VisualHub() {
   const [tasks, setTasks] = useState<OnboardingTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [addingToGroup, setAddingToGroup] = useState<string | null>(null);
@@ -1868,7 +1907,7 @@ export default function OnboardingOperacional() {
   const fetchTasks = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/onboarding-tasks');
+      const res = await fetch('/api/onboarding-tasks?type=visual-hub');
       if (res.ok) {
         const data = await res.json();
         setTasks(data);
@@ -1893,10 +1932,10 @@ export default function OnboardingOperacional() {
       <div className="px-8 pt-8 pb-4 flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-black tracking-tight text-dark-text">
-            Onboarding <span className="text-violet-500">Operacional</span>
+            Visual<span className="text-violet-500">Hub</span>
           </h1>
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">
-            Gestão de onboarding de clientes
+            Gestão de criação de conteúdo
           </p>
         </div>
         <div className="flex items-center gap-3">
