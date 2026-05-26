@@ -3937,108 +3937,140 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
 
                 {activeProjectTab === 'nps' && (
                   <div className="flex flex-col py-8 px-4">
-                    <div className="flex flex-col items-center justify-center pb-12 gap-4 border-b border-slate-200 dark:border-white/5 mb-8">
-                      <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-2">Pesquisa de qualidade</h3>
-                      <p className="text-sm text-slate-500 mb-6 text-center max-w-md">Copie o link abaixo e envie para o cliente avaliar o projeto e a parceria.</p>
-                      <div className="flex items-center gap-2">
-                        <input 
-                          type="text" 
-                          readOnly 
-                          value={`${window.location.origin}/nps/${selectedProject.id}`} 
-                          className="px-4 py-3 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-sm w-96 text-slate-500 outline-none" 
+                    {/* Link Section */}
+                    <div className="flex flex-col items-center justify-center pb-10 gap-3 border-b border-slate-200 dark:border-white/5 mb-10">
+                      <div className="w-12 h-12 rounded-2xl bg-violet-500/10 flex items-center justify-center mb-1">
+                        <Star size={22} className="text-violet-500" />
+                      </div>
+                      <h3 className="text-xl font-bold text-slate-800 dark:text-white">Pesquisa de qualidade</h3>
+                      <p className="text-sm text-slate-500 text-center max-w-sm">Copie o link abaixo e envie para o cliente avaliar o projeto e a parceria.</p>
+                      <div className="flex items-center gap-2 mt-2 w-full max-w-lg">
+                        <input
+                          type="text"
+                          readOnly
+                          value={`${window.location.origin}/nps/${selectedProject.id}`}
+                          className="flex-1 px-4 py-2.5 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-sm text-slate-500 outline-none"
                         />
-                        <button 
+                        <button
                           onClick={() => {
                             navigator.clipboard.writeText(`${window.location.origin}/nps/${selectedProject.id}`);
                             alert('Link copiado para a área de transferência!');
-                          }} 
-                          className="px-6 py-3 bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-bold transition-all flex items-center gap-2 shrink-0"
+                          }}
+                          className="px-5 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-bold transition-all flex items-center gap-2 shrink-0 text-sm"
                         >
-                          <Copy size={16} /> Copiar Link
+                          <Copy size={14} /> Copiar Link
                         </button>
                       </div>
                     </div>
 
+                    {/* Results */}
                     <div className="w-full">
-                      <h4 className="text-lg font-bold text-slate-800 dark:text-white mb-6">Resultados ({npsResponses.length})</h4>
-                      
+                      <div className="flex items-center justify-between mb-6">
+                        <h4 className="text-base font-bold text-slate-800 dark:text-white">
+                          Respostas <span className="ml-2 px-2.5 py-0.5 bg-violet-500/10 text-violet-600 dark:text-violet-400 rounded-full text-sm font-bold">{npsResponses.length}</span>
+                        </h4>
+                      </div>
+
                       {isNpsLoading ? (
-                        <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 text-violet-500 animate-spin" /></div>
+                        <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 text-violet-500 animate-spin" /></div>
                       ) : npsResponses.length === 0 ? (
-                        <div className="text-center py-10 text-slate-500 bg-slate-100 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">Nenhuma avaliação recebida ainda.</div>
+                        <div className="flex flex-col items-center justify-center py-16 text-slate-400 bg-slate-50 dark:bg-white/[0.02] rounded-2xl border border-slate-200 dark:border-white/5">
+                          <Star size={32} className="mb-3 opacity-30" />
+                          <p className="text-sm font-medium">Nenhuma avaliação recebida ainda.</p>
+                        </div>
                       ) : (
-                        <div className="space-y-6">
-                          {npsResponses.map((res, i) => (
-                            <div key={i} className="bg-slate-50 dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl p-6">
-                              <div className="flex justify-between items-start mb-8 pb-4 border-b border-slate-200 dark:border-white/5">
-                                <div>
-                                  <h5 className="font-bold text-slate-800 dark:text-white text-xl">{res.office}</h5>
-                                  <p className="text-sm text-slate-500 mt-1">{new Date(res.created_at).toLocaleString('pt-BR')}</p>
-                                </div>
-                                <div className="flex flex-col items-end">
-                                  <span className="text-sm text-slate-500 dark:text-slate-400 mb-2">Em uma escala de 0 a 5, o quão satisfeito está com a Grape Mídia?</span>
-                                  <div className="flex gap-1">
-                                    {[1, 2, 3, 4, 5].map(star => (
-                                      <Star key={star} size={20} className={res.grape_satisfaction >= star ? 'text-violet-500 fill-violet-500' : 'text-slate-300 dark:text-slate-700'} />
-                                    ))}
+                        <div className="space-y-8">
+                          {npsResponses.map((res, i) => {
+                            const avg = ((res.response_time_score || 0) + (res.project_result_score || 0) + (res.paid_traffic_score || 0) + (res.operations_manager_score || 0)) / 4;
+                            const avgColor = avg >= 4 ? 'text-emerald-500' : avg >= 3 ? 'text-amber-500' : 'text-rose-500';
+                            const avgBg = avg >= 4 ? 'from-emerald-500/10 to-transparent' : avg >= 3 ? 'from-amber-500/10 to-transparent' : 'from-rose-500/10 to-transparent';
+                            const avgBorder = avg >= 4 ? 'border-emerald-500/20' : avg >= 3 ? 'border-amber-500/20' : 'border-rose-500/20';
+                            const pct = (s: number) => Math.round((s / 5) * 100);
+                            const circumference = 2 * Math.PI * 20;
+
+                            const metrics = [
+                              { label: 'Tempo de resposta e atendimento', score: res.response_time_score, color: 'stroke-blue-500', bg: 'bg-blue-500/10 border-blue-500/20', text: 'text-blue-500' },
+                              { label: 'Resultado do projeto', score: res.project_result_score, color: 'stroke-violet-500', bg: 'bg-violet-500/10 border-violet-500/20', text: 'text-violet-500' },
+                              { label: 'Satisfação com o Tráfego Pago', score: res.paid_traffic_score, color: 'stroke-emerald-500', bg: 'bg-emerald-500/10 border-emerald-500/20', text: 'text-emerald-500' },
+                              { label: 'Gerente de Operações', score: res.operations_manager_score, color: 'stroke-amber-500', bg: 'bg-amber-500/10 border-amber-500/20', text: 'text-amber-500' },
+                            ];
+
+                            return (
+                              <div key={i} className={`bg-light-card dark:bg-dark-card border ${avgBorder} rounded-3xl overflow-hidden shadow-sm`}>
+                                {/* Header */}
+                                <div className={`bg-gradient-to-r ${avgBg} px-6 py-5 border-b border-slate-100 dark:border-white/5 flex items-center justify-between`}>
+                                  <div className="flex items-center gap-4">
+                                    <div className="w-11 h-11 rounded-2xl bg-slate-200 dark:bg-white/10 flex items-center justify-center text-slate-700 dark:text-white font-black text-lg">
+                                      {(res.office || '?')[0].toUpperCase()}
+                                    </div>
+                                    <div>
+                                      <h5 className="font-bold text-slate-800 dark:text-white text-base leading-tight">{res.office}</h5>
+                                      <p className="text-xs text-slate-400 mt-0.5">{new Date(res.created_at).toLocaleString('pt-BR')}</p>
+                                    </div>
                                   </div>
-                                </div>
-                              </div>
-                              
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                                <div className="bg-white dark:bg-white/5 rounded-2xl p-5 border border-slate-200 dark:border-white/5 relative overflow-hidden hover:border-slate-300 dark:hover:border-white/10 transition-colors">
-                                  <div className="absolute top-0 left-0 w-1 h-full bg-blue-500/50"></div>
-                                  <p className="text-sm text-slate-500 mb-3 pr-8">Qual nota que você daria ao tempo de resposta e ao atendimento prestado pela Grape?</p>
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-3xl font-black text-slate-800 dark:text-white">{res.response_time_score}</span>
-                                    <span className="text-sm text-slate-400">/ 5</span>
+                                  {/* Satisfaction overall */}
+                                  <div className="flex flex-col items-end gap-1.5">
+                                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Satisfação geral</span>
+                                    <div className="flex items-center gap-1">
+                                      {[1,2,3,4,5].map(star => (
+                                        <Star key={star} size={18} className={res.grape_satisfaction >= star ? 'text-violet-500 fill-violet-500' : 'text-slate-200 dark:text-white/10 fill-slate-200 dark:fill-white/10'} />
+                                      ))}
+                                      <span className={`ml-2 text-lg font-black ${avgColor}`}>{res.grape_satisfaction}/5</span>
+                                    </div>
                                   </div>
                                 </div>
 
-                                <div className="bg-white dark:bg-white/5 rounded-2xl p-5 border border-slate-200 dark:border-white/5 relative overflow-hidden hover:border-slate-300 dark:hover:border-white/10 transition-colors">
-                                  <div className="absolute top-0 left-0 w-1 h-full bg-violet-500/50"></div>
-                                  <p className="text-sm text-slate-500 mb-3 pr-8">Em uma escala de 0 a 5, qual nota você daria para o resultado do projeto?</p>
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-3xl font-black text-slate-800 dark:text-white">{res.project_result_score}</span>
-                                    <span className="text-sm text-slate-400">/ 5</span>
-                                  </div>
+                                {/* Score Metrics Grid */}
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-slate-100 dark:bg-white/5">
+                                  {metrics.map((m, mi) => (
+                                    <div key={mi} className="bg-light-card dark:bg-dark-card p-5 flex flex-col items-center gap-3">
+                                      {/* Circular Ring */}
+                                      <div className="relative w-14 h-14">
+                                        <svg className="w-14 h-14 -rotate-90" viewBox="0 0 48 48">
+                                          <circle cx="24" cy="24" r="20" fill="none" stroke="currentColor" strokeWidth="4" className="text-slate-100 dark:text-white/5" />
+                                          <circle
+                                            cx="24" cy="24" r="20" fill="none" strokeWidth="4"
+                                            className={m.color}
+                                            strokeDasharray={circumference}
+                                            strokeDashoffset={circumference - (circumference * pct(m.score)) / 100}
+                                            strokeLinecap="round"
+                                          />
+                                        </svg>
+                                        <div className="absolute inset-0 flex items-center justify-center">
+                                          <span className="text-sm font-black text-slate-800 dark:text-white">{m.score}</span>
+                                        </div>
+                                      </div>
+                                      <p className="text-[11px] text-slate-500 dark:text-slate-400 text-center leading-tight">{m.label}</p>
+                                    </div>
+                                  ))}
                                 </div>
 
-                                <div className="bg-white dark:bg-white/5 rounded-2xl p-5 border border-slate-200 dark:border-white/5 relative overflow-hidden hover:border-slate-300 dark:hover:border-white/10 transition-colors">
-                                  <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500/50"></div>
-                                  <p className="text-sm text-slate-500 mb-3 pr-8">Qual nota que você daria, com relação a sua satisfação, ao Tráfego Pago do nosso projeto?</p>
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-3xl font-black text-slate-800 dark:text-white">{res.paid_traffic_score}</span>
-                                    <span className="text-sm text-slate-400">/ 5</span>
-                                  </div>
-                                </div>
-
-                                <div className="bg-white dark:bg-white/5 rounded-2xl p-5 border border-slate-200 dark:border-white/5 relative overflow-hidden hover:border-slate-300 dark:hover:border-white/10 transition-colors">
-                                  <div className="absolute top-0 left-0 w-1 h-full bg-amber-500/50"></div>
-                                  <p className="text-sm text-slate-500 mb-3 pr-8">Com qual nota você qualifica o nosso Gerente de Operações?</p>
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-3xl font-black text-slate-800 dark:text-white">{res.operations_manager_score}</span>
-                                    <span className="text-sm text-slate-400">/ 5</span>
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="space-y-6">
-                                {res.improvements && (
-                                  <div className="bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-2xl p-6">
-                                    <span className="text-xs font-semibold text-violet-600 dark:text-violet-400 uppercase tracking-wider block mb-3">Houve algum ponto que deixamos a desejar no nosso projeto e que gostaria que melhorássemos daqui em diante?</span>
-                                    <p className="text-base text-slate-700 dark:text-slate-300 leading-relaxed">{res.improvements}</p>
+                                {/* Text Feedbacks */}
+                                {(res.improvements || res.other_services) && (
+                                  <div className="p-6 space-y-4">
+                                    {res.improvements && (
+                                      <div className="rounded-2xl border border-slate-100 dark:border-white/5 bg-slate-50 dark:bg-white/[0.02] p-4 flex gap-4">
+                                        <div className="w-1 shrink-0 rounded-full bg-gradient-to-b from-violet-500 to-violet-500/20" />
+                                        <div>
+                                          <span className="text-[10px] font-bold text-violet-600 dark:text-violet-400 uppercase tracking-widest block mb-2">Pontos de melhoria</span>
+                                          <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">{res.improvements}</p>
+                                        </div>
+                                      </div>
+                                    )}
+                                    {res.other_services && (
+                                      <div className="rounded-2xl border border-slate-100 dark:border-white/5 bg-slate-50 dark:bg-white/[0.02] p-4 flex gap-4">
+                                        <div className="w-1 shrink-0 rounded-full bg-gradient-to-b from-emerald-500 to-emerald-500/20" />
+                                        <div>
+                                          <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest block mb-2">Outros serviços desejados</span>
+                                          <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">{res.other_services}</p>
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
                                 )}
-                                {res.other_services && (
-                                  <div className="bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-2xl p-6">
-                                    <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider block mb-3">No momento atual do escritório, há algum outro serviço que gostaria que fosse realizado pela Grape?</span>
-                                    <p className="text-base text-slate-700 dark:text-slate-300 leading-relaxed">{res.other_services}</p>
-                                  </div>
-                                )}
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       )}
                     </div>
