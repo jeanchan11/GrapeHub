@@ -648,7 +648,8 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
             <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] shrink-0"></div>
             {!isCollapsed && (
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                v2.3.7
+                {/* @ts-ignore */}
+                {typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'v2.3.7'}
               </span>
             )}
           </div>

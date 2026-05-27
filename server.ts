@@ -1616,7 +1616,7 @@ async function startServer() {
 
             } else if (actionType === 'create_client') {
               // Cria um cliente em Clientes Ativos a partir dos dados do lead
-              const clientName = lead.nome || lead.form_nome_completo || 'Novo Cliente';
+              const clientName = lead.form_nome_fantasia || lead.nome || lead.form_nome_completo || 'Novo Cliente';
               const clientPhone = lead.telefone || lead.form_telefone_whatsapp || '';
               const clientEmail = lead.email || '';
               const clientLocation = lead.form_cidade || lead.office_location || '';
