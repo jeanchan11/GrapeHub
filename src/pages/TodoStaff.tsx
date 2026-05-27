@@ -122,12 +122,22 @@ const PriorityDot = ({ priority }: { priority: Priority }) => {
   return <span title={cfg.label} className={`w-2 h-2 rounded-full flex-shrink-0 ${cfg.dot}`} />;
 };
 
-const TagPill = ({ label, onRemove }: { label: string; onRemove?: () => void }) => (
-  <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-violet-500/15 text-violet-500 border border-violet-500/25">
-    {label}
-    {onRemove && <button onClick={onRemove} className="hover:text-red-400 transition-colors"><X size={9} /></button>}
-  </span>
-);
+const TagPill = ({ label, onRemove, color }: { label: string; onRemove?: () => void; color?: string }) => {
+  const style = color
+    ? { backgroundColor: color + '22', color, borderColor: color + '55' }
+    : undefined;
+  return (
+    <span
+      className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold border ${
+        color ? '' : 'bg-violet-500/15 text-violet-500 border-violet-500/25'
+      }`}
+      style={style}
+    >
+      {label}
+      {onRemove && <button onClick={onRemove} className="hover:opacity-60 transition-opacity"><X size={9} /></button>}
+    </span>
+  );
+};
 
 // Drag-and-drop insert indicator
 const DropLine = () => (
@@ -289,18 +299,157 @@ const DatePickerCalendar: React.FC<DatePickerProps> = ({ value, onChange, placeh
   );
 };
 
+// ─── Colored Tag types ────────────────────────────────────────────────────────
+
+interface ColoredTag {
+  id: string;
+  name: string;
+  color: string;
+}
+
+const TAG_COLORS = [
+  '#8b5cf6', '#6366f1', '#3b82f6', '#06b6d4', '#10b981',
+  '#f59e0b', '#f97316', '#ef4444', '#ec4899', '#64748b',
+  '#a78bfa', '#34d399', '#fbbf24', '#60a5fa', '#f472b6',
+];
+
+const loadColoredTags = (pageId: string): ColoredTag[] => {
+  try { const r = localStorage.getItem(`grapehub_ctags_${pageId}`); return r ? JSON.parse(r) : []; } catch { return []; }
+};
+const saveColoredTags = (pageId: string, tags: ColoredTag[]) =>
+  localStorage.setItem(`grapehub_ctags_${pageId}`, JSON.stringify(tags));
+
+// ─── Tags Manager Modal ───────────────────────────────────────────────────────
+
+interface TagsManagerModalProps {
+  tags: ColoredTag[];
+  onChange: (tags: ColoredTag[]) => void;
+  onClose: () => void;
+}
+
+const TagsManagerModal: React.FC<TagsManagerModalProps> = ({ tags, onChange, onClose }) => {
+  const [newName, setNewName]   = useState('');
+  const [newColor, setNewColor] = useState(TAG_COLORS[0]);
+  const [editId, setEditId]     = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editColor, setEditColor] = useState('');
+
+  const add = () => {
+    const v = newName.trim();
+    if (!v) return;
+    if (tags.some(t => t.name.toLowerCase() === v.toLowerCase())) return;
+    onChange([...tags, { id: uid(), name: v, color: newColor }]);
+    setNewName('');
+  };
+
+  const remove = (id: string) => onChange(tags.filter(t => t.id !== id));
+
+  const startEdit = (t: ColoredTag) => { setEditId(t.id); setEditName(t.name); setEditColor(t.color); };
+
+  const saveEdit = () => {
+    const v = editName.trim();
+    if (!v || !editId) return;
+    onChange(tags.map(t => t.id === editId ? { ...t, name: v, color: editColor } : t));
+    setEditId(null);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="w-full max-w-sm bg-dark-bg rounded-3xl border border-dark-text/10 shadow-2xl p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-black text-dark-text">Gerenciar <span className="text-violet-500">Tags</span></h2>
+          <button onClick={onClose} className="w-8 h-8 rounded-xl flex items-center justify-center text-dark-text/40 hover:text-dark-text hover:bg-dark-text/10 transition-all"><X size={16} /></button>
+        </div>
+
+        {/* Create new tag */}
+        <div className="space-y-2">
+          <label className="text-[10px] font-bold text-dark-text/40 uppercase tracking-widest block">Nova Tag</label>
+          <input
+            value={newName}
+            onChange={e => setNewName(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && add()}
+            placeholder="Nome da tag..."
+            className="w-full bg-dark-card border border-dark-text/10 rounded-xl px-4 py-2.5 text-sm text-dark-text placeholder-dark-text/30 focus:outline-none focus:border-violet-500/50 transition-all"
+          />
+          <div className="flex flex-wrap gap-2">
+            {TAG_COLORS.map(c => (
+              <button
+                key={c}
+                onClick={() => setNewColor(c)}
+                className={`w-6 h-6 rounded-full transition-all ${newColor === c ? 'ring-2 ring-offset-2 ring-offset-dark-bg ring-white scale-110' : 'hover:scale-105'}`}
+                style={{ backgroundColor: c }}
+              />
+            ))}
+          </div>
+          <button
+            onClick={add}
+            disabled={!newName.trim()}
+            className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-xs font-bold text-white transition-all"
+          >
+            <Plus size={13} /> Criar Tag
+          </button>
+        </div>
+
+        {/* Tag list */}
+        {tags.length > 0 && (
+          <div className="space-y-1 max-h-60 overflow-y-auto">
+            <label className="text-[10px] font-bold text-dark-text/40 uppercase tracking-widest block mb-2">Tags Existentes</label>
+            {tags.map(t => (
+              <div key={t.id}>
+                {editId === t.id ? (
+                  <div className="flex flex-col gap-2 p-2 bg-dark-card rounded-xl border border-violet-500/30">
+                    <input
+                      autoFocus
+                      value={editName}
+                      onChange={e => setEditName(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && saveEdit()}
+                      className="bg-transparent border-b border-dark-text/20 text-sm text-dark-text focus:outline-none py-0.5"
+                    />
+                    <div className="flex flex-wrap gap-1.5">
+                      {TAG_COLORS.map(c => (
+                        <button
+                          key={c}
+                          onClick={() => setEditColor(c)}
+                          className={`w-5 h-5 rounded-full transition-all ${editColor === c ? 'ring-2 ring-offset-1 ring-offset-dark-card ring-white scale-110' : 'hover:scale-105'}`}
+                          style={{ backgroundColor: c }}
+                        />
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={saveEdit} className="flex-1 py-1 rounded-lg bg-violet-600 hover:bg-violet-500 text-[11px] font-bold text-white transition-all">Salvar</button>
+                      <button onClick={() => setEditId(null)} className="flex-1 py-1 rounded-lg border border-dark-text/10 text-[11px] text-dark-text/50 hover:bg-dark-text/5 transition-all">Cancelar</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 px-2 py-1.5 rounded-xl hover:bg-dark-text/5 group transition-colors">
+                    <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: t.color }} />
+                    <span className="flex-1 text-sm text-dark-text">{t.name}</span>
+                    <button onClick={() => startEdit(t)} className="opacity-0 group-hover:opacity-100 text-dark-text/40 hover:text-violet-400 transition-all"><Edit3 size={12} /></button>
+                    <button onClick={() => remove(t.id)} className="opacity-0 group-hover:opacity-100 text-dark-text/40 hover:text-red-400 transition-all"><Trash2 size={12} /></button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // ─── TODO Modal ───────────────────────────────────────────────────────────────
 
 interface TodoModalProps {
   initial?: Partial<TodoItem>;
   allColumns: typeof COLUMNS;
   globalTags: string[];
+  coloredTagDefs?: ColoredTag[];
   onTagCreated: (tag: string) => void;
   onSave: (item: Omit<TodoItem, 'id' | 'createdAt'>) => void;
   onClose: () => void;
 }
 
-const TodoModal: React.FC<TodoModalProps> = ({ initial, allColumns, globalTags, onTagCreated, onSave, onClose }) => {
+const TodoModal: React.FC<TodoModalProps> = ({ initial, allColumns, globalTags, coloredTagDefs, onTagCreated, onSave, onClose }) => {
   const [title, setTitle]         = useState(initial?.title ?? '');
   const [description, setDescription] = useState(initial?.description ?? '');
   const [priority, setPriority]   = useState<Priority>(initial?.priority ?? 'medium');
@@ -400,7 +549,10 @@ const TodoModal: React.FC<TodoModalProps> = ({ initial, allColumns, globalTags, 
           {/* Selected pills */}
           {tags.length > 0 && (
             <div className="flex flex-wrap gap-1 mb-2">
-              {tags.map(t => <TagPill key={t} label={t} onRemove={() => toggleTag(t)} />)}
+              {tags.map(t => {
+                const ctag = coloredTagDefs?.find(c => c.name === t);
+                return <TagPill key={t} label={t} color={ctag?.color} onRemove={() => toggleTag(t)} />;
+              })}
             </div>
           )}
 
@@ -432,27 +584,52 @@ const TodoModal: React.FC<TodoModalProps> = ({ initial, allColumns, globalTags, 
                 </button>
               )}
 
-              {/* List */}
+              {/* List — colored tags when available, else plain tags */}
               <div className="max-h-44 overflow-y-auto">
-                {globalTags
-                  .filter(t => t.toLowerCase().includes(tagSearch.toLowerCase()))
-                  .map(t => {
-                    const selected = tags.includes(t);
-                    return (
-                      <button
-                        key={t}
-                        onMouseDown={e => { e.preventDefault(); toggleTag(t); }}
-                        className="w-full flex items-center gap-2.5 px-4 py-2 hover:bg-dark-text/5 transition-colors"
-                      >
-                        {selected
-                          ? <CheckCircle2 size={14} className="text-emerald-500 flex-shrink-0" />
-                          : <Circle size={14} className="text-dark-text/20 flex-shrink-0" />
-                        }
-                        <span className="text-sm text-dark-text">{t}</span>
-                      </button>
-                    );
-                  })}
-                {globalTags.filter(t => t.toLowerCase().includes(tagSearch.toLowerCase())).length === 0 && tagSearch === '' && (
+                {coloredTagDefs && coloredTagDefs.length > 0 ? (
+                  coloredTagDefs
+                    .filter(t => t.name.toLowerCase().includes(tagSearch.toLowerCase()))
+                    .map(ct => {
+                      const selected = tags.includes(ct.name);
+                      return (
+                        <button
+                          key={ct.id}
+                          onMouseDown={e => { e.preventDefault(); toggleTag(ct.name); }}
+                          className="w-full flex items-center gap-2.5 px-4 py-2 hover:bg-dark-text/5 transition-colors"
+                        >
+                          {selected
+                            ? <CheckCircle2 size={14} className="text-emerald-500 flex-shrink-0" />
+                            : <Circle size={14} className="text-dark-text/20 flex-shrink-0" />
+                          }
+                          <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: ct.color }} />
+                          <span className="text-sm text-dark-text">{ct.name}</span>
+                        </button>
+                      );
+                    })
+                ) : (
+                  globalTags
+                    .filter(t => t.toLowerCase().includes(tagSearch.toLowerCase()))
+                    .map(t => {
+                      const selected = tags.includes(t);
+                      return (
+                        <button
+                          key={t}
+                          onMouseDown={e => { e.preventDefault(); toggleTag(t); }}
+                          className="w-full flex items-center gap-2.5 px-4 py-2 hover:bg-dark-text/5 transition-colors"
+                        >
+                          {selected
+                            ? <CheckCircle2 size={14} className="text-emerald-500 flex-shrink-0" />
+                            : <Circle size={14} className="text-dark-text/20 flex-shrink-0" />
+                          }
+                          <span className="text-sm text-dark-text">{t}</span>
+                        </button>
+                      );
+                    })
+                  )}
+                {(coloredTagDefs ? coloredTagDefs : globalTags).filter(t => {
+                  const name = typeof t === 'string' ? t : (t as ColoredTag).name;
+                  return name.toLowerCase().includes(tagSearch.toLowerCase());
+                }).length === 0 && tagSearch === '' && (
                   <p className="px-4 py-3 text-xs text-dark-text/30 italic">Nenhuma tag criada ainda</p>
                 )}
               </div>
@@ -555,6 +732,7 @@ const TodoModal: React.FC<TodoModalProps> = ({ initial, allColumns, globalTags, 
 interface TaskDetailModalProps {
   item: TodoItem;
   allColumns: typeof COLUMNS;
+  coloredTagDefs?: ColoredTag[];
   onEdit: () => void;
   onClose: () => void;
   onSubtaskToggle: (taskId: string, subtaskId: string) => void;
@@ -563,7 +741,7 @@ interface TaskDetailModalProps {
   onAddComment: (taskId: string, text: string) => void;
 }
 
-const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ item, allColumns, onEdit, onClose, onSubtaskToggle, onSubtasksReorder, onAddSubtask, onAddComment }) => {
+const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ item, allColumns, coloredTagDefs, onEdit, onClose, onSubtaskToggle, onSubtasksReorder, onAddSubtask, onAddComment }) => {
   const [newComment, setNewComment] = useState('');
   const [newSubtask, setNewSubtask] = useState('');
   const [subDragFrom, setSubDragFrom] = useState<number | null>(null);
@@ -625,9 +803,15 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ item, allColumns, onE
                 {new Date(item.dueDate + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}
               </span>
             )}
-            {item.tags.map(t => (
-              <span key={t} className="px-2.5 py-1 rounded-lg bg-violet-500/10 border border-violet-500/20 text-xs font-semibold text-violet-500">{t}</span>
-            ))}
+            {item.tags.map(t => {
+              const ctag = coloredTagDefs?.find(c => c.name === t);
+              const tagStyle = ctag ? { backgroundColor: ctag.color + '22', color: ctag.color, borderColor: ctag.color + '55' } : undefined;
+              return (
+                <span key={t} className={`px-2.5 py-1 rounded-lg border text-xs font-semibold ${
+                  ctag ? '' : 'bg-violet-500/10 border-violet-500/20 text-violet-500'
+                }`} style={tagStyle}>{t}</span>
+              );
+            })}
           </div>
 
           {/* Description */}
@@ -1151,6 +1335,7 @@ const IdeaDetailModal: React.FC<IdeaDetailModalProps> = ({ idea, onEdit, onClose
 interface RowProps {
   item: TodoItem;
   allColumns: typeof COLUMNS;
+  coloredTagDefs?: ColoredTag[];
   onView: (item: TodoItem) => void;
   onEdit: (item: TodoItem) => void;
   onDelete: (id: string) => void;
@@ -1161,7 +1346,7 @@ interface RowProps {
   isDragOver?: boolean;
 }
 
-const TodoRow: React.FC<RowProps> = ({ item, allColumns, onView, onEdit, onDelete, onStatusChange, onDragStart, onDragOver, onDrop, isDragOver }) => {
+const TodoRow: React.FC<RowProps> = ({ item, allColumns, coloredTagDefs, onView, onEdit, onDelete, onStatusChange, onDragStart, onDragOver, onDrop, isDragOver }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -1210,11 +1395,22 @@ const TodoRow: React.FC<RowProps> = ({ item, allColumns, onView, onEdit, onDelet
         {/* Tag + Date + Subtask row */}
         {(item.tags.length > 0 || item.dueDate || item.subtasks.length > 0) && (
           <div className="flex items-center gap-2 mt-1">
-            {item.tags.length > 0 && (
-              <span className="px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-violet-500/10 text-violet-400 border border-violet-500/15">
-                {item.tags[0]}{item.tags.length > 1 ? ` +${item.tags.length - 1}` : ''}
-              </span>
-            )}
+            {item.tags.length > 0 && (() => {
+                const ctag = coloredTagDefs.find(c => c.name === item.tags[0]);
+                const tagStyle = ctag
+                  ? { backgroundColor: ctag.color + '22', color: ctag.color, borderColor: ctag.color + '55' }
+                  : undefined;
+                return (
+                  <span
+                    className={`px-1.5 py-0.5 rounded-full text-[9px] font-semibold border ${
+                      ctag ? '' : 'bg-violet-500/10 text-violet-400 border-violet-500/15'
+                    }`}
+                    style={tagStyle}
+                  >
+                    {item.tags[0]}{item.tags.length > 1 ? ` +${item.tags.length - 1}` : ''}
+                  </span>
+                );
+              })()}
             {item.dueDate && (() => {
               const today = new Date().toISOString().split('T')[0];
               const overdue = item.dueDate < today && item.status !== 'done';
@@ -1405,7 +1601,7 @@ const EmptyCol = ({ onAdd, label }: { onAdd: () => void; label: string }) => (
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-const TodoStaff: React.FC<{ activePage?: string }> = ({ activePage }) => {
+const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitle?: string; hideRecurring?: boolean; hideDocument?: boolean; enableColoredTags?: boolean }> = ({ activePage, pageTitle, pageSubtitle, hideRecurring = false, hideDocument = false, enableColoredTags = false }) => {
   const [todos,      setTodos]      = useState<TodoItem[]>([]);
   const [recurring,  setRecurring]  = useState<RecurringItem[]>([]);
   const [ideas,      setIdeas]      = useState<IdeaItem[]>([]);
@@ -1442,6 +1638,11 @@ const TodoStaff: React.FC<{ activePage?: string }> = ({ activePage }) => {
   const [tagFilterOpen, setTagFilterOpen] = useState(false);
   const tagFilterRef = useRef<HTMLDivElement>(null);
   const [dbLoaded, setDbLoaded] = useState(false);
+  // Colored tags
+  const [coloredTagDefs, setColoredTagDefs] = useState<ColoredTag[]>(() =>
+    enableColoredTags ? loadColoredTags(activePage || 'default') : []
+  );
+  const [tagsModal, setTagsModal] = useState(false);
 
   // ── Load data from API on mount ──
   useEffect(() => {
@@ -1476,6 +1677,11 @@ const TodoStaff: React.FC<{ activePage?: string }> = ({ activePage }) => {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  // Persist colored tags on change
+  useEffect(() => {
+    if (enableColoredTags) saveColoredTags(activePage || 'default', coloredTagDefs);
+  }, [coloredTagDefs, activePage, enableColoredTags]);
 
   // All unique tags used in todos (for the filter bar)
   const allTags = Array.from(new Set(todos.flatMap(t => t.tags))).sort();
@@ -1744,15 +1950,22 @@ const TodoStaff: React.FC<{ activePage?: string }> = ({ activePage }) => {
       {/* ── Header ─── */}
       <div className="flex items-center justify-between px-6 md:px-8 pt-8 pb-4">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-dark-text">TODO <span className="text-violet-500">Staff</span></h1>
-          <p className="text-[10px] font-bold text-dark-text/30 uppercase tracking-widest mt-0.5">Organização interna do time · seção grape</p>
+          <h1 className="text-2xl font-black tracking-tight text-dark-text">{pageTitle ? pageTitle.replace(/\s+(\S+)$/, '') : 'TODO'} <span className="text-violet-500">{pageTitle ? pageTitle.match(/\S+$/)?.[0] : 'Staff'}</span></h1>
+          <p className="text-[10px] font-bold text-dark-text/30 uppercase tracking-widest mt-0.5">{pageSubtitle || 'Organização interna do time · seção grape'}</p>
         </div>
         <div className="flex items-center gap-2">
           {activeTab === 'tarefas' ? (
             <>
-              <button onClick={openNewRec} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-blue-600/15 hover:bg-blue-600/25 text-blue-500 text-xs font-bold border border-blue-500/20 transition-all">
-                <RefreshCw size={13} /> Recorrente
-              </button>
+              {!hideRecurring && (
+                <button onClick={openNewRec} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-blue-600/15 hover:bg-blue-600/25 text-blue-500 text-xs font-bold border border-blue-500/20 transition-all">
+                  <RefreshCw size={13} /> Recorrente
+                </button>
+              )}
+              {enableColoredTags && (
+                <button onClick={() => setTagsModal(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-dark-card hover:bg-dark-card/80 text-dark-text/60 hover:text-dark-text text-xs font-bold border border-white/[0.07] transition-all">
+                  <Tag size={13} /> Tags
+                </button>
+              )}
               <button onClick={() => { setEditing(undefined); setDefaultStatus('todo'); setTodoModal(true); }} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition-all shadow-lg shadow-violet-500/20">
                 <Plus size={13} /> Nova Tarefa
               </button>
@@ -1931,16 +2144,18 @@ const TodoStaff: React.FC<{ activePage?: string }> = ({ activePage }) => {
           >
             <AlignJustify size={13} /> Lista
           </button>
-          <button
-            onClick={() => setViewMode('document')}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-              viewMode === 'document'
-                ? 'bg-violet-600/15 text-violet-500'
-                : 'text-dark-text/50 hover:text-dark-text/80'
-            }`}
-          >
-            <FileText size={13} /> Documento
-          </button>
+          {!hideDocument && (
+            <button
+              onClick={() => setViewMode('document')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                viewMode === 'document'
+                  ? 'bg-violet-600/15 text-violet-500'
+                  : 'text-dark-text/50 hover:text-dark-text/80'
+              }`}
+            >
+              <FileText size={13} /> Documento
+            </button>
+          )}
         </div>
       </div>
 
@@ -2230,6 +2445,7 @@ const TodoStaff: React.FC<{ activePage?: string }> = ({ activePage }) => {
                           {dragOverState === item.id && <DropLine />}
                           <TodoRow
                             item={item} allColumns={COLUMNS}
+                            coloredTagDefs={enableColoredTags ? coloredTagDefs : undefined}
                             onView={item => setViewingTodo(item)}
                             onEdit={item => { setEditing(item); setTodoModal(true); }}
                             onDelete={deleteTodo}
@@ -2319,6 +2535,7 @@ const TodoStaff: React.FC<{ activePage?: string }> = ({ activePage }) => {
         <TaskDetailModal
           item={viewingTodo}
           allColumns={COLUMNS}
+          coloredTagDefs={enableColoredTags ? coloredTagDefs : undefined}
           onEdit={() => { setEditing(viewingTodo); setViewingTodo(undefined); setTodoModal(true); }}
           onClose={() => setViewingTodo(undefined)}
           onSubtaskToggle={toggleSubtask}
@@ -2332,6 +2549,7 @@ const TodoStaff: React.FC<{ activePage?: string }> = ({ activePage }) => {
           initial={editing ?? { status: defaultStatus }}
           allColumns={COLUMNS}
           globalTags={globalTags}
+          coloredTagDefs={enableColoredTags ? coloredTagDefs : undefined}
           onTagCreated={handleTagCreated}
           onSave={editing ? updateTodo : createTodo}
           onClose={() => { setTodoModal(false); setEditing(undefined); }}
@@ -2359,6 +2577,13 @@ const TodoStaff: React.FC<{ activePage?: string }> = ({ activePage }) => {
           onTagCreated={handleTagCreated}
           onSave={editingIdea?.id ? updateIdea : createIdea}
           onClose={() => { setIdeaModal(false); setEditingIdea(undefined); }}
+        />
+      )}
+      {tagsModal && enableColoredTags && (
+        <TagsManagerModal
+          tags={coloredTagDefs}
+          onChange={setColoredTagDefs}
+          onClose={() => setTagsModal(false)}
         />
       )}
     </div>

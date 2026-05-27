@@ -54,7 +54,7 @@ export const menuConfig: MenuSection[] = [
             icon: Target,
             pages: [
               { id: 'projects', label: 'Projetos & Parceiros', icon: Briefcase },
-              { id: 'todo', label: 'Tarefas', icon: ListTodo },
+              { id: 'todo', label: 'Tarefas', icon: Briefcase },
             ]
           },
           {
@@ -73,7 +73,7 @@ export const menuConfig: MenuSection[] = [
             icon: Target,
             pages: [
               { id: 'projects-2', label: 'Projetos & Parceiros 2', icon: Briefcase },
-              { id: 'todo-2', label: 'Tarefas 2', icon: ListTodo },
+              { id: 'todo-2', label: 'Tarefas 2', icon: Briefcase },
             ]
           }
         ]

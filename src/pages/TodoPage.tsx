@@ -4,7 +4,7 @@ import {
   CheckCircle2, Circle, Clock, AlertCircle,
   Trash2, Edit2, Calendar, User, Tag,
   ChevronDown, X, Check, Loader2, ListTodo,
-  ChevronUp, Image as ImageIcon
+  ChevronUp, Image as ImageIcon, Scale
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../contexts/AuthContext';
@@ -45,6 +45,7 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
   const [projects, setProjects] = useState<any[]>([]);
   const [templates, setTemplates] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [viewMode, setViewMode] = useState<number>(1);
   
   const [selectedGroup, setSelectedGroup] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
@@ -75,7 +76,7 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
 
   const changeDate = (days: number) => {
     const newDate = new Date(currentDate);
-    newDate.setDate(newDate.getDate() + days);
+    newDate.setDate(newDate.getDate() + (days * viewMode));
     setCurrentDate(newDate);
   };
 
@@ -83,8 +84,16 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
     setLoading(true);
     try {
       const dateStr = currentDate.toISOString().split('T')[0];
+      let url = `/api/daily-tasks?date=${dateStr}&page_id=${activePage}`;
+      if (viewMode > 1) {
+        const endDate = new Date(currentDate);
+        endDate.setDate(endDate.getDate() + viewMode - 1);
+        const endDateStr = endDate.toISOString().split('T')[0];
+        url += `&end_date=${endDateStr}`;
+      }
+
       const [tasksRes, projectsRes, templatesRes] = await Promise.all([
-        fetch(`/api/daily-tasks?date=${dateStr}&page_id=${activePage}`),
+        fetch(url),
         fetch('/api/projects'),
         fetch('/api/task-templates')
       ]);
@@ -101,7 +110,7 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
 
   useEffect(() => {
     fetchData();
-  }, [currentDate]);
+  }, [currentDate, viewMode]);
 
   const toggleTaskStatus = async (task: Task) => {
     const newStatus = task.status === 'completed' ? 'pending' : 'completed';
@@ -283,28 +292,74 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
 
   const uniqueGroups = Array.from(new Set(projects.map(p => p.group).filter(Boolean)));
 
+  const getProjectIcon = (projectId: string) => {
+    const project = projects.find(p => p.id === projectId);
+    
+    const projectResults = [
+      { label: '-', color: 'bg-slate-500' },
+      { label: 'CAMPANHA PAUSADA', color: 'bg-slate-400' },
+      { label: 'TESTANDO', color: 'bg-blue-500' },
+      { label: 'RESULTADO RUIM', color: 'bg-rose-500' },
+      { label: 'RESULTADO OK', color: 'bg-amber-500' },
+      { label: 'RESULTADO BOM', color: 'bg-emerald-500' },
+      { label: 'AGUARDANDO CRIATIVOS', color: 'bg-slate-400' },
+      { label: 'AGUARDANDO ARTIGO', color: 'bg-slate-400' },
+      { label: 'AGUARDANDO LP', color: 'bg-slate-400' },
+      { label: 'SUBIR CAMPANHA', color: 'bg-slate-400' },
+    ];
+
+    const colorMap: Record<string, { bg: string; text: string }> = {
+      'bg-emerald-500': { bg: 'bg-emerald-500/20', text: 'text-emerald-500' },
+      'bg-amber-500':   { bg: 'bg-amber-500/20',   text: 'text-amber-500' },
+      'bg-rose-500':    { bg: 'bg-rose-500/20',    text: 'text-rose-500' },
+      'bg-blue-500':    { bg: 'bg-blue-500/20',    text: 'text-blue-500' },
+      'bg-slate-500':   { bg: 'bg-slate-500/20',   text: 'text-slate-500' },
+      'bg-slate-400':   { bg: 'bg-slate-400/20',   text: 'text-slate-400' },
+    };
+
+    const resultBg = projectResults.find(r => r.label === project?.projectResult)?.color || 'bg-slate-500';
+    const c = colorMap[resultBg] || colorMap['bg-slate-500'];
+
+    return (
+      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${c.bg} ${c.text} flex-shrink-0`}>
+        <Scale size={20} />
+      </div>
+    );
+  };
+
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-4xl font-black text-light-text dark:text-white tracking-tight mb-1">
-            Daily Log <span className="text-violet-500">Operacional</span>
+            To Do <span className="text-violet-500">Gestor</span>
           </h1>
-          <p className="text-slate-500 text-sm">Controle diário de campanhas e tarefas</p>
+          <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5">Controle diário de campanhas e tarefas</p>
         </div>
         
-        <div className="flex items-center gap-4 bg-white dark:bg-white/5 p-1 rounded-xl border border-slate-200 dark:border-white/10">
+        <div className="flex items-center gap-2 bg-white dark:bg-white/5 p-1 rounded-xl border border-slate-200 dark:border-white/10">
           <button onClick={() => changeDate(-1)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-lg text-slate-500 dark:text-gray-400 hover:text-slate-800 dark:hover:text-white transition-colors">
             <ChevronLeft size={20} />
           </button>
-          <div className="flex items-center gap-2 px-4 font-medium text-slate-800 dark:text-white min-w-[140px] justify-center">
+          <div className="flex items-center gap-2 px-2 font-medium text-slate-800 dark:text-white min-w-[140px] justify-center text-sm">
             <Calendar size={16} className="text-purple-500 dark:text-purple-400" />
-            {formatDate(currentDate)}
+            {viewMode === 1 ? formatDate(currentDate) : `${formatDate(currentDate)} até ${formatDate(new Date(currentDate.getTime() + (viewMode - 1) * 24 * 60 * 60 * 1000))}`}
           </div>
           <button onClick={() => changeDate(1)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-lg text-slate-500 dark:text-gray-400 hover:text-slate-800 dark:hover:text-white transition-colors">
             <ChevronRight size={20} />
           </button>
+          <div className="h-6 w-px bg-slate-200 dark:bg-white/10 mx-1"></div>
+          <select
+            value={viewMode}
+            onChange={(e) => setViewMode(Number(e.target.value))}
+            className="bg-transparent border-none text-slate-600 dark:text-gray-300 focus:ring-0 cursor-pointer text-sm font-medium pr-8"
+          >
+            <option value={1}>1 Dia</option>
+            <option value={3}>3 Dias</option>
+            <option value={5}>5 Dias</option>
+            <option value={7}>7 Dias</option>
+          </select>
         </div>
 
         <div className="flex items-center gap-4">
@@ -401,9 +456,7 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
                               onClick={() => setExpandedClients(prev => ({ ...prev, [projectId]: !isClientExpanded }))}
                             >
                               <div className="flex items-center gap-4">
-                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-100 to-blue-100 dark:from-purple-500/20 dark:to-blue-500/20 border border-purple-200 dark:border-purple-500/30 flex items-center justify-center text-purple-600 dark:text-purple-400 font-bold">
-                                  {projectName.substring(0, 2).toUpperCase()}
-                                </div>
+                                {getProjectIcon(projectId)}
                                 <div>
                                   <h3 className="text-slate-800 dark:text-white font-medium flex items-center gap-2">
                                     {projectName}
@@ -618,9 +671,7 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
                             onClick={() => setExpandedClients(prev => ({ ...prev, [`nodate-${projectId}`]: !isClientExpanded }))}
                           >
                             <div className="flex items-center gap-4">
-                              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-500/20 dark:to-gray-600/20 border border-gray-200 dark:border-gray-500/30 flex items-center justify-center text-gray-500 dark:text-gray-400 font-bold">
-                                {projectName.substring(0, 2).toUpperCase()}
-                              </div>
+                              {getProjectIcon(projectId)}
                               <div>
                                 <h3 className="text-slate-800 dark:text-white font-medium flex items-center gap-2">
                                   {projectName}

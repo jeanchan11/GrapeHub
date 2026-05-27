@@ -7,9 +7,21 @@ import { signInWithPopup } from 'firebase/auth';
 import { LogIn, AlertTriangle, Play, ChevronRight, BarChart3, Target, Zap, Sun, Moon } from 'lucide-react';
 import { motion } from 'motion/react';
 
+const ROLE_ORDER: Record<string, number> = {
+  'superadmin': 0,
+  'diretor-operacional': 1,
+  'gerente-operacional': 2,
+  'gerente-comercial': 3,
+  'gestor-trafego': 4,
+  'analista-ia': 5,
+  'design': 6,
+  'user': 7,
+};
+
 const Login: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [teamMembers, setTeamMembers] = useState<{ id: string; name: string; picture?: string; role: string }[]>([]);
   const [theme, setTheme] = useState<'light' | 'dark' | 'darker'>(() => {
     if (typeof window !== 'undefined') {
       const savedTheme = localStorage.getItem('theme');
@@ -28,6 +40,18 @@ const Login: React.FC = () => {
     }
     localStorage.setItem('theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    fetch('/api/system-users')
+      .then(r => r.ok ? r.json() : [])
+      .then((users: { id: string; name: string; picture?: string; role: string }[]) => {
+        const sorted = [...users]
+          .filter(u => u.picture)
+          .sort((a, b) => (ROLE_ORDER[a.role] ?? 99) - (ROLE_ORDER[b.role] ?? 99));
+        setTeamMembers(sorted.slice(0, 5));
+      })
+      .catch(() => {});
+  }, []);
 
   const toggleTheme = () => {
     setTheme(prev => prev === 'light' ? 'dark' : prev === 'dark' ? 'darker' : 'light');
@@ -117,10 +141,17 @@ const Login: React.FC = () => {
             </div>
 
             <div className="mt-auto pt-10 flex items-center gap-8">
-              <div className="flex -space-x-4">
-                {[1, 2, 3, 4, 5].map((i) => (
-                  <div key={i} className="w-12 h-12 rounded-full border-2 border-white dark:border-dark-card bg-slate-200 dark:bg-slate-800 flex items-center justify-center overflow-hidden">
-                    <img src={`/fotos/${i}.jpg`} alt="User" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+              <div className="flex -space-x-3">
+                {teamMembers.map((member) => (
+                  <div
+                    key={member.id}
+                    title={member.name}
+                    className="w-11 h-11 rounded-full border-2 border-white dark:border-dark-card bg-slate-200 dark:bg-slate-800 flex items-center justify-center overflow-hidden shadow-md"
+                  >
+                    {member.picture
+                      ? <img src={member.picture} alt={member.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      : <span className="text-xs font-bold text-slate-600 dark:text-slate-300">{member.name?.[0]?.toUpperCase()}</span>
+                    }
                   </div>
                 ))}
               </div>

@@ -416,6 +416,7 @@ const templates = [
   { id: 'projects', label: 'Projetos (Projects)' },
   { id: 'todo', label: 'Tarefas (Todo)' },
   { id: 'todo-staff', label: 'To Do (Staff)' },
+  { id: 'chamados-grapehub', label: 'Chamados Grapehub' },
   { id: 'crm-comercial', label: 'CRM Comercial' },
   { id: 'crm-sequencias', label: 'CRM Sequências' },
   { id: 'crm-atividades', label: 'CRM Atividades' },

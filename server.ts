@@ -2792,14 +2792,23 @@ async function startServer() {
   
   app.get("/api/daily-tasks", async (req, res) => {
     try {
-      const { date, group, status, page_id } = req.query;
+      const { date, end_date, group, status, page_id } = req.query;
       let query = `
         SELECT t.*, p.partner as project_name, p.group as project_group
         FROM todos t
         LEFT JOIN projects p ON t.project_id = p.id
-        WHERE (t.due_date::date = $1::date OR t.due_date IS NULL)
+        WHERE 1=1
       `;
-      const params: any[] = [date];
+      const params: any[] = [];
+      
+      if (date && end_date) {
+        params.push(date);
+        params.push(end_date);
+        query += ` AND (t.due_date::date >= $1::date AND t.due_date::date <= $2::date OR t.due_date IS NULL)`;
+      } else if (date) {
+        params.push(date);
+        query += ` AND (t.due_date::date = $1::date OR t.due_date IS NULL)`;
+      }
       
       if (page_id) {
         params.push(page_id);
@@ -11479,7 +11488,7 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
   app.get("/api/system-users", async (_req, res) => {
     try {
       const { rows } = await pool.query(
-        "SELECT id, name, email, picture FROM users ORDER BY name ASC"
+        "SELECT id, name, email, picture, role FROM users ORDER BY name ASC"
       );
       res.json(rows);
     } catch (e: any) {
