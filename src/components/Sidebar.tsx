@@ -258,7 +258,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                   exit={{ opacity: 0, width: 0 }}
                   transition={{ type: 'spring', stiffness: 400, damping: 40 }}
                   type="text"
-                  placeholder="Search"
+                  placeholder="Pesquisar"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full bg-light-bg dark:bg-dark-input border border-slate-200 dark:border-white/5 rounded-xl py-2.5 pl-10 pr-4 text-sm text-light-text dark:text-white placeholder:text-slate-500 outline-none focus:ring-2 focus:ring-violet-500/20 transition-colors overflow-hidden"
@@ -276,7 +276,45 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
           }`}
         >
           {Array.isArray(menu) && (() => {
-            const allowedSections = menu.filter(s => hasAllowedPagesInSection(s));
+            const query = searchQuery.trim().toLowerCase();
+            
+            const filterMenuTree = (sections: any[]) => {
+              if (!query) return sections;
+              return sections.map(section => {
+                const filteredSubSubSessions = (section.subSubSessions || []).map((sss: any) => {
+                  const filteredPages = (sss.pages || []).filter((p: any) => p.label.toLowerCase().includes(query));
+                  if (sss.label.toLowerCase().includes(query) || filteredPages.length > 0) {
+                    return { ...sss, pages: filteredPages.length > 0 ? filteredPages : sss.pages };
+                  }
+                  return null;
+                }).filter(Boolean);
+
+                const filteredSubSessions = (section.subSessions || []).map((ss: any) => {
+                  const filteredPages = (ss.pages || []).filter((p: any) => p.label.toLowerCase().includes(query));
+                  const filteredSSSubSub = (ss.subSubSessions || []).map((sss: any) => {
+                    const ssFilteredPages = (sss.pages || []).filter((p: any) => p.label.toLowerCase().includes(query));
+                    if (sss.label.toLowerCase().includes(query) || ssFilteredPages.length > 0) {
+                      return { ...sss, pages: ssFilteredPages.length > 0 ? ssFilteredPages : sss.pages };
+                    }
+                    return null;
+                  }).filter(Boolean);
+
+                  if (ss.label.toLowerCase().includes(query) || filteredPages.length > 0 || filteredSSSubSub.length > 0) {
+                    return { ...ss, pages: filteredPages.length > 0 ? filteredPages : ss.pages, subSubSessions: filteredSSSubSub };
+                  }
+                  return null;
+                }).filter(Boolean);
+
+                const filteredPages = (section.pages || []).filter((p: any) => p.label.toLowerCase().includes(query));
+
+                if (section.title.toLowerCase().includes(query) || filteredPages.length > 0 || filteredSubSessions.length > 0 || filteredSubSubSessions.length > 0) {
+                  return { ...section, pages: filteredPages.length > 0 ? filteredPages : section.pages, subSessions: filteredSubSessions, subSubSessions: filteredSubSubSessions };
+                }
+                return null;
+              }).filter(Boolean);
+            };
+
+            const allowedSections = filterMenuTree(menu.filter(s => hasAllowedPagesInSection(s)));
 
             /* ── COLLAPSED: one icon per section ──────────────── */
             if (isCollapsed) {
@@ -334,7 +372,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                           {React.createElement(iconMap[section.icon] || Folder, { size: 14, color: section.icon_color || '#64748b' })}
                         </div>
                         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                          <motion.div animate={{ rotate: expanded[`sec-${section.id}`] === false ? -90 : 0 }}>
+                          <motion.div animate={{ rotate: (!!query || expanded[`sec-${section.id}`] !== false) ? 0 : -90 }}>
                             <ChevronDown size={14} />
                           </motion.div>
                         </div>
@@ -348,7 +386,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                   </button>
 
                   <AnimatePresence initial={false}>
-                    {expanded[`sec-${section.id}`] !== false && (
+                    {(!!query || expanded[`sec-${section.id}`] !== false) && (
                       <motion.div
                         initial={{ height: 0, opacity: 0 }}
                         animate={{ height: 'auto', opacity: 1 }}
@@ -386,14 +424,14 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                                   </div>
                                   <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                     {subSubSession.pages?.length > 0
-                                      ? expanded[`secsubsub-${subSubSession.id}`] ? <ChevronDown size={14} color="#7C3AED" /> : <ChevronRight size={14} color="#C4C4C4" />
+                                      ? (!!query || expanded[`secsubsub-${subSubSession.id}`]) ? <ChevronDown size={14} color="#7C3AED" /> : <ChevronRight size={14} color="#C4C4C4" />
                                       : <span style={{ width: 14 }} />}
                                   </div>
                                 </div>
                                 <span className="text-sm">{subSubSession.label}</span>
                               </div>
                               <AnimatePresence initial={false}>
-                                {expanded[`secsubsub-${subSubSession.id}`] && (
+                                {(!!query || expanded[`secsubsub-${subSubSession.id}`]) && (
                                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2, ease: 'easeInOut' }} className="overflow-hidden">
                                     {Array.isArray(subSubSession.pages) && subSubSession.pages.filter((p: any) => isPageAllowed(p.id)).map((page: any) => {
                                       const PageIcon = iconMap[page.icon];
@@ -430,7 +468,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                                   </div>
                                   <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                     {(subSession.subSubSessions?.length > 0 || subSession.pages?.length > 0)
-                                      ? expanded[`sub-${subSession.id}`] ? <ChevronDown size={14} color="#7C3AED" /> : <ChevronRight size={14} color="#C4C4C4" />
+                                      ? (!!query || expanded[`sub-${subSession.id}`]) ? <ChevronDown size={14} color="#7C3AED" /> : <ChevronRight size={14} color="#C4C4C4" />
                                       : <span style={{ width: 14 }} />}
                                   </div>
                                 </div>
@@ -438,7 +476,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                               </div>
 
                               <AnimatePresence initial={false}>
-                                {expanded[`sub-${subSession.id}`] && (
+                                {(!!query || expanded[`sub-${subSession.id}`]) && (
                                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2, ease: 'easeInOut' }} className="overflow-hidden">
                                     {Array.isArray(subSession.pages) && subSession.pages.filter(p => isPageAllowed(p.id)).map(page => {
                                       const PageIcon = iconMap[page.icon];
@@ -468,14 +506,14 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                                               </div>
                                               <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                                 {subSubSession.pages?.length > 0
-                                                  ? expanded[`subsub-${subSubSession.id}`] ? <ChevronDown size={14} color="#7C3AED" /> : <ChevronRight size={14} color="#C4C4C4" />
+                                                  ? (!!query || expanded[`subsub-${subSubSession.id}`]) ? <ChevronDown size={14} color="#7C3AED" /> : <ChevronRight size={14} color="#C4C4C4" />
                                                   : <span style={{ width: 14 }} />}
                                               </div>
                                             </div>
                                             <span className="text-sm">{subSubSession.label}</span>
                                           </div>
                                           <AnimatePresence initial={false}>
-                                            {expanded[`subsub-${subSubSession.id}`] && (
+                                            {(!!query || expanded[`subsub-${subSubSession.id}`]) && (
                                               <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2, ease: 'easeInOut' }} className="overflow-hidden">
                                                 {Array.isArray(subSubSession.pages) && subSubSession.pages.filter(p => isPageAllowed(p.id)).map(page => {
                                                   const PageIcon = iconMap[page.icon];
@@ -602,6 +640,16 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
               >
                 <LogOut size={16} />
               </button>
+            )}
+          </div>
+          
+          {/* ── Version Indicator ── */}
+          <div className={`flex items-center gap-2 mt-4 transition-all duration-300 ${isCollapsed ? 'justify-center' : 'justify-start px-2'}`}>
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] shrink-0"></div>
+            {!isCollapsed && (
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                v2.3.7
+              </span>
             )}
           </div>
         </div>
