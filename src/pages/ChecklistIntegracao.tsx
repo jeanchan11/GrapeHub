@@ -1285,7 +1285,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                         {new Date(c.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </div>
-                    <p className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed">{c.text}</p>
+                    <p className="text-xs text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">{c.text}</p>
                   </div>
                 ))
               )}

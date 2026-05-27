@@ -272,6 +272,7 @@ interface SortableCardProps {
 interface LeadDetailModalProps {
   currentUserEmail?: string;
   currentUserName?: string;
+  currentUserAvatar?: string;
   lead: Lead | null;
   users: User[];
   columns: any[];
@@ -478,7 +479,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   onMove, onDelete, onWin, onLose, onReopen, onMoveToKanban,
   onAddTask, onUpdateTask, onDeleteTask, onApplyTemplate, onManageTemplates,
   onRefreshTasks, currentKanbanId, api4comSettings, callingLeadId, onCallLead, onUpdateLeadField,
-  tags, onRefreshTags, currentUserEmail, currentUserName, lossReasons, sequences, onApplySequence
+  tags, onRefreshTags, currentUserEmail, currentUserName, currentUserAvatar, lossReasons, sequences, onApplySequence
 }) => {
   const [activeTab, setActiveTab] = useState<'atividades' | 'histórico' | 'notas' | 'ligações' | 'arquivos'>('atividades');
   const [callLogs, setCallLogs] = useState<any[]>([]);
@@ -766,7 +767,8 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
         lead_id: lead.id,
         title: meetingForm.title,
         meeting_date: meetingForm.meeting_date,
-        responsible_name: currentUserEmail || 'Sistema',
+        responsible_name: currentUserName || currentUserEmail || 'Sistema',
+        responsible_avatar: currentUserAvatar || '',
         notes: meetingForm.notes,
         office_location: meetingForm.office_location,
         reunion_link: meetingForm.reunion_link,
@@ -866,7 +868,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
     <>
       <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4">
         {/* Backdrop */}
-        <div className="fixed inset-0 modal-overlay" onClick={onClose} />
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm transition-all" onClick={onClose} />
 
         {/* Modal */}
         <div className="relative w-full max-w-7xl h-[90vh] modal-container overflow-hidden flex flex-col shadow-2xl">
@@ -3101,7 +3103,7 @@ const GerenciarKanbansModal = ({ isOpen, onClose, kanbans, columns, leads, onRen
 
   return (
     <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4">
-      <div className="fixed inset-0 modal-overlay" onClick={onClose} />
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm transition-all" onClick={onClose} />
       <div className="relative w-full max-w-2xl bg-white dark:bg-slate-900 rounded-2xl shadow-xl flex flex-col max-h-[80vh]">
         <div className="p-6 border-b border-gray-100 dark:border-white/5 flex items-center justify-between shrink-0">
           <h2 className="text-xl font-bold text-gray-900 dark:text-white">Gerenciar Kanbans</h2>
@@ -4053,6 +4055,7 @@ const CrmComercial = () => {
             title: m.title,
             date: m.meeting_date,
             responsible: m.responsible_name,
+            responsible_avatar: m.responsible_avatar,
             local: m.office_location,
             link: m.reunion_link,
             niche: m.reunion_niche,
@@ -4069,7 +4072,12 @@ const CrmComercial = () => {
         body: JSON.stringify({
           client_name: lead?.form_nome_fantasia || lead?.nome || 'Cliente sem nome',
           nome_completo: lead?.form_nome_completo || lead?.nome || '',
+          nome_fantasia: lead?.form_nome_fantasia || '',
           telefone_whatsapp: lead?.form_telefone_whatsapp || lead?.telefone || '',
+          cnpj_cpf: lead?.form_cnpj || lead?.cnpj || '',
+          cep: lead?.form_cep || lead?.cep || '',
+          cidade: lead?.form_cidade || '',
+          uf: lead?.form_estado || lead?.uf || '',
           meeting_info: meetingData,
           status_group: 'briefing-realizado' // column for new clients
         }),
@@ -4783,7 +4791,8 @@ const CrmComercial = () => {
           currentKanbanId={activeKanbanId}
           api4comSettings={api4comSettings}
           currentUserEmail={user?.email}
-          currentUserName={user?.name}
+          currentUserName={user?.name || user?.displayName}
+          currentUserAvatar={user?.photoURL}
           callingLeadId={callingLeadId}
           onCallLead={handleCallLead}
           onUpdateLeadField={handleUpdateLeadField}

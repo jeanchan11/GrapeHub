@@ -1091,7 +1091,8 @@ async function startServer() {
       ADD COLUMN IF NOT EXISTS reunion_link TEXT,
       ADD COLUMN IF NOT EXISTS reunion_niche TEXT,
       ADD COLUMN IF NOT EXISTS monthly_closings TEXT,
-      ADD COLUMN IF NOT EXISTS closing_goal TEXT;
+      ADD COLUMN IF NOT EXISTS closing_goal TEXT,
+      ADD COLUMN IF NOT EXISTS responsible_avatar TEXT;
     `).catch(e => console.error("Error migrating crm_comercial_meetings columns", e));
     await pool.query(`
       CREATE TABLE IF NOT EXISTS crm_comercial_task_templates (
@@ -8184,15 +8185,15 @@ app.get("/api/todos", async (req, res) => {
 
   app.post("/api/crm-comercial/meetings", async (req, res) => {
     try {
-      const { lead_id, title, meeting_date, responsible_name, notes, office_location, reunion_link, reunion_niche, monthly_closings, closing_goal } = req.body;
+      const { lead_id, title, meeting_date, responsible_name, responsible_avatar, notes, office_location, reunion_link, reunion_niche, monthly_closings, closing_goal } = req.body;
       if (!lead_id || !title || !meeting_date || !responsible_name) {
         return res.status(400).json({ error: "Missing required fields" });
       }
       
       const result = await pool.query(
-        `INSERT INTO crm_comercial_meetings (lead_id, title, meeting_date, responsible_name, notes, office_location, reunion_link, reunion_niche, monthly_closings, closing_goal)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
-        [lead_id, title, meeting_date, responsible_name, notes, office_location, reunion_link, reunion_niche, monthly_closings, closing_goal]
+        `INSERT INTO crm_comercial_meetings (lead_id, title, meeting_date, responsible_name, responsible_avatar, notes, office_location, reunion_link, reunion_niche, monthly_closings, closing_goal)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+        [lead_id, title, meeting_date, responsible_name, responsible_avatar || null, notes, office_location, reunion_link, reunion_niche, monthly_closings, closing_goal]
       );
       
       // Also log it into the general history

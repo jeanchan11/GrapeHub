@@ -1234,7 +1234,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                       </span>
                     </div>
                     <div className="bg-dark-bg border border-white/5 rounded-2xl rounded-tl-sm px-4 py-3">
-                      <p className="text-sm text-slate-200 whitespace-pre-wrap leading-relaxed">{c.text}</p>
+                      <p className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">{c.text}</p>
                     </div>
                   </div>
                 </div>

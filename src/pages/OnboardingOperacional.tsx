@@ -1302,8 +1302,14 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                             <h4 className="font-bold text-dark-text text-[15px] leading-tight break-words pr-2">{parsed.title || 'Reunião'}</h4>
                             <span className="text-[10px] font-medium text-slate-500 shrink-0 mt-0.5">{dateObj.toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric'})} às {dateObj.toLocaleString('pt-BR', { hour:'2-digit', minute:'2-digit'})}</span>
                           </div>
-                          <div className="flex items-center gap-1.5 mt-2.5 text-[11px] text-slate-400 font-medium">
-                            <Users size={13} className="opacity-70" />
+                          <div className="flex items-center gap-2 mt-2.5 text-[11px] text-slate-400 font-medium">
+                            {parsed.responsible_avatar ? (
+                              <img src={parsed.responsible_avatar} alt="User" className="w-4 h-4 rounded-full object-cover shadow-sm" />
+                            ) : (
+                              <div className="w-4 h-4 rounded-full bg-violet-500/20 text-violet-500 flex items-center justify-center text-[8px] font-bold">
+                                {String(parsed.responsible || 'S').charAt(0).toUpperCase()}
+                              </div>
+                            )}
                             <span className="truncate max-w-[200px]">{parsed.responsible || 'Sistema'}</span>
                           </div>
                         </div>
@@ -1327,7 +1333,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                             {notesLines.map((line:string, i:number) => {
                               const isCheck = line.trim().startsWith('-');
                               return (
-                                <li key={i} className="flex items-start gap-3 text-[12px] text-slate-300">
+                                <li key={i} className="flex items-start gap-3 text-[12px] text-slate-700 dark:text-slate-300 font-medium leading-relaxed">
                                   {isCheck ? (
                                     <Check size={14} className="text-emerald-500 shrink-0 mt-0.5 opacity-80" />
                                   ) : (
@@ -1410,7 +1416,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                           {new Date(c.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
                         </span>
                       </div>
-                      <p className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed">{c.text}</p>
+                      <p className="text-xs text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">{c.text}</p>
                     </div>
                   ))
                 )}
