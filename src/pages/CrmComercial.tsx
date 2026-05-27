@@ -4067,11 +4067,11 @@ const CrmComercial = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          client_name: lead?.nome || 'Cliente sem nome',
-          nome_completo: lead?.nome || '',
-          telefone_whatsapp: lead?.telefone || '',
+          client_name: lead?.form_nome_fantasia || lead?.nome || 'Cliente sem nome',
+          nome_completo: lead?.form_nome_completo || lead?.nome || '',
+          telefone_whatsapp: lead?.form_telefone_whatsapp || lead?.telefone || '',
           meeting_info: meetingData,
-          status_group: 'a-fazer-briefing' // column for new clients
+          status_group: 'briefing-realizado' // column for new clients
         }),
       });
     } catch (e) {

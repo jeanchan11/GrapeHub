@@ -71,6 +71,7 @@ const ACTIONS: ActionDef[] = [
   { id: 'send_webhook',       label: 'Enviar webhook',            description: 'Envia um POST para uma URL externa',      icon: Send },
   { id: 'start_sequence',     label: 'Iniciar sequência',         description: 'Inscreve o negócio numa sequência',       icon: GitBranch },
   { id: 'create_client',      label: 'Criar cliente ativo',       description: 'Cria um cliente em Clientes Ativos',      icon: UserPlus },
+  { id: 'create_onboarding',  label: 'Criar no Onboarding',       description: 'Cria cliente no Onboarding Operacional',  icon: Layers },
 ];
 
 const CONDITION_FIELDS = [

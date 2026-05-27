@@ -114,8 +114,8 @@ const formatDate = (iso: string | null) => {
 const SQUAD_OPTIONS = ['Squad Able', 'Squad Baker'];
 
 const STATUS_GROUPS: Omit<StatusGroup, 'tasks'>[] = [
-  { id: 'reuniao-coleta-acessos', label: 'REUNIÃO - COLETA DE ACESSOS', color: '#3b82f6', emoji: '🗓️' },
   { id: 'treinamento-comercial',  label: 'TREINAMENTO COMERCIAL',       color: '#8b5cf6', emoji: '🧠💰' },
+  { id: 'reuniao-coleta-acessos', label: 'REUNIÃO - COLETA DE ACESSOS', color: '#3b82f6', emoji: '🗓️' },
   { id: 'briefing-realizado',     label: 'REUNIÃO - BRIEFING',          color: '#10b981', emoji: '🗓️' },
 ];
 
