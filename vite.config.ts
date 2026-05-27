@@ -2,28 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
-
-function getGitVersion() {
-  try {
-    const gitLogPath = path.resolve(__dirname, '.git/logs/HEAD');
-    if (fs.existsSync(gitLogPath)) {
-      const logs = fs.readFileSync(gitLogPath, 'utf8');
-      const lines = logs.trim().split('\n');
-      for (let i = lines.length - 1; i >= 0; i--) {
-        const line = lines[i];
-        if (line.includes('commit: ') || line.includes('commit (initial): ')) {
-          const match = line.match(/commit(?: \(initial\))?: ([\d\.]+)/);
-          if (match && match[1]) {
-            return `v${match[1]}`;
-          }
-        }
-      }
-    }
-  } catch (e) {
-    console.error('Error reading git log:', e);
-  }
-  return 'v2.3.7'; // fallback
-}
+import pkg from './package.json';
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
@@ -34,7 +13,7 @@ export default defineConfig(({ mode }) => {
       },
       plugins: [react()],
       define: {
-        '__APP_VERSION__': JSON.stringify(getGitVersion()),
+        '__APP_VERSION__': JSON.stringify(`v${pkg.version}`),
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
         'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
         // Map Firebase variables even if they don't have the VITE_ prefix
