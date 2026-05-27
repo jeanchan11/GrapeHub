@@ -6,7 +6,7 @@ import {
 import {
   Calendar, TrendingUp, DollarSign, Users, Target, RefreshCw,
   ChevronDown, Award, PhoneCall, UserCheck, RotateCcw,
-  Filter, ChevronRight, PieChart as PieChartIcon, Phone, Clock, Globe, Share2
+  Filter, ChevronRight, PieChart as PieChartIcon, Phone, Clock, Globe, Share2, UserMinus
 } from 'lucide-react';
 
 const MESES       = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
@@ -48,7 +48,10 @@ function LossTooltip({ active, payload }: any) {
   return (
     <div className="bg-dark-card border border-white/10 rounded-xl px-3 py-2 shadow-2xl text-sm pointer-events-none">
       <p className="font-bold text-dark-text text-sm">{d.name}</p>
-      <p className="text-red-400 font-semibold mt-0.5">{d.total} {d.total === 1 ? 'perda' : 'perdas'}</p>
+      <p className="text-red-400 font-semibold mt-0.5">
+        {d.total} {d.total === 1 ? 'perda' : 'perdas'}
+        {d.pct !== undefined && <span className="text-slate-400 font-medium ml-1">({d.pct}%)</span>}
+      </p>
     </div>
   );
 }
@@ -570,9 +573,10 @@ export default function CrmMetricas() {
             {/* ── Motivos de Perda Pré-vendas (donut — 2 colunas) ────── */}
             <div className="lg:col-span-2">
               {(() => {
-                const pvLossData: { name: string; total: number }[] = (data?.loss_reasons_pre_vendas || []).map((r: any) => ({ ...r, total: Number(r.total) }));
+                const pvLossDataRaw: { name: string; total: number }[] = (data?.loss_reasons_pre_vendas || []).map((r: any) => ({ ...r, total: Number(r.total) }));
                 const RED_SHADES = ['#ef4444','#dc2626','#b91c1c','#991b1b','#7f1d1d','#fca5a5','#fecaca'];
-                const totalNum = pvLossData.reduce((s, r) => s + r.total, 0);
+                const totalNum = pvLossDataRaw.reduce((s, r) => s + r.total, 0);
+                const pvLossData = pvLossDataRaw.map(r => ({ ...r, pct: totalNum ? Math.round((r.total / totalNum) * 100) : 0 }));
                 const topMotivo = pvLossData[0];
                 const topPct = totalNum && topMotivo ? Math.round((topMotivo.total / totalNum) * 100) : 0;
 
@@ -604,12 +608,9 @@ export default function CrmMetricas() {
                                 <Cell key={idx} fill={RED_SHADES[idx % RED_SHADES.length]} />
                               ))}
                             </Pie>
-                            <Tooltip content={<LossTooltip />} />
+                            <Tooltip content={<LossTooltip />} wrapperStyle={{ zIndex: 100 }} />
                           </PieChart>
-                          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                            <span className="text-3xl font-black text-dark-text">{topPct}%</span>
-                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center leading-tight px-4">{topMotivo?.name}</span>
-                          </div>
+                          {/* Centro vazio */}
                         </div>
                         <div className="flex flex-wrap gap-x-4 gap-y-2 justify-center">
                           {pvLossData.map((r: any, idx: number) => (
@@ -1071,8 +1072,9 @@ export default function CrmMetricas() {
               ) : (() => {
                 const RED_SHADES = ['#ef4444','#dc2626','#b91c1c','#991b1b','#7f1d1d','#fca5a5','#fecaca'];
                 // Converte total para number (PostgreSQL retorna BigInt como string)
-                const pieData = lossReasonsData.map(r => ({ ...r, total: Number(r.total) }));
-                const totalNum = pieData.reduce((s, r) => s + r.total, 0);
+                const pieDataRaw = lossReasonsData.map(r => ({ ...r, total: Number(r.total) }));
+                const totalNum = pieDataRaw.reduce((s, r) => s + r.total, 0);
+                const pieData = pieDataRaw.map(r => ({ ...r, pct: totalNum ? Math.round((r.total / totalNum) * 100) : 0 }));
                 const topMotivo = pieData[0];
                 const topPct = totalNum ? Math.round((topMotivo.total / totalNum) * 100) : 0;
                 
@@ -1096,13 +1098,9 @@ export default function CrmMetricas() {
                             <Cell key={idx} fill={RED_SHADES[idx % RED_SHADES.length]} />
                           ))}
                         </Pie>
-                        <Tooltip content={<LossTooltip />} />
+                        <Tooltip content={<LossTooltip />} wrapperStyle={{ zIndex: 100 }} />
                       </PieChart>
-                      {/* Texto central */}
-                      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                        <span className="text-3xl font-black text-dark-text">{topPct}%</span>
-                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center leading-tight px-4">{topMotivo.name}</span>
-                      </div>
+                      {/* Texto central vazio */}
                     </div>
                     {/* Legenda */}
                     <div className="flex flex-wrap gap-x-4 gap-y-2 justify-center">
