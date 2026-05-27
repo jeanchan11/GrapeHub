@@ -437,6 +437,121 @@ const TagsManagerModal: React.FC<TagsManagerModalProps> = ({ tags, onChange, onC
   );
 };
 
+// ─── Image utilities ─────────────────────────────────────────────────────────
+
+const compressImage = (file: File | Blob, maxW = 1200, quality = 0.82): Promise<string> =>
+  new Promise(resolve => {
+    const img = new window.Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const scale = Math.min(1, maxW / img.width);
+      const canvas = document.createElement('canvas');
+      canvas.width  = img.width  * scale;
+      canvas.height = img.height * scale;
+      canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.src = url;
+  });
+
+interface RichTextAreaProps {
+  value: string;
+  onChange: (html: string) => void;
+  placeholder?: string;
+  rows?: number;
+  className?: string;
+  enableImages?: boolean;
+}
+
+const RichTextArea: React.FC<RichTextAreaProps> = ({ value, onChange, placeholder = '', rows = 3, className = '', enableImages = false }) => {
+  const ref      = useRef<HTMLDivElement>(null);
+  const fileRef  = useRef<HTMLInputElement>(null);
+  const lastVal  = useRef(value);
+
+  // Sync external value → DOM only when it changes from outside
+  // Initialize content on mount
+  useEffect(() => {
+    if (ref.current) {
+      ref.current.innerHTML = value;
+      lastVal.current = value;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Sync external value changes (e.g. modal reset)
+  useEffect(() => {
+    if (ref.current && value !== lastVal.current) {
+      ref.current.innerHTML = value;
+      lastVal.current = value;
+    }
+  }, [value]);
+
+  const emit = () => {
+    const html = ref.current?.innerHTML ?? '';
+    lastVal.current = html;
+    onChange(html);
+  };
+
+  const insertImg = async (file: File | Blob) => {
+    const src = await compressImage(file);
+    document.execCommand('insertHTML', false, `<img src="${src}" style="max-width:100%;border-radius:8px;margin:4px 0;display:block" />`);
+    emit();
+  };
+
+  const handlePaste = async (e: React.ClipboardEvent) => {
+    const items = Array.from(e.clipboardData.items);
+    const imgItem = items.find(i => i.type.startsWith('image/'));
+    if (imgItem && enableImages) {
+      e.preventDefault();
+      const blob = imgItem.getAsFile();
+      if (blob) await insertImg(blob);
+    }
+  };
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) { ref.current?.focus(); await insertImg(file); }
+    e.target.value = '';
+  };
+
+  const isEmpty = !value || value === '<br>' || value === '';
+
+  return (
+    <div className={`relative ${className}`}>
+      <div
+        ref={ref}
+        contentEditable
+        suppressContentEditableWarning
+        onInput={emit}
+        onPaste={handlePaste}
+        style={{ minHeight: `${rows * 1.6}em` }}
+        className={`w-full bg-dark-card border border-dark-text/10 rounded-xl px-4 py-2.5 text-sm text-dark-text focus:outline-none focus:border-violet-500/50 transition-all overflow-auto rich-text-content`}
+      />
+      {isEmpty && (
+        <span className="absolute top-2.5 left-4 text-sm text-dark-text/30 pointer-events-none select-none">{placeholder}</span>
+      )}
+      {enableImages && (
+        <>
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            className="absolute bottom-2 right-2 w-6 h-6 flex items-center justify-center rounded-lg text-dark-text/30 hover:text-violet-400 hover:bg-violet-500/10 transition-all"
+            title="Anexar imagem"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <circle cx="8.5" cy="8.5" r="1.5" />
+              <polyline points="21 15 16 10 5 21" />
+            </svg>
+          </button>
+          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+        </>
+      )}
+    </div>
+  );
+};
+
 // ─── TODO Modal ───────────────────────────────────────────────────────────────
 
 interface TodoModalProps {
@@ -444,12 +559,13 @@ interface TodoModalProps {
   allColumns: typeof COLUMNS;
   globalTags: string[];
   coloredTagDefs?: ColoredTag[];
+  enableImageUpload?: boolean;
   onTagCreated: (tag: string) => void;
   onSave: (item: Omit<TodoItem, 'id' | 'createdAt'>) => void;
   onClose: () => void;
 }
 
-const TodoModal: React.FC<TodoModalProps> = ({ initial, allColumns, globalTags, coloredTagDefs, onTagCreated, onSave, onClose }) => {
+const TodoModal: React.FC<TodoModalProps> = ({ initial, allColumns, globalTags, coloredTagDefs, enableImageUpload, onTagCreated, onSave, onClose }) => {
   const [title, setTitle]         = useState(initial?.title ?? '');
   const [description, setDescription] = useState(initial?.description ?? '');
   const [priority, setPriority]   = useState<Priority>(initial?.priority ?? 'medium');
@@ -517,8 +633,18 @@ const TodoModal: React.FC<TodoModalProps> = ({ initial, allColumns, globalTags, 
 
         <div>
           <label className="text-[10px] font-bold text-dark-text/40 uppercase tracking-widest mb-1 block">Descrição</label>
-          <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Detalhes opcionais..." rows={2}
-            className="w-full bg-dark-card border border-dark-text/10 rounded-xl px-4 py-2.5 text-sm text-dark-text placeholder-dark-text/30 focus:outline-none focus:border-violet-500/50 transition-all resize-none" />
+          {enableImageUpload ? (
+            <RichTextArea
+              value={description}
+              onChange={setDescription}
+              placeholder="Detalhes opcionais... Cole imagens com Ctrl+V"
+              rows={3}
+              enableImages
+            />
+          ) : (
+            <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Detalhes opcionais..." rows={2}
+              className="w-full bg-dark-card border border-dark-text/10 rounded-xl px-4 py-2.5 text-sm text-dark-text placeholder-dark-text/30 focus:outline-none focus:border-violet-500/50 transition-all resize-none" />
+          )}
         </div>
 
         <div className="grid grid-cols-3 gap-3">
@@ -733,6 +859,7 @@ interface TaskDetailModalProps {
   item: TodoItem;
   allColumns: typeof COLUMNS;
   coloredTagDefs?: ColoredTag[];
+  enableImageUpload?: boolean;
   onEdit: () => void;
   onClose: () => void;
   onSubtaskToggle: (taskId: string, subtaskId: string) => void;
@@ -741,7 +868,7 @@ interface TaskDetailModalProps {
   onAddComment: (taskId: string, text: string) => void;
 }
 
-const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ item, allColumns, coloredTagDefs, onEdit, onClose, onSubtaskToggle, onSubtasksReorder, onAddSubtask, onAddComment }) => {
+const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ item, allColumns, coloredTagDefs, enableImageUpload, onEdit, onClose, onSubtaskToggle, onSubtasksReorder, onAddSubtask, onAddComment }) => {
   const [newComment, setNewComment] = useState('');
   const [newSubtask, setNewSubtask] = useState('');
   const [subDragFrom, setSubDragFrom] = useState<number | null>(null);
@@ -818,7 +945,14 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ item, allColumns, col
           {item.description && (
             <div>
               <p className="text-[10px] font-bold text-dark-text/40 uppercase tracking-widest mb-1.5">Descrição</p>
-              <p className="text-sm text-dark-text/70 leading-relaxed">{item.description}</p>
+              {enableImageUpload ? (
+                <div
+                  className="text-sm text-dark-text/70 leading-relaxed rich-text-content"
+                  dangerouslySetInnerHTML={{ __html: item.description }}
+                />
+              ) : (
+                <p className="text-sm text-dark-text/70 leading-relaxed">{item.description}</p>
+              )}
             </div>
           )}
 
@@ -921,7 +1055,11 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ item, allColumns, col
               )}
               {item.comments.map(c => (
                 <div key={c.id} className="bg-dark-card border border-dark-text/[0.06] rounded-xl px-3 py-2.5">
-                  <p className="text-sm text-dark-text/80 leading-relaxed">{c.text}</p>
+                  {enableImageUpload ? (
+                    <div className="text-sm text-dark-text/80 leading-relaxed rich-text-content" dangerouslySetInnerHTML={{ __html: c.text }} />
+                  ) : (
+                    <p className="text-sm text-dark-text/80 leading-relaxed">{c.text}</p>
+                  )}
                   <p className="text-[10px] text-dark-text/30 mt-1">
                     {new Date(c.createdAt).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
                   </p>
@@ -929,18 +1067,29 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ item, allColumns, col
               ))}
             </div>
             {/* New comment */}
-            <div className="flex gap-2">
-              <input
-                value={newComment}
-                onChange={e => setNewComment(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); submitComment(); } }}
-                placeholder="Adicionar um comentário..."
-                className="flex-1 bg-dark-card border border-dark-text/10 rounded-xl px-3 py-2 text-sm text-dark-text placeholder-dark-text/30 focus:outline-none focus:border-violet-500/50 transition-all"
-              />
+            <div className="flex gap-2 items-end">
+              {enableImageUpload ? (
+                <RichTextArea
+                  value={newComment}
+                  onChange={setNewComment}
+                  placeholder="Adicionar um comentário... Cole imagens com Ctrl+V"
+                  rows={2}
+                  enableImages
+                  className="flex-1"
+                />
+              ) : (
+                <input
+                  value={newComment}
+                  onChange={e => setNewComment(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); submitComment(); } }}
+                  placeholder="Adicionar um comentário..."
+                  className="flex-1 bg-dark-card border border-dark-text/10 rounded-xl px-3 py-2 text-sm text-dark-text placeholder-dark-text/30 focus:outline-none focus:border-violet-500/50 transition-all"
+                />
+              )}
               <button
                 onClick={submitComment}
-                disabled={!newComment.trim()}
-                className="px-3 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white transition-all"
+                disabled={!newComment.replace(/<[^>]*>/g,'').trim() && !newComment.includes('<img')}
+                className="px-3 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white transition-all flex-shrink-0"
               >
                 <Send size={13} />
               </button>
@@ -1385,32 +1534,34 @@ const TodoRow: React.FC<RowProps> = ({ item, allColumns, coloredTagDefs, onView,
 
       {/* Content block */}
       <div className="flex-1 min-w-0 cursor-pointer" onClick={() => onView(item)}>
-        {/* Title */}
-        <span
-          className={`text-sm text-dark-text block truncate hover:text-violet-400 transition-colors ${item.status === 'done' ? 'line-through opacity-40' : ''}`}
-        >
-          {item.title}
-        </span>
+        {/* Title row: title on left, tag pill on right */}
+        <div className="flex items-center gap-2 min-w-0">
+          <span
+            className={`flex-1 text-sm text-dark-text truncate hover:text-violet-400 transition-colors ${item.status === 'done' ? 'line-through opacity-40' : ''}`}
+          >
+            {item.title}
+          </span>
+          {item.tags.length > 0 && (() => {
+            const ctag = coloredTagDefs?.find(c => c.name === item.tags[0]);
+            const tagStyle = ctag
+              ? { backgroundColor: ctag.color + '26', color: ctag.color, borderColor: ctag.color + '66' }
+              : undefined;
+            return (
+              <span
+                className={`flex-shrink-0 px-1.5 py-0.5 rounded-full text-[9px] font-bold border ${
+                  ctag ? '' : 'bg-violet-500/10 text-violet-400 border-violet-500/15'
+                }`}
+                style={tagStyle}
+              >
+                {item.tags[0]}{item.tags.length > 1 ? ` +${item.tags.length - 1}` : ''}
+              </span>
+            );
+          })()}
+        </div>
 
-        {/* Tag + Date + Subtask row */}
-        {(item.tags.length > 0 || item.dueDate || item.subtasks.length > 0) && (
-          <div className="flex items-center gap-2 mt-1">
-            {item.tags.length > 0 && (() => {
-                const ctag = coloredTagDefs.find(c => c.name === item.tags[0]);
-                const tagStyle = ctag
-                  ? { backgroundColor: ctag.color + '22', color: ctag.color, borderColor: ctag.color + '55' }
-                  : undefined;
-                return (
-                  <span
-                    className={`px-1.5 py-0.5 rounded-full text-[9px] font-semibold border ${
-                      ctag ? '' : 'bg-violet-500/10 text-violet-400 border-violet-500/15'
-                    }`}
-                    style={tagStyle}
-                  >
-                    {item.tags[0]}{item.tags.length > 1 ? ` +${item.tags.length - 1}` : ''}
-                  </span>
-                );
-              })()}
+        {/* Second row: date + subtasks only */}
+        {(item.dueDate || item.subtasks.length > 0) && (
+          <div className="flex items-center gap-2 mt-0.5">
             {item.dueDate && (() => {
               const today = new Date().toISOString().split('T')[0];
               const overdue = item.dueDate < today && item.status !== 'done';
@@ -1601,7 +1752,7 @@ const EmptyCol = ({ onAdd, label }: { onAdd: () => void; label: string }) => (
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitle?: string; hideRecurring?: boolean; hideDocument?: boolean; enableColoredTags?: boolean }> = ({ activePage, pageTitle, pageSubtitle, hideRecurring = false, hideDocument = false, enableColoredTags = false }) => {
+const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitle?: string; hideRecurring?: boolean; hideDocument?: boolean; enableColoredTags?: boolean; enableImageUpload?: boolean }> = ({ activePage, pageTitle, pageSubtitle, hideRecurring = false, hideDocument = false, enableColoredTags = false, enableImageUpload = false }) => {
   const [todos,      setTodos]      = useState<TodoItem[]>([]);
   const [recurring,  setRecurring]  = useState<RecurringItem[]>([]);
   const [ideas,      setIdeas]      = useState<IdeaItem[]>([]);
@@ -2536,6 +2687,7 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
           item={viewingTodo}
           allColumns={COLUMNS}
           coloredTagDefs={enableColoredTags ? coloredTagDefs : undefined}
+          enableImageUpload={enableImageUpload}
           onEdit={() => { setEditing(viewingTodo); setViewingTodo(undefined); setTodoModal(true); }}
           onClose={() => setViewingTodo(undefined)}
           onSubtaskToggle={toggleSubtask}
@@ -2550,6 +2702,7 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
           allColumns={COLUMNS}
           globalTags={globalTags}
           coloredTagDefs={enableColoredTags ? coloredTagDefs : undefined}
+          enableImageUpload={enableImageUpload}
           onTagCreated={handleTagCreated}
           onSave={editing ? updateTodo : createTodo}
           onClose={() => { setTodoModal(false); setEditing(undefined); }}

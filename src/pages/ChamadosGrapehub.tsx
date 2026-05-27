@@ -17,6 +17,7 @@ const ChamadosGrapehub: React.FC<{ activePage?: string }> = ({ activePage }) => 
       hideRecurring
       hideDocument
       enableColoredTags
+      enableImageUpload
     />
   );
 };

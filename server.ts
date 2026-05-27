@@ -7100,22 +7100,28 @@ app.get("/api/todos", async (req, res) => {
       let paramIdx = 1;
       
       if (kanban_id !== undefined) {
-        // Moving to a new kanban: find its first column automatically
-        const firstColResult = await pool.query(
-          "SELECT id FROM crm_comercial_columns WHERE kanban_id = $1 ORDER BY order_index ASC LIMIT 1",
-          [kanban_id]
-        );
-        const firstColId = firstColResult.rows[0]?.id || null;
+        // Moving to a new kanban: use provided coluna if given, otherwise find first column automatically
+        let targetColId: string | null = null;
+        if (coluna !== undefined) {
+          // Use the explicitly provided coluna (e.g. when redirecting to Perdidos)
+          targetColId = coluna;
+        } else {
+          const firstColResult = await pool.query(
+            "SELECT id FROM crm_comercial_columns WHERE kanban_id = $1 ORDER BY order_index ASC LIMIT 1",
+            [kanban_id]
+          );
+          targetColId = firstColResult.rows[0]?.id || null;
+        }
         updates.push(`kanban_id = $${paramIdx++}`);
         params.push(kanban_id);
-        if (firstColId) {
+        if (targetColId) {
           updates.push(`coluna = $${paramIdx++}`);
-          params.push(firstColId);
+          params.push(targetColId);
           updates.push(`etapa_updated_at = NOW()`);
         }
         await pool.query(
           `INSERT INTO crm_comercial_history (lead_id, from_coluna, to_coluna, moved_by) VALUES ($1, $2, $3, $4)`,
-          [id, currentColuna, firstColId || 'outro-kanban', moved_by || 'Sistema']
+          [id, currentColuna, targetColId || 'outro-kanban', moved_by || 'Sistema']
         );
       } else if (coluna !== undefined) {
         updates.push(`coluna = $${paramIdx++}`);
@@ -9408,6 +9414,11 @@ app.get("/api/todos", async (req, res) => {
       ).catch(() => ({ rows: [] as any[] }));
       const comercialKanbanId = comercialKanban.rows[0]?.id || null;
 
+      const perdidosKanban = await pool.query(
+        `SELECT id FROM crm_comercial_kanbans WHERE LOWER(nome) LIKE '%perdido%' LIMIT 1`
+      ).catch(() => ({ rows: [] as any[] }));
+      const perdidosKanbanId = perdidosKanban.rows[0]?.id || null;
+
       const lossReasonsMonth = comercialKanbanId ? await pool.query(`
         SELECT
           COALESCE(lr.name, 'Sem motivo') AS name,
@@ -9415,11 +9426,20 @@ app.get("/api/todos", async (req, res) => {
         FROM crm_comercial_leads cl
         LEFT JOIN crm_comercial_loss_reasons lr ON cl.loss_reason_id = lr.id
         WHERE cl.is_lost = true
-          AND cl.kanban_id::text = $3::text
+          AND (
+            cl.kanban_id::text = $3::text
+            OR (
+              $4::text IS NOT NULL AND cl.kanban_id::text = $4::text 
+              AND cl.coluna::text IN (
+                SELECT id::text FROM crm_comercial_columns 
+                WHERE kanban_id::text = $4::text AND (LOWER(title) LIKE '%venda%' OR LOWER(title) LIKE '%comercial%') AND LOWER(title) NOT LIKE '%pr%'
+              )
+            )
+          )
           AND cl.updated_at >= $1 AND cl.updated_at <= ($2::date + interval '1 day')
         GROUP BY lr.name
         ORDER BY total DESC
-      `, [startDate, endDate, comercialKanbanId]) : { rows: [] as any[] };
+      `, [startDate, endDate, comercialKanbanId, perdidosKanbanId]) : { rows: [] as any[] };
 
       // Motivos de Perda — apenas Pré-vendas
       const preVendasKanban = await pool.query(
@@ -9434,11 +9454,20 @@ app.get("/api/todos", async (req, res) => {
         FROM crm_comercial_leads cl
         LEFT JOIN crm_comercial_loss_reasons lr ON cl.loss_reason_id = lr.id
         WHERE cl.is_lost = true
-          AND cl.kanban_id::text = $3::text
+          AND (
+            cl.kanban_id::text = $3::text
+            OR (
+              $4::text IS NOT NULL AND cl.kanban_id::text = $4::text 
+              AND cl.coluna::text IN (
+                SELECT id::text FROM crm_comercial_columns 
+                WHERE kanban_id::text = $4::text AND (LOWER(title) LIKE '%pré%' OR LOWER(title) LIKE '%pre%')
+              )
+            )
+          )
           AND cl.updated_at >= $1 AND cl.updated_at <= ($2::date + interval '1 day')
         GROUP BY lr.name
         ORDER BY total DESC
-      `, [startDate, endDate, preVendasKanbanId]) : { rows: [] as any[] };
+      `, [startDate, endDate, preVendasKanbanId, perdidosKanbanId]) : { rows: [] as any[] };
 
       // Leads do mês (quantidade criada no período)
       const leadsMonth = await pool.query(`

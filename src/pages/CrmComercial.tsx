@@ -4225,23 +4225,74 @@ const CrmComercial = () => {
   };
 
   const handleLoseLead = async (leadId: string, reasonId?: number, reasonName?: string) => {
-    // Atualiza UI otimisticamente (adiciona is_lost: true no lead)
-    setLeads(prev => prev.map(l => l.id === leadId ? { ...l, is_lost: true } as any : l));
+    // Otimisticamente remove do kanban atual (vai aparecer no Perdidos)
+    setLeads(prev => prev.filter(l => l.id !== leadId));
 
     try {
-      // Move para coluna "Perdido" se existir nesse kanban
-      const lostCol = columns.find(c => c.title?.toLowerCase().includes('perd') || c.title?.toLowerCase().includes('descart'));
-      const patchBody: any = { is_lost: true, moved_by: user?.name || 'Sistema' };
-      if (lostCol) patchBody.coluna = lostCol.id;
-      if (reasonId) patchBody.loss_reason_id = reasonId;
+      // 1. Descobrir o kanban "Perdidos"
+      const perdidosKanban = (kanbans as any[]).find((k: any) =>
+        k.nome?.toLowerCase().includes('perdido') || k.nome?.toLowerCase().includes('perdidos')
+      );
 
-      await fetch(`/api/crm-comercial/leads/${leadId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(patchBody)
-      });
+      // 2. Descobre o nome do kanban atual para decidir qual coluna do Perdidos usar
+      const currentKanbanNome = (kanbans as any[]).find((k: any) => String(k.id) === String(activeKanbanId))?.nome?.toLowerCase() || '';
+      const isPreVendas = currentKanbanNome.includes('pré') || currentKanbanNome.includes('pre') || currentKanbanNome.includes('pré-vendas');
 
-      // Registra o motivo da perda no histórico
+      if (perdidosKanban) {
+        // 3. Busca as colunas do kanban Perdidos
+        let perdidosColumns: any[] = [];
+        try {
+          const colRes = await fetch(`/api/crm-comercial/columns?kanban_id=${perdidosKanban.id}`);
+          if (colRes.ok) perdidosColumns = await colRes.json();
+        } catch { }
+
+        // 4. Escolhe a coluna correta dentro do Perdidos
+        let targetCol: any = null;
+        if (isPreVendas) {
+          targetCol = perdidosColumns.find((c: any) =>
+            c.title?.toLowerCase().includes('pré') || c.title?.toLowerCase().includes('pre') || c.title?.toLowerCase().includes('pré-vendas')
+          );
+        } else {
+          targetCol = perdidosColumns.find((c: any) =>
+            c.title?.toLowerCase().includes('venda') || c.title?.toLowerCase().includes('comercial')
+          );
+        }
+        if (!targetCol) targetCol = perdidosColumns[0]; // fallback: primeira coluna
+
+        // 5. Primeiro: marca is_lost + preserva motivo (para métricas)
+        await fetch(`/api/crm-comercial/leads/${leadId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            is_lost: true,
+            loss_reason_id: reasonId || null,
+            moved_by: user?.name || 'Sistema'
+          })
+        });
+
+        // 6. Segundo: move para o kanban Perdidos + coluna correta
+        const moveBody: any = { kanban_id: perdidosKanban.id, moved_by: user?.name || 'Sistema' };
+        if (targetCol) moveBody.coluna = targetCol.id;
+        await fetch(`/api/crm-comercial/leads/${leadId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(moveBody)
+        });
+
+      } else {
+        // Sem kanban Perdidos: comportamento anterior (coluna perdido no mesmo kanban)
+        const lostCol = columns.find(c => c.title?.toLowerCase().includes('perd') || c.title?.toLowerCase().includes('descart'));
+        const patchBody: any = { is_lost: true, moved_by: user?.name || 'Sistema' };
+        if (lostCol) patchBody.coluna = lostCol.id;
+        if (reasonId) patchBody.loss_reason_id = reasonId;
+        await fetch(`/api/crm-comercial/leads/${leadId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(patchBody)
+        });
+      }
+
+      // 7. Registra no histórico (preserva o motivo de perda para métricas)
       const desc = reasonName
         ? `❌ Lead marcado como perdido — Motivo: ${reasonName}`
         : '❌ Lead marcado como perdido';
@@ -4250,6 +4301,7 @@ const CrmComercial = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action_type: 'perda', description: desc, user_name: user?.name || 'Sistema' })
       }).catch(() => { });
+
     } catch (e) {
       console.error('Erro ao marcar perda:', e);
       fetchData(); // reverte em caso de erro
