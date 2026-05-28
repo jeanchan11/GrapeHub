@@ -113,17 +113,52 @@ const formatDate = (iso: string | null) => {
 
 const SQUAD_OPTIONS = ['Squad Able', 'Squad Baker'];
 
+// ── Colored Tags ─────────────────────────────────────────────────────────────
+export interface ColoredTag {
+  id: string;
+  name: string;
+  color: string;
+}
+
+const TAG_COLORS = [
+  '#8b5cf6', '#6366f1', '#3b82f6', '#06b6d4', '#10b981',
+  '#f59e0b', '#f97316', '#ef4444', '#ec4899', '#64748b',
+  '#a78bfa', '#34d399', '#fbbf24', '#60a5fa', '#f472b6',
+];
+
+const loadColoredTags = (pageId: string): ColoredTag[] => {
+  try { const r = localStorage.getItem(`grapehub_ctags_${pageId}`); return r ? JSON.parse(r) : []; } catch { return []; }
+};
+const saveColoredTags = (pageId: string, tags: ColoredTag[]) =>
+  localStorage.setItem(`grapehub_ctags_${pageId}`, JSON.stringify(tags));
+
+const uid = () => Math.random().toString(36).substr(2, 9);
+
 const STATUS_GROUPS: Omit<StatusGroup, 'tasks'>[] = [
   { id: 'alteracoes',             label: 'ALTERAÇÕES',             color: '#ef4444', emoji: '🔄' },
   { id: 'testes',                 label: 'TESTES',                 color: '#3b82f6', emoji: '⚙️🤖' },
   { id: 'implementacao-n8n',      label: 'IMPLEMENTAÇÃO N8N',      color: '#ea580c', emoji: '⤵️🤖' },
-  { id: 'criando-prompt',         label: 'CRIANDO PROMPT',         color: '#d97706', emoji: '📜' },
+  { id: 'criando-prompt',         label: 'CRIANDO PROMPT',         color: '#8b5cf6', emoji: '📝' },
   { id: 'a-implementar',          label: 'A IMPLEMENTAR',          color: '#71717a', emoji: '⏳' },
   { id: 'aguardando-informacoes', label: 'AGUARDANDO INFORMAÇÕES', color: '#eab308', emoji: '' },
 ];
 
 // ── Tag Badge ─────────────────────────────────────────────
-const TagBadge = ({ label }: { label: string }) => {
+const TagBadge = ({ label, defs }: { label: string; defs?: ColoredTag[] }) => {
+  if (defs) {
+    const ctag = defs.find(c => c.name.toLowerCase() === label.toLowerCase());
+    if (ctag) {
+      return (
+        <span
+          className="px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider border"
+          style={{ backgroundColor: ctag.color + '22', color: ctag.color, borderColor: ctag.color + '44' }}
+        >
+          {label}
+        </span>
+      );
+    }
+  }
+
   const colors: Record<string, string> = {
     'coletar conta de anúncio': 'bg-amber-500/15 text-amber-400 border border-amber-500/30',
     'pendência do advogado': 'bg-rose-500/15 text-rose-400 border border-rose-500/30',
@@ -131,7 +166,7 @@ const TagBadge = ({ label }: { label: string }) => {
   };
   const cls = colors[label.toLowerCase()] || 'bg-slate-500/15 text-slate-400 border border-slate-500/30';
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${cls}`}>
+    <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider ${cls}`}>
       {label}
     </span>
   );
@@ -309,8 +344,9 @@ const fetchUsersOnce = () => {
 };
 
 // ── Task Row ──────────────────────────────────────────────
-const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: { 
-  task: OnboardingTask; 
+const TaskRow = ({ task, coloredTagDefs, onUpdate, onOpenDetail, onOpenSubtask }: { 
+  task: OnboardingTask;
+  coloredTagDefs: ColoredTag[];
   onUpdate: () => void; 
   onOpenDetail: (t: OnboardingTask) => void;
   onOpenSubtask: (s: Subtask, t: OnboardingTask) => void;
@@ -319,6 +355,35 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
   const [showStatusPicker, setShowStatusPicker] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [tagMenuOpen, setTagMenuOpen] = useState(false);
+  const tagMenuRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (tagMenuRef.current && !tagMenuRef.current.contains(e.target as Node)) setTagMenuOpen(false);
+    };
+    if (tagMenuOpen) document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [tagMenuOpen]);
+
+  const handleToggleTag = async (tagName: string) => {
+    let newTags = [...task.tags];
+    if (newTags.includes(tagName)) {
+      newTags = newTags.filter(t => t !== tagName);
+    } else {
+      newTags.push(tagName);
+    }
+    
+    task.tags = newTags; // Optimistic update
+    try {
+      await fetch(`/api/onboarding-tasks/${task.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tags: newTags }),
+      });
+      onUpdate();
+    } catch { /* silent */ }
+  };
   const [expanded, setExpanded] = useState(false);
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
   const [loadingSubs, setLoadingSubs] = useState(false);
@@ -539,14 +604,54 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
         </div>
 
         {/* Client Name + subtask count */}
-        <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
+        <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap pr-4">
           <span onClick={() => onOpenDetail(task)} className="text-sm font-semibold text-dark-text truncate cursor-pointer hover:text-violet-400 transition-colors">{task.client_name}</span>
           {task.subtask_count > 0 && (
             <span className="text-[10px] text-slate-500 font-mono bg-white/5 px-1.5 py-0.5 rounded">
               ↳ {task.subtask_count}
             </span>
           )}
-          {task.tags.map(t => <TagBadge key={t} label={t} />)}
+        </div>
+
+        {/* Tags */}
+        <div className="shrink-0 w-40 relative flex items-center flex-wrap gap-1 pr-2" ref={tagMenuRef}>
+          {task.tags.map(t => <TagBadge key={t} label={t} defs={coloredTagDefs} />)}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setTagMenuOpen(!tagMenuOpen);
+            }}
+            className="w-5 h-5 rounded flex items-center justify-center text-slate-500 hover:bg-white/10 transition-colors"
+          >
+            <Plus size={12} />
+          </button>
+
+          {tagMenuOpen && (
+            <div className="absolute top-7 left-0 z-50 w-48 bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl p-2" onClick={e => e.stopPropagation()}>
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-2 mb-2">Adicionar / Remover</p>
+              <div className="max-h-40 overflow-y-auto space-y-1">
+                {coloredTagDefs.map(c => {
+                  const hasTag = task.tags.includes(c.name);
+                  return (
+                    <button
+                      key={c.id}
+                      onClick={() => handleToggleTag(c.name)}
+                      className="w-full flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-white/5 transition-colors text-left"
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: c.color }} />
+                        <span className="text-xs text-dark-text truncate">{c.name}</span>
+                      </div>
+                      {hasTag && <Check size={12} className="text-emerald-400 shrink-0" />}
+                    </button>
+                  );
+                })}
+                {coloredTagDefs.length === 0 && (
+                  <p className="text-xs text-slate-500 px-2 py-1">Nenhuma tag cadastrada.</p>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Squad */}
@@ -781,8 +886,9 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
 
 // ── Group Block ───────────────────────────────────────────
 
-const GroupBlock = ({ group, onUpdate, onAddTask, onOpenDetail, onOpenSubtask }: {
+const GroupBlock = ({ group, coloredTagDefs, onUpdate, onAddTask, onOpenDetail, onOpenSubtask }: {
   group: StatusGroup;
+  coloredTagDefs: ColoredTag[];
   onUpdate: () => void;
   onAddTask: (groupId: string) => void;
   onOpenDetail: (t: OnboardingTask) => void;
@@ -849,6 +955,7 @@ const GroupBlock = ({ group, onUpdate, onAddTask, onOpenDetail, onOpenSubtask }:
             <div className="w-[14px] shrink-0" />
             <div className="w-4 shrink-0" />
             <div className="flex-1">Nome</div>
+            <div className="shrink-0 w-40">Tags</div>
             <div className="shrink-0 w-36">Squad</div>
             <div className="shrink-0 w-20 text-center">Resp.</div>
             <div className="shrink-0 w-24">Data Inicial</div>
@@ -861,7 +968,7 @@ const GroupBlock = ({ group, onUpdate, onAddTask, onOpenDetail, onOpenSubtask }:
               <div className="py-12 text-center text-slate-500 text-xs font-medium">Nenhum cliente neste grupo.</div>
             ) : (
               group.tasks.map(task => (
-                <TaskRow key={task.id} task={task} onUpdate={onUpdate} onOpenDetail={onOpenDetail} onOpenSubtask={onOpenSubtask} />
+                <TaskRow key={task.id} task={task} coloredTagDefs={coloredTagDefs} onUpdate={onUpdate} onOpenDetail={onOpenDetail} onOpenSubtask={onOpenSubtask} />
               ))
             )}
             {/* Add task row */}
@@ -1153,6 +1260,28 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [loadingComments, setLoadingComments] = useState(true);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editTitleStr, setEditTitleStr] = useState(task.client_name);
+
+  const saveTitle = async () => {
+    const val = editTitleStr.trim();
+    if (val !== task.client_name && val !== '') {
+      try {
+        await fetch(`/api/onboarding-tasks/${task.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ client_name: val }),
+        });
+        task.client_name = val; // update local object
+        onUpdate();
+      } catch (e) {
+        console.error(e);
+      }
+    } else {
+      setEditTitleStr(task.client_name);
+    }
+    setIsEditingTitle(false);
+  };
 
   useEffect(() => {
     fetch(`/api/onboarding-tasks/${task.id}/comments`)
@@ -1182,8 +1311,32 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
       <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-black/5 dark:border-white/5">
-          <div>
-            <h2 className="text-base font-bold text-dark-text">{task.client_name}</h2>
+          <div className="flex-1 mr-4">
+            {isEditingTitle ? (
+              <input
+                type="text"
+                autoFocus
+                className="w-full bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-lg px-2 py-1 text-base font-bold text-dark-text outline-none focus:border-violet-500"
+                value={editTitleStr}
+                onChange={e => setEditTitleStr(e.target.value)}
+                onBlur={saveTitle}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') saveTitle();
+                  if (e.key === 'Escape') {
+                    setEditTitleStr(task.client_name);
+                    setIsEditingTitle(false);
+                  }
+                }}
+              />
+            ) : (
+              <h2
+                className="text-base font-bold text-dark-text cursor-pointer hover:text-violet-500 transition-colors"
+                onClick={() => setIsEditingTitle(true)}
+                title="Clique para editar"
+              >
+                {task.client_name}
+              </h2>
+            )}
             <p className="text-[10px] text-slate-500 mt-0.5 uppercase tracking-widest">Detalhes do cliente</p>
           </div>
           <div className="flex items-center gap-3">
@@ -1712,6 +1865,127 @@ const SubtaskDetailModal = ({ subtask, task, onClose, onUpdate }: { subtask: any
 };
 
 
+// ─── Tags Manager Modal ───────────────────────────────────────────────────────
+
+interface TagsManagerModalProps {
+  tags: ColoredTag[];
+  onChange: (tags: ColoredTag[]) => void;
+  onClose: () => void;
+}
+
+const TagsManagerModal: React.FC<TagsManagerModalProps> = ({ tags, onChange, onClose }) => {
+  const [newName, setNewName]   = useState('');
+  const [newColor, setNewColor] = useState(TAG_COLORS[0]);
+  const [editId, setEditId]     = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editColor, setEditColor] = useState('');
+
+  const add = () => {
+    const v = newName.trim();
+    if (!v) return;
+    if (tags.some(t => t.name.toLowerCase() === v.toLowerCase())) return;
+    onChange([...tags, { id: uid(), name: v, color: newColor }]);
+    setNewName('');
+  };
+
+  const remove = (id: string) => onChange(tags.filter(t => t.id !== id));
+
+  const startEdit = (t: ColoredTag) => { setEditId(t.id); setEditName(t.name); setEditColor(t.color); };
+
+  const saveEdit = () => {
+    const v = editName.trim();
+    if (!v || !editId) return;
+    onChange(tags.map(t => t.id === editId ? { ...t, name: v, color: editColor } : t));
+    setEditId(null);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-sm bg-dark-bg rounded-3xl border border-dark-text/10 shadow-2xl p-6 space-y-4" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-black text-dark-text">Gerenciar <span className="text-violet-500">Tags</span></h2>
+          <button onClick={onClose} className="w-8 h-8 rounded-xl flex items-center justify-center text-dark-text/40 hover:text-dark-text hover:bg-dark-text/10 transition-all"><X size={16} /></button>
+        </div>
+
+        {/* Create new tag */}
+        <div className="space-y-2">
+          <label className="text-[10px] font-bold text-dark-text/40 uppercase tracking-widest block">Nova Tag</label>
+          <input
+            value={newName}
+            onChange={e => setNewName(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && add()}
+            placeholder="Nome da tag..."
+            className="w-full bg-dark-card border border-dark-text/10 rounded-xl px-4 py-2.5 text-sm text-dark-text placeholder-dark-text/30 focus:outline-none focus:border-violet-500/50 transition-all"
+          />
+          <div className="flex flex-wrap gap-2">
+            {TAG_COLORS.map(c => (
+              <button
+                key={c}
+                onClick={() => setNewColor(c)}
+                className={`w-6 h-6 rounded-full transition-all ${newColor === c ? 'ring-2 ring-offset-2 ring-offset-dark-bg ring-white scale-110' : 'hover:scale-105'}`}
+                style={{ backgroundColor: c }}
+              />
+            ))}
+          </div>
+          <button
+            onClick={add}
+            disabled={!newName.trim()}
+            className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-xs font-bold text-white transition-all"
+          >
+            <Plus size={13} /> Criar Tag
+          </button>
+        </div>
+
+        {/* Tag list */}
+        {tags.length > 0 && (
+          <div className="space-y-1 max-h-60 overflow-y-auto">
+            <label className="text-[10px] font-bold text-dark-text/40 uppercase tracking-widest block mb-2">Tags Existentes</label>
+            {tags.map(t => (
+              <div key={t.id}>
+                {editId === t.id ? (
+                  <div className="flex flex-col gap-2 p-2 bg-dark-card rounded-xl border border-violet-500/30">
+                    <input
+                      autoFocus
+                      value={editName}
+                      onChange={e => setEditName(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && saveEdit()}
+                      className="bg-transparent border-b border-dark-text/20 text-sm text-dark-text focus:outline-none py-0.5"
+                    />
+                    <div className="flex flex-wrap gap-1.5">
+                      {TAG_COLORS.map(c => (
+                        <button
+                          key={c} onClick={() => setEditColor(c)}
+                          className={`w-5 h-5 rounded-full transition-all ${editColor === c ? 'ring-2 ring-offset-2 ring-offset-dark-card ring-white scale-110' : 'hover:scale-110'}`}
+                          style={{ backgroundColor: c }}
+                        />
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <button onClick={saveEdit} className="flex-1 py-1 rounded bg-violet-600 hover:bg-violet-500 text-[10px] font-bold text-white uppercase tracking-wider">Salvar</button>
+                      <button onClick={() => setEditId(null)} className="flex-1 py-1 rounded bg-dark-text/5 hover:bg-dark-text/10 text-[10px] font-bold text-dark-text uppercase tracking-wider">Cancelar</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="group flex items-center justify-between p-2 rounded-xl hover:bg-dark-card transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: t.color, boxShadow: `0 0 8px ${t.color}` }} />
+                      <span className="text-sm font-semibold text-dark-text">{t.name}</span>
+                    </div>
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => startEdit(t)} className="p-1.5 text-slate-500 hover:text-violet-400 hover:bg-violet-500/10 rounded-lg"><Settings size={14} /></button>
+                      <button onClick={() => remove(t.id)} className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg"><Trash2 size={14} /></button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // ── Main Component ────────────────────────────────────────
 export default function ImplementacaoIA() {
   const [tasks, setTasks] = useState<OnboardingTask[]>([]);
@@ -1720,6 +1994,13 @@ export default function ImplementacaoIA() {
   const [showTemplate, setShowTemplate] = useState(false);
   const [detailTask, setDetailTask] = useState<OnboardingTask | null>(null);
   const [detailSubtask, setDetailSubtask] = useState<{subtask: Subtask, task: OnboardingTask} | null>(null);
+
+  const [tagsModal, setTagsModal] = useState(false);
+  const [coloredTagDefs, setColoredTagDefs] = useState<ColoredTag[]>(() => loadColoredTags('onboarding'));
+
+  useEffect(() => {
+    saveColoredTags('onboarding', coloredTagDefs);
+  }, [coloredTagDefs]);
 
   const [showCompleted, setShowCompleted] = useState(false);
 
@@ -1751,13 +2032,20 @@ export default function ImplementacaoIA() {
       <div className="px-8 pt-8 pb-4 flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-black tracking-tight text-dark-text">
-            Onboarding <span className="text-violet-500">Operacional</span>
+            Implementação <span className="text-violet-500">de IA</span>
           </h1>
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">
-            Gestão de onboarding de clientes
+            Gestão de clientes
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => setTagsModal(true)}
+            className="flex items-center gap-2 px-4 py-2 text-[11px] font-bold rounded-xl transition-colors border border-violet-500/20 text-violet-400 bg-violet-500/10 hover:bg-violet-500/20"
+          >
+            <Tag size={14} />
+            Tags
+          </button>
           <button
             onClick={() => setShowCompleted(!showCompleted)}
             className={`px-4 py-2 text-[11px] font-bold rounded-xl transition-colors border flex items-center gap-2 ${
@@ -1790,6 +2078,7 @@ export default function ImplementacaoIA() {
             <GroupBlock
               key={group.id}
               group={group}
+              coloredTagDefs={coloredTagDefs}
               onUpdate={fetchTasks}
               onAddTask={setAddingToGroup}
               onOpenSubtask={(s, t) => setDetailSubtask({subtask: s, task: t})}
@@ -1835,6 +2124,15 @@ export default function ImplementacaoIA() {
           task={detailTask}
           onClose={() => setDetailTask(null)}
           onUpdate={fetchTasks}
+        />
+      )}
+
+      {/* Tags Manager Modal */}
+      {tagsModal && (
+        <TagsManagerModal
+          tags={coloredTagDefs}
+          onChange={setColoredTagDefs}
+          onClose={() => setTagsModal(false)}
         />
       )}
     </div>

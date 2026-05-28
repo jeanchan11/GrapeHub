@@ -1286,6 +1286,17 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
               const mDay = String(dateObj.getDate()).padStart(2, '0');
               const notesLines = String(parsed.notes || '').split('\n').filter((l:string) => l.trim().length > 0);
 
+              let dbUser = null;
+              if (parsed && parsed.responsible) {
+                dbUser = cachedUsers.find(u => 
+                  (u.name && u.name.toLowerCase() === parsed.responsible.toLowerCase()) || 
+                  (u.email && u.email.toLowerCase() === parsed.responsible.toLowerCase()) ||
+                  (u.email && u.email.toLowerCase().includes(parsed.responsible.toLowerCase().split(' ')[0]))
+                );
+              }
+              const userName = dbUser?.name || parsed?.responsible || 'Sistema';
+              const userPhoto = dbUser?.picture || parsed?.responsible_avatar;
+
               return (
                 <div className="flex items-start w-full relative">
                   <div className="w-full max-w-2xl mx-auto">
@@ -1303,14 +1314,14 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                             <span className="text-[10px] font-medium text-slate-500 shrink-0 mt-0.5">{dateObj.toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric'})} às {dateObj.toLocaleString('pt-BR', { hour:'2-digit', minute:'2-digit'})}</span>
                           </div>
                           <div className="flex items-center gap-2 mt-2.5 text-[11px] text-slate-400 font-medium">
-                            {parsed.responsible_avatar ? (
-                              <img src={parsed.responsible_avatar} alt="User" className="w-4 h-4 rounded-full object-cover shadow-sm" />
+                            {userPhoto ? (
+                              <img src={userPhoto} alt="User" className="w-4 h-4 rounded-full object-cover shadow-sm" referrerPolicy="no-referrer" />
                             ) : (
                               <div className="w-4 h-4 rounded-full bg-violet-500/20 text-violet-500 flex items-center justify-center text-[8px] font-bold">
-                                {String(parsed.responsible || 'S').charAt(0).toUpperCase()}
+                                {String(userName || 'S').charAt(0).toUpperCase()}
                               </div>
                             )}
-                            <span className="truncate max-w-[200px]">{parsed.responsible || 'Sistema'}</span>
+                            <span className="truncate max-w-[200px]">{userName}</span>
                           </div>
                         </div>
                       </div>
@@ -1606,6 +1617,27 @@ const SubtaskDetailModal = ({ subtask, task, onClose, onUpdate }: { subtask: any
   const [internalDoc, setInternalDoc] = useState(isOldMarkdown ? '' : rawDoc);
   const [internalDocSaving, setInternalDocSaving] = useState(false);
 
+  useEffect(() => {
+    const cleanCurrent = internalDoc || '';
+    const cleanOriginal = subtask.internal_doc || '';
+    if (cleanCurrent === cleanOriginal) return;
+    
+    const timeoutId = setTimeout(() => {
+      setInternalDocSaving(true);
+      fetch(`/api/onboarding-subtasks/${subtask.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ internal_doc: cleanCurrent })
+      }).then(() => {
+        onUpdate();
+      }).finally(() => {
+        setInternalDocSaving(false);
+      });
+    }, 1500);
+
+    return () => clearTimeout(timeoutId);
+  }, [internalDoc, subtask.id]);
+
   // File Add State
   const [showAddFile, setShowAddFile] = useState(false);
   const [newFileName, setNewFileName] = useState('');
@@ -1734,17 +1766,25 @@ const SubtaskDetailModal = ({ subtask, task, onClose, onUpdate }: { subtask: any
                     <FileText size={12} className="text-violet-500" />
                     Documento Interno
                   </h3>
-                  {internalDoc !== (subtask.internal_doc || '') && (
-                    <button onClick={handleSaveInternalDoc} disabled={internalDocSaving} className="text-[10px] font-bold text-violet-400 hover:text-violet-300">
-                      {internalDocSaving ? 'Salvando...' : 'Salvar Documento'}
-                    </button>
-                  )}
                 </div>
                 <RichTextEditor 
                   content={internalDoc} 
                   onChange={setInternalDoc} 
                   placeholder="Escreva a ata, anotações ou dados importantes aqui... Pressione '/' para comandos" 
                 />
+                <div className="mt-3 text-[10px] font-bold flex items-center justify-end min-h-[16px]">
+                  {internalDocSaving ? (
+                    <span className="text-violet-400 flex items-center gap-1">
+                      <Loader2 size={10} className="animate-spin" /> Salvando...
+                    </span>
+                  ) : internalDoc !== (subtask.internal_doc || '') ? (
+                    <span className="text-slate-500">Editado</span>
+                  ) : (
+                    <span className="text-emerald-500 flex items-center gap-1">
+                      <Check size={10} /> Salvo
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* Arquivos e Docs */}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, ChevronDown, ChevronUp, Trash2, Save, X, Edit2, Calendar, Clock, CheckSquare, FileText, Users, Loader2, Paperclip, ImageIcon } from 'lucide-react';
+import { Plus, ChevronDown, ChevronUp, Trash2, Save, X, Edit2, Calendar, Clock, CheckSquare, FileText, Users, Loader2, Paperclip, ImageIcon, Check } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -391,6 +391,14 @@ function SessionCard({ session, expanded, onToggle, onDelete, onUpdate, currentU
     } finally { setNotesSaving(false); }
   };
 
+  useEffect(() => {
+    if (!notesDirty) return;
+    const timeoutId = setTimeout(() => {
+      saveNotes();
+    }, 1500);
+    return () => clearTimeout(timeoutId);
+  }, [notesHtml, notesDirty]);
+
   const saveMeta = async () => {
     const r = await fetch(`/api/meeting-notes/${session.id}`, {
       method: 'PUT',
@@ -463,6 +471,17 @@ function SessionCard({ session, expanded, onToggle, onDelete, onUpdate, currentU
           )}
         </div>
         <div className="flex items-center gap-1 shrink-0">
+          <button 
+            onClick={e => { 
+              e.stopPropagation(); 
+              setEditingMeta(!editingMeta); 
+              if (!expanded) setExpanded(true);
+            }} 
+            className={`p-2 rounded-lg transition-colors ${editingMeta ? 'text-violet-500 bg-violet-500/10' : 'text-gray-400 hover:text-violet-500 hover:bg-violet-500/10'}`}
+            title="Editar informações"
+          >
+            <Edit2 size={14} />
+          </button>
           <button onClick={e => { e.stopPropagation(); onDelete(); }} className="p-2 text-gray-400 hover:text-rose-500 rounded-lg hover:bg-rose-500/10 transition-colors"><Trash2 size={14} /></button>
           {expanded ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
         </div>
@@ -478,16 +497,6 @@ function SessionCard({ session, expanded, onToggle, onDelete, onUpdate, currentU
               <h4 className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-2">
                 <FileText size={12} className="text-violet-500" /> Documento Interno
               </h4>
-              <div className="flex items-center gap-2">
-                <button onClick={() => setEditingMeta(!editingMeta)} className="flex items-center gap-1 text-[10px] font-bold text-violet-500 hover:text-violet-400">
-                  <Edit2 size={11} /> {editingMeta ? 'Fechar' : 'Editar info'}
-                </button>
-                {notesDirty && (
-                  <button onClick={saveNotes} disabled={notesSaving} className="flex items-center gap-1 text-[10px] font-bold text-emerald-500 hover:text-emerald-400">
-                    {notesSaving ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />} Salvar
-                  </button>
-                )}
-              </div>
             </div>
 
             {/* Meta edit panel */}
@@ -573,13 +582,19 @@ function SessionCard({ session, expanded, onToggle, onDelete, onUpdate, currentU
                 systemUsers={systemUsers}
                 onChange={html => { setNotesHtml(html); setNotesDirty(html !== (session.notes_html || '')); }}
               />
-              {notesDirty && (
-                <div className="mt-3 flex justify-end">
-                  <button onClick={saveNotes} disabled={notesSaving} className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-colors">
-                    {notesSaving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Salvar Documento
-                  </button>
-                </div>
-              )}
+              <div className="mt-3 flex justify-end min-h-[24px]">
+                {notesSaving ? (
+                  <span className="text-violet-400 text-xs font-bold flex items-center gap-1">
+                    <Loader2 size={12} className="animate-spin" /> Salvando...
+                  </span>
+                ) : notesDirty ? (
+                  <span className="text-slate-500 text-xs font-bold">Editado</span>
+                ) : (
+                  <span className="text-emerald-500 text-xs font-bold flex items-center gap-1">
+                    <Check size={12} /> Salvo
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 

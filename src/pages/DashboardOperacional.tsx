@@ -1,8 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import {
   Users, TrendingUp, DollarSign, AlertTriangle,
-  CheckCircle, Cpu, RefreshCw, Clock, MessageSquare
+  CheckCircle, Cpu, RefreshCw, Clock, MessageSquare, X,
+  ThumbsUp, Edit2, Trash2
 } from 'lucide-react';
+import { auth } from '../firebase';
+import { useAuth } from '../contexts/AuthContext';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types  (matching real API response shape)
@@ -152,7 +155,7 @@ function calcKPIs(projects: ProjectRow[]) {
     : 0;
   const orcamentoTotal = investments.reduce((a, b) => a + b, 0);
 
-  const atrasados = projects.filter(p => daysSince(p) > 7).length;
+  const atrasados = projects.filter(p => daysSince(p) > 4).length;
 
   const slaBom = projects.filter(p =>
     p.projectResult?.toLowerCase() !== 'resultado ruim' && p.projectResult?.toLowerCase() !== 'campanha pausada'
@@ -225,7 +228,7 @@ function getAtencaoList(projects: ProjectRow[]) {
 
 function getCriticas(projects: ProjectRow[]) {
   return projects
-    .filter(p => daysSince(p) > 7)
+    .filter(p => daysSince(p) > 4)
     .map(p => ({ ...p, diasSemUpdate: daysSince(p) }))
     .sort((a, b) => b.diasSemUpdate - a.diasSemUpdate)
     .slice(0, 15);
@@ -262,6 +265,7 @@ function getRecentComments(projects: ProjectRow[]) {
                 id: opt.id || Math.random().toString(),
                 project: p,
                 productName: prod.name,
+                productId: prod.id,
                 opt,
                 time: optDate.getTime()
               });
@@ -296,7 +300,7 @@ function KpiCard({ icon, iconBg, label, value, sub, extra }: {
   );
 }
 
-function DonutChart({ data }: { data: { label: string; count: number; color: string }[] }) {
+function DonutChart({ data, onClick }: { data: { label: string; count: number; color: string }[], onClick?: (label: string) => void }) {
   const [hovered, setHovered] = React.useState<number | null>(null);
   const [mousePos, setMousePos] = React.useState({ x: 0, y: 0 });
   const wrapRef = React.useRef<HTMLDivElement>(null);
@@ -426,7 +430,8 @@ function DonutChart({ data }: { data: { label: string; count: number; color: str
         {data.map((d, i) => (
           <div
             key={d.label}
-            className="flex items-center gap-4 rounded-xl px-4 py-2.5 cursor-default transition-all duration-100 border"
+            onClick={() => onClick && onClick(d.label)}
+            className={`flex items-center gap-4 rounded-xl px-4 py-2.5 transition-all duration-100 border ${onClick ? 'cursor-pointer hover:bg-white/5' : 'cursor-default'}`}
             style={{
               background: hovered === i ? `${d.color}18` : undefined,
               borderColor: hovered === i ? d.color + '33' : 'transparent',
@@ -483,6 +488,18 @@ function Spinner() {
   );
 }
 
+const formatDateShort = (dateStr: string) => {
+  if (!dateStr) return '';
+  const match = dateStr.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+  if (!match) return dateStr;
+  const day = parseInt(match[1], 10);
+  const month = parseInt(match[2], 10) - 1;
+  const year = parseInt(match[3], 10);
+  const d = new Date(year, month, day);
+  const m = d.toLocaleString('pt-BR', { month: 'short' }).replace('.', '');
+  return `${m} ${day}`;
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Main Component
 // ─────────────────────────────────────────────────────────────────────────────
@@ -496,6 +513,153 @@ export default function DashboardOperacional({ activePage = '', subsessionId }: 
   const [spinning, setSpinning] = useState(false);
   const [error, setError]       = useState<string | null>(null);
   const [selectedGestor, setSelectedGestor] = useState<string | null>(null);
+  const [selectedResultCategory, setSelectedResultCategory] = useState<string | null>(null);
+
+  const { userData } = useAuth();
+  const [replyingNoteId, setReplyingNoteId] = useState<string | null>(null);
+  const [replyMessage, setReplyMessage] = useState<string>('');
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [editingNoteMessage, setEditingNoteMessage] = useState<string>('');
+
+  const handleUpdateProject = async (updatedProject: ProjectRow) => {
+    try {
+      await fetch('/api/projects/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projects: [updatedProject] })
+      });
+      setProjects(prev => prev.map(p => p.id === updatedProject.id ? updatedProject : p));
+    } catch (e) {
+      console.error('Failed to save project updates', e);
+    }
+  };
+
+  const handleToggleLike = async (projectId: string, productId: string, optId: string) => {
+    const userIdentifier = auth.currentUser?.email || userData?.name || 'user';
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+    
+    const updatedProject = {
+      ...project,
+      products: project.products?.map(p => {
+        if (p.id === productId) {
+          return {
+            ...p,
+            optimizations: (p as any).optimizations?.map((opt: any) => {
+              if (opt.id === optId) {
+                const currentLikes = opt.likes || [];
+                const hasLiked = currentLikes.includes(userIdentifier);
+                return {
+                  ...opt,
+                  likes: hasLiked
+                    ? currentLikes.filter((id: string) => id !== userIdentifier)
+                    : [...currentLikes, userIdentifier]
+                };
+              }
+              return opt;
+            })
+          };
+        }
+        return p;
+      })
+    };
+    
+    // Optimistic update
+    setProjects(prev => prev.map(p => p.id === projectId ? updatedProject : p));
+    await handleUpdateProject(updatedProject);
+  };
+
+  const handleSaveReply = async (projectId: string, productId: string, optId: string) => {
+    if (!replyMessage.trim()) return;
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    const newReply = {
+      id: crypto.randomUUID(),
+      author: userData?.name || auth.currentUser?.displayName || 'Usuário',
+      authorPhoto: userData?.picture || auth.currentUser?.photoURL || '',
+      message: replyMessage,
+      date: new Date().toLocaleDateString('pt-BR'),
+      time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+    };
+
+    const updatedProject = {
+      ...project,
+      products: project.products?.map(p => {
+        if (p.id === productId) {
+          return {
+            ...p,
+            optimizations: (p as any).optimizations?.map((opt: any) => {
+              if (opt.id === optId) {
+                return { ...opt, replies: [...(opt.replies || []), newReply] };
+              }
+              return opt;
+            })
+          };
+        }
+        return p;
+      })
+    };
+    
+    setReplyingNoteId(null);
+    setReplyMessage('');
+    setProjects(prev => prev.map(p => p.id === projectId ? updatedProject : p));
+    await handleUpdateProject(updatedProject);
+  };
+
+  const handleDeleteNote = async (projectId: string, productId: string, optId: string) => {
+    if (!window.confirm('Tem certeza que deseja excluir esta nota?')) return;
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+    
+    const updatedProject = {
+      ...project,
+      products: project.products?.map(p => {
+        if (p.id === productId) {
+          return {
+            ...p,
+            optimizations: (p as any).optimizations?.filter((opt: any) => opt.id !== optId)
+          };
+        }
+        return p;
+      })
+    };
+    
+    setProjects(prev => prev.map(p => p.id === projectId ? updatedProject : p));
+    await handleUpdateProject(updatedProject);
+  };
+
+  const handleSaveEdit = async (projectId: string, productId: string, optId: string) => {
+    if (!editingNoteMessage.trim()) return;
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+    
+    const editDateStr = `(Editado em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })})`;
+    const newMessage = `${editingNoteMessage}\n\n${editDateStr}`;
+
+    const updatedProject = {
+      ...project,
+      products: project.products?.map(p => {
+        if (p.id === productId) {
+          return {
+            ...p,
+            optimizations: (p as any).optimizations?.map((opt: any) => {
+              if (opt.id === optId) {
+                return { ...opt, message: newMessage };
+              }
+              return opt;
+            })
+          };
+        }
+        return p;
+      })
+    };
+    
+    setEditingNoteId(null);
+    setEditingNoteMessage('');
+    setProjects(prev => prev.map(p => p.id === projectId ? updatedProject : p));
+    await handleUpdateProject(updatedProject);
+  };
 
   const fetchData = async (silent = false) => {
     if (!silent) setLoading(true);
@@ -676,7 +840,7 @@ export default function DashboardOperacional({ activePage = '', subsessionId }: 
           <KpiCard
             iconBg="bg-amber-500/15"
             icon={<Clock size={17} className="text-amber-500" />}
-            label="Sem Update +7d"
+            label="Sem Update +4d"
             value={String(kpis.atrasados)}
             sub={<span className="text-amber-500 font-bold">Projetos parados</span>}
           />
@@ -702,8 +866,10 @@ export default function DashboardOperacional({ activePage = '', subsessionId }: 
                       <div className="flex items-start justify-between mb-2">
                         <div className="flex items-center gap-2">
                           <div className="w-7 h-7 rounded-full overflow-hidden bg-slate-200 dark:bg-slate-800 shrink-0 border border-slate-300 dark:border-white/10">
-                            {dbUser?.picture ? (
-                              <img src={dbUser.picture} alt={c.opt.author || ''} className="w-full h-full object-cover" />
+                            {c.opt.authorPhoto ? (
+                              <img src={c.opt.authorPhoto} alt={c.opt.author || ''} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            ) : dbUser?.picture ? (
+                              <img src={dbUser.picture} alt={c.opt.author || ''} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                             ) : (
                               <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${c.opt.author}`} alt={c.opt.author || ''} className="w-full h-full object-cover" />
                             )}
@@ -713,14 +879,137 @@ export default function DashboardOperacional({ activePage = '', subsessionId }: 
                             <p className="text-[10px] text-slate-500">{c.project.partner} · {c.productName}</p>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <p className="text-[10px] font-bold text-slate-400">{c.opt.date}</p>
-                          {c.opt.time && <p className="text-[9px] text-slate-500">{c.opt.time}</p>}
+                        <div className="flex items-center gap-3">
+                          <div className="text-right">
+                            <p className="text-[10px] font-bold text-slate-400">{formatDateShort(c.opt.date)}</p>
+                            {c.opt.time && <p className="text-[9px] text-slate-500">{c.opt.time}</p>}
+                          </div>
+                          {(auth.currentUser?.email === c.opt.authorEmail || (userData?.name && c.opt.author?.toLowerCase() === userData?.name?.toLowerCase()) || (c.opt.author && auth.currentUser?.displayName && c.opt.author.toLowerCase() === auth.currentUser.displayName.toLowerCase()) || userData?.role === 'Admin') && (
+                            <div className="flex items-center gap-2">
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); setEditingNoteId(c.opt.id); setEditingNoteMessage(c.opt.message.replace(/\n\n\(Editado em.*?\)/g, '')); }}
+                                className="text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors"
+                              >
+                                <Edit2 size={12} />
+                              </button>
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); handleDeleteNote(c.project.id, c.productId, c.opt.id); }}
+                                className="text-slate-400 hover:text-rose-500 transition-colors"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
-                      <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed bg-white dark:bg-black/20 p-2.5 rounded-lg border border-slate-200 dark:border-white/5 whitespace-pre-wrap shadow-sm dark:shadow-none">
-                        {c.opt.message}
-                      </p>
+
+                      {editingNoteId === c.opt.id ? (
+                        <div className="flex flex-col gap-2 mt-2">
+                          <textarea
+                            value={editingNoteMessage}
+                            onChange={(e) => setEditingNoteMessage(e.target.value)}
+                            className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white outline-none resize-none"
+                            rows={3}
+                            autoFocus
+                          />
+                          <div className="flex gap-2 justify-end">
+                            <button
+                              onClick={() => { setEditingNoteId(null); setEditingNoteMessage(''); }}
+                              className="px-3 py-1.5 text-xs font-bold text-slate-500 hover:text-slate-700 dark:hover:text-white transition-colors"
+                            >
+                              Cancelar
+                            </button>
+                            <button
+                              onClick={() => handleSaveEdit(c.project.id, c.productId, c.opt.id)}
+                              className="px-3 py-1.5 text-xs font-bold text-white bg-violet-500 hover:bg-violet-600 rounded-lg transition-colors"
+                            >
+                              Salvar
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed bg-white dark:bg-black/20 p-2.5 rounded-lg border border-slate-200 dark:border-white/5 whitespace-pre-wrap shadow-sm dark:shadow-none">
+                          {c.opt.message}
+                        </p>
+                      )}
+
+                      {/* Replies */}
+                      {c.opt.replies && c.opt.replies.length > 0 && (
+                        <div className="mt-4 space-y-3">
+                          {c.opt.replies.map((reply: any) => (
+                            <div key={reply.id} className="flex items-start gap-3 pl-4 border-l-2 border-slate-100 dark:border-white/5">
+                              {reply.authorPhoto ? (
+                                <img src={reply.authorPhoto} alt={reply.author} className="w-5 h-5 rounded-full object-cover mt-0.5" referrerPolicy="no-referrer" />
+                              ) : (
+                                <div className="w-5 h-5 rounded-full bg-slate-200 dark:bg-white/10 flex items-center justify-center text-slate-500 text-[10px] font-bold mt-0.5">
+                                  {reply.author.charAt(0).toUpperCase()}
+                                </div>
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-baseline gap-2 mb-0.5">
+                                  <p className="text-xs font-bold text-slate-900 dark:text-white">{reply.author}</p>
+                                  <p className="text-[10px] text-slate-500">{formatDateShort(reply.date)} às {reply.time}</p>
+                                </div>
+                                <p className="text-xs text-slate-600 dark:text-slate-400 whitespace-pre-line">{reply.message}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {replyingNoteId === c.opt.id && (
+                        <div className="mt-4 flex flex-col gap-2">
+                          <textarea
+                            value={replyMessage}
+                            onChange={(e) => setReplyMessage(e.target.value)}
+                            placeholder="Escreva sua resposta..."
+                            className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white outline-none resize-none"
+                            rows={2}
+                            autoFocus
+                          />
+                          <div className="flex gap-2 justify-end">
+                            <button
+                              onClick={() => { setReplyingNoteId(null); setReplyMessage(''); }}
+                              className="px-3 py-1.5 text-xs font-bold text-slate-500 hover:text-slate-700 dark:hover:text-white transition-colors"
+                            >
+                              Cancelar
+                            </button>
+                            <button
+                              onClick={() => handleSaveReply(c.project.id, c.productId, c.opt.id)}
+                              className="px-3 py-1.5 text-xs font-bold text-white bg-violet-500 hover:bg-violet-600 rounded-lg transition-colors"
+                            >
+                              Responder
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Action Bar */}
+                      <div className="mt-4 pt-3 border-t border-slate-100 dark:border-white/5 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); handleToggleLike(c.project.id, c.productId, c.opt.id); }}
+                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold transition-colors border ${
+                              c.opt.likes?.includes(auth.currentUser?.email || userData?.name || 'user')
+                                ? 'bg-slate-100 dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-700 dark:text-white'
+                                : 'text-slate-400 border-transparent hover:bg-slate-100 dark:hover:bg-white/5'
+                            }`}
+                          >
+                            {c.opt.likes?.includes(auth.currentUser?.email || userData?.name || 'user') ? (
+                              <span>👍</span>
+                            ) : (
+                              <ThumbsUp size={14} />
+                            )}
+                            {(c.opt.likes?.length || 0) > 0 && <span>{c.opt.likes?.length}</span>}
+                          </button>
+                        </div>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); setReplyingNoteId(c.opt.id); }}
+                          className="text-xs font-bold text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors"
+                        >
+                          Responder
+                        </button>
+                      </div>
                     </div>
                   );
                 })}
@@ -733,7 +1022,7 @@ export default function DashboardOperacional({ activePage = '', subsessionId }: 
             <h2 className="text-sm font-bold text-dark-text mb-1 shrink-0">Distribuição de Resultados</h2>
             <p className="text-xs text-slate-500 mb-4 shrink-0">Todos os projetos por resultado atual</p>
             <div className="flex-1 min-h-0">
-              <DonutChart data={distrib} />
+              <DonutChart data={distrib} onClick={setSelectedResultCategory} />
             </div>
           </div>
           {/* Radar de Atenção */}
@@ -835,7 +1124,7 @@ export default function DashboardOperacional({ activePage = '', subsessionId }: 
           {/* Tarefas Críticas */}
           <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200">
             <h2 className="text-sm font-bold text-dark-text mb-1">Projetos Sem Update</h2>
-            <p className="text-xs text-slate-500 mb-4">Mais de 7 dias sem atualização</p>
+            <p className="text-xs text-slate-500 mb-4">Mais de 4 dias sem atualização</p>
             {criticas.length === 0 ? (
               <div className="text-center text-slate-500 text-sm py-10">Todos atualizados ✅</div>
             ) : (
@@ -888,6 +1177,70 @@ export default function DashboardOperacional({ activePage = '', subsessionId }: 
         </p>
 
       </div>
+
+      {/* Result Category Modal */}
+      {selectedResultCategory && (() => {
+        const matchingProjects = filteredProjects.filter(p => {
+          const res = p.projectResult || '-';
+          return res.toLowerCase() === selectedResultCategory.toLowerCase();
+        });
+        const catColor = getResultColor(selectedResultCategory);
+
+        return (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setSelectedResultCategory(null)}>
+            <div className="w-full max-w-2xl bg-dark-bg border border-dark-text/10 shadow-2xl rounded-3xl flex flex-col max-h-[85vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-dark-text/5 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="w-4 h-4 rounded-full" style={{ background: catColor, boxShadow: `0 0 10px ${catColor}` }} />
+                  <div>
+                    <h2 className="text-xl font-black text-dark-text capitalize">
+                      {selectedResultCategory === '-' ? 'Sem resultado' : selectedResultCategory.charAt(0) + selectedResultCategory.slice(1).toLowerCase()}
+                    </h2>
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mt-0.5">
+                      {matchingProjects.length} {matchingProjects.length === 1 ? 'projeto' : 'projetos'} com este resultado
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setSelectedResultCategory(null)}
+                  className="w-10 h-10 rounded-2xl flex items-center justify-center text-dark-text/40 hover:text-dark-text hover:bg-dark-text/10 transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-6 space-y-3">
+                {matchingProjects.length === 0 ? (
+                  <div className="text-center text-slate-500 py-10 text-sm font-medium">Nenhum projeto encontrado.</div>
+                ) : (
+                  matchingProjects.map(p => {
+                    const gest = users.find(u => (u.name && u.name.toLowerCase() === p.responsible?.toLowerCase()) || (u.email && u.email.toLowerCase().includes(p.responsible?.toLowerCase()?.split(' ')[0] || '')));
+                    return (
+                      <div key={p.id} className="bg-dark-card border border-white/5 hover:border-white/10 p-4 rounded-2xl flex items-center justify-between transition-all group">
+                        <div className="flex flex-col gap-1 min-w-0">
+                          <span className="text-sm font-bold text-dark-text group-hover:text-violet-400 transition-colors truncate">{p.partner}</span>
+                          <span className="text-xs text-slate-500 truncate">{p.product}</span>
+                        </div>
+                        <div className="flex items-center gap-4 shrink-0 pl-4">
+                          <div className="text-right">
+                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Gestor</p>
+                            <div className="flex items-center gap-1.5 justify-end">
+                              <div className="w-5 h-5 rounded-full overflow-hidden bg-slate-800 shrink-0">
+                                {gest?.picture ? <img src={gest.picture} alt="" className="w-full h-full object-cover" /> : null}
+                              </div>
+                              <span className="text-xs font-semibold text-slate-300">{gest?.name || p.responsible}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
     </div>
   );
 }

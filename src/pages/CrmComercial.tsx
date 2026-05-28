@@ -28,6 +28,7 @@ import {
   arrayMove,
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
+  horizontalListSortingStrategy,
   useSortable
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -310,6 +311,70 @@ interface LeadDetailModalProps {
   onApplySequence: (leadId: string, sequence: any) => void;
 }
 
+const SortableColumn = ({ column, children, setEditColumnData, setIsEditColumnModalOpen, setColumnToDelete, columnLeadsLength, totalValue }: any) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: column.id, data: { type: 'Column', column } });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.3 : 1,
+    zIndex: isDragging ? 50 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className="flex flex-col flex-1 min-h-[500px] min-w-[320px] w-[320px] snap-start bg-slate-50/50 dark:bg-white/[0.02] rounded-3xl border border-gray-200 dark:border-white/5 p-2 relative">
+      <div className="p-3 flex items-start justify-between mb-2 cursor-grab active:cursor-grabbing" {...attributes} {...listeners}>
+        <div className="flex items-start gap-3">
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${column.color === 'orange' ? 'bg-orange-500' :
+              column.color === 'blue' ? 'bg-blue-500' :
+                column.color === 'green' ? 'bg-emerald-500' :
+                  column.color === 'pink' ? 'bg-pink-500' :
+                    column.color === 'red' ? 'bg-red-500' :
+                      column.color === 'cyan' ? 'bg-cyan-500' : 'bg-slate-500'
+            }`}>
+            <RenderIcon name={column.icon || 'LayoutGrid'} size={20} className="text-white" />
+          </div>
+          <div>
+            <h3 className="font-bold text-gray-900 dark:text-white text-base leading-tight">{column.title}</h3>
+            <p className="text-gray-500 dark:text-slate-400 text-xs mt-0.5">{columnLeadsLength} tickets</p>
+            <div className="mt-1 text-sm font-black text-emerald-500">
+              {formatCurrency(totalValue)}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-1" onPointerDown={(e) => e.stopPropagation()}>
+          <button
+            onClick={() => {
+              setEditColumnData({ id: column.id, title: column.title, color: column.color || 'orange', icon: column.icon || 'LayoutGrid' });
+              setIsEditColumnModalOpen(true);
+            }}
+            className="p-1.5 text-gray-400 dark:text-slate-500 hover:text-gray-900 dark:hover:text-white transition-colors"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+          </button>
+          <button
+            onClick={() => setColumnToDelete(column.id)}
+            className="p-1.5 text-gray-400 dark:text-slate-500 hover:text-red-500 transition-colors"
+          >
+            <Trash2 size={16} />
+          </button>
+        </div>
+      </div>
+      {children}
+    </div>
+  );
+};
+
 const SortableCard = (props: SortableCardProps) => {
   const { lead, users, columns, tasks, onClick, onMove, onDelete, onEditValue, onHistory, isOverlay = false } = props;
   const {
@@ -379,92 +444,77 @@ const SortableCard = (props: SortableCardProps) => {
       style={{ ...style, marginBottom: 12 }}
       className="relative group"
       {...attributes}
-      {...listeners}
     >
-      {/* ─ Drag handle ─ */}
       <div
         {...listeners}
-        className="absolute left-1.5 top-1/2 -translate-y-1/2 z-10 p-1 rounded cursor-grab active:cursor-grabbing text-gray-300 dark:text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity hover:text-violet-400"
+        className="absolute left-0.5 top-1/2 -translate-y-1/2 z-10 p-1 rounded cursor-grab active:cursor-grabbing text-gray-300 dark:text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity hover:text-violet-400"
         title="Arrastar"
         onClick={e => e.stopPropagation()}
       >
-        <GripVertical size={15} />
+        <GripVertical size={12} />
       </div>
 
       <div
         onClick={() => onClick()}
-        className={`rounded-xl p-3 pl-6 border shadow-sm cursor-pointer relative transition-all duration-200 ${isDragging ? 'ring-2 ring-violet-500 opacity-30' :
+        className={`rounded-xl p-2.5 pl-5 border shadow-sm cursor-pointer relative transition-all duration-200 ${isDragging ? 'ring-2 ring-violet-500 opacity-30' :
             isWon ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-500/30 shadow-[0_4px_15px_rgba(16,185,129,0.1)] hover:border-emerald-500/50 hover:shadow-emerald-500/20' :
-              isRed ? 'bg-red-50 dark:bg-red-500/10 border-red-300/50 shadow-[0_4px_15px_rgba(239,68,68,0.08)] hover:border-red-400/50 hover:shadow-red-500/15' :
+              isLost ? 'bg-red-50 dark:bg-red-500/10 border-red-300/50 shadow-[0_4px_15px_rgba(239,68,68,0.08)] hover:border-red-400/50 hover:shadow-red-500/15' :
                 'bg-white dark:bg-dark-card border-gray-200 dark:border-white/5 hover:border-violet-500/30 hover:shadow-md'
           }`}
       >
         {isWon && (
-          <div className="absolute -top-2.5 -right-2.5 z-20 bg-emerald-500 text-white p-2 rounded-full shadow-lg border-2 border-white dark:border-dark-card animate-pulse">
-            <Trophy size={14} />
+          <div className="absolute -top-2 -right-2 z-20 bg-emerald-500 text-white p-1.5 rounded-full shadow-lg border-2 border-white dark:border-dark-card animate-pulse">
+            <Trophy size={10} />
           </div>
         )}
         {isLost && (
-          <div className="absolute -top-2.5 -right-2.5 z-20 bg-red-500 text-white p-2 rounded-full shadow-lg border-2 border-white dark:border-dark-card">
-            <X size={14} />
+          <div className="absolute -top-2 -right-2 z-20 bg-red-500 text-white p-1.5 rounded-full shadow-lg border-2 border-white dark:border-dark-card">
+            <X size={10} />
           </div>
         )}
-        <div className="flex items-start justify-between mb-2">
-          <div className="flex items-center gap-3">
-            {lead.origem === 'Indicação' ? (
-              <img src="https://ui-avatars.com/api/?name=Yandra+Alves&background=random" alt="Avatar" className="w-8 h-8 rounded-full" />
-            ) : lead.origem === 'TCV' ? (
-              <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold text-xs flex-shrink-0">
-                {getInitials(lead.nome)}
-              </div>
-            ) : (
-              <div className="w-8 h-8 rounded-full bg-violet-500 text-white flex items-center justify-center font-bold text-xs flex-shrink-0">
-                {getInitials(lead.nome)}
-              </div>
-            )}
-            <div>
-              <h4 className="font-bold text-sm text-gray-900 dark:text-white line-clamp-1">{lead.nome}</h4>
-              <div className="flex flex-wrap items-center gap-1 mt-1">
-                <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 text-gray-600 dark:text-slate-300">
-                  <span className={`w-1.5 h-1.5 rounded-full ${lead.origem === 'Indicação' ? 'bg-orange-500' :
-                      lead.origem === 'TCV' ? 'bg-emerald-500' :
-                        'bg-blue-500'
-                    }`}></span>
-                  {lead.origem}
+        <div className="flex items-start justify-between mb-1.5 w-full">
+          <div className="flex items-center justify-between w-full gap-2">
+            <h4 className="font-bold text-[12px] leading-tight text-gray-900 dark:text-white line-clamp-1 min-w-0 flex-1">{lead.nome}</h4>
+            <div className="flex items-center gap-1 shrink-0 overflow-hidden justify-end">
+              <span className="flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-md border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 text-gray-600 dark:text-slate-300 shrink-0">
+                <span className={`w-1.5 h-1.5 rounded-full ${lead.origem === 'Indicação' ? 'bg-orange-500' :
+                    lead.origem === 'TCV' ? 'bg-emerald-500' :
+                      'bg-blue-500'
+                  }`}></span>
+                {lead.origem}
+              </span>
+              {((lead as any).tags || []).map((tag: any) => (
+                <span key={tag.name} className="px-1.5 py-0.5 text-[9px] font-bold rounded-md text-white shadow-sm shrink-0" style={{ backgroundColor: tag.color }}>
+                  {tag.name}
                 </span>
-                {((lead as any).tags || []).map((tag: any) => (
-                  <span key={tag.name} className="px-1.5 py-0.5 text-[9px] font-bold rounded-full text-white shadow-sm" style={{ backgroundColor: tag.color }}>
-                    {tag.name}
-                  </span>
-                ))}
-              </div>
+              ))}
             </div>
           </div>
         </div>
 
-        {responsavel && (
-          <div className="flex items-center gap-2 mb-3">
-            <div className="w-5 h-5 rounded-full bg-gray-200 dark:bg-slate-700 flex items-center justify-center text-[8px] font-bold text-gray-600 dark:text-white overflow-hidden" title={responsavel.name}>
-              {responsavel.picture ? <img src={responsavel.picture} alt={responsavel.name} className="w-full h-full object-cover" /> : getInitials(responsavel.name)}
+        <div className="flex items-center justify-between mt-2 mb-2">
+          {responsavel ? (
+            <div className="flex items-center gap-1.5 min-w-0">
+              <div className="w-4 h-4 rounded-full bg-gray-200 dark:bg-slate-700 flex items-center justify-center text-[8px] font-bold text-gray-600 dark:text-white overflow-hidden shrink-0" title={responsavel.name}>
+                {responsavel.picture ? <img src={responsavel.picture} alt={responsavel.name} className="w-full h-full object-cover" /> : getInitials(responsavel.name)}
+              </div>
+              <span className="text-[10px] text-gray-500 dark:text-slate-400 font-medium line-clamp-1">{responsavel.name}</span>
             </div>
-            <span className="text-xs text-gray-500 dark:text-slate-400 font-medium">{responsavel.name}</span>
-          </div>
-        )}
-
-        <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-2 mb-2">
-          <div className="text-sm font-black text-emerald-500">
+          ) : <div />}
+          
+          <div className="text-[11px] font-black text-emerald-500 shrink-0 ml-2">
             {formatCurrency(lead.valor)}
           </div>
         </div>
 
         {taskStyle && nextTask && (
-          <div className={`flex items-center justify-between rounded-lg px-2 py-1.5 border text-xs font-semibold ${taskStyle.badge}`}>
-            <div className="flex items-center gap-1.5">
-              <Clock size={11} />
-              <span>{taskStyle.label}: {nextTask.type}</span>
+          <div className={`flex items-center justify-between rounded-md px-1.5 py-1 border text-[9px] font-semibold ${taskStyle.badge}`}>
+            <div className="flex items-center gap-1 min-w-0">
+              <Clock size={10} className="shrink-0" />
+              <span className="line-clamp-1">{taskStyle.label}: {nextTask.type}</span>
             </div>
             {nextTask.start_time && (
-              <span className="font-bold">{nextTask.start_time.slice(0, 5)}</span>
+              <span className="shrink-0 ml-1 font-bold">{nextTask.start_time.slice(0, 5)}</span>
             )}
           </div>
         )}
@@ -862,7 +912,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
 
   const responsavel = users.find(u => u.id === lead.responsavel_id);
   const currentColumn = columns.find(c => c.id === lead.coluna);
-  const tabs = ['Atividades', 'Histórico', 'Notas', 'Reuniões', 'Ligações', 'Arquivos'];
+  const tabs = ['Atividades', 'Histórico', 'Notas', 'Reuniões', 'Ligações'];
 
   return (
     <>
@@ -2057,13 +2107,29 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                       <div className="w-full bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-xl overflow-hidden shadow-inner flex flex-col">
                         <div className="flex gap-2 p-2 bg-slate-100 dark:bg-white/5 border-b border-slate-200 dark:border-white/10 text-xs text-gray-500 items-center justify-between">
                           <span className="font-medium px-2">Suporta Colagem de Imagens (Ctrl+V)</span>
-                          <button
-                            onClick={handleCreateNote}
-                            disabled={notesLoading}
-                            className="px-4 py-1.5 bg-violet-600 hover:bg-violet-700 active:scale-95 text-white rounded-lg text-xs font-bold transition-all shadow-sm shadow-violet-500/20 disabled:opacity-50"
-                          >
-                            {notesLoading ? <Loader2 size={14} className="animate-spin" /> : 'Salvar Nota'}
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => fileInputRef.current?.click()}
+                              disabled={uploadingFiles}
+                              className="px-3 py-1.5 bg-gray-200 dark:bg-white/10 hover:bg-gray-300 dark:hover:bg-white/20 text-gray-700 dark:text-slate-200 rounded-lg text-xs font-bold transition-all flex items-center gap-1 disabled:opacity-50"
+                            >
+                              {uploadingFiles ? <Loader2 size={12} className="animate-spin" /> : <Paperclip size={12} />}
+                              {uploadingFiles ? 'Enviando...' : 'Anexar'}
+                            </button>
+                            <input
+                              type="file"
+                              ref={fileInputRef}
+                              onChange={handleFileChange}
+                              className="hidden"
+                            />
+                            <button
+                              onClick={handleCreateNote}
+                              disabled={notesLoading}
+                              className="px-4 py-1.5 bg-violet-600 hover:bg-violet-700 active:scale-95 text-white rounded-lg text-xs font-bold transition-all shadow-sm shadow-violet-500/20 disabled:opacity-50"
+                            >
+                              {notesLoading ? <Loader2 size={14} className="animate-spin" /> : 'Salvar Nota'}
+                            </button>
+                          </div>
                         </div>
                         <div
                           ref={editorRef}
@@ -2084,29 +2150,30 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                           <Loader2 size={32} className="animate-spin text-violet-500 mb-2" />
                           <span className="text-sm">Carregando anotações...</span>
                         </div>
-                      ) : notes.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-16 text-gray-400 dark:text-slate-500">
-                          <FileText size={36} className="mb-3 opacity-30" />
-                          <p className="text-sm font-medium">Nenhuma nota registrada</p>
-                          <p className="text-xs mt-1 opacity-60">Use o editor acima para criar a primeira anotação</p>
+                      ) : notes.length === 0 && files.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center mt-12 text-gray-400">
+                          <MessageSquare size={32} className="mb-2 opacity-50" />
+                          <span className="text-sm">Nenhuma anotação ou arquivo neste card.</span>
                         </div>
                       ) : (
                         <>
                           <div className="absolute left-1/2 top-4 bottom-4 w-[2px] bg-indigo-50/50 dark:bg-white/5 -translate-x-1/2" />
 
                           <div className="space-y-16 relative">
-                            {notes.map((n, idx) => {
+                            {[
+                              ...notes.map((n: any) => ({ ...n, itemType: 'note' })),
+                              ...files.map((f: any) => ({ ...f, itemType: 'file', created_at: f.created_at || new Date().toISOString() }))
+                            ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).map((item, idx) => {
                               const isLeft = idx % 2 === 0;
-                              const dateObj = new Date(n.created_at || new Date());
-                              const nMonth = dateObj.toLocaleString('pt-BR', { month: 'short' }).toUpperCase();
-                              const nDay = String(dateObj.getDate()).padStart(2, '0');
-                              const uResp = users.find(u => u.email === n.user_name || u.name === n.user_name);
+                              const dateObj = new Date(item.created_at || new Date());
+                              const userName = item.itemType === 'note' ? item.user_name : item.sender;
+                              const uResp = users.find(u => u.email === userName || u.name === userName);
                               const getInitials = (num?: string) => num ? num.substring(0, 2).toUpperCase() : '??';
 
                               return (
-                                <div key={n.id || idx} className={`flex items-start w-full relative ${isLeft ? 'justify-start' : 'justify-end'}`}>
+                                <div key={item.itemType + '-' + (item.id || idx)} className={`flex items-start w-full relative ${isLeft ? 'justify-start' : 'justify-end'}`}>
                                   <div className="absolute left-1/2 top-[34px] -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border-[3px] border-white dark:border-[#15121E] bg-violet-50 dark:bg-violet-500/20 flex items-center justify-center z-10 shadow-sm">
-                                    <FileText size={14} className="text-violet-500" />
+                                    {item.itemType === 'file' ? <Paperclip size={14} className="text-violet-500" /> : <FileText size={14} className="text-violet-500" />}
                                   </div>
 
                                   <div className="w-[45%]">
@@ -2129,21 +2196,36 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                                           ) : (
                                             <>
                                               <Users size={12} className="opacity-70" />
-                                              <span className="truncate max-w-[150px] font-bold text-gray-700 dark:text-slate-300">{n.user_name || 'Sistema'}</span>
+                                              <span className="truncate max-w-[150px] font-bold text-gray-700 dark:text-slate-300">{userName || 'Sistema'}</span>
                                             </>
                                           )}
                                         </div>
-                                        <span className="text-[10px] font-bold text-gray-400">
+                                        <span className="text-[10px] font-bold text-gray-400 shrink-0 ml-2">
                                           {!isNaN(dateObj.getTime()) ? `${dateObj.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })} às ${dateObj.toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : 'Agora mesmo'}
                                         </span>
                                       </div>
 
-                                      <div
-                                        className="mt-2 text-sm text-gray-700 dark:text-slate-200 leading-relaxed whitespace-pre-wrap prose prose-sm dark:prose-invert max-w-none prose-img:cursor-zoom-in hover:prose-img:opacity-90 prose-img:transition-opacity prose-img:rounded-xl"
-                                        style={{ wordBreak: 'break-word' }}
-                                        onClick={handleNoteClick}
-                                        dangerouslySetInnerHTML={{ __html: n.content?.replace(/style="[^"]*color:[^"]*"/g, '') || '' }}
-                                      />
+                                      {item.itemType === 'note' ? (
+                                        <div
+                                          className="mt-2 text-sm text-gray-700 dark:text-slate-200 leading-relaxed whitespace-pre-wrap prose prose-sm dark:prose-invert max-w-none prose-img:cursor-zoom-in hover:prose-img:opacity-90 prose-img:transition-opacity prose-img:rounded-xl"
+                                          style={{ wordBreak: 'break-word' }}
+                                          onClick={handleNoteClick}
+                                          dangerouslySetInnerHTML={{ __html: item.content?.replace(/style="[^"]*color:[^"]*"/g, '') || '' }}
+                                        />
+                                      ) : (
+                                        <a href={item.url} target="_blank" rel="noreferrer" className="flex items-center gap-3 mt-2 p-3 rounded-xl bg-gray-50 dark:bg-white/5 border border-gray-100 dark:border-white/10 hover:border-violet-500/50 hover:bg-violet-50/50 dark:hover:bg-violet-500/10 transition-colors group/file">
+                                          <div className="w-10 h-10 rounded-lg bg-violet-100 dark:bg-violet-500/20 text-violet-600 flex items-center justify-center shrink-0">
+                                            <Paperclip size={20} />
+                                          </div>
+                                          <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-bold text-gray-900 dark:text-white truncate group-hover/file:text-violet-600 transition-colors">{item.name}</p>
+                                            <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">{item.size}</p>
+                                          </div>
+                                          <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDeleteFile(item.id); }} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors">
+                                            <Trash2 size={16} />
+                                          </button>
+                                        </a>
+                                      )}
 
                                     </div>
                                   </div>
@@ -2404,102 +2486,6 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                     </div>
                   );
                 })()}
-                {activeTab === 'arquivos' && (
-                  <div className="p-6 space-y-6 flex-1 flex flex-col font-sans">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-lg font-bold text-gray-800 dark:text-slate-100">Documentos e Arquivos</h3>
-                      <button
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={uploadingFiles}
-                        className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 border border-gray-200 dark:border-white/10 text-gray-700 dark:text-slate-200 rounded-xl text-sm font-bold transition-all disabled:opacity-50"
-                      >
-                        {uploadingFiles ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
-                        {uploadingFiles ? 'Enviando...' : 'Fazer Upload'}
-                      </button>
-                      <input
-                        type="file"
-                        ref={fileInputRef}
-                        onChange={handleFileChange}
-                        className="hidden"
-                      />
-                    </div>
-
-                    <div
-                      onDragOver={handleDragOver}
-                      onDrop={handleDrop}
-                      onClick={() => fileInputRef.current?.click()}
-                      className="border-2 border-dashed border-gray-300 dark:border-white/10 rounded-2xl p-8 text-center bg-gray-50 dark:bg-white/5 backdrop-blur-md cursor-pointer hover:border-violet-500 transition-all relative overflow-hidden"
-                    >
-                      <div className="flex flex-col items-center gap-3 relative z-10">
-                        <div className="p-3 bg-white/50 dark:bg-white/5 rounded-full border border-gray-200 dark:border-white/10 shadow-sm">
-                          <Folder size={24} className="text-gray-400 dark:text-slate-400" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-bold text-gray-700 dark:text-slate-200">Clique ou arraste arquivos para cá</p>
-                          <p className="text-xs text-gray-500 dark:text-slate-500 mt-1">Suporta PDF, DOCX, XLSX, imagens e vídeos (Máx 50MB)</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="bg-gray-50 dark:bg-white/5 backdrop-blur-md rounded-2xl border border-gray-200 dark:border-white/10 overflow-hidden relative">
-                      <table className="w-full text-left text-xs">
-                        <thead className="bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-slate-400 font-bold uppercase tracking-widest">
-                          <tr>
-                            <th className="px-6 py-4">Nome do Arquivo</th>
-                            <th className="px-6 py-4">Data</th>
-                            <th className="px-6 py-4">Tamanho</th>
-                            <th className="px-6 py-4">Enviado por</th>
-                            <th className="px-6 py-4 text-right">Ações</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-200 dark:divide-white/10 text-gray-700 dark:text-slate-200">
-                          {filesLoading && files.length === 0 ? (
-                            <tr>
-                              <td colSpan={5} className="px-6 py-8 text-center text-gray-400">Carregando arquivos...</td>
-                            </tr>
-                          ) : files.length === 0 ? (
-                            <tr>
-                              <td colSpan={5} className="px-6 py-8 text-center text-gray-400 italic">Nenhum arquivo enviado.</td>
-                            </tr>
-                          ) : (
-                            files.map((file: any) => (
-                              <tr key={file.id} className="hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
-                                <td className="px-6 py-4 flex items-center gap-3 font-bold max-w-[200px] truncate">
-                                  <File size={16} className="text-violet-500 flex-shrink-0" />
-                                  <span className="truncate" title={file.name}>{file.name}</span>
-                                </td>
-                                <td className="px-6 py-4 text-gray-500 dark:text-slate-400">{new Date(file.created_at).toLocaleDateString('pt-BR')}</td>
-                                <td className="px-6 py-4 text-gray-500 dark:text-slate-400">{file.size || '-'}</td>
-                                <td className="px-6 py-4">
-                                  <span className="px-2 py-1 rounded-lg font-bold text-[10px] uppercase tracking-wider bg-violet-500/10 text-violet-500">
-                                    {(() => {
-                                      if (file.sender === 'Agência') return currentUserName || 'Sistema';
-                                      const userMatch = users?.find((u: any) => u.email === file.sender || u.name === file.sender);
-                                      return userMatch?.name || file.sender || 'Sistema';
-                                    })()}
-                                  </span>
-                                </td>
-                                <td className="px-6 py-4 text-right">
-                                  <div className="flex items-center justify-end gap-3 text-gray-400">
-                                    <button onClick={() => window.open(file.url, '_blank')} className="hover:text-violet-500 transition-colors" title="Visualizar"><Eye size={16} /></button>
-                                    <button onClick={() => {
-                                      const a = document.createElement('a');
-                                      a.href = file.url;
-                                      a.download = file.name;
-                                      a.target = '_blank';
-                                      a.click();
-                                    }} className="hover:text-violet-500 transition-colors" title="Baixar"><Download size={16} /></button>
-                                    <button onClick={() => handleDeleteFile(file.id)} className="hover:text-red-500 transition-colors" title="Excluir"><Trash2 size={16} /></button>
-                                  </div>
-                                </td>
-                              </tr>
-                            ))
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
               </div>
 
 
@@ -3222,7 +3208,7 @@ const CrmComercial = () => {
   const [api4comSettings, setApi4comSettings] = useState<{ configured: boolean, sip_extension?: string } | null>(null);
   const [isTelefonySettingsOpen, setIsTelefonySettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<'webhook' | 'sequencias' | 'motivos-perda'>('webhook');
-  const [crmWebhookSettings, setCrmWebhookSettings] = useState<any>({ form_webhook_url: '', whatsapp_webhook_url: '', inbound_token: '', inbound_kanban_id: '', inbound_coluna: '' });
+  const [crmWebhookSettings, setCrmWebhookSettings] = useState<any>({ form_webhook_url: '', whatsapp_webhook_url: '', inbound_token: '', inbound_kanban_id: '', inbound_coluna: '', inbound_responsavel_id: '' });
   const [savingWebhookSettings, setSavingWebhookSettings] = useState(false);
   const [showWebhookConfig, setShowWebhookConfig] = useState<'form' | 'whatsapp' | 'inbound' | null>(null);
   const [inboundColumns, setInboundColumns] = useState<any[]>([]);
@@ -3856,18 +3842,24 @@ const CrmComercial = () => {
 
   const handleDragStart = (event: any) => {
     setActiveId(event.active.id);
-    const lead = leads.find(l => l.id === event.active.id);
-    if (lead) {
-      originalColumnRef.current = lead.coluna;
+    if (event.active.data.current?.type === 'Lead') {
+      const lead = leads.find(l => l.id === event.active.id);
+      if (lead) {
+        originalColumnRef.current = lead.coluna;
+      }
     }
   };
 
   const handleDragOver = (event: any) => {
     const { active, over } = event;
     if (!over) return;
+    if (active.data.current?.type === 'Column') return;
 
     const activeId = active.id;
-    const overId = over.id;
+    let overId = over.id;
+    if (typeof overId === 'string' && overId.endsWith('-droppable')) {
+      overId = overId.replace('-droppable', '');
+    }
 
     if (activeId === overId) return;
 
@@ -3910,8 +3902,36 @@ const CrmComercial = () => {
 
     if (!over) return;
 
+    let overId = over.id;
+    if (typeof overId === 'string' && overId.endsWith('-droppable')) {
+      overId = overId.replace('-droppable', '');
+    }
+
+    if (active.data.current?.type === 'Column') {
+      if (active.id !== overId) {
+        const oldIndex = columns.findIndex(c => c.id === active.id);
+        const newIndex = columns.findIndex(c => c.id === overId);
+        const newColumns = arrayMove(columns, oldIndex, newIndex);
+        setColumns(newColumns);
+        
+        try {
+          await fetch('/api/crm-comercial/columns/reorder', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              kanban_id: activeKanbanId,
+              columns: newColumns.map((c, idx) => ({ id: c.id, order_index: idx }))
+            })
+          });
+        } catch (error) {
+          console.error("Failed to reorder columns:", error);
+          fetchData(); // fallback
+        }
+      }
+      return;
+    }
+
     const leadId = active.id;
-    const overId = over.id;
 
     // Calcula a nova coluna com segurança, antes do setLeads para evitar problemas de escopo fechado
     let newColumn = originalColumnRef.current || '';
@@ -4635,54 +4655,22 @@ const CrmComercial = () => {
         onDragEnd={handleDragEnd}
       >
         <div ref={kanbanBoardRef} className="flex overflow-x-auto pb-4 gap-6 items-stretch snap-x flex-1 scroll-smooth">
+          <SortableContext items={columns.map((c: any) => c.id)} strategy={horizontalListSortingStrategy}>
           {columns.map(column => {
             const columnLeads = filteredLeads.filter(l => l.coluna === column.id);
             const totalValue = columnLeads.reduce((acc, l) => acc + Number(l.valor || 0), 0);
 
             return (
-              <div key={column.id} className="flex flex-col flex-1 min-h-[500px] min-w-[320px] w-[320px] snap-start bg-slate-50/50 dark:bg-white/[0.02] rounded-3xl border border-gray-200 dark:border-white/5 p-2">
-                <div className="p-3 flex items-start justify-between mb-2">
-                  <div className="flex items-start gap-3">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${column.color === 'orange' ? 'bg-orange-500' :
-                        column.color === 'blue' ? 'bg-blue-500' :
-                          column.color === 'green' ? 'bg-emerald-500' :
-                            column.color === 'pink' ? 'bg-pink-500' :
-                              column.color === 'red' ? 'bg-red-500' :
-                                column.color === 'cyan' ? 'bg-cyan-500' : 'bg-slate-500'
-                      }`}>
-                      <RenderIcon name={column.icon || 'LayoutGrid'} size={20} className="text-white" />
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-gray-900 dark:text-white text-base leading-tight">{column.title}</h3>
-                      <p className="text-gray-500 dark:text-slate-400 text-xs mt-0.5">{columnLeads.length} tickets</p>
-                      <div className="mt-1 text-sm font-black text-emerald-500">
-                        {formatCurrency(totalValue)}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => {
-                        setEditColumnData({ id: column.id, title: column.title, color: column.color || 'orange', icon: column.icon || 'LayoutGrid' });
-                        setIsEditColumnModalOpen(true);
-                      }}
-                      className="p-1.5 text-gray-400 dark:text-slate-500 hover:text-gray-900 dark:hover:text-white transition-colors"
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="12" cy="12" r="3"></circle>
-                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-                      </svg>
-                    </button>
-                    <button
-                      onClick={() => setColumnToDelete(column.id)}
-                      className="p-1.5 text-gray-400 dark:text-slate-500 hover:text-red-500 transition-colors"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                </div>
-
-                <DroppableColumn id={column.id}>
+              <SortableColumn
+                key={column.id}
+                column={column}
+                columnLeadsLength={columnLeads.length}
+                totalValue={totalValue}
+                setEditColumnData={setEditColumnData}
+                setIsEditColumnModalOpen={setIsEditColumnModalOpen}
+                setColumnToDelete={setColumnToDelete}
+              >
+                <DroppableColumn id={`${column.id}-droppable`}>
                   <SortableContext
                     id={column.id}
                     items={columnLeads.map(l => l.id)}
@@ -4732,25 +4720,53 @@ const CrmComercial = () => {
                     </div>
                   </SortableContext>
                 </DroppableColumn>
-              </div>
+              </SortableColumn>
             );
           })}
+          </SortableContext>
         </div>
 
         <DragOverlay>
           {activeId ? (
-            <SortableCard
-              lead={leads.find(l => l.id === activeId)!}
-              users={users}
-              columns={columns}
-              tasks={allKanbanTasks}
-              onClick={() => { }}
-              onMove={() => { }}
-              onDelete={() => { }}
-              onEditValue={() => { }}
-              onHistory={() => { }}
-              isOverlay={true}
-            />
+            (() => {
+              const activeLead = leads.find(l => l.id === activeId);
+              if (activeLead) {
+                return (
+                  <SortableCard
+                    lead={activeLead}
+                    users={users}
+                    columns={columns}
+                    tasks={allKanbanTasks}
+                    onClick={() => { }}
+                    onMove={() => { }}
+                    onDelete={() => { }}
+                    onEditValue={() => { }}
+                    onHistory={() => { }}
+                    isOverlay={true}
+                  />
+                );
+              }
+              const activeCol = columns.find(c => c.id === activeId);
+              if (activeCol) {
+                const columnLeads = filteredLeads.filter(l => l.coluna === activeCol.id);
+                const totalValue = columnLeads.reduce((acc, l) => acc + Number(l.valor || 0), 0);
+                return (
+                  <SortableColumn
+                    column={activeCol}
+                    columnLeadsLength={columnLeads.length}
+                    totalValue={totalValue}
+                    setEditColumnData={() => {}}
+                    setIsEditColumnModalOpen={() => {}}
+                    setColumnToDelete={() => {}}
+                  >
+                    <div className="flex-1 border-2 border-dashed border-gray-200 dark:border-white/10 rounded-xl flex flex-col items-center justify-center text-gray-400 p-8 min-h-[150px] pointer-events-none mt-2 bg-white/5">
+                      <p className="font-medium text-sm">Movendo coluna...</p>
+                    </div>
+                  </SortableColumn>
+                );
+              }
+              return null;
+            })()
           ) : null}
         </DragOverlay>
       </DndContext>
@@ -5994,6 +6010,20 @@ const CrmComercial = () => {
                                   <option value="">Selecione...</option>
                                   {inboundColumns.sort((a, b) => Number(a.order_index) - Number(b.order_index)).map((c: any) => (
                                     <option key={c.id} value={c.title}>{c.title}</option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              <div className="col-span-2">
+                                <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 block mb-1.5">Responsável Automático (Opcional)</label>
+                                <select
+                                  value={crmWebhookSettings.inbound_responsavel_id || ''}
+                                  onChange={e => setCrmWebhookSettings({ ...crmWebhookSettings, inbound_responsavel_id: e.target.value })}
+                                  className="w-full bg-white dark:bg-black/40 border border-gray-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:border-violet-500 outline-none"
+                                >
+                                  <option value="">Padrão (Dono do Webhook)</option>
+                                  {users.map((u: any) => (
+                                    <option key={u.id} value={u.id}>{u.name}</option>
                                   ))}
                                 </select>
                               </div>

@@ -786,6 +786,7 @@ async function startServer() {
     await pool.query(`ALTER TABLE crm_webhook_settings ADD COLUMN IF NOT EXISTS inbound_token TEXT`);
     await pool.query(`ALTER TABLE crm_webhook_settings ADD COLUMN IF NOT EXISTS inbound_kanban_id TEXT`);
     await pool.query(`ALTER TABLE crm_webhook_settings ADD COLUMN IF NOT EXISTS inbound_coluna TEXT`);
+    await pool.query(`ALTER TABLE crm_webhook_settings ADD COLUMN IF NOT EXISTS inbound_responsavel_id TEXT`);
 
     // Migration: add squad column to users if missing
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS squad TEXT`);
@@ -6250,6 +6251,37 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
+  app.post("/api/crm-comercial/columns/reorder", async (req, res) => {
+    try {
+      const { kanban_id, columns } = req.body;
+      if (!kanban_id || !Array.isArray(columns)) {
+        return res.status(400).json({ error: "kanban_id and columns array are required" });
+      }
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        for (const col of columns) {
+          await client.query(
+            "UPDATE crm_comercial_columns SET order_index = $1 WHERE id = $2 AND kanban_id = $3",
+            [col.order_index, col.id, kanban_id]
+          );
+        }
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
+
+      res.status(200).json({ success: true });
+    } catch (err) {
+      console.error("Error reordering columns:", err);
+      res.status(500).json({ error: "Failed to reorder columns" });
+    }
+  });
+
   app.post("/api/crm-comercial/columns", async (req, res) => {
     try {
       const { kanban_id, title, color, order_index, icon, max_days } = req.body;
@@ -8442,7 +8474,7 @@ app.get("/api/todos", async (req, res) => {
     const { user_id } = req.query;
     if (!user_id) return res.status(400).json({ error: "user_id is required" });
     try {
-      const result = await pool.query('SELECT form_webhook_url, whatsapp_webhook_url, inbound_token, inbound_kanban_id, inbound_coluna FROM crm_webhook_settings WHERE user_id = $1', [user_id]);
+      const result = await pool.query('SELECT form_webhook_url, whatsapp_webhook_url, inbound_token, inbound_kanban_id, inbound_coluna, inbound_responsavel_id FROM crm_webhook_settings WHERE user_id = $1', [user_id]);
       
       let settings = result.rows[0];
       if (settings && !settings.inbound_token) {
@@ -8452,7 +8484,7 @@ app.get("/api/todos", async (req, res) => {
       } else if (!settings) {
         const token = crypto.randomUUID();
         await pool.query('INSERT INTO crm_webhook_settings (user_id, inbound_token) VALUES ($1, $2)', [user_id, token]);
-        settings = { form_webhook_url: '', whatsapp_webhook_url: '', inbound_token: token, inbound_kanban_id: '', inbound_coluna: '' };
+        settings = { form_webhook_url: '', whatsapp_webhook_url: '', inbound_token: token, inbound_kanban_id: '', inbound_coluna: '', inbound_responsavel_id: '' };
       }
       
       res.json(settings);
@@ -8463,20 +8495,21 @@ app.get("/api/todos", async (req, res) => {
   });
 
   app.post("/api/crm/settings/webhooks", async (req, res) => {
-    const { user_id, form_webhook_url, whatsapp_webhook_url, inbound_kanban_id, inbound_coluna, inbound_token } = req.body;
+    const { user_id, form_webhook_url, whatsapp_webhook_url, inbound_kanban_id, inbound_coluna, inbound_token, inbound_responsavel_id } = req.body;
     if (!user_id) return res.status(400).json({ error: "user_id is required" });
     try {
       await pool.query(
-        `INSERT INTO crm_webhook_settings (user_id, form_webhook_url, whatsapp_webhook_url, inbound_kanban_id, inbound_coluna, inbound_token, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, NOW())
+        `INSERT INTO crm_webhook_settings (user_id, form_webhook_url, whatsapp_webhook_url, inbound_kanban_id, inbound_coluna, inbound_token, inbound_responsavel_id, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
          ON CONFLICT (user_id) DO UPDATE SET
            form_webhook_url = EXCLUDED.form_webhook_url,
            whatsapp_webhook_url = EXCLUDED.whatsapp_webhook_url,
            inbound_kanban_id = EXCLUDED.inbound_kanban_id,
            inbound_coluna = EXCLUDED.inbound_coluna,
            inbound_token = EXCLUDED.inbound_token,
+           inbound_responsavel_id = EXCLUDED.inbound_responsavel_id,
            updated_at = NOW()`,
-        [user_id, form_webhook_url || '', whatsapp_webhook_url || '', inbound_kanban_id || '', inbound_coluna || '', inbound_token || '']
+        [user_id, form_webhook_url || '', whatsapp_webhook_url || '', inbound_kanban_id || '', inbound_coluna || '', inbound_token || '', inbound_responsavel_id || '']
       );
       res.json({ success: true });
     } catch (err) {
@@ -8495,7 +8528,7 @@ app.get("/api/todos", async (req, res) => {
       if (!nome) return res.status(400).json({ error: "Campo 'nome' é obrigatório" });
 
       const hookSettings = await pool.query(`
-        SELECT ws.inbound_kanban_id, ws.inbound_coluna, u.id as user_id 
+        SELECT ws.inbound_kanban_id, ws.inbound_coluna, ws.inbound_responsavel_id, u.id as user_id 
         FROM crm_webhook_settings ws 
         JOIN users u ON u.email = ws.user_id 
         WHERE ws.inbound_token = $1
@@ -8505,7 +8538,7 @@ app.get("/api/todos", async (req, res) => {
         return res.status(404).json({ error: "Token de webhook inválido ou não encontrado." });
       }
 
-      const { inbound_kanban_id, inbound_coluna, user_id } = hookSettings.rows[0];
+      const { inbound_kanban_id, inbound_coluna, inbound_responsavel_id, user_id } = hookSettings.rows[0];
 
       if (!inbound_kanban_id || !inbound_coluna) {
         return res.status(400).json({ error: "Destino do lead (Kanban e Coluna) não foi configurado pelo proprietário deste token nas configurações do CRM." });
@@ -8561,7 +8594,7 @@ app.get("/api/todos", async (req, res) => {
         telefone:       body.telefone || body.TELEFONE || body.phone || '',
         nicho:          body.nicho    || body.NICHO    || '',
         origem:         finalOrigem,
-        responsavel_id: user_id,
+        responsavel_id: inbound_responsavel_id || user_id,
         instagram:      body.instagram || '',
         forma_pagamento:body.forma_pagamento || '',
         valor:          Number(body.valor) || 0,

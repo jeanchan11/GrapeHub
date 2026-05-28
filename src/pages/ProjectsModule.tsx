@@ -18,7 +18,7 @@ import {
   Gavel, Scale, HeartPulse, ShieldCheck, 
   Hammer, Landmark, Banknote, ShoppingCart, 
   Home, Stethoscope, Building2, Image as ImageIcon,
-  Folder, File, Eye, Download, Trash2, Upload, FileText, GripVertical, Copy, Loader2, Star, Lock, LockOpen
+  Folder, File, Eye, Download, Trash2, Upload, FileText, GripVertical, Copy, Loader2, Star, Lock, LockOpen, Bot, Edit2, ThumbsUp, SmilePlus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
@@ -56,6 +56,24 @@ const normalizePaymentMethod = (v?: string): string => {
   return v;
 };
 
+const formatCurrency = (val: string) => {
+  if (!val) return '';
+  const num = val.replace(/\D/g, '');
+  if (!num) return '';
+  const amount = parseInt(num, 10) / 100;
+  return amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+};
+
+const formatDateShort = (dateStr?: string) => {
+  if (!dateStr) return '';
+  const parts = dateStr.split('/');
+  if (parts.length !== 3) return dateStr;
+  const [day, month] = parts;
+  const months = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+  const monthName = months[parseInt(month, 10) - 1];
+  return `${monthName} ${parseInt(day, 10)}`;
+};
+
 const DragHandle = () => {
   const { attributes, listeners } = React.useContext(DragHandleContext);
   return (
@@ -87,6 +105,15 @@ const SortableRowWrapper = ({ id, children, className }: any) => {
   );
 };
 
+export interface OptimizationReply {
+  id: string;
+  author: string;
+  authorPhoto?: string;
+  message: string;
+  date: string;
+  time: string;
+}
+
 interface Optimization {
   id: string;
   author: string;
@@ -100,6 +127,9 @@ interface Optimization {
   optimization?: string;
   type?: string;
   status?: string;
+  likes?: string[];
+  productId?: string;
+  replies?: OptimizationReply[];
 }
 
 interface Product {
@@ -341,7 +371,12 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       }, 100);
     }
   }, [isProjectModalOpen, selectedProject]);
+  const [editingPage, setEditingPage] = useState<string | null>(null);
   const [newNote, setNewNote] = useState('');
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [editingNoteMessage, setEditingNoteMessage] = useState<string>('');
+  const [replyingNoteId, setReplyingNoteId] = useState<string | null>(null);
+  const [replyMessage, setReplyMessage] = useState<string>('');
   const [isInternal, setIsInternal] = useState(false);
   const [images, setImages] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -471,6 +506,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     const optimizations = selectedProject.products?.flatMap(p => (p.optimizations || []).map(opt => ({ 
       ...opt, 
       productName: p.name, 
+      productId: p.id,
       type: 'optimization',
       createdAt: opt.date.split('/').reverse().join('-') + (opt.time ? 'T' + opt.time : 'T00:00')
     }))) || [];
@@ -1265,7 +1301,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     const fields: { key: keyof Product; label: string }[] = [
       { key: 'name', label: 'Nome do Produto' },
       { key: 'icon', label: 'Ícone' },
-      { key: 'investmentMonthly', label: 'Investimento Mensal' },
+      { key: 'investmentMonthly', label: 'Investimento' },
       { key: 'leads', label: 'Leads' },
       { key: 'contracts', label: 'Contratos' },
       { key: 'cac', label: 'CAC' },
@@ -1277,7 +1313,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       { key: 'delivery', label: 'Veiculação' },
       { key: 'aiService', label: 'IA' },
       { key: 'bottleneck', label: 'Gargalo' },
-      { key: 'paymentMethod', label: 'Forma de Pagamento' },
+      { key: 'paymentMethod', label: 'Pagamento' },
     ];
 
     fields.forEach(field => {
@@ -1312,6 +1348,128 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     setSelectedProduct(finalProduct);
     setTempProduct(finalProduct);
     setIsEditingMetrics(false);
+  };
+
+  const handleSaveEditNote = (noteId: string) => {
+    if (!selectedProduct) return;
+    
+    const now = new Date();
+    const editSuffix = `\n\n(Editado em ${now.toLocaleDateString('pt-BR')} às ${now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })})`;
+    
+    const updatedProduct = {
+      ...selectedProduct,
+      optimizations: selectedProduct.optimizations?.map(opt => {
+        if (opt.id === noteId) {
+          return {
+            ...opt,
+            message: editingNoteMessage + editSuffix
+          };
+        }
+        return opt;
+      })
+    };
+    
+    setSelectedProduct(updatedProduct);
+    setEditingNoteId(null);
+    setEditingNoteMessage('');
+    
+    const updatedProjects = projects.map(proj => {
+      if (proj.products?.some(p => p.id === selectedProduct.id)) {
+        return {
+          ...proj,
+          products: proj.products.map(p => p.id === selectedProduct.id ? updatedProduct : p)
+        };
+      }
+      return proj;
+    });
+    setProjects(updatedProjects as any);
+  };
+
+  const handleSaveReply = (noteId: string, productId?: string) => {
+    if (!replyMessage.trim()) return;
+    const targetProductId = productId || selectedProduct?.id;
+    if (!targetProductId) return;
+
+    const newReply: OptimizationReply = {
+      id: crypto.randomUUID(),
+      author: userData?.name || auth.currentUser?.displayName || 'Usuário',
+      authorPhoto: userData?.picture || auth.currentUser?.photoURL || '',
+      message: replyMessage,
+      date: new Date().toLocaleDateString('pt-BR'),
+      time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+    };
+
+    const updatedProjects = projects.map(proj => {
+      if (proj.id === selectedProject?.id || proj.products?.some(p => p.id === targetProductId)) {
+        return {
+          ...proj,
+          products: proj.products?.map(p => {
+            if (p.id === targetProductId) {
+              const updatedProduct = {
+                ...p,
+                optimizations: p.optimizations?.map(opt => {
+                  if (opt.id === noteId) {
+                    return {
+                      ...opt,
+                      replies: [...(opt.replies || []), newReply]
+                    };
+                  }
+                  return opt;
+                })
+              };
+              if (selectedProduct?.id === targetProductId) {
+                setSelectedProduct(updatedProduct as any);
+              }
+              return updatedProduct;
+            }
+            return p;
+          })
+        };
+      }
+      return proj;
+    });
+    setProjects(updatedProjects as any);
+    setReplyingNoteId(null);
+    setReplyMessage('');
+  };
+
+  const handleToggleLike = (noteId: string, productId?: string) => {
+    const userIdentifier = auth.currentUser?.email || userData?.name || 'user';
+    const targetProductId = productId || selectedProduct?.id;
+    if (!targetProductId) return;
+
+    const updatedProjects = projects.map(proj => {
+      if (proj.id === selectedProject?.id || proj.products?.some(p => p.id === targetProductId)) {
+        return {
+          ...proj,
+          products: proj.products?.map(p => {
+            if (p.id === targetProductId) {
+              const updatedProduct = {
+                ...p,
+                optimizations: p.optimizations?.map(opt => {
+                  if (opt.id === noteId) {
+                    const likes = opt.likes || [];
+                    const hasLiked = likes.includes(userIdentifier);
+                    return {
+                      ...opt,
+                      likes: hasLiked ? likes.filter(e => e !== userIdentifier) : [...likes, userIdentifier]
+                    };
+                  }
+                  return opt;
+                })
+              };
+              if (selectedProduct?.id === targetProductId) {
+                setSelectedProduct(updatedProduct as any);
+              }
+              return updatedProduct;
+            }
+            return p;
+          })
+        };
+      }
+      return proj;
+    });
+    setProjects(updatedProjects as any);
   };
 
   const handleDeleteNote = (noteId: string) => {
@@ -1508,41 +1666,44 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       console.error("Error fetching user role:", err);
     }
 
-    const imageUrls: string[] = [];
-    for (const image of images) {
-      const storageRef = ref(storage, `users/${auth.currentUser?.uid}/optimizations/${Date.now()}_${image.name}`);
-      await uploadBytes(storageRef, image);
-      const downloadURL = await getDownloadURL(storageRef);
-      imageUrls.push(downloadURL);
-    }
-
-    const now = new Date();
-    
-    // Categorização automática
-    let category = 'Otimização';
-    const lowerNote = newNote.toLowerCase();
-    if (lowerNote.includes('status') || lowerNote.includes('pausado') || lowerNote.includes('rodando') || lowerNote.includes('bloqueio')) {
-      category = 'Mudança de Status';
-    } else if (lowerNote.includes('métrica') || lowerNote.includes('cpa') || lowerNote.includes('leads') || lowerNote.includes('roi') || lowerNote.includes('custo')) {
-      category = 'Mudança de Métricas';
-    }
-
-    const note: Optimization = {
-      id: Math.random().toString(36).substr(2, 9),
-      author: userData?.name || auth.currentUser?.displayName || 'Usuário',
-      authorPhoto: userData?.picture || auth.currentUser?.photoURL || '',
-      role: userRole,
-      date: now.toLocaleDateString('pt-BR'),
-      time: now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-      message: newNote,
-      isInternal: isInternal,
-      images: imageUrls,
-      optimization: category === 'Otimização' ? 'Otimização' : undefined,
-      type: category === 'Mudança de Métricas' ? 'Mudança de Métricas' : undefined,
-      status: category === 'Mudança de Status' ? 'Mudança de Status' : undefined
-    };
-
     try {
+      const imageUrls: string[] = [];
+      if (images.length > 0) {
+        if (!auth.currentUser) throw new Error("Usuário não autenticado.");
+        for (const image of images) {
+          const storageRef = ref(storage, `users/${auth.currentUser.uid}/optimizations/${Date.now()}_${image.name}`);
+          await uploadBytes(storageRef, image);
+          const downloadURL = await getDownloadURL(storageRef);
+          imageUrls.push(downloadURL);
+        }
+      }
+
+      const now = new Date();
+      
+      // Categorização automática
+      let category = 'Otimização';
+      const lowerNote = newNote.toLowerCase();
+      if (lowerNote.includes('status') || lowerNote.includes('pausado') || lowerNote.includes('rodando') || lowerNote.includes('bloqueio')) {
+        category = 'Mudança de Status';
+      } else if (lowerNote.includes('métrica') || lowerNote.includes('cpa') || lowerNote.includes('leads') || lowerNote.includes('roi') || lowerNote.includes('custo')) {
+        category = 'Mudança de Métricas';
+      }
+
+      const note: Optimization = {
+        id: Math.random().toString(36).substr(2, 9),
+        author: userData?.name || auth.currentUser?.displayName || 'Usuário',
+        authorPhoto: userData?.picture || auth.currentUser?.photoURL || '',
+        role: userRole,
+        date: now.toLocaleDateString('pt-BR'),
+        time: now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+        message: newNote,
+        isInternal: isInternal,
+        images: imageUrls,
+        optimization: category === 'Otimização' ? 'Otimização' : undefined,
+        type: category === 'Mudança de Métricas' ? 'Mudança de Métricas' : undefined,
+        status: category === 'Mudança de Status' ? 'Mudança de Status' : undefined
+      };
+
       await fetch('/api/optimizations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1576,6 +1737,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       });
     } catch (err) {
       console.error("Error saving optimization:", err);
+      alert("Houve um erro ao enviar a imagem ou salvar a nota. Verifique se o arquivo não é grande demais ou se sua conexão está estável.");
     } finally {
       setIsSavingNote(false);
     }
@@ -1888,14 +2050,11 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     {/* Detailed Metrics Grid */}
                     <div className="mt-8 grid grid-cols-3 gap-4">
                       {[
-                        { label: 'Investimento Mensal', value: 'budget', icon: DollarSign, color: 'text-slate-900 dark:text-white', type: 'text', editable: true },
+                        { label: 'Investimento', value: 'budget', icon: DollarSign, color: 'text-slate-900 dark:text-white', type: 'text', editable: true },
                         { label: 'Plataforma', value: 'platform', icon: Globe, color: 'platformColor', type: 'select', options: platformOptions, editable: true },
-                        { label: 'Dias de veiculação', value: 'delivery', icon: Globe, color: 'text-slate-900 dark:text-white', type: 'select', options: ['Full Time', 'Seg a Sex', 'Somente Horário Comercial', 'Seg a Sex + Domingo', 'Seg a Sab', 'Seg a Sex - Ter'], editable: true },
-                        { label: 'IA de Atendimento', value: 'aiService', icon: MessageSquare, color: 'text-slate-900 dark:text-white', type: 'select', options: aiServiceOptions, editable: true, hasKeyword: true },
-                        { label: 'Forma de Pagamento', value: 'paymentMethod', icon: CreditCard, color: 'text-slate-900 dark:text-white', type: 'select', options: ['Automático', 'Manual'], editable: true },
-                        ...((tempProduct?.paymentMethod ?? selectedProduct?.paymentMethod) === 'Manual' ? [
-                          { label: 'Saldo Atual', value: 'balance', icon: DollarSign, color: 'text-emerald-500', type: 'text', editable: true }
-                        ] : [])
+                        { label: 'Veiculação', value: 'delivery', icon: Globe, color: 'text-slate-900 dark:text-white', type: 'select', options: ['Full Time', 'Seg a Sex', 'Somente Horário Comercial', 'Seg a Sex + Domingo', 'Seg a Sab', 'Seg a Sex - Ter'], editable: true },
+                        { label: 'IA de Atendimento', value: 'aiService', icon: Bot, color: 'text-slate-900 dark:text-white', type: 'select', options: aiServiceOptions, editable: true, hasKeyword: true },
+                        { label: 'Pagamento', value: 'paymentMethod', icon: CreditCard, color: 'text-slate-900 dark:text-white', type: 'select', options: ['Automático', 'Manual'], editable: true, hasBalance: true }
                       ].map((metric: any) => (
                         <div key={metric.label} className="p-4 bg-white dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5 hover:border-violet-500/20 transition-all">
                           <div className="flex items-center gap-2 text-slate-500 mb-1">
@@ -1932,8 +2091,14 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                             <input 
                               type="text" 
                               value={(tempProduct as any)[metric.value] ?? (selectedProduct as any)[metric.value] ?? ''}
-                              onChange={(e) => setTempProduct({ ...tempProduct!, [metric.value]: e.target.value })}
-                              onBlur={(e) => handleUpdateResultField(metric.value as keyof Product, e.target.value, metric.label)}
+                              onChange={(e) => {
+                                let val = e.target.value;
+                                if (metric.value === 'balance' || metric.value === 'budget') {
+                                  val = formatCurrency(val);
+                                }
+                                setTempProduct({ ...tempProduct!, [metric.value]: val });
+                              }}
+                              onBlur={(e) => handleUpdateResultField(metric.value as keyof Product, (tempProduct as any)[metric.value] ?? e.target.value, metric.label)}
                               className={`w-full bg-transparent outline-none ${
                                 metric.color === 'dynamic' ? getCampaignStatusColor((selectedProduct as any)[metric.value]) : metric.color
                               } text-sm font-bold placeholder:text-slate-500/50 border-b border-transparent hover:border-slate-300 dark:hover:border-white/20 focus:border-violet-500 transition-all`}
@@ -1952,6 +2117,22 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                               />
                             </div>
                           )}
+                          {metric.hasBalance && ((tempProduct?.paymentMethod ?? selectedProduct?.paymentMethod) === 'Manual') && (
+                            <div className="mt-3 pt-3 border-t border-slate-100 dark:border-white/5">
+                              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Saldo Atual</span>
+                              <input 
+                                type="text" 
+                                placeholder="R$ 0,00"
+                                value={(tempProduct as any).balance ?? (selectedProduct as any).balance ?? ''}
+                                onChange={(e) => {
+                                  const val = formatCurrency(e.target.value);
+                                  setTempProduct({ ...tempProduct!, balance: val });
+                                }}
+                                onBlur={(e) => handleUpdateResultField('balance' as keyof Product, (tempProduct as any).balance ?? e.target.value, 'Saldo Atual')}
+                                className="w-full bg-transparent outline-none text-sm font-bold text-orange-500 placeholder:text-slate-400/50 border-b border-transparent hover:border-slate-300 dark:hover:border-white/20 focus:border-orange-500 transition-all mt-0.5"
+                              />
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -1961,7 +2142,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                 {activeProductTab === 'kpis' && (
                   <div className="mt-8 grid grid-cols-3 gap-4">
                     {[
-                      { label: 'Orçamento Investido', value: 'investmentMonthly', icon: DollarSign, color: 'text-slate-900 dark:text-white', type: 'text', editable: false },
+                      { label: 'Investimento', value: 'investmentMonthly', icon: DollarSign, color: 'text-slate-900 dark:text-white', type: 'text', editable: false },
                       { label: 'Leads', value: 'leads', icon: Users, color: 'text-slate-900 dark:text-white', type: 'text', editable: false },
                       { label: 'Contratos', value: 'contracts', icon: FileText, color: 'text-slate-900 dark:text-white', type: 'text', editable: false },
                       { label: 'CAC', value: 'cac', icon: Target, color: 'text-emerald-500', type: 'text', editable: false },
@@ -2171,8 +2352,8 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                         let matchesType = true;
                         if (filterType !== 'Tipo' && filterType !== 'Todos') {
                           if (filterType === 'Reuniões') matchesType = opt.type === 'meeting';
-                          else if (filterType === 'Otimizações') matchesType = (opt.optimization === 'Otimização' || opt.status === 'Otimização' || opt.type === 'Otimização' || opt.status === 'Mudança de Métricas' || opt.type === 'optimization') && !opt.message?.includes('Saldo Atual') && !opt.message?.includes('Forma de Pagamento') && !opt.message?.includes('Cartão');
-                          else if (filterType === 'Saldos') matchesType = !!(opt.message?.includes('Saldo Atual') || opt.message?.includes('Forma de Pagamento') || opt.message?.includes('Cartão'));
+                          else if (filterType === 'Otimizações') matchesType = (opt.optimization === 'Otimização' || opt.status === 'Otimização' || opt.type === 'Otimização' || opt.status === 'Mudança de Métricas' || opt.type === 'optimization') && !opt.message?.includes('Saldo Atual') && !opt.message?.includes('Pagamento') && !opt.message?.includes('Cartão');
+                          else if (filterType === 'Saldos') matchesType = !!(opt.message?.includes('Saldo Atual') || opt.message?.includes('Pagamento') || opt.message?.includes('Cartão'));
                           else if (filterType === 'Resultado') matchesType = opt.status === 'Mudança de Status' || !!opt.message?.includes('Resultado') || !!opt.message?.includes('Status do Projeto');
                         }
                         
@@ -2226,22 +2407,35 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                 </span>
                               )}
                               <div className="flex items-center">
-                                <p className="text-[10px] text-slate-500 font-medium">{opt.date} {opt.time && `às ${opt.time}`}</p>
+                                <p className="text-[10px] text-slate-500 font-medium">{formatDateShort(opt.date)} {opt.time && `às ${opt.time}`}</p>
                                 {(userData?.role?.toLowerCase() === 'superadmin' || 
                                   userData?.role?.toLowerCase() === 'super admin' || 
                                   userData?.role?.toLowerCase() === 'diretor operacional' || 
                                   userData?.role?.toLowerCase() === 'diretor-operacional' || 
                                   userData?.role?.toLowerCase() === 'diretoria') && (
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleDeleteNote(opt.id);
-                                    }}
-                                    className="ml-2 text-slate-400 hover:text-rose-500 transition-colors p-1 rounded-md hover:bg-rose-500/10"
-                                    title="Apagar nota"
-                                  >
-                                    <Trash2 size={12} />
-                                  </button>
+                                  <>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setEditingNoteId(opt.id);
+                                        setEditingNoteMessage(opt.message?.split('\n\n(Editado em')[0] || '');
+                                      }}
+                                      className="ml-2 text-slate-400 hover:text-blue-500 transition-colors p-1 rounded-md hover:bg-blue-500/10"
+                                      title="Editar nota"
+                                    >
+                                      <Edit2 size={12} />
+                                    </button>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDeleteNote(opt.id);
+                                      }}
+                                      className="ml-1 text-slate-400 hover:text-rose-500 transition-colors p-1 rounded-md hover:bg-rose-500/10"
+                                      title="Apagar nota"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  </>
                                 )}
                               </div>
                             </div>
@@ -2251,9 +2445,34 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                               <span className="opacity-70">🔒</span> MENSAGEM INTERNA
                             </div>
                           )}
-                          <p className={`text-xs ${opt.isInternal ? 'text-amber-900 dark:text-amber-200' : 'text-slate-600 dark:text-slate-400'} leading-relaxed whitespace-pre-line`}>
-                            {opt.message}
-                          </p>
+                          {editingNoteId === opt.id ? (
+                            <div className="flex flex-col gap-2">
+                              <textarea
+                                value={editingNoteMessage}
+                                onChange={(e) => setEditingNoteMessage(e.target.value)}
+                                className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white outline-none resize-none"
+                                rows={3}
+                              />
+                              <div className="flex gap-2 justify-end">
+                                <button
+                                  onClick={() => setEditingNoteId(null)}
+                                  className="px-3 py-1.5 text-xs font-bold text-slate-500 hover:text-slate-700 dark:hover:text-white transition-colors"
+                                >
+                                  Cancelar
+                                </button>
+                                <button
+                                  onClick={() => handleSaveEditNote(opt.id)}
+                                  className="px-3 py-1.5 text-xs font-bold text-white bg-violet-500 hover:bg-violet-600 rounded-lg transition-colors"
+                                >
+                                  Salvar
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <p className={`text-xs ${opt.isInternal ? 'text-amber-900 dark:text-amber-200' : 'text-slate-600 dark:text-slate-400'} leading-relaxed whitespace-pre-line`}>
+                              {opt.message}
+                            </p>
+                          )}
 
   {/* ... (inside the map function) */}
   {opt.images && opt.images.length > 0 && (
@@ -2270,6 +2489,84 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       ))}
     </div>
   )}
+
+                              {/* Replies */}
+                              {opt.replies && opt.replies.length > 0 && (
+                                <div className="mt-4 space-y-3">
+                                  {opt.replies.map(reply => (
+                                    <div key={reply.id} className="flex items-start gap-3 pl-4 border-l-2 border-slate-100 dark:border-white/5">
+                                      {reply.authorPhoto ? (
+                                        <img src={reply.authorPhoto} alt={reply.author} className="w-5 h-5 rounded-full object-cover mt-0.5" referrerPolicy="no-referrer" />
+                                      ) : (
+                                        <div className="w-5 h-5 rounded-full bg-slate-200 dark:bg-white/10 flex items-center justify-center text-slate-500 text-[10px] font-bold mt-0.5">
+                                          {reply.author.charAt(0).toUpperCase()}
+                                        </div>
+                                      )}
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-baseline gap-2 mb-0.5">
+                                          <p className="text-xs font-bold text-slate-900 dark:text-white">{reply.author}</p>
+                                          <p className="text-[10px] text-slate-500">{formatDateShort(reply.date)} às {reply.time}</p>
+                                        </div>
+                                        <p className="text-xs text-slate-600 dark:text-slate-400 whitespace-pre-line">{reply.message}</p>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+
+                              {replyingNoteId === opt.id && (
+                                <div className="mt-4 flex flex-col gap-2">
+                                  <textarea
+                                    value={replyMessage}
+                                    onChange={(e) => setReplyMessage(e.target.value)}
+                                    placeholder="Escreva sua resposta..."
+                                    className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white outline-none resize-none"
+                                    rows={2}
+                                    autoFocus
+                                  />
+                                  <div className="flex gap-2 justify-end">
+                                    <button
+                                      onClick={() => { setReplyingNoteId(null); setReplyMessage(''); }}
+                                      className="px-3 py-1.5 text-xs font-bold text-slate-500 hover:text-slate-700 dark:hover:text-white transition-colors"
+                                    >
+                                      Cancelar
+                                    </button>
+                                    <button
+                                      onClick={() => handleSaveReply(opt.id, selectedProduct?.id)}
+                                      className="px-3 py-1.5 text-xs font-bold text-white bg-violet-500 hover:bg-violet-600 rounded-lg transition-colors"
+                                    >
+                                      Responder
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Action Bar */}
+                              <div className="mt-4 pt-3 border-t border-slate-100 dark:border-white/5 flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <button 
+                                    onClick={(e) => { e.stopPropagation(); handleToggleLike(opt.id, selectedProduct?.id); }}
+                                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold transition-colors border ${
+                                      opt.likes?.includes(auth.currentUser?.email || userData?.name || 'user')
+                                        ? 'bg-slate-100 dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-700 dark:text-white'
+                                        : 'text-slate-400 border-transparent hover:bg-slate-100 dark:hover:bg-white/5'
+                                    }`}
+                                  >
+                                    {opt.likes?.includes(auth.currentUser?.email || userData?.name || 'user') ? (
+                                      <span>👍</span>
+                                    ) : (
+                                      <ThumbsUp size={14} />
+                                    )}
+                                    {(opt.likes?.length || 0) > 0 && <span>{opt.likes?.length}</span>}
+                                  </button>
+                                </div>
+                                <button 
+                                  onClick={(e) => { e.stopPropagation(); setReplyingNoteId(opt.id); }}
+                                  className="text-xs font-bold text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors"
+                                >
+                                  Responder
+                                </button>
+                              </div>
                         </div>
                       </div>
                     ))}
@@ -2462,7 +2759,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                   </div>
 
                   <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Orçamento</label>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Investimento</label>
                     <input 
                       type="text" 
                       placeholder="Ex: R$ 5.000"
@@ -2474,7 +2771,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
 
 
                   <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Forma de Pagamento</label>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Pagamento</label>
                     <select
                       value={newProductData.paymentMethod || 'Automático'}
                       onChange={(e) => {
@@ -2493,7 +2790,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                   </div>
 
                   <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Dias de veiculação</label>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Veiculação</label>
                     <select
                       value={newProductData.delivery || 'Full Time'}
                       onChange={(e) => setNewProductData({ ...newProductData, delivery: e.target.value })}
@@ -3007,8 +3304,8 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                         { key: null, label: '' },
                         { key: 'projectResult' as const, label: 'Resultado' },
                         { key: 'status' as const, label: 'Status' },
-                        { key: null, label: 'Forma de Pag.' },
-                        { key: 'investment' as const, label: 'Investimento Mensal' },
+                        { key: null, label: 'Pagamento' },
+                        { key: 'investment' as const, label: 'Investimento' },
                       ].map((col, idx) => (
                         <th
                           key={idx}
@@ -3362,8 +3659,8 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
 
                                     <div className="grid grid-cols-4 gap-2">
                                       <div className="p-2 rounded-xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm transition-all hover:border-violet-500/20">
-                                        <p className="text-[8px] font-bold text-slate-700 dark:text-white uppercase tracking-wider mb-0.5 min-h-[24px]">Investimento Mensal</p>
-                                        <p className="text-xs font-bold text-slate-900 dark:text-white">{prod.budget}</p>
+                                        <p className="text-[8px] font-bold text-slate-700 dark:text-white uppercase tracking-wider mb-0.5 min-h-[24px]">Investimento</p>
+                                        <p className="text-xs font-bold text-slate-900 dark:text-white">{prod.budget?.includes('R$') ? prod.budget : (formatCurrency(prod.budget || '') || 'R$ 0,00')}</p>
                                       </div>
                                       <div className="p-2 rounded-xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm transition-all hover:border-violet-500/20">
                                         <p className="text-[8px] font-bold text-slate-700 dark:text-white uppercase tracking-wider mb-0.5 min-h-[24px]">Plataforma</p>
@@ -3376,13 +3673,13 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                         }`}>{prod.platform || '-'}</p>
                                       </div>
                                       <div className="p-2 rounded-xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm transition-all hover:border-violet-500/20">
-                                        <p className="text-[8px] font-bold text-slate-700 dark:text-white uppercase tracking-wider mb-0.5 min-h-[24px]">Forma de Pagamento</p>
+                                        <p className="text-[8px] font-bold text-slate-700 dark:text-white uppercase tracking-wider mb-0.5 min-h-[24px]">Pagamento</p>
                                         <p className={`text-xs font-bold ${normalizePaymentMethod(prod.paymentMethod) === 'Manual' ? 'text-orange-500' : 'text-blue-500'}`}>
-                                          {normalizePaymentMethod(prod.paymentMethod) === 'Manual' ? (prod.balance || 'R$ 0') : 'Automático'}
+                                          {normalizePaymentMethod(prod.paymentMethod) === 'Manual' ? (prod.balance?.includes('R$') ? prod.balance : (formatCurrency(prod.balance || '') || 'R$ 0,00')) : 'Automático'}
                                         </p>
                                       </div>
                                       <div className="p-2 rounded-xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm transition-all hover:border-violet-500/20">
-                                        <p className="text-[8px] font-bold text-slate-700 dark:text-white uppercase tracking-wider mb-0.5 min-h-[24px]">Dias de veiculação</p>
+                                        <p className="text-[8px] font-bold text-slate-700 dark:text-white uppercase tracking-wider mb-0.5 min-h-[24px]">Veiculação</p>
                                         <p className="text-xs font-bold text-slate-900 dark:text-white">{prod.delivery || 'Full Time'}</p>
                                       </div>
                                     </div>
@@ -3669,7 +3966,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                           if (timelineFilter === 'Todos') return true;
                           if (timelineFilter === 'Reuniões') return opt.type === 'meeting';
                           if (timelineFilter === 'Otimizações') return opt.optimization === 'Otimização' || opt.status === 'Otimização' || opt.type === 'Otimização' || opt.type === 'optimization';
-                          if (timelineFilter === 'Saldos') return opt.message?.includes('Saldo Atual') || opt.message?.includes('Forma de Pagamento') || opt.message?.includes('Cartão');
+                          if (timelineFilter === 'Saldos') return opt.message?.includes('Saldo Atual') || opt.message?.includes('Forma de Pagamento') || opt.message?.includes('Pagamento') || opt.message?.includes('Cartão');
                           if (timelineFilter === 'Resultado') return opt.status === 'Mudança de Status' || opt.message?.includes('Resultado') || opt.message?.includes('Status do Projeto');
                           return true;
                         }).map((opt, idx) => (
@@ -3731,7 +4028,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                       </p>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                      <p className="text-[10px] text-slate-500 font-medium">{opt.date} {opt.time && `às ${opt.time}`}</p>
+                                      <p className="text-[10px] text-slate-500 font-medium">{formatDateShort(opt.date)} {opt.time && `às ${opt.time}`}</p>
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-2 mb-2">
@@ -3762,6 +4059,84 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                   ))}
                                 </div>
                               )}
+
+                              {/* Replies */}
+                              {opt.replies && opt.replies.length > 0 && (
+                                <div className="mt-4 space-y-3">
+                                  {opt.replies.map(reply => (
+                                    <div key={reply.id} className="flex items-start gap-3 pl-4 border-l-2 border-slate-100 dark:border-white/5">
+                                      {reply.authorPhoto ? (
+                                        <img src={reply.authorPhoto} alt={reply.author} className="w-5 h-5 rounded-full object-cover mt-0.5" referrerPolicy="no-referrer" />
+                                      ) : (
+                                        <div className="w-5 h-5 rounded-full bg-slate-200 dark:bg-white/10 flex items-center justify-center text-slate-500 text-[10px] font-bold mt-0.5">
+                                          {reply.author.charAt(0).toUpperCase()}
+                                        </div>
+                                      )}
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-baseline gap-2 mb-0.5">
+                                          <p className="text-xs font-bold text-slate-900 dark:text-white">{reply.author}</p>
+                                          <p className="text-[10px] text-slate-500">{formatDateShort(reply.date)} às {reply.time}</p>
+                                        </div>
+                                        <p className="text-xs text-slate-600 dark:text-slate-400 whitespace-pre-line">{reply.message}</p>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+
+                              {replyingNoteId === opt.id && (
+                                <div className="mt-4 flex flex-col gap-2">
+                                  <textarea
+                                    value={replyMessage}
+                                    onChange={(e) => setReplyMessage(e.target.value)}
+                                    placeholder="Escreva sua resposta..."
+                                    className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white outline-none resize-none"
+                                    rows={2}
+                                    autoFocus
+                                  />
+                                  <div className="flex gap-2 justify-end">
+                                    <button
+                                      onClick={() => { setReplyingNoteId(null); setReplyMessage(''); }}
+                                      className="px-3 py-1.5 text-xs font-bold text-slate-500 hover:text-slate-700 dark:hover:text-white transition-colors"
+                                    >
+                                      Cancelar
+                                    </button>
+                                    <button
+                                      onClick={() => handleSaveReply(opt.id, opt.productId)}
+                                      className="px-3 py-1.5 text-xs font-bold text-white bg-violet-500 hover:bg-violet-600 rounded-lg transition-colors"
+                                    >
+                                      Responder
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Action Bar */}
+                              <div className="mt-4 pt-3 border-t border-slate-100 dark:border-white/5 flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <button 
+                                    onClick={(e) => { e.stopPropagation(); handleToggleLike(opt.id, opt.productId); }}
+                                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold transition-colors border ${
+                                      opt.likes?.includes(auth.currentUser?.email || userData?.name || 'user')
+                                        ? 'bg-slate-100 dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-700 dark:text-white'
+                                        : 'text-slate-400 border-transparent hover:bg-slate-100 dark:hover:bg-white/5'
+                                    }`}
+                                  >
+                                    {opt.likes?.includes(auth.currentUser?.email || userData?.name || 'user') ? (
+                                      <span>👍</span>
+                                    ) : (
+                                      <ThumbsUp size={14} />
+                                    )}
+                                    {(opt.likes?.length || 0) > 0 && <span>{opt.likes?.length}</span>}
+                                  </button>
+                                </div>
+                                <button 
+                                  onClick={(e) => { e.stopPropagation(); setReplyingNoteId(opt.id); }}
+                                  className="text-xs font-bold text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors"
+                                >
+                                  Responder
+                                </button>
+                              </div>
                             </div>
                           </div>
                         ))}

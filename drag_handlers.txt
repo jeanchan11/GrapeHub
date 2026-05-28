@@ -1,0 +1,91 @@
+      const res = await fetch(`/api/crm-comercial/comments?lead_id=${leadId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setComments(data);
+      }
+    } catch (err) {
+      console.error('Error fetching comments:', err);
+    }
+  };
+
+  const fetchHistory = async (leadId: string) => {
+    try {
+      const res = await fetch(`/api/crm-comercial/history?lead_id=${leadId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setHistory(data);
+      }
+    } catch (err) {
+      console.error('Error fetching history:', err);
+    }
+  };
+
+  const handleAddComment = async () => {
+    if (!newComment.trim() || !selectedLeadForComments) return;
+    try {
+      const res = await fetch('/api/crm-comercial/comments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lead_id: selectedLeadForComments.id,
+          user_id: user?.id || 'system',
+          user_name: user?.name || 'Sistema',
+          user_avatar: user?.avatar || '',
+          content: newComment,
+          is_internal: false
+        })
+      });
+      if (res.ok) {
+        setNewComment('');
+        fetchComments(selectedLeadForComments.id);
+        fetchData(); // Refresh comment count
+      }
+    } catch (err) {
+      console.error('Error adding comment:', err);
+    }
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+    try {
+      const res = await fetch(`/api/crm-comercial/comments/${commentId}`, {
+        method: 'DELETE'
+      });
+      if (res.ok && selectedLeadForComments) {
+        fetchComments(selectedLeadForComments.id);
+        fetchData(); // Refresh comment count
+      }
+    } catch (err) {
+      console.error('Error deleting comment:', err);
+    }
+  };
+
+  const originalColumnRef = useRef<string | null>(null);
+
+  const handleDragStart = (event: any) => {
+    setActiveId(event.active.id);
+    if (event.active.data.current?.type === 'Lead') {
+      const lead = leads.find(l => l.id === event.active.id);
+      if (lead) {
+        originalColumnRef.current = lead.coluna;
+      }
+    }
+  };
+
+  const handleDragOver = (event: any) => {
+    const { active, over } = event;
+    if (!over) return;
+    if (active.data.current?.type === 'Column') return;
+
+    const activeId = active.id;
+    const overId = over.id;
+
+    if (activeId === overId) return;
+
+    const isActiveLead = active.data.current?.type === 'Lead';
+    const isOverLead = over.data.current?.type === 'Lead';
+    const isOverColumn = columns.some(c => c.id === overId);
+
+    if (!isActiveLead) return;
+
+    setLeads((prev) => {
+      const activeIndex = prev.findIndex((l) => l.id === activeId);
