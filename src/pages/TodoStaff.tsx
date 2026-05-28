@@ -676,7 +676,7 @@ const TodoModal: React.FC<TodoModalProps> = ({ initial, allColumns, globalTags, 
           {tags.length > 0 && (
             <div className="flex flex-wrap gap-1 mb-2">
               {tags.map(t => {
-                const ctag = coloredTagDefs?.find(c => c.name === t);
+                const ctag = coloredTagDefs?.find(c => c.name.trim().toLowerCase() === t.trim().toLowerCase());
                 return <TagPill key={t} label={t} color={ctag?.color} onRemove={() => toggleTag(t)} />;
               })}
             </div>
@@ -931,7 +931,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ item, allColumns, col
               </span>
             )}
             {item.tags.map(t => {
-              const ctag = coloredTagDefs?.find(c => c.name === t);
+              const ctag = coloredTagDefs?.find(c => c.name.trim().toLowerCase() === t.trim().toLowerCase());
               const tagStyle = ctag ? { backgroundColor: ctag.color + '22', color: ctag.color, borderColor: ctag.color + '55' } : undefined;
               return (
                 <span key={t} className={`px-2.5 py-1 rounded-lg border text-xs font-semibold ${
@@ -1542,7 +1542,7 @@ const TodoRow: React.FC<RowProps> = ({ item, allColumns, coloredTagDefs, onView,
             {item.title}
           </span>
           {item.tags.length > 0 && (() => {
-            const ctag = coloredTagDefs?.find(c => c.name === item.tags[0]);
+            const ctag = coloredTagDefs?.find(c => c.name.trim().toLowerCase() === item.tags[0].trim().toLowerCase());
             const tagStyle = ctag
               ? { backgroundColor: ctag.color + '26', color: ctag.color, borderColor: ctag.color + '66' }
               : undefined;
@@ -1783,7 +1783,7 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
   const [activePriority, setActivePriority] = useState<Priority | ''>('');
   const [activeDate, setActiveDate] = useState<string>('');
   const [collapsed,  setCollapsed]  = useState<Record<string, boolean>>({});
-  const [todoSort, setTodoSort] = useState<'manual' | 'date' | 'priority'>('manual');
+  const [todoSort, setTodoSort] = useState<'manual' | 'date' | 'priority' | 'tag'>('manual');
   const [sortDropdownOpen, setSortDropdownOpen] = useState(false);
   const [defaultStatus, setDefaultStatus] = useState<Status>('todo');
   const [tagFilterOpen, setTagFilterOpen] = useState(false);
@@ -2519,6 +2519,20 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
                   const order: Record<Priority, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
                   return (order[a.priority] ?? 3) - (order[b.priority] ?? 3);
                 }
+                if (todoSort === 'tag') {
+                  const orderMap: Record<string, number> = {
+                    'erros': 0,
+                    'otimização': 1,
+                    'otimizacao': 1,
+                    'desenvolvimento': 2
+                  };
+                  const tagA = a.tags[0]?.toLowerCase() || 'zzzz';
+                  const tagB = b.tags[0]?.toLowerCase() || 'zzzz';
+                  const orderA = orderMap[tagA] ?? 99;
+                  const orderB = orderMap[tagB] ?? 99;
+                  if (orderA !== orderB) return orderA - orderB;
+                  return tagA.localeCompare(tagB);
+                }
                 return 0;
               });
             }
@@ -2543,7 +2557,7 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
                         </button>
                         {sortDropdownOpen && (
                           <div className="absolute right-0 top-full mt-1 w-36 bg-dark-bg border border-dark-text/10 rounded-xl shadow-2xl shadow-black/30 z-30 overflow-hidden">
-                            {([['manual', 'Manual'], ['date', 'Data'], ['priority', 'Prioridade']] as const).map(([key, label]) => (
+                            {([['manual', 'Manual'], ['date', 'Data'], ['priority', 'Prioridade'], ['tag', 'Tag']] as const).map(([key, label]) => (
                               <button
                                 key={key}
                                 onClick={() => { setTodoSort(key); setSortDropdownOpen(false); }}
