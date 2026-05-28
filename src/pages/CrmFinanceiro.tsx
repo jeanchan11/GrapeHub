@@ -1268,7 +1268,23 @@ const CrmFinanceiro = () => {
                   <div>
                     <div className="flex justify-end mb-4">
                       <button
-                        onClick={() => setIsArchiveModalOpen(true)}
+                        onClick={async () => {
+                          if (!window.confirm('Tem certeza que deseja arquivar este cliente?')) return;
+                          try {
+                            const updateRes = await fetch(`/api/clients/${selectedClient.id}`, {
+                              method: 'PATCH',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ status: 'Inativo', crm_status: 'arquivado' })
+                            });
+                            if (!updateRes.ok) throw new Error('Failed to update client status');
+                            setIsArchiveModalOpen(false);
+                            setSelectedClient(null);
+                            fetchClients();
+                          } catch (err) {
+                            console.error('Error archiving client:', err);
+                            alert('Erro ao arquivar cliente');
+                          }
+                        }}
                         className="px-5 py-2.5 bg-rose-500 text-white hover:bg-rose-600 rounded-xl text-sm font-bold uppercase tracking-wider transition-all shadow-lg shadow-rose-500/20 flex items-center gap-2"
                       >
                         <Archive size={16} />
@@ -1282,40 +1298,7 @@ const CrmFinanceiro = () => {
         )}
       </Modal>
 
-      {isArchiveModalOpen && selectedClient && (
-        <ArchiveClientModal
-          clientId={selectedClient.id}
-          onClose={() => setIsArchiveModalOpen(false)}
-          onConfirm={async (data) => {
-            try {
-              // Save exit data
-              const exitRes = await fetch('/api/crm-exit-data', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ...data, client_id: selectedClient.id })
-              });
 
-              if (!exitRes.ok) throw new Error('Failed to save exit data');
-
-              // Update client status
-              const updateRes = await fetch(`/api/clients/${selectedClient.id}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ status: 'Inativo', crm_status: 'arquivado' })
-              });
-
-              if (!updateRes.ok) throw new Error('Failed to update client status');
-
-              setIsArchiveModalOpen(false);
-              setSelectedClient(null);
-              fetchClients();
-            } catch (err) {
-              console.error('Error archiving client:', err);
-              alert('Erro ao arquivar cliente');
-            }
-          }}
-        />
-      )}
 
       <Modal
         isOpen={isNewTaskModalOpen}

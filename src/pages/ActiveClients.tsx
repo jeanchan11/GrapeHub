@@ -85,7 +85,7 @@ const ActiveClients: React.FC = () => {
   const [projects, setProjects] = useState<any[]>([]);
   const [stats, setStats] = useState({ ativos: 0, tcv: 0, fee: 0, entradas: 0, churn: 0 });
   const [statsLoading, setStatsLoading] = useState(true);
-  const [managers, setManagers] = useState<{id: number; email: string; name: string}[]>([]);
+  const [managers, setManagers] = useState<any[]>([]);
   const [managerDropdownId, setManagerDropdownId] = useState<string | null>(null);
 
   // Fetch clients
@@ -291,13 +291,28 @@ const ActiveClients: React.FC = () => {
     };
     fetchStats();
 
-    // Fetch managers (gestor de tráfego)
     const fetchManagers = async () => {
       try {
-        const res = await fetch('/api/users');
+        const res = await fetch('/api/collaborators');
         if (res.ok) {
           const data = await res.json();
-          setManagers(data.filter((u: any) => u.role === 'gestor-trafego'));
+          const gestores = data
+            .filter((c: any) => c.role && c.role.toLowerCase().includes('gestor'))
+            .map((c: any) => ({
+              id: c.id,
+              name: c.name,
+              status: c.status || 'Outros'
+            }));
+          
+          gestores.sort((a: any, b: any) => {
+            const aIsActive = a.status === 'Efetivado';
+            const bIsActive = b.status === 'Efetivado';
+            if (aIsActive && !bIsActive) return -1;
+            if (!aIsActive && bIsActive) return 1;
+            return a.name.localeCompare(b.name);
+          });
+
+          setManagers(gestores);
         }
       } catch (err) {
         console.error('Failed to fetch managers:', err);
@@ -404,7 +419,7 @@ const ActiveClients: React.FC = () => {
           squad: churnClient.squad,
           start_date: churnClient.startDate,
           comments: churnComment,
-          manager_id: churnManagerId || null,
+          gestor: managers.find((m: any) => String(m.id) === churnManagerId)?.name || null,
         })
       });
       // Move to Inativo
@@ -1338,7 +1353,9 @@ const ActiveClients: React.FC = () => {
                   >
                     <option value="">Selecionar gestor...</option>
                     {managers.map(m => (
-                      <option key={m.id} value={String(m.id)}>{m.name}</option>
+                      <option key={m.id} value={String(m.id)}>
+                        {m.name} {m.status !== 'Efetivado' ? `(${m.status})` : ''}
+                      </option>
                     ))}
                   </select>
                 </div>
