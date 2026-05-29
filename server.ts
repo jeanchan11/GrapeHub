@@ -6562,31 +6562,58 @@ app.get("/api/todos", async (req, res) => {
         dateParams
       );
 
-      // ── Reuniões (from reunioes table) ────
+      // ── Reuniões (from reunioes table & history) ────
+      let reunioesMarcadas = 0;
+      let reunioesRealizadas = 0;
       let reunioesTotal = 0;
+      
+      // 1. Reuniões Realizadas (Count unique leads with a filled meeting record)
       try {
-        const reunCols = await pool.query(
-          `SELECT column_name FROM information_schema.columns WHERE table_name='reunioes' ORDER BY ordinal_position`
-        );
-        const rCols = reunCols.rows.map((r: any) => r.column_name);
-        const rRealizadas = rCols.find((c: string) => c.toLowerCase().includes('realiz')) || rCols[5] || 'id';
-        const rDay        = rCols.find((c: string) => c.toLowerCase() === 'day') || rCols[1] || 'id';
-
         let reuniaoSQL = `
-          SELECT COALESCE(SUM(CAST(COALESCE(NULLIF("${rRealizadas}",''), '0') AS INTEGER)), 0)::int AS total
-          FROM reunioes`;
+          SELECT COUNT(DISTINCT lead_id)::int AS realizadas
+          FROM crm_comercial_meetings
+        `;
         let reuniaoParams: any[] = [];
 
         if (startDate && endDate) {
-          reuniaoSQL += ` WHERE "${rDay}" >= $1 AND "${rDay}" <= $2`;
-          reuniaoParams = [startDate, endDate];
+          reuniaoSQL += ` WHERE meeting_date >= $1 AND meeting_date <= $2`;
+          reuniaoParams = [startDate, endDate + ' 23:59:59'];
         }
 
         const reuniaoResult = await pool.query(reuniaoSQL, reuniaoParams);
-        reunioesTotal = reuniaoResult.rows[0]?.total || 0;
+        reunioesRealizadas = reuniaoResult.rows[0]?.realizadas || 0;
+        reunioesTotal = reunioesRealizadas;
       } catch (e: any) {
         console.error('[marketing-dashboard] reunioes error:', e.message);
-        reunioesTotal = 0;
+      }
+
+      // 2. Reuniões Marcadas (Count unique leads that passed through "Reunião Marcada" column)
+      try {
+        let historySQL = `
+          SELECT COUNT(DISTINCT lead_id)::int AS marcadas
+          FROM (
+            SELECT h.lead_id, h.created_at
+            FROM crm_comercial_history h
+            JOIN crm_comercial_columns c ON h.to_coluna = c.id
+            WHERE LOWER(c.title) LIKE '%reunião marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%'
+            
+            UNION
+            
+            SELECT l.id AS lead_id, l.created_at
+            FROM crm_comercial_leads l
+            JOIN crm_comercial_columns c ON l.coluna = c.id
+            WHERE LOWER(c.title) LIKE '%reunião marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%'
+          ) sub
+        `;
+        let historyParams: any[] = [];
+        if (startDate && endDate) {
+          historySQL += ` WHERE sub.created_at >= $1 AND sub.created_at <= $2`;
+          historyParams = [startDate, endDate + ' 23:59:59'];
+        }
+        const histResult = await pool.query(historySQL, historyParams);
+        reunioesMarcadas = histResult.rows[0]?.marcadas || 0;
+      } catch (e: any) {
+        console.error('[marketing-dashboard] history marcadas error:', e.message);
       }
 
 
@@ -6603,6 +6630,8 @@ app.get("/api/todos", async (req, res) => {
           total_leads: totalLeads,
           leads_qualificados: totalQualificados,
           reunioes: reunioesTotal,
+          reunioes_marcadas: reunioesMarcadas,
+          reunioes_realizadas: reunioesRealizadas,
           custo_por_lead: totalLeads > 0 ? totalSpend / totalLeads : 0,
           custo_por_qualificado: totalQualificados > 0 ? totalSpend / totalQualificados : 0,
           custo_por_reuniao: reunioesTotal > 0 ? totalSpend / reunioesTotal : 0,

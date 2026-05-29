@@ -329,45 +329,56 @@ const SortableColumn = ({ column, children, setEditColumnData, setIsEditColumnMo
   };
 
   return (
-    <div ref={setNodeRef} style={style} className="flex flex-col flex-1 min-h-[500px] min-w-[320px] w-[320px] snap-start bg-slate-50/50 dark:bg-white/[0.02] rounded-3xl border border-gray-200 dark:border-white/5 p-2 relative">
+    <div ref={setNodeRef} style={style} className="flex flex-col flex-1 min-h-[500px] min-w-[200px] max-w-[320px] snap-start bg-slate-50/50 dark:bg-white/[0.02] rounded-3xl border border-gray-200 dark:border-white/5 p-2 relative">
       <div className="p-3 flex items-start justify-between mb-2 cursor-grab active:cursor-grabbing" {...attributes} {...listeners}>
-        <div className="flex items-start gap-3">
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${column.color === 'orange' ? 'bg-orange-500' :
+        <div className="flex items-start gap-2 pt-1 pl-1 w-full overflow-hidden">
+          <div className={`w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 mt-0.5 ${column.color === 'orange' ? 'bg-orange-500' :
               column.color === 'blue' ? 'bg-blue-500' :
                 column.color === 'green' ? 'bg-emerald-500' :
                   column.color === 'pink' ? 'bg-pink-500' :
                     column.color === 'red' ? 'bg-red-500' :
                       column.color === 'cyan' ? 'bg-cyan-500' : 'bg-slate-500'
             }`}>
-            <RenderIcon name={column.icon || 'LayoutGrid'} size={20} className="text-white" />
+            <RenderIcon name={column.icon || 'LayoutGrid'} size={14} className="text-white" />
           </div>
-          <div>
-            <h3 className="font-bold text-gray-900 dark:text-white text-base leading-tight">{column.title}</h3>
-            <p className="text-gray-500 dark:text-slate-400 text-xs mt-0.5">{columnLeadsLength} tickets</p>
-            <div className="mt-1 text-sm font-black text-emerald-500">
-              {formatCurrency(totalValue)}
-            </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-bold text-gray-900 dark:text-white text-[14px] leading-tight truncate pr-2">{column.title}</h3>
+            <p className="text-gray-500 dark:text-slate-400 text-[11px] mt-1 font-medium flex items-center gap-1.5">
+              <span className="text-gray-600 dark:text-slate-300 font-semibold truncate">{formatCurrency(totalValue)}</span>
+              <span className="flex-shrink-0">•</span>
+              <span className="flex-shrink-0">{columnLeadsLength} {columnLeadsLength === 1 ? 'ticket' : 'tickets'}</span>
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-1" onPointerDown={(e) => e.stopPropagation()}>
-          <button
-            onClick={() => {
-              setEditColumnData({ id: column.id, title: column.title, color: column.color || 'orange', icon: column.icon || 'LayoutGrid' });
-              setIsEditColumnModalOpen(true);
-            }}
-            className="p-1.5 text-gray-400 dark:text-slate-500 hover:text-gray-900 dark:hover:text-white transition-colors"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="3"></circle>
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-            </svg>
-          </button>
-          <button
-            onClick={() => setColumnToDelete(column.id)}
-            className="p-1.5 text-gray-400 dark:text-slate-500 hover:text-red-500 transition-colors"
-          >
-            <Trash2 size={16} />
-          </button>
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger asChild>
+              <button className="p-1.5 text-gray-400 dark:text-slate-500 hover:text-gray-900 dark:hover:text-white transition-colors">
+                <MoreHorizontal size={16} />
+              </button>
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content align="end" sideOffset={5} className="min-w-[160px] bg-white dark:bg-slate-800 border border-gray-100 dark:border-white/10 rounded-xl shadow-xl p-2 z-[1100]">
+                <DropdownMenu.Item
+                  onClick={() => {
+                    setEditColumnData({ id: column.id, title: column.title, color: column.color || 'orange', icon: column.icon || 'LayoutGrid' });
+                    setIsEditColumnModalOpen(true);
+                  }}
+                  className="flex items-center gap-2.5 px-3 py-2 text-sm font-semibold text-gray-600 dark:text-slate-300 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer outline-none transition-colors"
+                >
+                  <Settings size={15} />
+                  Editar Coluna
+                </DropdownMenu.Item>
+                <DropdownMenu.Item
+                  onClick={() => setColumnToDelete(column.id)}
+                  className="flex items-center gap-2.5 px-3 py-2 text-sm font-semibold text-rose-500 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-500/10 cursor-pointer outline-none transition-colors mt-1"
+                >
+                  <Trash2 size={15} />
+                  Excluir
+                </DropdownMenu.Item>
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Root>
         </div>
       </div>
       {children}
@@ -444,19 +455,11 @@ const SortableCard = (props: SortableCardProps) => {
       style={{ ...style, marginBottom: 12 }}
       className="relative group"
       {...attributes}
+      {...listeners}
     >
       <div
-        {...listeners}
-        className="absolute left-0.5 top-1/2 -translate-y-1/2 z-10 p-1 rounded cursor-grab active:cursor-grabbing text-gray-300 dark:text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity hover:text-violet-400"
-        title="Arrastar"
-        onClick={e => e.stopPropagation()}
-      >
-        <GripVertical size={12} />
-      </div>
-
-      <div
         onClick={() => onClick()}
-        className={`rounded-xl p-2.5 pl-5 border shadow-sm cursor-pointer relative transition-all duration-200 ${isDragging ? 'ring-2 ring-violet-500 opacity-30' :
+        className={`rounded-xl p-3 border shadow-sm cursor-grab active:cursor-grabbing relative transition-all duration-200 ${isDragging ? 'ring-2 ring-violet-500 opacity-30' :
             isWon ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-500/30 shadow-[0_4px_15px_rgba(16,185,129,0.1)] hover:border-emerald-500/50 hover:shadow-emerald-500/20' :
               isLost ? 'bg-red-50 dark:bg-red-500/10 border-red-300/50 shadow-[0_4px_15px_rgba(239,68,68,0.08)] hover:border-red-400/50 hover:shadow-red-500/15' :
                 'bg-white dark:bg-dark-card border-gray-200 dark:border-white/5 hover:border-violet-500/30 hover:shadow-md'
@@ -472,23 +475,21 @@ const SortableCard = (props: SortableCardProps) => {
             <X size={10} />
           </div>
         )}
-        <div className="flex items-start justify-between mb-1.5 w-full">
-          <div className="flex items-center justify-between w-full gap-2">
-            <h4 className="font-bold text-[12px] leading-tight text-gray-900 dark:text-white line-clamp-1 min-w-0 flex-1">{lead.nome}</h4>
-            <div className="flex items-center gap-1 shrink-0 overflow-hidden justify-end">
-              <span className="flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-md border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 text-gray-600 dark:text-slate-300 shrink-0">
-                <span className={`w-1.5 h-1.5 rounded-full ${lead.origem === 'Indicação' ? 'bg-orange-500' :
-                    lead.origem === 'TCV' ? 'bg-emerald-500' :
-                      'bg-blue-500'
-                  }`}></span>
-                {lead.origem}
+        <div className="flex flex-col gap-2 mb-1.5 w-full">
+          <h4 className="font-bold text-[13px] leading-tight text-gray-900 dark:text-white line-clamp-2 min-w-0">{lead.nome}</h4>
+          <div className="flex items-center gap-1 flex-wrap">
+            <span className="flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-md border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 text-gray-600 dark:text-slate-300 shrink-0">
+              <span className={`w-1.5 h-1.5 rounded-full ${lead.origem === 'Indicação' ? 'bg-orange-500' :
+                  lead.origem === 'TCV' ? 'bg-emerald-500' :
+                    'bg-blue-500'
+                }`}></span>
+              {lead.origem}
+            </span>
+            {((lead as any).tags || []).map((tag: any) => (
+              <span key={tag.name} className="px-1.5 py-0.5 text-[9px] font-bold rounded-md text-white shadow-sm shrink-0" style={{ backgroundColor: tag.color }}>
+                {tag.name}
               </span>
-              {((lead as any).tags || []).map((tag: any) => (
-                <span key={tag.name} className="px-1.5 py-0.5 text-[9px] font-bold rounded-md text-white shadow-sm shrink-0" style={{ backgroundColor: tag.color }}>
-                  {tag.name}
-                </span>
-              ))}
-            </div>
+            ))}
           </div>
         </div>
 
@@ -1014,7 +1015,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                   Mais
                 </button>
                 {showMoreMenu && (
-                  <div className="absolute right-0 top-full mt-2 w-52 modal-container py-2 z-50 shadow-2xl">
+                  <div className="absolute right-0 top-full mt-2 w-max min-w-[208px] modal-container py-2 z-50 shadow-2xl">
                     {/* Mover de kanban */}
                     <div className="relative" ref={moveRef}>
                       <button
@@ -4629,23 +4630,7 @@ const CrmComercial = () => {
         </DropdownMenu.Root>
       </div>
 
-      <div className="flex justify-center mb-6">
-        <div className="flex items-center gap-3 bg-white dark:bg-dark-card border border-gray-200 dark:border-white/5 rounded-full px-4 py-1.5">
-          <button
-            onClick={() => kanbanBoardRef.current?.scrollBy({ left: -340, behavior: 'smooth' })}
-            className="p-1 text-gray-400 dark:text-slate-500 hover:text-gray-900 dark:hover:text-white transition-colors"
-          >
-            <ChevronRight size={14} className="rotate-180" />
-          </button>
-          <span className="text-xs text-gray-500 dark:text-slate-400">Navegue pelas colunas</span>
-          <button
-            onClick={() => kanbanBoardRef.current?.scrollBy({ left: 340, behavior: 'smooth' })}
-            className="p-1 text-gray-400 dark:text-slate-500 hover:text-gray-900 dark:hover:text-white transition-colors"
-          >
-            <ChevronRight size={14} />
-          </button>
-        </div>
-      </div>
+
 
       <DndContext
         sensors={sensors}
@@ -4654,7 +4639,7 @@ const CrmComercial = () => {
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
-        <div ref={kanbanBoardRef} className="flex overflow-x-auto pb-4 gap-6 items-stretch snap-x flex-1 scroll-smooth">
+        <div ref={kanbanBoardRef} className="flex overflow-x-auto pb-4 gap-3 items-stretch snap-x flex-1 scroll-smooth">
           <SortableContext items={columns.map((c: any) => c.id)} strategy={horizontalListSortingStrategy}>
           {columns.map(column => {
             const columnLeads = filteredLeads.filter(l => l.coluna === column.id);

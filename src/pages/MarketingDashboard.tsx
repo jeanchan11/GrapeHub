@@ -33,6 +33,8 @@ interface Kpis {
   total_leads: number;
   leads_qualificados: number;
   reunioes: number;
+  reunioes_marcadas: number;
+  reunioes_realizadas: number;
   custo_por_lead: number;
   custo_por_qualificado: number;
   custo_por_reuniao: number;
@@ -75,6 +77,7 @@ function PieTooltip({ active, payload }: any) {
       <p className="font-bold text-dark-text text-sm">{d.campaign_name || d.nicho || d.name}</p>
       <p className="font-semibold mt-0.5" style={{ color: payload[0].fill }}>
         {d.spend ? fmtCurrency(d.spend) : d.total ? `${fmtInt(d.total)} leads` : d.value}
+        {d.pct !== undefined && <span className="text-slate-400 font-medium ml-1">({d.pct}%)</span>}
       </p>
     </div>
   );
@@ -382,7 +385,8 @@ export default function MarketingDashboard() {
   const valSpend = kpis.total_spend || 0;
   const valLeads = kpis.total_leads || 0;
   const valQuali = kpis.leads_qualificados || 0;
-  const valReuni = kpis.reunioes || 0;
+  const valReuniMarcadas = kpis.reunioes_marcadas || 0;
+  const valReuniRealizadas = kpis.reunioes_realizadas || 0;
 
   const dailySpend = (data?.daily_spend || []).map(d => ({ ...d, day: getDay(d.date) }));
   const dailyLeads = (data?.daily_leads || []).map(d => ({ ...d, day: getDay(d.date) }));
@@ -430,7 +434,7 @@ export default function MarketingDashboard() {
         <div className="px-6 md:px-8 pb-10 space-y-5">
 
           {/* ── KPI Cards ──────────────────────────────────────────────── */}
-          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
             <KpiCard
               iconBg="bg-violet-500/15"
               icon={<DollarSign size={17} className="text-violet-500" />}
@@ -459,15 +463,27 @@ export default function MarketingDashboard() {
             />
             <KpiCard
               iconBg="bg-pink-500/15"
-              icon={<Video size={17} className="text-pink-500" />}
-              label="Reuniões"
-              value={fmtInt(valReuni)}
+              icon={<Calendar size={17} className="text-pink-500" />}
+              label="Reuniões Marcadas"
+              value={fmtInt(valReuniMarcadas)}
               sub={
                 <span>
-                  Taxa (quali): <span className="text-pink-500 font-bold">{pct(valReuni, valQuali)}</span>
+                  Taxa de agendamento: <span className="text-pink-500 font-bold">{pct(valReuniMarcadas, valQuali)}</span>
                 </span>
               }
-              extra={<div className="text-[10px] text-slate-500 mt-0.5">Custo/Reunião: {fmtCurrency(valReuni > 0 ? valSpend / valReuni : 0)}</div>}
+              extra={<div className="text-[10px] text-slate-500 mt-0.5">Custo/Marcada: {fmtCurrency(valReuniMarcadas > 0 ? valSpend / valReuniMarcadas : 0)}</div>}
+            />
+            <KpiCard
+              iconBg="bg-cyan-500/15"
+              icon={<Video size={17} className="text-cyan-500" />}
+              label="Reuniões Realizadas"
+              value={fmtInt(valReuniRealizadas)}
+              sub={
+                <span>
+                  Taxa de comparecimento: <span className="text-cyan-500 font-bold">{pct(valReuniRealizadas, valReuniMarcadas)}</span>
+                </span>
+              }
+              extra={<div className="text-[10px] text-slate-500 mt-0.5">Custo/Realizada: {fmtCurrency(valReuniRealizadas > 0 ? valSpend / valReuniRealizadas : 0)}</div>}
             />
           </div>
 
@@ -501,7 +517,7 @@ export default function MarketingDashboard() {
 
             {/* Leads Diários */}
             <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200">
-              <h2 className="text-sm font-bold text-dark-text">Leads & Qualificados Diários</h2>
+              <h2 className="text-sm font-bold text-dark-text">Leads Diários</h2>
               <p className="text-xs text-slate-500 dark:text-slate-400 mb-5 mt-0.5">Capturas no mês — {rangeLabel}</p>
               {dailyLeads.length > 0 ? (
                 <ResponsiveContainer width="100%" height={210} className="focus:outline-none outline-none" style={{ outline: 'none' }}>
@@ -511,10 +527,6 @@ export default function MarketingDashboard() {
                         <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.5}/>
                         <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
                       </linearGradient>
-                      <linearGradient id="colorQualificados" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#c4b5fd" stopOpacity={0.6}/>
-                        <stop offset="95%" stopColor="#c4b5fd" stopOpacity={0}/>
-                      </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(100,100,120,0.15)" vertical={false} />
                     <XAxis dataKey="day" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} minTickGap={20} />
@@ -522,9 +534,6 @@ export default function MarketingDashboard() {
                     <Tooltip content={<CustomTooltip />} />
                     <Area type="monotone" dataKey="leads" name="Leads" stroke="#8b5cf6" strokeWidth={2} fillOpacity={1} fill="url(#colorLeads)"
                       dot={{ fill: '#8b5cf6', strokeWidth: 2, r: 3, stroke: '#1a1827' }}
-                      activeDot={{ r: 4, strokeWidth: 0 }} />
-                    <Area type="monotone" dataKey="qualificados" name="Qualificados" stroke="#c4b5fd" strokeWidth={2} fillOpacity={1} fill="url(#colorQualificados)"
-                      dot={{ fill: '#c4b5fd', strokeWidth: 2, r: 3, stroke: '#1a1827' }}
                       activeDot={{ r: 4, strokeWidth: 0 }} />
                   </ComposedChart>
                 </ResponsiveContainer>
@@ -597,7 +606,7 @@ export default function MarketingDashboard() {
                             style={{ width: valLeads ? `${(valQuali / valLeads) * 100}%` : '0%' }} />
                         </div>
                       </div>
-                      {/* Qualificados -> Reuniões */}
+                      {/* Qualificados -> Reuniões Marcadas */}
                       <div>
                         <div className="flex items-end justify-between mb-1.5">
                           <div className="flex items-center gap-2">
@@ -605,18 +614,40 @@ export default function MarketingDashboard() {
                               <Target size={13} className="text-pink-500" />
                             </div>
                             <div>
-                              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Reuniões</div>
-                              <div className="text-xl font-black text-dark-text">{valReuni}</div>
+                              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Reuniões Marcadas</div>
+                              <div className="text-xl font-black text-dark-text">{valReuniMarcadas}</div>
                             </div>
                           </div>
                           <div className="text-right">
-                            <div className="text-sm font-bold text-pink-500">{pct(valReuni, valQuali)}</div>
+                            <div className="text-sm font-bold text-pink-500">{pct(valReuniMarcadas, valQuali)}</div>
                             <div className="text-xs text-slate-500">dos Qualificados</div>
                           </div>
                         </div>
                         <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(100,100,120,0.15)' }}>
                           <div className="h-full bg-pink-500 rounded-full transition-all duration-500"
-                            style={{ width: valQuali ? `${(valReuni / valQuali) * 100}%` : '0%' }} />
+                            style={{ width: valQuali ? `${(valReuniMarcadas / valQuali) * 100}%` : '0%' }} />
+                        </div>
+                      </div>
+                      {/* Marcadas -> Realizadas */}
+                      <div>
+                        <div className="flex items-end justify-between mb-1.5">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-lg bg-cyan-500/15 flex items-center justify-center shrink-0">
+                              <Target size={13} className="text-cyan-500" />
+                            </div>
+                            <div>
+                              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Reuniões Realizadas</div>
+                              <div className="text-xl font-black text-dark-text">{valReuniRealizadas}</div>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-sm font-bold text-cyan-500">{pct(valReuniRealizadas, valReuniMarcadas)}</div>
+                            <div className="text-xs text-slate-500">das Marcadas</div>
+                          </div>
+                        </div>
+                        <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(100,100,120,0.15)' }}>
+                          <div className="h-full bg-cyan-500 rounded-full transition-all duration-500"
+                            style={{ width: valReuniMarcadas ? `${(valReuniRealizadas / valReuniMarcadas) * 100}%` : '0%' }} />
                         </div>
                       </div>
                     </div>
@@ -637,8 +668,9 @@ export default function MarketingDashboard() {
                   <p className="text-sm text-slate-500">Nenhum lead com nicho</p>
                 </div>
               ) : (() => {
-                const pieData = nichos.slice(0, 5).map(n => ({ ...n, total: Number(n.total) }));
-                const totalNum = pieData.reduce((s, r) => s + r.total, 0);
+                const pieDataRaw = nichos.slice(0, 5).map(n => ({ ...n, total: Number(n.total) }));
+                const totalNum = pieDataRaw.reduce((s, r) => s + r.total, 0);
+                const pieData = pieDataRaw.map(r => ({ ...r, pct: totalNum ? Math.round((r.total / totalNum) * 100) : 0 }));
                 const topMotivo = pieData[0];
                 const topPct = totalNum ? Math.round((topMotivo.total / totalNum) * 100) : 0;
                 
@@ -662,16 +694,13 @@ export default function MarketingDashboard() {
                         </Pie>
                         <Tooltip content={<PieTooltip />} />
                       </PieChart>
-                      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                        <span className="text-3xl font-black text-dark-text">{topPct}%</span>
-                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center leading-tight px-4 truncate max-w-[100px]">{topMotivo.nicho || '—'}</span>
-                      </div>
+                      {/* Centro vazio */}
                     </div>
                     <div className="flex flex-wrap gap-x-4 gap-y-2 justify-center">
-                      {pieData.slice(0, 3).map((r: any, idx: number) => (
+                      {pieData.map((r: any, idx: number) => (
                         <div key={r.nicho} className="flex items-center gap-1.5">
                           <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: EMERALD_SHADES[idx % EMERALD_SHADES.length] }} />
-                          <span className="text-[10px] text-slate-400 truncate max-w-[80px]" title={r.nicho}>{r.nicho || 'Não preenchido'}</span>
+                          <span className="text-xs text-slate-400">{r.nicho || 'Não preenchido'}</span>
                         </div>
                       ))}
                     </div>
