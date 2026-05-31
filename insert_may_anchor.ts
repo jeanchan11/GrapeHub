@@ -1,5 +1,8 @@
 import { Pool } from 'pg';
-const pool = new Pool({ connectionString: 'postgresql://neondb_owner:npg_Ucjz1nygpE4L@ep-sweet-morning-ac7xd87o-pooler.sa-east-1.aws.neon.tech/neondb?sslmode=require' });
+import dotenv from 'dotenv';
+dotenv.config();
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 async function run() {
   // Remove qualquer anchor de Maio anterior

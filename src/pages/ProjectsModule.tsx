@@ -479,7 +479,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
   const [isGoalsModalOpen, setIsGoalsModalOpen] = useState(false);
   const [isMeetingModalOpen, setIsMeetingModalOpen] = useState(false);
   const [meetings, setMeetings] = useState<any[]>([]);
-  const [meetingData, setMeetingData] = useState({ title: '', date: '', attendees: '', actions: '' });
+  const [meetingData, setMeetingData] = useState({ id: '', title: '', date: '', attendees: '', actions: '' });
   const [tempGoals, setTempGoals] = useState({ cpa: '', leads: '', cac: '', fechamentos: '' });
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -512,18 +512,23 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     }))) || [];
     const meetingItems = meetings.map(m => ({ 
       id: m.id, 
-      author: 'Reunião', 
+      author: userData?.name || 'Reunião', 
+      authorPhoto: userData?.picture || auth.currentUser?.photoURL || '',
       role: 'Reunião',
       message: `${m.title}\nParticipantes: ${m.attendees}\nAções: ${m.actions}`,
       date: new Date(m.date).toLocaleDateString('pt-BR'),
+      time: new Date(m.created_at || m.date).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
       rawDate: m.date,
       createdAt: m.created_at || m.date,
       attendees: m.attendees,
       actions: m.actions,
       type: 'meeting',
-      productName: 'Reunião'
+      productName: 'Reunião',
+      title: m.title,
+      likes: m.likes || [],
+      replies: m.replies || []
     }));
-    return [...optimizations, ...meetingItems].sort((a, b) => {
+    return ([...optimizations, ...meetingItems] as any[]).sort((a: any, b: any) => {
       const dateA = new Date(a.createdAt);
       const dateB = new Date(b.createdAt);
       return dateB.getTime() - dateA.getTime();
@@ -1105,9 +1110,12 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     if (!selectedProject || !meetingData.title || !meetingData.date) return;
 
     const newMeeting = {
-      id: Math.random().toString(36).substr(2, 9),
+      id: meetingData.id || Math.random().toString(36).substr(2, 9),
       project_id: selectedProject.id,
-      ...meetingData
+      title: meetingData.title,
+      date: meetingData.date,
+      attendees: meetingData.attendees,
+      actions: meetingData.actions
     };
 
     try {
@@ -1120,7 +1128,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       if (!response.ok) throw new Error('Failed to save meeting');
 
       setIsMeetingModalOpen(false);
-      setMeetingData({ title: '', date: '', attendees: '', actions: '' });
+      setMeetingData({ id: '', title: '', date: '', attendees: '', actions: '' });
       
       // Refresh meetings
       const fetchMeetings = async () => {
@@ -1495,6 +1503,63 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     
     setProjects(updatedProjects);
     saveProjects(updatedProjects);
+  };
+
+  const handleDeleteMeeting = async (meetingId: string) => {
+    if (!window.confirm("Tem certeza que deseja apagar esta reunião?")) return;
+    try {
+      const response = await fetch(`/api/meetings/${meetingId}`, { method: 'DELETE' });
+      if (response.ok && selectedProject) {
+        setMeetings(prev => prev.filter(m => m.id !== meetingId));
+      }
+    } catch (err) {
+      console.error("Error deleting meeting:", err);
+    }
+  };
+
+  const handleToggleMeetingLike = async (meetingId: string) => {
+    const userIdentifier = auth.currentUser?.email || userData?.name || 'user';
+    try {
+      const response = await fetch(`/api/meetings/${meetingId}/like`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userIdentifier })
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setMeetings(prev => prev.map(m => m.id === meetingId ? { ...m, likes: data.likes } : m));
+      }
+    } catch (err) {
+      console.error("Error toggling meeting like:", err);
+    }
+  };
+
+  const handleSaveMeetingReply = async (meetingId: string) => {
+    if (!replyMessage.trim()) return;
+    const now = new Date();
+    const replyData = {
+      id: Math.random().toString(36).substr(2, 9),
+      author: userData?.name || 'João',
+      authorPhoto: userData?.picture || auth.currentUser?.photoURL || '',
+      message: replyMessage,
+      date: now.toLocaleDateString('pt-BR'),
+      time: now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+    };
+    try {
+      const response = await fetch(`/api/meetings/${meetingId}/reply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reply: replyData })
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setMeetings(prev => prev.map(m => m.id === meetingId ? { ...m, replies: data.replies } : m));
+        setReplyingNoteId(null);
+        setReplyMessage('');
+      }
+    } catch (err) {
+      console.error("Error adding meeting reply:", err);
+    }
   };
 
   const handleUpdateProductResult = (result: string) => {
@@ -3983,27 +4048,67 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                             {/* Card */}
                             <div className={`w-[40%] p-5 rounded-2xl border transition-all bg-white dark:bg-white/5 border-slate-200 dark:border-white/5 hover:border-violet-500/20 ${idx % 2 === 0 ? 'mr-auto text-left' : 'ml-auto text-left'}`}>
                               {opt.type === 'meeting' ? (
-                                <div className="flex flex-col gap-3">
-                                  <div className="flex items-center gap-3">
-                                    <div className="w-12 h-12 flex flex-col items-center justify-center bg-violet-50 dark:bg-violet-900/20 rounded-xl border border-violet-100 dark:border-violet-800">
-                                      <span className="text-xs font-bold text-violet-600 dark:text-violet-400 uppercase">{new Date(opt.rawDate).toLocaleDateString('pt-BR', { month: 'short' })}</span>
-                                      <span className="text-lg font-bold text-violet-800 dark:text-violet-200">{new Date(opt.rawDate).getDate()}</span>
-                                    </div>
-                                    <div className="flex-1">
-                                      <h4 className="text-sm font-bold text-slate-900 dark:text-white">{opt.message.split('\n')[0]}</h4>
-                                      <div className="flex items-center gap-1 text-xs text-slate-500">
-                                        <Users size={12} />
-                                        <span>{opt.attendees}</span>
+                                <>
+                                  <div className="flex items-start justify-between mb-4">
+                                    <div className="flex items-center gap-3">
+                                      <div className="w-12 h-12 flex flex-col items-center justify-center bg-violet-50 dark:bg-violet-900/20 rounded-xl border border-violet-100 dark:border-violet-800">
+                                        <span className="text-xs font-bold text-violet-600 dark:text-violet-400 uppercase">{new Date(opt.rawDate).toLocaleDateString('pt-BR', { month: 'short' })}</span>
+                                        <span className="text-lg font-bold text-violet-800 dark:text-violet-200">{new Date(opt.rawDate).getDate()}</span>
+                                      </div>
+                                      <div>
+                                        <h4 className="text-sm font-bold text-slate-900 dark:text-white">{opt.title || opt.message?.split('\n')[0]}</h4>
+                                        <div className="flex items-center gap-1 text-xs text-slate-500">
+                                          <Users size={12} />
+                                          <span>{opt.attendees}</span>
+                                        </div>
                                       </div>
                                     </div>
-                                    <div className="text-[10px] text-slate-400">
-                                      {new Date(opt.createdAt).toLocaleDateString('pt-BR')} às {new Date(opt.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                                    
+                                    <div className="flex flex-col items-end gap-1">
+                                      <div className="flex items-center gap-2">
+                                        <p className="text-[10px] text-slate-500 font-medium">{formatDateShort(opt.date)} {opt.time && `às ${opt.time}`}</p>
+                                        {(userData?.role?.toLowerCase() === 'superadmin' || 
+                                          userData?.role?.toLowerCase() === 'super admin' || 
+                                          userData?.role?.toLowerCase() === 'diretor operacional' || 
+                                          userData?.role?.toLowerCase() === 'diretor-operacional' || 
+                                          userData?.role?.toLowerCase() === 'diretoria') && (
+                                          <>
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setMeetingData({
+                                                  id: opt.id,
+                                                  title: opt.title || '',
+                                                  date: opt.rawDate || '',
+                                                  attendees: opt.attendees || '',
+                                                  actions: opt.actions || ''
+                                                });
+                                                setIsMeetingModalOpen(true);
+                                              }}
+                                              className="ml-1 text-slate-400 hover:text-blue-500 transition-colors p-1 rounded-md hover:bg-blue-500/10"
+                                              title="Editar reunião"
+                                            >
+                                              <Edit2 size={12} />
+                                            </button>
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleDeleteMeeting(opt.id);
+                                              }}
+                                              className="text-slate-400 hover:text-rose-500 transition-colors p-1 rounded-md hover:bg-rose-500/10"
+                                              title="Apagar reunião"
+                                            >
+                                              <Trash2 size={12} />
+                                            </button>
+                                          </>
+                                        )}
+                                      </div>
                                     </div>
                                   </div>
                                   <div className="border-t border-slate-100 dark:border-white/5 pt-3">
                                     <p className="text-xs font-bold text-slate-500 uppercase mb-1">Próximas Ações / Acordos:</p>
                                     <div className="space-y-1">
-                                      {opt.actions.split(',').map((action, i) => (
+                                      {opt.actions.split(',').map((action: string, i: number) => (
                                         <div key={i} className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
                                           <Check size={12} className="text-green-500" />
                                           {action.trim()}
@@ -4011,7 +4116,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                       ))}
                                     </div>
                                   </div>
-                                </div>
+                                </>
                               ) : (
                                 <>
                                   <div className="flex items-center justify-between mb-3">
@@ -4102,7 +4207,13 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                       Cancelar
                                     </button>
                                     <button
-                                      onClick={() => handleSaveReply(opt.id, opt.productId)}
+                                      onClick={() => {
+                                        if (opt.type === 'meeting') {
+                                          handleSaveMeetingReply(opt.id);
+                                        } else {
+                                          handleSaveReply(opt.id, opt.productId);
+                                        }
+                                      }}
                                       className="px-3 py-1.5 text-xs font-bold text-white bg-violet-500 hover:bg-violet-600 rounded-lg transition-colors"
                                     >
                                       Responder
@@ -4115,7 +4226,14 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                               <div className="mt-4 pt-3 border-t border-slate-100 dark:border-white/5 flex items-center justify-between">
                                 <div className="flex items-center gap-2">
                                   <button 
-                                    onClick={(e) => { e.stopPropagation(); handleToggleLike(opt.id, opt.productId); }}
+                                    onClick={(e) => { 
+                                      e.stopPropagation(); 
+                                      if (opt.type === 'meeting') {
+                                        handleToggleMeetingLike(opt.id);
+                                      } else {
+                                        handleToggleLike(opt.id, opt.productId); 
+                                      }
+                                    }}
                                     className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold transition-colors border ${
                                       opt.likes?.includes(auth.currentUser?.email || userData?.name || 'user')
                                         ? 'bg-slate-100 dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-700 dark:text-white'
@@ -4179,34 +4297,154 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
 
                             {/* Card */}
                             <div className={`w-[40%] p-5 rounded-2xl border transition-all bg-white dark:bg-white/5 border-slate-200 dark:border-white/5 hover:border-violet-500/20 ${idx % 2 === 0 ? 'mr-auto text-left' : 'ml-auto text-left'}`}>
-                                <div className="flex flex-col gap-3">
+                                <div className="flex items-start justify-between mb-4">
                                   <div className="flex items-center gap-3">
                                     <div className="w-12 h-12 flex flex-col items-center justify-center bg-violet-50 dark:bg-violet-900/20 rounded-xl border border-violet-100 dark:border-violet-800">
                                       <span className="text-xs font-bold text-violet-600 dark:text-violet-400 uppercase">{new Date(opt.rawDate).toLocaleDateString('pt-BR', { month: 'short' })}</span>
                                       <span className="text-lg font-bold text-violet-800 dark:text-violet-200">{new Date(opt.rawDate).getDate()}</span>
                                     </div>
-                                    <div className="flex-1">
-                                      <h4 className="text-sm font-bold text-slate-900 dark:text-white">{opt.message.split('\n')[0]}</h4>
+                                    <div>
+                                      <h4 className="text-sm font-bold text-slate-900 dark:text-white">{opt.title || opt.message?.split('\n')[0]}</h4>
                                       <div className="flex items-center gap-1 text-xs text-slate-500">
                                         <Users size={12} />
                                         <span>{opt.attendees}</span>
                                       </div>
                                     </div>
-                                    <div className="text-[10px] text-slate-400">
-                                      {new Date(opt.createdAt).toLocaleDateString('pt-BR')} às {new Date(opt.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                                  </div>
+                                  
+                                  <div className="flex flex-col items-end gap-1">
+                                    <div className="flex items-center gap-2">
+                                      <p className="text-[10px] text-slate-500 font-medium">{formatDateShort(opt.date)} {opt.time && `às ${opt.time}`}</p>
+                                      {(userData?.role?.toLowerCase() === 'superadmin' || 
+                                        userData?.role?.toLowerCase() === 'super admin' || 
+                                        userData?.role?.toLowerCase() === 'diretor operacional' || 
+                                        userData?.role?.toLowerCase() === 'diretor-operacional' || 
+                                        userData?.role?.toLowerCase() === 'diretoria') && (
+                                        <>
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setMeetingData({
+                                                id: opt.id,
+                                                title: opt.title || '',
+                                                date: opt.rawDate || '',
+                                                attendees: opt.attendees || '',
+                                                actions: opt.actions || ''
+                                              });
+                                              setIsMeetingModalOpen(true);
+                                            }}
+                                            className="ml-1 text-slate-400 hover:text-blue-500 transition-colors p-1 rounded-md hover:bg-blue-500/10"
+                                            title="Editar reunião"
+                                          >
+                                            <Edit2 size={12} />
+                                          </button>
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleDeleteMeeting(opt.id);
+                                            }}
+                                            className="text-slate-400 hover:text-rose-500 transition-colors p-1 rounded-md hover:bg-rose-500/10"
+                                            title="Apagar reunião"
+                                          >
+                                            <Trash2 size={12} />
+                                          </button>
+                                        </>
+                                      )}
                                     </div>
                                   </div>
-                                  <div className="border-t border-slate-100 dark:border-white/5 pt-3">
-                                    <p className="text-xs font-bold text-slate-500 uppercase mb-1">Próximas Ações / Acordos:</p>
-                                    <div className="space-y-1">
-                                      {opt.actions.split(',').map((action, i) => (
-                                        <div key={i} className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
-                                          <Check size={12} className="text-green-500" />
-                                          {action.trim()}
+                                </div>
+                                <div className="border-t border-slate-100 dark:border-white/5 pt-3">
+                                  <p className="text-xs font-bold text-slate-500 uppercase mb-1">Próximas Ações / Acordos:</p>
+                                  <div className="space-y-1">
+                                    {opt.actions.split(',').map((action: string, i: number) => (
+                                      <div key={i} className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+                                        <Check size={12} className="text-green-500" />
+                                        {action.trim()}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                {/* Replies Display */}
+                                {opt.replies && opt.replies.length > 0 && (
+                                  <div className="mt-4 space-y-3">
+                                    {opt.replies.map((reply: any) => (
+                                      <div key={reply.id} className="flex items-start gap-3 pl-4 border-l-2 border-slate-100 dark:border-white/5">
+                                        {reply.authorPhoto ? (
+                                          <img src={reply.authorPhoto} alt={reply.author} className="w-5 h-5 rounded-full object-cover mt-0.5" referrerPolicy="no-referrer" />
+                                        ) : (
+                                          <div className="w-5 h-5 rounded-full bg-slate-200 dark:bg-white/10 flex items-center justify-center text-slate-500 text-[10px] font-bold mt-0.5">
+                                            {reply.author.charAt(0).toUpperCase()}
+                                          </div>
+                                        )}
+                                        <div className="flex-1 min-w-0">
+                                          <div className="flex items-baseline gap-2 mb-0.5">
+                                            <p className="text-xs font-bold text-slate-900 dark:text-white">{reply.author}</p>
+                                            <p className="text-[10px] text-slate-500">{formatDateShort(reply.date)} às {reply.time}</p>
+                                          </div>
+                                          <p className="text-xs text-slate-600 dark:text-slate-400 whitespace-pre-line">{reply.message}</p>
                                         </div>
-                                      ))}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+
+                                {/* Reply Input */}
+                                {replyingNoteId === opt.id && (
+                                  <div className="mt-4 flex flex-col gap-2">
+                                    <textarea
+                                      value={replyMessage}
+                                      onChange={(e) => setReplyMessage(e.target.value)}
+                                      placeholder="Escreva sua resposta..."
+                                      className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white outline-none resize-none"
+                                      rows={2}
+                                      autoFocus
+                                    />
+                                    <div className="flex gap-2 justify-end">
+                                      <button
+                                        onClick={() => { setReplyingNoteId(null); setReplyMessage(''); }}
+                                        className="px-3 py-1.5 text-xs font-bold text-slate-500 hover:text-slate-700 dark:hover:text-white transition-colors"
+                                      >
+                                        Cancelar
+                                      </button>
+                                      <button
+                                        onClick={() => handleSaveMeetingReply(opt.id)}
+                                        className="px-3 py-1.5 text-xs font-bold text-white bg-violet-500 hover:bg-violet-600 rounded-lg transition-colors"
+                                      >
+                                        Responder
+                                      </button>
                                     </div>
                                   </div>
+                                )}
+
+                                {/* Action Bar */}
+                                <div className="mt-4 pt-3 border-t border-slate-100 dark:border-white/5 flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <button 
+                                      onClick={(e) => { 
+                                        e.stopPropagation(); 
+                                        handleToggleMeetingLike(opt.id);
+                                      }}
+                                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold transition-colors border ${
+                                        opt.likes?.includes(auth.currentUser?.email || userData?.name || 'user')
+                                          ? 'bg-slate-100 dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-700 dark:text-white'
+                                          : 'text-slate-400 border-transparent hover:bg-slate-100 dark:hover:bg-white/5'
+                                      }`}
+                                    >
+                                      {opt.likes?.includes(auth.currentUser?.email || userData?.name || 'user') ? (
+                                        <span>👍</span>
+                                      ) : (
+                                        <ThumbsUp size={14} />
+                                      )}
+                                      {(opt.likes?.length || 0) > 0 && <span>{opt.likes?.length}</span>}
+                                    </button>
+                                  </div>
+                                  <button 
+                                    onClick={(e) => { e.stopPropagation(); setReplyingNoteId(opt.id); }}
+                                    className="text-xs font-bold text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors"
+                                  >
+                                    Responder
+                                  </button>
                                 </div>
                             </div>
                           </div>

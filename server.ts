@@ -10,6 +10,7 @@ import dotenv from "dotenv";
 import crypto from "crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import multer from "multer";
+import admin from "firebase-admin";
 import { setupCollectionRoutes } from "./src/routes/collection";
 import { setupDispatchRoutes } from "./src/routes/dispatch";
 
@@ -31,6 +32,66 @@ process.on("unhandledRejection", (reason, promise) => {
 });
 
 dotenv.config();
+
+// ── Firebase Admin SDK initialization ──────────────────────────────────────
+if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
+  admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+    }),
+  });
+  console.log('[BOOT] Firebase Admin SDK initialized.');
+} else {
+  console.warn('[BOOT] ⚠️  Firebase Admin credentials missing! Auth middleware will reject all requests.');
+  // Initialize with no credential so admin.auth() doesn't crash
+  if (!admin.apps.length) {
+    admin.initializeApp();
+  }
+}
+
+// ── Auth Middleware ─────────────────────────────────────────────────────────
+// Routes that must remain public (webhooks, health, public forms)
+const PUBLIC_ROUTES: Array<{ method?: string; pattern: RegExp }> = [
+  { pattern: /^\/api\/health$/ },
+  { pattern: /^\/api\/nps\/submit$/, method: 'POST' },
+  { pattern: /^\/api\/crm-comercial\/webhook$/, method: 'POST' },
+  { pattern: /^\/api\/public\// },
+  { pattern: /^\/api\/crm\/webhooks\/trigger\/whatsapp\// },
+  { pattern: /^\/api\/api4com\/webhook$/, method: 'POST' },
+  { pattern: /^\/api\/hiring\/public\// },
+  { pattern: /^\/api\/onboarding\/submit$/, method: 'POST' },
+];
+
+function isPublicRoute(method: string, path: string): boolean {
+  return PUBLIC_ROUTES.some(r => {
+    if (r.method && r.method !== method) return false;
+    return r.pattern.test(path);
+  });
+}
+
+async function authenticateToken(req: any, res: any, next: any) {
+  // Skip auth for public routes and static files
+  if (isPublicRoute(req.method, req.path) || !req.path.startsWith('/api/')) {
+    return next();
+  }
+
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Token de autenticação ausente.' });
+  }
+
+  const token = authHeader.split('Bearer ')[1];
+  try {
+    const decoded = await admin.auth().verifyIdToken(token);
+    req.user = decoded;
+    next();
+  } catch (err) {
+    console.warn('[Auth] Token inválido:', (err as any).message);
+    return res.status(401).json({ error: 'Token de autenticação inválido.' });
+  }
+}
 
 // ── Asaas API helper (usa https nativo para compatibilidade) ──
 function asaasFetch(endpoint: string): Promise<any | null> {
@@ -1336,6 +1397,9 @@ async function startServer() {
   app.use(express.json({ limit: '100mb' }));
   app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
+  // ── Auth middleware — verifica Firebase token em todas as rotas protegidas ──
+  app.use(authenticateToken);
+
   // ── Project Comments ────────────────────────────────────────────────────────
   app.get('/api/project-comments/:projectId', async (req, res) => {
     try {
@@ -1694,40 +1758,7 @@ async function startServer() {
   });
 
   // API Routes
-  // DIAGNOSTIC: check actual users table columns
-  app.get("/api/debug-users-schema", async (req, res) => {
-    try {
-      const result = await pool.query(`
-        SELECT column_name, data_type, is_nullable, column_default
-        FROM information_schema.columns
-        WHERE table_name = 'users'
-        ORDER BY ordinal_position
-      `);
-      res.json({ columns: result.rows });
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
 
-  app.get("/api/db-test", async (req, res) => {
-    try {
-      const client = await pool.connect();
-      const result = await client.query("SELECT NOW() as current_time");
-      client.release();
-      res.json({ 
-        status: "success", 
-        message: "Connected to Neon DB successfully!",
-        time: result.rows[0].current_time 
-      });
-    } catch (err) {
-      console.error("Database connection error:", err);
-      res.status(500).json({ 
-        status: "error", 
-        message: "Failed to connect to Neon DB",
-        error: err instanceof Error ? err.message : String(err)
-      });
-    }
-  });
 
   // Projects by subsession — fetches all projects from pages within a subsession
   app.get("/api/projects/by-subsession/:subsessionId", async (req: any, res: any) => {
@@ -1815,108 +1846,116 @@ async function startServer() {
 
   // Projects API
   app.get("/api/projects", async (req: any, res: any) => {
-
-    console.log("!!! RECEBIDA REQUISIÇÃO GET /api/projects !!!");
     try {
       const { page_id } = req.query;
-      let query = `
+
+      // Build project query with optional page_id filter
+      let projectQuery = `
         SELECT p.*, mp.manager_id as page_manager_id, u.name as page_manager_name, u.picture as page_manager_picture
         FROM projects p
         LEFT JOIN menu_pages mp ON mp.id = p.page_id
         LEFT JOIN users u ON u.id::text = mp.manager_id
       `;
-      const params: any[] = [];
+      const projectParams: any[] = [];
       if (page_id) {
-        query += " WHERE p.page_id = $1";
-        params.push(page_id);
+        projectQuery += " WHERE p.page_id = $1";
+        projectParams.push(page_id);
       }
-      query += " ORDER BY p.sort_order ASC, p.partner ASC";
-      
-      console.log("Executing query:", query, params);
-      const projectsResult = await pool.query(query, params);
-      console.log("Query result rows:", projectsResult.rows.length);
-      const projects = [];
+      projectQuery += " ORDER BY p.sort_order ASC, p.partner ASC";
 
-      for (const row of projectsResult.rows) {
-        console.log(`Fetching products for project: ${row.id}`);
-        const productsResult = await pool.query("SELECT * FROM products WHERE project_id = $1", [row.id]);
-        console.log(`Found ${productsResult.rows.length} products for project: ${row.id}`);
-        const products = [];
+      // Fetch projects first to get IDs
+      const projectsResult = await pool.query(projectQuery, projectParams);
+      const projectIds = projectsResult.rows.map(r => r.id);
 
-        for (const prodRow of productsResult.rows) {
-          console.log(`Fetching optimizations for product: ${prodRow.id}`);
-          const optimizationsResult = await pool.query("SELECT * FROM optimizations WHERE product_id = $1 ORDER BY date DESC", [prodRow.id]);
-          console.log(`Found ${optimizationsResult.rows.length} optimizations for product: ${prodRow.id}`);
-          products.push({
-            id: prodRow.id,
-            name: prodRow.name,
-            icon: prodRow.icon,
-            cac: prodRow.cac,
-            results: prodRow.results,
-            kpis: prodRow.kpis,
-            budget: prodRow.budget,
-            platform: prodRow.platform,
-            status: prodRow.status,
-            delivery: prodRow.delivery,
-            aiService: prodRow.ai_service,
-            aiKeyword: prodRow.ai_keyword,
-            bottleneck: prodRow.bottleneck,
-            history: prodRow.history,
-            balance: prodRow.balance,
-            paymentMethod: prodRow.payment_method,
-            projectResult: prodRow.project_result,
-            cpaGoal: prodRow.cpa_goal,
-            leadsGoal: prodRow.leads_goal,
-            cacGoal: prodRow.cac_goal,
-            fechamentosGoal: prodRow.fechamentos_goal,
-            optimizations: optimizationsResult.rows.map(opt => ({
-              id: opt.id,
-              author: opt.author,
-              authorPhoto: opt.author_photo,
-              role: opt.role,
-              date: opt.date,
-              time: opt.time,
-              message: opt.message,
-              isInternal: opt.is_internal,
-              images: opt.images,
-              status: opt.status,
-              type: opt.type,
-              optimization: opt.optimization
-            }))
-          });
-        }
+      if (projectIds.length === 0) {
+        return res.json([]);
+      }
 
-        projects.push({
-          id: row.id,
-          partner: row.partner,
-          product: row.partner, // Mapeando partner para product para compatibilidade
-          status: row.status,
-          roi: row.roi,
-          investment: row.investment,
-          responsible: row.page_manager_name || row.responsible,
-          responsiblePicture: row.page_manager_picture || null,
-          lastUpdate: row.last_update,
-          activeClientId: row.active_client_id,
-          page_id: row.page_id,
-          page_manager_id: row.page_manager_id,
-          group: row.group,
-          projectResult: row.project_result,
-          squad: row.squad,
-          files: (() => {
-            if (typeof row.files === 'string') {
-              try {
-                return JSON.parse(row.files);
-              } catch (e) {
-                console.error("Error parsing files JSON:", e);
-                return [];
-              }
-            }
-            return row.files || [];
-          })(),
-          sortOrder: row.sort_order,
-          products: products
+      // Fetch ALL products and ALL optimizations in parallel (2 queries instead of N+1)
+      const [productsResult, optimizationsResult] = await Promise.all([
+        pool.query("SELECT * FROM products WHERE project_id = ANY($1)", [projectIds]),
+        pool.query("SELECT * FROM optimizations WHERE product_id = ANY(SELECT id FROM products WHERE project_id = ANY($1)) ORDER BY date DESC", [projectIds])
+      ]);
+
+      // Index optimizations by product_id
+      const optsByProduct = new Map<string, any[]>();
+      for (const opt of optimizationsResult.rows) {
+        const pid = opt.product_id;
+        if (!optsByProduct.has(pid)) optsByProduct.set(pid, []);
+        optsByProduct.get(pid)!.push({
+          id: opt.id,
+          author: opt.author,
+          authorPhoto: opt.author_photo,
+          role: opt.role,
+          date: opt.date,
+          time: opt.time,
+          message: opt.message,
+          isInternal: opt.is_internal,
+          images: opt.images,
+          status: opt.status,
+          type: opt.type,
+          optimization: opt.optimization
         });
       }
+
+      // Index products by project_id
+      const prodsByProject = new Map<string, any[]>();
+      for (const prodRow of productsResult.rows) {
+        const projId = prodRow.project_id;
+        if (!prodsByProject.has(projId)) prodsByProject.set(projId, []);
+        prodsByProject.get(projId)!.push({
+          id: prodRow.id,
+          name: prodRow.name,
+          icon: prodRow.icon,
+          cac: prodRow.cac,
+          results: prodRow.results,
+          kpis: prodRow.kpis,
+          budget: prodRow.budget,
+          platform: prodRow.platform,
+          status: prodRow.status,
+          delivery: prodRow.delivery,
+          aiService: prodRow.ai_service,
+          aiKeyword: prodRow.ai_keyword,
+          bottleneck: prodRow.bottleneck,
+          history: prodRow.history,
+          balance: prodRow.balance,
+          paymentMethod: prodRow.payment_method,
+          projectResult: prodRow.project_result,
+          cpaGoal: prodRow.cpa_goal,
+          leadsGoal: prodRow.leads_goal,
+          cacGoal: prodRow.cac_goal,
+          fechamentosGoal: prodRow.fechamentos_goal,
+          optimizations: optsByProduct.get(prodRow.id) || []
+        });
+      }
+
+      // Assemble final response
+      const projects = projectsResult.rows.map(row => ({
+        id: row.id,
+        partner: row.partner,
+        product: row.partner,
+        status: row.status,
+        roi: row.roi,
+        investment: row.investment,
+        responsible: row.page_manager_name || row.responsible,
+        responsiblePicture: row.page_manager_picture || null,
+        lastUpdate: row.last_update,
+        activeClientId: row.active_client_id,
+        page_id: row.page_id,
+        page_manager_id: row.page_manager_id,
+        group: row.group,
+        projectResult: row.project_result,
+        squad: row.squad,
+        files: (() => {
+          if (typeof row.files === 'string') {
+            try { return JSON.parse(row.files); } catch (e) { return []; }
+          }
+          return row.files || [];
+        })(),
+        sortOrder: row.sort_order,
+        products: prodsByProject.get(row.id) || []
+      }));
+
       res.json(projects);
     } catch (err) {
       console.error("Error fetching projects:", err);
@@ -1925,12 +1964,14 @@ async function startServer() {
   });
 
   // PATCH /api/menu-pages/:id/manager — set responsible manager for a page (admin only)
-  app.patch("/api/menu-pages/:id/manager", async (req, res) => {
+  app.patch("/api/menu-pages/:id/manager", async (req: any, res: any) => {
     const { id } = req.params;
-    const { manager_id, requester_email } = req.body;
+    const { manager_id } = req.body;
     try {
-      if (requester_email) {
-        const userRes = await pool.query("SELECT role FROM users WHERE email = $1", [requester_email.toLowerCase()]);
+      // Use authenticated user's UID to verify admin role (not client-supplied email)
+      const uid = req.user?.uid;
+      if (uid) {
+        const userRes = await pool.query("SELECT role FROM users WHERE uid = $1", [uid]);
         const role = userRes.rows[0]?.role;
         if (role !== 'superadmin' && role !== 'admin') {
           return res.status(403).json({ error: 'Acesso negado. Apenas administradores podem alterar o gestor da página.' });
@@ -1945,14 +1986,11 @@ async function startServer() {
   });
 
   app.post("/api/projects", async (req, res) => {
-    console.log("!!! RECEBIDA REQUISIÇÃO POST /api/projects !!!");
-    console.log("Headers:", req.headers);
     const projects = req.body;
     if (!Array.isArray(projects)) {
-      console.log("!!! ERRO: Expected an array of projects !!!", typeof projects);
       return res.status(400).json({ error: "Expected an array of projects" });
     }
-    console.log(`Recebido array com ${projects.length} projetos.`);
+
 
     const MAX_RETRIES = 3;
     let retries = 0;
@@ -2310,65 +2348,9 @@ async function startServer() {
   });
 
   // Menu API
-  app.get("/api/debug-initdb", async (req, res) => {
-    try {
-      await pool.query("DELETE FROM menu_pages");
-      await pool.query("DELETE FROM menu_subsubsessions");
-      await pool.query("DELETE FROM menu_subsessions");
-      await pool.query("DELETE FROM menu_sections");
-
-      await pool.query("INSERT INTO menu_sections (id, title, order_index) VALUES ('operacional', 'Operacional', 0)");
-      await pool.query("INSERT INTO menu_subsessions (id, section_id, label, icon, order_index) VALUES ('squad-able', 'operacional', 'Squad Able', 'Users', 0)");
-      
-      // Kpi's Squad directly under Squad Able
-      await pool.query("INSERT INTO menu_pages (id, subsession_id, label, icon, template, order_index) VALUES ('kpis-squad', 'squad-able', 'Kpi''s Squad', 'TrendingUp', 'kpis-squad', 0)");
-      
-      await pool.query("INSERT INTO menu_subsubsessions (id, subsession_id, label, icon, order_index) VALUES ('resumo-squad', 'squad-able', 'Resumo do squad', 'LayoutDashboard', 1)");
-      await pool.query("INSERT INTO menu_pages (id, subsubsession_id, label, icon, template, order_index) VALUES ('parceiros-squad', 'resumo-squad', 'Parceiros squad', 'Users', 'parceiros-squad', 0)");
-      
-      await pool.query("INSERT INTO menu_subsubsessions (id, subsession_id, label, icon, order_index) VALUES ('gestor-trafego', 'squad-able', 'Gestor de Tráfego', 'Target', 2)");
-      await pool.query("INSERT INTO menu_pages (id, subsubsession_id, label, icon, template, order_index) VALUES ('projects', 'gestor-trafego', 'Projetos & Parceiros', 'Briefcase', 'projects', 0), ('todo', 'gestor-trafego', 'Tarefas', 'ListTodo', 'todo', 1)");
-      
-      await pool.query("INSERT INTO menu_subsubsessions (id, subsession_id, label, icon, order_index) VALUES ('gestor-trafego-2', 'squad-able', 'Gestor de Tráfego 2', 'Target', 3)");
-      await pool.query("INSERT INTO menu_pages (id, subsubsession_id, label, icon, template, order_index) VALUES ('projects-2', 'gestor-trafego-2', 'Projetos & Parceiros 2', 'Briefcase', 'projects', 0), ('todo-2', 'gestor-trafego-2', 'Tarefas 2', 'ListTodo', 'todo', 1)");
-      
-      await pool.query("INSERT INTO menu_sections (id, title, order_index) VALUES ('administracao', 'Administração', 1)");
-      await pool.query("INSERT INTO menu_subsessions (id, section_id, label, icon, order_index) VALUES ('painel-admin', 'administracao', 'Painel Admin', 'Shield', 0)");
-      await pool.query("INSERT INTO menu_subsubsessions (id, subsession_id, label, icon, order_index) VALUES ('admin-geral', 'painel-admin', 'Geral', 'FileText', 0)");
-      await pool.query("INSERT INTO menu_pages (id, subsubsession_id, label, icon, template, order_index) VALUES ('admin', 'admin-geral', 'Painel Admin', 'Shield', 'admin', 0), ('active-clients', 'admin-geral', 'Clientes Ativos', 'Users', 'active-clients', 1)");
-      
-      res.json({ success: true, message: "Database re-initialized successfully" });
-    } catch (err) {
-      res.status(500).json({ success: false, error: String(err) });
-    }
-  });
-
-  app.get("/api/debug-pages", async (req, res) => {
-    try {
-      const pages = await pool.query("SELECT * FROM menu_pages");
-      res.json(pages.rows);
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
-
-  app.get("/api/debug-menu", async (req, res) => {
-    try {
-      const pages = await pool.query("SELECT * FROM menu_pages");
-      const subsessions = await pool.query("SELECT * FROM menu_subsessions");
-      const subsubsessions = await pool.query("SELECT * FROM menu_subsubsessions");
-      res.json({
-        pages: pages.rows,
-        subsessions: subsessions.rows,
-        subsubsessions: subsubsessions.rows
-      });
-    } catch (err) {
-      res.status(500).json({ error: String(err) });
-    }
-  });
 
   app.get("/api/menu", async (req, res) => {
-    console.log("!!! RECEBIDA REQUISIÇÃO GET /api/menu !!!");
+
     try {
       const sectionsRes = await pool.query("SELECT * FROM menu_sections ORDER BY order_index");
       console.log("Sections fetched:", sectionsRes.rows.length);
@@ -2967,8 +2949,16 @@ async function startServer() {
   app.patch("/api/tasks/:id", async (req, res) => {
     const { id } = req.params;
     const { user_id, ...updates } = req.body;
+    const authenticatedUid = (req as any).user?.uid || user_id;
     try {
-      const keys = Object.keys(updates);
+      // Whitelist of allowed columns to prevent SQL injection
+      const ALLOWED_COLUMNS: Record<string, string> = {
+        title: 'title', description: 'description', status: 'status',
+        priority: 'priority', dueDate: 'due_date', assignedTo: 'assigned_to',
+        project_id: 'project_id', page_id: 'page_id', due_date: 'due_date',
+        assigned_to: 'assigned_to'
+      };
+      const keys = Object.keys(updates).filter(k => k in ALLOWED_COLUMNS);
       if (keys.length === 0) return res.json({ success: true });
       
       // Get old task for history
@@ -2976,9 +2966,7 @@ async function startServer() {
       const oldTask = oldTaskRes.rows[0];
       
       const setClause = keys.map((key, i) => {
-        // Map camelCase to snake_case if needed
-        const dbKey = key === 'dueDate' ? 'due_date' : key === 'assignedTo' ? 'assigned_to' : key;
-        return `${dbKey} = $${i + 2}`;
+        return `${ALLOWED_COLUMNS[key]} = $${i + 2}`;
       }).join(', ');
       const values = keys.map(key => updates[key]);
       
@@ -2987,16 +2975,16 @@ async function startServer() {
         [id, ...values]
       );
       
-      // Add history
-      if (user_id) {
+      // Add history using authenticated user ID
+      if (authenticatedUid) {
         if (updates.status && oldTask.status !== updates.status) {
-          await pool.query(`INSERT INTO task_history (task_id, user_id, action, old_value, new_value) VALUES ($1, $2, $3, $4, $5)`, [id, user_id, 'Status alterado', oldTask.status, updates.status]);
+          await pool.query(`INSERT INTO task_history (task_id, user_id, action, old_value, new_value) VALUES ($1, $2, $3, $4, $5)`, [id, authenticatedUid, 'Status alterado', oldTask.status, updates.status]);
         }
         if (updates.dueDate !== undefined && oldTask.due_date !== updates.dueDate) {
-          await pool.query(`INSERT INTO task_history (task_id, user_id, action, old_value, new_value) VALUES ($1, $2, $3, $4, $5)`, [id, user_id, 'Data de vencimento alterada', oldTask.due_date, updates.dueDate]);
+          await pool.query(`INSERT INTO task_history (task_id, user_id, action, old_value, new_value) VALUES ($1, $2, $3, $4, $5)`, [id, authenticatedUid, 'Data de vencimento alterada', oldTask.due_date, updates.dueDate]);
         }
         if (updates.assignedTo !== undefined && oldTask.assigned_to !== updates.assignedTo) {
-          await pool.query(`INSERT INTO task_history (task_id, user_id, action, old_value, new_value) VALUES ($1, $2, $3, $4, $5)`, [id, user_id, 'Responsável alterado', oldTask.assigned_to, updates.assignedTo]);
+          await pool.query(`INSERT INTO task_history (task_id, user_id, action, old_value, new_value) VALUES ($1, $2, $3, $4, $5)`, [id, authenticatedUid, 'Responsável alterado', oldTask.assigned_to, updates.assignedTo]);
         }
       }
       
@@ -3034,15 +3022,16 @@ async function startServer() {
 
   app.patch("/api/task-subtasks/:id", async (req, res) => {
     const { id } = req.params;
-    const { completed, user_id } = req.body;
+    const { completed } = req.body;
+    const authenticatedUid = (req as any).user?.uid;
     try {
       const result = await pool.query(
         `UPDATE task_subtasks SET completed = $1, completed_at = CASE WHEN $1 = true THEN NOW() ELSE NULL END WHERE id = $2 RETURNING *`,
         [completed, id]
       );
       
-      if (user_id && completed) {
-        await pool.query(`INSERT INTO task_history (task_id, user_id, action, new_value) VALUES ($1, $2, $3, $4)`, [result.rows[0].task_id, user_id, 'Subtarefa concluída', result.rows[0].title]);
+      if (authenticatedUid && completed) {
+        await pool.query(`INSERT INTO task_history (task_id, user_id, action, new_value) VALUES ($1, $2, $3, $4)`, [result.rows[0].task_id, authenticatedUid, 'Subtarefa concluída', result.rows[0].title]);
       }
       
       res.json(result.rows[0]);
@@ -3153,7 +3142,8 @@ async function startServer() {
 
   app.post("/api/task-templates/:id/apply", async (req, res) => {
     const { id } = req.params;
-    const { project_id, user_id } = req.query;
+    const { project_id } = req.query;
+    const user_id = (req as any).user?.uid || (req.query.user_id as string);
     try {
       const itemsRes = await pool.query("SELECT * FROM task_template_items WHERE template_id = $1 ORDER BY order_index ASC", [id]);
       const items = itemsRes.rows;
@@ -3294,6 +3284,57 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
+  app.delete("/api/meetings/:id", async (req, res) => {
+    const { id } = req.params;
+    try {
+      await pool.query("DELETE FROM meetings WHERE id = $1", [id]);
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Error deleting meeting:", err);
+      res.status(500).json({ error: "Failed to delete meeting" });
+    }
+  });
+
+  app.post("/api/meetings/:id/like", async (req, res) => {
+    const { id } = req.params;
+    const { userIdentifier } = req.body;
+    try {
+      const current = await pool.query("SELECT likes FROM meetings WHERE id = $1", [id]);
+      if (current.rows.length === 0) return res.status(404).json({ error: "Not found" });
+      
+      let likes = current.rows[0].likes || [];
+      if (likes.includes(userIdentifier)) {
+        likes = likes.filter((e: string) => e !== userIdentifier);
+      } else {
+        likes.push(userIdentifier);
+      }
+      
+      await pool.query("UPDATE meetings SET likes = $1 WHERE id = $2", [JSON.stringify(likes), id]);
+      res.json({ success: true, likes });
+    } catch (err) {
+      console.error("Error toggling meeting like:", err);
+      res.status(500).json({ error: "Failed to toggle like" });
+    }
+  });
+
+  app.post("/api/meetings/:id/reply", async (req, res) => {
+    const { id } = req.params;
+    const { reply } = req.body;
+    try {
+      const current = await pool.query("SELECT replies FROM meetings WHERE id = $1", [id]);
+      if (current.rows.length === 0) return res.status(404).json({ error: "Not found" });
+      
+      const replies = current.rows[0].replies || [];
+      replies.push(reply);
+      
+      await pool.query("UPDATE meetings SET replies = $1 WHERE id = $2", [JSON.stringify(replies), id]);
+      res.json({ success: true, replies });
+    } catch (err) {
+      console.error("Error adding meeting reply:", err);
+      res.status(500).json({ error: "Failed to add reply" });
+    }
+  });
+
   app.delete("/api/todos/:id", async (req, res) => {
     const { id } = req.params;
     try {
@@ -3317,6 +3358,19 @@ app.get("/api/todos", async (req, res) => {
       }
 
       const result = await pool.query(`
+        WITH receivable_agg AS (
+          SELECT 
+            r.customer_id,
+            SUM(CASE WHEN r.status = 'OVERDUE' THEN r.value ELSE 0 END) as overdue_total,
+            MIN(CASE WHEN r.status = 'OVERDUE' THEN r.due_date END) as oldest_overdue,
+            MIN(CASE WHEN r.status = 'PENDING' THEN r.due_date END) as next_pending_date,
+            (SELECT r2.value FROM fin_receivables r2 WHERE r2.customer_id = r.customer_id AND r2.status = 'PENDING' ORDER BY r2.due_date ASC LIMIT 1) as first_pending_value,
+            bool_or(r.status = 'OVERDUE') as has_overdue,
+            bool_or(r.status = 'PENDING' AND r.due_date <= CURRENT_DATE + interval '7 days') as has_due_soon
+          FROM fin_receivables r
+          WHERE r.status IN ('OVERDUE', 'PENDING')
+          GROUP BY r.customer_id
+        )
         SELECT 
           c.*,
           fp_link.id IS NOT NULL as has_financial_link,
@@ -3324,16 +3378,16 @@ app.get("/api/todos", async (req, res) => {
           EXISTS(SELECT 1 FROM projects p WHERE p.active_client_id = c.id) as has_project_link,
           (SELECT p.partner FROM projects p WHERE p.active_client_id = c.id LIMIT 1) as project_name,
           COALESCE(
-            (SELECT SUM(r.value) FROM fin_receivables r WHERE r.customer_id = fp_link.asaas_id AND r.status = 'OVERDUE'),
-            (SELECT r.value FROM fin_receivables r WHERE r.customer_id = fp_link.asaas_id AND r.status = 'PENDING' ORDER BY r.due_date ASC LIMIT 1),
+            NULLIF(ra.overdue_total, 0),
+            ra.first_pending_value,
             fs.value,
             0
           ) as valor_display,
-          (SELECT CURRENT_DATE - MIN(r.due_date) FROM fin_receivables r WHERE r.customer_id = fp_link.asaas_id AND r.status = 'OVERDUE') as dias_atraso,
-          (SELECT MIN(r.due_date) FROM fin_receivables r WHERE r.customer_id = fp_link.asaas_id AND r.status = 'PENDING') as proxima_cobranca,
+          CASE WHEN ra.oldest_overdue IS NOT NULL THEN CURRENT_DATE - ra.oldest_overdue END as dias_atraso,
+          ra.next_pending_date as proxima_cobranca,
           CASE 
-            WHEN EXISTS (SELECT 1 FROM fin_receivables r WHERE r.customer_id = fp_link.asaas_id AND r.status = 'OVERDUE') THEN 'atrasada'
-            WHEN EXISTS (SELECT 1 FROM fin_receivables r WHERE r.customer_id = fp_link.asaas_id AND r.status = 'PENDING' AND r.due_date <= CURRENT_DATE + interval '7 days') THEN 'vence_em_breve'
+            WHEN ra.has_overdue THEN 'atrasada'
+            WHEN ra.has_due_soon THEN 'vence_em_breve'
             ELSE 'em_dia'
           END as payment_status,
           CASE WHEN fs.id IS NOT NULL THEN true ELSE false END as has_active_subscription,
@@ -3353,6 +3407,7 @@ app.get("/api/todos", async (req, res) => {
         LEFT JOIN fin_subscriptions fs ON 
           (c.fin_subscription_id IS NOT NULL AND fs.id::text = c.fin_subscription_id) OR
           (c.fin_subscription_id IS NULL AND fs.customer_id = fp_link.asaas_id AND fs.status = 'ACTIVE')
+        LEFT JOIN receivable_agg ra ON ra.customer_id = fp_link.asaas_id
         ${whereClause}
         ORDER BY c.sort_order ASC, c.name ASC
       `, params);
@@ -4115,30 +4170,6 @@ app.get("/api/todos", async (req, res) => {
 
   // ------------------------------
 
-  // ── Diagnóstico Asaas (temporário) ──
-  app.get("/api/financeiro/debug-asaas", async (_req, res) => {
-    const key = process.env.ASAAS_API_KEY;
-    const hasKey = !!key;
-    const keyPreview = key ? `${key.substring(0, 12)}...${key.substring(key.length - 4)}` : 'EMPTY';
-    
-    let apiResult: any = null;
-    let apiError: string | null = null;
-    
-    try {
-      apiResult = await asaasFetch('/finance/balance');
-    } catch (err: any) {
-      apiError = err.message;
-    }
-    
-    res.json({
-      has_key: hasKey,
-      key_preview: keyPreview,
-      key_length: key?.length || 0,
-      api_result: apiResult,
-      api_error: apiError,
-      node_version: process.version,
-    });
-  });
 
   // Resumo financeiro do mês
   app.get("/api/financeiro/resumo", async (req, res) => {

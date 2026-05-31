@@ -1692,16 +1692,16 @@ const RecRow: React.FC<RecRowProps> = ({ item, onEdit, onDelete, onToggle }) => 
 
       {/* Menu */}
       <div className="relative" ref={ref}>
-        <button onClick={() => setMenuOpen(p => !p)} className="w-6 h-6 rounded-lg flex items-center justify-center text-dark-text/30 opacity-0 group-hover:opacity-100 hover:bg-dark-text/10 hover:text-dark-text/70 transition-all">
+        <button onClick={(e) => { e.stopPropagation(); setMenuOpen(p => !p); }} className="w-6 h-6 rounded-lg flex items-center justify-center text-dark-text/30 opacity-0 group-hover:opacity-100 hover:bg-dark-text/10 hover:text-dark-text/70 transition-all">
           <MoreHorizontal size={13} />
         </button>
         {menuOpen && (
           <div className="absolute right-0 top-7 z-20 w-32 bg-dark-card border border-dark-text/10 rounded-xl shadow-2xl py-1 overflow-hidden">
-            <button onClick={() => { onEdit(item); setMenuOpen(false); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-dark-text/70 hover:bg-dark-text/5 transition-colors">
+            <button onClick={(e) => { e.stopPropagation(); onEdit(item); setMenuOpen(false); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-dark-text/70 hover:bg-dark-text/5 transition-colors">
               <Edit3 size={11} /> Editar
             </button>
             <div className="border-t border-dark-text/5 my-0.5" />
-            <button onClick={() => { onDelete(item.id); setMenuOpen(false); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-500 hover:bg-red-500/10 transition-colors">
+            <button onClick={(e) => { e.stopPropagation(); onDelete(item.id); setMenuOpen(false); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-500 hover:bg-red-500/10 transition-colors">
               <Trash2 size={11} /> Excluir
             </button>
           </div>

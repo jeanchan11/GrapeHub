@@ -434,7 +434,7 @@ export default function MarketingDashboard() {
         <div className="px-6 md:px-8 pb-10 space-y-5">
 
           {/* ── KPI Cards ──────────────────────────────────────────────── */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <KpiCard
               iconBg="bg-violet-500/15"
               icon={<DollarSign size={17} className="text-violet-500" />}
@@ -450,25 +450,13 @@ export default function MarketingDashboard() {
               sub="Cadastros únicos no período"
             />
             <KpiCard
-              iconBg="bg-emerald-500/15"
-              icon={<UserCheck size={17} className="text-emerald-500" />}
-              label="Leads Qualificados"
-              value={fmtInt(valQuali)}
-              sub={
-                <span>
-                  Taxa de qualificação: <span className="text-emerald-500 font-bold">{pct(valQuali, valLeads)}</span>
-                </span>
-              }
-              extra={<div className="text-[10px] text-slate-500 mt-0.5">Custo/Qualificado: {fmtCurrency(valQuali > 0 ? valSpend / valQuali : 0)}</div>}
-            />
-            <KpiCard
               iconBg="bg-pink-500/15"
               icon={<Calendar size={17} className="text-pink-500" />}
               label="Reuniões Marcadas"
               value={fmtInt(valReuniMarcadas)}
               sub={
                 <span>
-                  Taxa de agendamento: <span className="text-pink-500 font-bold">{pct(valReuniMarcadas, valQuali)}</span>
+                  Taxa de agendamento: <span className="text-pink-500 font-bold">{pct(valReuniMarcadas, valLeads)}</span>
                 </span>
               }
               extra={<div className="text-[10px] text-slate-500 mt-0.5">Custo/Marcada: {fmtCurrency(valReuniMarcadas > 0 ? valSpend / valReuniMarcadas : 0)}</div>}
@@ -584,29 +572,7 @@ export default function MarketingDashboard() {
                   <div className="pl-6">
                     <h2 className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-4">Volume (Funil)</h2>
                     <div className="space-y-4">
-                      {/* Leads -> Qualificados */}
-                      <div>
-                        <div className="flex items-end justify-between mb-1.5">
-                          <div className="flex items-center gap-2">
-                            <div className="w-7 h-7 rounded-lg bg-emerald-500/15 flex items-center justify-center shrink-0">
-                              <Target size={13} className="text-emerald-500" />
-                            </div>
-                            <div>
-                              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Qualificados</div>
-                              <div className="text-xl font-black text-dark-text">{valQuali}</div>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <div className="text-sm font-bold text-emerald-500">{pct(valQuali, valLeads)}</div>
-                            <div className="text-xs text-slate-500">dos Leads</div>
-                          </div>
-                        </div>
-                        <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(100,100,120,0.15)' }}>
-                          <div className="h-full bg-emerald-500 rounded-full transition-all duration-500"
-                            style={{ width: valLeads ? `${(valQuali / valLeads) * 100}%` : '0%' }} />
-                        </div>
-                      </div>
-                      {/* Qualificados -> Reuniões Marcadas */}
+                      {/* Leads -> Reuniões Marcadas */}
                       <div>
                         <div className="flex items-end justify-between mb-1.5">
                           <div className="flex items-center gap-2">
@@ -619,13 +585,13 @@ export default function MarketingDashboard() {
                             </div>
                           </div>
                           <div className="text-right">
-                            <div className="text-sm font-bold text-pink-500">{pct(valReuniMarcadas, valQuali)}</div>
-                            <div className="text-xs text-slate-500">dos Qualificados</div>
+                            <div className="text-sm font-bold text-pink-500">{pct(valReuniMarcadas, valLeads)}</div>
+                            <div className="text-xs text-slate-500">dos Leads</div>
                           </div>
                         </div>
                         <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(100,100,120,0.15)' }}>
                           <div className="h-full bg-pink-500 rounded-full transition-all duration-500"
-                            style={{ width: valQuali ? `${(valReuniMarcadas / valQuali) * 100}%` : '0%' }} />
+                            style={{ width: valLeads ? `${(valReuniMarcadas / valLeads) * 100}%` : '0%' }} />
                         </div>
                       </div>
                       {/* Marcadas -> Realizadas */}

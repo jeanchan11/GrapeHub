@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "NODE_ENV=development tsx watch server.ts",
-    "build": "mkdir -p dist && npx vite build && npx esbuild server.ts --bundle --platform=node --format=esm --outfile=dist/server.js --external:vite --external:pg --external:express --external:dotenv --external:multer --external:@anthropic-ai/sdk --external:crypto --external:https",
+    "build": "mkdir -p dist && npx vite build && npx esbuild server.ts --bundle --platform=node --format=esm --outfile=dist/server.js --external:vite --external:pg --external:express --external:dotenv --external:multer --external:@anthropic-ai/sdk --external:crypto --external:https --external:firebase-admin",
     "start": "NODE_ENV=production node dist/server.js",
     "preview": "vite preview",
     "lint": "tsc --noEmit"
@@ -31,6 +31,7 @@
     "esbuild": "^0.27.4",
     "express": "^5.2.1",
     "firebase": "^11.0.1",
+    "firebase-admin": "^13.10.0",
     "html-to-image": "^1.11.13",
     "lottie-react": "^2.4.1",
     "lucide-react": "^0.563.0",

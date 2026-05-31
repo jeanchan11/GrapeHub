@@ -247,78 +247,62 @@ const ActiveClients: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchClients();
-    const fetchProjects = async () => {
-      try {
-        const response = await fetch('/api/projects');
-        if (response.ok) {
-          const data = await response.json();
-          setProjects(data);
-        }
-      } catch (err) {
-        console.error("Failed to fetch projects:", err);
-      }
-    };
-    fetchProjects();
+    const loadAll = async () => {
+      setIsLoading(true);
+      setStatsLoading(true);
 
-    const fetchFinPeople = async () => {
-      setIsFetchingFin(true);
       try {
-        const response = await fetch('/api/fin-people');
-        if (response.ok) {
-          const data = await response.json();
-          setFinPeople(data);
+        // Fire ALL requests in parallel
+        const [clientsRes, projectsRes, finRes, statsRes, collabRes] = await Promise.all([
+          fetch('/api/clients').then(r => r.ok ? r.json() : []),
+          fetch('/api/projects').then(r => r.ok ? r.json() : []),
+          fetch('/api/fin-people').then(r => r.ok ? r.json() : []),
+          fetch('/api/clients/stats').then(r => r.ok ? r.json() : { ativos: 0, tcv: 0, fee: 0, entradas: 0, churn: 0 }),
+          fetch('/api/collaborators').then(r => r.ok ? r.json() : [])
+        ]);
+
+        // Process clients
+        if (clientsRes && clientsRes.length > 0) {
+          setClients(clientsRes);
         }
+
+        // Process projects
+        setProjects(projectsRes);
+
+        // Process fin people
+        setFinPeople(finRes);
+
+        // Process stats
+        setStats(statsRes);
+
+        // Process managers
+        const gestores = collabRes
+          .filter((c: any) => c.role && c.role.toLowerCase().includes('gestor'))
+          .map((c: any) => ({
+            id: c.id,
+            name: c.name,
+            status: c.status || 'Outros'
+          }));
+        
+        gestores.sort((a: any, b: any) => {
+          const aIsActive = a.status === 'Efetivado';
+          const bIsActive = b.status === 'Efetivado';
+          if (aIsActive && !bIsActive) return -1;
+          if (!aIsActive && bIsActive) return 1;
+          return a.name.localeCompare(b.name);
+        });
+
+        setManagers(gestores);
       } catch (err) {
-        console.error("Failed to fetch fin people:", err);
+        console.error("Failed to load page data:", err);
       } finally {
+        setIsLoading(false);
+        setStatsLoading(false);
         setIsFetchingFin(false);
       }
     };
-    fetchFinPeople();
 
-    // Fetch KPI stats
-    const fetchStats = async () => {
-      setStatsLoading(true);
-      try {
-        const res = await fetch('/api/clients/stats');
-        if (res.ok) setStats(await res.json());
-      } catch (err) {
-        console.error('Failed to fetch stats:', err);
-      } finally {
-        setStatsLoading(false);
-      }
-    };
-    fetchStats();
-
-    const fetchManagers = async () => {
-      try {
-        const res = await fetch('/api/collaborators');
-        if (res.ok) {
-          const data = await res.json();
-          const gestores = data
-            .filter((c: any) => c.role && c.role.toLowerCase().includes('gestor'))
-            .map((c: any) => ({
-              id: c.id,
-              name: c.name,
-              status: c.status || 'Outros'
-            }));
-          
-          gestores.sort((a: any, b: any) => {
-            const aIsActive = a.status === 'Efetivado';
-            const bIsActive = b.status === 'Efetivado';
-            if (aIsActive && !bIsActive) return -1;
-            if (!aIsActive && bIsActive) return 1;
-            return a.name.localeCompare(b.name);
-          });
-
-          setManagers(gestores);
-        }
-      } catch (err) {
-        console.error('Failed to fetch managers:', err);
-      }
-    };
-    fetchManagers();
+    loadAll();
   }, []);
 
   const handleOpenModal = (client: Client | null = null) => {

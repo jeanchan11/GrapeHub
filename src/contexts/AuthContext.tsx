@@ -22,13 +22,23 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const email = firebaseUser.email;
     if (!email) return null;
 
+    // Helper to create authenticated fetch with Bearer token
+    const authFetchLocal = async (url: string, options?: RequestInit): Promise<Response> => {
+      const token = await firebaseUser.getIdToken();
+      const headers: Record<string, string> = {
+        ...(options?.headers as Record<string, string> || {}),
+        Authorization: `Bearer ${token}`,
+      };
+      return fetch(url, { ...options, headers });
+    };
+
     try {
       let response;
       try {
-        response = await fetch(`/api/users/profile/${encodeURIComponent(email)}`);
+        response = await authFetchLocal(`/api/users/profile/${encodeURIComponent(email)}`);
       } catch (e) {
         console.warn('Relative fetch failed, trying absolute URL...', e);
-        response = await fetch(`http://localhost:3000/api/users/profile/${encodeURIComponent(email)}`);
+        response = await authFetchLocal(`http://localhost:3000/api/users/profile/${encodeURIComponent(email)}`);
       }
 
       if (response.ok) {
@@ -43,7 +53,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           const newPicture = shouldUpdatePicture ? firebaseUser.photoURL : data.picture;
 
           try {
-            await fetch(`/api/users/${data.id}`, {
+            await authFetchLocal(`/api/users/${data.id}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -55,7 +65,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             });
           } catch (e) {
             console.warn('Relative PUT failed, trying absolute URL...', e);
-            await fetch(`http://localhost:3000/api/users/${data.id}`, {
+            await authFetchLocal(`http://localhost:3000/api/users/${data.id}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -90,14 +100,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
         let createResponse;
         try {
-          createResponse = await fetch('/api/users', {
+          createResponse = await authFetchLocal('/api/users', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(initialData)
           });
         } catch (e) {
           console.warn('Relative POST failed, trying absolute URL...', e);
-          createResponse = await fetch('http://localhost:3000/api/users', {
+          createResponse = await authFetchLocal('http://localhost:3000/api/users', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(initialData)
@@ -108,10 +118,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           // Fetch again after creation to get the ID
           let secondResponse;
           try {
-            secondResponse = await fetch(`/api/users/profile/${encodeURIComponent(email)}`);
+            secondResponse = await authFetchLocal(`/api/users/profile/${encodeURIComponent(email)}`);
           } catch (e) {
             console.warn('Relative fetch failed, trying absolute URL...', e);
-            secondResponse = await fetch(`http://localhost:3000/api/users/profile/${encodeURIComponent(email)}`);
+            secondResponse = await authFetchLocal(`http://localhost:3000/api/users/profile/${encodeURIComponent(email)}`);
           }
           if (secondResponse.ok) {
             const data = await secondResponse.json();

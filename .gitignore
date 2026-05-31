@@ -24,3 +24,9 @@ firebase-applet-config.json
 *.njsproj
 *.sln
 *.sw?
+
+# Local databases
+*.sqlite
+*.db
+crm.db
+database.sqlite

@@ -474,11 +474,7 @@ const CrmFinanceiro = () => {
 
 
   useEffect(() => {
-    const init = async () => {
-      await fetchClients();
-      await fetchTasks();
-    };
-    init();
+    Promise.all([fetchClients(), fetchTasks()]);
   }, []);
 
   useEffect(() => {
