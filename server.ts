@@ -13,7 +13,9 @@ import multer from "multer";
 import admin from "firebase-admin";
 import { setupCollectionRoutes } from "./src/routes/collection";
 import { setupDispatchRoutes } from "./src/routes/dispatch";
-
+import rateLimit from 'express-rate-limit';
+import cors from 'cors';
+import helmet from 'helmet';
 
 // IMMEDIATE LOGGING TO VERIFY BOOT
 console.log("-----------------------------------------");
@@ -134,6 +136,55 @@ const __dirname = path.dirname(__filename);
 
 async function startServer() {
   const app = express();
+
+  // ITEM 3 — Helmet (must be before routes)
+  // ITEM 3 — Helmet (must be before routes)
+  // Desabilitamos o CSP (Content Security Policy) porque a política estrita 
+  // padrão do Helmet bloqueia os scripts do Vite (módulos, eval) e conexões do Firebase,
+  // causando uma tela em branco no frontend. As outras 14+ proteções do Helmet continuam ativas.
+  app.use(helmet({ 
+    contentSecurityPolicy: false,
+    crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" } 
+  }));
+
+  // ITEM 2 — CORS com origem explícita
+  const allowedOrigins = [
+    'https://hub.grapemidia.com.br',
+    'http://localhost:5173',
+    'http://localhost:3000',
+  ];
+  app.use(cors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Origem não permitida pelo CORS'));
+      }
+    },
+    credentials: true,
+  }));
+
+  // ITEM 1 — Rate Limiting
+  const globalLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutos
+    max: 200,
+    message: { error: 'Muitas requisições. Tente novamente em alguns minutos.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+  const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 20,
+    message: { error: 'Muitas tentativas de login. Tente novamente em 15 minutos.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
+  // Aplica o rate limit apenas nas rotas da API, senão o Vite Dev Server 
+  // (que carrega dezenas de assets simultâneos) estoura o limite na hora.
+  app.use('/api', globalLimiter);
+  app.use('/api/auth', authLimiter);
+
   const PORT = process.env.PORT || 3000;
   const isProduction = process.env.NODE_ENV === "production" || process.env.VITE_USER_NODE_ENV === "production";
 
@@ -1759,6 +1810,25 @@ async function startServer() {
 
   // API Routes
 
+  // DB connectivity test (used by AdminPanel "Testar Conexão" button)
+  // Protected by auth middleware — only authenticated users can call this
+  app.get("/api/db-test", async (req, res) => {
+    try {
+      const client = await pool.connect();
+      const result = await client.query("SELECT NOW() as current_time");
+      client.release();
+      res.json({ 
+        status: "success", 
+        message: "Connected to Neon DB successfully!",
+        time: result.rows[0].current_time 
+      });
+    } catch (err) {
+      res.status(500).json({ 
+        status: "error", 
+        message: "Failed to connect to Neon DB"
+      });
+    }
+  });
 
   // Projects by subsession — fetches all projects from pages within a subsession
   app.get("/api/projects/by-subsession/:subsessionId", async (req: any, res: any) => {
@@ -4610,6 +4680,18 @@ app.get("/api/todos", async (req, res) => {
       const tab = (req.query.tab as string) || 'contas';
       const accountName = tab === 'sicredi' ? 'Sicredi' : 'Asaas';
 
+      // Helper to parse dates into YYYY-MM-DD strings safely, avoiding timezone shifts
+      const getYYYYMMDD = (d: any): string => {
+        if (!d) return '';
+        if (d instanceof Date) {
+          const y = d.getFullYear();
+          const m = String(d.getMonth() + 1).padStart(2, '0');
+          const day = String(d.getDate()).padStart(2, '0');
+          return `${y}-${m}-${day}`;
+        }
+        return String(d).slice(0, 10);
+      };
+
       // Default range: current month → +3 months
       const now = new Date();
       let startDate: string;
@@ -4619,11 +4701,18 @@ app.get("/api/todos", async (req, res) => {
         const m = req.query.month as string;
         const [y, mo] = m.split('-').map(Number);
         startDate = `${m}-01`;
-        endDate = new Date(y, mo, 0).toISOString().slice(0, 10);
+        const lastDay = new Date(y, mo, 0).getDate();
+        endDate = `${y}-${String(mo).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
       } else {
-        startDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
-        const future = new Date(now.getFullYear(), now.getMonth() + 4, 0);
-        endDate = future.toISOString().slice(0, 10);
+        const startY = now.getFullYear();
+        const startM = now.getMonth() + 1;
+        startDate = `${startY}-${String(startM).padStart(2, '0')}-01`;
+        
+        const tempDate = new Date(startY, startM + 3, 0);
+        const lastDay = tempDate.getDate();
+        const y = tempDate.getFullYear();
+        const mo = tempDate.getMonth() + 1;
+        endDate = `${y}-${String(mo).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
       }
 
       const result = await pool.query(
@@ -4653,11 +4742,12 @@ app.get("/api/todos", async (req, res) => {
         const val = parseFloat(item.value) || 0;
         totalPrevisto += val;
 
-        const dd = new Date(item.due_date);
+        const dateStr = getYYYYMMDD(item.due_date);
+        const dd = new Date(dateStr + 'T12:00:00');
         dd.setHours(0, 0, 0, 0);
         if (dd >= today && dd <= in7Days) vence7dias += val;
 
-        const itemMonth = item.due_date.toISOString ? item.due_date.toISOString().slice(0, 7) : String(item.due_date).slice(0, 7);
+        const itemMonth = dateStr.slice(0, 7);
         if (itemMonth === currentMonthKey) totalMesAtual += val;
       }
 
@@ -4665,18 +4755,21 @@ app.get("/api/todos", async (req, res) => {
       const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
       const itemsByMonth: Record<string, { label: string; total: number; items: any[] }> = {};
       for (const item of items) {
-        // due_date from pg is a Date object
-        const d = item.due_date instanceof Date ? item.due_date : new Date(String(item.due_date).slice(0, 10) + 'T12:00:00');
-        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        const dateStr = getYYYYMMDD(item.due_date);
+        const [y, mo] = dateStr.split('-').map(Number);
+        const key = dateStr.slice(0, 7); // "YYYY-MM"
+
         if (!itemsByMonth[key]) {
-          itemsByMonth[key] = { label: `${MESES[d.getMonth()]} ${d.getFullYear()}`, total: 0, items: [] };
+          itemsByMonth[key] = { label: `${MESES[mo - 1]} ${y}`, total: 0, items: [] };
         }
         const val = parseFloat(item.value) || 0;
         itemsByMonth[key].total += val;
-        // Normalize date to string for frontend
-        item.due_date = d.toISOString().slice(0, 10);
-        if (item.payment_date instanceof Date) item.payment_date = item.payment_date.toISOString().slice(0, 10);
-        if (item.generation_date instanceof Date) item.generation_date = item.generation_date.toISOString().slice(0, 10);
+
+        // Normalize dates to string for frontend
+        item.due_date = dateStr;
+        if (item.payment_date) item.payment_date = getYYYYMMDD(item.payment_date);
+        if (item.generation_date) item.generation_date = getYYYYMMDD(item.generation_date);
+
         itemsByMonth[key].items.push(item);
       }
 
@@ -4708,11 +4801,18 @@ app.get("/api/todos", async (req, res) => {
         const m = req.query.month as string;
         const [y, mo] = m.split('-').map(Number);
         startDate = `${m}-01`;
-        endDate = new Date(y, mo, 0).toISOString().slice(0, 10);
+        const lastDay = new Date(y, mo, 0).getDate();
+        endDate = `${y}-${String(mo).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
       } else {
-        startDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
-        const future = new Date(now.getFullYear(), now.getMonth() + 4, 0);
-        endDate = future.toISOString().slice(0, 10);
+        const startY = now.getFullYear();
+        const startM = now.getMonth() + 1;
+        startDate = `${startY}-${String(startM).padStart(2, '0')}-01`;
+        
+        const tempDate = new Date(startY, startM + 3, 0);
+        const lastDay = tempDate.getDate();
+        const y = tempDate.getFullYear();
+        const mo = tempDate.getMonth() + 1;
+        endDate = `${y}-${String(mo).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
       }
 
       const result = await pool.query(
@@ -11872,6 +11972,20 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
     console.log("Starting in PRODUCTION mode...");
     setupStaticServing(app);
   }
+
+  // ITEM 4 — Tratamento de erros sem stack trace exposto
+  app.use((err: any, req: any, res: any, next: any) => {
+    // Log interno completo (nunca exposto ao cliente)
+    console.error(`[ERROR] ${req.method} ${req.path}`, err);
+
+    // Resposta genérica para o cliente
+    const status = err.status || err.statusCode || 500;
+    res.status(status).json({
+      error: status < 500 
+        ? err.message 
+        : 'Erro interno do servidor. Tente novamente mais tarde.'
+    });
+  });
 
   const portNum = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT;
   const server = app.listen(portNum, "0.0.0.0", () => {

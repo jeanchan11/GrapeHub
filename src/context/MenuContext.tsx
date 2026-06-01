@@ -1,4 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth } from '../firebase';
 
 const MenuContext = createContext<{ menu: any[], setMenu: React.Dispatch<React.SetStateAction<any[]>> }>({ menu: [], setMenu: () => {} });
 
@@ -37,7 +39,15 @@ export const MenuProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
-    refreshMenu();
+    // Wait for Firebase Auth to be ready before fetching menu
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        refreshMenu();
+      } else {
+        setMenu([]);
+      }
+    });
+    return () => unsubscribe();
   }, []);
 
   return <MenuContext.Provider value={{ menu, setMenu, refreshMenu }}>{children}</MenuContext.Provider>;
