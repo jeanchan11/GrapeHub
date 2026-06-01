@@ -62,10 +62,10 @@ const ComercialGrape: React.FC = () => {
   const reportRef = useRef<HTMLDivElement>(null);
   const [data, setData] = useState({
     targetSales: 168000,
-    leadCost: 12,
-    leadToMeetingRate: 20,
-    meetingToClosingRate: 25,
+    meetingCost: 60,          // Custo por reunião (CPR)
+    meetingToClosingRate: 25, // Taxa Reunião → Fechamento
     averageTicket: 14000,
+    noShowRate: 20,           // Taxa de No-Show (%)
   });
 
   // Fetch data from Neon DB via API
@@ -75,7 +75,15 @@ const ComercialGrape: React.FC = () => {
         const response = await fetch('/api/comercial-data');
         if (response.ok) {
           const result = await response.json();
-          setData(result);
+          // Map legacy leadCost → meetingCost if needed
+          setData(prev => ({
+            ...prev,
+            targetSales:          result.targetSales          ?? prev.targetSales,
+            meetingCost:          result.meetingCost          ?? result.leadCost ?? prev.meetingCost,
+            meetingToClosingRate: result.meetingToClosingRate ?? prev.meetingToClosingRate,
+            averageTicket:        result.averageTicket        ?? prev.averageTicket,
+            noShowRate:           result.noShowRate           ?? prev.noShowRate,
+          }));
         }
       } catch (err) {
         console.error("Failed to fetch comercial data:", err);
@@ -84,7 +92,7 @@ const ComercialGrape: React.FC = () => {
     fetchData();
   }, []);
 
-  // Save data to Neon DB via API (debounced or on change)
+  // Save data to Neon DB via API (debounced)
   useEffect(() => {
     const saveData = async () => {
       try {
@@ -97,44 +105,48 @@ const ComercialGrape: React.FC = () => {
         console.error("Failed to save comercial data:", err);
       }
     };
-    
-    const timeoutId = setTimeout(saveData, 1000); // Save after 1s of inactivity
+    const timeoutId = setTimeout(saveData, 1000);
     return () => clearTimeout(timeoutId);
   }, [data]);
 
   const results = useMemo(() => {
     const targetContracts = data.averageTicket > 0 ? Math.ceil(data.targetSales / data.averageTicket) : 0;
-    const meetingsNeeded = targetContracts / (data.meetingToClosingRate / 100);
-    const leadsNeeded = meetingsNeeded / (data.leadToMeetingRate / 100);
-    const requiredInvestment = leadsNeeded * data.leadCost;
-    
+    // Reuniões efetivas necessárias para atingir a meta de contratos
+    const meetingsNeeded = data.meetingToClosingRate > 0
+      ? Math.ceil(targetContracts / (data.meetingToClosingRate / 100))
+      : 0;
+    // Agendamentos necessários = reuniões realizadas / (1 - taxa de no-show)
+    const noshowMultiplier = data.noShowRate >= 100 ? 1 : 1 / (1 - data.noShowRate / 100);
+    const scheduledMeetings = Math.ceil(meetingsNeeded * noshowMultiplier);
+    const noshowCount = scheduledMeetings - meetingsNeeded;
+    // Investimento = custo por reunião × agendamentos necessários (inclui no-shows)
+    const requiredInvestment = scheduledMeetings * data.meetingCost;
+
     const fmr = targetContracts * (data.averageTicket / 4);
     const tcv = targetContracts * data.averageTicket;
-    
     const cac = targetContracts > 0 ? requiredInvestment / targetContracts : 0;
-    const cpReuniao = meetingsNeeded > 0 ? requiredInvestment / meetingsNeeded : 0;
     const roi = requiredInvestment > 0 ? fmr / requiredInvestment : 0;
 
     return {
-      leadsNeeded: Math.round(leadsNeeded),
-      meetingsNeeded: Math.round(meetingsNeeded),
+      meetingsNeeded,
+      scheduledMeetings,
+      noshowCount,
       targetContracts,
       requiredInvestment,
       fmr,
       cac,
-      cpReuniao,
       roi,
-      tcv
+      tcv,
     };
   }, [data]);
 
-  const formatCurrency = (val: number) => 
+  const formatCurrency = (val: number) =>
     new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
 
   const handleExportPNG = async () => {
     if (reportRef.current === null) return;
     try {
-      const dataUrl = await toPng(reportRef.current, { 
+      const dataUrl = await toPng(reportRef.current, {
         cacheBust: true,
         backgroundColor: '#0f0f1a',
       });
@@ -156,7 +168,7 @@ const ComercialGrape: React.FC = () => {
               Calculadora Comercial <span className="text-violet-500">Grape</span>
             </h1>
             <p className="text-slate-500 text-sm max-w-3xl">
-              Analise a eficiência do seu tráfego pago em tempo real, preveja o impacto das taxas de conversão e otimize o fechamento de novos contratos para seu escritório.
+              Planeje sua operação de vendas com base em reuniões qualificadas agendadas diretamente. Projete contratos, receita e ROI com precisão.
             </p>
           </div>
 
@@ -175,7 +187,7 @@ const ComercialGrape: React.FC = () => {
 
       <main className="max-w-7xl mx-auto px-8">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          
+
           {/* Sidebar */}
           <div className="lg:col-span-3">
             <section className="bg-light-card dark:bg-dark-card p-8 rounded-3xl border border-slate-200 dark:border-white/5 space-y-8 sticky top-8 transition-colors duration-300">
@@ -183,49 +195,51 @@ const ComercialGrape: React.FC = () => {
                 <Calculator className="text-violet-600 dark:text-violet-500" size={20} />
                 <h2 className="text-sm font-bold text-light-text dark:text-white uppercase tracking-widest">Parâmetros do Funil</h2>
               </div>
-              
+
               <div className="space-y-6">
-                <InputField 
-                  label="Meta de Vendas" 
-                  value={data.targetSales} 
+                <InputField
+                  label="Meta de Vendas"
+                  value={data.targetSales}
                   onChange={(v) => setData(p => ({...p, targetSales: v}))}
                   prefix="R$"
                 />
 
-                <InputField 
-                  label="Custo do Lead" 
-                  value={data.leadCost} 
-                  onChange={(v) => setData(p => ({...p, leadCost: v}))}
+                <InputField
+                  label="Custo por Reunião (CPR)"
+                  value={data.meetingCost}
+                  onChange={(v) => setData(p => ({...p, meetingCost: v}))}
                   prefix="R$"
+                  helper="Custo médio de cada reunião qualificada agendada (tráfego + operação)"
                 />
 
-                <InputField 
-                  label="Taxa Lead -> Reunião" 
-                  value={data.leadToMeetingRate} 
-                  onChange={(v) => setData(p => ({...p, leadToMeetingRate: v}))}
-                  suffix="%"
-                />
-
-                <InputField 
-                  label="Taxa Reunião -> Fechamento" 
-                  value={data.meetingToClosingRate} 
+                <InputField
+                  label="Taxa Reunião → Fechamento"
+                  value={data.meetingToClosingRate}
                   onChange={(v) => setData(p => ({...p, meetingToClosingRate: v}))}
                   suffix="%"
                 />
 
-                <InputField 
-                  label="Ticket Médio do Contrato" 
-                  value={data.averageTicket} 
+                <InputField
+                  label="Ticket Médio do Contrato"
+                  value={data.averageTicket}
                   onChange={(v) => setData(p => ({...p, averageTicket: v}))}
                   prefix="R$"
                   helper="Valor total do contrato vendido (ex: 4 meses)"
+                />
+
+                <InputField
+                  label="Taxa de No-Show"
+                  value={data.noShowRate}
+                  onChange={(v) => setData(p => ({...p, noShowRate: Math.min(99, Math.max(0, v))}))}
+                  suffix="%"
+                  helper="Percentual de pessoas agendadas que não comparecem à reunião"
                 />
 
                 <div className="p-5 bg-violet-600/5 rounded-2xl border border-violet-500/10">
                   <div className="flex gap-3">
                     <Info size={16} className="text-violet-400 shrink-0 mt-0.5" />
                     <p className="text-[11px] text-slate-400 leading-relaxed">
-                      <span className="text-violet-400 font-bold">Dica Pro:</span> Ao definir uma meta de vendas, o sistema calcula automaticamente o volume de contratos, leads e o investimento necessário.
+                      <span className="text-violet-400 font-bold">Dica Pro:</span> Com {data.noShowRate}% de no-show, você precisa agendar <span className="text-white font-bold">{results.scheduledMeetings}</span> para ter <span className="text-white font-bold">{results.meetingsNeeded}</span> reuniões efetivas.
                     </p>
                   </div>
                 </div>
@@ -245,7 +259,7 @@ const ComercialGrape: React.FC = () => {
                 </div>
               </div>
 
-              <button 
+              <button
                 onClick={handleExportPNG}
                 className="w-full mt-4 px-6 py-4 rounded-xl bg-violet-600 text-white font-bold text-sm hover:bg-violet-700 transition-all shadow-lg shadow-violet-500/20 flex items-center justify-center gap-2 no-print"
               >
@@ -256,17 +270,19 @@ const ComercialGrape: React.FC = () => {
 
           {/* Main Dashboard */}
           <div className="lg:col-span-9 space-y-6">
-            
-            {/* Top Cards */}
+
+            {/* Top Cards — 3 cards: Agendamentos, Reuniões e Contratos */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="bg-light-card dark:bg-dark-card p-6 rounded-2xl border border-slate-200 dark:border-white/5 flex items-center gap-5 transition-colors duration-300">
-                <div className="p-3 bg-[#10b981] rounded-xl">
+                <div className="p-3 bg-[#ef4444] rounded-xl">
                   <Users size={24} className="text-white" />
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Total de Leads</p>
-                  <h3 className="text-3xl font-bold text-light-text dark:text-white">{results.leadsNeeded}</h3>
-                  <p className="text-[10px] text-slate-500 mt-1">Contatos no WhatsApp</p>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Agendamentos</p>
+                  <h3 className="text-3xl font-bold text-light-text dark:text-white">{results.scheduledMeetings}</h3>
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    {results.noshowCount > 0 ? <span className="text-rose-500">{results.noshowCount} no-shows previstos</span> : 'Sem no-shows'}
+                  </p>
                 </div>
               </div>
 
@@ -275,9 +291,9 @@ const ComercialGrape: React.FC = () => {
                   <CalendarDays size={24} className="text-white" />
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Reuniões</p>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Reuniões Realizadas</p>
                   <h3 className="text-3xl font-bold text-light-text dark:text-white">{results.meetingsNeeded}</h3>
-                  <p className="text-[10px] text-slate-500 mt-1">Agendamentos qualificados</p>
+                  <p className="text-[10px] text-slate-500 mt-1">Após {data.noShowRate}% no-show</p>
                 </div>
               </div>
 
@@ -320,27 +336,28 @@ const ComercialGrape: React.FC = () => {
 
             {/* Funnel and Metrics Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              
-              {/* Funnel Visualization */}
+
+              {/* Funnel Visualization — 3 etapas: Agendamentos → Reuniões → Contratos */}
               <div className="lg:col-span-7 bg-light-card dark:bg-dark-card p-10 rounded-3xl border border-slate-200 dark:border-white/5 transition-colors duration-300">
-                <div className="flex items-center justify-between mb-16">
+                <div className="flex items-center justify-between mb-10">
                   <h3 className="font-bold text-light-text dark:text-white flex items-center gap-2 uppercase tracking-widest text-xs">
                     <ArrowDownWideNarrow size={18} className="text-violet-600 dark:text-violet-400" />
                     Visualização do Funil
                   </h3>
                   <div className="text-[10px] font-bold text-slate-500 tracking-widest uppercase">Volume por Etapa</div>
                 </div>
-                
+
                 <div className="relative flex flex-col items-center">
                   <div className="relative w-full max-w-[420px]">
+                    {/* Funil de 3 etapas: Agendamentos → Reuniões → Contratos */}
                     <svg viewBox="0 0 400 420" className="w-full h-auto">
                       <defs>
-                        <linearGradient id="funnelGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                          <stop offset="0%" stopColor="#10b981" />
+                        <linearGradient id="funnelGradient3" x1="0%" y1="0%" x2="0%" y2="100%">
+                          <stop offset="0%" stopColor="#ef4444" />
                           <stop offset="50%" stopColor="#f59e0b" />
-                          <stop offset="100%" stopColor="#ef4444" />
+                          <stop offset="100%" stopColor="#8b5cf6" />
                         </linearGradient>
-                        <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+                        <filter id="glow3" x="-20%" y="-20%" width="140%" height="140%">
                           <feGaussianBlur stdDeviation="6" result="blur" />
                           <feComposite in="SourceGraphic" in2="blur" operator="over" />
                         </filter>
@@ -351,63 +368,71 @@ const ComercialGrape: React.FC = () => {
                       <line x1="20" y1="210" x2="380" y2="210" stroke="currentColor" className="text-slate-200 dark:text-white/5" strokeDasharray="4 4" />
                       <line x1="20" y1="380" x2="380" y2="380" stroke="currentColor" className="text-slate-200 dark:text-white/5" strokeDasharray="4 4" />
 
-                      {/* Funnel Shape with Glow */}
+                      {/* Funnel Shape — 3 stages */}
                       <path
-                        d="M 80,40
-                           C 80,140 160,170 160,210
+                        d="M 70,40
+                           C 70,140 160,170 160,210
                            L 175,380
                            L 225,380
                            L 240,210
-                           C 240,170 320,140 320,40
+                           C 240,170 330,140 330,40
                            Z"
-                        fill="url(#funnelGradient)"
-                        filter="url(#glow)"
-                        className="opacity-80"
+                        fill="url(#funnelGradient3)"
+                        filter="url(#glow3)"
+                        className="opacity-85"
                       />
 
                       {/* Labels Left */}
-                      <text x="20" y="30" className="fill-slate-500 text-[10px] font-bold uppercase tracking-widest">Leads</text>
-                      <text x="20" y="200" className="fill-slate-500 text-[10px] font-bold uppercase tracking-widest">Reuniões</text>
-                      <text x="20" y="370" className="fill-slate-500 text-[10px] font-bold uppercase tracking-widest">Contratos</text>
+                      <text x="20" y="30" className="fill-slate-500" fontSize="10" fontWeight="700">AGENDAMENTOS</text>
+                      <text x="20" y="202" className="fill-slate-500" fontSize="10" fontWeight="700">REUNIÕES</text>
+                      <text x="20" y="372" className="fill-slate-500" fontSize="10" fontWeight="700">CONTRATOS</text>
 
-                      {/* Pills (Centered) */}
+                      {/* Pills — valores */}
                       <rect x="160" y="25" width="80" height="30" rx="15" className="fill-slate-100 dark:fill-dark-input stroke-slate-200 dark:stroke-white/10" />
-                      <text x="200" y="45" textAnchor="middle" className="fill-light-text dark:fill-white text-[14px] font-bold">{results.leadsNeeded}</text>
+                      <text x="200" y="45" textAnchor="middle" className="fill-light-text dark:fill-white" fontSize="15" fontWeight="bold">{results.scheduledMeetings}</text>
 
                       <rect x="160" y="195" width="80" height="30" rx="15" className="fill-slate-100 dark:fill-dark-input stroke-slate-200 dark:stroke-white/10" />
-                      <text x="200" y="215" textAnchor="middle" className="fill-light-text dark:fill-white text-[14px] font-bold">{results.meetingsNeeded}</text>
+                      <text x="200" y="215" textAnchor="middle" className="fill-light-text dark:fill-white" fontSize="15" fontWeight="bold">{results.meetingsNeeded}</text>
 
                       <rect x="160" y="365" width="80" height="30" rx="15" className="fill-slate-100 dark:fill-dark-input stroke-slate-200 dark:stroke-white/10" />
-                      <text x="200" y="385" textAnchor="middle" className="fill-light-text dark:fill-white text-[14px] font-bold">{results.targetContracts}</text>
+                      <text x="200" y="385" textAnchor="middle" className="fill-light-text dark:fill-white" fontSize="15" fontWeight="bold">{results.targetContracts}</text>
 
-                      {/* Conversion Circles (Right) */}
-                      <g transform="translate(350, 125)">
-                        <circle r="26" className="fill-slate-100 dark:fill-dark-input stroke-slate-200 dark:stroke-white/10" />
-                        <text y="-2" textAnchor="middle" className="fill-emerald-600 dark:fill-[#10b981] text-[11px] font-bold">{data.leadToMeetingRate}%</text>
-                        <text y="10" textAnchor="middle" className="fill-slate-500 text-[8px] font-bold uppercase tracking-tighter">conv.</text>
+                      {/* Conversion Circles */}
+                      <g transform="translate(348, 125)">
+                        <circle r="26" className="fill-rose-50 dark:fill-rose-900/20 stroke-rose-200 dark:stroke-rose-500/20" />
+                        <text y="-2" textAnchor="middle" className="fill-rose-500" fontSize="11" fontWeight="bold">{data.noShowRate}%</text>
+                        <text y="11" textAnchor="middle" className="fill-slate-500" fontSize="8" fontWeight="bold">NO-SHOW</text>
                       </g>
 
-                      <g transform="translate(350, 295)">
+                      <g transform="translate(348, 295)">
                         <circle r="26" className="fill-slate-100 dark:fill-dark-input stroke-slate-200 dark:stroke-white/10" />
-                        <text y="-2" textAnchor="middle" className="fill-emerald-600 dark:fill-[#10b981] text-[11px] font-bold">{data.meetingToClosingRate}%</text>
-                        <text y="10" textAnchor="middle" className="fill-slate-500 text-[8px] font-bold uppercase tracking-tighter">conv.</text>
+                        <text y="-2" textAnchor="middle" className="fill-violet-600 dark:fill-violet-400" fontSize="11" fontWeight="bold">{data.meetingToClosingRate}%</text>
+                        <text y="11" textAnchor="middle" className="fill-slate-500" fontSize="8" fontWeight="bold">CONV.</text>
                       </g>
                     </svg>
                   </div>
 
-                  <div className="w-full mt-12 space-y-3">
-                    <div className="flex items-center justify-between p-6 bg-slate-50 dark:bg-dark-input rounded-2xl border border-slate-200 dark:border-white/5">
-                      <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Reuniões</span>
-                      <div className="flex items-center gap-6">
-                        <span className="text-2xl font-bold text-light-text dark:text-white">{results.meetingsNeeded}</span>
-                        <span className="text-[10px] font-bold text-emerald-600 dark:text-[#10b981] bg-emerald-500/10 px-3 py-1.5 rounded-lg uppercase tracking-widest">{data.leadToMeetingRate}% conv.</span>
+                  {/* Summary table below the funnel */}
+                  <div className="w-full mt-6 space-y-3">
+                    <div className="flex items-center justify-between p-5 bg-slate-50 dark:bg-dark-input rounded-2xl border border-slate-200 dark:border-white/5">
+                      <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Agendamentos</span>
+                      <div className="flex items-center gap-4">
+                        <span className="text-2xl font-bold text-light-text dark:text-white">{results.scheduledMeetings}</span>
+                        <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 bg-rose-500/10 px-3 py-1.5 rounded-lg uppercase tracking-widest">{data.noShowRate}% no-show</span>
                       </div>
                     </div>
-                    <div className="flex items-center justify-between p-6 bg-slate-50 dark:bg-dark-input rounded-2xl border border-slate-200 dark:border-white/5">
+                    <div className="flex items-center justify-between p-5 bg-slate-50 dark:bg-dark-input rounded-2xl border border-slate-200 dark:border-white/5">
+                      <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Reuniões</span>
+                      <div className="flex items-center gap-4">
+                        <span className="text-2xl font-bold text-light-text dark:text-white">{results.meetingsNeeded}</span>
+                        <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-3 py-1.5 rounded-lg uppercase tracking-widest">CPR {formatCurrency(data.meetingCost)}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between p-5 bg-slate-50 dark:bg-dark-input rounded-2xl border border-slate-200 dark:border-white/5">
                       <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Contratos</span>
-                      <div className="flex items-center gap-6">
+                      <div className="flex items-center gap-4">
                         <span className="text-2xl font-bold text-light-text dark:text-white">{results.targetContracts}</span>
-                        <span className="text-[10px] font-bold text-emerald-600 dark:text-[#10b981] bg-emerald-500/10 px-3 py-1.5 rounded-lg uppercase tracking-widest">{data.meetingToClosingRate}% conv.</span>
+                        <span className="text-[10px] font-bold text-violet-600 dark:text-violet-400 bg-violet-500/10 px-3 py-1.5 rounded-lg uppercase tracking-widest">{data.meetingToClosingRate}% conv.</span>
                       </div>
                     </div>
                   </div>
@@ -421,23 +446,23 @@ const ComercialGrape: React.FC = () => {
                     <BarChart3 size={18} className="text-violet-600 dark:text-violet-400" />
                     Métricas de Eficiência
                   </h3>
-                  
+
                   <div className="grid grid-cols-2 gap-4">
                     <div className="p-5 bg-slate-50 dark:bg-dark-input rounded-2xl border border-slate-200 dark:border-white/5">
-                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">Custo Lead</p>
-                      <p className="text-xl font-bold text-light-text dark:text-white">{formatCurrency(data.leadCost)}</p>
+                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">Custo / Reunião</p>
+                      <p className="text-xl font-bold text-light-text dark:text-white">{formatCurrency(data.meetingCost)}</p>
                     </div>
                     <div className="p-5 bg-slate-50 dark:bg-dark-input rounded-2xl border border-slate-200 dark:border-white/5">
-                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">CPReunião</p>
-                      <p className="text-xl font-bold text-light-text dark:text-white">{formatCurrency(results.cpReuniao)}</p>
+                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">Taxa Fechamento</p>
+                      <p className="text-xl font-bold text-light-text dark:text-white">{data.meetingToClosingRate}%</p>
+                    </div>
+                    <div className="p-5 bg-rose-50 dark:bg-rose-900/10 rounded-2xl border border-rose-200 dark:border-rose-500/20">
+                      <p className="text-[9px] font-bold text-rose-500 uppercase tracking-widest mb-1">No-Show</p>
+                      <p className="text-xl font-bold text-rose-600 dark:text-rose-400">{data.noShowRate}% <span className="text-xs font-medium text-rose-400">({results.noshowCount} faltas)</span></p>
                     </div>
                     <div className="p-5 bg-slate-50 dark:bg-dark-input rounded-2xl border border-slate-200 dark:border-white/5">
                       <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">CAC (Aquisição)</p>
                       <p className="text-xl font-bold text-light-text dark:text-white">{formatCurrency(results.cac)}</p>
-                    </div>
-                    <div className="p-5 bg-slate-50 dark:bg-dark-input rounded-2xl border border-slate-200 dark:border-white/5">
-                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">ROI (Retorno)</p>
-                      <p className="text-xl font-bold text-light-text dark:text-white">{results.roi.toFixed(1)}x</p>
                     </div>
                   </div>
                 </div>
@@ -468,20 +493,20 @@ const ComercialGrape: React.FC = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="p-8 bg-slate-50 dark:bg-dark-input rounded-2xl border border-slate-200 dark:border-white/5">
                   <div className="flex items-center gap-3 mb-5">
-                    <div className="w-2.5 h-2.5 rounded-full bg-blue-500"></div>
+                    <div className="w-2.5 h-2.5 rounded-full bg-violet-500"></div>
                     <h4 className="text-xs font-bold text-light-text dark:text-white uppercase tracking-widest">Alavanca de Conversão</h4>
                   </div>
                   <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
                     Se você aumentar sua taxa de <span className="text-light-text dark:text-white font-bold">Reunião → Contrato</span> para 30%, seu faturamento passaria para <span className="text-rose-500 dark:text-rose-400 font-bold">{formatCurrency(results.meetingsNeeded * 0.3 * (data.averageTicket / 4))}</span>, elevando seu ROI para <span className="text-violet-600 dark:text-violet-400 font-bold">{( (results.meetingsNeeded * 0.3 * (data.averageTicket / 4)) / results.requiredInvestment ).toFixed(1)}x</span>.
                   </p>
                 </div>
-                <div className="p-8 bg-slate-50 dark:bg-dark-input rounded-2xl border border-slate-200 dark:border-white/5">
+                <div className="p-8 bg-rose-50 dark:bg-rose-900/10 rounded-2xl border border-rose-200 dark:border-rose-500/20">
                   <div className="flex items-center gap-3 mb-5">
-                    <div className="w-2.5 h-2.5 rounded-full bg-[#10b981]"></div>
-                    <h4 className="text-xs font-bold text-light-text dark:text-white uppercase tracking-widest">Custo de Aquisição</h4>
+                    <div className="w-2.5 h-2.5 rounded-full bg-rose-500"></div>
+                    <h4 className="text-xs font-bold text-light-text dark:text-white uppercase tracking-widest">Impacto do No-Show</h4>
                   </div>
                   <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
-                    Seu CAC atual é de <span className="text-light-text dark:text-white font-bold">{formatCurrency(results.cac)}</span>. Em nichos de alto valor (como Inventários ou Tributário), um retorno de <span className="text-emerald-600 dark:text-[#10b981] font-bold">{results.roi.toFixed(1)}x</span> permite escala agressiva com segurança financeira.
+                    Com {data.noShowRate}% de no-show, você perde <span className="text-rose-500 font-bold">{results.noshowCount} reuniões</span> e gasta <span className="text-rose-500 font-bold">{formatCurrency(results.noshowCount * data.meetingCost)}</span> a mais por ciclo. Reduzir o no-show para 10% economizaria <span className="text-emerald-600 dark:text-emerald-400 font-bold">{formatCurrency(Math.max(0, results.noshowCount - Math.ceil(results.meetingsNeeded / (1 - 0.1))) * data.meetingCost)}</span> em investimento.
                   </p>
                 </div>
               </div>

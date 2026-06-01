@@ -2479,16 +2479,22 @@ async function startServer() {
     try {
       const result = await pool.query("SELECT data FROM closer_data ORDER BY updated_at DESC LIMIT 1");
       if (result.rows.length > 0) {
-        res.json(result.rows[0].data);
+        const raw = result.rows[0].data || {};
+        // Normalize: support both old schema and new schema
+        res.json({
+          baseSalary:     parseFloat(raw.baseSalary)     || 3000,
+          salesTarget:    parseFloat(raw.salesTarget)    || 35000,
+          bonusValue:     parseFloat(raw.bonusValue)     || 1000,
+          commissionRate: parseFloat(raw.commissionRate) || 10,
+          totalSold:      parseFloat(raw.totalSold)      || 0,
+        });
       } else {
         res.json({
           baseSalary: 3000,
-          maxBonus: 2000,
-          meetingDelay: false,
-          reportDelay: false,
-          taskDelays: [false, false, false],
-          activeClients: 10,
-          okResultClients: 10
+          salesTarget: 35000,
+          bonusValue: 1000,
+          commissionRate: 10,
+          totalSold: 0,
         });
       }
     } catch (err) {
@@ -2500,7 +2506,13 @@ async function startServer() {
   app.post("/api/closer-data", async (req, res) => {
     try {
       const data = req.body;
-      await pool.query("INSERT INTO closer_data (data) VALUES ($1)", [data]);
+      // Check if a row exists and update it; otherwise insert
+      const existing = await pool.query("SELECT id FROM closer_data ORDER BY updated_at DESC LIMIT 1");
+      if (existing.rows.length > 0) {
+        await pool.query("UPDATE closer_data SET data = $1, updated_at = NOW() WHERE id = $2", [data, existing.rows[0].id]);
+      } else {
+        await pool.query("INSERT INTO closer_data (data) VALUES ($1)", [data]);
+      }
       res.json({ success: true });
     } catch (err) {
       console.error("Error saving closer data:", err);

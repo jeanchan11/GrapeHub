@@ -79,7 +79,14 @@ const CloserCalculator: React.FC = () => {
         const response = await fetch('/api/closer-data');
         if (response.ok) {
           const result = await response.json();
-          setData(result);
+          // Sanitize: ensure all values are valid numbers (API may return null/string)
+          setData({
+            baseSalary:      parseFloat(result.baseSalary)      || 2500,
+            salesTarget:     parseFloat(result.salesTarget)     || 35000,
+            bonusValue:      parseFloat(result.bonusValue)      || 1000,
+            commissionRate:  parseFloat(result.commissionRate)  || 10,
+            totalSold:       parseFloat(result.totalSold)       || 0,
+          });
         }
       } catch (err) {
         console.error("Failed to fetch closer data:", err);
