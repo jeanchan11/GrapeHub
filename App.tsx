@@ -42,6 +42,7 @@ import ContasAReceber from './src/pages/ContasAReceber';
 import ColaboradoresPage from './src/pages/ColaboradoresPage';
 
 import MeetingNotes from './src/pages/MeetingNotes';
+import PlanejamentoCrescimento from './src/pages/PlanejamentoCrescimento';
 import CandidateApplicationForm from './src/pages/CandidateApplicationForm';
 import CollaboratorOnboardingForm from './src/pages/CollaboratorOnboardingForm';
 import SaboteurTestPage from './src/pages/SaboteurTestPage';
@@ -299,6 +300,8 @@ const AppContent: React.FC = () => {
         return <ContasAReceber />;
       case 'colaboradores':
         return <ColaboradoresPage />;
+      case 'planejamento-crescimento':
+        return <PlanejamentoCrescimento />;
 
       case 'meeting-notes': {
         // Find the page label from menu for the title

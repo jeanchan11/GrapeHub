@@ -36,6 +36,8 @@ process.on("unhandledRejection", (reason, promise) => {
 dotenv.config();
 
 // ── Firebase Admin SDK initialization ──────────────────────────────────────
+const FIREBASE_STORAGE_BUCKET = (process.env.FIREBASE_STORAGE_BUCKET || process.env.VITE_FIREBASE_STORAGE_BUCKET || '').replace(/^gs:\/\//, '');
+
 if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
   admin.initializeApp({
     credential: admin.credential.cert({
@@ -43,6 +45,7 @@ if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && proc
       clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
       privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
     }),
+    storageBucket: FIREBASE_STORAGE_BUCKET || `${process.env.FIREBASE_PROJECT_ID}.appspot.com`,
   });
   console.log('[BOOT] Firebase Admin SDK initialized.');
 } else {
@@ -1440,6 +1443,94 @@ async function startServer() {
       // Bump CRM Financeiro order to 4
       await pool.query(`UPDATE menu_pages SET order_index = 4 WHERE id = 'crm-financeiro' AND section_id = 'financeiro'`);
     } catch (e: any) { console.log('Skipping contas-a-receber menu injection:', e.message); }
+
+    // Growth Planning Schema & Seed Migrations
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS growth_projections (
+          id SERIAL PRIMARY KEY,
+          year INTEGER NOT NULL,
+          month INTEGER NOT NULL,
+          initial_clients INTEGER DEFAULT 0,
+          churn_rate NUMERIC(5,2) DEFAULT 0.00,
+          churn_count INTEGER DEFAULT 0,
+          new_clients INTEGER DEFAULT 0,
+          traffic_budget NUMERIC(12,2) DEFAULT 0.00,
+          cac NUMERIC(10,2) DEFAULT 0.00,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW(),
+          UNIQUE(year, month)
+        );
+      `);
+
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS growth_realized (
+          id SERIAL PRIMARY KEY,
+          year INTEGER NOT NULL,
+          month INTEGER NOT NULL,
+          initial_clients INTEGER DEFAULT 0,
+          churn_rate NUMERIC(5,2) DEFAULT 0.00,
+          churn_count INTEGER DEFAULT 0,
+          new_clients INTEGER DEFAULT 0,
+          traffic_budget NUMERIC(12,2) DEFAULT 0.00,
+          cac NUMERIC(10,2) DEFAULT 0.00,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW(),
+          UNIQUE(year, month)
+        );
+      `);
+
+      // Seed Projections for 2026 based on baseline planning parameters
+      // Month | Initial | Churn% | ChurnCount | New | Traffic | CAC
+      const baselineProjections = [
+        { m: 1, init: 64, churn: 10.0, churnCnt: 0, newCl: 15, traffic: 20000.00, cac: 1300.00 },
+        { m: 2, init: 79, churn: 10.0, churnCnt: 8, newCl: 15, traffic: 20000.00, cac: 1300.00 },
+        { m: 3, init: 86, churn: 10.0, churnCnt: 9, newCl: 15, traffic: 20000.00, cac: 1300.00 },
+        { m: 4, init: 92, churn: 10.0, churnCnt: 9, newCl: 15, traffic: 20000.00, cac: 1300.00 },
+        { m: 5, init: 98, churn: 10.0, churnCnt: 10, newCl: 15, traffic: 20000.00, cac: 1300.00 },
+        { m: 6, init: 103, churn: 10.0, churnCnt: 10, newCl: 15, traffic: 20000.00, cac: 1300.00 },
+        { m: 7, init: 108, churn: 10.0, churnCnt: 11, newCl: 15, traffic: 20000.00, cac: 1300.00 },
+        { m: 8, init: 112, churn: 10.0, churnCnt: 11, newCl: 15, traffic: 20000.00, cac: 1300.00 },
+        { m: 9, init: 116, churn: 10.0, churnCnt: 12, newCl: 15, traffic: 20000.00, cac: 1300.00 },
+        { m: 10, init: 119, churn: 10.0, churnCnt: 12, newCl: 15, traffic: 20000.00, cac: 1300.00 },
+        { m: 11, init: 122, churn: 10.0, churnCnt: 12, newCl: 15, traffic: 20000.00, cac: 1300.00 },
+        { m: 12, init: 125, churn: 10.0, churnCnt: 13, newCl: 15, traffic: 20000.00, cac: 1300.00 }
+      ];
+
+      for (const p of baselineProjections) {
+        await pool.query(`
+          INSERT INTO growth_projections (year, month, initial_clients, churn_rate, churn_count, new_clients, traffic_budget, cac)
+          VALUES (2026, $1, $2, $3, $4, $5, $6, $7)
+          ON CONFLICT (year, month) DO NOTHING
+        `, [p.m, p.init, p.churn, p.churnCnt, p.newCl, p.traffic, p.cac]);
+
+        // Insert placeholder empty realized metrics for 2026 if they do not exist
+        await pool.query(`
+          INSERT INTO growth_realized (year, month, initial_clients, churn_rate, churn_count, new_clients, traffic_budget, cac)
+          VALUES (2026, $1, 0, 0, 0, 0, 0, 0)
+          ON CONFLICT (year, month) DO NOTHING
+        `, [p.m]);
+      }
+
+      // Inject Growth Planning page into menu_pages under financeiro section
+      await pool.query(`
+        INSERT INTO menu_pages (id, section_id, label, icon, template, order_index)
+        VALUES ('planejamento-crescimento', 'financeiro', 'Planejamento', 'TrendingUp', 'planejamento-crescimento', 5)
+        ON CONFLICT (id) DO NOTHING
+      `);
+
+      // Migration: Grant access to planejamento-crescimento for users who have contas-a-pagar
+      await pool.query(`
+        UPDATE users 
+        SET allowed_pages = allowed_pages || '["planejamento-crescimento"]'::jsonb
+        WHERE allowed_pages @> '["contas-a-pagar"]'::jsonb 
+        AND NOT allowed_pages @> '["planejamento-crescimento"]'::jsonb
+      `);
+
+      console.log("[DB] Growth planning structures initialized and populated.");
+    } catch (e: any) {
+      console.error("[DB] Error running growth planning migrations:", e.message);
+    }
 
   } catch (err) {
     console.error("Error initializing database tables:", err);
@@ -3566,6 +3657,44 @@ app.get("/api/todos", async (req, res) => {
 
 
 
+
+  // Image Upload via Server (uses Firebase Admin SDK - bypasses client Storage config issues)
+  const imageUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 20 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+      if (file.mimetype.startsWith('image/')) { cb(null, true); }
+      else { cb(new Error('Apenas imagens sao permitidas.'), false); }
+    }
+  });
+
+  app.post('/api/upload', imageUpload.single('file'), async (req: any, res: any) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
+      const bucketName = FIREBASE_STORAGE_BUCKET || `${process.env.FIREBASE_PROJECT_ID}.appspot.com`;
+      const bucket = admin.storage().bucket(bucketName);
+      const uid = (req as any).user?.uid || 'anonymous';
+      const safeFileName = req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const filePath = 'optimizations/' + uid + '/' + Date.now() + '_' + safeFileName;
+      const fileRef = bucket.file(filePath);
+
+      await fileRef.save(req.file.buffer, {
+        metadata: { contentType: req.file.mimetype },
+      });
+
+      // Uniform bucket-level access is enabled — use signed URL (10-year expiry) instead of makePublic()
+      const [signedUrl] = await fileRef.getSignedUrl({
+        action: 'read',
+        expires: Date.now() + 1000 * 60 * 60 * 24 * 365 * 10, // 10 years
+      });
+
+      res.json({ url: signedUrl });
+    } catch (err: any) {
+      console.error('[Upload] Error uploading image:', err);
+      res.status(500).json({ error: 'Falha no upload: ' + (err.message || 'Erro desconhecido') });
+    }
+  });
+
   app.post("/api/optimizations", async (req, res) => {
     const { id, product_id, author, authorPhoto, role, date, time, message, is_internal, images } = req.body;
     try {
@@ -4848,6 +4977,125 @@ app.get("/api/todos", async (req, res) => {
   });
   app.get("/api/financeiro/recorrentes/bills", (_req, res) => {
     res.status(410).json({ error: "Deprecated." });
+  });
+
+  // ── GROWTH PLANNING ENDPOINTS ───────────────────────────────────────
+  app.get("/api/growth-planning", async (req, res) => {
+    try {
+      const year = parseInt(req.query.year as string, 10) || 2026;
+
+      const projResult = await pool.query(
+        "SELECT * FROM growth_projections WHERE year = $1 ORDER BY month ASC",
+        [year]
+      );
+
+      const realResult = await pool.query(
+        "SELECT * FROM growth_realized WHERE year = $1 ORDER BY month ASC",
+        [year]
+      );
+
+      res.json({
+        projections: projResult.rows,
+        realized: realResult.rows
+      });
+    } catch (err: any) {
+      console.error("Error fetching growth planning data:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put("/api/growth-planning/projections", async (req: any, res: any) => {
+    try {
+      const {
+        year,
+        month,
+        initial_clients,
+        churn_rate,
+        churn_count,
+        new_clients,
+        traffic_budget,
+        cac
+      } = req.body;
+
+      if (!year || !month) {
+        return res.status(400).json({ error: "Ano e Mês são campos obrigatórios." });
+      }
+
+      await pool.query(
+        `INSERT INTO growth_projections (year, month, initial_clients, churn_rate, churn_count, new_clients, traffic_budget, cac, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+         ON CONFLICT (year, month) DO UPDATE SET
+           initial_clients = EXCLUDED.initial_clients,
+           churn_rate = EXCLUDED.churn_rate,
+           churn_count = EXCLUDED.churn_count,
+           new_clients = EXCLUDED.new_clients,
+           traffic_budget = EXCLUDED.traffic_budget,
+           cac = EXCLUDED.cac,
+           updated_at = NOW()`,
+        [
+          parseInt(year, 10),
+          parseInt(month, 10),
+          parseInt(initial_clients, 10) || 0,
+          parseFloat(churn_rate) || 0,
+          parseInt(churn_count, 10) || 0,
+          parseInt(new_clients, 10) || 0,
+          parseFloat(traffic_budget) || 0,
+          parseFloat(cac) || 0
+        ]
+      );
+
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error("Error updating growth projections:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put("/api/growth-planning/realized", async (req: any, res: any) => {
+    try {
+      const {
+        year,
+        month,
+        initial_clients,
+        churn_rate,
+        churn_count,
+        new_clients,
+        traffic_budget,
+        cac
+      } = req.body;
+
+      if (!year || !month) {
+        return res.status(400).json({ error: "Ano e Mês são campos obrigatórios." });
+      }
+
+      await pool.query(
+        `INSERT INTO growth_realized (year, month, initial_clients, churn_rate, churn_count, new_clients, traffic_budget, cac, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+         ON CONFLICT (year, month) DO UPDATE SET
+           initial_clients = EXCLUDED.initial_clients,
+           churn_rate = EXCLUDED.churn_rate,
+           churn_count = EXCLUDED.churn_count,
+           new_clients = EXCLUDED.new_clients,
+           traffic_budget = EXCLUDED.traffic_budget,
+           cac = EXCLUDED.cac,
+           updated_at = NOW()`,
+        [
+          parseInt(year, 10),
+          parseInt(month, 10),
+          parseInt(initial_clients, 10) || 0,
+          parseFloat(churn_rate) || 0,
+          parseInt(churn_count, 10) || 0,
+          parseInt(new_clients, 10) || 0,
+          parseFloat(traffic_budget) || 0,
+          parseFloat(cac) || 0
+        ]
+      );
+
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error("Error updating growth realized data:", err);
+      res.status(500).json({ error: err.message });
+    }
   });
   app.get("/api/financeiro/recorrentes/entries", (_req, res) => {
     res.status(410).json({ error: "Deprecated." });

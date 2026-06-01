@@ -1735,11 +1735,21 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       const imageUrls: string[] = [];
       if (images.length > 0) {
         if (!auth.currentUser) throw new Error("Usuário não autenticado.");
+        // Upload images via server endpoint (uses Firebase Admin SDK - more reliable)
         for (const image of images) {
-          const storageRef = ref(storage, `users/${auth.currentUser.uid}/optimizations/${Date.now()}_${image.name}`);
-          await uploadBytes(storageRef, image);
-          const downloadURL = await getDownloadURL(storageRef);
-          imageUrls.push(downloadURL);
+          const formData = new FormData();
+          formData.append('file', image);
+          const uploadRes = await fetch('/api/upload', {
+            method: 'POST',
+            body: formData,
+            // Note: do NOT set Content-Type manually — browser sets it with boundary for FormData
+          });
+          if (!uploadRes.ok) {
+            const errText = await uploadRes.text().catch(() => `HTTP ${uploadRes.status}`);
+            throw new Error(`Erro no upload da imagem: ${errText}`);
+          }
+          const { url } = await uploadRes.json();
+          imageUrls.push(url);
         }
       }
 
@@ -1769,14 +1779,31 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
         status: category === 'Mudança de Status' ? 'Mudança de Status' : undefined
       };
 
-      await fetch('/api/optimizations', {
+      // Save optimization to database — use is_internal (snake_case) as expected by the API
+      const apiResponse = await fetch('/api/optimizations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ...note,
-          product_id: selectedProduct.id
+          id: note.id,
+          product_id: selectedProduct.id,
+          author: note.author,
+          authorPhoto: note.authorPhoto,
+          role: note.role,
+          date: note.date,
+          time: note.time,
+          message: note.message,
+          is_internal: isInternal,
+          images: imageUrls,
+          status: note.status,
+          type: note.type,
+          optimization: note.optimization
         })
       });
+
+      if (!apiResponse.ok) {
+        const errText = await apiResponse.text().catch(() => `HTTP ${apiResponse.status}`);
+        throw new Error(`Erro ao salvar nota no servidor (${apiResponse.status}): ${errText}`);
+      }
 
       const updatedProduct = {
         ...selectedProduct,
@@ -1802,7 +1829,8 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       });
     } catch (err) {
       console.error("Error saving optimization:", err);
-      alert("Houve um erro ao enviar a imagem ou salvar a nota. Verifique se o arquivo não é grande demais ou se sua conexão está estável.");
+      const errMsg = err instanceof Error ? err.message : String(err);
+      alert(`Houve um erro ao salvar a nota: ${errMsg}`);
     } finally {
       setIsSavingNote(false);
     }

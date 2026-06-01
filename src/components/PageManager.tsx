@@ -440,6 +440,8 @@ const templates = [
   { id: 'gerente-operacional', label: 'Calculadora Gerente Operacional' },
   { id: 'meeting-notes', label: '📋 Notas de Reunião' },
   { id: 'colaboradores', label: 'Colaboradores' },
+  { id: 'comercial-grape', label: 'Calculadora Comercial' },
+  { id: 'planejamento-crescimento', label: 'Planejamento de Crescimento' },
 ];
 
 const SortablePage = ({ page, parentId, parentType, editingPage, editPageData, setEditPageData, setEditingPage, handleSaveEditPage, handleDeletePage, handleEditPage, menu }: any) => {

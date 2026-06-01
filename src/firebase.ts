@@ -12,7 +12,11 @@ const firebaseConfig = {
   authDomain: (window as any).FIREBASE_AUTH_DOMAIN || import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || (import.meta.env as any).FIREBASE_AUTH_DOMAIN,
   projectId: (window as any).FIREBASE_PROJECT_ID || import.meta.env.VITE_FIREBASE_PROJECT_ID || (import.meta.env as any).FIREBASE_PROJECT_ID,
   appId: (window as any).FIREBASE_APP_ID || import.meta.env.VITE_FIREBASE_APP_ID || (import.meta.env as any).FIREBASE_APP_ID,
-  storageBucket: (window as any).FIREBASE_STORAGE_BUCKET || import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || (import.meta.env as any).FIREBASE_STORAGE_BUCKET,
+  storageBucket: (() => {
+    const raw = (window as any).FIREBASE_STORAGE_BUCKET || import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || (import.meta.env as any).FIREBASE_STORAGE_BUCKET || '';
+    // Firebase web SDK expects just the bucket hostname, not the gs:// URI
+    return raw.replace(/^gs:\/\//, '');
+  })(),
 };
 
 const firestoreDatabaseId = (window as any).FIREBASE_FIRESTORE_DATABASE_ID || import.meta.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID || (import.meta.env as any).FIREBASE_FIRESTORE_DATABASE_ID || '(default)';

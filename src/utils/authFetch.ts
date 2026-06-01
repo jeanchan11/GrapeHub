@@ -25,6 +25,17 @@ export function setupAuthInterceptor(): void {
         if (!headers.has('Authorization')) {
           headers.set('Authorization', `Bearer ${token}`);
         }
+        // When body is FormData, don't pass headers object so browser can set
+        // Content-Type: multipart/form-data with correct boundary automatically
+        const isFormData = init?.body instanceof FormData;
+        if (isFormData) {
+          // Build plain object headers to allow browser to append Content-Type
+          const headersObj: Record<string, string> = {};
+          headers.forEach((value, key) => { headersObj[key] = value; });
+          delete headersObj['content-type'];
+          delete headersObj['Content-Type'];
+          return originalFetch(input, { ...init, headers: headersObj });
+        }
         return originalFetch(input, { ...init, headers });
       } catch (err) {
         console.warn('[AuthInterceptor] Failed to get token:', err);
