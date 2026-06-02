@@ -12195,7 +12195,8 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
 
       app.use("*all", async (req, res, next) => {
         try {
-          let template = fs.readFileSync(path.resolve(__dirname, 'index.html'), 'utf-8');
+          const indexHtmlPath = path.resolve(process.cwd(), 'index.html');
+          let template = fs.readFileSync(indexHtmlPath, 'utf-8');
           template = await vite.transformIndexHtml(req.originalUrl, template);
 
           const config = {
@@ -12219,6 +12220,7 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
           const html = template.replace('</head>', `${injection}</head>`);
           res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
         } catch (e) {
+          console.error('[VITE RENDER ERROR]', e);
           vite.ssrFixStacktrace(e as Error);
           next(e);
         }
