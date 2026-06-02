@@ -27,6 +27,7 @@ import Automacoes from './src/pages/Automacoes';
 import CrmSequencias from './src/pages/CrmSequencias';
 import MarketingDashboard from './src/pages/MarketingDashboard';
 import MarketingAcoes from './src/pages/MarketingAcoes';
+import PlaybookAcoes from './src/pages/PlaybookAcoes';
 import DashboardOperacional from './src/pages/DashboardOperacional';
 import ParceirosSquad from './src/pages/ParceirosSquad';
 import TodoStaff from './src/pages/TodoStaff';
@@ -276,6 +277,8 @@ const AppContent: React.FC = () => {
         return <MarketingDashboard />;
       case 'marketing-acoes':
         return <MarketingAcoes key={activePage} activePage={activePage} />;
+      case 'playbook-acoes':
+        return <PlaybookAcoes />;
       case 'dashboard-operacional':
         return <DashboardOperacional activePage={activePage} />;
       case 'todo-staff':

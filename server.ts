@@ -34,26 +34,75 @@ process.on("unhandledRejection", (reason, promise) => {
 
 dotenv.config();
 
-// ── Firebase Admin SDK initialization ──────────────────────────────────────
+// ── Firebase Admin SDK initialization (opcional — apenas para Storage) ──────
 const FIREBASE_STORAGE_BUCKET = (process.env.FIREBASE_STORAGE_BUCKET || process.env.VITE_FIREBASE_STORAGE_BUCKET || '').replace(/^gs:\/\//, '');
+const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || '';
 
-if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-    }),
-    storageBucket: FIREBASE_STORAGE_BUCKET || `${process.env.FIREBASE_PROJECT_ID}.appspot.com`,
-  });
-  console.log('[BOOT] Firebase Admin SDK initialized.');
-} else {
-  console.warn('[BOOT] ⚠️  Firebase Admin credentials missing! Auth middleware will reject all requests.');
-  // Initialize with no credential so admin.auth() doesn't crash
-  if (!admin.apps.length) {
-    admin.initializeApp();
+let firebaseAdminReady = false;
+if (FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
+  try {
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId: FIREBASE_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+      }),
+      storageBucket: FIREBASE_STORAGE_BUCKET || `${FIREBASE_PROJECT_ID}.appspot.com`,
+    });
+    firebaseAdminReady = true;
+    console.log('[BOOT] Firebase Admin SDK initialized (Storage disponível).');
+  } catch (firebaseInitError: any) {
+    console.warn('[BOOT] Firebase Admin SDK não inicializado (Storage indisponível):', firebaseInitError.message);
   }
+} else {
+  console.log('[BOOT] Firebase Admin SDK não configurado — usando verificação JWT pública.');
 }
+
+// ── Firebase JWT verification via Google public keys (sem chave privada) ──────
+let _cachedPublicKeys: Record<string, string> = {};
+let _cacheExpiry = 0;
+
+async function getFirebasePublicKeys(): Promise<Record<string, string>> {
+  if (Date.now() < _cacheExpiry && Object.keys(_cachedPublicKeys).length > 0) {
+    return _cachedPublicKeys;
+  }
+  const res = await fetch('https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com');
+  const cc = res.headers.get('Cache-Control') || '';
+  const maxAge = parseInt(cc.match(/max-age=(\d+)/)?.[1] || '3600', 10);
+  _cachedPublicKeys = await res.json() as Record<string, string>;
+  _cacheExpiry = Date.now() + maxAge * 1000;
+  return _cachedPublicKeys;
+}
+
+async function verifyFirebaseToken(token: string): Promise<any> {
+  // Decode header to get kid (key ID)
+  const parts = token.split('.');
+  if (parts.length !== 3) throw new Error('Token JWT inválido');
+  const header = JSON.parse(Buffer.from(parts[0], 'base64url').toString());
+  const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
+
+  // Validate basic claims
+  const now = Math.floor(Date.now() / 1000);
+  if (payload.exp < now) throw new Error('Token expirado');
+  if (payload.iat > now + 300) throw new Error('Token do futuro');
+  if (payload.aud !== FIREBASE_PROJECT_ID) throw new Error('Audience inválido');
+  if (payload.iss !== `https://securetoken.google.com/${FIREBASE_PROJECT_ID}`) throw new Error('Issuer inválido');
+
+  // Get matching public key and verify signature
+  const keys = await getFirebasePublicKeys();
+  const publicKey = keys[header.kid];
+  if (!publicKey) throw new Error('Chave pública não encontrada para kid: ' + header.kid);
+
+  const signatureInput = parts[0] + '.' + parts[1];
+  const signature = Buffer.from(parts[2], 'base64url');
+  const verify = crypto.createVerify('RSA-SHA256');
+  verify.update(signatureInput);
+  const valid = verify.verify(publicKey, signature);
+  if (!valid) throw new Error('Assinatura JWT inválida');
+
+  return payload;
+}
+
 
 // ── Auth Middleware ─────────────────────────────────────────────────────────
 // Routes that must remain public (webhooks, health, public forms)
@@ -88,7 +137,7 @@ async function authenticateToken(req: any, res: any, next: any) {
 
   const token = authHeader.split('Bearer ')[1];
   try {
-    const decoded = await admin.auth().verifyIdToken(token);
+    const decoded = await verifyFirebaseToken(token);
     req.user = decoded;
     next();
   } catch (err) {
@@ -3669,10 +3718,13 @@ app.get("/api/todos", async (req, res) => {
 
 
 
-  // Image Upload via Server (uses Firebase Admin SDK)
-  // Receives image as base64 JSON — zero multipart dependencies, works in all environments
+  // Image Upload via Server (uses Firebase Admin SDK — only if FIREBASE_PRIVATE_KEY is configured)
   app.post('/api/upload', express.json({ limit: '30mb' }), async (req: any, res: any) => {
     try {
+      if (!firebaseAdminReady) {
+        return res.status(503).json({ error: 'Upload de imagens indisponível: Firebase Admin não configurado. Configure FIREBASE_PRIVATE_KEY nas variáveis de ambiente.' });
+      }
+
       const { fileData, mimeType, fileName } = req.body;
 
       if (!fileData) return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
@@ -3681,7 +3733,7 @@ app.get("/api/todos", async (req, res) => {
       const fileBuffer = Buffer.from(fileData, 'base64');
       if (fileBuffer.length === 0) return res.status(400).json({ error: 'Arquivo vazio.' });
 
-      const bucketName = FIREBASE_STORAGE_BUCKET || `${process.env.FIREBASE_PROJECT_ID}.appspot.com`;
+      const bucketName = FIREBASE_STORAGE_BUCKET || `${FIREBASE_PROJECT_ID}.appspot.com`;
       const bucket = admin.storage().bucket(bucketName);
       const uid = (req as any).user?.uid || 'anonymous';
       const safeFileName = (fileName || 'upload.jpg').replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -3701,6 +3753,7 @@ app.get("/api/todos", async (req, res) => {
       res.status(500).json({ error: 'Falha no upload: ' + (err.message || 'Erro desconhecido') });
     }
   });
+
 
 
   app.post("/api/optimizations", async (req, res) => {

@@ -11,9 +11,240 @@ import { useMenu } from '../context/MenuContext';
 import {
   Search, Bell, Settings,
   ChevronRight, ChevronLeft, LogOut,
-  ChevronDown, Sun, Moon, Zap, Folder, Camera, Phone, User as UserIcon, Save, X
+  ChevronDown, Sun, Moon, Zap, Folder, Camera, Phone, User as UserIcon, Save, X,
+  MoreHorizontal, Shield, Loader2, Check
 } from 'lucide-react';
 import Cropper from 'react-easy-crop';
+
+// ─── Page Permissions Modal ───────────────────────────────────────────────────
+
+interface PagePermissionsModalProps {
+  pageId: string;
+  pageLabel: string;
+  onClose: () => void;
+}
+
+const PagePermissionsModal: React.FC<PagePermissionsModalProps> = ({ pageId, pageLabel, onClose }) => {
+  const [users, setUsers] = useState<UserData[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [savingId, setSavingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const res = await fetch('/api/users');
+        if (res.ok) {
+          const data = await res.json();
+          setUsers(data);
+        }
+      } catch (err) {
+        console.error('Error fetching users:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchUsers();
+  }, []);
+
+  const toggleAccess = async (user: UserData) => {
+    setSavingId(user.id);
+    const hasAccess = user.allowedPages?.includes(pageId);
+    const newPages = hasAccess
+      ? (user.allowedPages || []).filter(p => p !== pageId)
+      : [...(user.allowedPages || []), pageId];
+    
+    try {
+      const res = await fetch(`/api/users/${user.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          role: user.role,
+          allowedPages: newPages,
+          name: user.name,
+          squad: user.squad,
+          picture: user.picture
+        })
+      });
+      if (res.ok) {
+        setUsers(prev => prev.map(u =>
+          u.id === user.id ? { ...u, allowedPages: newPages } : u
+        ));
+      }
+    } catch (err) {
+      console.error('Error toggling access:', err);
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const usersWithAccess = users.filter(u => u.role === 'superadmin' || u.allowedPages?.includes(pageId));
+  const usersWithoutAccess = users.filter(u => u.role !== 'superadmin' && !u.allowedPages?.includes(pageId));
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 10 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 10 }}
+        transition={{ duration: 0.2 }}
+        className="bg-white dark:bg-[#1e1b29] border border-slate-200 dark:border-white/10 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="p-5 border-b border-slate-100 dark:border-white/5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-violet-600/20 rounded-xl">
+              <Shield size={16} className="text-violet-400" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-light-text dark:text-white">Permissões</h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">{pageLabel}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors rounded-lg hover:bg-slate-100 dark:hover:bg-white/5">
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="max-h-[60vh] overflow-y-auto">
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 size={24} className="animate-spin text-violet-500" />
+            </div>
+          ) : (
+            <>
+              {/* Users with access */}
+              <div className="px-5 pt-4 pb-2">
+                <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mb-3">Com acesso · {usersWithAccess.length}</p>
+                <div className="flex flex-col gap-1">
+                  {usersWithAccess.map(user => (
+                    <div key={user.id} className="flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-white/5 transition-colors group">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-8 h-8 rounded-full bg-violet-500/20 flex items-center justify-center text-violet-600 dark:text-violet-400 font-bold text-xs shrink-0 overflow-hidden">
+                          {user.picture
+                            ? <img src={user.picture} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            : (user.name || user.email)[0].toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-light-text dark:text-white truncate">{user.name || user.email}</p>
+                          {user.name && <p className="text-[10px] text-slate-500 truncate">{user.email}</p>}
+                        </div>
+                      </div>
+                      {user.role === 'superadmin' ? (
+                        <span className="text-[9px] font-bold text-rose-500 bg-rose-500/10 px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0">Admin</span>
+                      ) : (
+                        <button
+                          onClick={() => toggleAccess(user)}
+                          disabled={savingId === user.id}
+                          className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-500 hover:bg-red-500/10 hover:text-red-400 transition-all shrink-0"
+                          title="Remover acesso"
+                        >
+                          {savingId === user.id ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Users without access */}
+              {usersWithoutAccess.length > 0 && (
+                <div className="px-5 pt-3 pb-4 border-t border-slate-100 dark:border-white/5 mt-2">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Sem acesso · {usersWithoutAccess.length}</p>
+                  <div className="flex flex-col gap-1">
+                    {usersWithoutAccess.map(user => (
+                      <div key={user.id} className="flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-white/5 transition-colors group opacity-60 hover:opacity-100">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-8 h-8 rounded-full bg-slate-500/20 flex items-center justify-center text-slate-500 font-bold text-xs shrink-0 overflow-hidden">
+                            {user.picture
+                              ? <img src={user.picture} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                              : (user.name || user.email)[0].toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-light-text dark:text-white truncate">{user.name || user.email}</p>
+                            {user.name && <p className="text-[10px] text-slate-500 truncate">{user.email}</p>}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => toggleAccess(user)}
+                          disabled={savingId === user.id}
+                          className="p-1.5 rounded-lg bg-slate-100 dark:bg-white/5 text-slate-400 hover:bg-emerald-500/10 hover:text-emerald-500 transition-all shrink-0"
+                          title="Conceder acesso"
+                        >
+                          {savingId === user.id ? <Loader2 size={14} className="animate-spin" /> : <Shield size={14} />}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
+// ─── PageItemWithMenu (reusable page link with 3-dot menu) ────────────────────
+
+interface PageItemProps {
+  page: any;
+  isActive: boolean;
+  paddingLeft: string;
+  onPageChange: (id: string) => void;
+  canManagePermissions: boolean;
+  onOpenPermissions: (pageId: string, pageLabel: string) => void;
+}
+
+const PageItemWithMenu: React.FC<PageItemProps> = ({ page, isActive, paddingLeft, onPageChange, canManagePermissions, onOpenPermissions }) => {
+  const [showMenu, setShowMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const PageIcon = iconMap[page.icon];
+
+  useEffect(() => {
+    if (!showMenu) return;
+    const handleClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setShowMenu(false);
+    };
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
+  }, [showMenu]);
+
+  return (
+    <div
+      className={`group/page relative flex items-center gap-2 pr-2 rounded-lg cursor-pointer transition-all duration-200 ${isActive ? 'text-white font-semibold' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white'}`}
+      style={{ paddingLeft, paddingRight: '8px', paddingTop: '7px', paddingBottom: '7px', borderRadius: '8px', margin: '1px 8px 1px 0', background: isActive ? '#7C3AED' : 'transparent' }}
+    >
+      <div className="flex-1 flex items-center gap-2 min-w-0" onClick={() => onPageChange(page.id)}>
+        {PageIcon && <PageIcon size={14} color={isActive ? '#FFFFFF' : (page.icon_color || '#9CA3AF')} />}
+        <span className="text-sm font-medium truncate" style={{ color: isActive ? '#FFFFFF' : 'inherit' }}>{page.label}</span>
+      </div>
+      {canManagePermissions && (
+        <div className="relative" ref={menuRef}>
+          <button
+            onClick={e => { e.stopPropagation(); setShowMenu(!showMenu); }}
+            className={`p-1 rounded-md transition-all shrink-0 ${isActive ? 'text-white/60 hover:text-white hover:bg-white/20' : 'text-transparent group-hover/page:text-slate-400 hover:!text-slate-600 dark:hover:!text-white hover:!bg-slate-100 dark:hover:!bg-white/10'}`}
+          >
+            <MoreHorizontal size={14} />
+          </button>
+          {showMenu && (
+            <div className="absolute right-0 top-7 z-[200] w-40 bg-white dark:bg-[#1e1b29] border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl overflow-hidden">
+              <button
+                onClick={e => { e.stopPropagation(); setShowMenu(false); onOpenPermissions(page.id, page.label); }}
+                className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors text-left"
+              >
+                <Shield size={13} className="text-violet-500" />
+                Permissões
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const getCroppedImg = async (imageSrc: string, pixelCrop: any): Promise<string> => {
   const image = new Image();
@@ -55,6 +286,19 @@ interface SidebarProps {
 type FlyoutItem = { id: string; label: string; icon: string; icon_color?: string; indent: number };
 
 const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userData, theme, toggleTheme }) => {
+  const userRole = userData?.role;
+  const canManagePermissionsBase = userRole === 'superadmin' || userRole === 'diretor-operacional';
+  const [permissionsPage, setPermissionsPage] = useState<{ id: string; label: string } | null>(null);
+
+  // Diretor operacional não pode gerenciar permissões de páginas do setor financeiro
+  const canManageForSection = (sectionTitle: string) => {
+    if (userRole === 'superadmin') return true;
+    if (userRole === 'diretor-operacional') {
+      return !sectionTitle.toLowerCase().includes('financeiro');
+    }
+    return false;
+  };
+
   const [isCollapsed, setIsCollapsed] = useState(() => {
     try { return localStorage.getItem('sidebar-collapsed') === 'true'; } catch { return false; }
   });
@@ -395,19 +639,17 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                         className="overflow-hidden"
                       >
                         {/* Direct pages */}
-                        {Array.isArray(section.pages) && section.pages.filter(p => isPageAllowed(p.id)).map(page => {
-                          const PageIcon = iconMap[page.icon];
-                          const isActive = activePage === page.id;
-                          return (
-                            <div key={page.id} onClick={() => onPageChange(page.id)}
-                              style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '28px', paddingRight: '12px', paddingTop: '7px', paddingBottom: '7px', borderRadius: '8px', margin: '1px 8px 1px 0', cursor: 'pointer', background: isActive ? '#7C3AED' : 'transparent' }}
-                              className={`w-full text-sm font-medium transition-all duration-200 ${isActive ? 'text-white font-semibold' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white'}`}
-                            >
-                              {PageIcon && <PageIcon size={14} color={isActive ? '#FFFFFF' : (page.icon_color || '#9CA3AF')} />}
-                              <span style={{ color: isActive ? '#FFFFFF' : 'inherit' }}>{page.label}</span>
-                            </div>
-                          );
-                        })}
+                        {Array.isArray(section.pages) && section.pages.filter(p => isPageAllowed(p.id)).map(page => (
+                          <PageItemWithMenu
+                            key={page.id}
+                            page={page}
+                            isActive={activePage === page.id}
+                            paddingLeft="28px"
+                            onPageChange={onPageChange}
+                            canManagePermissions={canManageForSection(section.title)}
+                            onOpenPermissions={(id, label) => setPermissionsPage({ id, label })}
+                          />
+                        ))}
 
                         {/* SubSubSessions directly in Section */}
                         {Array.isArray(section.subSubSessions) && section.subSubSessions.filter((sss: any) => hasAllowedPagesInSubSubSession(sss)).map((subSubSession: any) => {
@@ -433,19 +675,17 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                               <AnimatePresence initial={false}>
                                 {(!!query || expanded[`secsubsub-${subSubSession.id}`]) && (
                                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2, ease: 'easeInOut' }} className="overflow-hidden">
-                                    {Array.isArray(subSubSession.pages) && subSubSession.pages.filter((p: any) => isPageAllowed(p.id)).map((page: any) => {
-                                      const PageIcon = iconMap[page.icon];
-                                      const isActive = activePage === page.id;
-                                      return (
-                                        <div key={page.id} onClick={() => onPageChange(page.id)}
-                                          style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '40px', paddingRight: '12px', paddingTop: '7px', paddingBottom: '7px', borderRadius: '8px', margin: '1px 8px 1px 0', cursor: 'pointer', background: isActive ? '#7C3AED' : 'transparent' }}
-                                          className={`w-full text-sm font-medium transition-all duration-200 ${isActive ? 'text-white font-semibold' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white'}`}
-                                        >
-                                          {PageIcon && <PageIcon size={14} color={isActive ? '#FFFFFF' : (page.icon_color || '#9CA3AF')} />}
-                                          <span style={{ color: isActive ? '#FFFFFF' : 'inherit' }}>{page.label}</span>
-                                        </div>
-                                      );
-                                    })}
+                                    {Array.isArray(subSubSession.pages) && subSubSession.pages.filter((p: any) => isPageAllowed(p.id)).map((page: any) => (
+                                      <PageItemWithMenu
+                                        key={page.id}
+                                        page={page}
+                                        isActive={activePage === page.id}
+                                        paddingLeft="40px"
+                                        onPageChange={onPageChange}
+                                        canManagePermissions={canManageForSection(section.title)}
+                                        onOpenPermissions={(id, label) => setPermissionsPage({ id, label })}
+                                      />
+                                    ))}
                                   </motion.div>
                                 )}
                               </AnimatePresence>
@@ -478,19 +718,17 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                               <AnimatePresence initial={false}>
                                 {(!!query || expanded[`sub-${subSession.id}`]) && (
                                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2, ease: 'easeInOut' }} className="overflow-hidden">
-                                    {Array.isArray(subSession.pages) && subSession.pages.filter(p => isPageAllowed(p.id)).map(page => {
-                                      const PageIcon = iconMap[page.icon];
-                                      const isActive = activePage === page.id;
-                                      return (
-                                        <div key={page.id} onClick={() => onPageChange(page.id)}
-                                          style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '40px', paddingRight: '12px', paddingTop: '7px', paddingBottom: '7px', borderRadius: '8px', margin: '1px 8px 1px 0', cursor: 'pointer', background: isActive ? '#7C3AED' : 'transparent' }}
-                                          className={`w-full text-sm font-medium transition-all duration-200 ${isActive ? 'text-white font-semibold' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white'}`}
-                                        >
-                                          {PageIcon && <PageIcon size={14} color={isActive ? '#FFFFFF' : (page.icon_color || '#9CA3AF')} />}
-                                          <span style={{ color: isActive ? '#FFFFFF' : 'inherit' }}>{page.label}</span>
-                                        </div>
-                                      );
-                                    })}
+                                    {Array.isArray(subSession.pages) && subSession.pages.filter(p => isPageAllowed(p.id)).map(page => (
+                                      <PageItemWithMenu
+                                        key={page.id}
+                                        page={page}
+                                        isActive={activePage === page.id}
+                                        paddingLeft="40px"
+                                        onPageChange={onPageChange}
+                                        canManagePermissions={canManageForSection(section.title)}
+                                        onOpenPermissions={(id, label) => setPermissionsPage({ id, label })}
+                                      />
+                                    ))}
 
                                     {Array.isArray(subSession.subSubSessions) && subSession.subSubSessions.filter(hasAllowedPagesInSubSubSession).map(subSubSession => {
                                       const SubIcon = iconMap[subSubSession.icon];
@@ -515,19 +753,17 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                                           <AnimatePresence initial={false}>
                                             {(!!query || expanded[`subsub-${subSubSession.id}`]) && (
                                               <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2, ease: 'easeInOut' }} className="overflow-hidden">
-                                                {Array.isArray(subSubSession.pages) && subSubSession.pages.filter(p => isPageAllowed(p.id)).map(page => {
-                                                  const PageIcon = iconMap[page.icon];
-                                                  const isActive = activePage === page.id;
-                                                  return (
-                                                    <div key={page.id} onClick={() => onPageChange(page.id)}
-                                                      style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '52px', paddingRight: '12px', paddingTop: '7px', paddingBottom: '7px', borderRadius: '8px', margin: '1px 8px 1px 0', cursor: 'pointer', background: isActive ? '#7C3AED' : 'transparent' }}
-                                                      className={`w-full text-sm font-medium transition-all duration-200 ${isActive ? 'text-white font-semibold' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white'}`}
-                                                    >
-                                                      {PageIcon && <PageIcon size={14} color={isActive ? '#FFFFFF' : (page.icon_color || '#9CA3AF')} />}
-                                                      <span style={{ color: isActive ? '#FFFFFF' : 'inherit' }}>{page.label}</span>
-                                                    </div>
-                                                  );
-                                                })}
+                                                {Array.isArray(subSubSession.pages) && subSubSession.pages.filter(p => isPageAllowed(p.id)).map(page => (
+                                                  <PageItemWithMenu
+                                                    key={page.id}
+                                                    page={page}
+                                                    isActive={activePage === page.id}
+                                                    paddingLeft="52px"
+                                                    onPageChange={onPageChange}
+                                                    canManagePermissions={canManageForSection(section.title)}
+                                                    onOpenPermissions={(id, label) => setPermissionsPage({ id, label })}
+                                                  />
+                                                ))}
                                               </motion.div>
                                             )}
                                           </AnimatePresence>
@@ -866,6 +1102,17 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
               )}
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Page Permissions Modal ──────────────────────────── */}
+      <AnimatePresence>
+        {permissionsPage && (
+          <PagePermissionsModal
+            pageId={permissionsPage.id}
+            pageLabel={permissionsPage.label}
+            onClose={() => setPermissionsPage(null)}
+          />
         )}
       </AnimatePresence>
     </>

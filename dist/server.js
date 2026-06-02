@@ -4765,21 +4765,59 @@ process.on("unhandledRejection", (reason, promise) => {
 });
 dotenv.config();
 var FIREBASE_STORAGE_BUCKET = (process.env.FIREBASE_STORAGE_BUCKET || process.env.VITE_FIREBASE_STORAGE_BUCKET || "").replace(/^gs:\/\//, "");
-if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n")
-    }),
-    storageBucket: FIREBASE_STORAGE_BUCKET || `${process.env.FIREBASE_PROJECT_ID}.appspot.com`
-  });
-  console.log("[BOOT] Firebase Admin SDK initialized.");
-} else {
-  console.warn("[BOOT] \u26A0\uFE0F  Firebase Admin credentials missing! Auth middleware will reject all requests.");
-  if (!admin.apps.length) {
-    admin.initializeApp();
+var FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || "";
+var firebaseAdminReady = false;
+if (FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
+  try {
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId: FIREBASE_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n")
+      }),
+      storageBucket: FIREBASE_STORAGE_BUCKET || `${FIREBASE_PROJECT_ID}.appspot.com`
+    });
+    firebaseAdminReady = true;
+    console.log("[BOOT] Firebase Admin SDK initialized (Storage dispon\xEDvel).");
+  } catch (firebaseInitError) {
+    console.warn("[BOOT] Firebase Admin SDK n\xE3o inicializado (Storage indispon\xEDvel):", firebaseInitError.message);
   }
+} else {
+  console.log("[BOOT] Firebase Admin SDK n\xE3o configurado \u2014 usando verifica\xE7\xE3o JWT p\xFAblica.");
+}
+var _cachedPublicKeys = {};
+var _cacheExpiry = 0;
+async function getFirebasePublicKeys() {
+  if (Date.now() < _cacheExpiry && Object.keys(_cachedPublicKeys).length > 0) {
+    return _cachedPublicKeys;
+  }
+  const res = await fetch("https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com");
+  const cc = res.headers.get("Cache-Control") || "";
+  const maxAge = parseInt(cc.match(/max-age=(\d+)/)?.[1] || "3600", 10);
+  _cachedPublicKeys = await res.json();
+  _cacheExpiry = Date.now() + maxAge * 1e3;
+  return _cachedPublicKeys;
+}
+async function verifyFirebaseToken(token) {
+  const parts = token.split(".");
+  if (parts.length !== 3) throw new Error("Token JWT inv\xE1lido");
+  const header = JSON.parse(Buffer.from(parts[0], "base64url").toString());
+  const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString());
+  const now = Math.floor(Date.now() / 1e3);
+  if (payload.exp < now) throw new Error("Token expirado");
+  if (payload.iat > now + 300) throw new Error("Token do futuro");
+  if (payload.aud !== FIREBASE_PROJECT_ID) throw new Error("Audience inv\xE1lido");
+  if (payload.iss !== `https://securetoken.google.com/${FIREBASE_PROJECT_ID}`) throw new Error("Issuer inv\xE1lido");
+  const keys = await getFirebasePublicKeys();
+  const publicKey = keys[header.kid];
+  if (!publicKey) throw new Error("Chave p\xFAblica n\xE3o encontrada para kid: " + header.kid);
+  const signatureInput = parts[0] + "." + parts[1];
+  const signature = Buffer.from(parts[2], "base64url");
+  const verify = crypto.createVerify("RSA-SHA256");
+  verify.update(signatureInput);
+  const valid = verify.verify(publicKey, signature);
+  if (!valid) throw new Error("Assinatura JWT inv\xE1lida");
+  return payload;
 }
 var PUBLIC_ROUTES = [
   { pattern: /^\/api\/health$/ },
@@ -4807,7 +4845,7 @@ async function authenticateToken(req, res, next) {
   }
   const token = authHeader.split("Bearer ")[1];
   try {
-    const decoded = await admin.auth().verifyIdToken(token);
+    const decoded = await verifyFirebaseToken(token);
     req.user = decoded;
     next();
   } catch (err) {
@@ -8053,12 +8091,15 @@ async function startServer() {
   });
   app.post("/api/upload", express.json({ limit: "30mb" }), async (req, res) => {
     try {
+      if (!firebaseAdminReady) {
+        return res.status(503).json({ error: "Upload de imagens indispon\xEDvel: Firebase Admin n\xE3o configurado. Configure FIREBASE_PRIVATE_KEY nas vari\xE1veis de ambiente." });
+      }
       const { fileData, mimeType, fileName } = req.body;
       if (!fileData) return res.status(400).json({ error: "Nenhum arquivo enviado." });
       if (!mimeType?.startsWith("image/")) return res.status(400).json({ error: "Apenas imagens s\xE3o permitidas." });
       const fileBuffer = Buffer.from(fileData, "base64");
       if (fileBuffer.length === 0) return res.status(400).json({ error: "Arquivo vazio." });
-      const bucketName = FIREBASE_STORAGE_BUCKET || `${process.env.FIREBASE_PROJECT_ID}.appspot.com`;
+      const bucketName = FIREBASE_STORAGE_BUCKET || `${FIREBASE_PROJECT_ID}.appspot.com`;
       const bucket = admin.storage().bucket(bucketName);
       const uid = req.user?.uid || "anonymous";
       const safeFileName = (fileName || "upload.jpg").replace(/[^a-zA-Z0-9._-]/g, "_");
