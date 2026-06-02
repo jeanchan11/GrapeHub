@@ -1737,12 +1737,27 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
         if (!auth.currentUser) throw new Error("Usuário não autenticado.");
         // Upload images via server endpoint (uses Firebase Admin SDK - more reliable)
         for (const image of images) {
-          const formData = new FormData();
-          formData.append('file', image);
+          // Converte a imagem para base64 e envia como JSON (sem FormData/multipart)
+          // Isso elimina problemas de parsing em produção
+          const base64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve((reader.result as string).split(',')[1]); // remove o prefixo data:...;base64,
+            reader.onerror = reject;
+            reader.readAsDataURL(image);
+          });
+
+          const token = await auth.currentUser!.getIdToken();
           const uploadRes = await fetch('/api/upload', {
             method: 'POST',
-            body: formData,
-            // Note: do NOT set Content-Type manually — browser sets it with boundary for FormData
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              fileData: base64,
+              mimeType: image.type || 'image/jpeg',
+              fileName: image.name || 'upload.jpg',
+            }),
           });
           if (!uploadRes.ok) {
             const errText = await uploadRes.text().catch(() => `HTTP ${uploadRes.status}`);

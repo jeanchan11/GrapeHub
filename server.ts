@@ -3671,55 +3671,26 @@ app.get("/api/todos", async (req, res) => {
 
 
 
-  // Image Upload via Server (uses Firebase Admin SDK + busboy for multipart parsing)
-  // Uses busboy instead of multer to avoid ESM/CJS compatibility issues in production
-  app.post('/api/upload', express.raw({ type: '*/*', limit: '20mb' }), async (req: any, res: any) => {
+  // Image Upload via Server (uses Firebase Admin SDK)
+  // Receives image as base64 JSON — zero multipart dependencies, works in all environments
+  app.post('/api/upload', express.json({ limit: '30mb' }), async (req: any, res: any) => {
     try {
-      const contentType = req.headers['content-type'] || '';
-      if (!contentType.includes('multipart/form-data')) {
-        return res.status(400).json({ error: 'Content-Type deve ser multipart/form-data' });
-      }
+      const { fileData, mimeType, fileName } = req.body;
 
-      // Parse multipart using busboy (built into Node.js environment via npm)
-      const Busboy = _require('busboy');
-      const bb = Busboy({ headers: req.headers, limits: { fileSize: 20 * 1024 * 1024 } });
+      if (!fileData) return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
+      if (!mimeType?.startsWith('image/')) return res.status(400).json({ error: 'Apenas imagens são permitidas.' });
 
-      let fileBuffer: Buffer | null = null;
-      let mimeType = 'image/jpeg';
-      let originalName = 'upload.jpg';
-
-      await new Promise<void>((resolve, reject) => {
-        bb.on('file', (_fieldname: string, fileStream: any, info: any) => {
-          mimeType = info.mimeType || 'image/jpeg';
-          originalName = info.filename || 'upload.jpg';
-          const chunks: Buffer[] = [];
-          fileStream.on('data', (chunk: Buffer) => chunks.push(chunk));
-          fileStream.on('end', () => { fileBuffer = Buffer.concat(chunks); });
-          fileStream.on('error', reject);
-        });
-        bb.on('finish', resolve);
-        bb.on('error', reject);
-        bb.write(req.body);
-        bb.end();
-      });
-
-      if (!fileBuffer || (fileBuffer as Buffer).length === 0) {
-        return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
-      }
-      if (!mimeType.startsWith('image/')) {
-        return res.status(400).json({ error: 'Apenas imagens sao permitidas.' });
-      }
+      const fileBuffer = Buffer.from(fileData, 'base64');
+      if (fileBuffer.length === 0) return res.status(400).json({ error: 'Arquivo vazio.' });
 
       const bucketName = FIREBASE_STORAGE_BUCKET || `${process.env.FIREBASE_PROJECT_ID}.appspot.com`;
       const bucket = admin.storage().bucket(bucketName);
       const uid = (req as any).user?.uid || 'anonymous';
-      const safeFileName = originalName.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const safeFileName = (fileName || 'upload.jpg').replace(/[^a-zA-Z0-9._-]/g, '_');
       const filePath = 'optimizations/' + uid + '/' + Date.now() + '_' + safeFileName;
       const fileRef = bucket.file(filePath);
 
-      await fileRef.save(fileBuffer as Buffer, {
-        metadata: { contentType: mimeType },
-      });
+      await fileRef.save(fileBuffer, { metadata: { contentType: mimeType } });
 
       const [signedUrl] = await fileRef.getSignedUrl({
         action: 'read',
@@ -3728,10 +3699,11 @@ app.get("/api/todos", async (req, res) => {
 
       res.json({ url: signedUrl });
     } catch (err: any) {
-      console.error('[Upload] Error uploading image:', err);
+      console.error('[Upload] Error:', err);
       res.status(500).json({ error: 'Falha no upload: ' + (err.message || 'Erro desconhecido') });
     }
   });
+
 
   app.post("/api/optimizations", async (req, res) => {
     const { id, product_id, author, authorPhoto, role, date, time, message, is_internal, images } = req.body;
