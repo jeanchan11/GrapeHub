@@ -5,12 +5,27 @@ import {
 import {
   ArrowLeft, Plus, Edit2, Trash2, X, ChevronRight,
   GitCompare, CheckSquare, Square, AlertCircle, TrendingUp,
-  DollarSign, Users, FileText, Search, Filter
+  DollarSign, Users, FileText, Search, Filter, Eye,
+  ArrowUpRight, ArrowDownRight, Minus, Clock, History
 } from 'lucide-react';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type StatusAcao = 'verde' | 'amarelo' | 'vermelho' | 'a_testar';
+
+interface AcaoHistoryEntry {
+  id: string;
+  date: string;
+  status: StatusAcao;
+  custoLeadMin?: number;
+  custoLeadMax?: number;
+  custoLeadMedio?: number;
+  cacMin?: number;
+  cacMax?: number;
+  contratosMin?: number;
+  contratosMax?: number;
+  observacoes?: string;
+}
 
 interface Acao {
   id: string;
@@ -26,6 +41,7 @@ interface Acao {
   contratosMax?: number;
   observacoes?: string;
   updatedAt: string;
+  history?: AcaoHistoryEntry[];
 }
 
 // ─── Initial Data ─────────────────────────────────────────────────────────────
@@ -965,6 +981,258 @@ const CompareModal = ({ acoes, onClose, onClearSelection }: { acoes: Acao[]; onC
   );
 };
 
+// ─── Detail Modal (single action) ─────────────────────────────────────────────
+
+// Helper: get the "effective" single value of a metric for comparison
+const getLeadValue = (a: Partial<Acao>) =>
+  (a.custoLeadMedio ?? ((a.custoLeadMin ?? 0) + (a.custoLeadMax ?? 0)) / 2) || null;
+const getCacValue = (a: Partial<Acao>) =>
+  (((a.cacMin ?? 0) + (a.cacMax ?? 0)) / 2) || null;
+const getContratosValue = (a: Partial<Acao>) =>
+  (((a.contratosMin ?? 0) + (a.contratosMax ?? 0)) / 2) || null;
+
+const DeltaIndicator = ({ current, previous, invert }: { current: number | null; previous: number | null; invert?: boolean }) => {
+  if (current == null || previous == null || current === previous) return null;
+  const up = current > previous;
+  // For costs (lead, CAC), going UP is bad. For contracts, going UP is good.
+  const isGood = invert ? !up : up;
+  return (
+    <span className={`inline-flex items-center gap-0.5 text-[11px] font-bold ml-2 px-1.5 py-0.5 rounded-md ${
+      isGood ? 'text-emerald-400 bg-emerald-500/10' : 'text-red-400 bg-red-500/10'
+    }`}>
+      {up ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
+      {Math.abs(Math.round(((current - previous) / previous) * 100))}%
+    </span>
+  );
+};
+
+const DetailModal = ({ acao, onClose, onEdit, onDeleteHistory }: {
+  acao: Acao;
+  onClose: () => void;
+  onEdit: () => void;
+  onDeleteHistory: (acaoId: string, historyId: string) => void;
+}) => {
+  const [tab, setTab] = useState<'info' | 'history'>('info');
+  const lastHistory = acao.history?.length ? acao.history[acao.history.length - 1] : null;
+
+  const Row = ({ label, value, icon, delta }: { label: string; value: React.ReactNode; icon?: React.ReactNode; delta?: React.ReactNode }) => (
+    <div className="flex items-start gap-4 py-3.5 border-b border-slate-100 dark:border-white/5 last:border-0">
+      <div className="w-[140px] shrink-0 flex items-center gap-2 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider pt-0.5">
+        {icon}{label}
+      </div>
+      <div className="text-sm text-slate-900 dark:text-white flex-1 flex items-center flex-wrap gap-1">
+        {value}
+        {delta}
+      </div>
+    </div>
+  );
+
+  return (
+    <Modal onClose={onClose}>
+      {/* Header */}
+      <div className="p-6 border-b border-slate-100 dark:border-white/10">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="p-2.5 bg-violet-600/20 rounded-xl shrink-0">
+              <Eye size={18} className="text-violet-400" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-lg font-black text-slate-900 dark:text-white leading-snug">{acao.nome}</h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{acao.nicho}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition-all text-slate-400 hover:text-slate-900 dark:hover:text-white shrink-0">
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex gap-1 bg-slate-100 dark:bg-white/5 rounded-xl p-1">
+          <button
+            onClick={() => setTab('info')}
+            className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 text-xs font-bold rounded-lg transition-all ${
+              tab === 'info'
+                ? 'bg-white dark:bg-dark-card text-violet-600 dark:text-violet-400 shadow-sm'
+                : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+            }`}
+          >
+            <Eye size={13} /> Informações
+          </button>
+          <button
+            onClick={() => setTab('history')}
+            className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 text-xs font-bold rounded-lg transition-all ${
+              tab === 'history'
+                ? 'bg-white dark:bg-dark-card text-violet-600 dark:text-violet-400 shadow-sm'
+                : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+            }`}
+          >
+            <History size={13} /> Histórico
+            {(acao.history?.length ?? 0) > 0 && (
+              <span className="ml-1 px-1.5 py-0.5 text-[10px] font-bold bg-violet-500/20 text-violet-400 rounded-full">
+                {acao.history!.length}
+              </span>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="p-6 max-h-[55vh] overflow-y-auto">
+        {tab === 'info' ? (
+          <>
+            <Row
+              label="Status"
+              icon={<AlertCircle size={12} />}
+              value={<StatusBadge status={acao.status} />}
+              delta={lastHistory && lastHistory.status !== acao.status ? (
+                <span className="text-[10px] text-slate-500 ml-2">antes: <StatusBadge status={lastHistory.status} /></span>
+              ) : null}
+            />
+            <Row
+              label="Custo Lead"
+              icon={<DollarSign size={12} />}
+              value={
+                acao.custoLeadMedio != null ? (
+                  <span className="text-emerald-400 font-bold text-base">{fmt(acao.custoLeadMedio)}</span>
+                ) : acao.custoLeadMin != null || acao.custoLeadMax != null ? (
+                  <span className="text-emerald-400 font-bold text-base">{fmtRange(acao.custoLeadMin, acao.custoLeadMax)}</span>
+                ) : <span className="text-slate-500 italic">Não informado</span>
+              }
+              delta={lastHistory ? <DeltaIndicator current={getLeadValue(acao)} previous={getLeadValue(lastHistory)} invert /> : null}
+            />
+            <Row
+              label="CAC"
+              icon={<TrendingUp size={12} />}
+              value={
+                acao.cacMin != null || acao.cacMax != null ? (
+                  <span className="text-violet-300 font-bold text-base">{fmtRange(acao.cacMin, acao.cacMax)}</span>
+                ) : <span className="text-slate-500 italic">Não informado</span>
+              }
+              delta={lastHistory ? <DeltaIndicator current={getCacValue(acao)} previous={getCacValue(lastHistory)} invert /> : null}
+            />
+            <Row
+              label="Contratos"
+              icon={<Users size={12} />}
+              value={
+                acao.contratosMin != null || acao.contratosMax != null ? (
+                  <span className="text-blue-300 font-bold text-base">{fmtContratos(acao.contratosMin, acao.contratosMax)}</span>
+                ) : <span className="text-slate-500 italic">Não informado</span>
+              }
+              delta={lastHistory ? <DeltaIndicator current={getContratosValue(acao)} previous={getContratosValue(lastHistory)} /> : null}
+            />
+            <Row
+              label="Observações"
+              icon={<FileText size={12} />}
+              value={
+                acao.observacoes ? (
+                  <p className="text-slate-300 text-sm leading-relaxed whitespace-pre-wrap">{acao.observacoes}</p>
+                ) : <span className="text-slate-600 text-sm italic">Sem observações</span>
+              }
+            />
+          </>
+        ) : (
+          /* History Tab */
+          <div>
+            {!acao.history?.length ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center mb-3">
+                  <History size={20} className="text-slate-600" />
+                </div>
+                <p className="text-slate-500 font-semibold text-sm">Nenhuma edição anterior</p>
+                <p className="text-slate-600 text-xs mt-1">O histórico aparece quando você edita a ação</p>
+              </div>
+            ) : (
+              <div className="relative">
+                {/* Timeline line */}
+                <div className="absolute left-[15px] top-2 bottom-2 w-px bg-slate-200 dark:bg-white/10" />
+
+                <div className="flex flex-col gap-1">
+                  {[...acao.history].reverse().map((entry, i) => (
+                    <div key={entry.id} className="group relative flex gap-4 pl-1">
+                      {/* Timeline dot */}
+                      <div className="relative z-10 mt-4 w-[30px] flex justify-center shrink-0">
+                        <div className={`w-2.5 h-2.5 rounded-full border-2 ${
+                          i === 0
+                            ? 'bg-violet-500 border-violet-500/40'
+                            : 'bg-slate-400 dark:bg-slate-600 border-slate-300 dark:border-slate-700'
+                        }`} />
+                      </div>
+
+                      {/* Card */}
+                      <div className="flex-1 bg-white dark:bg-white/5 border border-slate-100 dark:border-white/5 rounded-xl p-4 mb-2 transition-all hover:border-slate-200 dark:hover:border-white/10">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <Clock size={12} className="text-slate-500" />
+                            <span className="text-[11px] font-semibold text-slate-500">
+                              {new Date(entry.date).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => onDeleteHistory(acao.id, entry.id)}
+                            className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
+                            title="Apagar entrada"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                          <div>
+                            <span className="text-slate-500 text-[10px] uppercase tracking-wider">Status</span>
+                            <div className="mt-0.5"><StatusBadge status={entry.status} /></div>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 text-[10px] uppercase tracking-wider">Lead</span>
+                            <p className="mt-0.5 font-semibold text-emerald-400">
+                              {entry.custoLeadMedio != null ? fmt(entry.custoLeadMedio)
+                                : entry.custoLeadMin != null || entry.custoLeadMax != null ? fmtRange(entry.custoLeadMin, entry.custoLeadMax)
+                                : <span className="text-slate-600">—</span>}
+                            </p>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 text-[10px] uppercase tracking-wider">CAC</span>
+                            <p className="mt-0.5 font-semibold text-violet-300">
+                              {entry.cacMin != null || entry.cacMax != null ? fmtRange(entry.cacMin, entry.cacMax) : <span className="text-slate-600">—</span>}
+                            </p>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 text-[10px] uppercase tracking-wider">Contratos</span>
+                            <p className="mt-0.5 font-semibold text-blue-300">
+                              {entry.contratosMin != null || entry.contratosMax != null ? fmtContratos(entry.contratosMin, entry.contratosMax) : <span className="text-slate-600">—</span>}
+                            </p>
+                          </div>
+                        </div>
+
+                        {entry.observacoes && (
+                          <p className="mt-2 text-[11px] text-slate-500 italic line-clamp-2">"{entry.observacoes}"</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className="p-6 border-t border-slate-100 dark:border-white/10 flex items-center justify-end gap-3">
+        <button
+          onClick={() => { onClose(); onEdit(); }}
+          className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 rounded-xl transition-all"
+        >
+          <Edit2 size={14} />
+          Editar
+        </button>
+        <button onClick={onClose} className="px-5 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-violet-600/20">
+          Fechar
+        </button>
+      </div>
+    </Modal>
+  );
+};
+
 // ─── Acao Card ────────────────────────────────────────────────────────────────
 
 interface AcaoCardProps {
@@ -973,85 +1241,78 @@ interface AcaoCardProps {
   selectionDisabled: boolean;
   onSelect: () => void;
   onEdit: () => void;
+  onView: () => void;
 }
 
-const AcaoCard = ({ acao, selected, selectionDisabled, onSelect, onEdit }: AcaoCardProps) => {
+const AcaoCard = ({ acao, selected, selectionDisabled, onSelect, onEdit, onView }: AcaoCardProps) => {
   const cfg = STATUS_CONFIG[acao.status];
   const hasMetrics = acao.custoLeadMedio != null || acao.custoLeadMin != null || acao.cacMin != null || acao.contratosMin != null;
 
   return (
-    <div className={`group relative bg-white dark:bg-dark-card border rounded-2xl p-4 transition-all duration-200 hover:border-violet-500/50 ${
+    <div className={`group relative bg-white dark:bg-dark-card border rounded-2xl p-5 transition-all duration-200 hover:border-violet-500/50 hover:shadow-lg hover:shadow-violet-500/5 hover:-translate-y-0.5 flex flex-col ${
       selected ? 'border-violet-500/50 shadow-lg shadow-violet-500/10' : 'border-slate-200 dark:border-white/10'
     }`}>
-      {/* Selection + Status stripe */}
-      <div className={`absolute left-0 top-0 bottom-0 w-1 rounded-l-2xl ${
-        acao.status === 'verde' ? 'bg-emerald-500' :
-        acao.status === 'amarelo' ? 'bg-yellow-500' :
-        acao.status === 'vermelho' ? 'bg-red-500' : 'bg-blue-500'
-      }`} />
-
-      <div className="pl-2 flex items-start gap-3">
-        {/* Checkbox */}
+      {/* Header: checkbox + edit */}
+      <div className="flex items-start justify-between gap-2 mb-3">
         <button
           onClick={onSelect}
           disabled={selectionDisabled && !selected}
           className={`mt-0.5 flex-shrink-0 transition-all ${selectionDisabled && !selected ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
         >
           {selected
-            ? <CheckSquare size={18} className="text-violet-400" />
-            : <Square size={18} className="text-slate-600 hover:text-slate-400" />
+            ? <CheckSquare size={16} className="text-violet-400" />
+            : <Square size={16} className="text-slate-600 hover:text-slate-400" />
           }
         </button>
+        <button
+          onClick={onEdit}
+          className="flex-shrink-0 opacity-0 group-hover:opacity-100 p-1.5 bg-slate-100 dark:bg-white/5 hover:bg-violet-600/20 hover:text-violet-600 dark:hover:text-violet-400 text-slate-400 dark:text-slate-500 rounded-lg transition-all"
+        >
+          <Edit2 size={12} />
+        </button>
+      </div>
 
-        {/* Content */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between gap-3">
-            <p className="text-sm font-semibold text-slate-900 dark:text-white leading-snug">{acao.nome}</p>
-            <button
-              onClick={onEdit}
-              className="flex-shrink-0 opacity-0 group-hover:opacity-100 p-1.5 bg-slate-100 dark:bg-white/5 hover:bg-violet-600/20 hover:text-violet-600 dark:hover:text-violet-400 text-slate-400 dark:text-slate-500 rounded-lg transition-all"
-            >
-              <Edit2 size={13} />
-            </button>
-          </div>
+      {/* Name — clickable to view details */}
+      <h3 onClick={onView} className="text-sm font-bold text-slate-900 dark:text-white leading-snug mb-2 line-clamp-2 flex-1 cursor-pointer hover:text-violet-500 dark:hover:text-violet-300 transition-colors">{acao.nome}</h3>
 
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <StatusBadge status={acao.status} />
-          </div>
+      {/* Status badge */}
+      <div className="mb-3">
+        <StatusBadge status={acao.status} />
+      </div>
 
-          {hasMetrics && (
-            <div className="mt-3 flex flex-wrap gap-3 text-xs">
-              {(acao.custoLeadMedio != null || acao.custoLeadMin != null) && (
-                <div className="flex items-center gap-1.5">
-                  <DollarSign size={11} className="text-emerald-400" />
-                  <span className="text-slate-400">Lead:</span>
-                  <span className="text-emerald-400 font-semibold">
-                    {acao.custoLeadMedio != null ? fmt(acao.custoLeadMedio) : fmtRange(acao.custoLeadMin, acao.custoLeadMax)}
-                  </span>
-                </div>
-              )}
-              {(acao.cacMin != null || acao.cacMax != null) && (
-                <div className="flex items-center gap-1.5">
-                  <TrendingUp size={11} className="text-violet-400" />
-                  <span className="text-slate-400">CAC:</span>
-                  <span className="text-violet-300 font-semibold">{fmtRange(acao.cacMin, acao.cacMax)}</span>
-                </div>
-              )}
-              {(acao.contratosMin != null || acao.contratosMax != null) && (
-                <div className="flex items-center gap-1.5">
-                  <Users size={11} className="text-blue-400" />
-                  <span className="text-slate-400">Contratos:</span>
-                  <span className="text-blue-300 font-semibold">{fmtContratos(acao.contratosMin, acao.contratosMax)}</span>
-                </div>
-              )}
+      {/* Metrics */}
+      {hasMetrics && (
+        <div className="flex flex-wrap gap-x-3 gap-y-1.5 text-[11px] pt-3 border-t border-slate-100 dark:border-white/5">
+          {(acao.custoLeadMedio != null || acao.custoLeadMin != null) && (
+            <div className="flex items-center gap-1">
+              <DollarSign size={10} className="text-emerald-400" />
+              <span className="text-slate-500">Lead:</span>
+              <span className="text-emerald-400 font-semibold">
+                {acao.custoLeadMedio != null ? fmt(acao.custoLeadMedio) : fmtRange(acao.custoLeadMin, acao.custoLeadMax)}
+              </span>
             </div>
           )}
-
-          {acao.observacoes && (
-            <p className="mt-2 text-xs text-slate-500 line-clamp-1 italic">"{acao.observacoes}"</p>
+          {(acao.cacMin != null || acao.cacMax != null) && (
+            <div className="flex items-center gap-1">
+              <TrendingUp size={10} className="text-violet-400" />
+              <span className="text-slate-500">CAC:</span>
+              <span className="text-violet-300 font-semibold">{fmtRange(acao.cacMin, acao.cacMax)}</span>
+            </div>
+          )}
+          {(acao.contratosMin != null || acao.contratosMax != null) && (
+            <div className="flex items-center gap-1">
+              <Users size={10} className="text-blue-400" />
+              <span className="text-slate-500">Contr:</span>
+              <span className="text-blue-300 font-semibold">{fmtContratos(acao.contratosMin, acao.contratosMax)}</span>
+            </div>
           )}
         </div>
-      </div>
+      )}
+
+      {/* Observations */}
+      {acao.observacoes && (
+        <p className="mt-2 text-[11px] text-slate-500 line-clamp-2 italic">"{acao.observacoes}"</p>
+      )}
     </div>
   );
 };
@@ -1144,6 +1405,8 @@ export default function PlaybookAcoes() {
   const [comparando, setComparando] = useState(false);
   const [busca, setBusca] = useState('');
   const [filtroStatus, setFiltroStatus] = useState<StatusAcao | 'all'>('all');
+  const [visualizandoId, setVisualizandoId] = useState<string | null>(null);
+  const visualizando = visualizandoId ? acoes.find(a => a.id === visualizandoId) ?? null : null;
 
   // Ações do nicho atual, ordenadas por status
   const acoesDoNicho = useMemo(() => {
@@ -1162,13 +1425,39 @@ export default function PlaybookAcoes() {
     setAcoes(prev => {
       const idx = prev.findIndex(a => a.id === acao.id);
       if (idx >= 0) {
+        const oldAcao = prev[idx];
+        // Create a history snapshot of the OLD values before overwriting
+        const snapshot: AcaoHistoryEntry = {
+          id: `h-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          date: oldAcao.updatedAt || new Date().toISOString(),
+          status: oldAcao.status,
+          custoLeadMin: oldAcao.custoLeadMin,
+          custoLeadMax: oldAcao.custoLeadMax,
+          custoLeadMedio: oldAcao.custoLeadMedio,
+          cacMin: oldAcao.cacMin,
+          cacMax: oldAcao.cacMax,
+          contratosMin: oldAcao.contratosMin,
+          contratosMax: oldAcao.contratosMax,
+          observacoes: oldAcao.observacoes,
+        };
         const next = [...prev];
-        next[idx] = acao;
+        next[idx] = {
+          ...acao,
+          updatedAt: new Date().toISOString(),
+          history: [...(oldAcao.history || []), snapshot],
+        };
         return next;
       }
-      return [...prev, acao];
+      return [...prev, { ...acao, updatedAt: new Date().toISOString() }];
     });
     setEditando(null);
+  };
+
+  const handleDeleteHistory = (acaoId: string, historyId: string) => {
+    setAcoes(prev => prev.map(a => {
+      if (a.id !== acaoId) return a;
+      return { ...a, history: (a.history || []).filter(h => h.id !== historyId) };
+    }));
   };
 
   const handleDelete = (id: string) => {
@@ -1293,7 +1582,7 @@ export default function PlaybookAcoes() {
                 </p>
               </div>
             ) : (
-              <div className="flex flex-col gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {acoesDoNicho.map(acao => (
                   <AcaoCard
                     key={acao.id}
@@ -1302,6 +1591,7 @@ export default function PlaybookAcoes() {
                     selectionDisabled={selecionadas.length >= 2}
                     onSelect={() => toggleSelect(acao.id)}
                     onEdit={() => setEditando(acao)}
+                    onView={() => setVisualizandoId(acao.id)}
                   />
                 ))}
               </div>
@@ -1355,6 +1645,15 @@ export default function PlaybookAcoes() {
           acoes={acoesComparar}
           onClose={() => setComparando(false)}
           onClearSelection={() => setSelecionadas([])}
+        />
+      )}
+
+      {visualizando && (
+        <DetailModal
+          acao={visualizando}
+          onClose={() => setVisualizandoId(null)}
+          onEdit={() => { const v = visualizando; setVisualizandoId(null); if (v) setEditando(v); }}
+          onDeleteHistory={handleDeleteHistory}
         />
       )}
     </div>
