@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "NODE_ENV=development tsx watch server.ts",
-    "build": "mkdir -p dist && npx vite build && npx esbuild server.ts --bundle --platform=node --format=esm --outfile=dist/server.js --external:vite --external:pg --external:express --external:dotenv --external:busboy --external:@anthropic-ai/sdk --external:crypto --external:https --external:firebase-admin",
+    "build": "mkdir -p dist && npx vite build && npx esbuild server.ts --bundle --platform=node --format=esm --outfile=dist/server.js --external:vite --external:pg --external:express --external:dotenv --external:@anthropic-ai/sdk --external:crypto --external:https --external:firebase-admin",
     "start": "NODE_ENV=production node dist/server.js",
     "preview": "vite preview",
     "lint": "tsc --noEmit"

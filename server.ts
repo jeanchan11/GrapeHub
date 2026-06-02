@@ -9,8 +9,6 @@ import pg from "pg";
 import dotenv from "dotenv";
 import crypto from "crypto";
 import Anthropic from "@anthropic-ai/sdk";
-import { createRequire } from "module";
-const _require = createRequire(import.meta.url);
 import admin from "firebase-admin";
 import { setupCollectionRoutes } from "./src/routes/collection";
 import { setupDispatchRoutes } from "./src/routes/dispatch";
