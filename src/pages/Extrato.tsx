@@ -1170,10 +1170,23 @@ export default function Extrato() {
     if (!ofxFile) return;
     setOfxUploading(true); setOfxResult(null);
     try {
-      const fd = new FormData();
-      fd.append('file', ofxFile);
-      fd.append('account', 'sicredi');
-      const res = await fetch('/api/financeiro/extrato/importar-ofx', { method: 'POST', body: fd });
+      // Converte arquivo para base64 e envia via JSON (sem FormData/multer)
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve((reader.result as string).split(',')[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(ofxFile);
+      });
+
+      const res = await fetch('/api/financeiro/extrato/importar-ofx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileData: base64,
+          fileName: ofxFile.name,
+          account: 'sicredi',
+        }),
+      });
       if (!res.ok) throw new Error('Erro na importação');
       const data = await res.json();
       setOfxResult(data);

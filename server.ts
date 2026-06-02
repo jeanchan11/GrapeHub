@@ -5531,16 +5531,26 @@ app.get("/api/todos", async (req, res) => {
   });
 
   // POST /api/financeiro/extrato/importar — import OFX or CSV file
-  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
-  app.post("/api/financeiro/extrato/importar-ofx", upload.single('file'), async (req: any, res) => {
+  // Accepts both: (1) JSON with base64 fileData or (2) raw text content
+  app.post("/api/financeiro/extrato/importar-ofx", express.json({ limit: '15mb' }), async (req: any, res) => {
     try {
       const account = (req.body.account as string) || 'sicredi';
       const billingMonth = (req.body.billing_month as string) || null;
-      const fileBuffer = req.file?.buffer;
-      if (!fileBuffer) return res.status(400).json({ error: 'No file uploaded' });
 
-      const content = fileBuffer.toString('utf-8');
-      const fileName = (req.file?.originalname || '').toLowerCase();
+      // Support base64 file upload via JSON
+      let content: string;
+      let fileName: string;
+      if (req.body.fileData) {
+        const buf = Buffer.from(req.body.fileData, 'base64');
+        content = buf.toString('utf-8');
+        fileName = (req.body.fileName || 'import.ofx').toLowerCase();
+      } else if (req.body.content) {
+        content = req.body.content;
+        fileName = (req.body.fileName || 'import.ofx').toLowerCase();
+      } else {
+        return res.status(400).json({ error: 'No file uploaded' });
+      }
+
       const isCSV = fileName.endsWith('.csv') || (!fileName.endsWith('.ofx') && content.includes(';'));
 
       const transactions: { fitid: string; trntype: string; trnamt: number; dtposted: string; memo: string }[] = [];
