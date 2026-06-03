@@ -269,59 +269,6 @@ export default function PlanejamentoCrescimento() {
           </div>
         </PageHeader>
 
-        {/* ── KPI Cards ──────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          
-          {/* KPI 1: Meta Clientes */}
-          <div className="bg-dark-card border border-white/10 rounded-2xl p-5 flex flex-col gap-2 min-w-0 transition-colors duration-200">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Meta Clientes (Dez)</span>
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-violet-500/10">
-                <Users size={16} className="text-violet-400" />
-              </div>
-            </div>
-            <div className="text-3xl font-black text-dark-text tracking-tight">{kpis.metaClientesDec}</div>
-            <div className="text-[10px] text-slate-500">Base total prevista para fim do ano</div>
-          </div>
-
-          {/* KPI 2: Meta Novos/Mês */}
-          <div className="bg-dark-card border border-white/10 rounded-2xl p-5 flex flex-col gap-2 min-w-0 transition-colors duration-200">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Meta Novos / Mês</span>
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-violet-500/10">
-                <TrendingUp size={16} className="text-violet-400" />
-              </div>
-            </div>
-            <div className="text-3xl font-black text-dark-text tracking-tight">+{kpis.avgNewProj}</div>
-            <div className="text-[10px] text-slate-500">Média de novos clientes por mês</div>
-          </div>
-
-          {/* KPI 3: Budget Mensal */}
-          <div className="bg-dark-card border border-white/10 rounded-2xl p-5 flex flex-col gap-2 min-w-0 transition-colors duration-200">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Budget Mensal</span>
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-violet-500/10">
-                <DollarSign size={16} className="text-violet-400" />
-              </div>
-            </div>
-            <div className="text-3xl font-black text-dark-text tracking-tight">{fmtBRL(kpis.avgBudgetProj)}</div>
-            <div className="text-[10px] text-slate-500">Verba de tráfego média mensal</div>
-          </div>
-
-          {/* KPI 4: Meta CAC */}
-          <div className="bg-dark-card border border-white/10 rounded-2xl p-5 flex flex-col gap-2 min-w-0 transition-colors duration-200">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Meta CAC</span>
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-violet-500/10">
-                <Target size={16} className="text-violet-400" />
-              </div>
-            </div>
-            <div className="text-3xl font-black text-dark-text tracking-tight">{fmtBRL(kpis.avgCACProj)}</div>
-            <div className="text-[10px] text-slate-500">Custo de Aquisição planejado</div>
-          </div>
-
-        </div>
-
         {/* ── Main Growth Chart & Side Status ────────────────────── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           
@@ -495,6 +442,7 @@ export default function PlanejamentoCrescimento() {
                     <tr 
                       key={p.month}
                       onClick={() => setSelectedMonth(p.month)}
+                      onDoubleClick={() => openEditModal('projections', p.month)}
                       className={`border-b border-white/5 hover:bg-white/5 cursor-pointer transition-colors ${
                         selectedMonth === p.month ? 'bg-violet-500/5' : ''
                       }`}
@@ -551,6 +499,7 @@ export default function PlanejamentoCrescimento() {
                       <tr 
                         key={r.month}
                         onClick={() => setSelectedMonth(r.month)}
+                        onDoubleClick={() => openEditModal('realized', r.month)}
                         className={`border-b border-white/5 hover:bg-white/5 cursor-pointer transition-colors ${
                           selectedMonth === r.month ? 'bg-emerald-500/5' : ''
                         }`}

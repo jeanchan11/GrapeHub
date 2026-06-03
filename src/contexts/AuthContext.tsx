@@ -152,7 +152,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return;
       }
 
-      await fetchUserDataFromApi(firebaseUser);
+      // Retry up to 3 times with exponential backoff if the API call fails
+      let result = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        result = await fetchUserDataFromApi(firebaseUser);
+        if (result) break;
+        // Wait 1s, 2s, 4s before retrying
+        await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)));
+        console.warn(`[AuthContext] Retry ${attempt + 1}/3 fetching userData...`);
+      }
       setLoading(false);
     });
 

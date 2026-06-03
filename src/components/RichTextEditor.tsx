@@ -3,7 +3,7 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
-import { Heading1, Heading2, Heading3, Type, List, ListOrdered, CheckSquare, ChevronRight } from 'lucide-react';
+import { Heading1, Heading2, Heading3, Type, List, ListOrdered, CheckSquare, ChevronRight, Minus } from 'lucide-react';
 
 import { Node, mergeAttributes } from '@tiptap/core';
 
@@ -181,6 +181,7 @@ const SLASH_COMMANDS = [
   { label: 'Cabeçalho 1',          icon: Heading1,     group: 'Básico', action: (e: any) => e.chain().focus().toggleHeading({ level: 1 }).run() },
   { label: 'Cabeçalho 2',          icon: Heading2,     group: 'Básico', action: (e: any) => e.chain().focus().toggleHeading({ level: 2 }).run() },
   { label: 'Cabeçalho 3',          icon: Heading3,     group: 'Básico', action: (e: any) => e.chain().focus().toggleHeading({ level: 3 }).run() },
+  { label: 'Linha Horizontal',     icon: Minus,        group: 'Básico', action: (e: any) => e.chain().focus().setHorizontalRule().run() },
   { label: 'Lista com marcadores', icon: List,          group: 'Listas', action: (e: any) => e.chain().focus().toggleBulletList().run() },
   { label: 'Lista numerada',       icon: ListOrdered,  group: 'Listas', action: (e: any) => e.chain().focus().toggleOrderedList().run() },
   { label: 'Checklist',            icon: CheckSquare,  group: 'Listas', action: (e: any) => e.chain().focus().toggleTaskList().run() },
@@ -204,6 +205,7 @@ interface MenuPos { top: number; left: number; }
 export default function RichTextEditor({ content, onChange, systemUsers = [] }: RichTextEditorProps) {
   const [slashOpen, setSlashOpen] = useState(false);
   const [slashFrom, setSlashFrom] = useState(0);
+  const [slashQuery, setSlashQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
 
   const [mentionOpen, setMentionOpen] = useState(false);
@@ -228,7 +230,7 @@ export default function RichTextEditor({ content, onChange, systemUsers = [] }: 
     ],
     content: initialHTML,
     editorProps: {
-      attributes: { class: 'tiptap-editor outline-none min-h-[380px]' },
+      attributes: { class: 'tiptap-editor outline-none min-h-[380px] break-words' },
     },
     onUpdate({ editor }) {
       onChange(editor.getHTML());
@@ -237,6 +239,7 @@ export default function RichTextEditor({ content, onChange, systemUsers = [] }: 
       const currentLine = textBefore.slice(textBefore.lastIndexOf('\n') + 1);
       
       const mentionMatch = /(?:^|\s)@([^\s]*)$/.exec(textBefore);
+      const slashMatch = /(?:^|\s)\/([^\s]*)$/.exec(currentLine);
 
       if (mentionMatch) {
         setMentionQuery(mentionMatch[1]);
@@ -248,18 +251,23 @@ export default function RichTextEditor({ content, onChange, systemUsers = [] }: 
         } catch {}
         setMentionOpen(true);
         setSlashOpen(false);
-      } else if (currentLine === '/') {
-        setSlashFrom(from - 1);
+      } else if (slashMatch) {
+        const query = slashMatch[1];
+        const sFrom = from - query.length - 1;
+        setSlashQuery(query);
+        setSlashFrom(sFrom);
         try {
-          const coords = editor.view.coordsAtPos(from);
+          const coords = editor.view.coordsAtPos(sFrom);
           const left = Math.min(coords.left, window.innerWidth - 272);
           setMenuPos({ top: coords.bottom + 6, left: Math.max(8, left) });
         } catch {}
-        setSlashOpen(true);
-        setSelectedIndex(0);
+        setSlashOpen(prev => {
+          if (!prev) setSelectedIndex(0);
+          return true;
+        });
         setMentionOpen(false);
       } else {
-        if (!currentLine.startsWith('/')) setSlashOpen(false);
+        setSlashOpen(false);
         setMentionOpen(false);
       }
     },
@@ -272,17 +280,19 @@ export default function RichTextEditor({ content, onChange, systemUsers = [] }: 
     }
   }, [editor, content]);
 
+  const filteredSlashCommands = SLASH_COMMANDS.filter(cmd => cmd.label.toLowerCase().includes(slashQuery.toLowerCase()));
+
   useEffect(() => {
-    if (!slashOpen) return;
+    if (!slashOpen || filteredSlashCommands.length === 0) return;
     const h = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { setSlashOpen(false); return; }
-      if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedIndex(i => (i + 1) % SLASH_COMMANDS.length); }
-      if (e.key === 'ArrowUp')   { e.preventDefault(); setSelectedIndex(i => (i - 1 + SLASH_COMMANDS.length) % SLASH_COMMANDS.length); }
-      if (e.key === 'Enter')     { e.preventDefault(); run(SLASH_COMMANDS[selectedIndex]); }
+      if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedIndex(i => (i + 1) % filteredSlashCommands.length); }
+      if (e.key === 'ArrowUp')   { e.preventDefault(); setSelectedIndex(i => (i - 1 + filteredSlashCommands.length) % filteredSlashCommands.length); }
+      if (e.key === 'Enter')     { e.preventDefault(); run(filteredSlashCommands[selectedIndex] || filteredSlashCommands[0]); }
     };
     window.addEventListener('keydown', h, true);
     return () => window.removeEventListener('keydown', h, true);
-  }, [slashOpen, selectedIndex]);
+  }, [slashOpen, selectedIndex, filteredSlashCommands]);
 
   const filteredUsers = systemUsers.filter(u => (u.name || u.email).toLowerCase().includes(mentionQuery.toLowerCase())).slice(0, 5);
 
@@ -311,14 +321,14 @@ export default function RichTextEditor({ content, onChange, systemUsers = [] }: 
 
   const run = useCallback((cmd: typeof SLASH_COMMANDS[0]) => {
     if (!editor) return;
-    editor.chain().focus().deleteRange({ from: slashFrom, to: slashFrom + 1 }).run();
+    editor.chain().focus().deleteRange({ from: slashFrom, to: editor.state.selection.from }).run();
     cmd.action(editor);
     setSlashOpen(false);
   }, [editor, slashFrom]);
 
   if (!editor) return null;
 
-  const groups = SLASH_COMMANDS.reduce((acc, cmd, idx) => {
+  const groups = filteredSlashCommands.reduce((acc, cmd, idx) => {
     if (!acc[cmd.group]) acc[cmd.group] = [];
     acc[cmd.group].push({ ...cmd, idx });
     return acc;
@@ -331,6 +341,8 @@ export default function RichTextEditor({ content, onChange, systemUsers = [] }: 
         .tiptap-editor summary { list-style: none !important; }
         .tiptap-editor summary::-webkit-details-marker { display: none !important; }
         .tiptap-editor summary::marker { display: none !important; }
+        
+
       `}</style>
       <EditorContent editor={editor} />
       {slashOpen && (

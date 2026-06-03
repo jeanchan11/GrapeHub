@@ -3,13 +3,16 @@ import {
   ChevronLeft, ChevronRight, Plus, Search, Filter, 
   CheckCircle2, Circle, Clock, AlertCircle,
   Trash2, Edit2, Calendar, User, Tag,
-  ChevronDown, X, Check, Loader2, ListTodo,
-  ChevronUp, Image as ImageIcon, Scale
+  ChevronDown, X, Check, Loader2, ListTodo, ListChecks,
+  ChevronUp, Image as ImageIcon, Scale, Paperclip, MessageSquare, Columns, List
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../contexts/AuthContext';
 import { Modal } from '../components/ui/Modal';
 import { designSystem } from '../design-system';
+import TaskDetailModal from '../components/TaskDetailModal';
+import { DatePicker } from '../components/ui/DatePicker';
+import confetti from 'canvas-confetti';
 
 interface TaskSubtask {
   id: string;
@@ -35,18 +38,19 @@ interface Task {
   project_group?: string;
   priority: string;
   subtasks_list?: TaskSubtask[];
+  tags?: string[];
 }
 
 const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => void }> = ({ activePage, onPageChange }) => {
   const { userData: authUser } = useAuth();
   
-  const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
   const [templates, setTemplates] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<number>(1);
   
+  const [viewType, setViewType] = useState<'kanban' | 'list'>('kanban');
+
   const [selectedGroup, setSelectedGroup] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   
@@ -66,31 +70,30 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
   const [addingSubtaskToTask, setAddingSubtaskToTask] = useState<string | null>(null);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
 
-  const formatDate = (date: Date) => {
-    const today = new Date();
-    if (date.toDateString() === today.toDateString()) {
-      return `Hoje, ${date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}`;
-    }
-    return date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
+  // TaskDetailModal state
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+
+  const openTaskDetail = (task: Task) => {
+    setSelectedTask(task);
+    setIsDetailModalOpen(true);
   };
 
-  const changeDate = (days: number) => {
-    const newDate = new Date(currentDate);
-    newDate.setDate(newDate.getDate() + (days * viewMode));
-    setCurrentDate(newDate);
+  const handleSubtaskAddFromModal = async (taskId: string, title: string) => {
+    try {
+      const res = await fetch('/api/task-subtasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task_id: taskId, title, assignee: null, due_date: null })
+      });
+      if (res.ok) fetchData();
+    } catch (e) { console.error(e); }
   };
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const dateStr = currentDate.toISOString().split('T')[0];
-      let url = `/api/daily-tasks?date=${dateStr}&page_id=${activePage}`;
-      if (viewMode > 1) {
-        const endDate = new Date(currentDate);
-        endDate.setDate(endDate.getDate() + viewMode - 1);
-        const endDateStr = endDate.toISOString().split('T')[0];
-        url += `&end_date=${endDateStr}`;
-      }
+      let url = `/api/daily-tasks?page_id=${activePage}`;
 
       const [tasksRes, projectsRes, templatesRes] = await Promise.all([
         fetch(url),
@@ -99,7 +102,11 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
       ]);
       
       if (tasksRes.ok) setTasks(await tasksRes.json());
-      if (projectsRes.ok) setProjects(await projectsRes.json());
+      if (projectsRes.ok) {
+        const p = await projectsRes.json();
+        p.unshift({ id: 'no-project', partner: 'Tarefas Internas / Sem Parceiro', group: 'Sem Grupo' });
+        setProjects(p);
+      }
       if (templatesRes.ok) setTemplates(await templatesRes.json());
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -110,7 +117,7 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
 
   useEffect(() => {
     fetchData();
-  }, [currentDate, viewMode]);
+  }, [activePage]);
 
   const toggleTaskStatus = async (task: Task) => {
     const newStatus = task.status === 'completed' ? 'pending' : 'completed';
@@ -126,6 +133,22 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
     } catch (e) {
       console.error(e);
     }
+  };
+
+  const updateTaskField = async (taskId: string, field: string, value: string) => {
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [field]: value })
+      });
+      if (res.ok) {
+        setTasks(tasks.map(t => t.id === taskId ? { ...t, [field]: value } : t));
+        if (selectedTask?.id === taskId) {
+          setSelectedTask(prev => prev ? { ...prev, [field]: value } : null);
+        }
+      }
+    } catch (e) { console.error(e); }
   };
 
   const toggleSubtaskStatus = async (subtask: TaskSubtask, taskId: string) => {
@@ -194,7 +217,7 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
           createdBy: authUser?.id || 'system',
           assignedTo: 'all',
           createdAt: new Date().toISOString(),
-          dueDate: currentDate.toISOString().split('T')[0],
+          dueDate: new Date().toISOString().split('T')[0],
           subtasks: [],
           project_id: projectId,
           page_id: activePage
@@ -233,37 +256,15 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
     }
   };
 
-  const updateTaskField = async (taskId: string, field: string, value: string) => {
-    try {
-      const res = await fetch(`/api/tasks/${taskId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [field]: value })
-      });
-      if (res.ok) {
-        setTasks(tasks.map(t => t.id === taskId ? { ...t, [field]: value } : t));
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
 
   // Grouping logic
   const groupedTasks: Record<string, Record<string, Task[]>> = {};
-  const noDateTasks: Record<string, Task[]> = {};
   
   tasks.forEach(task => {
-    const groupName = task.project_group || 'Sem Grupo';
-    const projectName = task.project_name || 'Sem Cliente';
     const projectId = task.project_id || 'no-project';
+    const groupName = (projectId === 'no-project' ? 'Sem Grupo' : task.project_group) || 'Sem Grupo';
     
     if (selectedGroup !== 'all' && groupName !== selectedGroup) return;
-    
-    if (!task.dueDate) {
-      if (!noDateTasks[projectId]) noDateTasks[projectId] = [];
-      noDateTasks[projectId].push(task);
-      return;
-    }
 
     if (!groupedTasks[groupName]) groupedTasks[groupName] = {};
     if (!groupedTasks[groupName][projectId]) groupedTasks[groupName][projectId] = [];
@@ -328,7 +329,7 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
   };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <div className="p-6 max-w-[1600px] mx-auto space-y-6">
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
@@ -338,31 +339,26 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
           <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5">Controle diário de campanhas e tarefas</p>
         </div>
         
-        <div className="flex items-center gap-2 bg-white dark:bg-white/5 p-1 rounded-xl border border-slate-200 dark:border-white/10">
-          <button onClick={() => changeDate(-1)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-lg text-slate-500 dark:text-gray-400 hover:text-slate-800 dark:hover:text-white transition-colors">
-            <ChevronLeft size={20} />
-          </button>
-          <div className="flex items-center gap-2 px-2 font-medium text-slate-800 dark:text-white min-w-[140px] justify-center text-sm">
-            <Calendar size={16} className="text-purple-500 dark:text-purple-400" />
-            {viewMode === 1 ? formatDate(currentDate) : `${formatDate(currentDate)} até ${formatDate(new Date(currentDate.getTime() + (viewMode - 1) * 24 * 60 * 60 * 1000))}`}
-          </div>
-          <button onClick={() => changeDate(1)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-lg text-slate-500 dark:text-gray-400 hover:text-slate-800 dark:hover:text-white transition-colors">
-            <ChevronRight size={20} />
-          </button>
-          <div className="h-6 w-px bg-slate-200 dark:bg-white/10 mx-1"></div>
-          <select
-            value={viewMode}
-            onChange={(e) => setViewMode(Number(e.target.value))}
-            className="bg-transparent border-none text-slate-600 dark:text-gray-300 focus:ring-0 cursor-pointer text-sm font-medium pr-8"
-          >
-            <option value={1}>1 Dia</option>
-            <option value={3}>3 Dias</option>
-            <option value={5}>5 Dias</option>
-            <option value={7}>7 Dias</option>
-          </select>
-        </div>
+
 
         <div className="flex items-center gap-4">
+          <div className="flex bg-white dark:bg-white/5 p-1 rounded-xl border border-slate-200 dark:border-white/10">
+            <button 
+              onClick={() => setViewType('kanban')}
+              className={`p-1.5 rounded-lg transition-colors ${viewType === 'kanban' ? 'bg-white dark:bg-white/10 text-violet-500 shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-gray-300'}`}
+              title="Visualização Kanban"
+            >
+              <Columns size={18} />
+            </button>
+            <button 
+              onClick={() => setViewType('list')}
+              className={`p-1.5 rounded-lg transition-colors ${viewType === 'list' ? 'bg-white dark:bg-white/10 text-violet-500 shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-gray-300'}`}
+              title="Visualização em Lista"
+            >
+              <List size={18} />
+            </button>
+          </div>
+
           <div className="flex items-center gap-3 text-sm font-medium bg-white dark:bg-white/5 px-4 py-2 rounded-xl border border-slate-200 dark:border-white/10">
             <span className="flex items-center gap-1.5 text-green-600 dark:text-green-400">
               <CheckCircle2 size={16} />
@@ -414,21 +410,245 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
           <Loader2 className="animate-spin text-purple-500" size={32} />
         </div>
       ) : (
-        <div className="space-y-6">
-          {Object.entries(groupedTasks).map(([groupName, clients]) => {
+        <div className={viewType === 'kanban' ? "flex gap-4 overflow-x-auto pb-6 pt-2 h-[calc(100vh-200px)] items-start custom-scrollbar" : "space-y-6 pb-6 pt-2"}>
+          {['Grupo 1', 'Grupo 2', 'Quarentena'].map(targetGroup => {
+            const actualGroupKey = Object.keys(groupedTasks).find(k => k.toLowerCase() === targetGroup.toLowerCase());
+            const groupName = actualGroupKey || targetGroup;
+            const clients = actualGroupKey ? groupedTasks[actualGroupKey] : {};
+            
+            // Filtra os clientes baseados no status selecionado (Otimizado, Pendente, Gargalo)
+            const filteredClients = Object.entries(clients).filter(([projectId, clientTasks]) => {
+                const completedCount = clientTasks.filter(t => t.status === 'completed').length;
+                let status: 'todo' | 'in_progress' | 'done' = 'todo';
+                if (clientTasks.length > 0) {
+                    if (completedCount === 0) status = 'todo';
+                    else if (completedCount === clientTasks.length) status = 'done';
+                    else status = 'in_progress';
+                }
+                
+                // User filter logic
+                if (selectedStatus === 'OTIMIZADO' && status !== 'done') return false;
+                if (selectedStatus === 'PENDENTE' && status !== 'todo' && status !== 'in_progress') return false;
+                if (selectedStatus === 'GARGALO' && !clientTasks.some(t => t.status === 'gargalo')) return false;
+                
+                return true;
+            });
+            
+            if (filteredClients.length === 0) return null;
+
             const isGroupExpanded = expandedGroups[groupName] !== false;
             
+            const renderCards = () => filteredClients.map(([projectId, clientTasks]) => {
+                      const completedCount = clientTasks.filter(t => t.status === 'completed').length;
+                      const progress = clientTasks.length > 0 ? (completedCount / clientTasks.length) * 100 : 0;
+                      const projectName = projectId === 'no-project' ? 'Tarefas Internas / Sem Parceiro' : (clientTasks[0]?.project_name || 'Projeto Desconhecido');
+                      const isClientExpanded = expandedClients[groupName + projectId] || false;
+                      const isDone = progress === 100;
+
+                      return (
+                         <div key={projectId} className="flex flex-col rounded-2xl bg-dark-card border border-white/[0.06] hover:border-violet-500/25 transition-all shadow-sm flex-shrink-0">
+                            {/* Client Card Header */}
+                            <div 
+                              className="p-4 cursor-pointer"
+                              onClick={() => setExpandedClients(prev => ({ ...prev, [groupName + projectId]: !isClientExpanded }))}
+                            >
+                              {viewType === 'list' ? (
+                                <div className="flex items-start gap-3">
+                                  {getProjectIcon(projectId)}
+                                  <div className="flex-1 min-w-0">
+                                    <h4 className="text-sm font-semibold text-dark-text truncate pr-2">{projectName}</h4>
+                                    <div className="w-[300px] shrink-0 mt-2">
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-[10px] font-bold text-dark-text/40">{completedCount}/{clientTasks.length} tarefas</span>
+                                        <span className="text-[10px] font-bold text-violet-400">{Math.round(progress)}%</span>
+                                      </div>
+                                      <div className="w-full h-1.5 bg-dark-text/10 rounded-full mt-1.5 overflow-hidden">
+                                        <div className={`h-full rounded-full transition-all duration-500 ${isDone ? 'bg-emerald-500' : 'bg-violet-500'}`} style={{ width: `${progress}%` }} />
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="flex items-start gap-3">
+                                  {getProjectIcon(projectId)}
+                                  <div className="flex-1 min-w-0">
+                                    <h4 className="text-sm font-semibold text-dark-text truncate pr-2">{projectName}</h4>
+                                    <div className="flex items-center justify-between mt-2">
+                                      <span className="text-[10px] font-bold text-dark-text/40">{completedCount}/{clientTasks.length} tarefas</span>
+                                      <span className="text-[10px] font-bold text-violet-400">{Math.round(progress)}%</span>
+                                    </div>
+                                    <div className="w-full h-1.5 bg-dark-text/10 rounded-full mt-1.5 overflow-hidden">
+                                      <div className={`h-full rounded-full transition-all duration-500 ${isDone ? 'bg-emerald-500' : 'bg-violet-500'}`} style={{ width: `${progress}%` }} />
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                            
+                            {/* Subtasks Expanded View */}
+                            <AnimatePresence>
+                              {isClientExpanded && (
+                                 <motion.div
+                                   initial={{ height: 0, opacity: 0 }}
+                                   animate={{ height: 'auto', opacity: 1 }}
+                                   exit={{ height: 0, opacity: 0 }}
+                                   className="border-t border-white/[0.06] bg-dark-bg/50 rounded-b-2xl"
+                                 >
+                                    <div className="p-3 space-y-1.5">
+                                      {clientTasks.map(task => {
+                                         const isCompleted = task.status === 'completed';
+                                         return (
+                                            <div key={task.id} className="flex items-center gap-2.5 p-2 hover:bg-white/5 rounded-xl group/task transition-colors">
+                                              <button 
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  if (task.status !== 'completed') {
+                                                    const rect = e.currentTarget.getBoundingClientRect();
+                                                    const x = (rect.left + rect.width / 2) / window.innerWidth;
+                                                    const y = (rect.top + rect.height / 2) / window.innerHeight;
+                                                    confetti({
+                                                      particleCount: 30,
+                                                      spread: 50,
+                                                      scalar: 0.6,
+                                                      origin: { x, y },
+                                                      colors: ['#8B5CF6', '#A78BFA', '#C4B5FD'],
+                                                      disableForReducedMotion: true,
+                                                      zIndex: 100
+                                                    });
+                                                  }
+                                                  toggleTaskStatus(task);
+                                                }}
+                                                className={`w-4 h-4 rounded-full border flex-shrink-0 flex items-center justify-center transition-all ${
+                                                  isCompleted ? 'bg-emerald-500 border-emerald-500' : 'border-dark-text/20 hover:border-violet-400'
+                                                }`}
+                                              >
+                                                {isCompleted && <Check size={10} className="text-white" />}
+                                              </button>
+                                              <div className="flex-1 min-w-0 flex flex-col justify-center">
+                                                <span 
+                                                  onClick={(e) => { e.stopPropagation(); openTaskDetail(task); }}
+                                                  className={`text-xs block cursor-pointer transition-colors ${isCompleted ? 'line-through text-dark-text/40 hover:text-dark-text/60' : 'text-dark-text hover:text-violet-400'}`}
+                                                >
+                                                  {task.title}
+                                                </span>
+                                                {task.subtasks_list && task.subtasks_list.length > 0 && (
+                                                  <div className="mt-1">
+                                                    <span className="text-[9px] font-semibold text-dark-text/30 flex items-center gap-1 bg-dark-text/5 px-1.5 py-0.5 rounded-full w-fit">
+                                                      <ListChecks size={9} />
+                                                      {task.subtasks_list.filter(s => s.completed).length}/{task.subtasks_list.length}
+                                                    </span>
+                                                  </div>
+                                                )}
+                                              </div>
+                                              
+                                              <div className="flex items-center gap-2 flex-shrink-0">
+                                                {/* Tags Logic (Max 1 Tag) */}
+                                                {(task.tags && task.tags.length > 0) ? (
+                                                  <span className="text-[9px] font-semibold text-violet-400 flex items-center gap-1 bg-violet-400/10 border border-violet-400/20 px-1.5 py-0.5 rounded-full">
+                                                    <Tag size={9} />
+                                                    {task.tags[0]}
+                                                    <button 
+                                                      onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        updateTaskField(task.id, 'tags', []);
+                                                      }}
+                                                      className="hover:text-red-400 ml-0.5"
+                                                    >
+                                                      <X size={8} />
+                                                    </button>
+                                                  </span>
+                                                ) : (
+                                                  <div className="relative group/tagdrop" onClick={(e) => e.stopPropagation()}>
+                                                    <button className="text-[9px] font-semibold text-dark-text/30 flex items-center gap-1 bg-dark-text/5 px-1.5 py-0.5 rounded-full hover:bg-dark-text/10 transition-colors" title="Adicionar Tag">
+                                                      <Plus size={9} /> Tag
+                                                    </button>
+                                                    <div className="absolute right-0 top-full mt-1 bg-[#1A1A24] border border-white/10 rounded-lg shadow-xl py-1 hidden group-hover/tagdrop:block z-[60] min-w-[120px]">
+                                                       {['Facebook', 'Google', 'CRM', 'Otimização'].map(option => (
+                                                         <button 
+                                                           key={option}
+                                                           onClick={() => {
+                                                             updateTaskField(task.id, 'tags', [option]);
+                                                           }}
+                                                           className="w-full text-left px-3 py-1.5 text-[10px] text-dark-text hover:bg-white/5 transition-colors"
+                                                         >
+                                                           {option}
+                                                         </button>
+                                                       ))}
+                                                    </div>
+                                                  </div>
+                                                )}
+
+                                                {/* Date Selector */}
+                                                <DatePicker 
+                                                  value={task.dueDate || null}
+                                                  onChange={(val) => updateTaskField(task.id, 'dueDate', val)}
+                                                />
+                                              </div>
+                                            </div>
+                                         );
+                                      })}
+                                      
+                                      {/* Add Task Quick Input */}
+                                      <div className="pt-2 mt-2 border-t border-white/[0.06]">
+                                        {addingTaskToClient === groupName + projectId ? (
+                                          <div className="flex items-center gap-2">
+                                            <input 
+                                              type="text"
+                                              value={newTaskTitle}
+                                              onChange={(e) => setNewTaskTitle(e.target.value)}
+                                              placeholder="Nova tarefa..."
+                                              className="flex-1 bg-dark-card border border-white/10 rounded-lg px-3 py-1.5 text-xs text-dark-text focus:outline-none focus:border-violet-500"
+                                              onKeyDown={(e) => { if (e.key === 'Enter') handleAddTask(projectId); }}
+                                              autoFocus
+                                            />
+                                            <button onClick={() => handleAddTask(projectId)} className="bg-violet-600 hover:bg-violet-700 text-white p-1.5 rounded-lg"><Check size={14}/></button>
+                                            <button onClick={() => setAddingTaskToClient(null)} className="text-dark-text/40 hover:text-red-400 p-1.5"><X size={14}/></button>
+                                          </div>
+                                        ) : (
+                                          <button 
+                                            onClick={() => setAddingTaskToClient(groupName + projectId)}
+                                            className="text-[10px] font-bold text-dark-text/40 hover:text-violet-400 uppercase tracking-widest flex items-center gap-1 px-2 py-1 w-full"
+                                          >
+                                            <Plus size={12} /> Adicionar Tarefa
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                 </motion.div>
+                              )}
+                            </AnimatePresence>
+                         </div>
+                      );
+                   });
+
+            if (viewType === 'kanban') {
+              return (
+                <div key={groupName} className="flex-1 min-w-[340px] max-w-[500px] rounded-3xl bg-dark-bg/40 border border-white/[0.06] p-4 flex flex-col gap-3 max-h-full overflow-y-auto custom-scrollbar">
+                   <div className="flex items-center justify-between px-1 mb-1">
+                     <h3 className="text-[11px] font-bold text-dark-text uppercase tracking-widest">{groupName}</h3>
+                     <span className="text-[10px] bg-dark-text/10 px-2 py-0.5 rounded-full text-dark-text/60 font-bold">{filteredClients.length}</span>
+                   </div>
+                   
+                   <div className="flex flex-col gap-3">
+                     {renderCards()}
+                   </div>
+                </div>
+              );
+            }
+
             return (
-              <div key={groupName} className="space-y-3">
+              <div key={groupName} className="bg-dark-bg/40 border border-white/[0.06] rounded-3xl overflow-hidden mb-6">
                 <button 
                   onClick={() => setExpandedGroups(prev => ({ ...prev, [groupName]: !isGroupExpanded }))}
-                  className="flex items-center gap-2 text-lg font-semibold text-slate-800 dark:text-white/90 hover:text-slate-900 dark:hover:text-white transition-colors"
+                  className="w-full flex items-center justify-between p-4 hover:bg-white/[0.02] transition-colors"
                 >
-                  {isGroupExpanded ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
-                  {groupName}
-                  <span className="text-sm font-normal text-slate-500 dark:text-gray-500 bg-slate-100 dark:bg-white/5 px-2 py-0.5 rounded-full border border-slate-200 dark:border-transparent">
-                    {Object.keys(clients).length} clientes
-                  </span>
+                  <div className="flex items-center gap-3">
+                    {isGroupExpanded ? <ChevronDown size={20} className="text-violet-500" /> : <ChevronRight size={20} className="text-violet-500" />}
+                    <h3 className="text-[14px] font-bold text-dark-text uppercase tracking-widest">{groupName}</h3>
+                    <span className="text-[10px] bg-dark-text/10 px-2 py-0.5 rounded-full text-dark-text/60 font-bold ml-2">
+                      {filteredClients.length} parceiros
+                    </span>
+                  </div>
                 </button>
 
                 <AnimatePresence>
@@ -437,188 +657,11 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
                       initial={{ height: 0, opacity: 0 }}
                       animate={{ height: 'auto', opacity: 1 }}
                       exit={{ height: 0, opacity: 0 }}
-                      className="space-y-3 pl-6"
+                      className="px-4 pb-4"
                     >
-                      {Object.entries(clients).map(([projectId, clientTasks]) => {
-                        const clientStatus = getClientStatus(clientTasks);
-                        if (selectedStatus !== 'all' && clientStatus !== selectedStatus) return null;
-                        
-                        const isClientExpanded = expandedClients[projectId] || false;
-                        const completedCount = clientTasks.filter(t => t.status === 'completed').length;
-                        const progress = clientTasks.length > 0 ? (completedCount / clientTasks.length) * 100 : 0;
-                        const projectName = clientTasks[0]?.project_name || 'Projeto Desconhecido';
-
-                        return (
-                          <div key={projectId} className="bg-white dark:bg-[#11111b] border border-slate-200 dark:border-white/5 shadow-sm dark:shadow-none rounded-xl overflow-hidden">
-                            {/* Client Card Header */}
-                            <div 
-                              className="flex items-center justify-between p-4 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors"
-                              onClick={() => setExpandedClients(prev => ({ ...prev, [projectId]: !isClientExpanded }))}
-                            >
-                              <div className="flex items-center gap-4">
-                                {getProjectIcon(projectId)}
-                                <div>
-                                  <h3 className="text-slate-800 dark:text-white font-medium flex items-center gap-2">
-                                    {projectName}
-                                    <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-gray-400 border border-slate-200 dark:border-white/10">
-                                      {groupName}
-                                    </span>
-                                  </h3>
-                                  <div className="flex items-center gap-3 mt-1">
-                                    <div className="text-xs text-slate-500 dark:text-gray-500">{completedCount}/{clientTasks.length} concluídas</div>
-                                    <div className="w-32 h-1.5 bg-slate-200 dark:bg-white/5 rounded-full overflow-hidden">
-                                      <div className="h-full bg-purple-500 rounded-full" style={{ width: `${progress}%` }} />
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                              
-                              <div className="flex items-center gap-4">
-                                <span className={`text-xs font-bold px-3 py-1 rounded-full border ${getClientStatusColor(clientStatus)}`}>
-                                  {clientStatus}
-                                </span>
-                                {isClientExpanded ? <ChevronUp size={20} className="text-gray-500" /> : <ChevronDown size={20} className="text-gray-500" />}
-                              </div>
-                            </div>
-
-                            {/* Client Tasks List */}
-                            <AnimatePresence>
-                              {isClientExpanded && (
-                                <motion.div 
-                                  initial={{ height: 0 }}
-                                  animate={{ height: 'auto' }}
-                                  exit={{ height: 0 }}
-                                  className="border-t border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-black/20"
-                                >
-                                  <div className="p-2 space-y-1">
-                                    {clientTasks.map(task => {
-                                      const isCompleted = task.status === 'completed';
-                                      const isTaskExpanded = expandedTasks[task.id] || false;
-                                      
-                                      return (
-                                        <div key={task.id} className={`rounded-lg transition-colors ${isCompleted ? 'bg-green-500/5' : 'hover:bg-slate-100 dark:hover:bg-white/5'}`}>
-                                          <div className="flex items-center gap-3 p-3">
-                                            <button 
-                                              onClick={() => toggleTaskStatus(task)}
-                                              className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${isCompleted ? 'bg-green-500 border-green-500 text-white' : 'border-slate-300 dark:border-gray-500 text-transparent hover:border-purple-500 dark:hover:border-purple-500 bg-white dark:bg-transparent'}`}
-                                            >
-                                              <Check size={14} />
-                                            </button>
-                                            
-                                            <div className="flex-1 flex flex-col">
-                                              <div className="flex items-center justify-between">
-                                                <span className={`text-sm ${isCompleted ? 'text-slate-400 dark:text-gray-500 line-through' : 'text-slate-700 dark:text-gray-200'}`}>
-                                                  {task.title}
-                                                </span>
-                                                <div className="flex items-center gap-2">
-                                                  <button className="text-xs text-slate-500 dark:text-gray-500 hover:text-purple-600 dark:hover:text-purple-400 flex items-center gap-1 p-1">
-                                                    <ImageIcon size={14} /> Ver print da campanha
-                                                  </button>
-                                                  <select 
-                                                    value={task.priority || 'Média'}
-                                                    onChange={(e) => updateTaskField(task.id, 'priority', e.target.value)}
-                                                    className="text-xs bg-transparent border-none text-slate-500 dark:text-gray-500 focus:ring-0 cursor-pointer"
-                                                  >
-                                                    <option value="Baixa">Baixa</option>
-                                                    <option value="Média">Média</option>
-                                                    <option value="Alta">Alta</option>
-                                                    <option value="Urgente">Urgente</option>
-                                                  </select>
-                                                  <button 
-                                                    onClick={() => setExpandedTasks(prev => ({ ...prev, [task.id]: !isTaskExpanded }))}
-                                                    className="text-slate-500 dark:text-gray-500 hover:text-slate-800 dark:hover:text-white p-1"
-                                                  >
-                                                    <ListTodo size={16} />
-                                                  </button>
-                                                </div>
-                                              </div>
-                                            </div>
-                                          </div>
-                                          
-                                          {/* Subtasks */}
-                                          <AnimatePresence>
-                                            {isTaskExpanded && (
-                                              <motion.div 
-                                                initial={{ height: 0, opacity: 0 }}
-                                                animate={{ height: 'auto', opacity: 1 }}
-                                                exit={{ height: 0, opacity: 0 }}
-                                                className="pl-11 pr-4 pb-3 space-y-2"
-                                              >
-                                                {task.subtasks_list?.map(subtask => (
-                                                  <div key={subtask.id} className="flex items-center gap-3 group">
-                                                    <button 
-                                                      onClick={() => toggleSubtaskStatus(subtask, task.id)}
-                                                      className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${subtask.completed ? 'bg-green-500 border-green-500 text-white' : 'border-slate-400 dark:border-gray-600 text-transparent group-hover:border-purple-500 dark:group-hover:border-purple-500 bg-white dark:bg-transparent'}`}
-                                                    >
-                                                      <Check size={12} />
-                                                    </button>
-                                                    <span className={`text-xs ${subtask.completed ? 'text-slate-400 dark:text-gray-600 line-through' : 'text-slate-600 dark:text-gray-400'}`}>
-                                                      {subtask.title}
-                                                    </span>
-                                                  </div>
-                                                ))}
-                                                
-                                                {addingSubtaskToTask === task.id ? (
-                                                  <div className="flex items-center gap-2 mt-2">
-                                                    <input 
-                                                      type="text"
-                                                      value={newSubtaskTitle}
-                                                      onChange={(e) => setNewSubtaskTitle(e.target.value)}
-                                                      placeholder="Título da subtarefa..."
-                                                      className="flex-1 bg-white dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded px-3 py-1 text-xs text-slate-800 dark:text-white focus:outline-none focus:border-purple-500"
-                                                      onKeyDown={(e) => e.key === 'Enter' && handleAddSubtask(task.id)}
-                                                      autoFocus
-                                                    />
-                                                    <button onClick={() => handleAddSubtask(task.id)} className="text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 text-xs font-medium">Salvar</button>
-                                                    <button onClick={() => setAddingSubtaskToTask(null)} className="text-slate-500 dark:text-gray-500 hover:text-slate-700 dark:hover:text-gray-400"><X size={14} /></button>
-                                                  </div>
-                                                ) : (
-                                                  <button 
-                                                    onClick={() => setAddingSubtaskToTask(task.id)}
-                                                    className="text-xs text-slate-500 dark:text-gray-500 hover:text-purple-600 dark:hover:text-purple-400 flex items-center gap-1 mt-2"
-                                                  >
-                                                    <Plus size={12} /> Adicionar subtarefa
-                                                  </button>
-                                                )}
-                                              </motion.div>
-                                            )}
-                                          </AnimatePresence>
-                                        </div>
-                                      );
-                                    })}
-                                    
-                                    {/* Add Task to Client */}
-                                    <div className="p-3">
-                                      {addingTaskToClient === projectId ? (
-                                        <div className="flex items-center gap-2">
-                                          <input 
-                                            type="text"
-                                            value={newTaskTitle}
-                                            onChange={(e) => setNewTaskTitle(e.target.value)}
-                                            placeholder="Título da tarefa..."
-                                            className="flex-1 bg-white dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-purple-500"
-                                            onKeyDown={(e) => e.key === 'Enter' && handleAddTask(projectId)}
-                                            autoFocus
-                                          />
-                                          <button onClick={() => handleAddTask(projectId)} className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-lg text-sm font-medium">Salvar</button>
-                                          <button onClick={() => setAddingTaskToClient(null)} className="text-slate-500 dark:text-gray-500 hover:text-slate-700 dark:hover:text-gray-400 p-2"><X size={18} /></button>
-                                        </div>
-                                      ) : (
-                                        <button 
-                                          onClick={() => setAddingTaskToClient(projectId)}
-                                          className="text-sm text-slate-500 dark:text-gray-500 hover:text-purple-600 dark:hover:text-purple-400 flex items-center gap-2 font-medium"
-                                        >
-                                          <Plus size={16} /> ADICIONAR ITEM
-                                        </button>
-                                      )}
-                                    </div>
-                                  </div>
-                                </motion.div>
-                              )}
-                            </AnimatePresence>
-                          </div>
-                        );
-                      })}
+                      <div className="flex flex-col gap-3 pt-2">
+                        {renderCards()}
+                      </div>
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -626,217 +669,9 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
             );
           })}
           
-          {Object.keys(groupedTasks).length === 0 && Object.keys(noDateTasks).length === 0 && (
-            <div className="text-center py-12 text-slate-500 dark:text-gray-500">
-              Nenhuma tarefa encontrada para esta data.
-            </div>
-          )}
-
-          {Object.keys(noDateTasks).length > 0 && (
-            <div className="space-y-3 mt-8">
-              <button 
-                onClick={() => setExpandedGroups(prev => ({ ...prev, 'Sem Data': prev['Sem Data'] !== false ? false : true }))}
-                className="flex items-center gap-2 text-lg font-semibold text-slate-800 dark:text-white/90 hover:text-slate-900 dark:hover:text-white transition-colors"
-              >
-                {expandedGroups['Sem Data'] !== false ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
-                Sem Data
-                <span className="text-sm font-normal text-slate-500 dark:text-gray-500 bg-slate-100 dark:bg-white/5 px-2 py-0.5 rounded-full border border-slate-200 dark:border-transparent">
-                  {Object.keys(noDateTasks).length} clientes
-                </span>
-              </button>
-
-              <AnimatePresence>
-                {expandedGroups['Sem Data'] !== false && (
-                  <motion.div 
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    className="space-y-3 pl-6"
-                  >
-                    {Object.entries(noDateTasks).map(([projectId, clientTasks]) => {
-                      const clientStatus = getClientStatus(clientTasks);
-                      if (selectedStatus !== 'all' && clientStatus !== selectedStatus) return null;
-                      
-                      const isClientExpanded = expandedClients[`nodate-${projectId}`] || false;
-                      const completedCount = clientTasks.filter(t => t.status === 'completed').length;
-                      const progress = clientTasks.length > 0 ? (completedCount / clientTasks.length) * 100 : 0;
-                      const projectName = clientTasks[0]?.project_name || 'Projeto Desconhecido';
-                      const groupName = clientTasks[0]?.project_group || 'Sem Grupo';
-
-                      return (
-                        <div key={`nodate-${projectId}`} className="bg-white dark:bg-[#11111b] border border-slate-200 dark:border-white/5 shadow-sm dark:shadow-none rounded-xl overflow-hidden opacity-90 dark:opacity-80">
-                          {/* Client Card Header */}
-                          <div 
-                            className="flex items-center justify-between p-4 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors"
-                            onClick={() => setExpandedClients(prev => ({ ...prev, [`nodate-${projectId}`]: !isClientExpanded }))}
-                          >
-                            <div className="flex items-center gap-4">
-                              {getProjectIcon(projectId)}
-                              <div>
-                                <h3 className="text-slate-800 dark:text-white font-medium flex items-center gap-2">
-                                  {projectName}
-                                  <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-gray-400 border border-slate-200 dark:border-white/10">
-                                    {groupName}
-                                  </span>
-                                </h3>
-                                <div className="flex items-center gap-3 mt-1">
-                                  <div className="text-xs text-slate-500 dark:text-gray-500">{completedCount}/{clientTasks.length} concluídas</div>
-                                  <div className="w-32 h-1.5 bg-slate-200 dark:bg-white/5 rounded-full overflow-hidden">
-                                    <div className="h-full bg-gray-400 dark:bg-gray-500 rounded-full" style={{ width: `${progress}%` }} />
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                            
-                            <div className="flex items-center gap-4">
-                              <span className={`text-xs font-bold px-3 py-1 rounded-full border ${getClientStatusColor(clientStatus)}`}>
-                                {clientStatus}
-                              </span>
-                              {isClientExpanded ? <ChevronUp size={20} className="text-gray-500" /> : <ChevronDown size={20} className="text-gray-500" />}
-                            </div>
-                          </div>
-
-                          {/* Client Tasks List */}
-                          <AnimatePresence>
-                            {isClientExpanded && (
-                              <motion.div 
-                                initial={{ height: 0 }}
-                                animate={{ height: 'auto' }}
-                                exit={{ height: 0 }}
-                                className="border-t border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-black/20"
-                              >
-                                <div className="p-2 space-y-1">
-                                  {clientTasks.map(task => {
-                                    const isCompleted = task.status === 'completed';
-                                    const isTaskExpanded = expandedTasks[task.id] || false;
-                                    
-                                    return (
-                                      <div key={task.id} className={`rounded-lg transition-colors ${isCompleted ? 'bg-green-500/5' : 'hover:bg-slate-100 dark:hover:bg-white/5'}`}>
-                                        <div className="flex items-center gap-3 p-3">
-                                          <button 
-                                            onClick={() => toggleTaskStatus(task)}
-                                            className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${isCompleted ? 'bg-green-500 border-green-500 text-white' : 'border-slate-300 dark:border-gray-500 text-transparent hover:border-purple-500 dark:hover:border-purple-500 bg-white dark:bg-transparent'}`}
-                                          >
-                                            <Check size={14} />
-                                          </button>
-                                          
-                                          <div className="flex-1 flex flex-col">
-                                            <div className="flex items-center justify-between">
-                                              <span className={`text-sm ${isCompleted ? 'text-slate-400 dark:text-gray-500 line-through' : 'text-slate-700 dark:text-gray-200'}`}>
-                                                {task.title}
-                                              </span>
-                                              <div className="flex items-center gap-2">
-                                                <button className="text-xs text-slate-500 dark:text-gray-500 hover:text-purple-600 dark:hover:text-purple-400 flex items-center gap-1 p-1">
-                                                  <ImageIcon size={14} /> Ver print da campanha
-                                                </button>
-                                                <select 
-                                                  value={task.priority || 'Média'}
-                                                  onChange={(e) => updateTaskField(task.id, 'priority', e.target.value)}
-                                                  className="text-xs bg-transparent border-none text-slate-500 dark:text-gray-500 focus:ring-0 cursor-pointer"
-                                                >
-                                                  <option value="Baixa">Baixa</option>
-                                                  <option value="Média">Média</option>
-                                                  <option value="Alta">Alta</option>
-                                                  <option value="Urgente">Urgente</option>
-                                                </select>
-                                                <button 
-                                                  onClick={() => setExpandedTasks(prev => ({ ...prev, [task.id]: !isTaskExpanded }))}
-                                                  className="text-slate-500 dark:text-gray-500 hover:text-slate-800 dark:hover:text-white p-1"
-                                                >
-                                                  <ListTodo size={16} />
-                                                </button>
-                                              </div>
-                                            </div>
-                                          </div>
-                                        </div>
-                                        
-                                        {/* Subtasks */}
-                                        <AnimatePresence>
-                                          {isTaskExpanded && (
-                                            <motion.div 
-                                              initial={{ height: 0, opacity: 0 }}
-                                              animate={{ height: 'auto', opacity: 1 }}
-                                              exit={{ height: 0, opacity: 0 }}
-                                              className="pl-11 pr-4 pb-3 space-y-2"
-                                            >
-                                              {task.subtasks_list?.map(subtask => (
-                                                <div key={subtask.id} className="flex items-center gap-3 group">
-                                                  <button 
-                                                    onClick={() => toggleSubtaskStatus(subtask, task.id)}
-                                                    className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${subtask.completed ? 'bg-green-500 border-green-500 text-white' : 'border-slate-400 dark:border-gray-600 text-transparent group-hover:border-purple-500 dark:group-hover:border-purple-500 bg-white dark:bg-transparent'}`}
-                                                  >
-                                                    <Check size={12} />
-                                                  </button>
-                                                  <span className={`text-xs ${subtask.completed ? 'text-slate-400 dark:text-gray-600 line-through' : 'text-slate-600 dark:text-gray-400'}`}>
-                                                    {subtask.title}
-                                                  </span>
-                                                </div>
-                                              ))}
-                                              
-                                              {addingSubtaskToTask === task.id ? (
-                                                <div className="flex items-center gap-2 mt-2">
-                                                  <input 
-                                                    type="text"
-                                                    value={newSubtaskTitle}
-                                                    onChange={(e) => setNewSubtaskTitle(e.target.value)}
-                                                    placeholder="Título da subtarefa..."
-                                                    className="flex-1 bg-white dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded px-3 py-1 text-xs text-slate-800 dark:text-white focus:outline-none focus:border-purple-500"
-                                                    onKeyDown={(e) => e.key === 'Enter' && handleAddSubtask(task.id)}
-                                                    autoFocus
-                                                  />
-                                                  <button onClick={() => handleAddSubtask(task.id)} className="text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 text-xs font-medium">Salvar</button>
-                                                  <button onClick={() => setAddingSubtaskToTask(null)} className="text-slate-500 dark:text-gray-500 hover:text-slate-700 dark:hover:text-gray-400"><X size={14} /></button>
-                                                </div>
-                                              ) : (
-                                                <button 
-                                                  onClick={() => setAddingSubtaskToTask(task.id)}
-                                                  className="text-xs text-slate-500 dark:text-gray-500 hover:text-purple-600 dark:hover:text-purple-400 flex items-center gap-1 mt-2"
-                                                >
-                                                  <Plus size={12} /> Adicionar subtarefa
-                                                </button>
-                                              )}
-                                            </motion.div>
-                                          )}
-                                        </AnimatePresence>
-                                      </div>
-                                    );
-                                  })}
-                                  
-                                  {/* Add Task to Client */}
-                                  <div className="p-3">
-                                    {addingTaskToClient === `nodate-${projectId}` ? (
-                                      <div className="flex items-center gap-2">
-                                        <input 
-                                          type="text"
-                                          value={newTaskTitle}
-                                          onChange={(e) => setNewTaskTitle(e.target.value)}
-                                          placeholder="Título da tarefa..."
-                                          className="flex-1 bg-white dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-purple-500"
-                                          onKeyDown={(e) => e.key === 'Enter' && handleAddTask(projectId)}
-                                          autoFocus
-                                        />
-                                        <button onClick={() => handleAddTask(projectId)} className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-lg text-sm font-medium">Salvar</button>
-                                        <button onClick={() => setAddingTaskToClient(null)} className="text-slate-500 dark:text-gray-500 hover:text-slate-700 dark:hover:text-gray-400 p-2"><X size={18} /></button>
-                                      </div>
-                                    ) : (
-                                      <button 
-                                        onClick={() => setAddingTaskToClient(`nodate-${projectId}`)}
-                                        className="text-sm text-slate-500 dark:text-gray-500 hover:text-purple-600 dark:hover:text-purple-400 flex items-center gap-2 font-medium"
-                                      >
-                                        <Plus size={16} /> ADICIONAR ITEM
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
-                        </div>
-                      );
-                    })}
-                  </motion.div>
-                )}
-              </AnimatePresence>
+          {Object.keys(groupedTasks).length === 0 && (
+            <div className="text-center w-full py-12 text-dark-text/40 font-medium">
+              Nenhuma tarefa encontrada.
             </div>
           )}
         </div>
@@ -934,6 +769,21 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
           </div>
         </div>
       </Modal>
+
+      {/* Task Detail Modal */}
+      <TaskDetailModal
+        isOpen={isDetailModalOpen}
+        onClose={() => { setIsDetailModalOpen(false); setSelectedTask(null); }}
+        task={selectedTask ? tasks.find(t => t.id === selectedTask.id) || selectedTask : null}
+        onTaskUpdate={(taskId, field, value) => {
+          updateTaskField(taskId, field, value);
+        }}
+        onSubtaskToggle={(subtask, taskId) => {
+          toggleSubtaskStatus(subtask, taskId);
+        }}
+        onSubtaskAdd={handleSubtaskAddFromModal}
+        onRefresh={fetchData}
+      />
     </div>
   );
 };

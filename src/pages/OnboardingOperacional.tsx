@@ -25,6 +25,7 @@ interface OnboardingTask {
   cidade: string | null;
   uf: string | null;
   meeting_info: string | null;
+  produto?: string | null;
 }
 
 interface Comment {
@@ -546,6 +547,32 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
           {task.tags.map(t => <TagBadge key={t} label={t} />)}
         </div>
 
+        {/* Produto */}
+        <div className="shrink-0 w-32 flex items-center pr-2">
+          {task.produto ? (
+            (() => {
+              let pName = task.produto;
+              let pColor = '#8b5cf6'; // violet-500 default
+              try {
+                const parsed = JSON.parse(task.produto);
+                if (parsed && typeof parsed === 'object' && parsed.name) {
+                  pName = parsed.name;
+                  if (parsed.color) pColor = parsed.color;
+                }
+              } catch(e) {}
+              return (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg truncate border"
+                      style={{ color: pColor, backgroundColor: `${pColor}15`, borderColor: `${pColor}30` }}
+                      title={pName}>
+                  {pName}
+                </span>
+              );
+            })()
+          ) : (
+            <span className="text-[11px] text-slate-600">—</span>
+          )}
+        </div>
+
         {/* Squad */}
         <div className="shrink-0 w-36">
           <select value={squad} onChange={e => handleSquadChange(e.target.value)}
@@ -845,6 +872,7 @@ const GroupBlock = ({ group, onUpdate, onAddTask, onOpenDetail, onOpenSubtask }:
             <div className="w-[14px] shrink-0" />
             <div className="w-4 shrink-0" />
             <div className="flex-1">Nome</div>
+            <div className="shrink-0 w-32">Produto</div>
             <div className="shrink-0 w-36">Squad</div>
             <div className="shrink-0 w-20 text-center">Resp.</div>
             <div className="shrink-0 w-24">Data Inicial</div>
@@ -985,9 +1013,21 @@ const TemplateModal = ({ onClose }: { onClose: () => void }) => {
   };
 
   const [selectedItem, setSelectedItem] = useState<TemplateItem | null>(null);
+  const saveTimeout = React.useRef<any>(null);
 
   const updateItem = (idx: number, updates: Partial<TemplateItem>) => {
-    setItems(prev => prev.map((item, i) => i === idx ? { ...item, ...updates } : item));
+    setItems(prev => {
+      const next = prev.map((item, i) => i === idx ? { ...item, ...updates } : item);
+      if (saveTimeout.current) clearTimeout(saveTimeout.current);
+      saveTimeout.current = setTimeout(() => {
+        fetch('/api/onboarding-template', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: next.map(i => ({ title: i.title, description: i.description || null, internal_doc: i.internal_doc || null })) }),
+        }).catch(() => {});
+      }, 1000);
+      return next;
+    });
     if (selectedItem && items[idx]?.id === selectedItem.id) {
       setSelectedItem(prev => prev ? { ...prev, ...updates } : prev);
     }

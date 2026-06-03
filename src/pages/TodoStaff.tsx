@@ -526,7 +526,7 @@ const RichTextArea: React.FC<RichTextAreaProps> = ({ value, onChange, placeholde
         onInput={emit}
         onPaste={handlePaste}
         style={{ minHeight: `${rows * 1.6}em` }}
-        className={`w-full bg-dark-card border border-dark-text/10 rounded-xl px-4 py-2.5 text-sm text-dark-text focus:outline-none focus:border-violet-500/50 transition-all overflow-auto rich-text-content`}
+        className={`w-full bg-dark-card border border-dark-text/10 rounded-xl px-4 py-2.5 text-sm text-dark-text focus:outline-none focus:border-violet-500/50 transition-all overflow-auto rich-text-content break-words`}
       />
       {isEmpty && (
         <span className="absolute top-2.5 left-4 text-sm text-dark-text/30 pointer-events-none select-none">{placeholder}</span>
@@ -1768,6 +1768,7 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
   const [activeDocPageId, setActiveDocPageId] = useState<string | null>(null);
   const [docPageDirty, setDocPageDirty] = useState(false);
   const [docPageSaving, setDocPageSaving] = useState(false);
+  const docSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [editingDocTitle, setEditingDocTitle] = useState<string | null>(null);
   const [docTitleInput, setDocTitleInput] = useState('');
   const [todoModal,  setTodoModal]  = useState(false);
@@ -2425,15 +2426,28 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
                     <input
                       value={docPages.find(p => p.id === activeDocPageId)?.title || ''}
                       onChange={e => {
-                        setDocPages(prev => prev.map(p => p.id === activeDocPageId ? { ...p, title: e.target.value } : p));
-                        setDocPageDirty(true);
+                        const newTitle = e.target.value;
+                        setDocPages(prev => prev.map(p => p.id === activeDocPageId ? { ...p, title: newTitle } : p));
+                        
+                        if (docSaveTimeoutRef.current) clearTimeout(docSaveTimeoutRef.current);
+                        setDocPageSaving(true);
+                        docSaveTimeoutRef.current = setTimeout(async () => {
+                          const page = docPages.find(p => p.id === activeDocPageId);
+                          if (page) {
+                            await apiCall('PUT', `/api/todo-staff/doc-pages/${activeDocPageId}`, { title: newTitle, content: page.content });
+                          }
+                          setDocPageSaving(false);
+                        }, 1000);
                       }}
                       className="text-2xl font-black text-dark-text bg-transparent outline-none w-full placeholder:text-dark-text/20"
                       placeholder="Título da página..."
                     />
-                    <p className="text-[10px] text-dark-text/30 mt-1">
-                      Atualizado por último {new Date(docPages.find(p => p.id === activeDocPageId)?.updated_at || '').toLocaleDateString('pt-BR')}
-                    </p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <p className="text-[10px] text-dark-text/30">
+                        Atualizado por último {new Date(docPages.find(p => p.id === activeDocPageId)?.updated_at || '').toLocaleDateString('pt-BR')}
+                      </p>
+                      {docPageSaving && <Loader2 size={10} className="animate-spin text-dark-text/40" />}
+                    </div>
                   </div>
                   {/* Editor */}
                   <div className="flex-1 px-8 py-6 overflow-y-auto custom-scrollbar">
@@ -2442,30 +2456,19 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
                       content={docPages.find(p => p.id === activeDocPageId)?.content || ''}
                       onChange={html => {
                         setDocPages(prev => prev.map(p => p.id === activeDocPageId ? { ...p, content: html, updated_at: new Date().toISOString() } : p));
-                        setDocPageDirty(true);
+                        
+                        if (docSaveTimeoutRef.current) clearTimeout(docSaveTimeoutRef.current);
+                        setDocPageSaving(true);
+                        docSaveTimeoutRef.current = setTimeout(async () => {
+                          const page = docPages.find(p => p.id === activeDocPageId);
+                          if (page) {
+                            await apiCall('PUT', `/api/todo-staff/doc-pages/${activeDocPageId}`, { title: page.title, content: html });
+                          }
+                          setDocPageSaving(false);
+                        }, 1000);
                       }}
                     />
                   </div>
-                  {/* Save bar */}
-                  {docPageDirty && (
-                    <div className="px-8 py-3 border-t border-white/[0.06] flex justify-end">
-                      <button
-                        onClick={async () => {
-                          setDocPageSaving(true);
-                          const page = docPages.find(p => p.id === activeDocPageId);
-                          if (page) {
-                            await apiCall('PUT', `/api/todo-staff/doc-pages/${activeDocPageId}`, { title: page.title, content: page.content });
-                          }
-                          setDocPageDirty(false);
-                          setDocPageSaving(false);
-                        }}
-                        disabled={docPageSaving}
-                        className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-colors"
-                      >
-                        {docPageSaving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Salvar
-                      </button>
-                    </div>
-                  )}
                 </>
               ) : (
                 <div className="flex-1 flex flex-col items-center justify-center text-dark-text/30 gap-3">

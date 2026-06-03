@@ -55,7 +55,7 @@ const ActiveClients: React.FC = () => {
   const [clients, setClients] = useState<Client[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [showValues, setShowValues] = useState(true);
+  const [showValues, setShowValues] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
@@ -379,6 +379,7 @@ const ActiveClients: React.FC = () => {
     'Resultado Comercial',
     'Motivo Financeiro',
     'CRM e IA',
+    'Campanha',
     'Outros',
   ];
 

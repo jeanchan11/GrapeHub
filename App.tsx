@@ -48,6 +48,7 @@ import CandidateApplicationForm from './src/pages/CandidateApplicationForm';
 import CollaboratorOnboardingForm from './src/pages/CollaboratorOnboardingForm';
 import SaboteurTestPage from './src/pages/SaboteurTestPage';
 import DiscTestPage from './src/pages/DiscTestPage';
+import SenhasPage from './src/pages/SenhasPage';
 import Login from './src/components/LoginView';
 import AdminPanel from './src/components/AdminPanel';
 import LoadingSpinner from './src/components/LoadingSpinner';
@@ -71,6 +72,10 @@ const AppContent: React.FC = () => {
   const { menu } = useMenu();
   console.log('AppContent userData:', userData);
   const [activePage, setActivePage] = useState(() => {
+    // Read from URL hash first (e.g. /#/chamados-grapehub)
+    const hash = window.location.hash.replace(/^#\/?/, '');
+    if (hash) return hash;
+    // Fallback to localStorage for backward compatibility
     return localStorage.getItem('activePage') || 'welcome';
   });
   const [theme, setTheme] = useState<'light' | 'dark' | 'darker'>(() => {
@@ -78,8 +83,33 @@ const AppContent: React.FC = () => {
     return (saved as 'light' | 'dark' | 'darker') || 'dark';
   });
 
+  // Sync URL hash when activePage changes
   useEffect(() => {
+    const currentHash = window.location.hash.replace(/^#\/?/, '');
+    if (currentHash !== activePage) {
+      window.history.replaceState(null, '', `#/${activePage}`);
+    }
     localStorage.setItem('activePage', activePage);
+  }, [activePage]);
+
+  // Navigate to page with browser history support
+  const navigateTo = (pageId: string) => {
+    if (pageId !== activePage) {
+      window.history.pushState(null, '', `#/${pageId}`);
+      setActivePage(pageId);
+    }
+  };
+
+  // Listen for browser back/forward navigation
+  useEffect(() => {
+    const handlePopState = () => {
+      const hash = window.location.hash.replace(/^#\/?/, '');
+      if (hash && hash !== activePage) {
+        setActivePage(hash);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
   }, [activePage]);
 
   // Resolve o template da página ativa (necessário para detectar páginas financeiras no AIChat)
@@ -180,6 +210,16 @@ const AppContent: React.FC = () => {
   };
 
   const renderPage = () => {
+    // Guard: if user is logged in but userData hasn't loaded yet, show spinner
+    // This prevents the "Acesso Restrito" flash during token refresh or slow API
+    if (user && !userData) {
+      return (
+        <div className="flex items-center justify-center h-full">
+          <LoadingSpinner size="lg" />
+        </div>
+      );
+    }
+
     const isAdmin = userData?.role === 'superadmin' || userData?.role === 'gerente-operacional';
     const isAllowed = isAdmin || userData?.allowedPages?.includes(activePage);
     
@@ -228,7 +268,7 @@ const AppContent: React.FC = () => {
         console.log("AppContent: Rendering ProjectsModule with activePage:", activePage);
         return <ProjectsModule key={activePage} activePage={activePage} />;
       case 'todo':
-        return <TodoPage key={activePage} activePage={activePage} onPageChange={setActivePage} />;
+        return <TodoPage key={activePage} activePage={activePage} onPageChange={navigateTo} />;
       case 'gestor-dashboard':
         return <GestorDashboard />;
       case 'closer':
@@ -244,7 +284,7 @@ const AppContent: React.FC = () => {
       case 'notifications':
         return <NotificationsPage />;
       case 'settings':
-        return <SettingsPage onPageChange={setActivePage} isSuperAdmin={userData?.role === 'superadmin'} />;
+        return <SettingsPage onPageChange={navigateTo} isSuperAdmin={userData?.role === 'superadmin'} />;
       case 'financeiro-dashboard':
         return <FinanceiroDashboard />;
       case 'fin-extrato':
@@ -252,7 +292,7 @@ const AppContent: React.FC = () => {
       case 'kpis-squad':
         return <DashboardOperacional key={activePage} activePage={activePage} subsessionId={activeSubsessionId} />;
       case 'parceiros-squad':
-        return <ParceirosSquad activePage={activePage} onPageChange={setActivePage} />;
+        return <ParceirosSquad activePage={activePage} onPageChange={navigateTo} />;
       case 'blank':
         return <div className="p-8 text-center text-slate-500">Esta é uma página em branco.</div>;
       case 'task-templates':
@@ -305,6 +345,8 @@ const AppContent: React.FC = () => {
         return <ColaboradoresPage />;
       case 'planejamento-crescimento':
         return <PlanejamentoCrescimento />;
+      case 'senhas':
+        return <SenhasPage activePage={activePage} />;
 
       case 'meeting-notes': {
         // Find the page label from menu for the title
@@ -367,7 +409,7 @@ const AppContent: React.FC = () => {
     <div className="flex h-screen overflow-hidden bg-light-bg dark:bg-dark-bg transition-colors duration-300">
       <Sidebar 
         activePage={activePage} 
-        onPageChange={setActivePage} 
+        onPageChange={navigateTo} 
         user={user}
         userData={userData}
         theme={theme}

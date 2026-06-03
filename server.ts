@@ -15,6 +15,7 @@ import { setupDispatchRoutes } from "./src/routes/dispatch";
 import rateLimit from 'express-rate-limit';
 import cors from 'cors';
 import helmet from 'helmet';
+import multer from 'multer';
 
 // IMMEDIATE LOGGING TO VERIFY BOOT
 console.log("-----------------------------------------");
@@ -759,11 +760,33 @@ async function startServer() {
         created_at TIMESTAMP DEFAULT NOW()
       );
 
+      CREATE TABLE IF NOT EXISTS task_attachments (
+        id SERIAL PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        file_name TEXT NOT NULL,
+        file_url TEXT NOT NULL,
+        file_type TEXT,
+        file_size INTEGER,
+        uploaded_by TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS task_comments (
+        id SERIAL PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        author_name TEXT NOT NULL,
+        author_avatar TEXT,
+        content TEXT NOT NULL,
+        attachments JSONB DEFAULT '[]',
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+
       -- Migration for todos table
       ALTER TABLE todos ADD COLUMN IF NOT EXISTS due_date TIMESTAMP;
       ALTER TABLE todos ADD COLUMN IF NOT EXISTS subtasks JSONB DEFAULT '[]';
       ALTER TABLE todos ADD COLUMN IF NOT EXISTS page_id TEXT;
       ALTER TABLE todos ADD COLUMN IF NOT EXISTS project_id TEXT;
+      ALTER TABLE todos ADD COLUMN IF NOT EXISTS tags JSONB DEFAULT '[]'::jsonb;
 
       CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
@@ -1346,6 +1369,21 @@ async function startServer() {
     `);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_project_comments_project_id ON project_comments(project_id)`);
 
+    // Passwords / Logins Table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS passwords (
+        id SERIAL PRIMARY KEY,
+        page_id TEXT NOT NULL,
+        service_name TEXT NOT NULL,
+        login TEXT,
+        password TEXT,
+        url TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    
+    await pool.query(`ALTER TABLE passwords ADD COLUMN IF NOT EXISTS url TEXT;`).catch(e => console.error("Error migrating passwords columns", e));
+
     // ── Hiring / Contratação tables ──────────────────────────────────────────
     await pool.query(`
       CREATE TABLE IF NOT EXISTS hiring_folders (
@@ -1895,6 +1933,43 @@ async function startServer() {
                 );
                 console.log(`[Automação] create_client: cliente "${clientName}" criado com id ${clientId}`);
               }
+            } else if (actionType === 'create_onboarding') {
+              const clientName = lead.form_nome_fantasia || lead.nome || lead.form_nome_completo || 'Novo Cliente';
+              const nomeCompleto = lead.form_nome_completo || null;
+              const telefone = lead.telefone || lead.form_telefone_whatsapp || null;
+              const cidade = lead.form_cidade || lead.office_location || null;
+              
+              const tags = Array.isArray(lead.tags) ? lead.tags : [];
+              const produtoTag = tags.length > 0 ? tags[0] : null;
+
+              const result = await pool.query(
+                `INSERT INTO onboarding_tasks (client_name, nome_completo, telefone_whatsapp, cidade, produto, status_group, type)
+                 VALUES ($1, $2, $3, $4, $5, 'briefing-realizado', 'operacional') RETURNING *`,
+                [clientName, nomeCompleto, telefone, cidade, produtoTag]
+              );
+              const newTask = result.rows[0];
+
+              const template = await pool.query(
+                "SELECT title, order_index, description, internal_doc FROM onboarding_template_items WHERE type = 'operacional' ORDER BY order_index ASC"
+              );
+              if (template.rows.length > 0) {
+                const values = [];
+                const params = [];
+                let idx = 1;
+                for (const item of template.rows) {
+                  values.push(`($${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++})`);
+                  params.push(newTask.id, item.title, item.order_index, item.description || null, item.internal_doc || null);
+                }
+                await pool.query(
+                  `INSERT INTO onboarding_subtasks (task_id, title, order_index, description, internal_doc) VALUES ${values.join(', ')}`,
+                  params
+                );
+                await pool.query(
+                  `UPDATE onboarding_tasks SET subtask_count = $1 WHERE id = $2`,
+                  [template.rows.length, newTask.id]
+                );
+              }
+              console.log(`[Automação] create_onboarding: tarefa operacional criada para lead ${leadId}`);
             }
 
             console.log(`[Automação] "${automation.name}" → ação "${actionType}" executada para lead ${leadId}`);
@@ -1997,7 +2072,8 @@ async function startServer() {
       // Fetch all projects for those page_ids
       const placeholders = pageIds.map((_: any, i: number) => `$${i + 1}`).join(', ');
       const projectsResult = await pool.query(`
-        SELECT p.*, mp.manager_id as page_manager_id, u.name as page_manager_name, u.picture as page_manager_picture
+        SELECT p.*, mp.manager_id as page_manager_id, u.name as page_manager_name, u.picture as page_manager_picture,
+        (SELECT date FROM meetings WHERE project_id = p.id ORDER BY date DESC LIMIT 1) as last_meeting_date
         FROM projects p
         LEFT JOIN menu_pages mp ON mp.id = p.page_id
         LEFT JOIN users u ON u.id::text = mp.manager_id
@@ -2042,6 +2118,7 @@ async function startServer() {
           projectResult: row.project_result,
           page_id: row.page_id,
           squad: row.squad,
+          lastMeetingDate: row.last_meeting_date,
           products,
         });
       }
@@ -2060,7 +2137,8 @@ async function startServer() {
 
       // Build project query with optional page_id filter
       let projectQuery = `
-        SELECT p.*, mp.manager_id as page_manager_id, u.name as page_manager_name, u.picture as page_manager_picture
+        SELECT p.*, mp.manager_id as page_manager_id, u.name as page_manager_name, u.picture as page_manager_picture,
+        (SELECT date FROM meetings WHERE project_id = p.id ORDER BY date DESC LIMIT 1) as last_meeting_date
         FROM projects p
         LEFT JOIN menu_pages mp ON mp.id = p.page_id
         LEFT JOIN users u ON u.id::text = mp.manager_id
@@ -2155,6 +2233,7 @@ async function startServer() {
         group: row.group,
         projectResult: row.project_result,
         squad: row.squad,
+        lastMeetingDate: row.last_meeting_date,
         files: (() => {
           if (typeof row.files === 'string') {
             try { return JSON.parse(row.files); } catch (e) { return []; }
@@ -3009,10 +3088,10 @@ async function startServer() {
       if (date && end_date) {
         params.push(date);
         params.push(end_date);
-        query += ` AND (t.due_date::date >= $1::date AND t.due_date::date <= $2::date OR t.due_date IS NULL)`;
+        query += ` AND ((t.due_date::date >= $1::date AND t.due_date::date <= $2::date) OR t.due_date IS NULL OR (t.due_date::date < $1::date AND t.status != 'completed'))`;
       } else if (date) {
         params.push(date);
-        query += ` AND (t.due_date::date = $1::date OR t.due_date IS NULL)`;
+        query += ` AND (t.due_date::date = $1::date OR t.due_date IS NULL OR (t.due_date::date < $1::date AND t.status != 'completed'))`;
       }
       
       if (page_id) {
@@ -3123,7 +3202,8 @@ async function startServer() {
         createdBy: row.created_by,
         assignedTo: row.assigned_to,
         project_id: row.project_id,
-        priority: row.priority
+        priority: row.priority,
+        tags: row.tags || []
       })));
     } catch (err) {
       console.error("Error fetching tasks:", err);
@@ -3132,13 +3212,13 @@ async function startServer() {
   });
 
   app.post("/api/tasks", async (req, res) => {
-    const { id, title, description, status, createdBy, assignedTo, dueDate, project_id, priority, subtasks, page_id } = req.body;
+    const { id, title, description, status, createdBy, assignedTo, dueDate, project_id, priority, subtasks, page_id, tags } = req.body;
     try {
       const taskId = id || Date.now().toString();
       const finalProjectId = project_id === "" ? null : project_id;
       await pool.query(
-        `INSERT INTO todos (id, title, description, status, created_by, assigned_to, due_date, project_id, priority, subtasks, page_id) 
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        `INSERT INTO todos (id, title, description, status, created_by, assigned_to, due_date, project_id, priority, subtasks, page_id, tags) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
          ON CONFLICT (id) DO UPDATE SET 
            title = EXCLUDED.title, 
            description = EXCLUDED.description, 
@@ -3148,8 +3228,9 @@ async function startServer() {
            project_id = EXCLUDED.project_id,
            priority = EXCLUDED.priority,
            subtasks = EXCLUDED.subtasks,
-           page_id = EXCLUDED.page_id`,
-        [taskId, title, description, status || 'pending', createdBy, assignedTo, dueDate, finalProjectId, priority || 'Média', JSON.stringify(subtasks || []), page_id]
+           page_id = EXCLUDED.page_id,
+           tags = EXCLUDED.tags`,
+        [taskId, title, description, status || 'pending', createdBy, assignedTo, dueDate, finalProjectId, priority || 'Média', JSON.stringify(subtasks || []), page_id, JSON.stringify(tags || [])]
       );
       
       // Add history if it's a new task (we can check if id was provided, but for simplicity we just log creation if id wasn't provided)
@@ -3172,12 +3253,11 @@ async function startServer() {
     const { user_id, ...updates } = req.body;
     const authenticatedUid = (req as any).user?.uid || user_id;
     try {
-      // Whitelist of allowed columns to prevent SQL injection
       const ALLOWED_COLUMNS: Record<string, string> = {
         title: 'title', description: 'description', status: 'status',
         priority: 'priority', dueDate: 'due_date', assignedTo: 'assigned_to',
         project_id: 'project_id', page_id: 'page_id', due_date: 'due_date',
-        assigned_to: 'assigned_to'
+        assigned_to: 'assigned_to', tags: 'tags'
       };
       const keys = Object.keys(updates).filter(k => k in ALLOWED_COLUMNS);
       if (keys.length === 0) return res.json({ success: true });
@@ -3189,7 +3269,7 @@ async function startServer() {
       const setClause = keys.map((key, i) => {
         return `${ALLOWED_COLUMNS[key]} = $${i + 2}`;
       }).join(', ');
-      const values = keys.map(key => updates[key]);
+      const values = keys.map(key => key === 'tags' || key === 'subtasks' ? JSON.stringify(updates[key]) : updates[key]);
       
       await pool.query(
         `UPDATE todos SET ${setClause} WHERE id = $1`,
@@ -3421,6 +3501,124 @@ async function startServer() {
       res.status(500).json({ error: "Failed to fetch task history" });
     }
   });
+
+// ═══════════════════════════════════════════════════════════
+// TASK ATTACHMENTS & COMMENTS
+// ═══════════════════════════════════════════════════════════
+
+const taskUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB max
+
+// Upload attachment
+app.post('/api/tasks/:id/attachments', taskUpload.single('file'), async (req: any, res: any) => {
+  try {
+    const { id } = req.params;
+    const file = req.file;
+    if (!file) return res.status(400).json({ error: 'No file provided' });
+
+    let fileUrl = '';
+    const fileName = `task-attachments/${id}/${Date.now()}-${file.originalname}`;
+
+    if (firebaseAdminReady) {
+      const bucket = admin.storage().bucket();
+      const blob = bucket.file(fileName);
+      await blob.save(file.buffer, {
+        metadata: { contentType: file.mimetype },
+      });
+      await blob.makePublic();
+      fileUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+    } else {
+      // Fallback: save as base64 data URL
+      const base64 = file.buffer.toString('base64');
+      fileUrl = `data:${file.mimetype};base64,${base64}`;
+    }
+
+    const result = await pool.query(
+      `INSERT INTO task_attachments (task_id, file_name, file_url, file_type, file_size, uploaded_by)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [id, file.originalname, fileUrl, file.mimetype, file.size, req.body.uploaded_by || 'system']
+    );
+    res.json(result.rows[0]);
+  } catch (err: any) {
+    console.error('[task-attachments] upload error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// List attachments
+app.get('/api/tasks/:id/attachments', async (req: any, res: any) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query(
+      'SELECT * FROM task_attachments WHERE task_id = $1 ORDER BY created_at DESC',
+      [id]
+    );
+    res.json(result.rows);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete attachment
+app.delete('/api/tasks/attachments/:attachmentId', async (req: any, res: any) => {
+  try {
+    const { attachmentId } = req.params;
+    const att = await pool.query('SELECT * FROM task_attachments WHERE id = $1', [attachmentId]);
+    if (att.rows.length > 0 && firebaseAdminReady && att.rows[0].file_url.startsWith('https://storage.googleapis.com')) {
+      try {
+        const bucket = admin.storage().bucket();
+        const filePath = att.rows[0].file_url.split(`${bucket.name}/`)[1];
+        if (filePath) await bucket.file(filePath).delete().catch(() => {});
+      } catch (e) { /* ignore storage delete errors */ }
+    }
+    await pool.query('DELETE FROM task_attachments WHERE id = $1', [attachmentId]);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Add comment
+app.post('/api/tasks/:id/comments', async (req: any, res: any) => {
+  try {
+    const { id } = req.params;
+    const { author_name, author_avatar, content, attachments } = req.body;
+    if (!content?.trim()) return res.status(400).json({ error: 'Content required' });
+    const result = await pool.query(
+      `INSERT INTO task_comments (task_id, author_name, author_avatar, content, attachments)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [id, author_name || 'Anônimo', author_avatar || null, content, JSON.stringify(attachments || [])]
+    );
+    res.json(result.rows[0]);
+  } catch (err: any) {
+    console.error('[task-comments] error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// List comments
+app.get('/api/tasks/:id/comments', async (req: any, res: any) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query(
+      'SELECT * FROM task_comments WHERE task_id = $1 ORDER BY created_at ASC',
+      [id]
+    );
+    res.json(result.rows);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete comment
+app.delete('/api/tasks/comments/:commentId', async (req: any, res: any) => {
+  try {
+    const { commentId } = req.params;
+    await pool.query('DELETE FROM task_comments WHERE id = $1', [commentId]);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 app.get("/api/todos", async (req, res) => {
     try {
@@ -7156,6 +7354,19 @@ app.get("/api/todos", async (req, res) => {
 
       const now = new Date();
 
+      // ── Descobrir colunas reais da tabela fechamentos (mesma lógica do dashboard) ──
+      const fechCols = await pool.query(
+        `SELECT column_name FROM information_schema.columns WHERE table_name='fechamentos' ORDER BY ordinal_position`
+      );
+      const colNames = fechCols.rows.map((r: any) => r.column_name);
+      const fechValorCol = colNames.find((c: string) =>
+        c.toLowerCase() === 'valor' || c.toLowerCase().includes('valor')
+      ) || colNames[3] || 'id';
+      const fechOrigemCol = colNames.find((c: string) =>
+        c.toLowerCase().includes('indica') || c.toLowerCase().includes('campa') || c.toLowerCase().includes('origem')
+      ) || colNames[4] || 'id';
+
+
       const result = await Promise.all(metas.rows.map(async (meta) => {
         let valorAtual = 0;
 
@@ -7311,73 +7522,36 @@ app.get("/api/todos", async (req, res) => {
 
           // ──────────────────────────────────────────────────────────────
           // NEGÓCIOS GANHOS
-          // Leads que estão em colunas terminais (color=green / título
-          // contém "fechado" ou "ganho") e foram movidos para lá no período.
-          // Usa etapa_updated_at — quando o lead foi movido para a coluna.
+          // Usa a tabela 'fechamentos' (mesma fonte do dashboard Métricas)
+          // para garantir que os números sejam iguais.
           // ──────────────────────────────────────────────────────────────
           } else if (meta.tipo === 'negocios_ganhos') {
-            const params: any[] = [dataInicio, dataFim];
-            // Usa etapa_updated_at (quando moveu para a coluna) ou updated_at como fallback
-            let where = `
-              WHERE (c.color = 'green'
-                     OR LOWER(c.title) LIKE '%fechado%'
-                     OR LOWER(c.title) LIKE '%ganho%')
-                AND COALESCE(l.etapa_updated_at, l.updated_at, l.created_at) >= $1
-                AND COALESCE(l.etapa_updated_at, l.updated_at, l.created_at) <= $2
-            `;
-
-            if (meta.kanban_id) {
-              params.push(meta.kanban_id);
-              where += ` AND l.kanban_id = $${params.length}`;
-            }
-            if (meta.responsavel_id) {
-              params.push(meta.responsavel_id);
-              where += ` AND l.responsavel_id = $${params.length}`;
-            }
+            const startStr = dataInicio.toISOString().slice(0, 10);
+            const endStr   = dataFim.toISOString().slice(0, 10);
 
             const agg = meta.metrica === 'valor'
-              ? 'COALESCE(SUM(l.valor), 0)'
+              ? `COALESCE(SUM(CAST(REPLACE(REPLACE(REPLACE(COALESCE("${fechValorCol}", '0'), 'R$', ''), ',', '.'), ' ', '') AS NUMERIC)), 0)`
               : 'COUNT(*)';
 
             const q = await pool.query(
-              `SELECT ${agg} AS total
-               FROM crm_comercial_leads l
-               JOIN crm_comercial_columns c ON c.id::text = l.coluna
-               ${where}`,
-              params
+              `SELECT ${agg} AS total FROM fechamentos WHERE day >= $1 AND day <= $2`,
+              [startStr, endStr]
             );
             valorAtual = Number(q.rows[0]?.total || 0);
 
           // ──────────────────────────────────────────────────────────────
           // RECEITA
-          // Soma o valor (R$) dos leads nas colunas terminais no período.
-          // Sempre usa SUM(valor) — sem opção de métrica quantidade.
+          // Usa a tabela 'fechamentos' (mesma fonte do dashboard Métricas)
+          // para garantir que os números sejam iguais.
           // ──────────────────────────────────────────────────────────────
           } else if (meta.tipo === 'receita') {
-            const params: any[] = [dataInicio, dataFim];
-            let where = `
-              WHERE (c.color = 'green'
-                     OR LOWER(c.title) LIKE '%fechado%'
-                     OR LOWER(c.title) LIKE '%ganho%')
-                AND COALESCE(l.etapa_updated_at, l.updated_at, l.created_at) >= $1
-                AND COALESCE(l.etapa_updated_at, l.updated_at, l.created_at) <= $2
-            `;
-
-            if (meta.kanban_id) {
-              params.push(meta.kanban_id);
-              where += ` AND l.kanban_id = $${params.length}`;
-            }
-            if (meta.responsavel_id) {
-              params.push(meta.responsavel_id);
-              where += ` AND l.responsavel_id = $${params.length}`;
-            }
+            const startStr = dataInicio.toISOString().slice(0, 10);
+            const endStr   = dataFim.toISOString().slice(0, 10);
 
             const q = await pool.query(
-              `SELECT COALESCE(SUM(l.valor), 0) AS total
-               FROM crm_comercial_leads l
-               JOIN crm_comercial_columns c ON c.id::text = l.coluna
-               ${where}`,
-              params
+              `SELECT COALESCE(SUM(CAST(REPLACE(REPLACE(REPLACE(COALESCE("${fechValorCol}", '0'), 'R$', ''), ',', '.'), ' ', '') AS NUMERIC)), 0) AS total
+               FROM fechamentos WHERE day >= $1 AND day <= $2`,
+              [startStr, endStr]
             );
             valorAtual = Number(q.rows[0]?.total || 0);
           // ──────────────────────────────────────────────────────────────
@@ -7408,6 +7582,52 @@ app.get("/api/todos", async (req, res) => {
                FROM crm_comercial_tasks t
                ${where}`,
               params
+            );
+            valorAtual = Number(q.rows[0]?.total || 0);
+
+          // ──────────────────────────────────────────────────────────────
+          // REUNIÕES MARCADAS
+          // COUNT(DISTINCT lead_id) de leads que passaram pela coluna
+          // "Reunião Marcada" no CRM (via crm_comercial_history).
+          // Conta cada lead apenas uma vez.
+          // ──────────────────────────────────────────────────────────────
+          } else if (meta.tipo === 'reunioes_marcadas') {
+            const startStr = dataInicio.toISOString().slice(0, 10);
+            const endStr   = dataFim.toISOString().slice(0, 10);
+
+            const q = await pool.query(
+              `SELECT COUNT(DISTINCT sub.lead_id) AS total
+               FROM (
+                 SELECT h.lead_id
+                 FROM crm_comercial_history h
+                 JOIN crm_comercial_columns c ON h.to_coluna = c.id::text
+                 WHERE (LOWER(c.title) LIKE '%reunião marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%')
+                   AND h.created_at >= $1 AND h.created_at <= ($2::date + interval '1 day')
+                 UNION
+                 SELECT l.id AS lead_id
+                 FROM crm_comercial_leads l
+                 JOIN crm_comercial_columns c ON l.coluna = c.id::text
+                 WHERE (LOWER(c.title) LIKE '%reunião marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%')
+                   AND l.created_at >= $1 AND l.created_at <= ($2::date + interval '1 day')
+               ) sub`,
+              [startStr, endStr]
+            );
+            valorAtual = Number(q.rows[0]?.total || 0);
+
+          // ──────────────────────────────────────────────────────────────
+          // REUNIÕES REALIZADAS
+          // COUNT(DISTINCT lead_id) de leads que possuem pelo menos um
+          // registro em crm_comercial_meetings (aba "Reuniões" do popup).
+          // ──────────────────────────────────────────────────────────────
+          } else if (meta.tipo === 'reunioes_realizadas') {
+            const startStr = dataInicio.toISOString().slice(0, 10);
+            const endStr   = dataFim.toISOString().slice(0, 10);
+
+            const q = await pool.query(
+              `SELECT COUNT(DISTINCT m.lead_id) AS total
+               FROM crm_comercial_meetings m
+               WHERE m.meeting_date >= $1 AND m.meeting_date <= ($2::date + interval '1 day')`,
+              [startStr, endStr]
             );
             valorAtual = Number(q.rows[0]?.total || 0);
           }
@@ -9859,16 +10079,63 @@ app.get("/api/todos", async (req, res) => {
         ORDER BY mes ASC
       `, [year]);
 
-      // Totais de reuniões do mês
-      const reunioesMonth = await pool.query(`
-        SELECT
-          SUM(CAST(COALESCE(NULLIF("${rMarcadas}",''), '0') AS INTEGER)) AS marcadas,
-          SUM(CAST(COALESCE(NULLIF("${rRealizadas}",''), '0') AS INTEGER)) AS realizadas,
-          SUM(CAST(COALESCE(NULLIF("${rNoshow}",''), '0') AS INTEGER)) AS noshow,
-          SUM(CAST(COALESCE(NULLIF("${rReagend}",''), '0') AS INTEGER)) AS reagendamento
-        FROM reunioes
-        WHERE "${rDay}" >= $1 AND "${rDay}" <= $2
+      // Descobrir kanban de Pré-vendas (necessário para reuniões e funil)
+      const preVendasKanban = await pool.query(
+        `SELECT id FROM crm_comercial_kanbans WHERE LOWER(nome) LIKE '%pr_-vendas%' OR LOWER(nome) LIKE '%pr__vendas%' OR LOWER(nome) LIKE '%pre vendas%' OR LOWER(nome) LIKE '%pré vendas%' LIMIT 1`
+      ).catch(() => ({ rows: [] as any[] }));
+      const preVendasKanbanId = preVendasKanban.rows[0]?.id || null;
+
+      // Reuniões do mês — usando dados do CRM (sem filtro de kanban,
+      // pois o lead pode ter saído do pré-vendas após a reunião)
+      // Marcadas: leads DISTINTOS que passaram pela coluna "Reunião Marcada" no período
+      const reunMarcadasMonth = await pool.query(`
+        SELECT COUNT(DISTINCT sub.lead_id) AS marcadas
+        FROM (
+          SELECT h.lead_id
+          FROM crm_comercial_history h
+          JOIN crm_comercial_columns c ON h.to_coluna = c.id::text
+          WHERE (LOWER(c.title) LIKE '%reunião marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%')
+            AND h.created_at >= $1 AND h.created_at <= ($2::date + interval '1 day')
+          UNION
+          SELECT l.id AS lead_id
+          FROM crm_comercial_leads l
+          JOIN crm_comercial_columns c ON l.coluna = c.id::text
+          WHERE (LOWER(c.title) LIKE '%reunião marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%')
+            AND l.created_at >= $1 AND l.created_at <= ($2::date + interval '1 day')
+        ) sub
       `, [startDate, endDate]);
+
+      // Realizadas: leads DISTINTOS que possuem um registro na aba de reuniões (crm_comercial_meetings)
+      const reunRealizadasMonth = await pool.query(`
+        SELECT COUNT(DISTINCT m.lead_id) AS realizadas
+        FROM crm_comercial_meetings m
+        WHERE m.meeting_date >= $1 AND m.meeting_date <= ($2::date + interval '1 day')
+      `, [startDate, endDate]);
+
+      // No-show: leads que passaram pela coluna "Noshow"
+      const reunNoshowMonth = await pool.query(`
+        SELECT COUNT(DISTINCT h.lead_id) AS noshow
+        FROM crm_comercial_history h
+        JOIN crm_comercial_columns c ON h.to_coluna = c.id::text
+        WHERE (LOWER(c.title) LIKE '%noshow%' OR LOWER(c.title) LIKE '%no-show%' OR LOWER(c.title) LIKE '%no show%')
+          AND h.created_at >= $1 AND h.created_at <= ($2::date + interval '1 day')
+      `, [startDate, endDate]);
+
+      // Reagendamento: leads que passaram pela coluna "Reagendamento"
+      const reunReagendMonth = await pool.query(`
+        SELECT COUNT(DISTINCT h.lead_id) AS reagendamento
+        FROM crm_comercial_history h
+        JOIN crm_comercial_columns c ON h.to_coluna = c.id::text
+        WHERE LOWER(c.title) LIKE '%reagend%'
+          AND h.created_at >= $1 AND h.created_at <= ($2::date + interval '1 day')
+      `, [startDate, endDate]);
+
+      const reunioesMonthData = {
+        marcadas: Number(reunMarcadasMonth.rows[0]?.marcadas) || 0,
+        realizadas: Number(reunRealizadasMonth.rows[0]?.realizadas) || 0,
+        noshow: Number(reunNoshowMonth.rows[0]?.noshow) || 0,
+        reagendamento: Number(reunReagendMonth.rows[0]?.reagendamento) || 0,
+      };
 
       // KPIs do mês anterior (para comparativo)
       let prevStart = '';
@@ -9955,10 +10222,6 @@ app.get("/api/todos", async (req, res) => {
       `, [startDate, endDate, comercialKanbanId, perdidosKanbanId]) : { rows: [] as any[] };
 
       // Motivos de Perda — apenas Pré-vendas
-      const preVendasKanban = await pool.query(
-        `SELECT id FROM crm_comercial_kanbans WHERE LOWER(nome) LIKE '%pr_-vendas%' OR LOWER(nome) LIKE '%pr__vendas%' OR LOWER(nome) LIKE '%pre vendas%' OR LOWER(nome) LIKE '%pré vendas%' LIMIT 1`
-      ).catch(() => ({ rows: [] as any[] }));
-      const preVendasKanbanId = preVendasKanban.rows[0]?.id || null;
 
       const lossReasonsPreVendas = preVendasKanbanId ? await pool.query(`
         SELECT
@@ -10007,16 +10270,52 @@ app.get("/api/todos", async (req, res) => {
         ORDER BY dia ASC
       `, [startDate, endDate]);
 
-      // Reuniões do mês anterior (comparativo)
-      const reunioesPrev = await pool.query(`
-        SELECT
-          SUM(CAST(COALESCE(NULLIF("${rMarcadas}",''), '0') AS INTEGER)) AS marcadas,
-          SUM(CAST(COALESCE(NULLIF("${rRealizadas}",''), '0') AS INTEGER)) AS realizadas,
-          SUM(CAST(COALESCE(NULLIF("${rNoshow}",''), '0') AS INTEGER)) AS noshow,
-          SUM(CAST(COALESCE(NULLIF("${rReagend}",''), '0') AS INTEGER)) AS reagendamento
-        FROM reunioes
-        WHERE "${rDay}" >= $1 AND "${rDay}" <= $2
+      // Reuniões do mês anterior — usando dados do CRM (sem filtro de kanban)
+      const reunMarcadasPrev = await pool.query(`
+        SELECT COUNT(DISTINCT sub.lead_id) AS marcadas
+        FROM (
+          SELECT h.lead_id
+          FROM crm_comercial_history h
+          JOIN crm_comercial_columns c ON h.to_coluna = c.id::text
+          WHERE (LOWER(c.title) LIKE '%reunião marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%')
+            AND h.created_at >= $1 AND h.created_at <= ($2::date + interval '1 day')
+          UNION
+          SELECT l.id AS lead_id
+          FROM crm_comercial_leads l
+          JOIN crm_comercial_columns c ON l.coluna = c.id::text
+          WHERE (LOWER(c.title) LIKE '%reunião marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%')
+            AND l.created_at >= $1 AND l.created_at <= ($2::date + interval '1 day')
+        ) sub
       `, [prevStart, prevEnd]);
+
+      const reunRealizadasPrev = await pool.query(`
+        SELECT COUNT(DISTINCT m.lead_id) AS realizadas
+        FROM crm_comercial_meetings m
+        WHERE m.meeting_date >= $1 AND m.meeting_date <= ($2::date + interval '1 day')
+      `, [prevStart, prevEnd]);
+
+      const reunNoshowPrev = await pool.query(`
+        SELECT COUNT(DISTINCT h.lead_id) AS noshow
+        FROM crm_comercial_history h
+        JOIN crm_comercial_columns c ON h.to_coluna = c.id::text
+        WHERE (LOWER(c.title) LIKE '%noshow%' OR LOWER(c.title) LIKE '%no-show%' OR LOWER(c.title) LIKE '%no show%')
+          AND h.created_at >= $1 AND h.created_at <= ($2::date + interval '1 day')
+      `, [prevStart, prevEnd]);
+
+      const reunReagendPrev = await pool.query(`
+        SELECT COUNT(DISTINCT h.lead_id) AS reagendamento
+        FROM crm_comercial_history h
+        JOIN crm_comercial_columns c ON h.to_coluna = c.id::text
+        WHERE LOWER(c.title) LIKE '%reagend%'
+          AND h.created_at >= $1 AND h.created_at <= ($2::date + interval '1 day')
+      `, [prevStart, prevEnd]);
+
+      const reunioesPrevData = {
+        marcadas: Number(reunMarcadasPrev.rows[0]?.marcadas) || 0,
+        realizadas: Number(reunRealizadasPrev.rows[0]?.realizadas) || 0,
+        noshow: Number(reunNoshowPrev.rows[0]?.noshow) || 0,
+        reagendamento: Number(reunReagendPrev.rows[0]?.reagendamento) || 0,
+      };
 
       // Funil de Pré-vendas
       const funilPreVendas = preVendasKanbanId ? await pool.query(`
@@ -10093,8 +10392,8 @@ app.get("/api/todos", async (req, res) => {
         fechamentos_list: fechamentosMonth.rows,
         fechamentos_year: fechamentosYear.rows,
         reunioes_year: reunioesYear.rows,
-        reunioes_month: reunioesMonth.rows[0],
-        reunioes_prev: reunioesPrev.rows[0],
+        reunioes_month: reunioesMonthData,
+        reunioes_prev: reunioesPrevData,
         leads_month: Number(leadsMonth.rows[0]?.total) || 0,
         leads_prev: Number(leadsPrev.rows[0]?.total) || 0,
         leads_per_day: leadsPerDay.rows,
@@ -10123,7 +10422,7 @@ app.get("/api/todos", async (req, res) => {
     try {
       const { id } = req.params;
       const fields = req.body;
-      const allowed = ['client_name','squad','responsible_id','responsible_name','responsible_avatar','start_date','due_date','status_group','tags','subtask_count','nome_completo','nome_fantasia','telefone_whatsapp','cnpj_cpf','cep','cidade','uf'];
+      const allowed = ['client_name','squad','responsible_id','responsible_name','responsible_avatar','start_date','due_date','status_group','tags','subtask_count','nome_completo','nome_fantasia','telefone_whatsapp','cnpj_cpf','cep','cidade','uf','produto'];
       const sets: string[] = [];
       const vals: any[] = [];
       let idx = 1;
@@ -10218,7 +10517,7 @@ app.get("/api/todos", async (req, res) => {
   `);
 
   // Add form fields columns
-  const formCols = ['nome_completo','nome_fantasia','telefone_whatsapp','cnpj_cpf','cep','cidade','uf','meeting_info'];
+  const formCols = ['nome_completo','nome_fantasia','telefone_whatsapp','cnpj_cpf','cep','cidade','uf','meeting_info','produto'];
   for (const col of formCols) {
     await pool.query(`ALTER TABLE onboarding_tasks ADD COLUMN IF NOT EXISTS ${col} TEXT`);
   }
@@ -10339,11 +10638,11 @@ app.get("/api/todos", async (req, res) => {
 
       // 1. Create the task
       const result = await pool.query(
-        `INSERT INTO onboarding_tasks (client_name, squad, responsible_id, responsible_name, responsible_avatar, start_date, due_date, status_group, tags, nome_completo, nome_fantasia, telefone_whatsapp, cnpj_cpf, cep, cidade, uf, meeting_info, type)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *`,
+        `INSERT INTO onboarding_tasks (client_name, squad, responsible_id, responsible_name, responsible_avatar, start_date, due_date, status_group, tags, nome_completo, nome_fantasia, telefone_whatsapp, cnpj_cpf, cep, cidade, uf, meeting_info, produto, type)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *`,
         [client_name, squad || null, responsible_id || null, responsible_name || null, responsible_avatar || null,
          start_date || null, due_date || null, status_group || (taskType === 'integracao' ? 'reuniao-coleta-acessos' : 'briefing-realizado'), tags || [],
-         nome_completo || null, nome_fantasia || null, telefone_whatsapp || null, cnpj_cpf || null, cep || null, cidade || null, uf || null, meeting_info || null, taskType]
+         nome_completo || null, nome_fantasia || null, telefone_whatsapp || null, cnpj_cpf || null, cep || null, cidade || null, uf || null, meeting_info || null, req.body.produto || null, taskType]
       );
       const newTask = result.rows[0];
 
@@ -10384,7 +10683,7 @@ app.get("/api/todos", async (req, res) => {
     try {
       const { id } = req.params;
       const fields = req.body;
-      const allowed = ['client_name','squad','responsible_id','responsible_name','responsible_avatar','start_date','due_date','status_group','tags','subtask_count','nome_completo','nome_fantasia','telefone_whatsapp','cnpj_cpf','cep','cidade','uf','meeting_info'];
+      const allowed = ['client_name','squad','responsible_id','responsible_name','responsible_avatar','start_date','due_date','status_group','tags','subtask_count','nome_completo','nome_fantasia','telefone_whatsapp','cnpj_cpf','cep','cidade','uf','meeting_info','produto'];
       const sets: string[] = [];
       const vals: any[] = [];
       let idx = 1;
@@ -12234,6 +12533,47 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
         `DELETE FROM meeting_notes_comments WHERE id = $1 AND session_id = $2`,
         [req.params.commentId, req.params.id]
       );
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Passwords / Logins endpoints
+  app.get('/api/passwords', async (req, res) => {
+    try {
+      const { page_id } = req.query;
+      const r = await pool.query(
+        `SELECT * FROM passwords WHERE page_id = $1 ORDER BY created_at DESC`,
+        [page_id]
+      );
+      res.json(r.rows);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.post('/api/passwords', async (req, res) => {
+    try {
+      const { page_id, service_name, login, password, url } = req.body;
+      const r = await pool.query(
+        `INSERT INTO passwords (page_id, service_name, login, password, url) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+        [page_id, service_name, login, password, url]
+      );
+      res.json(r.rows[0]);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.patch('/api/passwords/:id', async (req, res) => {
+    try {
+      const { service_name, login, password, url } = req.body;
+      const r = await pool.query(
+        `UPDATE passwords SET service_name = COALESCE($1, service_name), login = COALESCE($2, login), password = COALESCE($3, password), url = COALESCE($4, url) WHERE id = $5 RETURNING *`,
+        [service_name, login, password, url, req.params.id]
+      );
+      res.json(r.rows[0]);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.delete('/api/passwords/:id', async (req, res) => {
+    try {
+      await pool.query(`DELETE FROM passwords WHERE id = $1`, [req.params.id]);
       res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });

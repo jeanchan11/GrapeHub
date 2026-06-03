@@ -176,6 +176,7 @@ interface Project {
   group?: string;
   projectResult?: string;
   sortOrder?: number;
+  lastMeetingDate?: string;
   files?: { name: string; date: string; size: string; url: string; sender: string }[];
 }
 
@@ -3393,6 +3394,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                         { key: 'status' as const, label: 'Status' },
                         { key: null, label: 'Pagamento' },
                         { key: 'investment' as const, label: 'Investimento' },
+                        { key: 'lastMeetingDate' as const, label: 'Última Reunião' },
                       ].map((col, idx) => (
                         <th
                           key={idx}
@@ -3574,6 +3576,11 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     </td>
                     <td className="px-6 py-5" onClick={() => handleRowClick(project)}>
                       <p className="text-sm text-slate-600 dark:text-slate-300 cursor-pointer">{project.investment}</p>
+                    </td>
+                    <td className="px-6 py-5" onClick={() => handleRowClick(project)}>
+                      <p className="text-sm text-slate-600 dark:text-slate-300 cursor-pointer">
+                        {project.lastMeetingDate ? new Date(project.lastMeetingDate).toLocaleDateString('pt-BR', { day: 'numeric', month: 'short', timeZone: 'UTC' }).replace('.', '').toLowerCase() : ''}
+                      </p>
                     </td>
                     <td className="px-6 py-5 text-right">
                       <div className="flex items-center justify-end gap-2">

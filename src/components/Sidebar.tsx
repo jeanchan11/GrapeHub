@@ -2,6 +2,7 @@
 // Sidebar component for GrapeHub
 // Last updated: 2026-04-19
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth } from '../firebase';
 import { signOut, User as FirebaseUser } from 'firebase/auth';
@@ -200,17 +201,32 @@ interface PageItemProps {
 
 const PageItemWithMenu: React.FC<PageItemProps> = ({ page, isActive, paddingLeft, onPageChange, canManagePermissions, onOpenPermissions }) => {
   const [showMenu, setShowMenu] = useState(false);
+  const [menuCoords, setMenuCoords] = useState({ top: 0, right: 0 });
   const menuRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const PageIcon = iconMap[page.icon];
 
   useEffect(() => {
     if (!showMenu) return;
     const handleClick = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setShowMenu(false);
+      if (menuRef.current && !menuRef.current.contains(e.target as Node) && buttonRef.current && !buttonRef.current.contains(e.target as Node)) {
+        setShowMenu(false);
+      }
     };
     document.addEventListener('click', handleClick);
     return () => document.removeEventListener('click', handleClick);
   }, [showMenu]);
+
+  const handleToggleMenu = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!showMenu && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      setMenuCoords({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+      setShowMenu(true);
+    } else {
+      setShowMenu(false);
+    }
+  };
 
   return (
     <div
@@ -222,15 +238,20 @@ const PageItemWithMenu: React.FC<PageItemProps> = ({ page, isActive, paddingLeft
         <span className="text-sm font-medium truncate" style={{ color: isActive ? '#FFFFFF' : 'inherit' }}>{page.label}</span>
       </div>
       {canManagePermissions && (
-        <div className="relative" ref={menuRef}>
+        <div className="relative">
           <button
-            onClick={e => { e.stopPropagation(); setShowMenu(!showMenu); }}
+            ref={buttonRef}
+            onClick={handleToggleMenu}
             className={`p-1 rounded-md transition-all shrink-0 ${isActive ? 'text-white/60 hover:text-white hover:bg-white/20' : 'text-transparent group-hover/page:text-slate-400 hover:!text-slate-600 dark:hover:!text-white hover:!bg-slate-100 dark:hover:!bg-white/10'}`}
           >
             <MoreHorizontal size={14} />
           </button>
-          {showMenu && (
-            <div className="absolute right-0 top-7 z-[200] w-40 bg-white dark:bg-[#1e1b29] border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl overflow-hidden">
+          {showMenu && createPortal(
+            <div 
+              ref={menuRef}
+              style={{ position: 'fixed', top: menuCoords.top, right: menuCoords.right, zIndex: 999999 }}
+              className="w-40 bg-white dark:bg-[#1e1b29] border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl overflow-hidden"
+            >
               <button
                 onClick={e => { e.stopPropagation(); setShowMenu(false); onOpenPermissions(page.id, page.label); }}
                 className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors text-left"
@@ -238,7 +259,8 @@ const PageItemWithMenu: React.FC<PageItemProps> = ({ page, isActive, paddingLeft
                 <Shield size={13} className="text-violet-500" />
                 Permissões
               </button>
-            </div>
+            </div>,
+            document.body
           )}
         </div>
       )}

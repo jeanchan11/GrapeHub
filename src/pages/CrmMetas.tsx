@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Plus, Trash2, Trophy, TrendingUp, TrendingDown, DollarSign,
   Activity, Target, CheckCircle2, Clock, AlertCircle, X,
-  ChevronRight, ChevronLeft, BarChart3, RefreshCw, Pencil
+  ChevronRight, ChevronLeft, BarChart3, RefreshCw, Pencil,
+  Calendar, Video
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -76,6 +77,24 @@ const TIPOS_META = [
     color: 'text-rose-500',
     bg: 'bg-rose-50 dark:bg-rose-500/10',
     border: 'border-rose-200 dark:border-rose-500/30',
+  },
+  {
+    id: 'reunioes_marcadas',
+    label: 'Reuniões Marcadas',
+    desc: 'Quantidade de reuniões marcadas no período',
+    icon: Calendar,
+    color: 'text-cyan-500',
+    bg: 'bg-cyan-50 dark:bg-cyan-500/10',
+    border: 'border-cyan-200 dark:border-cyan-500/30',
+  },
+  {
+    id: 'reunioes_realizadas',
+    label: 'Reuniões Realizadas',
+    desc: 'Quantidade de reuniões realizadas no período',
+    icon: Video,
+    color: 'text-teal-500',
+    bg: 'bg-teal-50 dark:bg-teal-500/10',
+    border: 'border-teal-200 dark:border-teal-500/30',
   },
 ];
 
@@ -473,8 +492,8 @@ export default function CrmMetas() {
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
-                  {/* Métrica — oculta para atividades e receita (que é sempre valor R$) */}
-                  {form.tipo !== 'atividades' && form.tipo !== 'receita' && (
+                  {/* Métrica — oculta para atividades, receita, reuniões (que são sempre quantidade) */}
+                  {form.tipo !== 'atividades' && form.tipo !== 'receita' && form.tipo !== 'reunioes_marcadas' && form.tipo !== 'reunioes_realizadas' && (
                     <div>
                       <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5 uppercase tracking-wide">Métrica</label>
                       <select
@@ -487,7 +506,7 @@ export default function CrmMetas() {
                       </select>
                     </div>
                   )}
-                  <div className={form.tipo === 'atividades' || form.tipo === 'receita' ? 'col-span-2' : ''}>
+                  <div className={form.tipo === 'atividades' || form.tipo === 'receita' || form.tipo === 'reunioes_marcadas' || form.tipo === 'reunioes_realizadas' ? 'col-span-2' : ''}>
                     <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5 uppercase tracking-wide">Período</label>
                     <select
                       value={form.periodo}

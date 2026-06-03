@@ -5969,6 +5969,16 @@ async function startServer() {
     `);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_project_comments_project_id ON project_comments(project_id)`);
     await pool.query(`
+      CREATE TABLE IF NOT EXISTS passwords (
+        id SERIAL PRIMARY KEY,
+        page_id TEXT NOT NULL,
+        service_name TEXT NOT NULL,
+        login TEXT,
+        password TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS hiring_folders (
         id SERIAL PRIMARY KEY,
         nome TEXT NOT NULL,
@@ -6559,7 +6569,8 @@ async function startServer() {
       }
       const placeholders = pageIds.map((_, i) => `$${i + 1}`).join(", ");
       const projectsResult = await pool.query(`
-        SELECT p.*, mp.manager_id as page_manager_id, u.name as page_manager_name, u.picture as page_manager_picture
+        SELECT p.*, mp.manager_id as page_manager_id, u.name as page_manager_name, u.picture as page_manager_picture,
+        (SELECT date FROM meetings WHERE project_id = p.id ORDER BY date DESC LIMIT 1) as last_meeting_date
         FROM projects p
         LEFT JOIN menu_pages mp ON mp.id = p.page_id
         LEFT JOIN users u ON u.id::text = mp.manager_id
@@ -6603,6 +6614,7 @@ async function startServer() {
           projectResult: row.project_result,
           page_id: row.page_id,
           squad: row.squad,
+          lastMeetingDate: row.last_meeting_date,
           products
         });
       }
@@ -6616,7 +6628,8 @@ async function startServer() {
     try {
       const { page_id } = req.query;
       let projectQuery = `
-        SELECT p.*, mp.manager_id as page_manager_id, u.name as page_manager_name, u.picture as page_manager_picture
+        SELECT p.*, mp.manager_id as page_manager_id, u.name as page_manager_name, u.picture as page_manager_picture,
+        (SELECT date FROM meetings WHERE project_id = p.id ORDER BY date DESC LIMIT 1) as last_meeting_date
         FROM projects p
         LEFT JOIN menu_pages mp ON mp.id = p.page_id
         LEFT JOIN users u ON u.id::text = mp.manager_id
@@ -6700,6 +6713,7 @@ async function startServer() {
         group: row.group,
         projectResult: row.project_result,
         squad: row.squad,
+        lastMeetingDate: row.last_meeting_date,
         files: (() => {
           if (typeof row.files === "string") {
             try {
@@ -7456,10 +7470,10 @@ async function startServer() {
       if (date && end_date) {
         params.push(date);
         params.push(end_date);
-        query += ` AND (t.due_date::date >= $1::date AND t.due_date::date <= $2::date OR t.due_date IS NULL)`;
+        query += ` AND ((t.due_date::date >= $1::date AND t.due_date::date <= $2::date) OR t.due_date IS NULL OR (t.due_date::date < $1::date AND t.status != 'completed'))`;
       } else if (date) {
         params.push(date);
-        query += ` AND (t.due_date::date = $1::date OR t.due_date IS NULL)`;
+        query += ` AND (t.due_date::date = $1::date OR t.due_date IS NULL OR (t.due_date::date < $1::date AND t.status != 'completed'))`;
       }
       if (page_id) {
         params.push(page_id);
@@ -15671,6 +15685,50 @@ ${instrucoes_extras}` : ""}
         `DELETE FROM meeting_notes_comments WHERE id = $1 AND session_id = $2`,
         [req.params.commentId, req.params.id]
       );
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+  app.get("/api/passwords", async (req, res) => {
+    try {
+      const { page_id } = req.query;
+      const r = await pool.query(
+        `SELECT * FROM passwords WHERE page_id = $1 ORDER BY created_at DESC`,
+        [page_id]
+      );
+      res.json(r.rows);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+  app.post("/api/passwords", async (req, res) => {
+    try {
+      const { page_id, service_name, login, password } = req.body;
+      const r = await pool.query(
+        `INSERT INTO passwords (page_id, service_name, login, password) VALUES ($1,$2,$3,$4) RETURNING *`,
+        [page_id, service_name, login, password]
+      );
+      res.json(r.rows[0]);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+  app.patch("/api/passwords/:id", async (req, res) => {
+    try {
+      const { service_name, login, password } = req.body;
+      const r = await pool.query(
+        `UPDATE passwords SET service_name = COALESCE($1, service_name), login = COALESCE($2, login), password = COALESCE($3, password) WHERE id = $4 RETURNING *`,
+        [service_name, login, password, req.params.id]
+      );
+      res.json(r.rows[0]);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+  app.delete("/api/passwords/:id", async (req, res) => {
+    try {
+      await pool.query(`DELETE FROM passwords WHERE id = $1`, [req.params.id]);
       res.json({ ok: true });
     } catch (e) {
       res.status(500).json({ error: e.message });

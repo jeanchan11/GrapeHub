@@ -439,6 +439,7 @@ const templates = (() => {
     { id: 'parceiros-squad', label: 'Parceiros Squad' },
     { id: 'planejamento-crescimento', label: 'Planejamento de Crescimento' },
     { id: 'playbook-acoes', label: 'Playbook de Ações' },
+    { id: 'senhas', label: 'Senhas e Logins' },
     { id: 'projects', label: 'Projetos (Projects)' },
     { id: 'todo', label: 'Tarefas (Todo)' },
     { id: 'todo-staff', label: 'To Do (Staff)' },
