@@ -121,7 +121,7 @@ const STATUS_GROUPS: Omit<StatusGroup, 'tasks'>[] = [
 ];
 
 // ── Tag Badge ─────────────────────────────────────────────
-const TagBadge = ({ label }: { label: string }) => {
+const TagBadge = ({ label, onRemove }: { label: string; onRemove?: () => void }) => {
   const colors: Record<string, string> = {
     'coletar conta de anúncio': 'bg-amber-500/15 text-amber-400 border border-amber-500/30',
     'pendência do advogado': 'bg-rose-500/15 text-rose-400 border border-rose-500/30',
@@ -129,8 +129,16 @@ const TagBadge = ({ label }: { label: string }) => {
   };
   const cls = colors[label.toLowerCase()] || 'bg-slate-500/15 text-slate-400 border border-slate-500/30';
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${cls}`}>
+    <span className={`group/tag inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${cls}`}>
       {label}
+      {onRemove && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onRemove(); }}
+          className="opacity-0 group-hover/tag:opacity-100 transition-opacity hover:brightness-150 -mr-0.5"
+        >
+          <X size={10} />
+        </button>
+      )}
     </span>
   );
 };
@@ -492,6 +500,19 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
     } catch { /* silent */ }
   };
 
+  const handleRemoveTag = async (tagName: string) => {
+    const newTags = task.tags.filter(t => t !== tagName);
+    task.tags = newTags;
+    try {
+      await fetch(`/api/onboarding-tasks/${task.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tags: newTags }),
+      });
+      onUpdate();
+    } catch { /* silent */ }
+  };
+
   const currentGroup = STATUS_GROUPS.find(g => g.id === task.status_group);
   const circleColor = currentGroup?.color || '#64748b';
   const completedCount = subtasks.filter(s => s.completed).length;
@@ -544,7 +565,7 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
               ↳ {task.subtask_count}
             </span>
           )}
-          {task.tags.map(t => <TagBadge key={t} label={t} />)}
+          {task.tags.map(t => <TagBadge key={t} label={t} onRemove={() => handleRemoveTag(t)} />)}
         </div>
 
         {/* Produto */}

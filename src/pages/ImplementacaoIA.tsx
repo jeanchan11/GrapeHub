@@ -144,16 +144,24 @@ const STATUS_GROUPS: Omit<StatusGroup, 'tasks'>[] = [
 ];
 
 // ── Tag Badge ─────────────────────────────────────────────
-const TagBadge = ({ label, defs }: { label: string; defs?: ColoredTag[] }) => {
+const TagBadge = ({ label, defs, onRemove }: { label: string; defs?: ColoredTag[]; onRemove?: () => void }) => {
   if (defs) {
     const ctag = defs.find(c => c.name.toLowerCase() === label.toLowerCase());
     if (ctag) {
       return (
         <span
-          className="px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider border"
+          className="group/tag px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider border inline-flex items-center gap-1"
           style={{ backgroundColor: ctag.color + '22', color: ctag.color, borderColor: ctag.color + '44' }}
         >
           {label}
+          {onRemove && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onRemove(); }}
+              className="opacity-0 group-hover/tag:opacity-100 transition-opacity hover:brightness-150 -mr-0.5"
+            >
+              <X size={10} />
+            </button>
+          )}
         </span>
       );
     }
@@ -166,8 +174,16 @@ const TagBadge = ({ label, defs }: { label: string; defs?: ColoredTag[] }) => {
   };
   const cls = colors[label.toLowerCase()] || 'bg-slate-500/15 text-slate-400 border border-slate-500/30';
   return (
-    <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider ${cls}`}>
+    <span className={`group/tag px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider inline-flex items-center gap-1 ${cls}`}>
       {label}
+      {onRemove && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onRemove(); }}
+          className="opacity-0 group-hover/tag:opacity-100 transition-opacity hover:brightness-150 -mr-0.5"
+        >
+          <X size={10} />
+        </button>
+      )}
     </span>
   );
 };
@@ -615,7 +631,7 @@ const TaskRow = ({ task, coloredTagDefs, onUpdate, onOpenDetail, onOpenSubtask }
 
         {/* Tags */}
         <div className="shrink-0 w-40 relative flex items-center flex-wrap gap-1 pr-2" ref={tagMenuRef}>
-          {task.tags.map(t => <TagBadge key={t} label={t} defs={coloredTagDefs} />)}
+          {task.tags.map(t => <TagBadge key={t} label={t} defs={coloredTagDefs} onRemove={() => handleToggleTag(t)} />)}
           <button
             onClick={(e) => {
               e.stopPropagation();

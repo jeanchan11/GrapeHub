@@ -121,7 +121,7 @@ const CrmSequencias = () => {
   };
 
   return (
-    <div className={`h-full bg-light-bg dark:bg-[#0A0A0A] ${seqMode === 'list' ? 'p-4 md:p-8 overflow-y-auto' : 'flex flex-col overflow-hidden p-4 md:p-6 pb-0'}`}>
+    <div className={`h-full bg-light-bg dark:bg-dark-bg ${seqMode === 'list' ? 'p-4 md:p-8 overflow-y-auto' : 'flex flex-col overflow-hidden p-4 md:p-6 pb-0'}`}>
       {/* HEADER LIST */}
       {seqMode === 'list' && (
         <div className="flex items-center justify-between mb-8">
@@ -135,7 +135,7 @@ const CrmSequencias = () => {
       )}
 
       {seqMode === 'list' ? (
-        <div className="max-w-4xl bg-white dark:bg-[#13111a] border border-gray-200 dark:border-[#2d2b3d] rounded-2xl p-6 shadow-sm">
+        <div className="max-w-4xl bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-2xl p-6 shadow-sm">
           {/* Header List */}
           <div className="flex items-center justify-between mb-6">
             <div>
@@ -195,9 +195,9 @@ const CrmSequencias = () => {
         <div className="flex-1 flex flex-col lg:flex-row gap-6 min-h-0 pb-4 md:pb-6">
           
           {/* Canvas Area */}
-          <div className="flex-1 flex flex-col bg-gray-50/50 dark:bg-[#0a0a0a]/50 rounded-2xl border border-gray-200 dark:border-white/10 overflow-hidden relative shadow-sm">
+          <div className="flex-1 flex flex-col bg-gray-50/50 dark:bg-dark-bg/50 rounded-2xl border border-gray-200 dark:border-white/10 overflow-hidden relative shadow-sm">
             {/* Toolbar */}
-            <div className="flex items-center justify-between p-4 bg-white dark:bg-[#13111a] border-b border-gray-200 dark:border-white/10 shrink-0 z-20 shadow-sm">
+            <div className="flex items-center justify-between p-4 bg-white dark:bg-dark-card border-b border-gray-200 dark:border-white/10 shrink-0 z-20 shadow-sm">
               <div className="flex items-center gap-3">
                 <button onClick={() => { setSeqMode('list'); setSeqEditId(null); setSelectedStepIndex(null); }} className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-all">
                   <ChevronLeft size={18} />
@@ -223,7 +223,7 @@ const CrmSequencias = () => {
               {/* START NODE */}
               <div 
                 onClick={(e) => { e.stopPropagation(); setSelectedStepIndex(null); }}
-                className={`w-full max-w-[400px] shrink-0 bg-white dark:bg-[#13111a] border rounded-xl shadow-sm relative z-10 flex flex-col overflow-hidden cursor-pointer transition-all ${selectedStepIndex === null ? 'border-violet-500 ring-2 ring-violet-500/20' : 'border-gray-200 dark:border-white/10 hover:border-gray-300 dark:hover:border-white/20'}`}
+                className={`w-full max-w-[400px] shrink-0 bg-white dark:bg-dark-card border rounded-xl shadow-sm relative z-10 flex flex-col overflow-hidden cursor-pointer transition-all ${selectedStepIndex === null ? 'border-violet-500 ring-2 ring-violet-500/20' : 'border-gray-200 dark:border-white/10 hover:border-gray-300 dark:hover:border-white/20'}`}
               >
                 <div className="h-1.5 bg-emerald-500 w-full" />
                 <div className="px-5 py-4">
@@ -237,7 +237,7 @@ const CrmSequencias = () => {
                 <div className="w-px h-full bg-gray-300 dark:bg-white/20"></div>
                 <button 
                   onClick={() => addStep(0)}
-                  className="absolute top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white dark:bg-[#13111a] border border-gray-300 dark:border-white/20 flex items-center justify-center text-gray-400 hover:text-violet-600 dark:hover:text-violet-400 hover:border-violet-500 hover:scale-110 transition-all z-10 shadow-sm"
+                  className="absolute top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white dark:bg-dark-card border border-gray-300 dark:border-white/20 flex items-center justify-center text-gray-400 hover:text-violet-600 dark:hover:text-violet-400 hover:border-violet-500 hover:scale-110 transition-all z-10 shadow-sm"
                   title="Adicionar etapa"
                 >
                   <Plus size={14} />
@@ -253,14 +253,14 @@ const CrmSequencias = () => {
                     {/* STEP CARD */}
                     <div 
                       onClick={(e) => { e.stopPropagation(); setSelectedStepIndex(idx); }}
-                      className={`w-full max-w-[400px] shrink-0 bg-white dark:bg-[#13111a] border rounded-xl shadow-sm relative z-10 group flex flex-col transition-all cursor-pointer ${isSelected ? 'border-violet-500 ring-2 ring-violet-500/20' : 'border-gray-200 dark:border-white/10 hover:border-violet-500/30 hover:shadow-violet-500/5'}`}
+                      className={`w-full max-w-[400px] shrink-0 bg-white dark:bg-dark-card border rounded-xl shadow-sm relative z-10 group flex flex-col transition-all cursor-pointer ${isSelected ? 'border-violet-500 ring-2 ring-violet-500/20' : 'border-gray-200 dark:border-white/10 hover:border-violet-500/30 hover:shadow-violet-500/5'}`}
                     >
                       
                       {/* Hover Actions (Desktop) */}
                       <div className="absolute -right-12 top-1/2 -translate-y-1/2 flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity hidden md:flex">
-                        <button onClick={(e) => { e.stopPropagation(); deleteStep(idx); }} className="w-8 h-8 rounded-lg bg-white dark:bg-[#13111a] border border-gray-200 dark:border-white/10 text-gray-400 hover:text-red-500 hover:border-red-500/30 flex items-center justify-center shadow-sm transition-colors"><Trash2 size={14} /></button>
-                        <button onClick={(e) => { e.stopPropagation(); moveStep(idx, -1); }} disabled={idx === 0} className="w-8 h-8 rounded-lg bg-white dark:bg-[#13111a] border border-gray-200 dark:border-white/10 text-gray-400 hover:text-violet-500 disabled:opacity-30 flex items-center justify-center shadow-sm transition-colors"><ChevronLeft size={14} className="rotate-90" /></button>
-                        <button onClick={(e) => { e.stopPropagation(); moveStep(idx, 1); }} disabled={idx === seqForm.steps.length - 1} className="w-8 h-8 rounded-lg bg-white dark:bg-[#13111a] border border-gray-200 dark:border-white/10 text-gray-400 hover:text-violet-500 disabled:opacity-30 flex items-center justify-center shadow-sm transition-colors"><ChevronLeft size={14} className="-rotate-90" /></button>
+                        <button onClick={(e) => { e.stopPropagation(); deleteStep(idx); }} className="w-8 h-8 rounded-lg bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 text-gray-400 hover:text-red-500 hover:border-red-500/30 flex items-center justify-center shadow-sm transition-colors"><Trash2 size={14} /></button>
+                        <button onClick={(e) => { e.stopPropagation(); moveStep(idx, -1); }} disabled={idx === 0} className="w-8 h-8 rounded-lg bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 text-gray-400 hover:text-violet-500 disabled:opacity-30 flex items-center justify-center shadow-sm transition-colors"><ChevronLeft size={14} className="rotate-90" /></button>
+                        <button onClick={(e) => { e.stopPropagation(); moveStep(idx, 1); }} disabled={idx === seqForm.steps.length - 1} className="w-8 h-8 rounded-lg bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 text-gray-400 hover:text-violet-500 disabled:opacity-30 flex items-center justify-center shadow-sm transition-colors"><ChevronLeft size={14} className="-rotate-90" /></button>
                       </div>
 
                       {/* Header (DIA X | ⌛ 1 dia) */}
@@ -289,7 +289,7 @@ const CrmSequencias = () => {
                       <div className="w-px h-full bg-gray-300 dark:bg-white/20"></div>
                       <button 
                         onClick={() => addStep(idx + 1)}
-                        className="absolute top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white dark:bg-[#13111a] border border-gray-300 dark:border-white/20 flex items-center justify-center text-gray-400 hover:text-violet-600 dark:hover:text-violet-400 hover:border-violet-500 hover:scale-110 transition-all z-10 shadow-sm"
+                        className="absolute top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white dark:bg-dark-card border border-gray-300 dark:border-white/20 flex items-center justify-center text-gray-400 hover:text-violet-600 dark:hover:text-violet-400 hover:border-violet-500 hover:scale-110 transition-all z-10 shadow-sm"
                         title="Adicionar etapa"
                       >
                         <Plus size={14} />
@@ -308,7 +308,7 @@ const CrmSequencias = () => {
             
             {selectedStepIndex === null ? (
               /* GLOBAL SETTINGS SIDEBAR */
-              <div className="bg-white dark:bg-[#13111a] border border-gray-200 dark:border-[#2d2b3d] rounded-2xl p-5 shadow-sm space-y-5 animate-in fade-in slide-in-from-right-4">
+              <div className="bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-2xl p-5 shadow-sm space-y-5 animate-in fade-in slide-in-from-right-4">
                 <div className="flex items-center justify-between border-b border-gray-100 dark:border-white/10 pb-3">
                   <h4 className="text-[11px] font-bold uppercase tracking-widest text-gray-500 dark:text-slate-500">Sequência Geral</h4>
                 </div>
@@ -316,14 +316,14 @@ const CrmSequencias = () => {
                 <div>
                   <label className="text-[10px] font-bold uppercase tracking-widest text-gray-600 dark:text-slate-400 block mb-1.5">Nome da Sequência</label>
                   <input type="text" value={seqForm.name} onChange={e => setSeqForm(f => ({ ...f, name: e.target.value }))}
-                    className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-[#0a0a0a] border border-gray-200 dark:border-white/10 text-gray-900 dark:text-white text-sm font-bold focus:outline-none focus:border-violet-500/60"
+                    className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-white/10 text-gray-900 dark:text-white text-sm font-bold focus:outline-none focus:border-violet-500/60"
                     placeholder="Ex: Follow-up 5 dias" />
                 </div>
                 
                 <div>
                   <label className="text-[10px] font-bold uppercase tracking-widest text-gray-600 dark:text-slate-400 block mb-2">Descrição</label>
                   <textarea value={seqForm.description} onChange={e => setSeqForm(f => ({ ...f, description: e.target.value }))}
-                    className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-[#0a0a0a] border border-gray-200 dark:border-white/10 text-gray-900 dark:text-white text-xs focus:outline-none focus:border-violet-500/60 resize-none h-24"
+                    className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-white/10 text-gray-900 dark:text-white text-xs focus:outline-none focus:border-violet-500/60 resize-none h-24"
                     placeholder="Objetivo dessa sequência..." />
                 </div>
                 
@@ -351,7 +351,7 @@ const CrmSequencias = () => {
             ) : (
 
               /* STEP SETTINGS SIDEBAR */
-              <div className="bg-white dark:bg-[#13111a] border border-violet-500 ring-2 ring-violet-500/20 rounded-2xl p-5 shadow-sm space-y-5 animate-in fade-in slide-in-from-right-4 relative">
+              <div className="bg-white dark:bg-dark-card border border-violet-500 ring-2 ring-violet-500/20 rounded-2xl p-5 shadow-sm space-y-5 animate-in fade-in slide-in-from-right-4 relative">
                 <button onClick={() => setSelectedStepIndex(null)} className="absolute top-4 right-4 w-6 h-6 flex items-center justify-center bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 text-gray-500 rounded-md transition-colors">
                   <X size={14} />
                 </button>
@@ -361,7 +361,7 @@ const CrmSequencias = () => {
 
                 {seqForm.steps[selectedStepIndex] && (
                   <>
-                    <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-[#0a0a0a] rounded-xl border border-gray-200 dark:border-white/10">
+                    <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-dark-bg rounded-xl border border-gray-200 dark:border-white/10">
                       <span className="text-[11px] font-bold text-gray-500 uppercase tracking-widest shrink-0">Espera</span>
                       <div className="flex items-center gap-2 flex-1">
                         <input 
@@ -369,7 +369,7 @@ const CrmSequencias = () => {
                           min="0" 
                           value={seqForm.steps[selectedStepIndex].day_offset} 
                           onChange={e => handleSeqAction(selectedStepIndex, 'day_offset', parseInt(e.target.value) || 0)}
-                          className="w-14 bg-white dark:bg-[#13111a] border border-gray-200 dark:border-white/10 rounded-lg px-2 py-1.5 text-sm font-bold text-center text-gray-900 dark:text-white focus:outline-none focus:border-violet-500" 
+                          className="w-14 bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-lg px-2 py-1.5 text-sm font-bold text-center text-gray-900 dark:text-white focus:outline-none focus:border-violet-500" 
                         />
                         <span className="text-xs font-semibold text-gray-500">dia(s) após o anterior</span>
                       </div>
@@ -381,7 +381,7 @@ const CrmSequencias = () => {
                         <select 
                           value={seqForm.steps[selectedStepIndex].type} 
                           onChange={e => handleSeqAction(selectedStepIndex, 'type', e.target.value)}
-                          className={`w-full bg-gray-50 dark:bg-[#0a0a0a] border border-gray-200 dark:border-white/10 rounded-xl px-9 py-2.5 text-sm font-bold appearance-none focus:outline-none focus:border-violet-500 transition-colors cursor-pointer ${SEQ_TYPE_COLOR[seqForm.steps[selectedStepIndex].type] || 'text-gray-900 dark:text-white'}`}
+                          className={`w-full bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-white/10 rounded-xl px-9 py-2.5 text-sm font-bold appearance-none focus:outline-none focus:border-violet-500 transition-colors cursor-pointer ${SEQ_TYPE_COLOR[seqForm.steps[selectedStepIndex].type] || 'text-gray-900 dark:text-white'}`}
                         >
                           <option value="WhatsApp">WhatsApp</option>
                           <option value="Ligação">Ligação</option>
@@ -401,7 +401,7 @@ const CrmSequencias = () => {
                         type="text" 
                         value={seqForm.steps[selectedStepIndex].title} 
                         onChange={e => handleSeqAction(selectedStepIndex, 'title', e.target.value)}
-                        className="w-full bg-gray-50 dark:bg-[#0a0a0a] border border-gray-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-sm font-bold text-gray-900 dark:text-white focus:outline-none focus:border-violet-500 placeholder:text-gray-400 dark:placeholder:text-slate-600" 
+                        className="w-full bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-sm font-bold text-gray-900 dark:text-white focus:outline-none focus:border-violet-500 placeholder:text-gray-400 dark:placeholder:text-slate-600" 
                         placeholder="Ex: Enviar mensagem de apresentação..." 
                       />
                     </div>
@@ -415,7 +415,7 @@ const CrmSequencias = () => {
                         value={seqForm.steps[selectedStepIndex].observations || ''} 
                         onChange={e => handleSeqAction(selectedStepIndex, 'observations', e.target.value)} 
                         rows={4}
-                        className="w-full bg-gray-50 dark:bg-[#0a0a0a] border border-gray-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-xs text-gray-700 dark:text-gray-300 focus:outline-none focus:border-violet-500 resize-none placeholder:text-gray-400 dark:placeholder:text-slate-600" 
+                        className="w-full bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-white/10 rounded-xl px-3 py-2.5 text-xs text-gray-700 dark:text-gray-300 focus:outline-none focus:border-violet-500 resize-none placeholder:text-gray-400 dark:placeholder:text-slate-600" 
                         placeholder="Adicione um script, template de mensagem ou notas para quem for executar a tarefa..." 
                       />
                     </div>

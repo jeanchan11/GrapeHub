@@ -233,10 +233,10 @@ const PageItemWithMenu: React.FC<PageItemProps> = ({ page, isActive, paddingLeft
       className={`group/page relative flex items-center gap-2 pr-2 rounded-lg cursor-pointer transition-all duration-200 ${isActive ? 'text-white font-semibold' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white'}`}
       style={{ paddingLeft, paddingRight: '8px', paddingTop: '7px', paddingBottom: '7px', borderRadius: '8px', margin: '1px 8px 1px 0', background: isActive ? '#7C3AED' : 'transparent' }}
     >
-      <div className="flex-1 flex items-center gap-2 min-w-0" onClick={() => onPageChange(page.id)}>
+      <a className="flex-1 flex items-center gap-2 min-w-0 no-underline" href={`#/${page.id}`} onClick={(e) => { e.preventDefault(); onPageChange(page.id); }}>
         {PageIcon && <PageIcon size={14} color={isActive ? '#FFFFFF' : (page.icon_color || '#9CA3AF')} />}
         <span className="text-sm font-medium truncate" style={{ color: isActive ? '#FFFFFF' : 'inherit' }}>{page.label}</span>
-      </div>
+      </a>
       {canManagePermissions && (
         <div className="relative">
           <button
@@ -937,11 +937,12 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
             const ItemIcon = iconMap[item.icon];
             const isActive = activePage === item.id;
             return (
-              <div
+              <a
                 key={item.id}
-                onClick={() => { onPageChange(item.id); setFlyoutSection(null); }}
+                href={`#/${item.id}`}
+                onClick={(e) => { e.preventDefault(); onPageChange(item.id); setFlyoutSection(null); }}
                 style={{ paddingLeft: `${12 + item.indent * 16}px` }}
-                className={`flex items-center gap-2.5 pr-4 py-2 mx-1 rounded-lg cursor-pointer transition-all text-xs font-medium ${
+                className={`flex items-center gap-2.5 pr-4 py-2 mx-1 rounded-lg cursor-pointer transition-all text-xs font-medium no-underline ${
                   isActive
                     ? 'bg-violet-600 text-white'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 hover:text-slate-900 dark:hover:text-white'
@@ -949,7 +950,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
               >
                 {ItemIcon && <ItemIcon size={13} color={isActive ? '#fff' : (item.icon_color || '#9CA3AF')} />}
                 {item.label}
-              </div>
+              </a>
             );
           })}
         </div>

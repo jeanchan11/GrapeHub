@@ -73,6 +73,14 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
   // TaskDetailModal state
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [openTagDropdown, setOpenTagDropdown] = useState<string | null>(null);
+
+  // Close tag dropdown on click outside
+  useEffect(() => {
+    const handleClick = () => setOpenTagDropdown(null);
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
+  }, []);
 
   const openTaskDetail = (task: Task) => {
     setSelectedTask(task);
@@ -543,10 +551,19 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
                                               
                                               <div className="flex items-center gap-2 flex-shrink-0">
                                                 {/* Tags Logic (Max 1 Tag) */}
-                                                {(task.tags && task.tags.length > 0) ? (
-                                                  <span className="text-[9px] font-semibold text-violet-400 flex items-center gap-1 bg-violet-400/10 border border-violet-400/20 px-1.5 py-0.5 rounded-full">
+                                                {(task.tags && task.tags.length > 0) ? (() => {
+                                                  const tagName = task.tags[0];
+                                                  const tagColors: Record<string, string> = {
+                                                    'Facebook': 'text-blue-400 bg-blue-400/10 border-blue-400/20',
+                                                    'Google': 'text-amber-400 bg-amber-400/10 border-amber-400/20',
+                                                    'CRM': 'text-violet-400 bg-violet-400/10 border-violet-400/20',
+                                                    'Otimização': 'text-violet-400 bg-violet-400/10 border-violet-400/20',
+                                                  };
+                                                  const colorClass = tagColors[tagName] || 'text-violet-400 bg-violet-400/10 border-violet-400/20';
+                                                  return (
+                                                  <span className={`text-[9px] font-semibold flex items-center gap-1 border px-1.5 py-0.5 rounded-full ${colorClass}`}>
                                                     <Tag size={9} />
-                                                    {task.tags[0]}
+                                                    {tagName}
                                                     <button 
                                                       onClick={(e) => {
                                                         e.stopPropagation();
@@ -557,24 +574,32 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
                                                       <X size={8} />
                                                     </button>
                                                   </span>
-                                                ) : (
-                                                  <div className="relative group/tagdrop" onClick={(e) => e.stopPropagation()}>
-                                                    <button className="text-[9px] font-semibold text-dark-text/30 flex items-center gap-1 bg-dark-text/5 px-1.5 py-0.5 rounded-full hover:bg-dark-text/10 transition-colors" title="Adicionar Tag">
+                                                  );
+                                                })() : (
+                                                  <div className="relative" onClick={(e) => e.stopPropagation()}>
+                                                    <button 
+                                                      onClick={() => setOpenTagDropdown(openTagDropdown === task.id ? null : task.id)}
+                                                      className="text-[9px] font-semibold text-dark-text/30 flex items-center gap-1 bg-dark-text/5 px-1.5 py-0.5 rounded-full hover:bg-dark-text/10 transition-colors" 
+                                                      title="Adicionar Tag"
+                                                    >
                                                       <Plus size={9} /> Tag
                                                     </button>
-                                                    <div className="absolute right-0 top-full mt-1 bg-[#1A1A24] border border-white/10 rounded-lg shadow-xl py-1 hidden group-hover/tagdrop:block z-[60] min-w-[120px]">
-                                                       {['Facebook', 'Google', 'CRM', 'Otimização'].map(option => (
-                                                         <button 
-                                                           key={option}
-                                                           onClick={() => {
-                                                             updateTaskField(task.id, 'tags', [option]);
-                                                           }}
-                                                           className="w-full text-left px-3 py-1.5 text-[10px] text-dark-text hover:bg-white/5 transition-colors"
-                                                         >
-                                                           {option}
-                                                         </button>
-                                                       ))}
-                                                    </div>
+                                                    {openTagDropdown === task.id && (
+                                                      <div className="absolute right-0 top-full mt-1 bg-[#1A1A24] border border-white/10 rounded-lg shadow-xl py-1 z-[60] min-w-[120px]">
+                                                         {['Facebook', 'Google', 'CRM', 'Otimização'].map(option => (
+                                                           <button 
+                                                             key={option}
+                                                             onClick={() => {
+                                                               updateTaskField(task.id, 'tags', [option]);
+                                                               setOpenTagDropdown(null);
+                                                             }}
+                                                             className="w-full text-left px-3 py-1.5 text-[10px] text-dark-text hover:bg-white/5 transition-colors"
+                                                           >
+                                                             {option}
+                                                           </button>
+                                                         ))}
+                                                      </div>
+                                                    )}
                                                   </div>
                                                 )}
 
