@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react';
+
+import { PieChart, Pie, Cell, Tooltip as RechartsTooltip } from 'recharts';
 import SplitHeadline from '../components/SplitHeadline';
 import {
   Users, TrendingUp, DollarSign, AlertTriangle,
@@ -284,9 +286,78 @@ function getRecentComments(projects: ProjectRow[]) {
 // Sub-components
 // ─────────────────────────────────────────────────────────────────────────────
 
+const CountUp = ({ value, prefix = '', suffix = '', className = '', format = false }: { value: number; prefix?: string; suffix?: string; className?: string; format?: boolean }) => {
+  const [display, setDisplay] = React.useState(0);
+  const ref = React.useRef<HTMLSpanElement>(null);
+  const animated = React.useRef(false);
+
+  React.useEffect(() => {
+    if (animated.current) { setDisplay(Math.round(value)); return; }
+    const el = ref.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !animated.current) {
+          animated.current = true;
+          const duration = 1000;
+          const start = performance.now();
+          const target = Math.round(value);
+          const step = (now: number) => {
+            const elapsed = now - start;
+            const t = Math.min(elapsed / duration, 1);
+            const eased = 1 - Math.pow(1 - t, 3);
+            setDisplay(Math.round(eased * target));
+            if (t < 1) requestAnimationFrame(step);
+          };
+          requestAnimationFrame(step);
+        }
+      },
+      { threshold: 0.1 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [value]);
+
+  const formattedStr = format ? display.toLocaleString('pt-BR') : display;
+
+  return <span ref={ref} className={className}>{prefix}{formattedStr}{suffix}</span>;
+};
+
+const AnimatedColorBar = ({ widthPercent, color }: { widthPercent: number; color: string }) => {
+  const [width, setWidth] = React.useState(0);
+  const ref = React.useRef<HTMLDivElement>(null);
+  const animated = React.useRef(false);
+
+  React.useEffect(() => {
+    if (animated.current) { setWidth(widthPercent); return; }
+    const el = ref.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !animated.current) {
+          animated.current = true;
+          requestAnimationFrame(() => setWidth(widthPercent));
+        }
+      },
+      { threshold: 0.1 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [widthPercent]);
+
+  return (
+    <div ref={ref} className="h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(100,100,120,0.15)' }}>
+      <div
+        className="h-full rounded-full transition-all duration-1000 ease-out"
+        style={{ width: `${width}%`, background: color }}
+      />
+    </div>
+  );
+};
+
 function KpiCard({ icon, iconBg, label, value, sub, extra }: {
   icon: React.ReactNode; iconBg: string; label: string;
-  value: string; sub?: React.ReactNode; extra?: React.ReactNode;
+  value: React.ReactNode; sub?: React.ReactNode; extra?: React.ReactNode;
 }) {
   return (
     <div className="bg-dark-card border border-white/10 rounded-2xl p-5 flex flex-col gap-2 min-w-0 transition-colors duration-200">
@@ -314,28 +385,13 @@ function DonutChart({ data, onClick }: { data: { label: string; count: number; c
     </div>
   );
 
-  const cx = 140; const cy = 140; const R = 120; const r = 82;
-  let startAngle = -Math.PI / 2;
+  const cx = 140; const cy = 140;
 
-  const slices = data.map((d, idx) => {
-    const angle = (d.count / total) * 2 * Math.PI;
-    const ea = startAngle + angle;
-    const x1 = cx + R * Math.cos(startAngle); const y1 = cy + R * Math.sin(startAngle);
-    const x2 = cx + R * Math.cos(ea);         const y2 = cy + R * Math.sin(ea);
-    const x3 = cx + r * Math.cos(ea);         const y3 = cy + r * Math.sin(ea);
-    const x4 = cx + r * Math.cos(startAngle); const y4 = cy + r * Math.sin(startAngle);
-    const large = angle > Math.PI ? 1 : 0;
-    const path = `M ${x1} ${y1} A ${R} ${R} 0 ${large} 1 ${x2} ${y2} L ${x3} ${y3} A ${r} ${r} 0 ${large} 0 ${x4} ${y4} Z`;
-    startAngle = ea;
-    return { ...d, path, idx };
-  });
-
-  const hoveredSlice = hovered !== null ? slices[hovered] : null;
+  const hoveredSlice = hovered !== null ? data[hovered] : null;
   const centerVal = hoveredSlice ? `${Math.round((hoveredSlice.count / total) * 100)}%` : String(total);
   const centerSub = hoveredSlice
     ? (hoveredSlice.label === '-' ? 'SEM RES.' : hoveredSlice.label.toUpperCase().replace('RESULTADO ', 'RES.').slice(0, 9))
     : 'PROJETOS';
-  const centerFill = hoveredSlice ? hoveredSlice.color : 'white';
 
   const handleMouseMove = (e: React.MouseEvent) => {
     const rect = wrapRef.current?.getBoundingClientRect();
@@ -344,49 +400,59 @@ function DonutChart({ data, onClick }: { data: { label: string; count: number; c
 
   return (
     <div className="flex gap-8 items-center justify-between w-full h-full">
-      {/* Donut SVG wrapped in relative div for tooltip positioning */}
       <div
         ref={wrapRef}
         className="relative flex items-center justify-center pl-2"
         style={{ width: 280, height: 280, flexShrink: 0 }}
         onMouseMove={handleMouseMove}
       >
-        <svg width={280} height={280} viewBox="0 0 280 280" style={{ overflow: 'visible' }}>
-          {slices.map((s) => (
-            <path
-              key={s.idx}
-              d={s.path}
-              fill={s.color}
-              stroke={hovered === s.idx ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.2)'}
-              strokeWidth={hovered === s.idx ? 2 : 1.5}
-              opacity={hovered === null || hovered === s.idx ? 1 : 0.35}
-              style={{
-                transform: hovered === s.idx ? 'scale(1.05)' : 'scale(1)',
-                transformOrigin: `${cx}px ${cy}px`,
-                transition: 'all 0.12s ease',
-                cursor: 'pointer',
-                filter: hovered === s.idx ? `drop-shadow(0 0 12px ${s.color}99)` : 'none',
-              }}
-              onMouseEnter={() => setHovered(s.idx)}
-              onMouseLeave={() => setHovered(null)}
-            />
-          ))}
+        <PieChart width={280} height={280}>
+          <Pie
+            data={data}
+            cx={cx} cy={cy}
+            innerRadius={82} outerRadius={120}
+            dataKey="count"
+            strokeWidth={0}
+            paddingAngle={data.length > 1 ? 3 : 0}
+            startAngle={90} endAngle={-270}
+            isAnimationActive={true}
+            animationDuration={800}
+            animationEasing="ease-out"
+            onMouseEnter={(_, index) => setHovered(index)}
+            onMouseLeave={() => setHovered(null)}
+          >
+            {data.map((d, idx) => (
+              <Cell 
+                key={idx} 
+                fill={d.color}
+                stroke={hovered === idx ? 'rgba(255,255,255,0.25)' : 'none'}
+                strokeWidth={hovered === idx ? 2 : 0}
+                style={{
+                  transform: hovered === idx ? 'scale(1.05)' : 'scale(1)',
+                  transformOrigin: `${cx}px ${cy}px`,
+                  transition: 'transform 0.15s ease, opacity 0.15s ease',
+                  cursor: 'pointer',
+                  opacity: hovered === null || hovered === idx ? 1 : 0.35,
+                }}
+              />
+            ))}
+          </Pie>
 
-          {/* Center — updates on hover */}
+          {/* Center Text */}
           <text x={cx} y={cy - 6} textAnchor="middle" 
             fill={hoveredSlice ? hoveredSlice.color : undefined}
             className={hoveredSlice ? "" : "fill-slate-800 dark:fill-white"}
             fontSize={hovered !== null ? 32 : 36} fontWeight={900}
-            style={{ transition: 'all 0.12s ease' }}>
+            style={{ transition: 'all 0.12s ease', pointerEvents: 'none' }}>
             {centerVal}
           </text>
           <text x={cx} y={cy + 16} textAnchor="middle" 
             fill={hovered !== null && hoveredSlice ? hoveredSlice.color + 'bb' : '#64748b'}
             fontSize={10} fontWeight={800} letterSpacing={1.5}
-            style={{ transition: 'all 0.12s ease' }}>
+            style={{ transition: 'all 0.12s ease', pointerEvents: 'none' }}>
             {centerSub}
           </text>
-        </svg>
+        </PieChart>
 
         {/* Flyout tooltip */}
         {hovered !== null && hoveredSlice && (
@@ -728,6 +794,12 @@ export default function DashboardOperacional({ activePage = '', subsessionId }: 
 
   return (
     <div className="min-h-screen bg-dark-bg transition-colors duration-300">
+      <style>{`
+        @keyframes rowFadeIn {
+          from { opacity: 0; transform: translateY(-10px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
 
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-6 md:px-8 pt-8 pb-4">
@@ -812,35 +884,35 @@ export default function DashboardOperacional({ activePage = '', subsessionId }: 
             iconBg="bg-violet-500/15"
             icon={<Users size={17} className="text-violet-500" />}
             label="Projetos"
-            value={String(filteredProjects.length)}
+            value={<CountUp value={filteredProjects.length} />}
             sub={<span><span className="text-violet-400 font-bold">{kpis.totalAtivos}</span> operacionais</span>}
           />
           <KpiCard
             iconBg="bg-indigo-500/15"
             icon={<Cpu size={17} className="text-indigo-500" />}
             label="Produtos"
-            value={String(allProducts.length)}
+            value={<CountUp value={allProducts.length} />}
             sub={<span>em <span className="text-indigo-400 font-bold">{projects.length}</span> projetos</span>}
           />
           <KpiCard
             iconBg="bg-red-500/15"
             icon={<AlertTriangle size={17} className="text-red-500" />}
             label="Resultado Ruim"
-            value={String(kpis.resultadoRuim)}
+            value={<CountUp value={kpis.resultadoRuim} />}
             sub={<span><span className="text-red-400 font-bold">{projects.length ? Math.round((kpis.resultadoRuim / projects.length) * 100) : 0}%</span> do total</span>}
           />
           <KpiCard
             iconBg="bg-emerald-500/15"
             icon={<DollarSign size={17} className="text-emerald-500" />}
             label="Investimento Diário"
-            value={fmtBRL(kpis.orcamentoTotal / 30)}
+            value={<CountUp value={kpis.orcamentoTotal / 30} prefix="R$ " format />}
             sub={<span>Mensal: <span className="text-emerald-400 font-bold">{fmtBRL(kpis.orcamentoTotal)}</span></span>}
           />
           <KpiCard
             iconBg="bg-amber-500/15"
             icon={<Clock size={17} className="text-amber-500" />}
             label="Sem Update +4d"
-            value={String(kpis.atrasados)}
+            value={<CountUp value={kpis.atrasados} />}
             sub={<span className="text-amber-500 font-bold">Projetos parados</span>}
           />
         </div>
@@ -858,10 +930,14 @@ export default function DashboardOperacional({ activePage = '', subsessionId }: 
               <div className="text-center text-slate-500 text-sm py-6">Nenhum comentário registrado 📝</div>
             ) : (
               <div className="space-y-3 flex-1 overflow-y-auto pr-1 min-h-0">
-                {recentComments.slice(0, 40).map(c => {
+                {recentComments.slice(0, 40).map((c, idx) => {
                   const dbUser = users.find(u => (u.name && u.name.toLowerCase() === c.opt.author?.toLowerCase()) || (u.email && u.email.toLowerCase().includes(c.opt.author?.toLowerCase()?.split(' ')[0] || '')));
                   return (
-                    <div key={c.id} className="p-3 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5 hover:border-slate-300 dark:hover:border-white/10 transition-all">
+                    <div 
+                      key={c.id} 
+                      className="p-3 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5 hover:border-slate-300 dark:hover:border-white/10 transition-colors"
+                      style={{ animation: 'rowFadeIn 0.3s ease both', animationDelay: `${idx * 0.04}s` }}
+                    >
                       <div className="flex items-start justify-between mb-2">
                         <div className="flex items-center gap-2">
                           <div className="w-7 h-7 rounded-full overflow-hidden bg-slate-200 dark:bg-slate-800 shrink-0 border border-slate-300 dark:border-white/10">
@@ -1041,10 +1117,14 @@ export default function DashboardOperacional({ activePage = '', subsessionId }: 
                     </tr>
                   </thead>
                   <tbody>
-                    {atencao.map(a => {
+                    {atencao.map((a, idx) => {
                       const dbUser = users.find(u => (u.name && u.name.toLowerCase() === a.responsible?.toLowerCase()) || (u.email && u.email.toLowerCase().includes(a.responsible?.toLowerCase()?.split(' ')[0] || '')));
                       return (
-                      <tr key={a.id} className="border-b transition-colors hover:bg-slate-50 dark:hover:bg-white/5" style={{ borderColor: 'rgba(100,100,120,0.08)' }}>
+                      <tr 
+                        key={a.id} 
+                        className="border-b transition-colors hover:bg-slate-50 dark:hover:bg-white/5" 
+                        style={{ borderColor: 'rgba(100,100,120,0.08)', animation: 'rowFadeIn 0.3s ease both', animationDelay: `${idx * 0.04}s` }}
+                      >
                         <td className="py-2.5 pr-2 font-bold text-dark-text truncate max-w-[110px]">{a.partner}</td>
                         <td className="py-2.5 pr-2">
                           <div className="flex items-center gap-1.5">
@@ -1103,17 +1183,9 @@ export default function DashboardOperacional({ activePage = '', subsessionId }: 
                         <div className="w-2 h-2 rounded-full" style={{ background: d.color }} />
                         <span className="text-xs text-slate-400">{d.label}</span>
                       </div>
-                      <span className="text-xs font-bold text-dark-text">{d.count}</span>
+                      <CountUp value={d.count} className="text-xs font-bold text-dark-text" />
                     </div>
-                    <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(100,100,120,0.15)' }}>
-                      <div
-                        className="h-full rounded-full transition-all duration-500"
-                        style={{
-                          width: `${(d.count / allProducts.length) * 100}%`,
-                          background: d.color,
-                        }}
-                      />
-                    </div>
+                    <AnimatedColorBar widthPercent={(d.count / allProducts.length) * 100} color={d.color} />
                   </div>
                 ))}
               </div>
@@ -1128,10 +1200,14 @@ export default function DashboardOperacional({ activePage = '', subsessionId }: 
               <div className="text-center text-slate-500 text-sm py-10">Todos atualizados ✅</div>
             ) : (
               <div className="space-y-2">
-                {criticas.map(c => {
+                {criticas.map((c, idx) => {
                   const dbUser = users.find(u => (u.name && u.name.toLowerCase() === c.responsible?.toLowerCase()) || (u.email && u.email.toLowerCase().includes(c.responsible?.toLowerCase()?.split(' ')[0] || '')));
                   return (
-                  <div key={c.id} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5 hover:border-slate-300 dark:hover:border-white/10 transition-all">
+                  <div 
+                    key={c.id} 
+                    className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5 hover:border-slate-300 dark:hover:border-white/10 transition-colors"
+                    style={{ animation: 'rowFadeIn 0.3s ease both', animationDelay: `${idx * 0.04}s` }}
+                  >
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-dark-text truncate">{c.partner}</p>
                       <div className="flex items-center gap-1.5 mt-1">

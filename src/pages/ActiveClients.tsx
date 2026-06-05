@@ -540,6 +540,12 @@ const ActiveClients: React.FC = () => {
 
   return (
     <div className="p-8 max-w-[1600px] mx-auto">
+      <style>{`
+        @keyframes rowFadeIn {
+          from { opacity: 0; transform: translateY(-10px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
       {/* Header */}
       <PageHeader 
         title="Clientes" 
@@ -765,13 +771,11 @@ const ActiveClients: React.FC = () => {
                 </tr>
               ) : (
                 filteredClients.map((client, idx) => (
-                  <motion.tr
+                  <tr
                     key={client.id}
-                    className="group hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-all cursor-pointer"
+                    className="group hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors cursor-pointer"
                     onClick={() => handleOpenModal(client)}
-                    initial={{ opacity: 0, y: -14 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3, delay: idx * 0.04, ease: [0.32, 0.72, 0, 1] }}
+                    style={{ animation: 'rowFadeIn 0.3s ease both', animationDelay: `${idx * 0.04}s` }}
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
@@ -924,7 +928,7 @@ const ActiveClients: React.FC = () => {
                         <MoreVertical size={16} />
                       </button>
                     </td>
-                  </motion.tr>
+                  </tr>
                 ))
               )}
             </tbody>

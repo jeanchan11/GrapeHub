@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import SplitHeadline from '../components/SplitHeadline';
-import { RefreshCw, ChevronDown, Check, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
+import { PageHeader } from '../components/ui/PageHeader';
+import { RefreshCw, ChevronDown, Check, ArrowUp, ArrowDown, ArrowUpDown, Search, Filter, Download, Briefcase, DollarSign, Target, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useMenu } from '../context/MenuContext';
 import ProjectsModule from './ProjectsModule';
-import { motion } from 'framer-motion';
+
 
 interface ProjectRow {
   id: string;
@@ -62,6 +63,9 @@ export default function ParceirosSquad({ activePage, onPageChange }: { activePag
 
   // Sorting state
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
+
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Resolve the squad name from the menu hierarchy
   const squadName = useMemo(() => {
@@ -164,6 +168,24 @@ export default function ParceirosSquad({ activePage, onPageChange }: { activePag
     setSortConfig({ key, direction });
   };
 
+  const filteredProjects = useMemo(() => {
+    return sortedProjects.filter(p => 
+      p.partner.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (p.responsible && p.responsible.toLowerCase().includes(searchQuery.toLowerCase()))
+    );
+  }, [sortedProjects, searchQuery]);
+
+  const totalProjetos = projects.length;
+  const totalOrcamento = projects.reduce((acc, p) => {
+    let total = parseMoney(p.investment);
+    if (total <= 0 && p.products && p.products.length > 0) {
+      total = p.products.reduce((a, prod) => a + parseMoney(prod.budget), 0);
+    }
+    return acc + total;
+  }, 0);
+  const resultadoBom = projects.filter(p => p.projectResult === 'RESULTADO BOM').length;
+  const resultadoRuim = projects.filter(p => p.projectResult === 'RESULTADO RUIM').length;
+
   // Close picker on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -204,31 +226,100 @@ export default function ParceirosSquad({ activePage, onPageChange }: { activePag
   }
 
   return (
-    <div className="min-h-screen bg-dark-bg transition-colors duration-300 p-6 md:p-8">
-      {/* ── Header ─────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between pb-8">
-        <div>
-          <SplitHeadline text="Parceiros " highlight="Squad" className="text-2xl font-black tracking-tight text-dark-text" />
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">
-            Todos os projetos · Squad {squadName}
-          </p>
-        </div>
+    <div className="p-8 max-w-[1600px] mx-auto">
+      <style>{`
+        @keyframes rowFadeIn {
+          from { opacity: 0; transform: translateY(-10px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+      {/* Header */}
+      <PageHeader 
+        title="Parceiros" 
+        titleAccent="Squad" 
+        subtitle={`Todos os projetos · Squad ${squadName}`}
+      >
         <button
           onClick={() => fetchData(true)}
-          className={`w-9 h-9 rounded-xl bg-dark-card border border-white/10 hover:bg-dark-card-hover flex items-center justify-center transition-colors ${spinning ? 'animate-spin' : ''}`}
+          className={`px-4 py-2 bg-dark-card border border-white/10 hover:bg-dark-card-hover text-white rounded-xl transition-all shadow-sm flex items-center gap-2 ${spinning ? 'opacity-70' : ''}`}
         >
-          <RefreshCw size={14} className="text-slate-400" />
+          <RefreshCw size={16} className={spinning ? 'animate-spin' : ''} />
+          Atualizar
         </button>
+      </PageHeader>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
+        <div className="bg-white dark:bg-dark-card/60 backdrop-blur-md p-5 rounded-3xl border border-slate-200 dark:border-white/10 hover:border-violet-500/30 transition-all group shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <div className="p-2.5 rounded-xl bg-violet-500/10">
+              <Briefcase size={18} className="text-violet-500" />
+            </div>
+          </div>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Total Projetos</p>
+          <h3 className="text-3xl font-bold text-light-text dark:text-white">{totalProjetos}</h3>
+          <p className="text-[10px] text-violet-500 mt-1">Parceiros gerenciados pelo squad</p>
+        </div>
+
+        <div className="bg-white dark:bg-dark-card/60 backdrop-blur-md p-5 rounded-3xl border border-slate-200 dark:border-white/10 hover:border-emerald-500/30 transition-all group shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <div className="p-2.5 rounded-xl bg-emerald-500/10">
+              <DollarSign size={18} className="text-emerald-500" />
+            </div>
+          </div>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Orçamento Total</p>
+          <h3 className="text-3xl font-bold text-light-text dark:text-white">{fmtBRL(totalOrcamento)}</h3>
+          <p className="text-[10px] text-emerald-500 mt-1">Soma de investimento mensal</p>
+        </div>
+
+        <div className="bg-white dark:bg-dark-card/60 backdrop-blur-md p-5 rounded-3xl border border-slate-200 dark:border-white/10 hover:border-blue-500/30 transition-all group shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <div className="p-2.5 rounded-xl bg-blue-500/10">
+              <Target size={18} className="text-blue-500" />
+            </div>
+          </div>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Resultado Bom</p>
+          <h3 className="text-3xl font-bold text-light-text dark:text-white">{resultadoBom}</h3>
+          <p className="text-[10px] text-blue-500 mt-1">Projetos com bons resultados</p>
+        </div>
+
+        <div className="bg-white dark:bg-dark-card/60 backdrop-blur-md p-5 rounded-3xl border border-slate-200 dark:border-white/10 hover:border-rose-500/30 transition-all group shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <div className="p-2.5 rounded-xl bg-rose-500/10">
+              <AlertTriangle size={18} className="text-rose-500" />
+            </div>
+          </div>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Atenção</p>
+          <h3 className="text-3xl font-bold text-light-text dark:text-white">{resultadoRuim}</h3>
+          <p className="text-[10px] text-rose-500 mt-1">Resultado Ruim ou pausado</p>
+        </div>
       </div>
 
-      {/* ── Tabela completa ──────────────────────────────────── */}
-      <div className="bg-white dark:bg-dark-card/60 backdrop-blur-md rounded-3xl border border-slate-200 dark:border-white/10 overflow-hidden shadow-2xl transition-colors duration-300">
-        <div className="p-6 pb-0 flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-sm font-bold text-light-text dark:text-white">Todos os Projetos</h2>
-            <p className="text-xs text-slate-500 mt-0.5">{projects.length} projetos carregados</p>
-          </div>
+      {/* Filters Bar */}
+      <div className="bg-white dark:bg-dark-card/60 backdrop-blur-md p-4 rounded-3xl border border-slate-200 dark:border-white/10 mb-6 flex flex-wrap items-center gap-4 shadow-sm transition-colors">
+        <div className="flex-1 min-w-[240px] relative">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+          <input 
+            type="text" 
+            placeholder="Buscar parceiro ou responsável..." 
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl py-3 pl-12 pr-4 text-sm text-light-text dark:text-white placeholder:text-slate-500 outline-none focus:ring-2 focus:ring-violet-500/20 transition-all"
+          />
         </div>
+        
+        <div className="flex items-center gap-3">
+          <button className="p-3 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl text-slate-500 hover:text-light-text dark:hover:text-white transition-colors">
+            <Filter size={18} />
+          </button>
+          <button className="p-3 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl text-slate-500 hover:text-light-text dark:hover:text-white transition-colors">
+            <Download size={18} />
+          </button>
+        </div>
+      </div>
+
+      {/* Tabela completa */}
+      <div className="bg-white dark:bg-dark-card/60 backdrop-blur-md rounded-3xl border border-slate-200 dark:border-white/10 overflow-hidden shadow-2xl transition-colors duration-300">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -236,7 +327,7 @@ export default function ParceirosSquad({ activePage, onPageChange }: { activePag
                 {['Cliente', 'Responsável', 'Resultado', 'Orçamento Mensal', 'Produtos'].map(h => (
                   <th 
                     key={h} 
-                    className="px-6 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-left cursor-pointer hover:text-violet-400 transition-colors group select-none"
+                    className="px-8 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-left cursor-pointer hover:text-violet-400 transition-colors group select-none"
                     onClick={() => handleSort(h)}
                   >
                     <div className="flex items-center gap-1.5">
@@ -252,7 +343,7 @@ export default function ParceirosSquad({ activePage, onPageChange }: { activePag
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-white/5">
-              {sortedProjects.map((p, idx) => {
+              {filteredProjects.map((p, idx) => {
                 // Use picture from backend if available, else look up by name
                 const fallbackUser = users.find(u =>
                   p.responsible &&
@@ -266,16 +357,13 @@ export default function ParceirosSquad({ activePage, onPageChange }: { activePag
                 const isSaving = savingPageId === p.page_id;
 
                 return (
-                  <motion.tr 
+                  <tr 
                     key={p.id} 
-                    initial={{ opacity: 0, y: -14 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{
-                      duration: 0.3,
-                      delay: idx * 0.04,
-                      ease: [0.32, 0.72, 0, 1],
-                    }}
-                    className="group hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-all cursor-pointer" 
+                    className="group hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors cursor-pointer"
+                    style={{
+                      animation: `rowFadeIn 0.3s ease both`,
+                      animationDelay: `${idx * 0.04}s`,
+                    }} 
                     onClick={(e: any) => {
                       // Prevent if clicked on a specific button inside
                       if (e.target.closest('button')) return;
@@ -289,19 +377,21 @@ export default function ParceirosSquad({ activePage, onPageChange }: { activePag
                     }}
                   >
                     {/* Cliente */}
-                    <td className="px-6 py-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-7 h-7 rounded-lg bg-violet-500/10 flex items-center justify-center text-violet-500 font-bold text-[10px]">
-                          {p.partner.charAt(0).toUpperCase()}
+                    <td className="px-8 py-5">
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-violet-500/10 to-fuchsia-500/10 border border-violet-500/20 flex items-center justify-center shrink-0 shadow-inner">
+                          <span className="text-sm font-bold bg-clip-text text-transparent bg-gradient-to-r from-violet-500 to-fuchsia-500">
+                            {p.partner.charAt(0).toUpperCase()}
+                          </span>
                         </div>
-                        <span className="font-bold text-light-text dark:text-white text-xs truncate max-w-[140px]">{p.partner}</span>
+                        <span className="font-bold text-light-text dark:text-white text-sm truncate max-w-[200px]">{p.partner}</span>
                       </div>
                     </td>
 
                     {/* Responsável */}
-                    <td className="px-6 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-white/5 flex items-center justify-center overflow-hidden shrink-0 border-2 border-violet-500/30">
+                    <td className="px-8 py-5">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-white/5 flex items-center justify-center overflow-hidden shrink-0 border-2 border-violet-500/30 shadow-sm">
                           {picture ? (
                             <img src={picture} alt={p.responsible} className="w-full h-full object-cover" />
                           ) : p.responsible ? (
@@ -310,14 +400,14 @@ export default function ParceirosSquad({ activePage, onPageChange }: { activePag
                             <span className="text-[8px] text-slate-500">?</span>
                           )}
                         </div>
-                        <span className="text-xs text-slate-500 font-medium truncate max-w-[100px]">{p.responsible || '—'}</span>
+                        <span className="text-sm text-slate-500 font-medium truncate max-w-[120px]">{p.responsible || '—'}</span>
                       </div>
                     </td>
 
                     {/* Resultado */}
-                    <td className="px-6 py-3">
+                    <td className="px-8 py-5">
                       <span
-                        className="text-[9px] font-bold px-2 py-0.5 rounded-md whitespace-nowrap"
+                        className="text-[10px] font-bold px-2.5 py-1 rounded-md whitespace-nowrap"
                         style={{
                           background: ((p.projectResult && RESULT_COLORS[p.projectResult.toUpperCase()]) ? RESULT_COLORS[p.projectResult.toUpperCase()] : '#64748b') + '22',
                           color: (p.projectResult && RESULT_COLORS[p.projectResult.toUpperCase()]) ? RESULT_COLORS[p.projectResult.toUpperCase()] : '#94a3b8',
@@ -328,7 +418,7 @@ export default function ParceirosSquad({ activePage, onPageChange }: { activePag
                     </td>
 
                     {/* Orçamento */}
-                    <td className="px-6 py-3 text-xs font-bold text-emerald-500 whitespace-nowrap">
+                    <td className="px-8 py-5 text-sm font-bold text-emerald-500 whitespace-nowrap">
                       {(() => {
                         let total = parseMoney(p.investment);
                         if (total <= 0 && p.products && p.products.length > 0) {
@@ -339,8 +429,8 @@ export default function ParceirosSquad({ activePage, onPageChange }: { activePag
                     </td>
 
                     {/* Produtos */}
-                    <td className="px-6 py-3 text-xs text-slate-500">{(p.products || []).length}</td>
-                  </motion.tr>
+                    <td className="px-8 py-5 text-sm text-slate-500">{(p.products || []).length}</td>
+                  </tr>
                 );
               })}
             </tbody>

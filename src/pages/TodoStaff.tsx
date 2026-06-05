@@ -875,6 +875,13 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ item, allColumns, col
   const [newSubtask, setNewSubtask] = useState('');
   const [subDragFrom, setSubDragFrom] = useState<number | null>(null);
   const [subDragOver, setSubDragOver] = useState<number | null>(null);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+
+  const handleHtmlClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.target instanceof HTMLImageElement) {
+      setPreviewImage(e.target.src);
+    }
+  };
 
   const submitComment = () => {
     const v = newComment.trim();
@@ -951,6 +958,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ item, allColumns, col
                 <div
                   className="text-sm text-dark-text/70 leading-relaxed rich-text-content"
                   dangerouslySetInnerHTML={{ __html: item.description }}
+                  onClick={handleHtmlClick}
                 />
               ) : (
                 <p className="text-sm text-dark-text/70 leading-relaxed">{item.description}</p>
@@ -1058,7 +1066,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ item, allColumns, col
               {item.comments.map(c => (
                 <div key={c.id} className="bg-dark-card border border-dark-text/[0.06] rounded-xl px-3 py-2.5">
                   {enableImageUpload ? (
-                    <div className="text-sm text-dark-text/80 leading-relaxed rich-text-content" dangerouslySetInnerHTML={{ __html: c.text }} />
+                    <div className="text-sm text-dark-text/80 leading-relaxed rich-text-content" dangerouslySetInnerHTML={{ __html: c.text }} onClick={handleHtmlClick} />
                   ) : (
                     <p className="text-sm text-dark-text/80 leading-relaxed">{c.text}</p>
                   )}
@@ -1099,6 +1107,21 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ item, allColumns, col
           </div>
         </div>
       </div>
+
+      {/* Image Preview Modal */}
+      {previewImage && (
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4">
+          <div 
+            onClick={() => setPreviewImage(null)}
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm cursor-pointer"
+          />
+          <img 
+            src={previewImage}
+            alt="Preview"
+            className="relative max-w-[90vw] max-h-[90vh] rounded-xl shadow-2xl object-contain z-[2001]"
+          />
+        </div>
+      )}
     </div>
   );
 };
