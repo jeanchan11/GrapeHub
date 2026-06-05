@@ -30607,14 +30607,16 @@ async function startServer() {
     try {
       const { id } = req.params;
       const fields = req.body;
-      const allowed = ["client_name", "squad", "responsible_id", "responsible_name", "responsible_avatar", "start_date", "due_date", "status_group", "tags", "subtask_count", "nome_completo", "nome_fantasia", "telefone_whatsapp", "cnpj_cpf", "cep", "cidade", "uf", "produto"];
+      const allowed = ["client_name", "squad", "responsible_id", "responsible_name", "responsible_avatar", "start_date", "due_date", "status_group", "tags", "subtask_count", "nome_completo", "nome_fantasia", "telefone_whatsapp", "cnpj_cpf", "cep", "cidade", "uf", "produto", "responsavel_projeto_id", "responsavel_projeto_name", "responsavel_projeto_avatar", "hospedagem", "entregavel", "prioridade"];
+      const DATE_FIELDS = ["start_date", "due_date"];
       const sets = [];
       const vals = [];
       let idx = 1;
       for (const key of allowed) {
         if (key in fields) {
           sets.push(`${key} = $${idx++}`);
-          vals.push(fields[key]);
+          const val = DATE_FIELDS.includes(key) && fields[key] === "" ? null : fields[key];
+          vals.push(val);
         }
       }
       if (sets.length === 0) return res.status(400).json({ error: "Nenhum campo para atualizar." });
@@ -30673,6 +30675,10 @@ async function startServer() {
       updated_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  const visualHubCols = ["responsavel_projeto_id", "responsavel_projeto_name", "responsavel_projeto_avatar", "hospedagem", "entregavel", "prioridade"];
+  for (const col of visualHubCols) {
+    await pool.query(`ALTER TABLE onboarding_tasks ADD COLUMN IF NOT EXISTS ${col} TEXT`).catch((e) => console.error(e));
+  }
   await pool.query(`
     CREATE TABLE IF NOT EXISTS onboarding_template_items (
       id SERIAL PRIMARY KEY,
@@ -30795,12 +30801,12 @@ async function startServer() {
   });
   app.post("/api/onboarding-tasks", async (req, res) => {
     try {
-      const { client_name, squad, responsible_id, responsible_name, responsible_avatar, start_date, due_date, status_group, tags, nome_completo, nome_fantasia, telefone_whatsapp, cnpj_cpf, cep, cidade, uf, meeting_info, type } = req.body;
+      const { client_name, squad, responsible_id, responsible_name, responsible_avatar, start_date, due_date, status_group, tags, nome_completo, nome_fantasia, telefone_whatsapp, cnpj_cpf, cep, cidade, uf, meeting_info, type, responsavel_projeto_id, responsavel_projeto_name, responsavel_projeto_avatar, hospedagem, entregavel, prioridade } = req.body;
       const taskType = type || "operacional";
       if (!client_name) return res.status(400).json({ error: "client_name \xE9 obrigat\xF3rio." });
       const result = await pool.query(
-        `INSERT INTO onboarding_tasks (client_name, squad, responsible_id, responsible_name, responsible_avatar, start_date, due_date, status_group, tags, nome_completo, nome_fantasia, telefone_whatsapp, cnpj_cpf, cep, cidade, uf, meeting_info, produto, type)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *`,
+        `INSERT INTO onboarding_tasks (client_name, squad, responsible_id, responsible_name, responsible_avatar, start_date, due_date, status_group, tags, nome_completo, nome_fantasia, telefone_whatsapp, cnpj_cpf, cep, cidade, uf, meeting_info, produto, type, responsavel_projeto_id, responsavel_projeto_name, responsavel_projeto_avatar, hospedagem, entregavel, prioridade)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25) RETURNING *`,
         [
           client_name,
           squad || null,
@@ -30820,7 +30826,13 @@ async function startServer() {
           uf || null,
           meeting_info || null,
           req.body.produto || null,
-          taskType
+          taskType,
+          responsavel_projeto_id || null,
+          responsavel_projeto_name || null,
+          responsavel_projeto_avatar || null,
+          hospedagem || null,
+          entregavel || null,
+          prioridade || null
         ]
       );
       const newTask = result.rows[0];
@@ -30856,14 +30868,16 @@ async function startServer() {
     try {
       const { id } = req.params;
       const fields = req.body;
-      const allowed = ["client_name", "squad", "responsible_id", "responsible_name", "responsible_avatar", "start_date", "due_date", "status_group", "tags", "subtask_count", "nome_completo", "nome_fantasia", "telefone_whatsapp", "cnpj_cpf", "cep", "cidade", "uf", "meeting_info", "produto"];
+      const allowed = ["client_name", "squad", "responsible_id", "responsible_name", "responsible_avatar", "start_date", "due_date", "status_group", "tags", "subtask_count", "nome_completo", "nome_fantasia", "telefone_whatsapp", "cnpj_cpf", "cep", "cidade", "uf", "meeting_info", "produto", "responsavel_projeto_id", "responsavel_projeto_name", "responsavel_projeto_avatar", "hospedagem", "entregavel", "prioridade"];
+      const DATE_FIELDS = ["start_date", "due_date"];
       const sets = [];
       const vals = [];
       let idx = 1;
       for (const key of allowed) {
         if (key in fields) {
           sets.push(`${key} = $${idx++}`);
-          vals.push(fields[key]);
+          const val = DATE_FIELDS.includes(key) && fields[key] === "" ? null : fields[key];
+          vals.push(val);
         }
       }
       if (sets.length === 0) return res.status(400).json({ error: "Nenhum campo para atualizar." });

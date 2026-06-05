@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import SplitHeadline from '../components/SplitHeadline';
 import { createPortal } from 'react-dom';
-import { Plus, ChevronDown, ChevronRight, Calendar, Users, Tag, MoreHorizontal, Circle, CheckCircle2, Loader2, X, Trash2, GripVertical, Settings, FileText, Link as LinkIcon, Save, Heading1, Heading2, Heading3, Type, List, ListOrdered, CheckSquare, Check } from 'lucide-react';
+import { Plus, ChevronDown, ChevronRight, Calendar, Users, Tag, MoreHorizontal, Circle, CheckCircle2, Loader2, X, Trash2, GripVertical, Settings, FileText, Link as LinkIcon, Save, Heading1, Heading2, Heading3, Type, List, ListOrdered, CheckSquare, Check, Paperclip, Upload, MessageCircle, Clock, Image as ImageIcon, Download, Eye, Edit2, Palette } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
 
 // ── Types ─────────────────────────────────────────────────
@@ -118,9 +118,319 @@ const formatDate = (iso: string | null) => {
   return <span className="text-xs text-slate-400">{result}</span>;
 };
 
-const SQUAD_OPTIONS = ['Squad Able', 'Squad Baker'];
+// ── Column Config Context ─────────────────────────────────
+interface ColumnOption {
+  label: string;
+  color: string;
+}
 
-const STATUS_GROUPS: Omit<StatusGroup, 'tasks'>[] = [
+interface ColumnConfig {
+  entregavel: ColumnOption[];
+  hospedagem: ColumnOption[];
+  squad: ColumnOption[];
+}
+
+const COLOR_PALETTE = [
+  { id: 'sky',     hex: '#38bdf8', bg: 'rgba(56,189,248,0.15)',  border: 'rgba(56,189,248,0.3)' },
+  { id: 'blue',    hex: '#60a5fa', bg: 'rgba(96,165,250,0.15)',  border: 'rgba(96,165,250,0.3)' },
+  { id: 'violet',  hex: '#a78bfa', bg: 'rgba(167,139,250,0.15)', border: 'rgba(167,139,250,0.3)' },
+  { id: 'fuchsia', hex: '#e879f9', bg: 'rgba(232,121,249,0.15)', border: 'rgba(232,121,249,0.3)' },
+  { id: 'rose',    hex: '#fb7185', bg: 'rgba(251,113,133,0.15)', border: 'rgba(251,113,133,0.3)' },
+  { id: 'orange',  hex: '#fb923c', bg: 'rgba(251,146,60,0.15)',  border: 'rgba(251,146,60,0.3)' },
+  { id: 'amber',   hex: '#fbbf24', bg: 'rgba(251,191,36,0.15)',  border: 'rgba(251,191,36,0.3)' },
+  { id: 'lime',    hex: '#a3e635', bg: 'rgba(163,230,53,0.15)',  border: 'rgba(163,230,53,0.3)' },
+  { id: 'emerald', hex: '#34d399', bg: 'rgba(52,211,153,0.15)',  border: 'rgba(52,211,153,0.3)' },
+  { id: 'teal',    hex: '#2dd4bf', bg: 'rgba(45,212,191,0.15)',  border: 'rgba(45,212,191,0.3)' },
+  { id: 'cyan',    hex: '#22d3ee', bg: 'rgba(34,211,238,0.15)',  border: 'rgba(34,211,238,0.3)' },
+  { id: 'slate',   hex: '#94a3b8', bg: 'rgba(148,163,184,0.15)', border: 'rgba(148,163,184,0.3)' },
+];
+
+const getColorStyle = (hex: string) => {
+  const c = COLOR_PALETTE.find(p => p.hex === hex);
+  if (c) return { bg: c.bg, border: c.border, text: c.hex };
+  // fallback for custom hex
+  return { bg: `${hex}26`, border: `${hex}4D`, text: hex };
+};
+
+const DEFAULT_COLUMN_CONFIG: ColumnConfig = {
+  entregavel: [
+    { label: 'Site', color: '#38bdf8' },
+    { label: 'Landing Page', color: '#a78bfa' },
+    { label: 'E-commerce', color: '#fb923c' },
+    { label: 'Blog', color: '#34d399' },
+    { label: 'App', color: '#e879f9' },
+  ],
+  hospedagem: [
+    { label: 'Hostinger', color: '#fb923c' },
+    { label: 'Vercel', color: '#94a3b8' },
+    { label: 'AWS', color: '#fbbf24' },
+    { label: 'GoDaddy', color: '#34d399' },
+    { label: 'Locaweb', color: '#60a5fa' },
+  ],
+  squad: [
+    { label: 'Squad Able', color: '#60a5fa' },
+    { label: 'Squad Baker', color: '#e879f9' },
+  ],
+};
+
+const migrateOptions = (arr: any[], defaults: ColumnOption[]): ColumnOption[] => {
+  if (!Array.isArray(arr)) return defaults;
+  return arr.map((item, i) => {
+    if (typeof item === 'string') {
+      // migrate old string format → object with color
+      const defaultColor = COLOR_PALETTE[i % COLOR_PALETTE.length].hex;
+      return { label: item, color: defaultColor };
+    }
+    if (item && typeof item === 'object' && item.label) {
+      return { label: item.label, color: item.color || COLOR_PALETTE[0].hex };
+    }
+    return defaults[i] || { label: String(item), color: COLOR_PALETTE[0].hex };
+  });
+};
+
+const loadColumnConfig = (): ColumnConfig => {
+  try {
+    const saved = localStorage.getItem('visualhub-column-config');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      return {
+        entregavel: migrateOptions(parsed.entregavel, DEFAULT_COLUMN_CONFIG.entregavel),
+        hospedagem: migrateOptions(parsed.hospedagem, DEFAULT_COLUMN_CONFIG.hospedagem),
+        squad: migrateOptions(parsed.squad, DEFAULT_COLUMN_CONFIG.squad),
+      };
+    }
+  } catch { /* silent */ }
+  return DEFAULT_COLUMN_CONFIG;
+};
+
+const ColumnConfigContext = React.createContext<ColumnConfig>(DEFAULT_COLUMN_CONFIG);
+
+// ── Status Groups Context ─────────────────────────────────
+type StatusGroupDef = Omit<StatusGroup, 'tasks'>;
+const StatusGroupsContext = React.createContext<StatusGroupDef[]>([]);
+
+const STATUS_COLOR_PALETTE = [
+  '#7c3aed', '#6d28d9', '#8b5cf6', '#a78bfa',
+  '#ea580c', '#f97316', '#ef4444', '#f43f5e',
+  '#10b981', '#14b8a6', '#06b6d4', '#0ea5e9',
+  '#3b82f6', '#6366f1', '#d946ef', '#ec4899',
+  '#84cc16', '#eab308', '#f59e0b', '#78716c',
+  '#52525b', '#3f3f46', '#94a3b8', '#64748b',
+];
+
+const STATUS_EMOJI_OPTIONS = ['🔵', '🟠', '🟢', '🔴', '🟡', '🟣', '⚪', '⬜', '⏳', '🚀', '✅', '📝', '🎯', '🔧', '📋', '💡'];
+
+// helper to find an option's color by label
+const findOptionColor = (options: ColumnOption[], label: string | null | undefined): ReturnType<typeof getColorStyle> | null => {
+  if (!label) return null;
+  const opt = options.find(o => o.label === label);
+  return opt ? getColorStyle(opt.color) : null;
+};
+
+// ── Column Config Modal ──────────────────────────────────
+const COLUMN_LABELS: Record<keyof ColumnConfig, string> = {
+  entregavel: 'Entregável',
+  hospedagem: 'Hospedagem',
+  squad: 'Squad',
+};
+
+const TAB_COLORS: Record<keyof ColumnConfig, { bg: string; text: string; border: string }> = {
+  entregavel: { bg: 'bg-sky-500/15', text: 'text-sky-400', border: 'border-sky-500/30' },
+  hospedagem: { bg: 'bg-amber-500/15', text: 'text-amber-400', border: 'border-amber-500/30' },
+  squad: { bg: 'bg-violet-500/15', text: 'text-violet-400', border: 'border-violet-500/30' },
+};
+
+const ColumnConfigModal = ({ config, onSave, onClose }: { config: ColumnConfig; onSave: (c: ColumnConfig) => void; onClose: () => void }) => {
+  const [draft, setDraft] = useState<ColumnConfig>({
+    entregavel: config.entregavel.map(o => ({ ...o })),
+    hospedagem: config.hospedagem.map(o => ({ ...o })),
+    squad: config.squad.map(o => ({ ...o })),
+  });
+  const [activeTab, setActiveTab] = useState<keyof ColumnConfig>('entregavel');
+  const [newOption, setNewOption] = useState('');
+  const [newColor, setNewColor] = useState(COLOR_PALETTE[0].hex);
+  const [editingColorIdx, setEditingColorIdx] = useState<number | null>(null);
+  const inputRef = React.useRef<HTMLInputElement>(null);
+
+  const addOption = () => {
+    const val = newOption.trim();
+    if (!val || draft[activeTab].some(o => o.label === val)) return;
+    setDraft(prev => ({ ...prev, [activeTab]: [...prev[activeTab], { label: val, color: newColor }] }));
+    setNewOption('');
+    setNewColor(COLOR_PALETTE[(draft[activeTab].length + 1) % COLOR_PALETTE.length].hex);
+    inputRef.current?.focus();
+  };
+
+  const removeOption = (idx: number) => {
+    setDraft(prev => ({ ...prev, [activeTab]: prev[activeTab].filter((_, i) => i !== idx) }));
+    if (editingColorIdx === idx) setEditingColorIdx(null);
+  };
+
+  const changeColor = (idx: number, hex: string) => {
+    setDraft(prev => ({
+      ...prev,
+      [activeTab]: prev[activeTab].map((o, i) => i === idx ? { ...o, color: hex } : o),
+    }));
+    setEditingColorIdx(null);
+  };
+
+  const handleSave = () => {
+    localStorage.setItem('visualhub-column-config', JSON.stringify(draft));
+    onSave(draft);
+    onClose();
+  };
+
+  const tabs: (keyof ColumnConfig)[] = ['entregavel', 'hospedagem', 'squad'];
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-dark-card border border-white/10 rounded-2xl shadow-2xl w-full max-w-md flex flex-col" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-white/5">
+          <div>
+            <h2 className="text-base font-bold text-dark-text flex items-center gap-2">
+              <Settings size={18} className="text-violet-500" />
+              Configurar Colunas
+            </h2>
+            <p className="text-[10px] text-slate-500 mt-0.5">Defina as opções e cores dos dropdowns das colunas</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 text-slate-500 hover:text-white hover:bg-white/10 rounded-lg transition-colors">
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex items-center gap-1 px-6 pt-4 pb-2">
+          {tabs.map(tab => {
+            const isActive = activeTab === tab;
+            const c = TAB_COLORS[tab];
+            return (
+              <button
+                key={tab}
+                onClick={() => { setActiveTab(tab); setNewOption(''); setEditingColorIdx(null); }}
+                className={`px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all ${
+                  isActive
+                    ? `${c.bg} ${c.text} border ${c.border}`
+                    : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'
+                }`}
+              >
+                {COLUMN_LABELS[tab]}
+                <span className={`ml-1.5 px-1 py-0 rounded text-[9px] ${isActive ? 'bg-white/10' : 'bg-white/5'}`}>
+                  {draft[tab].length}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Options list */}
+        <div className="flex-1 overflow-y-auto px-6 py-3 max-h-[340px]">
+          {draft[activeTab].length === 0 ? (
+            <p className="text-center text-slate-600 text-xs py-6">Nenhuma opção definida</p>
+          ) : (
+            <div className="space-y-1.5">
+              {draft[activeTab].map((opt, idx) => {
+                const cs = getColorStyle(opt.color);
+                const isEditing = editingColorIdx === idx;
+                return (
+                  <div key={`${opt.label}-${idx}`}>
+                    <div
+                      className="flex items-center gap-2 px-3 py-2 rounded-xl border group transition-all"
+                      style={{ background: cs.bg, borderColor: cs.border }}
+                    >
+                      {/* Color dot — click to toggle picker */}
+                      <button
+                        onClick={() => setEditingColorIdx(isEditing ? null : idx)}
+                        className="w-4 h-4 rounded-full shrink-0 border-2 transition-transform hover:scale-125"
+                        style={{ backgroundColor: opt.color, borderColor: cs.border }}
+                        title="Alterar cor"
+                      />
+                      <span className="flex-1 text-xs font-semibold" style={{ color: cs.text }}>{opt.label}</span>
+                      <button
+                        onClick={() => removeOption(idx)}
+                        className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-500 hover:text-rose-400 transition-all"
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                    {/* Inline color picker */}
+                    {isEditing && (
+                      <div className="flex items-center gap-1.5 px-3 py-2 mt-0.5 bg-white/[0.03] rounded-xl border border-white/5">
+                        {COLOR_PALETTE.map(c => (
+                          <button
+                            key={c.id}
+                            onClick={() => changeColor(idx, c.hex)}
+                            className="w-5 h-5 rounded-full border-2 transition-all hover:scale-125"
+                            style={{
+                              backgroundColor: c.hex,
+                              borderColor: opt.color === c.hex ? '#fff' : 'transparent',
+                              boxShadow: opt.color === c.hex ? `0 0 0 2px ${c.hex}` : 'none',
+                            }}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Add new option */}
+        <div className="px-6 py-3 border-t border-white/5">
+          <div className="flex items-center gap-2">
+            {/* Color preview for new option */}
+            <button
+              onClick={() => {
+                const curIdx = COLOR_PALETTE.findIndex(c => c.hex === newColor);
+                const next = COLOR_PALETTE[(curIdx + 1) % COLOR_PALETTE.length];
+                setNewColor(next.hex);
+              }}
+              className="w-6 h-6 rounded-full shrink-0 border-2 border-white/20 transition-transform hover:scale-110"
+              style={{ backgroundColor: newColor }}
+              title="Clique para trocar a cor"
+            />
+            <input
+              ref={inputRef}
+              type="text"
+              value={newOption}
+              onChange={e => setNewOption(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && addOption()}
+              placeholder={`Nova opção para ${COLUMN_LABELS[activeTab]}...`}
+              className="flex-1 bg-white/5 border border-white/10 focus:border-violet-500/50 rounded-xl px-3 py-2 text-xs text-dark-text placeholder-slate-600 focus:outline-none transition-all"
+            />
+            <button
+              onClick={addOption}
+              disabled={!newOption.trim()}
+              className="px-3 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl transition-colors flex items-center gap-1"
+            >
+              <Plus size={12} />
+              Adicionar
+            </button>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-white/5">
+          <button onClick={onClose} className="px-4 py-2 text-xs font-bold text-slate-400 hover:text-white transition-colors">
+            Cancelar
+          </button>
+          <button
+            onClick={handleSave}
+            className="px-5 py-2 bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5"
+          >
+            <Save size={12} />
+            Salvar Configurações
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+};
+
+const DEFAULT_STATUS_GROUPS: Omit<StatusGroup, 'tasks'>[] = [
   { id: 'revisao-iii',        label: 'REVISÃO III',         color: '#7c3aed', emoji: '🔵' },
   { id: 'alteracao-ii',       label: 'ALTERAÇÃO II',        color: '#6d28d9', emoji: '🔵' },
   { id: 'revisao-ii',         label: 'REVISÃO II',          color: '#7c3aed', emoji: '🔵' },
@@ -506,6 +816,7 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
   onOpenDetail: (t: OnboardingTask) => void;
   onOpenSubtask: (s: Subtask, t: OnboardingTask) => void;
 }) => {
+  const columnConfig = React.useContext(ColumnConfigContext);
   const [squad, setSquad] = useState(task.squad || '');
   const [showStatusPicker, setShowStatusPicker] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
@@ -517,6 +828,9 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
   const [taskRespPicker, setTaskRespPicker] = useState(false);
   const [taskRespPos, setTaskRespPos] = useState({ top: 0, left: 0 });
   const [subtaskRespPos, setSubtaskRespPos] = useState({ top: 0, left: 0 });
+  const [editingName, setEditingName] = useState(false);
+  const [editNameValue, setEditNameValue] = useState(task.client_name);
+  const nameInputRef = React.useRef<HTMLInputElement>(null);
   const [projRespPicker, setProjRespPicker] = useState(false);
   const [projRespPos, setProjRespPos] = useState({ top: 0, left: 0 });
   const statusRef = React.useRef<HTMLDivElement>(null);
@@ -712,7 +1026,8 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
     } catch { /* silent */ }
   };
 
-  const currentGroup = STATUS_GROUPS.find(g => g.id === task.status_group);
+  const statusGroups = React.useContext(StatusGroupsContext);
+  const currentGroup = statusGroups.find(g => g.id === task.status_group);
   const circleColor = currentGroup?.color || '#64748b';
   const completedCount = subtasks.filter(s => s.completed).length;
 
@@ -740,7 +1055,7 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Status</p>
               </div>
               <div className="py-1.5">
-                {STATUS_GROUPS.map(sg => {
+                {statusGroups.map(sg => {
                   const isActive = sg.id === task.status_group;
                   return (
                     <button key={sg.id} onClick={() => handleStatusChange(sg.id)}
@@ -758,7 +1073,40 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
 
         {/* Client Name + subtask count */}
         <div className="flex-1 min-w-[200px] flex items-center gap-2 flex-wrap">
-          <span onClick={() => onOpenDetail(task)} className="text-sm font-semibold text-dark-text truncate cursor-pointer hover:text-violet-400 transition-colors">{task.client_name}</span>
+          {editingName ? (
+            <input
+              ref={nameInputRef}
+              value={editNameValue}
+              onChange={e => setEditNameValue(e.target.value)}
+              onBlur={async () => {
+                const trimmed = editNameValue.trim();
+                if (trimmed && trimmed !== task.client_name) {
+                  try {
+                    await fetch(`/api/onboarding-tasks/${task.id}`, {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ client_name: trimmed }),
+                    });
+                    onUpdate();
+                  } catch { /* silent */ }
+                }
+                setEditingName(false);
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                if (e.key === 'Escape') { setEditNameValue(task.client_name); setEditingName(false); }
+              }}
+              className="text-sm font-semibold text-dark-text bg-transparent border-b border-violet-500/50 outline-none w-full max-w-[280px] py-0"
+              autoFocus
+            />
+          ) : (
+            <span
+              onClick={() => onOpenDetail(task)}
+              onDoubleClick={(e) => { e.stopPropagation(); setEditNameValue(task.client_name); setEditingName(true); }}
+              className="text-sm font-semibold text-dark-text truncate cursor-pointer hover:text-violet-400 transition-colors"
+              title="Clique para detalhes · Duplo-clique para renomear"
+            >{task.client_name}</span>
+          )}
           {task.subtask_count > 0 && (
             <span className="text-[10px] text-slate-500 font-mono bg-white/5 px-1.5 py-0.5 rounded">
               ↳ {task.subtask_count}
@@ -769,21 +1117,38 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
 
         {/* Entregável */}
         <div className="shrink-0 w-28">
-          <input
-            type="text"
-            value={task.entregavel || ''}
-            onChange={(e) => {
-              const val = e.target.value;
-              fetch(`/api/onboarding-tasks/${task.id}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ entregavel: val }),
-              });
-              onUpdate();
-            }}
-            placeholder="Adicionar..."
-            className="w-full bg-transparent border border-transparent hover:border-white/10 focus:border-violet-500/50 rounded-lg px-2 py-1 text-xs text-dark-text placeholder-slate-600 focus:outline-none transition-all"
-          />
+          {(() => {
+            const cs = findOptionColor(columnConfig.entregavel, task.entregavel);
+            return (
+              <select
+                value={task.entregavel || ''}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  fetch(`/api/onboarding-tasks/${task.id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ entregavel: val }),
+                  });
+                  onUpdate();
+                }}
+                className="w-full border rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer focus:outline-none"
+                style={cs ? {
+                  background: cs.bg,
+                  color: cs.text,
+                  borderColor: cs.border,
+                } : {
+                  background: 'transparent',
+                  borderColor: 'transparent',
+                  color: '#94a3b8',
+                }}
+              >
+                <option value="" className="bg-dark-bg text-slate-400">Adicionar...</option>
+                {columnConfig.entregavel.map(opt => (
+                  <option key={opt.label} value={opt.label} className="bg-dark-bg text-dark-text">{opt.label}</option>
+                ))}
+              </select>
+            );
+          })()}
         </div>
 
         {/* Prioridade */}
@@ -815,35 +1180,62 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
 
         {/* Hospedagem */}
         <div className="shrink-0 w-28">
-          <input
-            type="text"
-            value={task.hospedagem || ''}
-            onChange={(e) => {
-              const val = e.target.value;
-              fetch(`/api/onboarding-tasks/${task.id}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ hospedagem: val }),
-              });
-              onUpdate();
-            }}
-            placeholder="Adicionar..."
-            className="w-full bg-transparent border border-transparent hover:border-white/10 focus:border-violet-500/50 rounded-lg px-2 py-1 text-xs text-dark-text placeholder-slate-600 focus:outline-none transition-all"
-          />
+          {(() => {
+            const cs = findOptionColor(columnConfig.hospedagem, task.hospedagem);
+            return (
+              <select
+                value={task.hospedagem || ''}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  fetch(`/api/onboarding-tasks/${task.id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ hospedagem: val }),
+                  });
+                  onUpdate();
+                }}
+                className="w-full border rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer focus:outline-none"
+                style={cs ? {
+                  background: cs.bg,
+                  color: cs.text,
+                  borderColor: cs.border,
+                } : {
+                  background: 'transparent',
+                  borderColor: 'transparent',
+                  color: '#94a3b8',
+                }}
+              >
+                <option value="" className="bg-dark-bg text-slate-400">Adicionar...</option>
+                {columnConfig.hospedagem.map(opt => (
+                  <option key={opt.label} value={opt.label} className="bg-dark-bg text-dark-text">{opt.label}</option>
+                ))}
+              </select>
+            );
+          })()}
         </div>
 
         {/* Squad */}
         <div className="shrink-0 w-32">
-          <select value={squad} onChange={e => handleSquadChange(e.target.value)}
-            className={`w-full border rounded-lg px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer focus:outline-none ${
-              squad === 'Squad Able' ? 'bg-blue-500/15 text-blue-400 border-blue-500/30 focus:border-blue-500/50' :
-              squad === 'Squad Baker' ? 'bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/30 focus:border-fuchsia-500/50' :
-              'bg-transparent border-transparent text-slate-400 hover:border-white/10 focus:border-white/20'
-            }`}
-          >
-            <option value="" className="bg-dark-bg text-slate-400">SQUAD</option>
-            {SQUAD_OPTIONS.map(s => <option key={s} value={s} className="bg-dark-bg text-dark-text">{s}</option>)}
-          </select>
+          {(() => {
+            const cs = findOptionColor(columnConfig.squad, squad);
+            return (
+              <select value={squad} onChange={e => handleSquadChange(e.target.value)}
+                className="w-full border rounded-lg px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer focus:outline-none"
+                style={cs ? {
+                  background: cs.bg,
+                  color: cs.text,
+                  borderColor: cs.border,
+                } : {
+                  background: 'transparent',
+                  borderColor: 'transparent',
+                  color: '#94a3b8',
+                }}
+              >
+                <option value="" className="bg-dark-bg text-slate-400">SQUAD</option>
+                {columnConfig.squad.map(s => <option key={s.label} value={s.label} className="bg-dark-bg text-dark-text">{s.label}</option>)}
+              </select>
+            );
+          })()}
         </div>
 
         {/* Responsável */}
@@ -1067,14 +1459,29 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
 
 // ── Group Block ───────────────────────────────────────────
 
-const GroupBlock = ({ group, onUpdate, onAddTask, onOpenDetail, onOpenSubtask }: {
+const GroupBlock = ({ group, onUpdate, onAddTask, onOpenDetail, onOpenSubtask, onRenameGroup, onUpdateGroup, onDeleteGroup, onDragStart, onDragOver, onDrop, isDragOver }: {
   group: StatusGroup;
   onUpdate: () => void;
   onAddTask: (groupId: string) => void;
   onOpenDetail: (t: OnboardingTask) => void;
   onOpenSubtask: (s: Subtask, t: OnboardingTask) => void;
+  onRenameGroup?: (id: string, label: string) => void;
+  onUpdateGroup?: (id: string, fields: { color?: string; emoji?: string }) => void;
+  onDeleteGroup?: (id: string) => void;
+  onDragStart?: (id: string) => void;
+  onDragOver?: (e: React.DragEvent, id: string) => void;
+  onDrop?: (id: string) => void;
+  isDragOver?: boolean;
 }) => {
   const [expanded, setExpanded] = useState(group.tasks.length > 0);
+  const [editing, setEditing] = useState(false);
+  const [editLabel, setEditLabel] = useState(group.label);
+  const [showGroupMenu, setShowGroupMenu] = useState(false);
+  const [showColorPicker, setShowColorPicker] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(false);
+  const menuRef = React.useRef<HTMLDivElement>(null);
+  const inputRef = React.useRef<HTMLInputElement>(null);
 
   // Keep expanded in sync when tasks arrive after initial mount
   const prevLenRef = React.useRef(group.tasks.length);
@@ -1085,48 +1492,213 @@ const GroupBlock = ({ group, onUpdate, onAddTask, onOpenDetail, onOpenSubtask }:
     prevLenRef.current = group.tasks.length;
   }, [group.tasks.length]);
 
+  // Close menu on outside click
+  React.useEffect(() => {
+    if (!showGroupMenu) { setConfirmDel(false); return; }
+    const handle = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowGroupMenu(false);
+        setShowColorPicker(false);
+        setShowEmojiPicker(false);
+        setConfirmDel(false);
+      }
+    };
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, [showGroupMenu]);
+
+  // Focus input on edit mode
+  React.useEffect(() => {
+    if (editing && inputRef.current) inputRef.current.focus();
+  }, [editing]);
+
+  const handleSaveLabel = () => {
+    const trimmed = editLabel.trim();
+    if (trimmed && trimmed !== group.label && onRenameGroup) {
+      onRenameGroup(group.id, trimmed.toUpperCase());
+    }
+    setEditing(false);
+  };
+
+  const handleDelete = () => {
+    if (!confirmDel) { setConfirmDel(true); return; }
+    onDeleteGroup?.(group.id);
+    setShowGroupMenu(false);
+    setConfirmDel(false);
+  };
+
+  // Shared header badge (collapsed & expanded)
+  const renderBadge = (compact: boolean) => (
+    <div
+      className={`${compact ? 'px-2.5 py-0.5' : 'px-3 py-1.5'} rounded-${compact ? 'md' : 'lg'} text-[${compact ? '10' : '11'}px] font-black uppercase tracking-widest flex items-center gap-${compact ? '1.5' : '2'} transition-transform`}
+      style={{ background: `${group.color}${compact ? '10' : '15'}`, color: compact ? `${group.color}80` : group.color, border: `1px solid ${group.color}${compact ? '15' : '30'}` }}
+    >
+      <span>{group.emoji}</span>
+      {editing ? (
+        <input
+          ref={inputRef}
+          value={editLabel}
+          onChange={e => setEditLabel(e.target.value)}
+          onBlur={handleSaveLabel}
+          onKeyDown={e => { if (e.key === 'Enter') handleSaveLabel(); if (e.key === 'Escape') { setEditLabel(group.label); setEditing(false); } }}
+          onClick={e => e.stopPropagation()}
+          className="bg-transparent border-b border-current text-current font-black uppercase tracking-widest outline-none w-40 text-inherit"
+          style={{ fontSize: 'inherit' }}
+        />
+      ) : (
+        <span
+          onDoubleClick={(e) => { e.stopPropagation(); setEditLabel(group.label); setEditing(true); }}
+          title="Duplo-clique para renomear"
+        >{group.label}</span>
+      )}
+      <span className={`ml-${compact ? '0.5' : '1'} px-${compact ? '1' : '1.5'} py-0.5 rounded-md bg-white/${compact ? '5' : '10'} text-[9px]`}>{group.tasks.length}</span>
+    </div>
+  );
+
+  // Context menu for editing group
+  const renderGroupMenu = () => (
+    <div ref={menuRef} className="relative" onClick={e => e.stopPropagation()}>
+      <button
+        onClick={(e) => { e.stopPropagation(); setShowGroupMenu(v => !v); }}
+        className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-600 hover:text-slate-300 hover:bg-white/5 transition-colors opacity-0 group-hover/header:opacity-100"
+      >
+        <MoreHorizontal size={14} />
+      </button>
+      {showGroupMenu && (
+        <div className="absolute top-8 left-0 z-50 w-56 bg-dark-card border border-white/10 rounded-xl shadow-2xl overflow-hidden">
+          <div className="py-1">
+            {/* Rename */}
+            <button
+              onClick={() => { setShowGroupMenu(false); setEditLabel(group.label); setEditing(true); }}
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-xs text-slate-300 hover:bg-white/5 transition-colors"
+            >
+              <Edit2 size={13} className="text-slate-500" />
+              Renomear etapa
+            </button>
+
+            {/* Color picker */}
+            <div className="relative">
+              <button
+                onClick={() => { setShowColorPicker(v => !v); setShowEmojiPicker(false); }}
+                className="w-full flex items-center gap-3 px-4 py-2.5 text-xs text-slate-300 hover:bg-white/5 transition-colors"
+              >
+                <Palette size={13} className="text-slate-500" />
+                Alterar cor
+                <div className="ml-auto w-3 h-3 rounded-full" style={{ backgroundColor: group.color }} />
+              </button>
+              {showColorPicker && (
+                <div className="px-3 pb-3 pt-1">
+                  <div className="grid grid-cols-8 gap-1">
+                    {STATUS_COLOR_PALETTE.map(c => (
+                      <button
+                        key={c}
+                        onClick={() => { onUpdateGroup?.(group.id, { color: c }); setShowColorPicker(false); }}
+                        className={`w-5 h-5 rounded-full transition-transform hover:scale-125 ${c === group.color ? 'ring-2 ring-white/50 ring-offset-1 ring-offset-dark-card' : ''}`}
+                        style={{ backgroundColor: c }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Emoji picker */}
+            <div className="relative">
+              <button
+                onClick={() => { setShowEmojiPicker(v => !v); setShowColorPicker(false); }}
+                className="w-full flex items-center gap-3 px-4 py-2.5 text-xs text-slate-300 hover:bg-white/5 transition-colors"
+              >
+                <span className="text-[13px] w-[13px] text-center">{group.emoji}</span>
+                Alterar emoji
+              </button>
+              {showEmojiPicker && (
+                <div className="px-3 pb-3 pt-1">
+                  <div className="grid grid-cols-8 gap-1">
+                    {STATUS_EMOJI_OPTIONS.map(em => (
+                      <button
+                        key={em}
+                        onClick={() => { onUpdateGroup?.(group.id, { emoji: em }); setShowEmojiPicker(false); }}
+                        className={`w-6 h-6 rounded-lg flex items-center justify-center text-sm transition-transform hover:scale-125 hover:bg-white/10 ${em === group.emoji ? 'bg-white/15 ring-1 ring-white/20' : ''}`}
+                      >
+                        {em}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-white/5 my-1" />
+
+            {/* Delete */}
+            <button
+              onClick={handleDelete}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 text-xs transition-colors ${confirmDel ? 'text-rose-400 bg-rose-500/10 font-bold' : 'text-rose-400/70 hover:bg-rose-500/5'}`}
+            >
+              <Trash2 size={13} />
+              {confirmDel ? 'Confirmar exclusão' : 'Excluir etapa'}
+            </button>
+            {confirmDel && group.tasks.length > 0 && (
+              <p className="px-4 pb-2 text-[10px] text-rose-400/60">
+                {group.tasks.length} tarefa(s) serão movidas para "A Desenvolver"
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   // Empty group — compact single-line
   if (group.tasks.length === 0 && !expanded) {
     return (
-      <div className="mb-1">
-        <button
-          onClick={() => setExpanded(true)}
-          className="w-full flex items-center gap-2.5 px-4 py-2 rounded-xl hover:bg-white/[0.03] transition-colors group"
-        >
-          <ChevronRight size={12} className="text-slate-700 group-hover:text-slate-500 transition-colors shrink-0" />
+      <div
+        className={`mb-1 transition-all ${isDragOver ? 'border-t-2 border-violet-500 pt-1' : ''}`}
+        onDragOver={e => { e.preventDefault(); onDragOver?.(e, group.id); }}
+        onDrop={e => { e.preventDefault(); onDrop?.(group.id); }}
+      >
+        <div className="w-full flex items-center gap-2.5 px-4 py-2 rounded-xl hover:bg-white/[0.03] transition-colors group/header">
           <div
-            className="px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5"
-            style={{ background: `${group.color}10`, color: `${group.color}80`, border: `1px solid ${group.color}15` }}
+            draggable
+            onDragStart={() => onDragStart?.(group.id)}
+            className="cursor-grab active:cursor-grabbing text-slate-700 hover:text-slate-400 opacity-0 group-hover/header:opacity-100 transition-opacity shrink-0"
           >
-            <span>{group.emoji}</span>
-            <span>{group.label}</span>
-            <span className="ml-0.5 px-1 py-0 rounded bg-white/5 text-[9px]">0</span>
+            <GripVertical size={12} />
           </div>
-        </button>
+          <button onClick={() => setExpanded(true)} className="flex items-center gap-2 flex-1">
+            <ChevronRight size={12} className="text-slate-700 group-hover/header:text-slate-500 transition-colors shrink-0" />
+            {renderBadge(true)}
+          </button>
+          {renderGroupMenu()}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="mb-6">
+    <div
+      className={`mb-6 transition-all ${isDragOver ? 'border-t-2 border-violet-500 pt-1' : ''}`}
+      onDragOver={e => { e.preventDefault(); onDragOver?.(e, group.id); }}
+      onDrop={e => { e.preventDefault(); onDrop?.(group.id); }}
+    >
       {/* Group header */}
-      <div className="flex items-center gap-3 px-2 py-2 sticky top-0 z-10">
+      <div className="flex items-center gap-3 px-2 py-2 sticky top-0 z-10 group/header">
+        <div
+          draggable
+          onDragStart={() => onDragStart?.(group.id)}
+          className="cursor-grab active:cursor-grabbing text-slate-700 hover:text-slate-400 opacity-0 group-hover/header:opacity-100 transition-opacity shrink-0"
+        >
+          <GripVertical size={14} />
+        </div>
         <button onClick={() => setExpanded(v => !v)} className="flex items-center gap-2 group flex-1">
-          <div
-            className="px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-widest flex items-center gap-2 transition-transform group-hover:scale-105"
-            style={{ background: `${group.color}15`, color: group.color, border: `1px solid ${group.color}30` }}
-          >
-            <span>{group.emoji}</span>
-            <span>{group.label}</span>
-            <span className="ml-1 px-1.5 py-0.5 rounded-md bg-white/10">{group.tasks.length}</span>
-          </div>
+          {renderBadge(false)}
           {expanded
             ? <ChevronDown size={14} className="text-slate-500 ml-2" />
             : <ChevronRight size={14} className="text-slate-500 ml-2" />
           }
         </button>
+        {renderGroupMenu()}
       </div>
-
 
       {/* Column headers */}
       {expanded && (
@@ -1140,9 +1712,9 @@ const GroupBlock = ({ group, onUpdate, onAddTask, onOpenDetail, onOpenSubtask }:
             <div className="shrink-0 w-28">Hospedagem</div>
             <div className="shrink-0 w-32">Squad</div>
             <div className="shrink-0 w-16 text-center">Resp.</div>
-            <div className="shrink-0 w-20">Data Iníc.</div>
-            <div className="shrink-0 w-24">Vencimento</div>
-            <div className="shrink-0 w-16">Docs</div>
+            <div className="shrink-0 w-24">Data Iníc.</div>
+            <div className="shrink-0 w-28">Vencimento</div>
+            <div className="shrink-0 w-24">Docs</div>
             <div className="shrink-0 w-[22px]" />
           </div>
 
@@ -1176,6 +1748,7 @@ const AddTaskModal = ({ groupId, onClose, onSaved }: { groupId: string; onClose:
   const [startDate, setStartDate] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [saving, setSaving] = useState(false);
+  const columnConfig = React.useContext(ColumnConfigContext);
 
   const handleSave = async () => {
     if (!clientName.trim()) return;
@@ -1184,7 +1757,7 @@ const AddTaskModal = ({ groupId, onClose, onSaved }: { groupId: string; onClose:
       await fetch('/api/onboarding-tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ client_name: clientName, squad, start_date: startDate || null, due_date: dueDate || null, status_group: groupId, type: 'visual-hub' }),
+        body: JSON.stringify({ client_name: clientName.trim(), squad: squad || null, start_date: startDate || null, due_date: dueDate || null, status_group: groupId, type: 'visual-hub' }),
       });
       onSaved();
       onClose();
@@ -1204,7 +1777,7 @@ const AddTaskModal = ({ groupId, onClose, onSaved }: { groupId: string; onClose:
           <select value={squad} onChange={e => setSquad(e.target.value)}
             className="w-full bg-dark-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-dark-text focus:outline-none focus:border-violet-500/50">
             <option value="">— Squad —</option>
-            {SQUAD_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+            {columnConfig.squad.map(s => <option key={s.label} value={s.label}>{s.label}</option>)}
           </select>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -1449,16 +2022,59 @@ interface TaskFile {
 }
 
 const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; onClose: () => void; onUpdate: () => void }) => {
+  const columnConfig = React.useContext(ColumnConfigContext);
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [loadingComments, setLoadingComments] = useState(true);
+  const [description, setDescription] = useState(task.meeting_info || '');
+  const [editingDesc, setEditingDesc] = useState(false);
+  const [savingDesc, setSavingDesc] = useState(false);
+
+  // Files state
+  const [files, setFiles] = useState<TaskFile[]>([]);
+  const [loadingFiles, setLoadingFiles] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [previewFile, setPreviewFile] = useState<TaskFile | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const commentEndRef = React.useRef<HTMLDivElement>(null);
+
+  // Editable name
+  const [editingName, setEditingName] = useState(false);
+  const [editNameValue, setEditNameValue] = useState(task.client_name);
+
+  const handleSaveName = async () => {
+    const trimmed = editNameValue.trim();
+    if (trimmed && trimmed !== task.client_name) {
+      try {
+        await fetch(`/api/onboarding-tasks/${task.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ client_name: trimmed }),
+        });
+        onUpdate();
+      } catch { /* silent */ }
+    }
+    setEditingName(false);
+  };
 
   useEffect(() => {
     fetch(`/api/onboarding-tasks/${task.id}/comments`)
       .then(r => r.ok ? r.json() : [])
       .then(data => { setComments(data); setLoadingComments(false); })
       .catch(() => setLoadingComments(false));
+
+    fetch(`/api/visual-hub-files?task_id=${task.id}`)
+      .then(r => r.ok ? r.json() : [])
+      .then(data => { setFiles(data); setLoadingFiles(false); })
+      .catch(() => setLoadingFiles(false));
   }, [task.id]);
+
+  useEffect(() => {
+    if (!loadingComments && commentEndRef.current) {
+      commentEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [comments.length, loadingComments]);
 
   const addComment = async () => {
     if (!newComment.trim()) return;
@@ -1476,17 +2092,126 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
     } catch { /* silent */ }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+  const saveDescription = async () => {
+    setSavingDesc(true);
+    try {
+      await fetch(`/api/onboarding-tasks/${task.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ meeting_info: description }),
+      });
+      setEditingDesc(false);
+      onUpdate();
+    } catch { /* silent */ }
+    setSavingDesc(false);
+  };
 
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-black/5 dark:border-white/5">
-          <div>
-            <h2 className="text-base font-bold text-dark-text">{task.client_name}</h2>
-            <p className="text-[10px] text-slate-500 mt-0.5 uppercase tracking-widest">Comentários</p>
+  const uploadFile = (file: File) => {
+    setUploading(true);
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const base64 = reader.result as string;
+      const isImg = file.type.startsWith('image/');
+      const isPdf = file.type === 'application/pdf';
+      const type: TaskFile['type'] = isImg ? 'image' : isPdf ? 'doc' : 'link';
+      try {
+        const res = await fetch('/api/visual-hub-files', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ task_id: task.id, name: file.name, url: base64, type }),
+        });
+        if (res.ok) { const f = await res.json(); setFiles(prev => [...prev, f]); }
+      } catch { /**/ } finally { setUploading(false); }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const deleteFile = async (id: number) => {
+    await fetch(`/api/visual-hub-files/${id}`, { method: 'DELETE' });
+    setFiles(prev => prev.filter(f => f.id !== id));
+  };
+
+  const isImg = (f: TaskFile) => f.type === 'image' || f.url?.startsWith('data:image');
+  const isPdf = (f: TaskFile) => f.type === 'doc' || f.url?.startsWith('data:application/pdf');
+
+  const getFileIcon = (f: TaskFile) => {
+    if (isImg(f)) return <ImageIcon size={16} />;
+    if (isPdf(f)) return <FileText size={16} />;
+    return <Paperclip size={16} />;
+  };
+
+  const getFileSize = (f: TaskFile) => {
+    if (f.url?.startsWith('data:')) {
+      const sizeBytes = Math.round((f.url.length * 3) / 4);
+      if (sizeBytes > 1048576) return `${(sizeBytes / 1048576).toFixed(1)} MB`;
+      return `${Math.round(sizeBytes / 1024)} KB`;
+    }
+    return '';
+  };
+
+  const statusGroups = React.useContext(StatusGroupsContext);
+  const currentGroup = statusGroups.find(g => g.id === task.status_group);
+  const entregavelColor = findOptionColor(columnConfig.entregavel, task.entregavel);
+  const hospedagemColor = findOptionColor(columnConfig.hospedagem, task.hospedagem);
+  const squadColor = findOptionColor(columnConfig.squad, task.squad);
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="bg-dark-card border border-white/10 rounded-2xl shadow-2xl w-full max-w-5xl flex flex-col overflow-hidden"
+        style={{ height: '90vh', maxHeight: '90vh' }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* ─── Top Header ─── */}
+        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-white/5 shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div
+              className="w-3 h-3 rounded-full shrink-0"
+              style={{ backgroundColor: currentGroup?.color || '#64748b' }}
+            />
+            <div className="min-w-0">
+              {editingName ? (
+                <input
+                  value={editNameValue}
+                  onChange={e => setEditNameValue(e.target.value)}
+                  onBlur={handleSaveName}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                    if (e.key === 'Escape') { setEditNameValue(task.client_name); setEditingName(false); }
+                  }}
+                  className="text-lg font-bold text-dark-text bg-transparent border-b border-violet-500/50 outline-none w-full"
+                  autoFocus
+                />
+              ) : (
+                <h2
+                  onClick={() => { setEditNameValue(task.client_name); setEditingName(true); }}
+                  className="text-lg font-bold text-dark-text truncate cursor-pointer hover:text-violet-400 transition-colors"
+                  title="Clique para renomear"
+                >{task.client_name}</h2>
+              )}
+              <div className="flex items-center gap-2 mt-0.5">
+                <span
+                  className="text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md"
+                  style={{
+                    backgroundColor: (currentGroup?.color || '#64748b') + '26',
+                    color: currentGroup?.color || '#64748b',
+                  }}
+                >
+                  {currentGroup?.label || task.status_group}
+                </span>
+                {task.prioridade && (
+                  <span className={`text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md ${
+                    task.prioridade === 'Alta' ? 'bg-rose-500/15 text-rose-400' :
+                    task.prioridade === 'Média' ? 'bg-amber-500/15 text-amber-400' :
+                    'bg-emerald-500/15 text-emerald-400'
+                  }`}>
+                    {task.prioridade}
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={() => {
                 fetch(`/api/onboarding-tasks/${task.id}/archive`, { method: 'POST' })
@@ -1497,71 +2222,456 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
               <Check size={13} />
               Concluir
             </button>
-            <button onClick={onClose} className="p-1.5 text-slate-500 hover:text-dark-text hover:bg-black/10 dark:hover:bg-white/10 rounded-lg transition-colors">
+            <button onClick={onClose} className="p-1.5 text-slate-500 hover:text-dark-text hover:bg-white/10 rounded-lg transition-colors">
               <X size={16} />
             </button>
           </div>
         </div>
 
-        {/* Comments feed */}
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
-          {loadingComments ? (
-            <div className="flex justify-center py-12">
-              <div className="w-6 h-6 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
-            </div>
-          ) : comments.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-slate-600">
-              <CheckSquare size={36} className="mb-3 opacity-20" />
-              <p className="text-sm font-medium">Nenhum comentário ainda.</p>
-              <p className="text-xs mt-1 opacity-60">Seja o primeiro a comentar!</p>
-            </div>
-          ) : (
-            [...comments].reverse().map(c => (
-              <div key={c.id} className="flex gap-3">
-                <div className="w-7 h-7 rounded-full bg-violet-500/20 flex items-center justify-center text-violet-400 font-bold text-xs shrink-0 mt-0.5 uppercase">
-                  {(c.author_name || 'U').charAt(0)}
+        {/* ─── Two-Column Body ─── */}
+        <div className="flex flex-1 min-h-0">
+
+          {/* ─── LEFT PANEL: Metadata + Description + Files ─── */}
+          <div className="flex-1 border-r border-white/5 overflow-y-auto">
+            <div className="p-6 space-y-6">
+
+              {/* ── Campos / Metadata Grid ── */}
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <Settings size={14} className="text-slate-500" />
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Campos</span>
                 </div>
-                <div className="flex-1">
-                  <div className="flex items-baseline gap-2 mb-1">
-                    <span className="text-xs font-bold text-dark-text">{c.author_name || 'Usuário'}</span>
-                    <span className="text-[10px] text-slate-500">
-                      {new Date(c.created_at).toLocaleString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+                  {/* Squad */}
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider w-20 shrink-0">Squad</span>
+                    {task.squad ? (
+                      <span
+                        className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg border"
+                        style={squadColor ? { background: squadColor.bg, color: squadColor.text, borderColor: squadColor.border } : {}}
+                      >
+                        {task.squad}
+                      </span>
+                    ) : <span className="text-[10px] text-slate-600">—</span>}
+                  </div>
+                  {/* Entregável */}
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider w-20 shrink-0">Entregável</span>
+                    {task.entregavel ? (
+                      <span
+                        className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg border"
+                        style={entregavelColor ? { background: entregavelColor.bg, color: entregavelColor.text, borderColor: entregavelColor.border } : {}}
+                      >
+                        {task.entregavel}
+                      </span>
+                    ) : <span className="text-[10px] text-slate-600">—</span>}
+                  </div>
+                  {/* Hospedagem */}
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider w-20 shrink-0">Hospedagem</span>
+                    {task.hospedagem ? (
+                      <span
+                        className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg border"
+                        style={hospedagemColor ? { background: hospedagemColor.bg, color: hospedagemColor.text, borderColor: hospedagemColor.border } : {}}
+                      >
+                        {task.hospedagem}
+                      </span>
+                    ) : <span className="text-[10px] text-slate-600">—</span>}
+                  </div>
+                  {/* Responsável */}
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider w-20 shrink-0">Responsável</span>
+                    {task.responsible_name ? (
+                      <div className="flex items-center gap-1.5">
+                        {task.responsible_avatar ? (
+                          <img src={task.responsible_avatar} alt="" className="w-5 h-5 rounded-full object-cover" />
+                        ) : (
+                          <div className="w-5 h-5 rounded-full bg-violet-500/20 flex items-center justify-center text-violet-400 text-[8px] font-bold uppercase">
+                            {task.responsible_name.charAt(0)}
+                          </div>
+                        )}
+                        <span className="text-xs text-dark-text font-medium">{task.responsible_name}</span>
+                      </div>
+                    ) : <span className="text-[10px] text-slate-600">—</span>}
+                  </div>
+                  {/* Datas */}
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider w-20 shrink-0">Data Início</span>
+                    <span className="text-xs text-slate-400 flex items-center gap-1">
+                      <Calendar size={11} className="text-slate-600" />
+                      {task.start_date ? new Date(task.start_date).toLocaleDateString('pt-BR') : '—'}
                     </span>
                   </div>
-                  <div className="bg-dark-bg border border-white/5 rounded-2xl rounded-tl-sm px-4 py-3">
-                    <p className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">{c.text}</p>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider w-20 shrink-0">Vencimento</span>
+                    {(() => {
+                      const r = task.due_date ? fmtDate(task.due_date) : null;
+                      if (!r) return <span className="text-xs text-slate-600">—</span>;
+                      if (typeof r === 'object') {
+                        return (
+                          <span className={`text-xs font-semibold flex items-center gap-1 ${r.color}`}>
+                            <Calendar size={11} />
+                            {r.color === 'text-rose-400' ? r.text : r.formatted}
+                          </span>
+                        );
+                      }
+                      return <span className="text-xs text-slate-400 flex items-center gap-1"><Calendar size={11} className="text-slate-600" />{r}</span>;
+                    })()}
                   </div>
                 </div>
               </div>
-            ))
-          )}
-        </div>
 
-        {/* Input bar */}
-        <div className="border-t border-white/5 px-5 py-4 bg-dark-card">
-          <div className="flex gap-3 items-end">
-            <div className="w-7 h-7 rounded-full bg-violet-500/20 flex items-center justify-center text-violet-400 font-bold text-xs shrink-0 uppercase">G</div>
-            <div className="flex-1">
-              <textarea
-                value={newComment}
-                onChange={e => setNewComment(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addComment(); } }}
-                placeholder="Escreva um comentário..."
-                rows={1}
-                className="w-full bg-dark-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500/50 transition-colors resize-none"
-                style={{ minHeight: '40px', maxHeight: '100px' }}
-                onInput={e => { const el = e.currentTarget; el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 100) + 'px'; }}
-              />
+              {/* ── Descrição ── */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <FileText size={14} className="text-slate-500" />
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Descrição</span>
+                  </div>
+                  {!editingDesc && (
+                    <button onClick={() => setEditingDesc(true)} className="text-[10px] text-violet-400 hover:text-violet-300 font-semibold transition-colors">
+                      Editar
+                    </button>
+                  )}
+                </div>
+                {editingDesc ? (
+                  <div className="space-y-2">
+                    <textarea
+                      value={description}
+                      onChange={e => setDescription(e.target.value)}
+                      placeholder="Adicione uma descrição ou escreva com IA..."
+                      rows={4}
+                      className="w-full bg-dark-bg border border-white/10 rounded-xl px-4 py-3 text-sm text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500/50 transition-colors resize-none"
+                    />
+                    <div className="flex gap-2">
+                      <button onClick={saveDescription} disabled={savingDesc}
+                        className="px-3 py-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5">
+                        {savingDesc ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                        Salvar
+                      </button>
+                      <button onClick={() => { setEditingDesc(false); setDescription(task.meeting_info || ''); }}
+                        className="px-3 py-1.5 text-xs text-slate-400 hover:text-white font-bold transition-colors">
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    onClick={() => setEditingDesc(true)}
+                    className="cursor-pointer bg-dark-bg border border-white/5 rounded-xl px-4 py-3 min-h-[60px] hover:border-white/10 transition-colors"
+                  >
+                    {description ? (
+                      <p className="text-sm text-slate-300 whitespace-pre-wrap leading-relaxed">{description}</p>
+                    ) : (
+                      <p className="text-sm text-slate-600 italic">Clique para adicionar uma descrição...</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* ── Anexos / Arquivos ── */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Paperclip size={14} className="text-slate-500" />
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Anexos</span>
+                    <span className="text-[9px] bg-white/5 text-slate-500 px-1.5 py-0.5 rounded font-bold">{files.length}</span>
+                  </div>
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex items-center gap-1 text-[10px] text-violet-400 hover:text-violet-300 font-semibold transition-colors"
+                  >
+                    <Upload size={11} />
+                    Upload
+                  </button>
+                </div>
+
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  accept="image/*,.pdf,.doc,.docx,.json,.txt,.png,.jpg,.jpeg,.webp,.gif,.svg,.xls,.xlsx,.ppt,.pptx,.zip"
+                  multiple
+                  onChange={e => { Array.from(e.target.files || []).forEach(uploadFile); e.target.value = ''; }}
+                />
+
+                {/* Drop zone */}
+                <div
+                  className={`border-2 border-dashed rounded-xl transition-all ${
+                    isDragOver
+                      ? 'border-violet-500/50 bg-violet-500/5'
+                      : 'border-white/5 hover:border-white/10'
+                  }`}
+                  onDragOver={e => { e.preventDefault(); setIsDragOver(true); }}
+                  onDragLeave={() => setIsDragOver(false)}
+                  onDrop={e => {
+                    e.preventDefault(); setIsDragOver(false);
+                    Array.from(e.dataTransfer.files).forEach(uploadFile);
+                  }}
+                >
+                  {loadingFiles ? (
+                    <div className="flex justify-center py-8">
+                      <div className="w-5 h-5 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
+                    </div>
+                  ) : files.length === 0 && !uploading ? (
+                    <div
+                      className="flex flex-col items-center justify-center py-8 cursor-pointer"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center mb-2">
+                        <Upload size={18} className="text-slate-600" />
+                      </div>
+                      <p className="text-xs text-slate-500 font-medium">Solte os arquivos aqui para <span className="text-violet-400 underline">upload</span></p>
+                      <p className="text-[10px] text-slate-600 mt-1">PDF, imagens, docs, JSON e mais</p>
+                    </div>
+                  ) : (
+                    <div className="p-3 space-y-2">
+                      {/* File grid */}
+                      <div className="grid grid-cols-2 gap-2">
+                        {files.map(f => (
+                          <div
+                            key={f.id}
+                            className="group flex items-center gap-2.5 bg-white/[0.03] border border-white/5 hover:border-white/10 rounded-xl px-3 py-2.5 cursor-pointer transition-all"
+                            onClick={() => setPreviewFile(f)}
+                          >
+                            {/* Thumbnail or icon */}
+                            {isImg(f) ? (
+                              <div className="w-10 h-10 rounded-lg overflow-hidden border border-white/10 shrink-0 bg-black/20">
+                                <img src={f.url} alt={f.name} className="w-full h-full object-cover" />
+                              </div>
+                            ) : (
+                              <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
+                                isPdf(f) ? 'bg-rose-500/15 text-rose-400' : 'bg-violet-500/15 text-violet-400'
+                              }`}>
+                                {getFileIcon(f)}
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-semibold text-dark-text truncate">{f.name}</p>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className="text-[9px] text-slate-600">{getFileSize(f)}</span>
+                                {f.created_at && (
+                                  <span className="text-[9px] text-slate-600">
+                                    {new Date(f.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            {/* Actions */}
+                            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all shrink-0">
+                              <button
+                                onClick={e => { e.stopPropagation(); setPreviewFile(f); }}
+                                className="p-1 text-slate-500 hover:text-violet-400 transition-colors"
+                                title="Visualizar"
+                              >
+                                <Eye size={12} />
+                              </button>
+                              {f.url && (
+                                <a
+                                  href={f.url} download={f.name}
+                                  onClick={e => e.stopPropagation()}
+                                  className="p-1 text-slate-500 hover:text-emerald-400 transition-colors"
+                                  title="Baixar"
+                                >
+                                  <Download size={12} />
+                                </a>
+                              )}
+                              <button
+                                onClick={e => { e.stopPropagation(); deleteFile(f.id); }}
+                                className="p-1 text-slate-500 hover:text-rose-400 transition-colors"
+                                title="Remover"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      {/* Upload progress */}
+                      {uploading && (
+                        <div className="flex items-center gap-2 px-3 py-2 bg-violet-500/5 border border-violet-500/20 rounded-xl">
+                          <Loader2 size={14} className="animate-spin text-violet-400" />
+                          <span className="text-[10px] text-violet-400 font-medium">Enviando arquivo...</span>
+                        </div>
+                      )}
+                      {/* Add more button */}
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="w-full flex items-center justify-center gap-1.5 py-2 text-[10px] text-slate-500 hover:text-violet-400 font-semibold rounded-lg hover:bg-white/[0.03] transition-all"
+                      >
+                        <Plus size={11} />
+                        Adicionar mais arquivos
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
-            <button onClick={addComment} disabled={!newComment.trim()}
-              className="h-9 w-9 rounded-full bg-violet-600 hover:bg-violet-500 disabled:opacity-30 text-white flex items-center justify-center transition-all shrink-0">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-            </button>
           </div>
-          <p className="text-[10px] text-slate-600 mt-2 ml-10">Enter para enviar · Shift+Enter para nova linha</p>
+
+          {/* ─── RIGHT PANEL: Activity / Comments ─── */}
+          <div className="w-[360px] shrink-0 flex flex-col bg-dark-bg/50">
+            {/* Activity header */}
+            <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-white/5 shrink-0">
+              <div className="flex items-center gap-2">
+                <MessageCircle size={14} className="text-violet-400" />
+                <span className="text-xs font-bold text-dark-text">Atividade</span>
+              </div>
+              <span className="text-[9px] bg-violet-500/15 text-violet-400 px-2 py-0.5 rounded-full font-bold">
+                {comments.length}
+              </span>
+            </div>
+
+            {/* Comments feed */}
+            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+              {loadingComments ? (
+                <div className="flex justify-center py-12">
+                  <div className="w-6 h-6 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
+                </div>
+              ) : comments.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-slate-600">
+                  <MessageCircle size={32} className="mb-3 opacity-20" />
+                  <p className="text-sm font-medium">Nenhum comentário</p>
+                  <p className="text-xs mt-1 opacity-60">Seja o primeiro a comentar!</p>
+                </div>
+              ) : (
+                [...comments].reverse().map(c => (
+                  <div key={c.id} className="flex gap-2.5">
+                    <div className="w-7 h-7 rounded-full bg-violet-500/20 flex items-center justify-center text-violet-400 font-bold text-[10px] shrink-0 mt-0.5 uppercase">
+                      {(c.author_name || 'U').charAt(0)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-baseline gap-2 mb-1">
+                        <span className="text-xs font-bold text-dark-text">{c.author_name || 'Usuário'}</span>
+                        <span className="text-[9px] text-slate-600 flex items-center gap-0.5">
+                          <Clock size={8} />
+                          {new Date(c.created_at).toLocaleString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      <div className="bg-dark-card border border-white/5 rounded-2xl rounded-tl-sm px-3.5 py-2.5">
+                        <p className="text-[13px] text-slate-300 whitespace-pre-wrap leading-relaxed break-words">{c.text}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+              <div ref={commentEndRef} />
+            </div>
+
+            {/* Comment input */}
+            <div className="border-t border-white/5 px-4 py-3 bg-dark-card/80 shrink-0">
+              <div className="bg-dark-bg border border-white/10 rounded-xl focus-within:border-violet-500/50 transition-colors overflow-hidden">
+                <textarea
+                  value={newComment}
+                  onChange={e => setNewComment(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addComment(); } }}
+                  placeholder="Escreva um comentário..."
+                  rows={3}
+                  className="w-full px-4 py-3 text-sm text-dark-text placeholder-slate-600 focus:outline-none resize-none bg-transparent"
+                  style={{ minHeight: '72px', maxHeight: '140px' }}
+                  onInput={e => { const el = e.currentTarget; el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 140) + 'px'; }}
+                />
+                <div className="flex items-center justify-between px-3 py-2 border-t border-white/5">
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="p-1.5 text-slate-500 hover:text-violet-400 hover:bg-white/5 rounded-lg transition-colors"
+                      title="Anexar arquivo"
+                    >
+                      <Paperclip size={14} />
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] text-slate-600">Enter enviar · Shift+Enter nova linha</span>
+                    <button
+                      onClick={addComment}
+                      disabled={!newComment.trim()}
+                      className="px-3 py-1 bg-violet-600 hover:bg-violet-500 disabled:opacity-30 disabled:cursor-not-allowed text-white text-[11px] font-bold rounded-lg transition-all flex items-center gap-1"
+                    >
+                      Enviar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
+
+      {/* ─── Fullscreen file preview ─── */}
+      {previewFile && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 backdrop-blur-xl" onClick={() => setPreviewFile(null)}>
+          <div
+            className="bg-[#0d0d14] border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+            style={{ width: '92vw', height: '92vh' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Preview header */}
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/5 shrink-0">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                  isImg(previewFile) ? 'bg-violet-500/15 text-violet-400' : isPdf(previewFile) ? 'bg-rose-500/15 text-rose-400' : 'bg-violet-500/15 text-violet-400'
+                }`}>
+                  {getFileIcon(previewFile)}
+                </div>
+                <span className="text-sm font-bold text-white truncate">{previewFile.name}</span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {files.length > 1 && (
+                  <>
+                    <button
+                      onClick={e => { e.stopPropagation(); const idx = files.findIndex(f => f.id === previewFile.id); setPreviewFile(files[(idx - 1 + files.length) % files.length]); }}
+                      className="p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                    >
+                      <ChevronRight size={16} className="rotate-180" />
+                    </button>
+                    <span className="text-[10px] text-slate-600">{files.findIndex(f => f.id === previewFile.id) + 1} / {files.length}</span>
+                    <button
+                      onClick={e => { e.stopPropagation(); const idx = files.findIndex(f => f.id === previewFile.id); setPreviewFile(files[(idx + 1) % files.length]); }}
+                      className="p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                    >
+                      <ChevronRight size={16} />
+                    </button>
+                  </>
+                )}
+                <a
+                  href={previewFile.url} download={previewFile.name}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold rounded-lg transition-colors"
+                  onClick={e => e.stopPropagation()}
+                >
+                  <Download size={12} />
+                  Baixar
+                </a>
+                <button onClick={() => setPreviewFile(null)} className="p-1.5 text-slate-500 hover:text-white hover:bg-white/10 rounded-lg transition-colors">
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+            {/* Preview content */}
+            <div className="flex-1 overflow-hidden">
+              {isImg(previewFile) ? (
+                <div className="w-full h-full flex items-center justify-center bg-black/40 p-6">
+                  <img src={previewFile.url} alt={previewFile.name} className="max-w-full max-h-full object-contain rounded-xl shadow-2xl" />
+                </div>
+              ) : isPdf(previewFile) ? (
+                <iframe src={previewFile.url} className="w-full h-full border-none" title={previewFile.name} />
+              ) : (
+                <div className="w-full h-full flex flex-col items-center justify-center text-slate-500">
+                  <FileText size={64} className="mb-4 opacity-30" />
+                  <p className="text-lg font-semibold">{previewFile.name}</p>
+                  <a href={previewFile.url} download={previewFile.name}
+                    className="mt-3 px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold rounded-lg transition-colors">
+                    Baixar arquivo
+                  </a>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+    </div>,
+    document.body
   );
 };
 const DocEditorModal = ({ file, onSave, onClose }: { file: any; onSave: (id: number, content: string) => Promise<void>; onClose: () => void }) => {
@@ -2003,8 +3113,25 @@ export default function VisualHub() {
   const [showTemplate, setShowTemplate] = useState(false);
   const [detailTask, setDetailTask] = useState<OnboardingTask | null>(null);
   const [detailSubtask, setDetailSubtask] = useState<{subtask: Subtask, task: OnboardingTask} | null>(null);
-
   const [showCompleted, setShowCompleted] = useState(false);
+  const [columnConfig, setColumnConfig] = useState<ColumnConfig>(loadColumnConfig);
+  const [showColumnConfig, setShowColumnConfig] = useState(false);
+
+  // Dynamic status groups
+  const [statusGroups, setStatusGroups] = useState<StatusGroupDef[]>(DEFAULT_STATUS_GROUPS);
+  const [addingNewGroup, setAddingNewGroup] = useState(false);
+  const [newGroupLabel, setNewGroupLabel] = useState('');
+  const newGroupRef = React.useRef<HTMLInputElement>(null);
+
+  const fetchStatusGroups = async () => {
+    try {
+      const res = await fetch('/api/visual-hub-status-groups');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.length > 0) setStatusGroups(data);
+      }
+    } catch { /* fallback to defaults */ }
+  };
 
   const fetchTasks = async () => {
     try {
@@ -2017,11 +3144,108 @@ export default function VisualHub() {
     } catch { /* silent */ } finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchTasks(); }, []);
+  useEffect(() => { fetchStatusGroups().then(() => fetchTasks()); }, []);
+
+  // Focus new group input
+  React.useEffect(() => {
+    if (addingNewGroup && newGroupRef.current) newGroupRef.current.focus();
+  }, [addingNewGroup]);
+
+  // ── Status group CRUD handlers ──
+  const handleAddGroup = async () => {
+    const label = newGroupLabel.trim().toUpperCase();
+    if (!label) { setAddingNewGroup(false); return; }
+    const id = label.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9\-]/g, '');
+    if (statusGroups.some(g => g.id === id)) { setAddingNewGroup(false); setNewGroupLabel(''); return; }
+    try {
+      const res = await fetch('/api/visual-hub-status-groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, label, color: '#7c3aed', emoji: '🔵', order_index: statusGroups.length }),
+      });
+      if (res.ok) {
+        const created = await res.json();
+        setStatusGroups(prev => [...prev, created]);
+      }
+    } catch { /* silent */ }
+    setAddingNewGroup(false);
+    setNewGroupLabel('');
+  };
+
+  const handleRenameGroup = async (id: string, label: string) => {
+    setStatusGroups(prev => prev.map(g => g.id === id ? { ...g, label } : g));
+    try {
+      await fetch(`/api/visual-hub-status-groups/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label }),
+      });
+    } catch { /* silent */ }
+  };
+
+  const handleUpdateGroup = async (id: string, fields: { color?: string; emoji?: string }) => {
+    setStatusGroups(prev => prev.map(g => g.id === id ? { ...g, ...fields } : g));
+    try {
+      await fetch(`/api/visual-hub-status-groups/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(fields),
+      });
+    } catch { /* silent */ }
+  };
+
+  const handleDeleteGroup = async (id: string) => {
+    setStatusGroups(prev => prev.filter(g => g.id !== id));
+    try {
+      await fetch(`/api/visual-hub-status-groups/${id}`, { method: 'DELETE' });
+      fetchTasks(); // refresh tasks since they may have been moved
+    } catch { /* silent */ }
+  };
+
+  // ── Drag & Drop reorder ──
+  const [draggingGroupId, setDraggingGroupId] = useState<string | null>(null);
+  const [dragOverGroupId, setDragOverGroupId] = useState<string | null>(null);
+
+  const handleGroupDragStart = (id: string) => {
+    setDraggingGroupId(id);
+  };
+
+  const handleGroupDragOver = (e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    if (draggingGroupId && targetId !== draggingGroupId) {
+      setDragOverGroupId(targetId);
+    }
+  };
+
+  const handleGroupDrop = async (targetId: string) => {
+    if (!draggingGroupId || draggingGroupId === targetId) {
+      setDraggingGroupId(null);
+      setDragOverGroupId(null);
+      return;
+    }
+    const fromIdx = statusGroups.findIndex(g => g.id === draggingGroupId);
+    const toIdx = statusGroups.findIndex(g => g.id === targetId);
+    if (fromIdx === -1 || toIdx === -1) { setDraggingGroupId(null); setDragOverGroupId(null); return; }
+
+    const reordered = [...statusGroups];
+    const [moved] = reordered.splice(fromIdx, 1);
+    reordered.splice(toIdx, 0, moved);
+    setStatusGroups(reordered);
+    setDraggingGroupId(null);
+    setDragOverGroupId(null);
+
+    try {
+      await fetch('/api/visual-hub-status-groups/reorder', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ groups: reordered.map((g, i) => ({ id: g.id, order_index: i })) }),
+      });
+    } catch { /* silent */ }
+  };
 
   const activeGroups = showCompleted 
-    ? [{ id: 'arquivado', label: 'CONCLUÍDO', color: '#10b981', emoji: '🏆' }, ...STATUS_GROUPS]
-    : STATUS_GROUPS;
+    ? [{ id: 'arquivado', label: 'CONCLUÍDO', color: '#10b981', emoji: '🏆' }, ...statusGroups]
+    : statusGroups;
 
   const groups: StatusGroup[] = activeGroups.map(sg => ({
     ...sg,
@@ -2029,6 +3253,8 @@ export default function VisualHub() {
   }));
 
   return (
+    <ColumnConfigContext.Provider value={columnConfig}>
+    <StatusGroupsContext.Provider value={statusGroups}>
     <div className="min-h-screen bg-dark-bg">
       {/* ── Header ── */}
       <div className="px-8 pt-8 pb-4 flex items-start justify-between">
@@ -2051,6 +3277,13 @@ export default function VisualHub() {
             {showCompleted ? 'Ocultar Concluídos' : 'Mostrar Concluídos'}
           </button>
           <button
+            onClick={() => setShowColumnConfig(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-dark-card border border-black/10 dark:border-white/10 hover:border-sky-500/30 text-dark-text text-[11px] font-bold rounded-xl transition-colors"
+          >
+            <Tag size={14} className="text-sky-400" />
+            Configurar Colunas
+          </button>
+          <button
             onClick={() => setShowTemplate(true)}
             className="flex items-center gap-2 px-4 py-2 bg-dark-card border border-black/10 dark:border-white/10 hover:border-violet-500/30 text-dark-text text-[11px] font-bold rounded-xl transition-colors"
           >
@@ -2067,6 +3300,7 @@ export default function VisualHub() {
         </div>
       ) : (
         <div className="px-8 pb-12">
+          <div onDragEnd={() => { setDraggingGroupId(null); setDragOverGroupId(null); }}>
           {groups.map(group => (
             <GroupBlock
               key={group.id}
@@ -2075,14 +3309,52 @@ export default function VisualHub() {
               onAddTask={setAddingToGroup}
               onOpenSubtask={(s, t) => setDetailSubtask({subtask: s, task: t})}
               onOpenDetail={setDetailTask}
+              onRenameGroup={handleRenameGroup}
+              onUpdateGroup={handleUpdateGroup}
+              onDeleteGroup={handleDeleteGroup}
+              onDragStart={handleGroupDragStart}
+              onDragOver={handleGroupDragOver}
+              onDrop={handleGroupDrop}
+              isDragOver={dragOverGroupId === group.id}
             />
           ))}
+          </div>
 
-          {/* New status button */}
-          <button className="flex items-center gap-2 text-xs text-slate-600 hover:text-slate-400 transition-colors mt-4 px-4 py-2">
-            <Plus size={14} />
-            Novo status
-          </button>
+          {/* New status button / inline form */}
+          {addingNewGroup ? (
+            <div className="flex items-center gap-2 mt-4 px-4 py-2">
+              <div className="w-3 h-3 rounded-full bg-violet-500/40" />
+              <input
+                ref={newGroupRef}
+                value={newGroupLabel}
+                onChange={e => setNewGroupLabel(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleAddGroup(); if (e.key === 'Escape') { setAddingNewGroup(false); setNewGroupLabel(''); } }}
+                onBlur={handleAddGroup}
+                placeholder="Nome da nova etapa..."
+                className="bg-transparent border-b border-violet-500/40 text-dark-text text-xs font-bold uppercase tracking-widest outline-none w-64 py-1 placeholder-slate-600"
+              />
+              <button
+                onClick={handleAddGroup}
+                className="text-[10px] text-violet-400 hover:text-violet-300 font-bold transition-colors"
+              >
+                Salvar
+              </button>
+              <button
+                onClick={() => { setAddingNewGroup(false); setNewGroupLabel(''); }}
+                className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors"
+              >
+                Cancelar
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setAddingNewGroup(true)}
+              className="flex items-center gap-2 text-xs text-slate-600 hover:text-slate-400 transition-colors mt-4 px-4 py-2"
+            >
+              <Plus size={14} />
+              Novo status
+            </button>
+          )}
         </div>
       )}
 
@@ -2118,6 +3390,18 @@ export default function VisualHub() {
           onUpdate={fetchTasks}
         />
       )}
+
+      {/* Column Config Modal */}
+      {showColumnConfig && (
+        <ColumnConfigModal
+          config={columnConfig}
+          onSave={setColumnConfig}
+          onClose={() => setShowColumnConfig(false)}
+        />
+      )}
     </div>
+    </StatusGroupsContext.Provider>
+    </ColumnConfigContext.Provider>
   );
 }
+

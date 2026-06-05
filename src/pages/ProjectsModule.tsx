@@ -1955,31 +1955,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
   return (
     <>
       <div className="min-h-screen bg-dark-bg text-white p-8 font-sans relative">
-      {/* Saving Indicator */}
-      <AnimatePresence>
-        {(isSaving || saveError) && (
-          <motion.div 
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className={`fixed top-4 right-4 z-[200] px-4 py-2 rounded-xl border flex items-center gap-2 shadow-lg backdrop-blur-md ${
-              saveError ? 'bg-rose-500/20 border-rose-500/50 text-rose-500' : 'bg-violet-500/20 border-violet-500/50 text-violet-500'
-            }`}
-          >
-            {saveError ? (
-              <>
-                <AlertTriangle size={16} />
-                <span className="text-xs font-bold uppercase tracking-wider">Erro ao salvar: {saveError}</span>
-              </>
-            ) : (
-              <>
-                <div className="w-3 h-3 border-2 border-violet-500/20 border-t-violet-500 rounded-full animate-spin" />
-                <span className="text-xs font-bold uppercase tracking-wider">Salvando alterações...</span>
-              </>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
+
 
       {/* Product Modal */}
       <AnimatePresence>

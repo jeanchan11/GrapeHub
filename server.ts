@@ -10450,11 +10450,17 @@ app.get("/api/todos", async (req, res) => {
       const { id } = req.params;
       const fields = req.body;
       const allowed = ['client_name','squad','responsible_id','responsible_name','responsible_avatar','start_date','due_date','status_group','tags','subtask_count','nome_completo','nome_fantasia','telefone_whatsapp','cnpj_cpf','cep','cidade','uf','produto','responsavel_projeto_id','responsavel_projeto_name','responsavel_projeto_avatar','hospedagem','entregavel','prioridade'];
+      const DATE_FIELDS = ['start_date', 'due_date'];
       const sets: string[] = [];
       const vals: any[] = [];
       let idx = 1;
       for (const key of allowed) {
-        if (key in fields) { sets.push(`${key} = $${idx++}`); vals.push(fields[key]); }
+        if (key in fields) {
+          sets.push(`${key} = $${idx++}`);
+          // Convert empty strings to null for DATE columns
+          const val = DATE_FIELDS.includes(key) && fields[key] === '' ? null : fields[key];
+          vals.push(val);
+        }
       }
       if (sets.length === 0) return res.status(400).json({ error: 'Nenhum campo para atualizar.' });
       sets.push(`updated_at = NOW()`);
@@ -10606,6 +10612,120 @@ app.get("/api/todos", async (req, res) => {
     )
   `);
 
+  // ── Visual Hub Status Groups table ──
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS visual_hub_status_groups (
+      id TEXT PRIMARY KEY,
+      label TEXT NOT NULL,
+      color TEXT NOT NULL DEFAULT '#7c3aed',
+      emoji TEXT NOT NULL DEFAULT '🔵',
+      order_index INT NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  // Seed defaults if table is empty
+  const existingGroups = await pool.query('SELECT COUNT(*) FROM visual_hub_status_groups');
+  if (parseInt(existingGroups.rows[0].count) === 0) {
+    const defaults = [
+      { id: 'revisao-iii', label: 'REVISÃO III', color: '#7c3aed', emoji: '🔵', order_index: 0 },
+      { id: 'alteracao-ii', label: 'ALTERAÇÃO II', color: '#6d28d9', emoji: '🔵', order_index: 1 },
+      { id: 'revisao-ii', label: 'REVISÃO II', color: '#7c3aed', emoji: '🔵', order_index: 2 },
+      { id: 'alteracao-i', label: 'ALTERAÇÃO I', color: '#6d28d9', emoji: '🔵', order_index: 3 },
+      { id: 'revisao-i', label: 'REVISÃO I', color: '#7c3aed', emoji: '🔵', order_index: 4 },
+      { id: 'em-desenvolvimento', label: 'EM DESENVOLVIMENTO', color: '#ea580c', emoji: '🟠', order_index: 5 },
+      { id: 'a-desenvolver', label: 'A DESENVOLVER', color: '#52525b', emoji: '⬜', order_index: 6 },
+      { id: 'aguardando-copy', label: 'AGUARDANDO COPY', color: '#3f3f46', emoji: '⏳', order_index: 7 },
+    ];
+    for (const d of defaults) {
+      await pool.query(
+        'INSERT INTO visual_hub_status_groups (id, label, color, emoji, order_index) VALUES ($1,$2,$3,$4,$5)',
+        [d.id, d.label, d.color, d.emoji, d.order_index]
+      );
+    }
+  }
+
+  // ── Visual Hub Status Groups API ──
+  app.get('/api/visual-hub-status-groups', async (req, res) => {
+    try {
+      const result = await pool.query('SELECT * FROM visual_hub_status_groups ORDER BY order_index ASC');
+      res.json(result.rows);
+    } catch (err) {
+      console.error('GET /api/visual-hub-status-groups error:', err);
+      res.status(500).json({ error: 'Erro ao buscar grupos.' });
+    }
+  });
+
+  app.post('/api/visual-hub-status-groups', async (req, res) => {
+    try {
+      const { id, label, color, emoji, order_index } = req.body;
+      if (!id || !label) return res.status(400).json({ error: 'id e label obrigatórios.' });
+      const result = await pool.query(
+        `INSERT INTO visual_hub_status_groups (id, label, color, emoji, order_index) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+        [id, label, color || '#7c3aed', emoji || '🔵', order_index ?? 0]
+      );
+      res.status(201).json(result.rows[0]);
+    } catch (err) {
+      console.error('POST /api/visual-hub-status-groups error:', err);
+      res.status(500).json({ error: 'Erro ao criar grupo.' });
+    }
+  });
+
+  app.patch('/api/visual-hub-status-groups/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const fields = req.body;
+      const allowed = ['label', 'color', 'emoji', 'order_index'];
+      const sets: string[] = [];
+      const vals: any[] = [];
+      let idx = 1;
+      for (const key of allowed) {
+        if (key in fields) { sets.push(`${key} = $${idx++}`); vals.push(fields[key]); }
+      }
+      if (sets.length === 0) return res.status(400).json({ error: 'Nenhum campo para atualizar.' });
+      vals.push(id);
+      const result = await pool.query(
+        `UPDATE visual_hub_status_groups SET ${sets.join(', ')} WHERE id = $${idx} RETURNING *`,
+        vals
+      );
+      if (result.rowCount === 0) return res.status(404).json({ error: 'Grupo não encontrado.' });
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error('PATCH /api/visual-hub-status-groups error:', err);
+      res.status(500).json({ error: 'Erro ao atualizar grupo.' });
+    }
+  });
+
+  app.delete('/api/visual-hub-status-groups/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      await pool.query(
+        `UPDATE onboarding_tasks SET status_group = 'a-desenvolver' WHERE status_group = $1 AND type = 'visual-hub'`,
+        [id]
+      );
+      await pool.query('DELETE FROM visual_hub_status_groups WHERE id = $1', [id]);
+      res.json({ success: true });
+    } catch (err) {
+      console.error('DELETE /api/visual-hub-status-groups error:', err);
+      res.status(500).json({ error: 'Erro ao deletar grupo.' });
+    }
+  });
+
+  app.put('/api/visual-hub-status-groups/reorder', async (req, res) => {
+    try {
+      const { groups } = req.body;
+      if (!Array.isArray(groups)) return res.status(400).json({ error: 'groups array required.' });
+      for (const g of groups) {
+        await pool.query('UPDATE visual_hub_status_groups SET order_index = $1 WHERE id = $2', [g.order_index, g.id]);
+      }
+      const result = await pool.query('SELECT * FROM visual_hub_status_groups ORDER BY order_index ASC');
+      res.json(result.rows);
+    } catch (err) {
+      console.error('PUT /api/visual-hub-status-groups/reorder error:', err);
+      res.status(500).json({ error: 'Erro ao reordenar.' });
+    }
+  });
+
   // ── Visual Hub Files API ──
   app.get('/api/visual-hub-files', async (req, res) => {
     try {
@@ -10718,11 +10838,17 @@ app.get("/api/todos", async (req, res) => {
       const { id } = req.params;
       const fields = req.body;
       const allowed = ['client_name','squad','responsible_id','responsible_name','responsible_avatar','start_date','due_date','status_group','tags','subtask_count','nome_completo','nome_fantasia','telefone_whatsapp','cnpj_cpf','cep','cidade','uf','meeting_info','produto','responsavel_projeto_id','responsavel_projeto_name','responsavel_projeto_avatar','hospedagem','entregavel','prioridade'];
+      const DATE_FIELDS = ['start_date', 'due_date'];
       const sets: string[] = [];
       const vals: any[] = [];
       let idx = 1;
       for (const key of allowed) {
-        if (key in fields) { sets.push(`${key} = $${idx++}`); vals.push(fields[key]); }
+        if (key in fields) {
+          sets.push(`${key} = $${idx++}`);
+          // Convert empty strings to null for DATE columns
+          const val = DATE_FIELDS.includes(key) && fields[key] === '' ? null : fields[key];
+          vals.push(val);
+        }
       }
       if (sets.length === 0) return res.status(400).json({ error: 'Nenhum campo para atualizar.' });
       sets.push(`updated_at = NOW()`);
