@@ -10449,7 +10449,7 @@ app.get("/api/todos", async (req, res) => {
     try {
       const { id } = req.params;
       const fields = req.body;
-      const allowed = ['client_name','squad','responsible_id','responsible_name','responsible_avatar','start_date','due_date','status_group','tags','subtask_count','nome_completo','nome_fantasia','telefone_whatsapp','cnpj_cpf','cep','cidade','uf','produto'];
+      const allowed = ['client_name','squad','responsible_id','responsible_name','responsible_avatar','start_date','due_date','status_group','tags','subtask_count','nome_completo','nome_fantasia','telefone_whatsapp','cnpj_cpf','cep','cidade','uf','produto','responsavel_projeto_id','responsavel_projeto_name','responsavel_projeto_avatar','hospedagem','entregavel','prioridade'];
       const sets: string[] = [];
       const vals: any[] = [];
       let idx = 1;
@@ -10518,6 +10518,12 @@ app.get("/api/todos", async (req, res) => {
       updated_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+
+  // Add extended fields for Visual Hub
+  const visualHubCols = ['responsavel_projeto_id', 'responsavel_projeto_name', 'responsavel_projeto_avatar', 'hospedagem', 'entregavel', 'prioridade'];
+  for (const col of visualHubCols) {
+    await pool.query(`ALTER TABLE onboarding_tasks ADD COLUMN IF NOT EXISTS ${col} TEXT`).catch(e => console.error(e));
+  }
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS onboarding_template_items (
@@ -10659,17 +10665,18 @@ app.get("/api/todos", async (req, res) => {
   // ── POST task (auto-creates subtasks from template) ──
   app.post('/api/onboarding-tasks', async (req, res) => {
     try {
-      const { client_name, squad, responsible_id, responsible_name, responsible_avatar, start_date, due_date, status_group, tags, nome_completo, nome_fantasia, telefone_whatsapp, cnpj_cpf, cep, cidade, uf, meeting_info, type } = req.body;
+      const { client_name, squad, responsible_id, responsible_name, responsible_avatar, start_date, due_date, status_group, tags, nome_completo, nome_fantasia, telefone_whatsapp, cnpj_cpf, cep, cidade, uf, meeting_info, type, responsavel_projeto_id, responsavel_projeto_name, responsavel_projeto_avatar, hospedagem, entregavel, prioridade } = req.body;
       const taskType = type || 'operacional';
       if (!client_name) return res.status(400).json({ error: 'client_name é obrigatório.' });
 
       // 1. Create the task
       const result = await pool.query(
-        `INSERT INTO onboarding_tasks (client_name, squad, responsible_id, responsible_name, responsible_avatar, start_date, due_date, status_group, tags, nome_completo, nome_fantasia, telefone_whatsapp, cnpj_cpf, cep, cidade, uf, meeting_info, produto, type)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *`,
+        `INSERT INTO onboarding_tasks (client_name, squad, responsible_id, responsible_name, responsible_avatar, start_date, due_date, status_group, tags, nome_completo, nome_fantasia, telefone_whatsapp, cnpj_cpf, cep, cidade, uf, meeting_info, produto, type, responsavel_projeto_id, responsavel_projeto_name, responsavel_projeto_avatar, hospedagem, entregavel, prioridade)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25) RETURNING *`,
         [client_name, squad || null, responsible_id || null, responsible_name || null, responsible_avatar || null,
          start_date || null, due_date || null, status_group || (taskType === 'integracao' ? 'reuniao-coleta-acessos' : 'briefing-realizado'), tags || [],
-         nome_completo || null, nome_fantasia || null, telefone_whatsapp || null, cnpj_cpf || null, cep || null, cidade || null, uf || null, meeting_info || null, req.body.produto || null, taskType]
+         nome_completo || null, nome_fantasia || null, telefone_whatsapp || null, cnpj_cpf || null, cep || null, cidade || null, uf || null, meeting_info || null, req.body.produto || null, taskType,
+         responsavel_projeto_id || null, responsavel_projeto_name || null, responsavel_projeto_avatar || null, hospedagem || null, entregavel || null, prioridade || null]
       );
       const newTask = result.rows[0];
 
@@ -10710,7 +10717,7 @@ app.get("/api/todos", async (req, res) => {
     try {
       const { id } = req.params;
       const fields = req.body;
-      const allowed = ['client_name','squad','responsible_id','responsible_name','responsible_avatar','start_date','due_date','status_group','tags','subtask_count','nome_completo','nome_fantasia','telefone_whatsapp','cnpj_cpf','cep','cidade','uf','meeting_info','produto'];
+      const allowed = ['client_name','squad','responsible_id','responsible_name','responsible_avatar','start_date','due_date','status_group','tags','subtask_count','nome_completo','nome_fantasia','telefone_whatsapp','cnpj_cpf','cep','cidade','uf','meeting_info','produto','responsavel_projeto_id','responsavel_projeto_name','responsavel_projeto_avatar','hospedagem','entregavel','prioridade'];
       const sets: string[] = [];
       const vals: any[] = [];
       let idx = 1;

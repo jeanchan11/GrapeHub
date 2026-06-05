@@ -592,7 +592,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       productName: p.name, 
       productId: p.id,
       type: 'optimization',
-      createdAt: opt.date.split('/').reverse().join('-') + (opt.time ? 'T' + opt.time : 'T00:00')
+      createdAt: (opt.date || '').split('/').reverse().join('-') + (opt.time ? 'T' + opt.time : 'T00:00')
     }))) || [];
     const meetingItems = meetings.map(m => ({ 
       id: m.id, 
@@ -1011,7 +1011,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     icon: 'Layout',
     budget: 'R$ 0',
     cac: 'R$ 0',
-    results: '0 Leads',
+    leads: '0',
     platform: 'Meta Ads',
     status: 'Rodando',
     aiService: 'Ativado',
@@ -1287,7 +1287,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       icon: 'Layout',
       budget: 'R$ 0',
       cac: 'R$ 0',
-      results: '0 Leads',
+      leads: '0',
       platform: 'Meta Ads',
       status: 'Rodando',
       aiService: 'Ativado',
@@ -2530,8 +2530,8 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     {selectedProduct.optimizations
                       ?.slice()
                       .sort((a, b) => {
-                        const dateA = new Date(a.date.split('/').reverse().join('-') + 'T' + (a.time || '00:00'));
-                        const dateB = new Date(b.date.split('/').reverse().join('-') + 'T' + (b.time || '00:00'));
+                        const dateA = new Date((a.date || '').split('/').reverse().join('-') + 'T' + (a.time || '00:00'));
+                        const dateB = new Date((b.date || '').split('/').reverse().join('-') + 'T' + (b.time || '00:00'));
                         return dateB.getTime() - dateA.getTime();
                       })
                       .filter(opt => {
@@ -2566,7 +2566,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                 <img src={opt.authorPhoto} alt={opt.author} className="w-6 h-6 rounded-full object-cover" referrerPolicy="no-referrer" />
                               ) : (
                                 <div className="w-6 h-6 rounded-full bg-violet-500/20 flex items-center justify-center text-violet-500 text-xs font-bold">
-                                  {opt.author.charAt(0).toUpperCase()}
+                                  {(opt.author || '?').charAt(0).toUpperCase()}
                                 </div>
                               )}
                               <p className={`text-sm font-bold ${opt.isInternal ? 'text-amber-700 dark:text-amber-500' : 'text-slate-900 dark:text-white'}`}>
@@ -2686,7 +2686,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                         <img src={reply.authorPhoto} alt={reply.author} className="w-5 h-5 rounded-full object-cover mt-0.5" referrerPolicy="no-referrer" />
                                       ) : (
                                         <div className="w-5 h-5 rounded-full bg-slate-200 dark:bg-white/10 flex items-center justify-center text-slate-500 text-[10px] font-bold mt-0.5">
-                                          {reply.author.charAt(0).toUpperCase()}
+                                          {(reply.author || '?').charAt(0).toUpperCase()}
                                         </div>
                                       )}
                                       <div className="flex-1 min-w-0">
@@ -3062,7 +3062,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                       if (proj) {
                         const updated = { ...proj, group };
                         setProjects(prev => prev.map(p => p.id === proj.id ? updated : p));
-                        handleSaveProject([updated]);
+                        saveProjects([updated]);
                       }
                       setIsGroupModalOpen(false);
                       setGroupModalProjectId(null);
@@ -4274,7 +4274,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                   <div className="border-t border-slate-100 dark:border-white/5 pt-3">
                                     <p className="text-xs font-bold text-slate-500 uppercase mb-1">Próximas Ações / Acordos:</p>
                                     <div className="space-y-1">
-                                      {opt.actions.split(',').map((action: string, i: number) => (
+                                      {(opt.actions || '').split(',').map((action: string, i: number) => (
                                         <div key={i} className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
                                           <Check size={12} className="text-green-500" />
                                           {action.trim()}
@@ -4291,7 +4291,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                         <img src={opt.authorPhoto} alt={opt.author} className="w-6 h-6 rounded-full object-cover" referrerPolicy="no-referrer" />
                                       ) : (
                                         <div className="w-6 h-6 rounded-full bg-violet-500/20 flex items-center justify-center text-violet-500 text-xs font-bold">
-                                          {opt.author.charAt(0).toUpperCase()}
+                                          {(opt.author || '?').charAt(0).toUpperCase()}
                                         </div>
                                       )}
                                       <p className="text-sm font-bold text-slate-900 dark:text-white">
@@ -4340,7 +4340,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                         <img src={reply.authorPhoto} alt={reply.author} className="w-5 h-5 rounded-full object-cover mt-0.5" referrerPolicy="no-referrer" />
                                       ) : (
                                         <div className="w-5 h-5 rounded-full bg-slate-200 dark:bg-white/10 flex items-center justify-center text-slate-500 text-[10px] font-bold mt-0.5">
-                                          {reply.author.charAt(0).toUpperCase()}
+                                          {(reply.author || '?').charAt(0).toUpperCase()}
                                         </div>
                                       )}
                                       <div className="flex-1 min-w-0">
@@ -4522,7 +4522,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                 <div className="border-t border-slate-100 dark:border-white/5 pt-3">
                                   <p className="text-xs font-bold text-slate-500 uppercase mb-1">Próximas Ações / Acordos:</p>
                                   <div className="space-y-1">
-                                    {opt.actions.split(',').map((action: string, i: number) => (
+                                    {(opt.actions || '').split(',').map((action: string, i: number) => (
                                       <div key={i} className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
                                         <Check size={12} className="text-green-500" />
                                         {action.trim()}
@@ -4540,7 +4540,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                           <img src={reply.authorPhoto} alt={reply.author} className="w-5 h-5 rounded-full object-cover mt-0.5" referrerPolicy="no-referrer" />
                                         ) : (
                                           <div className="w-5 h-5 rounded-full bg-slate-200 dark:bg-white/10 flex items-center justify-center text-slate-500 text-[10px] font-bold mt-0.5">
-                                            {reply.author.charAt(0).toUpperCase()}
+                                            {(reply.author || '?').charAt(0).toUpperCase()}
                                           </div>
                                         )}
                                         <div className="flex-1 min-w-0">
@@ -4957,7 +4957,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
                                   c.isInternal ? 'bg-amber-500/20 text-amber-400' : 'bg-violet-500/20 text-violet-500'
                                 }`}>
-                                  {c.author.charAt(0).toUpperCase()}
+                                  {(c.author || '?').charAt(0).toUpperCase()}
                                 </div>
                               )}
                             </div>

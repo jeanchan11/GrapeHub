@@ -26,6 +26,12 @@ interface OnboardingTask {
   cidade: string | null;
   uf: string | null;
   meeting_info: string | null;
+  responsavel_projeto_id?: string | null;
+  responsavel_projeto_name?: string | null;
+  responsavel_projeto_avatar?: string | null;
+  hospedagem?: string | null;
+  entregavel?: string | null;
+  prioridade?: string | null;
 }
 
 interface Comment {
@@ -511,10 +517,13 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
   const [taskRespPicker, setTaskRespPicker] = useState(false);
   const [taskRespPos, setTaskRespPos] = useState({ top: 0, left: 0 });
   const [subtaskRespPos, setSubtaskRespPos] = useState({ top: 0, left: 0 });
+  const [projRespPicker, setProjRespPicker] = useState(false);
+  const [projRespPos, setProjRespPos] = useState({ top: 0, left: 0 });
   const statusRef = React.useRef<HTMLDivElement>(null);
   const menuRef = React.useRef<HTMLDivElement>(null);
   const respRef = React.useRef<HTMLDivElement>(null);
   const taskRespRef = React.useRef<HTMLButtonElement>(null);
+  const projRespRef = React.useRef<HTMLButtonElement>(null);
 
   useEffect(() => { fetchUsersOnce(); }, []);
 
@@ -529,6 +538,18 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, [taskRespPicker]);
+
+  useEffect(() => {
+    if (!projRespPicker) return;
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as Element;
+      if (!target.closest('[data-proj-resp-portal]') && !target.closest('[data-proj-resp-btn]')) {
+        setProjRespPicker(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [projRespPicker]);
 
   useEffect(() => {
     if (!subtaskRespPicker) return;
@@ -607,6 +628,18 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ responsible_id: userId, responsible_name: userName, responsible_avatar: userAvatar }),
+      });
+      onUpdate();
+    } catch { /* silent */ }
+  };
+
+  const handleProjResponsible = async (userId: string, userName: string, userAvatar: string) => {
+    setProjRespPicker(false);
+    try {
+      await fetch(`/api/onboarding-tasks/${task.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ responsavel_projeto_id: userId, responsavel_projeto_name: userName, responsavel_projeto_avatar: userAvatar }),
       });
       onUpdate();
     } catch { /* silent */ }
@@ -724,7 +757,7 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
         </div>
 
         {/* Client Name + subtask count */}
-        <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
+        <div className="flex-1 min-w-[200px] flex items-center gap-2 flex-wrap">
           <span onClick={() => onOpenDetail(task)} className="text-sm font-semibold text-dark-text truncate cursor-pointer hover:text-violet-400 transition-colors">{task.client_name}</span>
           {task.subtask_count > 0 && (
             <span className="text-[10px] text-slate-500 font-mono bg-white/5 px-1.5 py-0.5 rounded">
@@ -734,22 +767,87 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
           {task.tags.map(t => <TagBadge key={t} label={t} />)}
         </div>
 
-        {/* Squad */}
-        <div className="shrink-0 w-36">
-          <select value={squad} onChange={e => handleSquadChange(e.target.value)}
-            className={`w-[calc(100%+0.75rem)] -ml-3 border rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer focus:outline-none ${
-              squad === 'Squad Able' ? 'bg-blue-500/15 text-blue-400 border-blue-500/30 focus:border-blue-500/50' :
-              squad === 'Squad Baker' ? 'bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/30 focus:border-fuchsia-500/50' :
-              'bg-white/5 text-slate-400 border-white/10 focus:border-white/20'
+        {/* Entregável */}
+        <div className="shrink-0 w-28">
+          <input
+            type="text"
+            value={task.entregavel || ''}
+            onChange={(e) => {
+              const val = e.target.value;
+              fetch(`/api/onboarding-tasks/${task.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entregavel: val }),
+              });
+              onUpdate();
+            }}
+            placeholder="Adicionar..."
+            className="w-full bg-transparent border border-transparent hover:border-white/10 focus:border-violet-500/50 rounded-lg px-2 py-1 text-xs text-dark-text placeholder-slate-600 focus:outline-none transition-all"
+          />
+        </div>
+
+        {/* Prioridade */}
+        <div className="shrink-0 w-20">
+          <select
+            value={task.prioridade || ''}
+            onChange={(e) => {
+              const val = e.target.value;
+              fetch(`/api/onboarding-tasks/${task.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prioridade: val }),
+              });
+              onUpdate();
+            }}
+            className={`w-full border rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer focus:outline-none ${
+              task.prioridade === 'Alta' ? 'bg-rose-500/15 text-rose-400 border-rose-500/30 focus:border-rose-500/50' :
+              task.prioridade === 'Média' ? 'bg-amber-500/15 text-amber-400 border-amber-500/30 focus:border-amber-500/50' :
+              task.prioridade === 'Baixa' ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30 focus:border-emerald-500/50' :
+              'bg-transparent border-transparent text-slate-400 hover:border-white/10 focus:border-white/20'
             }`}
           >
-            <option value="" className="bg-dark-bg text-slate-400">— SQUAD —</option>
+            <option value="" className="bg-dark-bg text-slate-400">Prior.</option>
+            <option value="Alta" className="bg-dark-bg text-rose-400">Alta</option>
+            <option value="Média" className="bg-dark-bg text-amber-400">Média</option>
+            <option value="Baixa" className="bg-dark-bg text-emerald-400">Baixa</option>
+          </select>
+        </div>
+
+        {/* Hospedagem */}
+        <div className="shrink-0 w-28">
+          <input
+            type="text"
+            value={task.hospedagem || ''}
+            onChange={(e) => {
+              const val = e.target.value;
+              fetch(`/api/onboarding-tasks/${task.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ hospedagem: val }),
+              });
+              onUpdate();
+            }}
+            placeholder="Adicionar..."
+            className="w-full bg-transparent border border-transparent hover:border-white/10 focus:border-violet-500/50 rounded-lg px-2 py-1 text-xs text-dark-text placeholder-slate-600 focus:outline-none transition-all"
+          />
+        </div>
+
+        {/* Squad */}
+        <div className="shrink-0 w-32">
+          <select value={squad} onChange={e => handleSquadChange(e.target.value)}
+            className={`w-full border rounded-lg px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer focus:outline-none ${
+              squad === 'Squad Able' ? 'bg-blue-500/15 text-blue-400 border-blue-500/30 focus:border-blue-500/50' :
+              squad === 'Squad Baker' ? 'bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/30 focus:border-fuchsia-500/50' :
+              'bg-transparent border-transparent text-slate-400 hover:border-white/10 focus:border-white/20'
+            }`}
+          >
+            <option value="" className="bg-dark-bg text-slate-400">SQUAD</option>
             {SQUAD_OPTIONS.map(s => <option key={s} value={s} className="bg-dark-bg text-dark-text">{s}</option>)}
           </select>
         </div>
 
         {/* Responsável */}
-        <div className="shrink-0 w-20 flex items-center justify-center gap-1">
+        <div className="shrink-0 w-16 flex items-center justify-center gap-1">
           {task.responsible_name ? (
             <button
               ref={taskRespRef}
@@ -1036,12 +1134,15 @@ const GroupBlock = ({ group, onUpdate, onAddTask, onOpenDetail, onOpenSubtask }:
           <div className="flex items-center gap-2 px-8 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-black/[0.07] dark:border-white/5">
             <div className="w-[14px] shrink-0" />
             <div className="w-4 shrink-0" />
-            <div className="flex-1">Nome</div>
-            <div className="shrink-0 w-36">Squad</div>
-            <div className="shrink-0 w-20 text-center">Resp.</div>
-            <div className="shrink-0 w-24">Data Inicial</div>
-            <div className="shrink-0 w-28">Vencimento</div>
-            <div className="shrink-0 w-24">Docs</div>
+            <div className="flex-1 min-w-[200px]">Nome</div>
+            <div className="shrink-0 w-28">Entregável</div>
+            <div className="shrink-0 w-20">Prioridade</div>
+            <div className="shrink-0 w-28">Hospedagem</div>
+            <div className="shrink-0 w-32">Squad</div>
+            <div className="shrink-0 w-16 text-center">Resp.</div>
+            <div className="shrink-0 w-20">Data Iníc.</div>
+            <div className="shrink-0 w-24">Vencimento</div>
+            <div className="shrink-0 w-16">Docs</div>
             <div className="shrink-0 w-[22px]" />
           </div>
 

@@ -33,14 +33,14 @@ export const Modal: React.FC<ModalProps> = ({
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className={`${designSystem.modal.overlay} flex items-start justify-center p-4 overflow-y-auto pt-10 pb-10`}>
+        <div className="fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto pt-10 pb-10">
           {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-0"
+            className="fixed inset-0 z-0 modal-overlay"
             onClick={onClose}
           />
           {/* Modal Content */}

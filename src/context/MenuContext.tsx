@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../firebase';
 
-const MenuContext = createContext<{ menu: any[], setMenu: React.Dispatch<React.SetStateAction<any[]>> }>({ menu: [], setMenu: () => {} });
+const MenuContext = createContext<{ menu: any[], setMenu: React.Dispatch<React.SetStateAction<any[]>>, refreshMenu: () => Promise<void> }>({ menu: [], setMenu: () => {}, refreshMenu: async () => {} });
 
 export const MenuProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [menu, setMenu] = useState<any[]>([]);

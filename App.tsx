@@ -429,7 +429,6 @@ const AppContent: React.FC = () => {
           marginLeft: sidebarCollapsed ? 80 : 280, 
           transition: 'margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s',
           willChange: 'margin-left',
-          contain: 'layout style',
         }}
       >
         <PageTransition pageKey={activePage}>
