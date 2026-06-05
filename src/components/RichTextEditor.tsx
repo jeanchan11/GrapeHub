@@ -271,6 +271,17 @@ export default function RichTextEditor({ content, onChange, systemUsers = [] }: 
         setMentionOpen(false);
       }
     },
+    onSelectionUpdate({ editor }) {
+      const { from } = editor.state.selection;
+      const textBefore = editor.state.doc.textBetween(Math.max(0, from - 60), from, '\n');
+      const currentLine = textBefore.slice(textBefore.lastIndexOf('\n') + 1);
+      
+      const mentionMatch = /(?:^|\s)@([^\s]*)$/.exec(textBefore);
+      const slashMatch = /(?:^|\s)\/([^\s]*)$/.exec(currentLine);
+
+      if (!mentionMatch) setMentionOpen(false);
+      if (!slashMatch) setSlashOpen(false);
+    },
   });
 
   useEffect(() => {

@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
+import SplitHeadline from '../components/SplitHeadline';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Zap, Plus, Play, Pause, Trash2, Edit2, Clock, Mail, MessageSquare,
@@ -798,9 +799,7 @@ const Automacoes: React.FC = () => {
       <div className="flex items-end justify-between gap-4 flex-wrap mb-8">
         <div>
           <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-slate-500 mb-1">CRM Comercial</p>
-          <h1 className="text-3xl font-black text-gray-900 dark:text-white leading-tight">
-            Auto<span className="text-violet-500">mações</span>
-          </h1>
+          <SplitHeadline text="Auto" highlight="mações" className="text-3xl font-black text-gray-900 dark:text-white leading-tight" />
           <p className="text-xs font-bold uppercase tracking-widest text-gray-400 dark:text-slate-500 mt-1">
             Automatize ações com base em eventos do seu CRM
           </p>

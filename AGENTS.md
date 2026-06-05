@@ -6,6 +6,8 @@
 
 - **autorização:** Sempre pessa permissão ao mexer em qualquer coisa do banco de dados.  Como criar tabelas, apagar registros ou apagar qualquer coisa.
 
+- **orientação:** Não use comandos git ou Python. O ambiente do usuário não suporta essas ferramentas.
+
 - **Dashboards:** Ao criar qualquer nova página de dashboard ou métricas, siga **obrigatoriamente** a seção 4 do `/DESIGN_SYSTEM.md`. Isso inclui:
   - Headline com título branco + última palavra em `text-violet-500` + subtítulo uppercase 10px
   - Fundo da página: `bg-dark-bg`

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import SplitHeadline from '../components/SplitHeadline';
 import {
   Plus, Trash2, Trophy, TrendingUp, TrendingDown, DollarSign,
   Activity, Target, CheckCircle2, Clock, AlertCircle, X,
@@ -284,11 +285,13 @@ export default function CrmMetas() {
       {/* HEADER */}
       <div className="flex items-start justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Target size={22} className="text-violet-500" />
-            Metas
-          </h1>
-          <p className="text-sm text-slate-500 mt-1">Acompanhe o progresso das suas metas de vendas</p>
+          <SplitHeadline
+            text=""
+            highlight="Metas"
+            subtitle="Acompanhe o progresso das suas metas de vendas"
+            className="text-2xl font-black tracking-tight text-slate-800 dark:text-white"
+            subtitleClassName="text-sm text-slate-500 mt-1"
+          />
         </div>
         <div className="flex items-center gap-3">
           <button

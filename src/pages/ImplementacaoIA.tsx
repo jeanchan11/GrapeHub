@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { motion } from 'framer-motion';
+import SplitHeadline from '../components/SplitHeadline';
 import { createPortal } from 'react-dom';
 import { Plus, ChevronDown, ChevronRight, Calendar, Users, Tag, MoreHorizontal, Circle, CheckCircle2, Loader2, X, Trash2, GripVertical, Settings, FileText, Link as LinkIcon, Save, Heading1, Heading2, Heading3, Type, List, ListOrdered, CheckSquare, Check } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
@@ -983,8 +985,19 @@ const GroupBlock = ({ group, coloredTagDefs, onUpdate, onAddTask, onOpenDetail, 
             {group.tasks.length === 0 ? (
               <div className="py-12 text-center text-slate-500 text-xs font-medium">Nenhum cliente neste grupo.</div>
             ) : (
-              group.tasks.map(task => (
-                <TaskRow key={task.id} task={task} coloredTagDefs={coloredTagDefs} onUpdate={onUpdate} onOpenDetail={onOpenDetail} onOpenSubtask={onOpenSubtask} />
+              group.tasks.map((task, idx) => (
+                <motion.div
+                  key={task.id}
+                  initial={{ opacity: 0, y: -18, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={{
+                    duration: 0.35,
+                    delay: idx * 0.06,
+                    ease: [0.32, 0.72, 0, 1],
+                  }}
+                >
+                  <TaskRow task={task} coloredTagDefs={coloredTagDefs} onUpdate={onUpdate} onOpenDetail={onOpenDetail} onOpenSubtask={onOpenSubtask} />
+                </motion.div>
               ))
             )}
             {/* Add task row */}
@@ -2047,9 +2060,7 @@ export default function ImplementacaoIA() {
       {/* ── Header ── */}
       <div className="px-8 pt-8 pb-4 flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-dark-text">
-            Implementação <span className="text-violet-500">de IA</span>
-          </h1>
+          <SplitHeadline text="Implementação " highlight="de IA" className="text-2xl font-black tracking-tight text-dark-text" />
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">
             Gestão de clientes
           </p>
@@ -2090,16 +2101,26 @@ export default function ImplementacaoIA() {
         </div>
       ) : (
         <div className="px-8 pb-12">
-          {groups.map(group => (
-            <GroupBlock
+          {groups.map((group, gIdx) => (
+            <motion.div
               key={group.id}
-              group={group}
-              coloredTagDefs={coloredTagDefs}
-              onUpdate={fetchTasks}
-              onAddTask={setAddingToGroup}
-              onOpenSubtask={(s, t) => setDetailSubtask({subtask: s, task: t})}
-              onOpenDetail={setDetailTask}
-            />
+              initial={{ opacity: 0, y: -24, scale: 0.985 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{
+                duration: 0.4,
+                delay: gIdx * 0.08,
+                ease: [0.32, 0.72, 0, 1],
+              }}
+            >
+              <GroupBlock
+                group={group}
+                coloredTagDefs={coloredTagDefs}
+                onUpdate={fetchTasks}
+                onAddTask={setAddingToGroup}
+                onOpenSubtask={(s, t) => setDetailSubtask({subtask: s, task: t})}
+                onOpenDetail={setDetailTask}
+              />
+            </motion.div>
           ))}
 
           {/* New status button */}

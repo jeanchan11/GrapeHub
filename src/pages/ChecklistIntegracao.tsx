@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import SplitHeadline from '../components/SplitHeadline';
 import { createPortal } from 'react-dom';
 import { Plus, ChevronDown, ChevronRight, Calendar, Users, Tag, MoreHorizontal, Circle, CheckCircle2, Loader2, X, Trash2, GripVertical, Settings, FileText, Link as LinkIcon, Save, Heading1, Heading2, Heading3, Type, List, ListOrdered, CheckSquare, Check } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
@@ -1643,9 +1644,7 @@ export default function ChecklistIntegracao() {
       {/* ── Header ── */}
       <div className="px-8 pt-8 pb-4 flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-dark-text">
-            Checklist de <span className="text-violet-500">Integração</span>
-          </h1>
+          <SplitHeadline text="Checklist de " highlight="Integração" className="text-2xl font-black tracking-tight text-dark-text" />
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">
             Gestão e checklist de integração de novos colaboradores
           </p>

@@ -438,6 +438,7 @@ const templates = (() => {
     { id: 'onboarding-operacional', label: 'Onboarding Operacional' },
     { id: 'parceiros-squad', label: 'Parceiros Squad' },
     { id: 'planejamento-crescimento', label: 'Planejamento de Crescimento' },
+    { id: 'planos-de-carreira', label: 'Planos de Carreira' },
     { id: 'playbook-acoes', label: 'Playbook de Ações' },
     { id: 'senhas', label: 'Senhas e Logins' },
     { id: 'projects', label: 'Projetos (Projects)' },

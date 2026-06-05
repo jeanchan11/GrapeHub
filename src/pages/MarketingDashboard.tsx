@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import SplitHeadline from '../components/SplitHeadline';
 import {
   BarChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   ComposedChart, PieChart, Pie, Cell, AreaChart, Area
@@ -402,7 +403,7 @@ export default function MarketingDashboard() {
       {/* ── Header ───────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-6 md:px-8 pt-8 pb-4 flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-dark-text">Dashboard <span className="text-violet-500">Marketing</span></h1>
+          <SplitHeadline text="Dashboard " highlight="Marketing" className="text-2xl font-black tracking-tight text-dark-text" />
           <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5">
             {rangeLabel ? rangeLabel : 'Visão geral de performance de tráfego'}
           </p>
@@ -482,7 +483,7 @@ export default function MarketingDashboard() {
               <h2 className="text-sm font-bold text-dark-text">Investimento Diário</h2>
               <p className="text-xs text-slate-500 dark:text-slate-400 mb-5 mt-0.5">Evolução de gastos em anúncios — {rangeLabel}</p>
               {dailySpend.length > 0 ? (
-                <ResponsiveContainer width="100%" height={210} className="focus:outline-none outline-none" style={{ outline: 'none' }}>
+                <ResponsiveContainer key={`spend-${dailySpend.length}-${rangeLabel}`} width="100%" height={210} className="focus:outline-none outline-none" style={{ outline: 'none' }}>
                   <ComposedChart data={dailySpend} margin={{ top: 8, right: 0, left: 0, bottom: 0 }} style={{ outline: 'none' }}>
                     <defs>
                       <linearGradient id="colorSpend" x1="0" y1="0" x2="0" y2="1">
@@ -508,7 +509,7 @@ export default function MarketingDashboard() {
               <h2 className="text-sm font-bold text-dark-text">Leads Diários</h2>
               <p className="text-xs text-slate-500 dark:text-slate-400 mb-5 mt-0.5">Capturas no mês — {rangeLabel}</p>
               {dailyLeads.length > 0 ? (
-                <ResponsiveContainer width="100%" height={210} className="focus:outline-none outline-none" style={{ outline: 'none' }}>
+                <ResponsiveContainer key={`leads-${dailyLeads.length}-${rangeLabel}`} width="100%" height={210} className="focus:outline-none outline-none" style={{ outline: 'none' }}>
                   <ComposedChart data={dailyLeads} margin={{ top: 8, right: 0, left: -24, bottom: 0 }} style={{ outline: 'none' }}>
                     <defs>
                       <linearGradient id="colorLeads" x1="0" y1="0" x2="0" y2="1">

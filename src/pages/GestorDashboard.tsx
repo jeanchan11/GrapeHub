@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Users, Briefcase, ListTodo, TrendingUp } from 'lucide-react';
+import SplitHeadline from '../components/SplitHeadline';
 
 export const GestorDashboard: React.FC = () => {
   const [clients, setClients] = useState<any[]>([]);
@@ -50,10 +51,12 @@ export const GestorDashboard: React.FC = () => {
   return (
     <div className="p-8 bg-dark-bg text-white min-h-screen">
       <div className="mb-8">
-        <h1 className="text-4xl font-black text-light-text dark:text-white tracking-tight mb-1">
-          Dashboard <span className="text-violet-500">Gestor</span>
-        </h1>
-        <p className="text-slate-500 text-sm">Visão geral e métricas de desempenho.</p>
+        <SplitHeadline
+          text="Dashboard "
+          highlight="Gestor"
+          subtitle="Visão geral e métricas de desempenho."
+          className="text-4xl font-black text-light-text dark:text-white tracking-tight mb-1"
+        />
       </div>
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">

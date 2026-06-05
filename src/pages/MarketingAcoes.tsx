@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import SplitHeadline from '../components/SplitHeadline';
 import {
   Search, MoreHorizontal,
   AlertTriangle, PauseCircle,
@@ -364,9 +365,7 @@ export default function MarketingAcoes({ activePage }: Props) {
       {/* Header */}
       <div className="px-6 md:px-8 pt-8 pb-4 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-dark-text">
-            Ações de <span className="text-violet-500">Campanhas</span>
-          </h1>
+          <SplitHeadline text="Ações de " highlight="Campanhas" className="text-2xl font-black tracking-tight text-dark-text" />
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">
             Registro de otimizações e ações em campanhas de marketing
           </p>

@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { motion } from 'framer-motion';
+import SplitHeadline from '../components/SplitHeadline';
 import {
   Plus, X, Check, Clock, AlertCircle, ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
   Trash2, Edit3, MoreHorizontal, Search, RefreshCw, Repeat, Filter, ArrowUpDown,
@@ -1783,7 +1785,7 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
   const [activeTag,  setActiveTag]  = useState<string>('');
   const [activePriority, setActivePriority] = useState<Priority | ''>('');
   const [activeDate, setActiveDate] = useState<string>('');
-  const [collapsed,  setCollapsed]  = useState<Record<string, boolean>>({});
+  const [collapsed,  setCollapsed]  = useState<Record<string, boolean>>({ done: true });
   const [todoSort, setTodoSort] = useState<'manual' | 'date' | 'priority' | 'tag'>('manual');
   const [sortDropdownOpen, setSortDropdownOpen] = useState(false);
   const [defaultStatus, setDefaultStatus] = useState<Status>('todo');
@@ -2102,7 +2104,7 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
       {/* ── Header ─── */}
       <div className="flex items-center justify-between px-6 md:px-8 pt-8 pb-4">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-dark-text">{pageTitle ? pageTitle.replace(/\s+(\S+)$/, '') : 'TODO'} <span className="text-violet-500">{pageTitle ? pageTitle.match(/\S+$/)?.[0] : 'Staff'}</span></h1>
+          <SplitHeadline text={(pageTitle ? pageTitle.replace(/\s+(\S+)$/, '') : 'TODO') + ' '} highlight={pageTitle ? pageTitle.match(/\S+$/)?.[0] || 'Staff' : 'Staff'} className="text-2xl font-black tracking-tight text-dark-text" />
           <p className="text-[10px] font-bold text-dark-text/30 uppercase tracking-widest mt-0.5">{pageSubtitle || 'Organização interna do time · seção grape'}</p>
         </div>
         <div className="flex items-center gap-2">
@@ -2611,18 +2613,28 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
                       : items.map((item, idx) => (
                         <React.Fragment key={item.id}>
                           {dragOverState === item.id && <DropLine />}
-                          <TodoRow
-                            item={item} allColumns={COLUMNS}
-                            coloredTagDefs={enableColoredTags ? coloredTagDefs : undefined}
-                            onView={item => setViewingTodo(item)}
-                            onEdit={item => { setEditing(item); setTodoModal(true); }}
-                            onDelete={deleteTodo}
-                            onStatusChange={changeStatus}
-                            onDragStart={handleTaskDragStart}
-                            onDragOver={handleTaskDragOver}
-                            onDrop={handleTaskDrop}
-                            isDragOver={false}
-                          />
+                          <motion.div
+                            initial={{ opacity: 0, y: -18, scale: 0.98 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            transition={{
+                              duration: 0.35,
+                              delay: idx * 0.06,
+                              ease: [0.32, 0.72, 0, 1],
+                            }}
+                          >
+                            <TodoRow
+                              item={item} allColumns={COLUMNS}
+                              coloredTagDefs={enableColoredTags ? coloredTagDefs : undefined}
+                              onView={item => setViewingTodo(item)}
+                              onEdit={item => { setEditing(item); setTodoModal(true); }}
+                              onDelete={deleteTodo}
+                              onStatusChange={changeStatus}
+                              onDragStart={handleTaskDragStart}
+                              onDragOver={handleTaskDragOver}
+                              onDrop={handleTaskDrop}
+                              isDragOver={false}
+                            />
+                          </motion.div>
                         </React.Fragment>
                       ))
                     }
@@ -2681,14 +2693,25 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
                         <button onClick={() => { setEditingIdea({ status: col.id } as IdeaItem); setIdeaModal(true); }}
                           className="text-[11px] text-violet-500 hover:text-violet-600 font-semibold transition-colors">+ Adicionar</button>
                       </div>
-                    ) : colIdeas.map(idea => (
-                      <IdeaCard
-                        key={idea.id} idea={idea}
-                        onView={i => setViewingIdea(i)}
-                        onEdit={i => { setEditingIdea(i); setIdeaModal(true); }}
-                        onDelete={deleteIdea}
-                        onStatusChange={changeIdeaStatus}
-                      />
+                    ) : colIdeas.map((idea, idx) => (
+                      <motion.div
+                        key={idea.id}
+                        initial={{ opacity: 0, y: -18, scale: 0.98 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        transition={{
+                          duration: 0.35,
+                          delay: idx * 0.06,
+                          ease: [0.32, 0.72, 0, 1],
+                        }}
+                      >
+                        <IdeaCard
+                          idea={idea}
+                          onView={i => setViewingIdea(i)}
+                          onEdit={i => { setEditingIdea(i); setIdeaModal(true); }}
+                          onDelete={deleteIdea}
+                          onStatusChange={changeIdeaStatus}
+                        />
+                      </motion.div>
                     ))}
                   </div>
                 </div>

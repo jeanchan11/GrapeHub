@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import SplitHeadline from '../components/SplitHeadline';
 import {
   BarChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   ComposedChart, PieChart, Pie, Cell, AreaChart, Area
@@ -408,7 +409,7 @@ export default function CrmMetricas() {
       {/* ── Header ───────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-6 md:px-8 pt-8 pb-4">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-dark-text">Comercial</h1>
+          <SplitHeadline text="Comer" highlight="cial" className="text-2xl font-black tracking-tight text-dark-text" />
           <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5">Performance de Vendas</p>
         </div>
         <div className="flex items-center gap-2">

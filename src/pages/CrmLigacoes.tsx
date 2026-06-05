@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import SplitHeadline from '../components/SplitHeadline';
 import { 
   Phone, PhoneIncoming, PhoneMissed, Clock, 
   Users, Sunset, CalendarDays, Flame, ChevronDown, ChevronUp, Download, Play, Filter, LayoutDashboard, List
@@ -341,7 +342,7 @@ export default function CrmLigacoes() {
       {/* HEADER TABS & TITLE */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-dark-text">Ligações</h1>
+          <SplitHeadline text="Liga" highlight="ções" className="text-2xl font-black tracking-tight text-dark-text" />
           <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5">{viewMode === 'dashboard' ? 'Visualize e analise suas chamadas' : 'Histórico avançado de chamadas'}</p>
         </div>
         

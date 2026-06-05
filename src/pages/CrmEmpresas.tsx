@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import SplitHeadline from '../components/SplitHeadline';
 import { 
   Search, Settings, Download, Plus, Building2, 
   Globe, Phone, Mail, Users, AlertCircle, Briefcase
@@ -172,12 +173,16 @@ export default function CrmEmpresas() {
           <div className="p-2 bg-violet-500/10 rounded-lg border border-violet-500/20">
             <Building2 size={20} className="text-violet-400" />
           </div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            Empresas
+          <div className="flex items-center gap-3">
+            <SplitHeadline
+              text=""
+              highlight="Empresas"
+              className="text-2xl font-black tracking-tight text-slate-800 dark:text-white"
+            />
             <span className="text-xs bg-violet-500/10 text-violet-400 border border-violet-500/20 px-2 py-0.5 rounded-full font-semibold">
               {filteredEmpresas.length}
             </span>
-          </h1>
+          </div>
         </div>
 
         <div className="flex items-center gap-3 w-full md:w-auto">

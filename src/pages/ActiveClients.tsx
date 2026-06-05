@@ -764,8 +764,15 @@ const ActiveClients: React.FC = () => {
                   </td>
                 </tr>
               ) : (
-                filteredClients.map((client) => (
-                  <tr key={client.id} className="group hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-all cursor-pointer" onClick={() => handleOpenModal(client)}>
+                filteredClients.map((client, idx) => (
+                  <motion.tr
+                    key={client.id}
+                    className="group hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-all cursor-pointer"
+                    onClick={() => handleOpenModal(client)}
+                    initial={{ opacity: 0, y: -14 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3, delay: idx * 0.04, ease: [0.32, 0.72, 0, 1] }}
+                  >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
                         <div className="w-7 h-7 rounded-lg bg-violet-500/10 flex items-center justify-center text-violet-500 font-bold text-[10px]">
@@ -917,7 +924,7 @@ const ActiveClients: React.FC = () => {
                         <MoreVertical size={16} />
                       </button>
                     </td>
-                  </tr>
+                  </motion.tr>
                 ))
               )}
             </tbody>

@@ -11,6 +11,7 @@ import {
   Users, BarChart3, Activity, ShieldAlert, Award, Check, X, ClipboardList, CalendarDays, ListTodo
 } from 'lucide-react';
 import { TrafficManagerData, TrafficManagerResults } from '../../types';
+import SplitHeadline from '../components/SplitHeadline';
 
 // Components
 const StatCard = ({ icon: Icon, title, value, subtitle, colorClass, highlighted = false, statusLabel }: { 
@@ -205,9 +206,11 @@ const GestorCalculator: React.FC = () => {
       <header className="pt-12 pb-20 px-6">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-start justify-between gap-8">
           <div className="flex-1">
-            <h1 className="text-4xl font-black text-light-text dark:text-white tracking-tight mb-1">
-              Calculadora de <span className="text-violet-500">Bonificação</span>
-            </h1>
+            <SplitHeadline
+              text="Calculadora de "
+              highlight="Bonificação"
+              className="text-4xl font-black text-light-text dark:text-white tracking-tight mb-1"
+            />
             <p className="text-slate-500 text-sm max-w-2xl">
               Calcule sua remuneração baseada em <span className="text-violet-600 dark:text-violet-400 font-medium">critérios de entrega (30%)</span> e <span className="text-violet-600 dark:text-violet-400 font-medium">resultado de clientes (70%)</span>.
             </p>

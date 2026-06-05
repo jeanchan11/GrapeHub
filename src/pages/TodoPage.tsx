@@ -13,6 +13,77 @@ import { designSystem } from '../design-system';
 import TaskDetailModal from '../components/TaskDetailModal';
 import { DatePicker } from '../components/ui/DatePicker';
 import confetti from 'canvas-confetti';
+import SplitHeadline from '../components/SplitHeadline';
+
+// ── Animated Progress Bar ─────────────────────────────────
+const AnimatedBar = ({ progress, isDone }: { progress: number; isDone: boolean }) => {
+  const [width, setWidth] = React.useState(0);
+  const ref = React.useRef<HTMLDivElement>(null);
+  const animated = React.useRef(false);
+
+  React.useEffect(() => {
+    if (animated.current) { setWidth(progress); return; }
+    const el = ref.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !animated.current) {
+          animated.current = true;
+          requestAnimationFrame(() => setWidth(progress));
+        }
+      },
+      { threshold: 0.1 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [progress]);
+
+  return (
+    <div ref={ref} className="w-full h-1.5 bg-dark-text/10 rounded-full mt-1.5 overflow-hidden">
+      <div
+        className={`h-full rounded-full transition-all duration-1000 ease-out ${isDone ? 'bg-emerald-500' : 'bg-violet-500'}`}
+        style={{ width: `${width}%` }}
+      />
+    </div>
+  );
+};
+
+// ── Animated Count Up ─────────────────────────────────────
+const CountUp = ({ value, suffix = '', className = '' }: { value: number; suffix?: string; className?: string }) => {
+  const [display, setDisplay] = React.useState(0);
+  const ref = React.useRef<HTMLSpanElement>(null);
+  const animated = React.useRef(false);
+
+  React.useEffect(() => {
+    if (animated.current) { setDisplay(Math.round(value)); return; }
+    const el = ref.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !animated.current) {
+          animated.current = true;
+          const duration = 1000;
+          const start = performance.now();
+          const target = Math.round(value);
+          const step = (now: number) => {
+            const elapsed = now - start;
+            const t = Math.min(elapsed / duration, 1);
+            // ease-out cubic
+            const eased = 1 - Math.pow(1 - t, 3);
+            setDisplay(Math.round(eased * target));
+            if (t < 1) requestAnimationFrame(step);
+          };
+          requestAnimationFrame(step);
+        }
+      },
+      { threshold: 0.1 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [value]);
+
+  return <span ref={ref} className={className}>{display}{suffix}</span>;
+};
 
 interface TaskSubtask {
   id: string;
@@ -341,10 +412,13 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-4xl font-black text-light-text dark:text-white tracking-tight mb-1">
-            To Do <span className="text-violet-500">Gestor</span>
-          </h1>
-          <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5">Controle diário de campanhas e tarefas</p>
+          <SplitHeadline
+            text="To Do "
+            highlight="Gestor"
+            subtitle="Controle diário de campanhas e tarefas"
+            className="text-4xl font-black text-light-text dark:text-white tracking-tight mb-1"
+            subtitleClassName="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5"
+          />
         </div>
         
 
@@ -468,11 +542,9 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
                                     <div className="w-[300px] shrink-0 mt-2">
                                       <div className="flex items-center justify-between">
                                         <span className="text-[10px] font-bold text-dark-text/40">{completedCount}/{clientTasks.length} tarefas</span>
-                                        <span className="text-[10px] font-bold text-violet-400">{Math.round(progress)}%</span>
+                                        <CountUp value={progress} suffix="%" className="text-[10px] font-bold text-violet-400" />
                                       </div>
-                                      <div className="w-full h-1.5 bg-dark-text/10 rounded-full mt-1.5 overflow-hidden">
-                                        <div className={`h-full rounded-full transition-all duration-500 ${isDone ? 'bg-emerald-500' : 'bg-violet-500'}`} style={{ width: `${progress}%` }} />
-                                      </div>
+                                      <AnimatedBar progress={progress} isDone={isDone} />
                                     </div>
                                   </div>
                                 </div>
@@ -483,11 +555,9 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
                                     <h4 className="text-sm font-semibold text-dark-text truncate pr-2">{projectName}</h4>
                                     <div className="flex items-center justify-between mt-2">
                                       <span className="text-[10px] font-bold text-dark-text/40">{completedCount}/{clientTasks.length} tarefas</span>
-                                      <span className="text-[10px] font-bold text-violet-400">{Math.round(progress)}%</span>
+                                      <CountUp value={progress} suffix="%" className="text-[10px] font-bold text-violet-400" />
                                     </div>
-                                    <div className="w-full h-1.5 bg-dark-text/10 rounded-full mt-1.5 overflow-hidden">
-                                      <div className={`h-full rounded-full transition-all duration-500 ${isDone ? 'bg-emerald-500' : 'bg-violet-500'}`} style={{ width: `${progress}%` }} />
-                                    </div>
+                                    <AnimatedBar progress={progress} isDone={isDone} />
                                   </div>
                                 </div>
                               )}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { 
   TrendingUp, Users, Target, DollarSign, CalendarDays, Edit2, RefreshCw, AlertTriangle, CheckCircle2 
 } from 'lucide-react';
@@ -26,6 +26,61 @@ const MESES = [
 
 const fmtBRL = (v: number) =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+// ── Count-Up Hook ─────────────────────────────────────────────────────────────
+function useCountUp(target: number, duration = 700): number {
+  const [current, setCurrent] = useState(0);
+  const rafRef = useRef<number | null>(null);
+  const startRef = useRef<number | null>(null);
+  const startValRef = useRef(0);
+
+  useEffect(() => {
+    if (target === 0) { setCurrent(0); return; }
+    startValRef.current = 0;
+    startRef.current = null;
+
+    const animate = (now: number) => {
+      if (startRef.current === null) startRef.current = now;
+      const elapsed = now - startRef.current;
+      const progress = Math.min(elapsed / duration, 1);
+      // easeOutExpo
+      const eased = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress);
+      setCurrent(startValRef.current + (target - startValRef.current) * eased);
+      if (progress < 1) rafRef.current = requestAnimationFrame(animate);
+    };
+
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(animate);
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+  }, [target, duration]);
+
+  return current;
+}
+
+// ── AnimatedNumber Component ──────────────────────────────────────────────────
+interface AnimNumProps {
+  value: number | null;
+  format?: 'int' | 'pct' | 'brl';
+  prefix?: string;
+  suffix?: string;
+  className?: string;
+  dash?: boolean; // show — when null
+}
+
+const AnimatedNumber: React.FC<AnimNumProps> = ({ value, format = 'int', prefix = '', suffix = '', className = '', dash = false }) => {
+  const target = value ?? 0;
+  const animated = useCountUp(target, 650);
+
+  if (dash && value === null) return <span className={className}>—</span>;
+
+  const display = () => {
+    if (format === 'brl') return fmtBRL(animated);
+    if (format === 'pct') return `${animated.toFixed(1)}%`;
+    return Math.round(animated).toString();
+  };
+
+  return <span className={className}>{prefix}{display()}{suffix}</span>;
+};
 
 export default function PlanejamentoCrescimento() {
   const [year] = useState(2026);
@@ -448,12 +503,24 @@ export default function PlanejamentoCrescimento() {
                       }`}
                     >
                       <td className="py-2.5 font-bold">{p.month}</td>
-                      <td className="py-2.5 text-right font-medium text-slate-400">{p.initial_clients}</td>
-                      <td className="py-2.5 text-right text-slate-400">{parseFloat(String(p.churn_rate)).toFixed(1)}%</td>
-                      <td className="py-2.5 text-right text-rose-400">{p.churn_count}</td>
-                      <td className="py-2.5 text-right text-emerald-400">+{p.new_clients}</td>
-                      <td className="py-2.5 text-right text-slate-400">{fmtBRL(parseFloat(String(p.traffic_budget)))}</td>
-                      <td className="py-2.5 text-right text-slate-400">{fmtBRL(parseFloat(String(p.cac)))}</td>
+                      <td className="py-2.5 text-right font-medium text-slate-400">
+                        <AnimatedNumber value={p.initial_clients} />
+                      </td>
+                      <td className="py-2.5 text-right text-slate-400">
+                        <AnimatedNumber value={parseFloat(String(p.churn_rate))} format="pct" />
+                      </td>
+                      <td className="py-2.5 text-right text-rose-400">
+                        <AnimatedNumber value={p.churn_count} />
+                      </td>
+                      <td className="py-2.5 text-right text-emerald-400">
+                        +<AnimatedNumber value={p.new_clients} />
+                      </td>
+                      <td className="py-2.5 text-right text-slate-400">
+                        <AnimatedNumber value={parseFloat(String(p.traffic_budget))} format="brl" />
+                      </td>
+                      <td className="py-2.5 text-right text-slate-400">
+                        <AnimatedNumber value={parseFloat(String(p.cac))} format="brl" />
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -505,12 +572,24 @@ export default function PlanejamentoCrescimento() {
                         }`}
                       >
                         <td className="py-2.5 font-bold">{r.month}</td>
-                        <td className="py-2.5 text-right font-medium text-slate-400">{hasData ? r.initial_clients : '—'}</td>
-                        <td className="py-2.5 text-right text-slate-400">{hasData ? `${parseFloat(String(r.churn_rate)).toFixed(1)}%` : '—'}</td>
-                        <td className="py-2.5 text-right text-rose-400">{hasData ? r.churn_count : '—'}</td>
-                        <td className="py-2.5 text-right text-emerald-400">{hasData ? `+${r.new_clients}` : '—'}</td>
-                        <td className="py-2.5 text-right text-slate-400">{hasData ? fmtBRL(parseFloat(String(r.traffic_budget))) : '—'}</td>
-                        <td className="py-2.5 text-right text-slate-400">{hasData ? fmtBRL(parseFloat(String(r.cac))) : '—'}</td>
+                        <td className="py-2.5 text-right font-medium text-slate-400">
+                          {hasData ? <AnimatedNumber value={r.initial_clients} /> : '—'}
+                        </td>
+                        <td className="py-2.5 text-right text-slate-400">
+                          {hasData ? <AnimatedNumber value={parseFloat(String(r.churn_rate))} format="pct" /> : '—'}
+                        </td>
+                        <td className="py-2.5 text-right text-rose-400">
+                          {hasData ? <AnimatedNumber value={r.churn_count} /> : '—'}
+                        </td>
+                        <td className="py-2.5 text-right text-emerald-400">
+                          {hasData ? <span>+<AnimatedNumber value={r.new_clients} /></span> : '—'}
+                        </td>
+                        <td className="py-2.5 text-right text-slate-400">
+                          {hasData ? <AnimatedNumber value={parseFloat(String(r.traffic_budget))} format="brl" /> : '—'}
+                        </td>
+                        <td className="py-2.5 text-right text-slate-400">
+                          {hasData ? <AnimatedNumber value={parseFloat(String(r.cac))} format="brl" /> : '—'}
+                        </td>
                       </tr>
                     );
                   })}

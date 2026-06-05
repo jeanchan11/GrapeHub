@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend, Filler, LineController, BarController } from 'chart.js';
 import { Chart } from 'react-chartjs-2';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend as RechartsLegend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend as RechartsLegend, ResponsiveContainer, PieChart, Pie, Cell, ComposedChart, Line, Area } from 'recharts';
 import { MoreVertical, DollarSign, TrendingUp, TrendingDown, AlertCircle, Wallet, Calendar, AlertTriangle, ArrowUpRight, ShieldAlert, Users, ChevronDown, ChevronUp, X, ArrowUp, ArrowDown } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { designSystem } from '../design-system';
@@ -242,6 +242,7 @@ export default function FinanceiroDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [dayPopup, setDayPopup] = useState<{ iso: string; label: string; items: any[] } | null>(null);
   const [dayLoading, setDayLoading] = useState(false);
+  const [chartAnimKey, setChartAnimKey] = useState(0);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -268,6 +269,7 @@ export default function FinanceiroDashboard() {
         setError(err.message || 'Erro desconhecido');
       } finally {
         setLoading(false);
+        setChartAnimKey(k => k + 1);
       }
     };
 
@@ -371,86 +373,13 @@ export default function FinanceiroDashboard() {
   const saldoAcumulado = lastPrevisto ?? lastRealizado ?? resumo?.previsto_fim_mes ?? 0;
 
 
-  const chartSaudeData = {
-    labels,
-    datasets: [
-      {
-        type: 'line' as const,
-        label: 'Realizado',
-        data: saldoRealizadoData,
-        borderColor: '#8B5CF6', // Roxo
-        backgroundColor: 'rgba(139, 92, 246, 0.1)',
-        borderWidth: 3,
-        pointBackgroundColor: '#8B5CF6',
-        pointBorderColor: '#fff',
-        pointBorderWidth: 2,
-        pointRadius: 4,
-        tension: 0.4,
-        fill: true,
-      },
-      {
-        type: 'line' as const,
-        label: 'Previsto',
-        data: saldoPrevistoData,
-        borderColor: '#C4B5FD', // Lilás
-        borderWidth: 3,
-        borderDash: [5, 5],
-        pointBackgroundColor: '#C4B5FD',
-        pointBorderColor: '#fff',
-        pointBorderWidth: 2,
-        pointRadius: 4,
-        tension: 0.4,
-        fill: false,
-      }
-    ]
-  };
-
-  const lineChartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    interaction: {
-      mode: 'index' as const,
-      intersect: false,
-    },
-    onHover: (_: any, elements: any[]) => {
-      // handled via wrapper onMouseMove
-    },
-    plugins: {
-      legend: { 
-        display: true,
-        position: 'bottom' as const,
-        labels: {
-          font: { family: 'Inter', size: 12 },
-          color: 'rgba(150, 150, 150, 1)',
-          usePointStyle: true,
-          padding: 20
-        }
-      },
-      tooltip: {
-        backgroundColor: 'rgba(17, 17, 27, 0.9)',
-        titleFont: { family: 'Inter', size: 12 },
-        bodyFont: { family: 'Inter', size: 12 },
-        padding: 12,
-        cornerRadius: 8,
-        displayColors: false,
-      }
-    },
-    scales: {
-      y: {
-        beginAtZero: true,
-        grid: { color: 'rgba(150, 150, 150, 0.1)' },
-        ticks: { 
-          font: { family: 'Inter', size: 10 }, 
-          color: 'rgba(150, 150, 150, 1)',
-          callback: (value: any) => 'R$ ' + value.toLocaleString('pt-BR')
-        }
-      },
-      x: {
-        grid: { display: false },
-        ticks: { font: { family: 'Inter', size: 10 }, color: 'rgba(150, 150, 150, 1)' }
-      }
-    }
-  };
+  // Dados para Recharts (Saúde do Caixa)
+  const rechartsSaudeData = labels.map((label, i) => ({
+    name: label,
+    dia: todosOsDias[i]?.dia,
+    realizado: saldoRealizadoData[i],
+    previsto: saldoPrevistoData[i],
+  }));
 
   const getInitials = (name: string) => (name || '??').substring(0, 2).toUpperCase();
 
@@ -522,7 +451,8 @@ export default function FinanceiroDashboard() {
         .recharts-wrapper:focus,
         .recharts-wrapper svg:focus,
         .recharts-surface { outline: none !important; -webkit-tap-highlight-color: transparent; }
-      `}</style>
+      `}
+      </style>
       <div className="max-w-[1600px] mx-auto space-y-6">
         
         {/* Header */}
@@ -777,18 +707,82 @@ export default function FinanceiroDashboard() {
               style={{ cursor: 'pointer' }}
               onMouseDown={(e) => e.preventDefault()}
             >
-              <Chart
-                type="line"
-                data={chartSaudeData}
-                options={lineChartOptions}
-                onClick={(_event: any, elements: any[]) => {
-                  if (elements.length > 0) {
-                    const idx = elements[0].index;
-                    const dayItem = todosOsDias[idx];
-                    if (dayItem?.dia) handleBarClick({ dia: dayItem.dia });
-                  }
-                }}
-              />
+              <ResponsiveContainer key={`saude-caixa-${chartAnimKey}`} width="100%" height="100%">
+                <ComposedChart
+                  data={rechartsSaudeData}
+                  onClick={(data: any) => {
+                    if (data && data.activePayload && data.activePayload.length > 0) {
+                      handleBarClick(data.activePayload[0].payload);
+                    }
+                  }}
+                >
+                  <defs>
+                    <linearGradient id="gradientRealizado" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.15} />
+                      <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0.01} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(150, 150, 150, 0.1)" />
+                  <XAxis
+                    dataKey="name"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: 'rgba(150, 150, 150, 1)', fontSize: 10, fontFamily: 'Inter' }}
+                    dy={10}
+                  />
+                  <YAxis
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: 'rgba(150, 150, 150, 1)', fontSize: 10, fontFamily: 'Inter' }}
+                    tickFormatter={(val) => 'R$ ' + val.toLocaleString('pt-BR')}
+                  />
+                  <RechartsTooltip
+                    contentStyle={{
+                      backgroundColor: 'rgba(17, 17, 27, 0.9)',
+                      border: 'none',
+                      borderRadius: '8px',
+                      padding: '12px',
+                      fontFamily: 'Inter',
+                      fontSize: '12px',
+                      color: '#fff',
+                    }}
+                    formatter={(value: any) => ['R$ ' + Number(value).toLocaleString('pt-BR')]}
+                    labelStyle={{ color: 'rgba(150,150,150,1)', fontSize: '12px' }}
+                  />
+                  <RechartsLegend
+                    wrapperStyle={{ paddingTop: '20px', fontSize: '12px', fontFamily: 'Inter', color: 'rgba(150, 150, 150, 1)' }}
+                    iconType="circle"
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="realizado"
+                    name="Realizado"
+                    stroke="#8B5CF6"
+                    strokeWidth={3}
+                    fill="url(#gradientRealizado)"
+                    dot={false}
+                    activeDot={{ r: 6, fill: '#8B5CF6', stroke: '#fff', strokeWidth: 2 }}
+                    animationBegin={0}
+                    animationDuration={1200}
+                    animationEasing="ease-out"
+                    connectNulls={false}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="previsto"
+                    name="Previsto"
+                    stroke="#C4B5FD"
+                    strokeWidth={3}
+                    strokeDasharray="5 5"
+                    dot={false}
+                    activeDot={{ r: 6, fill: '#C4B5FD', stroke: '#fff', strokeWidth: 2 }}
+                    animationBegin={400}
+                    animationDuration={1200}
+                    animationEasing="ease-out"
+                    connectNulls={false}
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
             </div>
           </div>
         </div>

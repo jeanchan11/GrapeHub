@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import SplitHeadline from '../components/SplitHeadline';
 import { 
   ChevronLeft, Plus, Edit2, Trash2, 
   CheckSquare, Save, Play, Info,
@@ -126,10 +127,13 @@ const CrmSequencias = () => {
       {seqMode === 'list' && (
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-white text-3xl font-bold flex items-center gap-2">
-              CRM <span className="text-violet-500">Sequências</span>
-            </h1>
-            <p className="text-gray-400 text-sm mt-1">Modelos de atividades automáticas para follow-up.</p>
+            <SplitHeadline
+              text="CRM "
+              highlight="Sequências"
+              subtitle="Modelos de atividades automáticas para follow-up."
+              className="text-3xl font-black tracking-tight text-white"
+              subtitleClassName="text-gray-400 text-sm"
+            />
           </div>
         </div>
       )}

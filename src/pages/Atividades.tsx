@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import SplitHeadline from '../components/SplitHeadline';
 import {
   Phone, Mail, Users, CheckSquare, Calendar, Clock, Filter,
   Plus, RefreshCw, ChevronDown, Circle, CheckCircle2,
@@ -722,9 +723,7 @@ const Atividades: React.FC = () => {
 
           {/* Left — título */}
           <div>
-            <h1 className="text-xl font-black text-slate-900 dark:text-white tracking-tight leading-none">
-              Atividades
-            </h1>
+            <SplitHeadline text="Ativi" highlight="dades" className="text-xl font-black text-slate-900 dark:text-white tracking-tight leading-none" />
             <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
               {loading ? 'Carregando...' : `${totalCount} atividade${totalCount !== 1 ? 's' : ''}`}
             </p>

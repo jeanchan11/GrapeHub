@@ -21,7 +21,7 @@ export const designSystem = {
 
   pageTitle: {
     wrapper: 'mb-6',
-    title: 'text-3xl font-bold tracking-tight text-gray-900 dark:text-white',
+    title: 'text-3xl font-black tracking-tight text-gray-900 dark:text-white',
     titleAccent: 'text-purple-500',
     subtitle: 'text-sm text-gray-500 dark:text-gray-400 mt-1',
   },

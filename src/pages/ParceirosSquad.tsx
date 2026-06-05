@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { RefreshCw, ChevronDown, Check } from 'lucide-react';
+import SplitHeadline from '../components/SplitHeadline';
+import { RefreshCw, ChevronDown, Check, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useMenu } from '../context/MenuContext';
 import ProjectsModule from './ProjectsModule';
+import { motion } from 'framer-motion';
 
 interface ProjectRow {
   id: string;
@@ -57,6 +59,9 @@ export default function ParceirosSquad({ activePage, onPageChange }: { activePag
   const [pickerPageId, setPickerPageId] = useState<string | null>(null);
   const [savingPageId, setSavingPageId] = useState<string | null>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
+
+  // Sorting state
+  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
 
   // Resolve the squad name from the menu hierarchy
   const squadName = useMemo(() => {
@@ -113,6 +118,52 @@ export default function ParceirosSquad({ activePage, onPageChange }: { activePag
 
   useEffect(() => { fetchData(); }, [squadName]);
 
+  const sortedProjects = useMemo(() => {
+    let sortable = [...projects];
+    if (sortConfig !== null) {
+      sortable.sort((a, b) => {
+        let valA: any = '';
+        let valB: any = '';
+
+        if (sortConfig.key === 'Cliente') {
+          valA = a.partner.toLowerCase();
+          valB = b.partner.toLowerCase();
+        } else if (sortConfig.key === 'Responsável') {
+          valA = (a.responsible || '').toLowerCase();
+          valB = (b.responsible || '').toLowerCase();
+        } else if (sortConfig.key === 'Resultado') {
+          valA = (a.projectResult || '').toLowerCase();
+          valB = (b.projectResult || '').toLowerCase();
+        } else if (sortConfig.key === 'Orçamento Mensal') {
+          valA = parseMoney(a.investment);
+          if (valA <= 0 && a.products) {
+            valA = a.products.reduce((acc, prod) => acc + parseMoney(prod.budget), 0);
+          }
+          valB = parseMoney(b.investment);
+          if (valB <= 0 && b.products) {
+            valB = b.products.reduce((acc, prod) => acc + parseMoney(prod.budget), 0);
+          }
+        } else if (sortConfig.key === 'Produtos') {
+          valA = (a.products || []).length;
+          valB = (b.products || []).length;
+        }
+
+        if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+    return sortable;
+  }, [projects, sortConfig]);
+
+  const handleSort = (key: string) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
+
   // Close picker on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -157,9 +208,7 @@ export default function ParceirosSquad({ activePage, onPageChange }: { activePag
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between pb-8">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-dark-text">
-            Parceiros <span className="text-violet-500">Squad</span>
-          </h1>
+          <SplitHeadline text="Parceiros " highlight="Squad" className="text-2xl font-black tracking-tight text-dark-text" />
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">
             Todos os projetos · Squad {squadName}
           </p>
@@ -173,24 +222,37 @@ export default function ParceirosSquad({ activePage, onPageChange }: { activePag
       </div>
 
       {/* ── Tabela completa ──────────────────────────────────── */}
-      <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200">
-        <div className="flex items-center justify-between mb-4">
+      <div className="bg-white dark:bg-dark-card/60 backdrop-blur-md rounded-3xl border border-slate-200 dark:border-white/10 overflow-hidden shadow-2xl transition-colors duration-300">
+        <div className="p-6 pb-0 flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-sm font-bold text-dark-text">Todos os Projetos</h2>
+            <h2 className="text-sm font-bold text-light-text dark:text-white">Todos os Projetos</h2>
             <p className="text-xs text-slate-500 mt-0.5">{projects.length} projetos carregados</p>
           </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-xs">
+          <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="border-b" style={{ borderColor: 'rgba(100,100,120,0.15)' }}>
+              <tr className="bg-slate-50/50 dark:bg-white/5 border-b border-slate-200 dark:border-white/5">
                 {['Cliente', 'Responsável', 'Resultado', 'Orçamento Mensal', 'Produtos'].map(h => (
-                  <th key={h} className="text-[9px] font-bold text-slate-500 uppercase tracking-widest pb-3 pr-4 text-left">{h}</th>
+                  <th 
+                    key={h} 
+                    className="px-6 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-left cursor-pointer hover:text-violet-400 transition-colors group select-none"
+                    onClick={() => handleSort(h)}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      {h}
+                      {sortConfig?.key === h ? (
+                        sortConfig.direction === 'asc' ? <ArrowUp size={10} className="text-violet-500" /> : <ArrowDown size={10} className="text-violet-500" />
+                      ) : (
+                        <ArrowUpDown size={10} className="opacity-0 group-hover:opacity-50 transition-opacity" />
+                      )}
+                    </div>
+                  </th>
                 ))}
               </tr>
             </thead>
-            <tbody>
-              {projects.map(p => {
+            <tbody className="divide-y divide-slate-200 dark:divide-white/5">
+              {sortedProjects.map((p, idx) => {
                 // Use picture from backend if available, else look up by name
                 const fallbackUser = users.find(u =>
                   p.responsible &&
@@ -204,13 +266,19 @@ export default function ParceirosSquad({ activePage, onPageChange }: { activePag
                 const isSaving = savingPageId === p.page_id;
 
                 return (
-                  <tr 
+                  <motion.tr 
                     key={p.id} 
-                    className="border-b transition-colors hover:bg-white/5 cursor-pointer" 
-                    style={{ borderColor: 'rgba(100,100,120,0.08)' }}
-                    onClick={(e) => {
+                    initial={{ opacity: 0, y: -14 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{
+                      duration: 0.3,
+                      delay: idx * 0.04,
+                      ease: [0.32, 0.72, 0, 1],
+                    }}
+                    className="group hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-all cursor-pointer" 
+                    onClick={(e: any) => {
                       // Prevent if clicked on a specific button inside
-                      if ((e.target as HTMLElement).closest('button')) return;
+                      if (e.target.closest('button')) return;
                       
                       if (p.page_id) {
                         setModalProject(p);
@@ -221,19 +289,19 @@ export default function ParceirosSquad({ activePage, onPageChange }: { activePag
                     }}
                   >
                     {/* Cliente */}
-                    <td className="py-3 pr-4">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-lg bg-violet-500/20 flex items-center justify-center text-violet-500 text-[10px] font-black shrink-0">
+                    <td className="px-6 py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-7 h-7 rounded-lg bg-violet-500/10 flex items-center justify-center text-violet-500 font-bold text-[10px]">
                           {p.partner.charAt(0).toUpperCase()}
                         </div>
-                        <span className="font-bold text-dark-text truncate max-w-[140px]">{p.partner}</span>
+                        <span className="font-bold text-light-text dark:text-white text-xs truncate max-w-[140px]">{p.partner}</span>
                       </div>
                     </td>
 
                     {/* Responsável */}
-                    <td className="py-3 pr-4">
+                    <td className="px-6 py-3">
                       <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center overflow-hidden shrink-0 border-2 border-violet-500/30">
+                        <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-white/5 flex items-center justify-center overflow-hidden shrink-0 border-2 border-violet-500/30">
                           {picture ? (
                             <img src={picture} alt={p.responsible} className="w-full h-full object-cover" />
                           ) : p.responsible ? (
@@ -242,14 +310,14 @@ export default function ParceirosSquad({ activePage, onPageChange }: { activePag
                             <span className="text-[8px] text-slate-500">?</span>
                           )}
                         </div>
-                        <span className="text-slate-300 font-medium truncate max-w-[100px]">{p.responsible || '—'}</span>
+                        <span className="text-xs text-slate-500 font-medium truncate max-w-[100px]">{p.responsible || '—'}</span>
                       </div>
                     </td>
 
                     {/* Resultado */}
-                    <td className="py-3 pr-4">
+                    <td className="px-6 py-3">
                       <span
-                        className="text-[9px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap"
+                        className="text-[9px] font-bold px-2 py-0.5 rounded-md whitespace-nowrap"
                         style={{
                           background: ((p.projectResult && RESULT_COLORS[p.projectResult.toUpperCase()]) ? RESULT_COLORS[p.projectResult.toUpperCase()] : '#64748b') + '22',
                           color: (p.projectResult && RESULT_COLORS[p.projectResult.toUpperCase()]) ? RESULT_COLORS[p.projectResult.toUpperCase()] : '#94a3b8',
@@ -260,7 +328,7 @@ export default function ParceirosSquad({ activePage, onPageChange }: { activePag
                     </td>
 
                     {/* Orçamento */}
-                    <td className="py-3 pr-4 font-bold text-emerald-500 whitespace-nowrap">
+                    <td className="px-6 py-3 text-xs font-bold text-emerald-500 whitespace-nowrap">
                       {(() => {
                         let total = parseMoney(p.investment);
                         if (total <= 0 && p.products && p.products.length > 0) {
@@ -271,8 +339,8 @@ export default function ParceirosSquad({ activePage, onPageChange }: { activePag
                     </td>
 
                     {/* Produtos */}
-                    <td className="py-3 pr-4 text-slate-400">{(p.products || []).length}</td>
-                  </tr>
+                    <td className="px-6 py-3 text-xs text-slate-500">{(p.products || []).length}</td>
+                  </motion.tr>
                 );
               })}
             </tbody>

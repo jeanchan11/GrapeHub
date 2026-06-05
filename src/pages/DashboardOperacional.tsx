@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import SplitHeadline from '../components/SplitHeadline';
 import {
   Users, TrendingUp, DollarSign, AlertTriangle,
   CheckCircle, Cpu, RefreshCw, Clock, MessageSquare, X,
@@ -731,9 +732,7 @@ export default function DashboardOperacional({ activePage = '', subsessionId }: 
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-6 md:px-8 pt-8 pb-4">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-dark-text">
-            Dashboard <span className="text-violet-500">Operacional</span>
-          </h1>
+          <SplitHeadline text="Dashboard " highlight="Operacional" className="text-2xl font-black tracking-tight text-dark-text" />
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">
             Visão geral de projetos · Squad {squadName}
           </p>

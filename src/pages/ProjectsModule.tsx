@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import { auth, storage } from '../firebase';
 import { Modal } from '../components/ui/Modal';
+import SplitHeadline from '../components/SplitHeadline';
 import { useAuth } from '../contexts/AuthContext';
 import { useMenu } from '../context/MenuContext';
 import { designSystem } from '../design-system';
@@ -25,6 +26,60 @@ import confetti from 'canvas-confetti';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+
+// ── Animated KPI Count Up ─────────────────────────────────
+const KpiCountUp = ({ value, className = '' }: { value: string; className?: string }) => {
+  const ref = React.useRef<HTMLSpanElement>(null);
+  const animated = React.useRef(false);
+  const [display, setDisplay] = React.useState(value);
+
+  React.useEffect(() => {
+    if (animated.current) { setDisplay(value); return; }
+    const el = ref.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !animated.current) {
+          animated.current = true;
+          // Extract prefix (e.g. "R$ ") and numeric part
+          const match = value.match(/^([^\d]*?)([\d.,]+)(.*)$/);
+          if (!match) { setDisplay(value); return; }
+          const prefix = match[1];
+          const numStr = match[2];
+          const suffix = match[3];
+          const target = parseFloat(numStr.replace(/\./g, '').replace(',', '.'));
+          if (isNaN(target) || target === 0) { setDisplay(value); return; }
+          const hasDot = numStr.includes('.');
+          const hasComma = numStr.includes(',');
+          const duration = 1000;
+          const start = performance.now();
+          const step = (now: number) => {
+            const elapsed = now - start;
+            const t = Math.min(elapsed / duration, 1);
+            const eased = 1 - Math.pow(1 - t, 3);
+            const current = Math.round(eased * target);
+            let formatted: string;
+            if (hasDot) {
+              formatted = current.toLocaleString('pt-BR');
+            } else if (hasComma) {
+              formatted = current.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+            } else {
+              formatted = current.toString();
+            }
+            setDisplay(`${prefix}${formatted}${suffix}`);
+            if (t < 1) requestAnimationFrame(step);
+          };
+          requestAnimationFrame(step);
+        }
+      },
+      { threshold: 0.1 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [value]);
+
+  return <span ref={ref} className={className}>{display}</span>;
+};
 
 const DragHandleContext = React.createContext<any>(null);
 
@@ -102,6 +157,33 @@ const SortableRowWrapper = ({ id, children, className }: any) => {
         {children}
       </tr>
     </DragHandleContext.Provider>
+  );
+};
+
+// SVG Path Morph lock icon — shackle animates smoothly between locked/unlocked
+const AnimatedLock = ({ isLocked, size = 14 }: { isLocked: boolean; size?: number }) => {
+  const lockedPath   = "M 7 11 V 7 a 5 5 0 0 1 10 0 V 11";
+  const unlockedPath = "M 7 11 V 7 a 5 5 0 0 1 10 -3 V 5";
+
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <motion.rect
+        width="18" height="11" x="3" y="11" rx="2" ry="2"
+      />
+      <motion.path
+        animate={{ d: isLocked ? lockedPath : unlockedPath }}
+        transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
+      />
+    </svg>
   );
 };
 
@@ -347,6 +429,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
   const [npsResponses, setNpsResponses] = useState<any[]>([]);
   const [isNpsLoading, setIsNpsLoading] = useState(false);
   const [timelineFilter, setTimelineFilter] = useState('Todos');
+
 
   useEffect(() => {
     if (selectedProject && activeProjectTab === 'nps') {
@@ -2008,18 +2091,32 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     <button
                       key={tab}
                       onClick={() => setActiveProductTab(tab)}
-                      className={`pb-4 text-sm font-bold transition-all ${
+                      className={`pb-4 text-sm font-bold transition-all relative ${
                         activeProductTab === tab
-                          ? 'text-violet-600 border-b-2 border-violet-600'
+                          ? 'text-violet-600'
                           : 'text-slate-500 hover:text-light-text dark:hover:text-white'
                       }`}
                     >
                       {tab === 'resultado' ? 'Resultado do produto' : 'KPI\'s Produto'}
+                      {activeProductTab === tab && (
+                        <motion.div
+                          layoutId="product-tab-indicator"
+                          className="absolute bottom-0 left-0 right-0 h-0.5 bg-violet-500"
+                        />
+                      )}
                     </button>
                   ))}
                 </div>
 
                 {/* Content based on active tab */}
+                <AnimatePresence mode="wait">
+                <motion.div
+                  key={activeProductTab}
+                  initial={{ opacity: 0, x: -8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 8 }}
+                  transition={{ duration: 0.18 }}
+                >
                 {activeProductTab === 'resultado' && (
                   <>
                     {/* Selectors Area */}
@@ -2258,6 +2355,8 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     ))}
                   </div>
                 )}
+                </motion.div>
+                </AnimatePresence>
               </div>
 
               {/* Modal Content - Optimization History */}
@@ -3143,10 +3242,11 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       <header className="mb-10">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight mb-1">
-              Projetos & <span className="text-violet-500">Parceiros</span>
-            </h1>
-            <p className="text-slate-500 text-sm">Gerenciamento centralizado de contas, performance e gargalos operacionais.</p>
+            <SplitHeadline 
+              text="Projetos & " 
+              highlight="Parceiros"
+              subtitle="Gerenciamento centralizado de contas, performance e gargalos operacionais."
+            />
           </div>
           <div className="flex items-center gap-4 relative z-50">
             <div className="flex items-center gap-2 bg-white dark:bg-dark-card/60 backdrop-blur-md px-4 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 shadow-sm">
@@ -3298,7 +3398,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
               <ArrowUpRight size={16} className="text-slate-400 group-hover:text-violet-500 transition-colors" />
             </div>
             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">{stat.label}</p>
-            <h3 className="text-3xl font-bold text-slate-900 dark:text-white">{stat.value}</h3>
+            <h3 className="text-3xl font-bold text-slate-900 dark:text-white"><KpiCountUp value={stat.value} /></h3>
           </div>
         ))}
       </div>
@@ -3351,12 +3451,12 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       {/* Containers por grupo */}
       <div className="space-y-6">
         {Object.entries(groupedProjects).map(([groupName, projectsInGroup]) => (
-          <div key={groupName} className="bg-white dark:bg-dark-card/60 backdrop-blur-md rounded-3xl border border-slate-200 dark:border-white/5 overflow-hidden shadow-xl transition-colors duration-300">
+          <div key={groupName} className="bg-white dark:bg-dark-card/60 backdrop-blur-md rounded-3xl border border-slate-200 dark:border-white/5 shadow-xl transition-colors duration-300">
             <div 
               className="px-6 py-4 bg-transparent flex items-center justify-between relative z-10"
             >
               <div className="flex items-center gap-3 cursor-pointer flex-1" onClick={() => toggleGroup(groupName)}>
-                <ChevronDown size={16} className={`text-slate-400 transition-transform ${expandedGroups[groupName] ? '' : '-rotate-90'}`} />
+                <ChevronRight size={16} className={`transition-all duration-300 ${expandedGroups[groupName] ? 'rotate-90 text-violet-500' : 'text-slate-400'}`} />
                 <div className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider ${
                   groupName === 'Grupo 1' ? 'bg-blue-500/10 text-blue-500' :
                   groupName === 'Grupo 2' ? 'bg-emerald-500/10 text-emerald-500' :
@@ -3370,18 +3470,26 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
               <button
                 onClick={(e) => { e.stopPropagation(); setLockedGroups(prev => ({ ...prev, [groupName]: !prev[groupName] })); }}
                 title={lockedGroups[groupName] ? 'Desbloquear classificação' : 'Bloquear classificação'}
-                className={`p-2 rounded-xl transition-all ${
+                className={`p-2 rounded-xl transition-all duration-300 ${
                   lockedGroups[groupName]
                     ? 'bg-amber-500/15 text-amber-500 border border-amber-500/30'
                     : 'text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5'
                 }`}
               >
-                {lockedGroups[groupName] ? <Lock size={14} /> : <LockOpen size={14} />}
+                <AnimatedLock isLocked={!!lockedGroups[groupName]} size={14} />
               </button>
             </div>
             
+            <AnimatePresence initial={false}>
             {expandedGroups[groupName] && (
-              <div className="overflow-x-auto">
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}
+                style={{ overflow: 'clip' }}
+              >
+              <div className="overflow-x-auto" style={{ overflowY: 'visible' }}>
                 <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={() => setExpandedRowId(null)} onDragEnd={handleDragEnd}>
                 <table className="w-full text-left border-collapse">
                   <thead>
@@ -3582,7 +3690,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                         {project.lastMeetingDate ? new Date(project.lastMeetingDate).toLocaleDateString('pt-BR', { day: 'numeric', month: 'short', timeZone: 'UTC' }).replace('.', '').toLowerCase() : ''}
                       </p>
                     </td>
-                    <td className="px-6 py-5 text-right">
+                    <td className="px-6 py-5 text-right overflow-visible">
                       <div className="flex items-center justify-end gap-2">
                         <button 
                           onClick={(e) => {
@@ -3604,29 +3712,32 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                             <MoreHorizontal size={16} />
                           </button>
                           {openProjectMenuId === project.id && (
-                            <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-dark-card rounded-xl shadow-lg border border-slate-200 dark:border-white/10 z-[100] overflow-hidden" style={{ minWidth: '160px' }}>
-                              <button 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setGroupModalProjectId(project.id);
-                                  setIsGroupModalOpen(true);
-                                  setOpenProjectMenuId(null);
-                                }}
-                                className="w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5"
-                              >
-                                Mudar Grupo
-                              </button>
-                              <button 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeleteProject(project.id);
-                                  setOpenProjectMenuId(null);
-                                }}
-                                className="w-full text-left px-4 py-2 text-sm text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20"
-                              >
-                                Excluir Projeto
-                              </button>
-                            </div>
+                            <>
+                              <div className="fixed inset-0 z-[98]" onClick={() => setOpenProjectMenuId(null)} />
+                              <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-dark-card rounded-xl shadow-2xl border border-slate-200 dark:border-white/10 z-[99] overflow-hidden" style={{ minWidth: '160px' }}>
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setGroupModalProjectId(project.id);
+                                    setIsGroupModalOpen(true);
+                                    setOpenProjectMenuId(null);
+                                  }}
+                                  className="w-full text-left px-4 py-2.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors"
+                                >
+                                  Mudar Grupo
+                                </button>
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteProject(project.id);
+                                    setOpenProjectMenuId(null);
+                                  }}
+                                  className="w-full text-left px-4 py-2.5 text-sm text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors"
+                                >
+                                  Excluir Projeto
+                                </button>
+                              </div>
+                            </>
                           )}
                         </div>
                       </div>
@@ -3651,7 +3762,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                   <div className="w-1.5 h-6 bg-violet-600 rounded-full"></div>
                                   <h4 className="text-sm font-bold text-light-text dark:text-white uppercase tracking-widest">Produtos do Parceiro</h4>
                                     
-                                    <div className="ml-6 flex items-center bg-slate-100 dark:bg-[#1a1625] rounded-xl p-1 border border-slate-200 dark:border-white/5">
+                                    <div className="ml-6 flex items-center bg-slate-100 dark:bg-white/5 rounded-xl p-1 border border-slate-200 dark:border-white/5">
                                       <button
                                         onClick={(e) => {
                                           e.stopPropagation();
@@ -3659,8 +3770,8 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                         }}
                                         className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
                                           activeProductsFilter === 'ativos'
-                                            ? 'bg-white dark:bg-white/10 text-violet-500 shadow-sm'
-                                            : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                                            ? 'bg-white dark:bg-white/10 text-violet-600 dark:text-violet-400 shadow-sm'
+                                            : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
                                         }`}
                                       >
                                         Ativos ({project.products?.filter(p => p.status !== 'Inativo').length || 0})
@@ -3672,8 +3783,8 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                         }}
                                         className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
                                           activeProductsFilter === 'inativos'
-                                            ? 'bg-white dark:bg-white/10 text-violet-500 shadow-sm'
-                                            : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                                            ? 'bg-white dark:bg-white/10 text-violet-600 dark:text-violet-400 shadow-sm'
+                                            : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
                                         }`}
                                       >
                                         Inativos ({project.products?.filter(p => p.status === 'Inativo').length || 0})
@@ -3684,10 +3795,15 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                                   {/* Product Cards */}
+                                  <AnimatePresence mode="popLayout">
                                   {project.products
                                     ?.filter(prod => activeProductsFilter === 'ativos' ? prod.status !== 'Inativo' : prod.status === 'Inativo')
                                     .map((prod) => (
-                                  <div 
+                                  <motion.div 
+                                    initial={{ opacity: 0, scale: 0.9 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    exit={{ opacity: 0, scale: 0.9 }}
+                                    transition={{ duration: 0.2 }}
                                     key={prod.id} 
                                     onClick={() => handleProductClick(prod)}
                                     className={`bg-dark-card backdrop-blur-md rounded-2xl border p-6 shadow-xl relative overflow-hidden before:absolute before:inset-0 before:bg-gradient-to-br before:to-transparent before:opacity-50 before:pointer-events-none transition-all cursor-pointer group/prod ${
@@ -3751,14 +3867,14 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                       )}
                                     </div>
 
-                                    <div className="grid grid-cols-4 gap-2">
-                                      <div className="p-2 rounded-xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm transition-all hover:border-violet-500/20">
-                                        <p className="text-[8px] font-bold text-slate-700 dark:text-white uppercase tracking-wider mb-0.5 min-h-[24px]">Investimento</p>
-                                        <p className="text-xs font-bold text-slate-900 dark:text-white">{prod.budget?.includes('R$') ? prod.budget : (formatCurrency(prod.budget || '') || 'R$ 0,00')}</p>
+                                    <div className="grid grid-cols-4 gap-1.5">
+                                      <div className="p-2 rounded-xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm transition-all hover:border-violet-500/20 min-w-0">
+                                        <p className="text-[7px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-0.5">Investimento</p>
+                                        <p className="text-[11px] font-bold text-slate-900 dark:text-white truncate">{prod.budget?.includes('R$') ? prod.budget : (formatCurrency(prod.budget || '') || 'R$ 0,00')}</p>
                                       </div>
-                                      <div className="p-2 rounded-xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm transition-all hover:border-violet-500/20">
-                                        <p className="text-[8px] font-bold text-slate-700 dark:text-white uppercase tracking-wider mb-0.5 min-h-[24px]">Plataforma</p>
-                                        <p className={`text-xs font-bold ${
+                                      <div className="p-2 rounded-xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm transition-all hover:border-violet-500/20 min-w-0">
+                                        <p className="text-[7px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-0.5">Plataforma</p>
+                                        <p className={`text-[11px] font-bold truncate ${
                                           prod.platform === 'Meta Ads' ? 'text-blue-500' 
                                           : prod.platform === 'Google Ads' ? 'text-amber-500' 
                                           : prod.platform === 'Tiktok Ads' ? 'text-purple-500' 
@@ -3766,30 +3882,35 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                           : 'text-slate-400'
                                         }`}>{prod.platform || '-'}</p>
                                       </div>
-                                      <div className="p-2 rounded-xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm transition-all hover:border-violet-500/20">
-                                        <p className="text-[8px] font-bold text-slate-700 dark:text-white uppercase tracking-wider mb-0.5 min-h-[24px]">Pagamento</p>
-                                        <p className={`text-xs font-bold ${normalizePaymentMethod(prod.paymentMethod) === 'Manual' ? 'text-orange-500' : 'text-blue-500'}`}>
+                                      <div className="p-2 rounded-xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm transition-all hover:border-violet-500/20 min-w-0">
+                                        <p className="text-[7px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-0.5">Pagamento</p>
+                                        <p className={`text-[11px] font-bold truncate ${normalizePaymentMethod(prod.paymentMethod) === 'Manual' ? 'text-orange-500' : 'text-blue-500'}`}>
                                           {normalizePaymentMethod(prod.paymentMethod) === 'Manual' ? (prod.balance?.includes('R$') ? prod.balance : (formatCurrency(prod.balance || '') || 'R$ 0,00')) : 'Automático'}
                                         </p>
                                       </div>
-                                      <div className="p-2 rounded-xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm transition-all hover:border-violet-500/20">
-                                        <p className="text-[8px] font-bold text-slate-700 dark:text-white uppercase tracking-wider mb-0.5 min-h-[24px]">Veiculação</p>
-                                        <p className="text-xs font-bold text-slate-900 dark:text-white">{prod.delivery || 'Full Time'}</p>
+                                      <div className="p-2 rounded-xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm transition-all hover:border-violet-500/20 min-w-0">
+                                        <p className="text-[7px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-0.5">Veiculação</p>
+                                        <p className="text-[11px] font-bold text-slate-900 dark:text-white truncate">{prod.delivery || 'Full Time'}</p>
                                       </div>
                                     </div>
-                                  </div>
+                                  </motion.div>
                                 ))}
-
-                                {/* Add Product Card */}
-                                <button 
-                                  onClick={() => handleOpenAddProduct(project.id)}
-                                  className="group relative flex flex-col items-center justify-center gap-3 p-8 rounded-2xl border-2 border-dashed border-slate-200 dark:border-white/5 hover:border-violet-500/30 hover:bg-violet-500/5 transition-all min-h-[200px]"
-                                >
-                                  <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-white/5 group-hover:bg-violet-600 flex items-center justify-center transition-all">
-                                    <Plus size={24} className="text-slate-400 group-hover:text-white" />
-                                  </div>
-                                  <p className="text-sm font-bold text-slate-500 group-hover:text-light-text dark:group-hover:text-white transition-colors">Adicionar Novo Produto</p>
-                                </button>
+                                  {/* Add Product Card */}
+                                  <motion.button 
+                                    key="add-product"
+                                    initial={{ opacity: 0, scale: 0.9 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    exit={{ opacity: 0, scale: 0.9 }}
+                                    transition={{ duration: 0.2 }}
+                                    onClick={() => handleOpenAddProduct(project.id)}
+                                    className="group relative flex flex-col items-center justify-center gap-3 p-8 rounded-2xl border-2 border-dashed border-slate-200 dark:border-white/5 hover:border-violet-500/30 hover:bg-violet-500/5 transition-all min-h-[200px]"
+                                  >
+                                    <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-white/5 group-hover:bg-violet-600 flex items-center justify-center transition-all">
+                                      <Plus size={24} className="text-slate-400 group-hover:text-white" />
+                                    </div>
+                                    <p className="text-sm font-bold text-slate-500 group-hover:text-light-text dark:group-hover:text-white transition-colors">Adicionar Novo Produto</p>
+                                  </motion.button>
+                                  </AnimatePresence>
                               </div>
                             </div>
                           </motion.div>
@@ -3806,7 +3927,9 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
           </table>
           </DndContext>
         </div>
+        </motion.div>
         )}
+        </AnimatePresence>
       </div>
     ))}
   </div>
@@ -3845,19 +3968,33 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
               <button
                 key={tab}
                 onClick={() => setActiveProjectTab(tab as any)}
-                className={`pb-4 text-sm font-bold transition-all ${
+                className={`pb-4 text-sm font-bold transition-all relative ${
                   activeProjectTab === tab
                     ? 'modal-tab-active'
                     : 'text-slate-500 hover:text-gray-900 dark:hover:text-white'
                 }`}
               >
                 {tab === 'resultado' ? 'Resultado do projeto' : tab === 'reunioes' ? 'Reuniões' : tab === 'arquivos' ? 'Arquivos do projeto' : tab === 'comentarios' ? 'Comentários' : tab === 'nps' ? 'NPS' : 'Análise de Leads'}
+                {activeProjectTab === tab && (
+                  <motion.div
+                    layoutId="project-tab-indicator"
+                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-violet-500"
+                  />
+                )}
               </button>
             ))}
           </div>
 
           {/* Content based on active tab */}
-          <div className="flex-1 overflow-y-auto scrollbar-hide">
+          <AnimatePresence mode="wait">
+          <motion.div
+            key={activeProjectTab}
+            initial={{ opacity: 0, x: -8 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 8 }}
+            transition={{ duration: 0.18 }}
+            className="flex-1 overflow-y-auto scrollbar-hide"
+          >
             {activeProjectTab === 'resultado' && (
                   <>
                     {/* KPIs Dashboard */}
@@ -4901,7 +5038,8 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     </div>
                   );
                 })()}
-          </div>
+          </motion.div>
+          </AnimatePresence>
         </div>
         </Modal>
       )}
@@ -4983,6 +5121,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
         </div>
       )}
     </AnimatePresence>
+
     </>
   );
 };

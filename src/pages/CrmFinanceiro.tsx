@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { 
   Search, Plus, MoreHorizontal, 
   CheckCircle2, AlertCircle, Clock, 
@@ -34,6 +34,7 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { Modal } from '../components/ui/Modal';
 import { designSystem } from '../design-system';
 import CrmCommentHistory, { COMMENT_TYPES } from '../components/CrmCommentHistory';
+import LoadingSpinner from '../components/LoadingSpinner';
 import CrmChecklist from '../components/CrmChecklist';
 import ArchiveClientModal from '../components/ArchiveClientModal';
 
@@ -93,12 +94,14 @@ interface Task {
 const COLUMNS = [
   { id: 'pedido_finalizacao', title: 'PEDIDO DE FINALIZAÇÃO', emoji: '📋', color: '#f43f5e', colorKey: 'finalizacao' },
   { id: 'negociacao', title: 'NEGOCIAÇÃO', emoji: '🟡', color: '#34d399', colorKey: 'negociacao' },
+  { id: 'recuperado', title: 'RECUPERADO', emoji: '🏆', color: '#2dd4bf', colorKey: 'recuperado' },
   { id: 'aviso_30_dias', title: 'AVISO 30 DIAS', emoji: '⚠️', color: '#fb923c', colorKey: 'yellow' },
   { id: 'processo_saida', title: 'PROCESSO DE SAÍDA', emoji: '🔴', color: '#f87171', colorKey: 'red' },
 ];
 
 const CARD_VALUE_STYLE: Record<string, { bg: string; text: string }> = {
   negociacao:    { bg: '#0d2d1a', text: '#34d399' },
+  recuperado:    { bg: '#0a2d2a', text: '#2dd4bf' },
   red:           { bg: '#2d0f0f', text: '#f87171' },
   finalizacao:   { bg: '#2d240a', text: '#fbbf24' },
   yellow:        { bg: '#2d240a', text: '#fbbf24' },
@@ -122,7 +125,6 @@ const getInitialsFromName = (name: string) => {
 
 interface SortableCardProps {
   client: Client;
-  tasks: Task[];
   onClick: (client: Client) => void;
   onMove: (clientId: string, newStatus: string) => void | Promise<void>;
 }
@@ -161,7 +163,7 @@ const isTomorrowDate = (dateString: string) => {
     date.getFullYear() === tomorrow.getFullYear();
 };
 
-const SortableCard: React.FC<SortableCardProps> = ({ client, tasks, onClick, onMove }) => {
+const SortableCard: React.FC<SortableCardProps> = ({ client, onClick, onMove }) => {
   const [showMenu, setShowMenu] = useState(false);
   const {
     attributes,
@@ -191,54 +193,9 @@ const SortableCard: React.FC<SortableCardProps> = ({ client, tasks, onClick, onM
   const avatar = getAvatarColor(client.name);
   const initials = getInitialsFromName(client.name);
 
-  // Próxima atividade pendente
-  const clientTasks = tasks.filter(t => t.project_id === client.id && t.status !== 'completed');
-  const nextTask = clientTasks.sort((a, b) => {
-    if (!a.dueDate) return 1;
-    if (!b.dueDate) return -1;
-    return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
-  })[0] ?? null;
-
-  const getTaskStyle = (task: Task) => {
-    if (!task.dueDate) return null;
-    
-    if (isPastDate(task.dueDate)) {
-      return { 
-        badge: 'text-red-600 bg-red-50 border-red-200 dark:bg-red-500/10 dark:border-red-500/20 dark:text-red-400', 
-        label: 'Tarefa Atrasada' 
-      };
-    }
-    if (isToday(task.dueDate)) {
-      return { 
-        badge: 'text-emerald-600 bg-emerald-50 border-emerald-200 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:text-emerald-400', 
-        label: 'Tarefa para Hoje' 
-      };
-    }
-    
-    // Future date — agendada (subtle white)
-    const dateStr = parseLocalDate(task.dueDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-    return { 
-      badge: 'text-gray-500 bg-gray-50 border-gray-200 dark:bg-white/5 dark:border-white/10 dark:text-slate-400', 
-      label: 'Tarefa Agendada' 
-    };
-  };
-
-  const taskStyle = nextTask ? getTaskStyle(nextTask) : null;
-
-  // Card-level alert state for border highlight
-  // "no task" = either no task at all, OR task exists but has no dueDate (taskStyle is null)
-  const hasVisibleTask = !!(nextTask && taskStyle);
-  const hasOverdueTask = !!(nextTask && nextTask.dueDate && isPastDate(nextTask.dueDate));
-  const hasNoTask = !hasVisibleTask;
-  const cardAlertState = hasOverdueTask ? 'overdue' : hasNoTask ? 'none' : 'ok';
-
   const cardBorderClass = isDragging
     ? 'ring-2 ring-violet-500 shadow-2xl border-violet-500/50'
-    : cardAlertState === 'overdue'
-      ? 'border-red-400 dark:border-red-500/60 shadow-[0_0_0_1px_rgba(239,68,68,0.25)]'
-      : cardAlertState === 'none'
-        ? 'border-amber-400 dark:border-amber-500/60 shadow-[0_0_0_1px_rgba(251,191,36,0.25)]'
-        : 'border-gray-200 dark:border-white/5 hover:border-gray-300 dark:hover:border-white/10';
+    : 'border-gray-200 dark:border-white/5 hover:border-gray-300 dark:hover:border-white/10';
 
   return (
     <div
@@ -246,24 +203,10 @@ const SortableCard: React.FC<SortableCardProps> = ({ client, tasks, onClick, onM
       {...attributes}
       {...listeners}
       onClick={() => onClick(client)}
-      className={`relative cursor-grab active:cursor-grabbing rounded-xl border transition-all ${cardBorderClass} ${client.isArchived ? 'opacity-50 grayscale' : ''} overflow-hidden ${
-        !isDragging && cardAlertState === 'overdue'
-          ? 'bg-red-50 dark:bg-red-500/5'
-          : !isDragging && cardAlertState === 'none'
-            ? 'bg-amber-50 dark:bg-amber-500/5'
-            : 'bg-white dark:bg-dark-card'
-      }`}
+      className={`relative cursor-grab active:cursor-grabbing rounded-xl border transition-all ${cardBorderClass} ${client.isArchived ? 'opacity-50 grayscale' : ''} overflow-hidden bg-white dark:bg-dark-card`}
       style={{ ...style, marginBottom: 12 }}
     >
-      {/* Left stripe indicator */}
-      {!isDragging && cardAlertState !== 'ok' && (
-        <div className={`absolute left-0 top-0 bottom-0 w-[3px] ${
-          cardAlertState === 'overdue'
-            ? 'bg-red-400 dark:bg-red-500'
-            : 'bg-amber-400 dark:bg-amber-500'
-        }`} />
-      )}
-      <div className={`p-3 ${!isDragging && cardAlertState !== 'ok' ? 'pl-[14px]' : 'p-3'}`}>
+      <div className="p-3">
       {client.isArchived && (
         <div className="absolute -top-2 -right-2 bg-slate-800 text-white text-[9px] font-bold uppercase tracking-widest px-2 py-1 rounded-lg shadow-lg z-10">
           Arquivado
@@ -360,24 +303,7 @@ const SortableCard: React.FC<SortableCardProps> = ({ client, tasks, onClick, onM
 
 
 
-      {/* Next Task / No Task Alert */}
-      <div className="mt-2 pt-2 border-t border-gray-100 dark:border-white/5">
-        {nextTask && taskStyle ? (
-          <div className={`flex items-center justify-between rounded-lg px-2 py-1.5 border text-[11px] font-bold ${taskStyle.badge}`}>
-            <div className="flex items-center gap-1.5">
-              <Clock size={11} />
-              <span className="truncate max-w-[160px] uppercase tracking-tighter">
-                {nextTask.dueDate ? `${parseLocalDate(nextTask.dueDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} - ${taskStyle.label}` : taskStyle.label}
-              </span>
-            </div>
-          </div>
-        ) : (
-          <div className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 border border-amber-200 bg-amber-50 dark:bg-amber-500/10 dark:border-amber-500/20 text-amber-600 dark:text-amber-400 text-[11px] font-bold uppercase tracking-tighter">
-            <AlertCircle size={11} />
-            <span>Sem tarefa</span>
-          </div>
-        )}
-      </div>
+
       </div>
     </div>
   );
@@ -443,20 +369,36 @@ const CrmFinanceiro = () => {
   const [isAddingInlineTask, setIsAddingInlineTask] = useState(false);
   const [taskFilterClientId, setTaskFilterClientId] = useState<string | null>(null);
 
-  const fetchClients = async () => {
+  // Fast fetch: only CRM clients (filtered, much smaller dataset)
+  const fetchCrmClients = async () => {
     try {
-      const [crmRes, allRes] = await Promise.all([
-        fetch('/api/clients?crm_status=true'),
-        fetch('/api/clients')
-      ]);
-      
-      if (crmRes.ok) setClients(await crmRes.json());
-      if (allRes.ok) setAllClients(await allRes.json());
+      const res = await fetch('/api/clients?crm_status=true');
+      if (res.ok) setClients(await res.json());
     } catch (err) {
-      console.error("Error fetching clients:", err);
+      console.error("Error fetching CRM clients:", err);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Lazy fetch: all clients — only needed for "Add Client" dropdown
+  const allClientsFetched = useRef(false);
+  const fetchAllClients = useCallback(async () => {
+    if (allClientsFetched.current) return;
+    allClientsFetched.current = true;
+    try {
+      const res = await fetch('/api/clients');
+      if (res.ok) setAllClients(await res.json());
+    } catch (err) {
+      console.error("Error fetching all clients:", err);
+      allClientsFetched.current = false; // allow retry on error
+    }
+  }, []);
+
+  // Combined re-fetch for sync/refresh button
+  const fetchClients = async () => {
+    allClientsFetched.current = false;
+    await Promise.all([fetchCrmClients(), fetchAllClients()]);
   };
 
   const fetchTasks = async () => {
@@ -471,11 +413,15 @@ const CrmFinanceiro = () => {
     }
   };
 
-
-
+  // Initial load: only fetch CRM clients + tasks (fast path)
   useEffect(() => {
-    Promise.all([fetchClients(), fetchTasks()]);
+    Promise.all([fetchCrmClients(), fetchTasks()]);
   }, []);
+
+  // Lazy-load all clients when dropdown is opened
+  useEffect(() => {
+    if (isAddDropdownOpen) fetchAllClients();
+  }, [isAddDropdownOpen, fetchAllClients]);
 
   useEffect(() => {
     if (selectedClient) {
@@ -723,8 +669,8 @@ const CrmFinanceiro = () => {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <RefreshCw className="animate-spin text-violet-500" size={32} />
+      <div className="fixed inset-0 flex items-center justify-center z-10">
+        <LoadingSpinner size="lg" />
       </div>
     );
   }
@@ -793,36 +739,7 @@ const CrmFinanceiro = () => {
         </div>
       </PageHeader>
 
-      <div className="flex items-center gap-4 mb-8 border-b border-gray-200 dark:border-neutral-800 darker:border-neutral-900">
-        <button
-          onClick={() => setActiveMainTab('crm')}
-          className={`pb-4 px-2 text-sm font-bold transition-colors relative ${
-            activeMainTab === 'crm' 
-              ? 'text-violet-500' 
-              : 'text-slate-500 hover:text-light-text dark:hover:text-white'
-          }`}
-        >
-          CRM
-          {activeMainTab === 'crm' && (
-            <motion.div layoutId="activeMainTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-violet-500 rounded-t-full" />
-          )}
-        </button>
-        <button
-          onClick={() => setActiveMainTab('tarefas')}
-          className={`pb-4 px-2 text-sm font-bold transition-colors relative ${
-            activeMainTab === 'tarefas' 
-              ? 'text-violet-500' 
-              : 'text-slate-500 hover:text-light-text dark:hover:text-white'
-          }`}
-        >
-          Tarefas
-          {activeMainTab === 'tarefas' && (
-            <motion.div layoutId="activeMainTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-violet-500 rounded-t-full" />
-          )}
-        </button>
-      </div>
-
-      {activeMainTab === 'crm' ? (
+      {(
         <DndContext
           sensors={sensors}
           collisionDetection={closestCorners}
@@ -917,14 +834,19 @@ const CrmFinanceiro = () => {
                     strategy={verticalListSortingStrategy}
                   >
                     <div className="min-h-[80px]">
-                      {columnClients.map(client => (
-                        <SortableCard
-                          tasks={tasks}
+                      {columnClients.map((client, idx) => (
+                        <motion.div
                           key={client.id}
-                          client={client}
-                          onClick={setSelectedClient}
-                          onMove={handleMoveClient}
-                        />
+                          initial={{ opacity: 0, y: -18, scale: 0.98 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          transition={{ duration: 0.35, delay: idx * 0.06, ease: [0.32, 0.72, 0, 1] }}
+                        >
+                          <SortableCard
+                            client={client}
+                            onClick={setSelectedClient}
+                            onMove={handleMoveClient}
+                          />
+                        </motion.div>
                       ))}
                     </div>
                   </SortableContext>
@@ -942,7 +864,6 @@ const CrmFinanceiro = () => {
           {activeId ? (
             <div style={{ transform: 'scale(1.03)', boxShadow: '0 20px 60px rgba(0,0,0,0.5)', borderRadius: 10, opacity: 0.95 }}>
               <SortableCard
-                tasks={tasks}
                 client={clients.find(c => c.id === activeId)!}
                 onClick={() => {}}
                 onMove={() => {}}
@@ -951,108 +872,6 @@ const CrmFinanceiro = () => {
           ) : null}
         </DragOverlay>
         </DndContext>
-      ) : (
-        <div className="bg-white dark:bg-dark-card rounded-3xl border border-slate-200 dark:border-white/10 p-6">
-          <div className="flex justify-between items-center mb-6">
-            <div className="flex items-center gap-4">
-              <h2 className="text-xl font-bold text-light-text dark:text-white">Tarefas do CRM</h2>
-              {taskFilterClientId && (
-                <div className="flex items-center gap-2 px-3 py-1 bg-violet-500/10 text-violet-500 rounded-full text-sm font-bold">
-                  <span>Cliente: {clients.find(c => c.id === taskFilterClientId)?.name}</span>
-                  <button onClick={() => setTaskFilterClientId(null)} className="hover:text-violet-700 transition-colors">
-                    <X size={14} />
-                  </button>
-                </div>
-              )}
-            </div>
-            <button 
-              onClick={() => setIsNewTaskModalOpen(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-violet-500 text-white rounded-xl text-sm font-bold hover:bg-violet-600 transition-colors"
-            >
-              <Plus size={16} />
-              Nova Tarefa
-            </button>
-          </div>
-          
-          <div className="space-y-6">
-            {['Atrasadas', 'Hoje', 'Esta semana', 'Próximas'].map(group => {
-              const groupTasks = tasks.filter(t => {
-                if (taskFilterClientId && t.project_id !== taskFilterClientId) return false;
-                
-                const isCrmClient = clients.some(c => c.id === t.project_id && c.crmStatus);
-                if (!isCrmClient) return false;
-                
-                if (!t.dueDate) return group === 'Próximas';
-                
-                const dueDate = new Date(t.dueDate);
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
-                
-                const diffTime = dueDate.getTime() - today.getTime();
-                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                
-                if (group === 'Atrasadas') return diffDays < 0 && t.status !== 'completed';
-                if (group === 'Hoje') return diffDays === 0 && t.status !== 'completed';
-                if (group === 'Esta semana') return diffDays > 0 && diffDays <= 7 && t.status !== 'completed';
-                if (group === 'Próximas') return diffDays > 7 && t.status !== 'completed';
-                return false;
-              });
-
-              if (groupTasks.length === 0) return null;
-
-              return (
-                <div key={group}>
-                  <h3 className={`text-sm font-bold uppercase tracking-widest mb-3 ${
-                    group === 'Atrasadas' ? 'text-red-500' : 'text-slate-500'
-                  }`}>
-                    {group} ({groupTasks.length})
-                  </h3>
-                  <div className="space-y-2">
-                    {groupTasks.map(task => {
-                      const client = clients.find(c => c.id === task.project_id);
-                      return (
-                        <div key={task.id} className="flex items-center gap-4 p-3 bg-slate-50 dark:bg-white/5 rounded-xl border border-slate-200 dark:border-white/10">
-                          <button 
-                            onClick={async () => {
-                              try {
-                                await fetch(`/api/tasks/${task.id}`, {
-                                  method: 'PATCH',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ status: 'completed' })
-                                });
-                                fetchTasks();
-                              } catch (err) {
-                                console.error(err);
-                              }
-                            }}
-                            className="w-5 h-5 rounded-full border-2 border-slate-300 dark:border-slate-600 flex items-center justify-center hover:border-violet-500 transition-colors"
-                          />
-                          <div className="flex-1">
-                            <p className="text-sm font-medium text-light-text dark:text-white">{task.title}</p>
-                            <div className="flex items-center gap-2 mt-1">
-                              {client && (
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-500">
-                                  {client.name}
-                                </span>
-                              )}
-                              {task.dueDate && (
-                                <span className={`text-[10px] font-medium ${
-                                  group === 'Atrasadas' ? 'text-red-500' : 'text-slate-500'
-                                }`}>
-                                  {parseLocalDate(task.dueDate).toLocaleDateString('pt-BR')}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
       )}
 
       {/* Central Modal Popup */}

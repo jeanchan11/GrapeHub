@@ -3,6 +3,7 @@ import { Plus, Edit2, Trash2, Save, X, ListTodo, ChevronDown, ChevronRight } fro
 import { useAuth } from '../contexts/AuthContext';
 import { Modal } from '../components/ui/Modal';
 import { designSystem } from '../design-system';
+import SplitHeadline from '../components/SplitHeadline';
 
 interface TemplateItem {
   id: number;
@@ -164,10 +165,12 @@ const TaskTemplates = () => {
     <div className="p-8 max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-4xl font-black text-light-text dark:text-white tracking-tight mb-1">
-            Modelos de <span className="text-violet-500">Tarefa</span>
-          </h1>
-          <p className="text-slate-500 text-sm">Crie e gerencie templates de tarefas e subtarefas para aplicar em projetos.</p>
+          <SplitHeadline
+            text="Modelos de "
+            highlight="Tarefa"
+            subtitle="Crie e gerencie templates de tarefas e subtarefas para aplicar em projetos."
+            className="text-4xl font-black text-light-text dark:text-white tracking-tight mb-1"
+          />
         </div>
         <button
           onClick={() => handleOpenModal()}

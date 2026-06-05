@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import { Plus, CheckCircle2, X, Copy, Trash2, Loader2, KeyRound, Edit2 } from 'lucide-react';
 import { Modal } from '../components/ui/Modal';
+import SplitHeadline from '../components/SplitHeadline';
 import { useAuth } from '../contexts/AuthContext';
 
 interface PasswordItem {
@@ -122,10 +124,13 @@ const SenhasPage: React.FC<{ activePage: string }> = ({ activePage }) => {
     <div className="p-6 max-w-4xl mx-auto space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-4xl font-black text-light-text dark:text-white tracking-tight mb-1">
-            Logins e <span className="text-violet-500">Senhas</span>
-          </h1>
-          <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5">Gerenciador de Acessos</p>
+          <SplitHeadline
+            text="Logins e "
+            highlight="Senhas"
+            subtitle="Gerenciador de Acessos"
+            className="text-4xl font-black text-light-text dark:text-white tracking-tight mb-1"
+            subtitleClassName="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5"
+          />
         </div>
       </div>
 
@@ -136,26 +141,36 @@ const SenhasPage: React.FC<{ activePage: string }> = ({ activePage }) => {
       ) : (
         <div className="bg-white dark:bg-[#11111b] border border-slate-200 dark:border-white/5 shadow-sm dark:shadow-none rounded-xl overflow-hidden">
           <div className="p-2 space-y-1">
-            {passwords.map(item => (
-              <div 
-                key={item.id} 
-                className="flex items-center gap-3 p-3 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 cursor-pointer transition-colors"
-                onClick={() => openEditModal(item)}
+            {passwords.map((item, idx) => (
+              <motion.div
+                key={item.id}
+                initial={{ opacity: 0, y: -18, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{
+                  duration: 0.35,
+                  delay: idx * 0.06,
+                  ease: [0.32, 0.72, 0, 1],
+                }}
               >
-                <div className="w-8 h-8 rounded-full border border-purple-500/50 flex items-center justify-center bg-purple-500/10 text-purple-500">
-                  <KeyRound size={16} />
+                <div 
+                  className="flex items-center gap-3 p-3 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 cursor-pointer transition-colors"
+                  onClick={() => openEditModal(item)}
+                >
+                  <div className="w-8 h-8 rounded-full border border-purple-500/50 flex items-center justify-center bg-purple-500/10 text-purple-500">
+                    <KeyRound size={16} />
+                  </div>
+                  
+                  <div className="flex-1">
+                    <span className="text-sm font-medium text-slate-800 dark:text-gray-200">
+                      {item.service_name}
+                    </span>
+                  </div>
+                  
+                  <button className="text-xs text-slate-400 dark:text-gray-500 hover:text-purple-500 transition-colors">
+                    Ver dados
+                  </button>
                 </div>
-                
-                <div className="flex-1">
-                  <span className="text-sm font-medium text-slate-800 dark:text-gray-200">
-                    {item.service_name}
-                  </span>
-                </div>
-                
-                <button className="text-xs text-slate-400 dark:text-gray-500 hover:text-purple-500 transition-colors">
-                  Ver dados
-                </button>
-              </div>
+              </motion.div>
             ))}
             
             {passwords.length === 0 && (

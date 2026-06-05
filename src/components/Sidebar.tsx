@@ -303,11 +303,12 @@ interface SidebarProps {
   userData: UserData | null;
   theme: 'light' | 'dark' | 'darker';
   toggleTheme: () => void;
+  onCollapseChange?: (collapsed: boolean) => void;
 }
 
 type FlyoutItem = { id: string; label: string; icon: string; icon_color?: string; indent: number };
 
-const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userData, theme, toggleTheme }) => {
+const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userData, theme, toggleTheme, onCollapseChange }) => {
   const userRole = userData?.role;
   const canManagePermissionsBase = userRole === 'superadmin' || userRole === 'diretor-operacional';
   const [permissionsPage, setPermissionsPage] = useState<{ id: string; label: string } | null>(null);
@@ -353,6 +354,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
   // Persist collapsed state
   useEffect(() => {
     try { localStorage.setItem('sidebar-collapsed', String(isCollapsed)); } catch {}
+    onCollapseChange?.(isCollapsed);
   }, [isCollapsed]);
 
   // Flyout state — rendered outside sidebar via fixed position
@@ -456,11 +458,9 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
 
   return (
     <>
-      <motion.aside
-        initial={false}
-        animate={{ width: isCollapsed ? 80 : 280 }}
-        transition={{ type: 'spring', stiffness: 400, damping: 40 }}
-        className="h-screen bg-white dark:bg-dark-bg/80 backdrop-blur-xl border-r border-slate-200 dark:border-white/10 flex flex-col relative z-50 shadow-2xl rounded-tr-[2.5rem] transition-colors duration-300"
+      <aside
+        style={{ width: isCollapsed ? 80 : 280, transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)' }}
+        className="fixed top-0 left-0 h-screen bg-white dark:bg-dark-bg/80 backdrop-blur-xl border-r border-slate-200 dark:border-white/10 flex flex-col z-50 shadow-2xl rounded-tr-[2.5rem] transition-colors duration-300"
       >
         {/* ── Header ───────────────────────────────────────────── */}
         <div className="p-6 flex items-center justify-between relative min-h-[80px]">
@@ -508,9 +508,8 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
 
         {/* ── Search ───────────────────────────────────────────── */}
         <div className={`mb-6 flex justify-center transition-all duration-300 ${isCollapsed ? 'px-0' : 'px-4'}`}>
-          <motion.div layout className="relative flex items-center h-10 w-full">
+          <motion.div className="relative flex items-center h-10 w-full">
             <motion.div
-              layout="position"
               className={`z-10 text-slate-500 flex items-center justify-center transition-all duration-300 ${isCollapsed ? 'w-full' : 'absolute left-3'}`}
             >
               <Search size={18} />
@@ -518,7 +517,6 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
             <AnimatePresence mode="popLayout">
               {!isCollapsed && (
                 <motion.input
-                  layout
                   initial={{ opacity: 0, width: 0 }}
                   animate={{ opacity: 1, width: '100%' }}
                   exit={{ opacity: 0, width: 0 }}
@@ -536,7 +534,6 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
 
         {/* ── Navigation ───────────────────────────────────────── */}
         <motion.div
-          layout
           className={`flex-1 scrollbar-hide py-2 transition-all duration-300 px-2 ${
             isCollapsed ? 'overflow-y-auto' : 'overflow-y-auto space-y-1'
           }`}
@@ -912,7 +909,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
             )}
           </div>
         </div>
-      </motion.aside>
+      </aside>
 
       {/* ── Flyout panel (fixed, fora da sidebar) ────────────── */}
       {isCollapsed && flyoutSection && flyoutItems.length > 0 && (

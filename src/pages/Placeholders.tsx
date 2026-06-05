@@ -2,21 +2,23 @@ import React, { useState } from 'react';
 import { Bell, Settings, Shield, User, Palette, Globe, Lock, HelpCircle, Mail, MessageSquare, Zap, AlertCircle, FolderTree, ArrowRight, CheckSquare, ChevronLeft, UserPlus } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSoftphone } from '../hooks/useSoftphone';
+import SplitHeadline from '../components/SplitHeadline';
 
-const PageHeader = ({ title, icon: Icon, description }: { title: string, icon: any, description: string }) => (
-  <div className="mb-10">
-    <h1 className="text-4xl font-black text-light-text dark:text-white tracking-tight mb-1">
-      {title.split(' ').length > 1 ? (
-        <>
-          {title.split(' ').slice(0, -1).join(' ')} <span className="text-violet-500">{title.split(' ').slice(-1)}</span>
-        </>
-      ) : (
-        <span className="text-violet-500">{title}</span>
-      )}
-    </h1>
-    <p className="text-slate-500 text-sm">{description}</p>
-  </div>
-);
+const PageHeader = ({ title, icon: Icon, description }: { title: string, icon: any, description: string }) => {
+  const words = title.split(' ');
+  const text = words.length > 1 ? words.slice(0, -1).join(' ') + ' ' : '';
+  const highlight = words.length > 1 ? words.slice(-1)[0] : title;
+  return (
+    <div className="mb-10">
+      <SplitHeadline
+        text={text}
+        highlight={highlight}
+        subtitle={description}
+        className="text-4xl font-black text-light-text dark:text-white tracking-tight mb-1"
+      />
+    </div>
+  );
+};
 
 export const NotificationsPage = () => {
   const notifications = [
@@ -309,10 +311,7 @@ export const SettingsPage = ({ onPageChange, isSuperAdmin }: { onPageChange?: (p
             <ChevronLeft size={16} className="transition-transform group-hover:-translate-x-0.5" />
             Voltar para Configurações
           </button>
-          <h1 className="text-4xl font-black text-light-text dark:text-white tracking-tight mb-1">
-            Auto<span className="text-violet-500">mações</span>
-          </h1>
-          <p className="text-slate-500 text-sm">Automações ativas que criam tarefas no CRM e Onboarding.</p>
+          <SplitHeadline text="Auto" highlight="mações" subtitle="Automações ativas que criam tarefas no CRM e Onboarding." className="text-4xl font-black text-light-text dark:text-white tracking-tight mb-1" />
         </div>
 
         {/* Tabs */}
@@ -505,10 +504,7 @@ export const SettingsPage = ({ onPageChange, isSuperAdmin }: { onPageChange?: (p
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="transition-transform group-hover:-translate-x-0.5"><path d="m15 18-6-6 6-6"/></svg>
             Voltar para Configurações
           </button>
-          <h1 className="text-4xl font-black text-light-text dark:text-white tracking-tight mb-1">
-            <span className="text-violet-500">Integrações</span>
-          </h1>
-          <p className="text-slate-500 text-sm">Configure telefonia, APIs e conexões externas.</p>
+          <SplitHeadline text="" highlight="Integrações" subtitle="Configure telefonia, APIs e conexões externas." className="text-4xl font-black text-light-text dark:text-white tracking-tight mb-1" />
         </div>
 
         {/* Api4Com / Telefonia */}

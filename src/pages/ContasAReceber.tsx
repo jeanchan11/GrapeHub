@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import SplitHeadline from '../components/SplitHeadline';
 import { createPortal } from 'react-dom';
 import { Calendar, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Clock, CreditCard, Zap, FileText, ExternalLink, Settings, AlertTriangle, Pause, Play, Check, X, ShieldAlert, Activity, CheckCircle2, Send, Settings2, Search, TrendingUp, Banknote, BarChart2, MessageCircle, MessageSquare, Copy, Phone, Mail, Users, DollarSign, Filter, RefreshCw, MoreHorizontal, RotateCcw } from 'lucide-react';
 
@@ -1793,9 +1794,7 @@ export default function ContasAReceber() {
       {/* ── Header ── */}
       <div className="flex items-center justify-between px-6 md:px-8 pt-8 pb-2">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-dark-text">
-            Contas a <span className="text-violet-500">Receber</span>
-          </h1>
+          <SplitHeadline text="Contas a " highlight="Receber" className="text-2xl font-black tracking-tight text-dark-text" />
           <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5">
             Referência: {monthLabel}
           </p>

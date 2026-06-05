@@ -4,6 +4,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 
 import Sidebar from './src/components/Sidebar';
+import PageTransition from './src/components/PageTransition';
 import GestorCalculator from './src/pages/GestorCalculator';
 import CloserCalculator from './src/pages/CloserCalculator';
 import ComercialGrape from './src/pages/ComercialGrape';
@@ -49,6 +50,7 @@ import CollaboratorOnboardingForm from './src/pages/CollaboratorOnboardingForm';
 import SaboteurTestPage from './src/pages/SaboteurTestPage';
 import DiscTestPage from './src/pages/DiscTestPage';
 import SenhasPage from './src/pages/SenhasPage';
+import PlanosDeCarreira from './src/pages/PlanosDeCarreira';
 import Login from './src/components/LoginView';
 import AdminPanel from './src/components/AdminPanel';
 import LoadingSpinner from './src/components/LoadingSpinner';
@@ -81,6 +83,9 @@ const AppContent: React.FC = () => {
   const [theme, setTheme] = useState<'light' | 'dark' | 'darker'>(() => {
     const saved = localStorage.getItem('theme');
     return (saved as 'light' | 'dark' | 'darker') || 'dark';
+  });
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try { return localStorage.getItem('sidebar-collapsed') === 'true'; } catch { return false; }
   });
 
   // Sync URL hash when activePage changes
@@ -347,6 +352,8 @@ const AppContent: React.FC = () => {
         return <PlanejamentoCrescimento />;
       case 'senhas':
         return <SenhasPage activePage={activePage} />;
+      case 'planos-de-carreira':
+        return <PlanosDeCarreira key={activePage} activePage={activePage} />;
 
       case 'meeting-notes': {
         // Find the page label from menu for the title
@@ -406,7 +413,7 @@ const AppContent: React.FC = () => {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-light-bg dark:bg-dark-bg transition-colors duration-300">
+    <div className="h-screen overflow-hidden bg-light-bg dark:bg-dark-bg transition-colors duration-300">
       <Sidebar 
         activePage={activePage} 
         onPageChange={navigateTo} 
@@ -414,9 +421,20 @@ const AppContent: React.FC = () => {
         userData={userData}
         theme={theme}
         toggleTheme={toggleTheme}
+        onCollapseChange={setSidebarCollapsed}
       />
-      <main className="flex-1 overflow-y-auto scrollbar-hide rounded-tl-[2.5rem] bg-light-bg dark:bg-dark-bg transition-colors duration-300">
-        {renderPage()}
+      <main 
+        className="h-screen overflow-y-auto scrollbar-hide rounded-tl-[2.5rem] bg-light-bg dark:bg-dark-bg"
+        style={{ 
+          marginLeft: sidebarCollapsed ? 80 : 280, 
+          transition: 'margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s',
+          willChange: 'margin-left',
+          contain: 'layout style',
+        }}
+      >
+        <PageTransition pageKey={activePage}>
+          {renderPage()}
+        </PageTransition>
       </main>
     </div>
   );

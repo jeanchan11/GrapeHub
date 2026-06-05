@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Search, GripVertical, ChevronDown, ChevronRight, Edit, Trash2, CheckCircle2, Copy, Check, Settings, X, Link } from 'lucide-react';
 import LoadingSpinner from '../components/LoadingSpinner';
+import SplitHeadline from '../components/SplitHeadline';
 import Organograma from '../components/Organograma';
 
 interface Collaborator {
@@ -243,10 +244,7 @@ export default function ColaboradoresPage() {
     <div className="flex-1 flex flex-col min-h-0 bg-light-bg dark:bg-dark-bg p-6 font-sans">
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-2">
-            Colaboradores <span className="text-violet-500">Grape</span>
-          </h1>
-          <p className="text-slate-500 dark:text-slate-400 text-sm font-medium mt-1">Gestão centralizada do time Grape Mídia</p>
+          <SplitHeadline text="Colaboradores " highlight="Grape" className="text-3xl font-black text-slate-800 dark:text-white tracking-tight mb-1" subtitle="Gestão centralizada do time Grape Mídia" subtitleClassName="text-slate-500 dark:text-slate-400 text-sm font-medium" />
         </div>
         <div className="flex items-center gap-4">
           <div className="relative">

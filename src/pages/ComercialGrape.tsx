@@ -9,6 +9,7 @@ import {
   Users, CalendarDays, ClipboardList, MousePointer2,
   ArrowDownWideNarrow, Lightbulb
 } from 'lucide-react';
+import SplitHeadline from '../components/SplitHeadline';
 
 // Components
 const StatCard = ({ icon: Icon, title, value, subtitle, colorClass, variant = 'default' }: { 
@@ -164,9 +165,11 @@ const ComercialGrape: React.FC = () => {
       <header className="pt-12 pb-16 px-8">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-start justify-between gap-8">
           <div className="flex-1">
-            <h1 className="text-4xl font-black text-light-text dark:text-white tracking-tight mb-1">
-              Calculadora Comercial <span className="text-violet-500">Grape</span>
-            </h1>
+            <SplitHeadline
+              text="Calculadora Comercial "
+              highlight="Grape"
+              className="text-4xl font-black text-light-text dark:text-white tracking-tight mb-1"
+            />
             <p className="text-slate-500 text-sm max-w-3xl">
               Planeje sua operação de vendas com base em reuniões qualificadas agendadas diretamente. Projete contratos, receita e ROI com precisão.
             </p>

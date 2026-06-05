@@ -11,6 +11,7 @@ import {
   BarChart3, Activity, Award, Check, X, 
   ArrowUpRight, Percent, ShoppingBag, Coins
 } from 'lucide-react';
+import SplitHeadline from '../components/SplitHeadline';
 
 // Components
 const StatCard = ({ icon: Icon, title, value, subtitle, colorClass, highlighted = false, statusLabel }: { 
@@ -182,9 +183,11 @@ const CloserCalculator: React.FC = () => {
       <header className="pt-12 pb-20 px-6">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-start justify-between gap-8">
           <div className="flex-1">
-            <h1 className="text-4xl font-black text-light-text dark:text-white tracking-tight mb-1">
-              Calculadora <span className="text-violet-500">Comercial</span>
-            </h1>
+            <SplitHeadline
+              text="Calculadora "
+              highlight="Comercial"
+              className="text-4xl font-black text-light-text dark:text-white tracking-tight mb-1"
+            />
             <p className="text-slate-500 text-sm max-w-2xl">
               Projete sua remuneração com bônus progressivo: <span className="text-violet-600 dark:text-violet-400 font-medium">70% da meta libera metade do bônus</span> e <span className="text-violet-600 dark:text-violet-400 font-medium">100% da meta libera o valor integral</span>.
             </p>

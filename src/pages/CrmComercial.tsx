@@ -918,11 +918,26 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   return (
     <>
       <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4">
-        {/* Backdrop */}
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm transition-all" onClick={onClose} />
+        {/* Backdrop — blur is static, only opacity animates */}
+        <motion.div
+          className="fixed inset-0 bg-black/60"
+          onClick={onClose}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+        />
+        <div className="fixed inset-0 backdrop-blur-sm pointer-events-none" />
 
         {/* Modal */}
-        <div className="relative w-full max-w-7xl h-[90vh] modal-container overflow-hidden flex flex-col shadow-2xl">
+        <motion.div
+          className="relative w-full max-w-7xl h-[90vh] modal-container overflow-hidden flex flex-col shadow-2xl"
+          style={{ willChange: 'transform, opacity' }}
+          initial={{ opacity: 0, scale: 0.96, y: 12 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.96, y: 12 }}
+          transition={{ type: 'spring', damping: 28, stiffness: 350, mass: 0.8 }}
+        >
           {/* Header */}
           <div className="flex items-center justify-between px-6 py-4 border-b modal-divider shrink-0">
             <div className="flex items-center gap-6">
@@ -1201,6 +1216,15 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
             {/* Left: activity/comments */}
             <div className="flex-1 flex flex-col overflow-hidden border-r modal-divider">
               <div className="flex-1 overflow-y-auto flex flex-col h-full bg-slate-50 dark:bg-black/20">
+                <AnimatePresence mode="wait">
+                <motion.div
+                  key={activeTab}
+                  initial={{ opacity: 0, x: -8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 8 }}
+                  transition={{ duration: 0.18 }}
+                  className="flex flex-col flex-1"
+                >
                 {activeTab === 'histórico' && (
                   <div className="p-6 space-y-4 flex-1">
                     <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-2">Histórico</h3>
@@ -2487,6 +2511,8 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                     </div>
                   );
                 })()}
+                </motion.div>
+                </AnimatePresence>
               </div>
 
 
@@ -2944,7 +2970,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
               </div>
             </div>
           </div>
-        </div>
+        </motion.div>
         {/* Meeting Modal */}
         {showMeetingModal && (
           <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4">
@@ -4641,13 +4667,23 @@ const CrmComercial = () => {
       >
         <div ref={kanbanBoardRef} className="flex overflow-x-auto pb-4 gap-3 items-stretch snap-x flex-1 scroll-smooth">
           <SortableContext items={columns.map((c: any) => c.id)} strategy={horizontalListSortingStrategy}>
-          {columns.map(column => {
+          {columns.map((column, colIdx) => {
             const columnLeads = filteredLeads.filter(l => l.coluna === column.id);
             const totalValue = columnLeads.reduce((acc, l) => acc + Number(l.valor || 0), 0);
 
             return (
-              <SortableColumn
+              <motion.div
                 key={column.id}
+                initial={{ opacity: 0, y: -24, scale: 0.985 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{
+                  duration: 0.4,
+                  delay: colIdx * 0.07,
+                  ease: [0.32, 0.72, 0, 1],
+                }}
+                style={{ display: 'flex', flexShrink: 0 }}
+              >
+              <SortableColumn
                 column={column}
                 columnLeadsLength={columnLeads.length}
                 totalValue={totalValue}
@@ -4676,26 +4712,36 @@ const CrmComercial = () => {
                         </div>
                       ) : (
                         <>
-                          {columnLeads.map(lead => (
-                            <SortableCard
+                          {columnLeads.map((lead, cardIdx) => (
+                            <motion.div
                               key={lead.id}
-                              lead={lead}
-                              users={users}
-                              columns={columns}
-                              tasks={allKanbanTasks}
-                              onClick={() => {
-                                setSelectedLeadForDetails(lead);
-                                fetchComments(lead.id);
-                                fetchHistory(lead.id);
+                              initial={{ opacity: 0, y: -18, scale: 0.98 }}
+                              animate={{ opacity: 1, y: 0, scale: 1 }}
+                              transition={{
+                                duration: 0.35,
+                                delay: colIdx * 0.07 + cardIdx * 0.05,
+                                ease: [0.32, 0.72, 0, 1],
                               }}
-                              onMove={handleMoveLead}
-                              onDelete={handleDeleteLead}
-                              onEditValue={handleEditValue}
-                              onHistory={() => {
-                                setSelectedLeadForHistory(lead);
-                                fetchHistory(lead.id);
-                              }}
-                            />
+                            >
+                              <SortableCard
+                                lead={lead}
+                                users={users}
+                                columns={columns}
+                                tasks={allKanbanTasks}
+                                onClick={() => {
+                                  setSelectedLeadForDetails(lead);
+                                  fetchComments(lead.id);
+                                  fetchHistory(lead.id);
+                                }}
+                                onMove={handleMoveLead}
+                                onDelete={handleDeleteLead}
+                                onEditValue={handleEditValue}
+                                onHistory={() => {
+                                  setSelectedLeadForHistory(lead);
+                                  fetchHistory(lead.id);
+                                }}
+                              />
+                            </motion.div>
                           ))}
                           <div className="border border-dashed border-gray-300 dark:border-white/10 rounded-xl p-4 text-center text-xs text-gray-500 dark:text-slate-500" style={{ marginTop: 4 }}>
                             Solte aqui para adicionar
@@ -4706,6 +4752,7 @@ const CrmComercial = () => {
                   </SortableContext>
                 </DroppableColumn>
               </SortableColumn>
+              </motion.div>
             );
           })}
           </SortableContext>
@@ -4757,6 +4804,7 @@ const CrmComercial = () => {
       </DndContext>
 
       {/* Lead Detail Modal */}
+      <AnimatePresence>
       {selectedLeadForDetails && (
         <LeadDetailModal
           lead={selectedLeadForDetails}
@@ -4799,6 +4847,7 @@ const CrmComercial = () => {
           onUpdateLeadField={handleUpdateLeadField}
         />
       )}
+      </AnimatePresence>
 
       {/* Template Management Modal */}
       <AnimatePresence>

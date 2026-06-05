@@ -1,4 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import SplitHeadline from '../components/SplitHeadline';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid
 } from 'recharts';
@@ -633,11 +635,22 @@ const StatusBadge = ({ status, size = 'sm' }: { status: StatusAcao; size?: 'sm' 
 // ─── Modal Base ───────────────────────────────────────────────────────────────
 
 const Modal = ({ children, onClose, wide = false }: { children: React.ReactNode; onClose: () => void; wide?: boolean }) => (
-  <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-    <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
-    <div className={`relative w-full ${wide ? 'max-w-4xl' : 'max-w-xl'} bg-white/95 dark:bg-[#11111b]/95 border border-slate-200 dark:border-white/10 rounded-3xl shadow-2xl max-h-[90vh] overflow-y-auto`}>
+  <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+    <motion.div
+      className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+      onClick={onClose}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.25, ease: 'easeOut' }}
+    />
+    <motion.div
+      className={`relative w-full ${wide ? 'max-w-4xl' : 'max-w-xl'} bg-white/95 dark:bg-[#11111b]/95 border border-slate-200 dark:border-white/10 rounded-3xl shadow-2xl max-h-[90vh] overflow-y-auto`}
+      initial={{ opacity: 0, scale: 0.92, y: 20 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
+    >
       {children}
-    </div>
+    </motion.div>
   </div>
 );
 
@@ -1323,9 +1336,10 @@ interface NichoCardProps {
   nicho: string;
   acoes: Acao[];
   onClick: () => void;
+  cardRef?: React.Ref<HTMLButtonElement>;
 }
 
-const NichoCard = ({ nicho, acoes, onClick }: NichoCardProps) => {
+const NichoCard = ({ nicho, acoes, onClick, cardRef }: NichoCardProps) => {
   const counts = useMemo(() => ({
     verde:    acoes.filter(a => a.status === 'verde').length,
     amarelo:  acoes.filter(a => a.status === 'amarelo').length,
@@ -1338,6 +1352,7 @@ const NichoCard = ({ nicho, acoes, onClick }: NichoCardProps) => {
 
   return (
     <button
+      ref={cardRef}
       onClick={onClick}
       className="group w-full text-left bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 hover:border-violet-500/50 rounded-2xl p-5 transition-all duration-200 hover:shadow-lg hover:shadow-violet-500/5 hover:-translate-y-0.5"
     >
@@ -1408,6 +1423,36 @@ export default function PlaybookAcoes() {
   const [visualizandoId, setVisualizandoId] = useState<string | null>(null);
   const visualizando = visualizandoId ? acoes.find(a => a.id === visualizandoId) ?? null : null;
 
+  // iOS Folder state
+  const [folderOpen, setFolderOpen] = useState(false);
+  const [folderOrigin, setFolderOrigin] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const nichoRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+
+  const setNichoRef = useCallback((nicho: string) => (el: HTMLButtonElement | null) => {
+    nichoRefs.current[nicho] = el;
+  }, []);
+
+  const handleNichoClick = useCallback((nicho: string) => {
+    const el = nichoRefs.current[nicho];
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      setFolderOrigin({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, w: rect.width, h: rect.height });
+    }
+    setNichoAtual(nicho);
+    setFolderOpen(true);
+    setBusca('');
+    setFiltroStatus('all');
+  }, []);
+
+  const handleFolderClose = useCallback(() => {
+    setFolderOpen(false);
+    // Delay clearing nicho so exit animation plays
+    setTimeout(() => {
+      setNichoAtual(null);
+      setFolderOrigin(null);
+    }, 350);
+  }, []);
+
   // Ações do nicho atual, ordenadas por status
   const acoesDoNicho = useMemo(() => {
     if (!nichoAtual) return [];
@@ -1476,133 +1521,217 @@ export default function PlaybookAcoes() {
   const acoesComparar = acoes.filter(a => selecionadas.includes(a.id));
   const editandoAcao = editando === 'new' ? {} : (editando || null);
 
+  // Folder animation origin values
+  const originX = folderOrigin ? folderOrigin.x : typeof window !== 'undefined' ? window.innerWidth / 2 : 500;
+  const originY = folderOrigin ? folderOrigin.y : typeof window !== 'undefined' ? window.innerHeight / 2 : 400;
+
   return (
     <div className="min-h-screen bg-light-bg dark:bg-dark-bg text-slate-900 dark:text-white">
 
       {/* ── Header ── */}
       <div className="flex items-center justify-between px-6 md:px-8 pt-8 pb-6">
         <div className="flex items-center gap-4">
-          {nichoAtual && (
-            <button
-              onClick={() => {
-                setNichoAtual(null);
-                setBusca('');
-                setFiltroStatus('all');
-              }}
-              className="p-2 hover:bg-white/10 rounded-xl transition-all text-slate-400 hover:text-white"
-            >
-              <ArrowLeft size={18} />
-            </button>
-          )}
           <div>
-            <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">
-              Playbook de{' '}
-              <span className="text-violet-500">
-                {nichoAtual || 'Ações'}
-              </span>
-            </h1>
+            <SplitHeadline text="Playbook de " highlight="Ações" className="text-2xl font-black tracking-tight text-slate-900 dark:text-white" />
             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">
-              {nichoAtual
-                ? `${acoesDoNicho.length} ações encontradas`
-                : 'Selecione um nicho jurídico para ver as ações'
-              }
+              Selecione um nicho jurídico para ver as ações
             </p>
           </div>
         </div>
-
-        {nichoAtual && (
-          <button
-            onClick={() => setEditando('new')}
-            className="flex items-center gap-2 px-4 py-2.5 bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-violet-600/20"
-          >
-            <Plus size={16} /> Nova Ação
-          </button>
-        )}
       </div>
 
-      {/* ── Content ── */}
+      {/* ── Content: Grid de Nichos ── */}
       <div className="px-6 md:px-8 pb-20">
-
-        {/* TELA: LISTA DE NICHOS */}
-        {!nichoAtual && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {NICHOS.map(nicho => (
-              <NichoCard
-                key={nicho}
-                nicho={nicho}
-                acoes={acoes.filter(a => a.nicho === nicho)}
-                onClick={() => setNichoAtual(nicho)}
-              />
-            ))}
-          </div>
-        )}
-
-        {/* TELA: AÇÕES DO NICHO */}
-        {nichoAtual && (
-          <div>
-            {/* Filtros */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 mb-6">
-              <div className="relative flex-1 max-w-xs">
-                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                <input
-                  type="text"
-                  placeholder="Buscar ação..."
-                  value={busca}
-                  onChange={e => setBusca(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-violet-500/50 transition-all"
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <Filter size={13} className="text-slate-500" />
-                {(['all', 'verde', 'amarelo', 'vermelho', 'a_testar'] as const).map(s => (
-                  <button
-                    key={s}
-                    onClick={() => setFiltroStatus(s)}
-                    className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
-                      filtroStatus === s
-                        ? 'bg-violet-600 text-white'
-                        : 'bg-slate-200 dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-white/10'
-                    }`}
-                  >
-                    {s === 'all' ? 'Todos' : STATUS_CONFIG[s].emoji + ' ' + STATUS_CONFIG[s].label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Actions list */}
-            {acoesDoNicho.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-center">
-                <div className="w-16 h-16 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/0 rounded-2xl flex items-center justify-center mb-4">
-                  <FileText size={24} className="text-slate-400 dark:text-slate-600" />
-                </div>
-                <p className="text-slate-400 font-semibold">Nenhuma ação encontrada</p>
-                <p className="text-slate-600 text-sm mt-1">
-                  {busca || filtroStatus !== 'all' ? 'Tente outros filtros' : 'Clique em "Nova Ação" para começar'}
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {acoesDoNicho.map(acao => (
-                  <AcaoCard
-                    key={acao.id}
-                    acao={acao}
-                    selected={selecionadas.includes(acao.id)}
-                    selectionDisabled={selecionadas.length >= 2}
-                    onSelect={() => toggleSelect(acao.id)}
-                    onEdit={() => setEditando(acao)}
-                    onView={() => setVisualizandoId(acao.id)}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {NICHOS.map(nicho => (
+            <NichoCard
+              key={nicho}
+              nicho={nicho}
+              acoes={acoes.filter(a => a.nicho === nicho)}
+              onClick={() => handleNichoClick(nicho)}
+              cardRef={setNichoRef(nicho)}
+            />
+          ))}
+        </div>
       </div>
+
+      {/* ── iOS Folder Overlay ── */}
+      <AnimatePresence>
+        {nichoAtual && (
+          <>
+            {/* Backdrop blur */}
+            <motion.div
+              key="folder-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+              className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-xl"
+              onClick={handleFolderClose}
+            />
+
+            {/* Folder panel */}
+            <motion.div
+              key="folder-panel"
+              initial={{
+                opacity: 0,
+                scale: 0.3,
+                x: originX - (typeof window !== 'undefined' ? window.innerWidth / 2 : 0),
+                y: originY - (typeof window !== 'undefined' ? window.innerHeight / 2 : 0),
+                borderRadius: 24,
+              }}
+              animate={{
+                opacity: 1,
+                scale: 1,
+                x: 0,
+                y: 0,
+                borderRadius: 32,
+              }}
+              exit={{
+                opacity: 0,
+                scale: 0.3,
+                x: originX - (typeof window !== 'undefined' ? window.innerWidth / 2 : 0),
+                y: originY - (typeof window !== 'undefined' ? window.innerHeight / 2 : 0),
+                borderRadius: 24,
+              }}
+              transition={{ 
+                duration: 0.4, 
+                ease: [0.32, 0.72, 0, 1],
+              }}
+              className="fixed inset-4 md:inset-8 lg:inset-12 z-[61] bg-white/95 dark:bg-[#11111b]/95 border border-slate-200 dark:border-white/10 shadow-2xl overflow-hidden flex flex-col"
+              style={{ borderRadius: 32 }}
+            >
+              {/* Folder Header */}
+              <div className="flex items-center justify-between px-6 md:px-8 pt-6 pb-4 border-b border-slate-100 dark:border-white/10 shrink-0">
+                <div className="flex items-center gap-4">
+                  <motion.button
+                    onClick={handleFolderClose}
+                    className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition-all text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                  >
+                    <ArrowLeft size={18} />
+                  </motion.button>
+                  <div>
+                    <motion.h2 
+                      className="text-xl font-black tracking-tight text-slate-900 dark:text-white"
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: 0.15, duration: 0.3 }}
+                    >
+                      <span className="text-2xl mr-2">{NICHO_ICONS[nichoAtual] || '📁'}</span>
+                      {nichoAtual}
+                    </motion.h2>
+                    <motion.p 
+                      className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: 0.25, duration: 0.3 }}
+                    >
+                      {acoesDoNicho.length} ações encontradas
+                    </motion.p>
+                  </div>
+                </div>
+
+                <motion.button
+                  onClick={() => setEditando('new')}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-violet-600/20"
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: 0.2, duration: 0.3, ease: 'easeOut' }}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <Plus size={16} /> Nova Ação
+                </motion.button>
+              </div>
+
+              {/* Folder Filters */}
+              <motion.div 
+                className="flex flex-col sm:flex-row items-start sm:items-center gap-3 px-6 md:px-8 py-4 shrink-0"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.2, duration: 0.3 }}
+              >
+                <div className="relative flex-1 max-w-xs">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                  <input
+                    type="text"
+                    placeholder="Buscar ação..."
+                    value={busca}
+                    onChange={e => setBusca(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-violet-500/50 transition-all"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Filter size={13} className="text-slate-500" />
+                  {(['all', 'verde', 'amarelo', 'vermelho', 'a_testar'] as const).map(s => (
+                    <button
+                      key={s}
+                      onClick={() => setFiltroStatus(s)}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                        filtroStatus === s
+                          ? 'bg-violet-600 text-white'
+                          : 'bg-slate-200 dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-white/10'
+                      }`}
+                    >
+                      {s === 'all' ? 'Todos' : STATUS_CONFIG[s].emoji + ' ' + STATUS_CONFIG[s].label}
+                    </button>
+                  ))}
+                </div>
+              </motion.div>
+
+              {/* Folder Content — Ações */}
+              <div className="flex-1 overflow-y-auto px-6 md:px-8 pb-6">
+                {acoesDoNicho.length === 0 ? (
+                  <motion.div 
+                    className="flex flex-col items-center justify-center py-20 text-center"
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: 0.3, duration: 0.3 }}
+                  >
+                    <div className="w-16 h-16 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/0 rounded-2xl flex items-center justify-center mb-4">
+                      <FileText size={24} className="text-slate-400 dark:text-slate-600" />
+                    </div>
+                    <p className="text-slate-400 font-semibold">Nenhuma ação encontrada</p>
+                    <p className="text-slate-600 text-sm mt-1">
+                      {busca || filtroStatus !== 'all' ? 'Tente outros filtros' : 'Clique em "Nova Ação" para começar'}
+                    </p>
+                  </motion.div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    {acoesDoNicho.map((acao, index) => (
+                      <motion.div
+                        key={acao.id}
+                        initial={{ opacity: 0, y: 20, scale: 0.9 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        transition={{ 
+                          delay: 0.15 + index * 0.04,
+                          duration: 0.35, 
+                          ease: [0.25, 0.46, 0.45, 0.94],
+                        }}
+                      >
+                        <AcaoCard
+                          acao={acao}
+                          selected={selecionadas.includes(acao.id)}
+                          selectionDisabled={selecionadas.length >= 2}
+                          onSelect={() => toggleSelect(acao.id)}
+                          onEdit={() => setEditando(acao)}
+                          onView={() => setVisualizandoId(acao.id)}
+                        />
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       {/* ── Floating Compare Button ── */}
       {selecionadas.length > 0 && !comparando && (
-        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 p-2 bg-white/95 dark:bg-[#11111b]/95 backdrop-blur-md border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl">
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-3 p-2 bg-white/95 dark:bg-[#11111b]/95 backdrop-blur-md border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl">
           <div className="pl-3 pr-1 py-1 flex flex-col justify-center">
             <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest leading-none mb-1">Comparar</p>
             <p className="text-sm font-semibold text-slate-900 dark:text-white leading-none whitespace-nowrap">
@@ -1626,6 +1755,14 @@ export default function PlaybookAcoes() {
               Cancelar
             </button>
           )}
+
+          <button
+            onClick={() => setSelecionadas([])}
+            className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition-all text-slate-400 hover:text-slate-900 dark:hover:text-white"
+            title="Fechar"
+          >
+            <X size={16} />
+          </button>
         </div>
       )}
 
@@ -1659,3 +1796,4 @@ export default function PlaybookAcoes() {
     </div>
   );
 }
+

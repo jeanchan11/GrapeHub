@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import SplitHeadline from '../components/SplitHeadline';
 import { createPortal } from 'react-dom';
 import { Search, ArrowUp, ArrowDown, FileText, Calendar, ChevronDown, ChevronUp, Check, Tag, AlertTriangle, ShieldAlert, Users, TrendingUp, TrendingDown, X, MessageSquare, Copy, ExternalLink, Pencil, Zap, ToggleLeft, ToggleRight, Trash2, Plus, Loader2, Wand2, Link2, EyeOff, Eye, Upload } from 'lucide-react';
 
@@ -1310,9 +1311,7 @@ export default function Extrato() {
       {/* ── Header ── */}
       <div className="flex items-center justify-between px-6 md:px-8 pt-8 pb-4">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-dark-text">
-            Extra<span className="text-violet-500">to</span>
-          </h1>
+          <SplitHeadline text="Extra" highlight="to" className="text-2xl font-black tracking-tight text-dark-text" />
           <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5">
             {activeTab === 'Extrato' ? (rangeLabel || 'Todas as movimentações bancárias') : `Referência: ${monthLabel}`}
           </p>

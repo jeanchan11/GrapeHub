@@ -216,10 +216,10 @@ async function startServer() {
     credentials: true,
   }));
 
-  // ITEM 1 — Rate Limiting
+  const isDevMode = process.env.NODE_ENV !== 'production' && process.env.VITE_USER_NODE_ENV !== 'production';
   const globalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutos
-    max: 200,
+    max: isDevMode ? 2000 : 200,
     message: { error: 'Muitas requisições. Tente novamente em alguns minutos.' },
     standardHeaders: true,
     legacyHeaders: false,
@@ -1616,6 +1616,33 @@ async function startServer() {
       console.log("[DB] Growth planning structures initialized and populated.");
     } catch (e: any) {
       console.error("[DB] Error running growth planning migrations:", e.message);
+    }
+
+    // ── Career Plans (Planos de Carreira) ──────────────────────────────
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS career_plan_docs (
+          id TEXT PRIMARY KEY,
+          page_id TEXT NOT NULL DEFAULT 'default',
+          title TEXT NOT NULL DEFAULT 'Novo Plano',
+          content TEXT DEFAULT '',
+          sort_order INTEGER DEFAULT 0,
+          created_by TEXT,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+        ALTER TABLE career_plan_docs ADD COLUMN IF NOT EXISTS allowed_users JSONB DEFAULT '[]'::jsonb;
+      `);
+
+      await pool.query(`
+        INSERT INTO menu_pages (id, section_id, label, icon, template, order_index)
+        VALUES ('planos-de-carreira', 'operacional', 'Planos de Carreira', 'Award', 'planos-de-carreira', 12)
+        ON CONFLICT (id) DO NOTHING
+      `);
+
+      console.log("[DB] Career plan docs table initialized.");
+    } catch (e: any) {
+      console.error("[DB] Error running career plans migrations:", e.message);
     }
 
   } catch (err) {
@@ -11876,6 +11903,70 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
   app.delete("/api/todo-staff/doc-pages/:id", async (req, res) => {
     try {
       await pool.query("DELETE FROM to_do_staff_doc_pages WHERE id=$1", [req.params.id]);
+      res.json({ ok: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // ── Career Plans (Planos de Carreira) API ─────────────────────────────────
+
+  // GET all career plan docs for a page_id
+  app.get("/api/career-plans/docs", async (req, res) => {
+    try {
+      const pageId = (req.query.page_id as string) || 'default';
+      const userEmail = req.query.user_email as string;
+      const userRole = req.query.user_role as string;
+      
+      let query = "SELECT * FROM career_plan_docs WHERE page_id = $1";
+      let params: any[] = [pageId];
+
+      if (userRole?.toLowerCase() !== 'admin' && userEmail) {
+        query += " AND (allowed_users IS NULL OR jsonb_array_length(allowed_users) = 0 OR allowed_users @> $2::jsonb)";
+        params.push(JSON.stringify([userEmail]));
+      }
+
+      query += " ORDER BY sort_order ASC, created_at ASC";
+
+      const { rows } = await pool.query(query, params);
+      res.json(rows);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // POST create a career plan doc
+  app.post("/api/career-plans/docs", async (req, res) => {
+    try {
+      const { id, page_id, title, content, sort_order, created_by, allowed_users } = req.body;
+      const allowedUsersJson = allowed_users ? JSON.stringify(allowed_users) : '[]';
+      await pool.query(
+        `INSERT INTO career_plan_docs (id, page_id, title, content, sort_order, created_by, allowed_users) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [id, page_id || 'default', title || 'Novo Plano', content || '', sort_order || 0, created_by || null, allowedUsersJson]
+      );
+      res.json({ ok: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // PUT update a career plan doc
+  app.put("/api/career-plans/docs/:id", async (req, res) => {
+    try {
+      const { title, content, allowed_users } = req.body;
+      if (allowed_users !== undefined) {
+        await pool.query(
+          `UPDATE career_plan_docs SET title=$1, content=$2, allowed_users=$3, updated_at=NOW() WHERE id=$4`,
+          [title, content, JSON.stringify(allowed_users), req.params.id]
+        );
+      } else {
+        await pool.query(
+          `UPDATE career_plan_docs SET title=$1, content=$2, updated_at=NOW() WHERE id=$3`,
+          [title, content, req.params.id]
+        );
+      }
+      res.json({ ok: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // DELETE a career plan doc
+  app.delete("/api/career-plans/docs/:id", async (req, res) => {
+    try {
+      await pool.query("DELETE FROM career_plan_docs WHERE id=$1", [req.params.id]);
       res.json({ ok: true });
     } catch (err: any) { res.status(500).json({ error: err.message }); }
   });

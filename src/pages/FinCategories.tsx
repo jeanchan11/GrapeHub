@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ChevronRight, ChevronDown, Plus, Pencil, Check, X, FolderTree, Layers, Tag, Search, Loader2 } from 'lucide-react';
+import SplitHeadline from '../components/SplitHeadline';
 
 // ── Types ──────────────────────────────────────────────
 interface CategoryNode {
@@ -332,10 +333,12 @@ export default function FinCategories({ onBack }: { onBack: () => void }) {
 
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-4xl font-black text-light-text dark:text-white tracking-tight mb-1">
-          Plano de <span className="text-violet-500">Categorias</span>
-        </h1>
-        <p className="text-slate-500 text-sm">Gerencie as categorias financeiras da empresa em estrutura hierárquica.</p>
+        <SplitHeadline
+          text="Plano de "
+          highlight="Categorias"
+          subtitle="Gerencie as categorias financeiras da empresa em estrutura hierárquica."
+          className="text-4xl font-black text-light-text dark:text-white tracking-tight mb-1"
+        />
       </div>
 
       {/* Stats Cards */}

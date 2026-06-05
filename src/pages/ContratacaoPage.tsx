@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import SplitHeadline from '../components/SplitHeadline';
 import {
   Plus, X, Pencil, Trash2, FolderOpen, Users, UserPlus,
   ChevronLeft, ChevronRight, Phone, Mail, Calendar, GripVertical, Link as LinkIcon,
@@ -1041,9 +1042,7 @@ export default function ContratacaoPage() {
               <ChevronLeft size={14} /> Voltar para Seleções
             </button>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-black tracking-tight text-light-text dark:text-dark-text">
-                Contratação / <span className="text-violet-500">{activeFolder.nome}</span>
-              </h1>
+              <SplitHeadline text="Contratação / " highlight={activeFolder.nome} className="text-2xl font-black tracking-tight text-light-text dark:text-dark-text" />
               {activeFolder.cargo && (
                 <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-violet-500/10 text-violet-400">
                   {activeFolder.cargo}
@@ -1424,9 +1423,7 @@ export default function ContratacaoPage() {
       {/* Header */}
       <div className="px-6 md:px-8 pt-8 pb-4 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-light-text dark:text-dark-text">
-            Processos de <span className="text-violet-500">Contratação</span>
-          </h1>
+          <SplitHeadline text="Processos de " highlight="Contratação" className="text-2xl font-black tracking-tight text-light-text dark:text-dark-text" />
           <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5">
             Gerencie seleções e candidatos
           </p>

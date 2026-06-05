@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import { Plus, ChevronDown, ChevronUp, Trash2, Save, X, Edit2, Calendar, Clock, CheckSquare, FileText, Users, Loader2, Paperclip, ImageIcon, Check } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
+import SplitHeadline from '../components/SplitHeadline';
 import { useAuth } from '../contexts/AuthContext';
 
 interface Session {
@@ -141,10 +143,7 @@ export default function MeetingNotes({ activePage, pageLabel }: { activePage: st
       {/* Header */}
       <div className="flex items-start justify-between mb-8">
         <div>
-          <h1 className="text-4xl font-black text-gray-900 dark:text-white tracking-tight mb-1">
-            Notas de <span className="text-violet-500">{pageLabel || 'Reunião'}</span>
-          </h1>
-          <p className="text-slate-500 text-sm">Atas, registros e acompanhamento de reuniões</p>
+          <SplitHeadline text="Notas de " highlight={pageLabel || 'Reunião'} className="text-4xl font-black text-gray-900 dark:text-white tracking-tight mb-1" subtitle="Atas, registros e acompanhamento de reuniões" />
         </div>
         <button onClick={() => setShowNew(true)} className="flex items-center gap-2 px-4 py-2.5 bg-violet-600 hover:bg-violet-500 text-white rounded-xl font-bold text-sm transition-colors shadow-lg shadow-violet-500/20">
           <Plus size={16} /> Nova Reunião
@@ -290,16 +289,23 @@ export default function MeetingNotes({ activePage, pageLabel }: { activePage: st
                 
                 {isExpanded && (
                   <div className="p-4 border-t border-gray-100 dark:border-white/5 space-y-3">
-                    {groupSessions.map(session => (
-                      <SessionCard key={session.id} session={session}
-                        expanded={expandedId === session.id}
-                        onToggle={() => setExpandedId(expandedId === session.id ? null : session.id)}
-                        onDelete={() => deleteSession(session.id)}
-                        onUpdate={updateSession}
-                        currentUser={user?.displayName || user?.email || 'Equipe'}
-                        systemUsers={systemUsers}
-                        userRole={userData?.role}
-                      />
+                    {groupSessions.map((session, idx) => (
+                      <motion.div
+                        key={session.id}
+                        initial={{ opacity: 0, y: -18, scale: 0.98 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        transition={{ duration: 0.35, delay: idx * 0.06, ease: [0.32, 0.72, 0, 1] }}
+                      >
+                        <SessionCard session={session}
+                          expanded={expandedId === session.id}
+                          onToggle={() => setExpandedId(expandedId === session.id ? null : session.id)}
+                          onDelete={() => deleteSession(session.id)}
+                          onUpdate={updateSession}
+                          currentUser={user?.displayName || user?.email || 'Equipe'}
+                          systemUsers={systemUsers}
+                          userRole={userData?.role}
+                        />
+                      </motion.div>
                     ))}
                   </div>
                 )}
