@@ -179,7 +179,7 @@ async function runDailyBatchIfNeeded(pool: Pool) {
       )
       SELECT
         COALESCE(fp.name, fr.customer_name, 'Desconhecido'),
-        COALESCE(NULLIF(c.phone,''), NULLIF(fp.phone,''), ''),
+        COALESCE(NULLIF(c.billing_phone,''), NULLIF(c.phone,''), NULLIF(fp.phone,''), ''),
         fr.value, fr.due_date, fcr.day_offset, fcr.label,
         'WHATSAPP', fcr.message_template, fcr.message_template,
         fr.due_date::date + fcr.day_offset,
@@ -223,11 +223,25 @@ async function runDailyBatchIfNeeded(pool: Pool) {
         [item.id]
       );
       try {
+        // Busca o telefone mais atualizado (prioriza billing_phone do cadastro)
+        const freshPhone = await pool.query(`
+          SELECT COALESCE(NULLIF(c.billing_phone,''), NULLIF(c.phone,''), NULLIF(fp.phone,''), dq.customer_phone) as phone
+          FROM fin_dispatch_queue dq
+          LEFT JOIN fin_people fp ON fp.asaas_id = dq.customer_asaas_id
+          LEFT JOIN clients c ON c.id = fp.grapehub_client_id
+          WHERE dq.id = $1
+        `, [item.id]);
+        const resolvedPhone = freshPhone.rows[0]?.phone || item.customer_phone || '';
+        // Atualiza o customer_phone na fila com o valor correto
+        if (resolvedPhone !== item.customer_phone) {
+          await pool.query(`UPDATE fin_dispatch_queue SET customer_phone = $2 WHERE id = $1`, [item.id, resolvedPhone]);
+          item.customer_phone = resolvedPhone;
+        }
         const mensagem = renderMessage(item.message_template || '', item);
         // Atualiza message_rendered no banco para exibição correta no UI
         await pool.query(`UPDATE fin_dispatch_queue SET message_rendered = $2 WHERE id = $1`, [item.id, mensagem]);
         const payload = {
-          telefone: item.customer_phone,
+          telefone: resolvedPhone,
           mensagem,
           nome: item.customer_name,
           email: '',
@@ -368,9 +382,21 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
 
       // Envia assíncronamente
       try {
+        // Busca o telefone mais atualizado (prioriza billing_phone do cadastro)
+        const freshPhone = await pool.query(`
+          SELECT COALESCE(NULLIF(c.billing_phone,''), NULLIF(c.phone,''), NULLIF(fp.phone,''), dq.customer_phone) as phone
+          FROM fin_dispatch_queue dq
+          LEFT JOIN fin_people fp ON fp.asaas_id = dq.customer_asaas_id
+          LEFT JOIN clients c ON c.id = fp.grapehub_client_id
+          WHERE dq.id = $1
+        `, [id]);
+        const resolvedPhone = freshPhone.rows[0]?.phone || item.customer_phone || '';
+        if (resolvedPhone !== item.customer_phone) {
+          await pool.query(`UPDATE fin_dispatch_queue SET customer_phone = $2 WHERE id = $1`, [id, resolvedPhone]);
+        }
         const mensagem = renderMessage(item.message_template || '', item);
         await pool.query(`UPDATE fin_dispatch_queue SET message_rendered = $2 WHERE id = $1`, [id, mensagem]);
-        const payload = { telefone: item.customer_phone, mensagem, nome: item.customer_name, email: '', dispatch_id: id };
+        const payload = { telefone: resolvedPhone, mensagem, nome: item.customer_name, email: '', dispatch_id: id };
         const resp = await sendViaN8n(cfg.n8n_webhook_url, payload);
         await pool.query(`UPDATE fin_dispatch_queue SET status = 'ENVIADO', sent_at = NOW(), updated_at = NOW(), n8n_ticket_id = $2, n8n_contato_id = $3, n8n_contato_novo = $4, n8n_ticket_novo = $5 WHERE id = $1`,
           [id, resp?.ticket_id || null, resp?.contato_id || null, resp?.contato_novo ?? null, resp?.ticket_novo ?? null]);
@@ -463,9 +489,21 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
       for (const item of items) {
         await pool.query(`UPDATE fin_dispatch_queue SET status = 'ENVIANDO', updated_at = NOW() WHERE id = $1`, [item.id]);
         try {
+          // Busca o telefone mais atualizado (prioriza billing_phone do cadastro)
+          const freshPhone = await pool.query(`
+            SELECT COALESCE(NULLIF(c.billing_phone,''), NULLIF(c.phone,''), NULLIF(fp.phone,''), dq.customer_phone) as phone
+            FROM fin_dispatch_queue dq
+            LEFT JOIN fin_people fp ON fp.asaas_id = dq.customer_asaas_id
+            LEFT JOIN clients c ON c.id = fp.grapehub_client_id
+            WHERE dq.id = $1
+          `, [item.id]);
+          const resolvedPhone = freshPhone.rows[0]?.phone || item.customer_phone || '';
+          if (resolvedPhone !== item.customer_phone) {
+            await pool.query(`UPDATE fin_dispatch_queue SET customer_phone = $2 WHERE id = $1`, [item.id, resolvedPhone]);
+          }
           const mensagem = renderMessage(item.message_template || '', item);
           await pool.query(`UPDATE fin_dispatch_queue SET message_rendered = $2 WHERE id = $1`, [item.id, mensagem]);
-          const payload = { telefone: item.customer_phone, mensagem, nome: item.customer_name, email: '', dispatch_id: item.id };
+          const payload = { telefone: resolvedPhone, mensagem, nome: item.customer_name, email: '', dispatch_id: item.id };
           const resp = await sendViaN8n(cfg.n8n_webhook_url, payload);
           await pool.query(`UPDATE fin_dispatch_queue SET status = 'ENVIADO', sent_at = NOW(), updated_at = NOW(), n8n_ticket_id = $2, n8n_contato_id = $3, n8n_contato_novo = $4, n8n_ticket_novo = $5 WHERE id = $1`,
             [item.id, resp?.ticket_id || null, resp?.contato_id || null, resp?.contato_novo ?? null, resp?.ticket_novo ?? null]);
@@ -664,7 +702,7 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
         )
         SELECT
           COALESCE(fp.name, fr.customer_name, 'Desconhecido'),
-          COALESCE(NULLIF(c.phone,''), NULLIF(fp.phone,''), ''),
+          COALESCE(NULLIF(c.billing_phone,''), NULLIF(c.phone,''), NULLIF(fp.phone,''), ''),
           fr.value,
           fr.due_date,
           fcr.day_offset,

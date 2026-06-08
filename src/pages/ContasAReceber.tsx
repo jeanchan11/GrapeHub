@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import SplitHeadline from '../components/SplitHeadline';
 import { createPortal } from 'react-dom';
+import { motion, AnimatePresence, useSpring, useTransform, useInView } from 'motion/react';
 import { Calendar, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Clock, CreditCard, Zap, FileText, ExternalLink, Settings, AlertTriangle, Pause, Play, Check, X, ShieldAlert, Activity, CheckCircle2, Send, Settings2, Search, TrendingUp, Banknote, BarChart2, MessageCircle, MessageSquare, Copy, Phone, Mail, Users, DollarSign, Filter, RefreshCw, MoreHorizontal, RotateCcw } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────
@@ -60,6 +61,23 @@ const extractClientName = (desc: string): string => {
   const dashIdx = desc.lastIndexOf(' - ');
   if (dashIdx >= 0) return desc.slice(dashIdx + 3).trim();
   return desc;
+};
+
+// ── CountUp Animation Component ───────────────────────
+const CountUp = ({ value, isCurrency = false, suffix = '' }: { value: number; isCurrency?: boolean; suffix?: string }) => {
+  const ref = useRef<HTMLSpanElement>(null);
+  const isInView = useInView(ref, { once: true, margin: '-50px' });
+  const springValue = useSpring(0, { duration: 1200, bounce: 0 });
+  const display = useTransform(springValue, (v: number) => {
+    if (isCurrency) return (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    return Math.round(v).toLocaleString('pt-BR') + suffix;
+  });
+
+  useEffect(() => {
+    if (isInView) springValue.set(value);
+  }, [isInView, value, springValue]);
+
+  return <motion.span ref={ref}>{display}</motion.span>;
 };
 
 const BILLING_LABELS: Record<string, { label: string; icon: string }> = {
@@ -189,7 +207,7 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
   const [editingRule, setEditingRule] = useState<Rule | null>(null);
   const [templateText, setTemplateText] = useState('');
   const [isSaving, setIsSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState<'config' | 'disparos'>('disparos');
+  const [showReguaModal, setShowReguaModal] = useState(false);
   const [phaseDetail, setPhaseDetail] = useState<{ phase: string; label: string; items: any[] } | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [queueStats, setQueueStats] = useState({ hoje: 0, ultimos7dias: 0, agendados: 0 });
@@ -217,6 +235,7 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
   const [dispatchSubTab, setDispatchSubTab] = useState<'agendados'|'enviados'|'humano'|'suspensao'|'cancelados'>('agendados');
   const [overdueClients, setOverdueClients] = useState<any[]>([]);
   const [clientsMap, setClientsMap] = useState<Map<string, any>>(new Map());
+  const [expandedDispatchId, setExpandedDispatchId] = useState<string | null>(null);
 
   const fetchDispatch = async () => {
     try {
@@ -265,13 +284,12 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
     return () => clearInterval(t);
   }, [pollingActive]);
 
-  // Atualização automática a cada 30s enquanto a aba de disparos está aberta
+  // Atualização automática a cada 30s
   useEffect(() => {
-    if (activeTab !== 'disparos') return;
     fetchDispatch();
     const t = setInterval(fetchDispatch, 30_000);
     return () => clearInterval(t);
-  }, [activeTab]);
+  }, []);
 
   const handleDispatchSend = async (id: string) => {
     setSendingId(id);
@@ -577,66 +595,35 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
   };
 
   return (
-    <div className="bg-white dark:bg-dark-card border border-gray-100 dark:border-white/10 rounded-2xl p-6 mt-6 shadow-sm dark:shadow-none">
-      {/* 1. Header (Tabs) */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6 border-b border-gray-100 dark:border-white/10 pb-4">
-        <div className="flex items-center gap-6">
-          <Activity size={20} className="text-violet-500 hidden sm:block" />
-          <button 
-            onClick={() => setActiveTab('disparos')}
-            className={`flex items-center gap-2 pb-4 -mb-[17px] border-b-2 font-bold text-sm transition-colors ${activeTab === 'disparos' ? 'border-violet-500 text-violet-600 dark:text-violet-400' : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'}`}
-          >
-            <Send size={16} />
-            Fila de Disparos
-          </button>
-          <button 
-            onClick={() => setActiveTab('config')}
-            className={`flex items-center gap-2 pb-4 -mb-[17px] border-b-2 font-bold text-sm transition-colors ${activeTab === 'config' ? 'border-violet-500 text-violet-600 dark:text-violet-400' : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'}`}
-          >
-            <Settings2 size={16} />
-            Régua de Cobrança
-          </button>
+    <div>
+      {/* Action bar */}
+      <div className="flex items-center justify-end gap-2 flex-wrap mb-6">
+        <div className="relative">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar..." className="pl-9 pr-3 py-1.5 bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-white/10 rounded-lg text-xs text-gray-900 dark:text-white focus:outline-none focus:border-violet-500/50" />
         </div>
-        
-        {activeTab === 'config' && (
-          <div className="flex items-center gap-3">
-            <span className="px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-500 text-[10px] font-bold rounded-full uppercase tracking-widest flex items-center gap-1">
-              <CheckCircle2 size={10} /> Ativa
-            </span>
-            <button className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 dark:bg-white/5 hover:bg-gray-100 dark:hover:bg-white/10 border border-gray-200 dark:border-white/10 rounded-lg text-xs font-medium text-gray-600 dark:text-slate-300 transition-colors">
-              <Settings size={14} /> Editar Régua
-            </button>
-          </div>
-        )}
-        {activeTab === 'disparos' && (
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="relative">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar..." className="pl-9 pr-3 py-1.5 bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-white/10 rounded-lg text-xs text-gray-900 dark:text-white focus:outline-none focus:border-violet-500/50" />
-            </div>
-            <button onClick={handlePopulateQueue} disabled={isPopulating} className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-lg text-xs font-medium text-gray-600 dark:text-slate-300 hover:bg-gray-100 disabled:opacity-50 transition-colors">
-              <RefreshCw size={13} className={isPopulating ? 'animate-spin' : ''} />
-              {isPopulating ? 'Atualizando...' : 'Atualizar Fila'}
-            </button>
-            <button onClick={() => setShowSendAllConfirm(true)} disabled={sendingAll || dispatchItems.filter(i => i.status === 'AGENDADO').length === 0}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white rounded-lg text-xs font-bold transition-colors">
-              {sendingAll ? <><div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Disparando...</> : <><Send size={13} /> Disparar Fila</>}
-            </button>
-            <button onClick={() => setShowConfigModal(true)} className="p-1.5 rounded-lg bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors" title="Configurações">
-              <Settings size={15} />
-            </button>
-          </div>
-        )}
+        <button onClick={handlePopulateQueue} disabled={isPopulating} className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-lg text-xs font-medium text-gray-600 dark:text-slate-300 hover:bg-gray-100 disabled:opacity-50 transition-colors">
+          <RefreshCw size={13} className={isPopulating ? 'animate-spin' : ''} />
+          {isPopulating ? 'Atualizando...' : 'Atualizar Fila'}
+        </button>
+        <button onClick={() => setShowReguaModal(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-lg text-xs font-medium text-violet-600 dark:text-violet-400 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors">
+          <Settings2 size={13} />
+          Régua de Cobrança
+        </button>
+        <button onClick={() => setShowSendAllConfirm(true)} disabled={sendingAll || dispatchItems.filter(i => i.status === 'AGENDADO').length === 0}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white rounded-lg text-xs font-bold transition-colors">
+          {sendingAll ? <><div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Disparando...</> : <><Send size={13} /> Disparar Fila</>}
+        </button>
+        <button onClick={() => setShowConfigModal(true)} className="p-1.5 rounded-lg bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors" title="Configurações">
+          <Settings size={15} />
+        </button>
       </div>
 
       {loading ? (
         <div className="py-12 flex justify-center"><div className="w-6 h-6 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" /></div>
       ) : (
         <>
-          {/* Aba CONFIGURAÇÕES */}
-          {activeTab === 'config' && (
-            <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-          {/* 4. Alerta Humano */}
+          {/* Alerta Humano */}
           {(summary.humano > 0 || summary.suspensao > 0) && (
             <div className="mb-6 p-4 bg-orange-50 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-500/50 rounded-xl flex items-center gap-3">
               <AlertTriangle className="text-orange-500 dark:text-orange-400 shrink-0" size={20} />
@@ -646,35 +633,149 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
             </div>
           )}
 
-          {/* 2. Métricas 4 Fases */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-            <div onClick={() => openPhaseDetail('preventivo')} className="p-4 rounded-xl border border-[#2dd4bf]/20 bg-[#2dd4bf]/5 dark:bg-[#0d4a3a]/10 cursor-pointer hover:border-[#2dd4bf]/40 hover:shadow-md transition-all">
-              <p className="text-[10px] font-bold text-teal-600 dark:text-[#2dd4bf] uppercase tracking-widest mb-1">Em preventivo</p>
-              <p className="text-2xl font-black text-gray-800 dark:text-white">{summary.preventivo}</p>
+          {/* Métricas */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+            {/* 1) Disparos Hoje */}
+            <div className="bg-dark-card border border-white/10 rounded-2xl p-5 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[140px]">
+              <div className="flex items-center justify-between mb-3">
+                <div className="p-2 rounded-xl bg-slate-600"><Send size={16} className="text-white" /></div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Disparos</p>
+              </div>
+              <div className="flex flex-col mt-auto">
+                <h3 className="text-3xl font-black tracking-tight mb-2 text-dark-text"><CountUp value={dispatchStats.disparos_hoje} /></h3>
+                <div className="pt-2 border-t border-white/10">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-500">Hoje</span>
+                    <span className="font-semibold text-slate-400">{dispatchStats.disparos_hoje} envios</span>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div onClick={() => openPhaseDetail('vencimento')} className="p-4 rounded-xl border border-[#f59e0b]/20 bg-[#f59e0b]/5 dark:bg-[#78350f]/10 cursor-pointer hover:border-[#f59e0b]/40 hover:shadow-md transition-all">
-              <p className="text-[10px] font-bold text-amber-600 dark:text-[#f59e0b] uppercase tracking-widest mb-1">No vencimento</p>
-              <p className="text-2xl font-black text-gray-800 dark:text-white">{summary.vencimento}</p>
+            {/* 2) Preventivo */}
+            <div onClick={() => openPhaseDetail('preventivo')} className="bg-dark-card border border-white/10 rounded-2xl p-5 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[140px] cursor-pointer hover:border-[#2dd4bf]/40">
+              <div className="flex items-center justify-between mb-3">
+                <div className="p-2 rounded-xl bg-teal-600"><Activity size={16} className="text-white" /></div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Preventivo</p>
+              </div>
+              <div className="flex flex-col mt-auto">
+                <h3 className="text-3xl font-black tracking-tight mb-2 text-dark-text"><CountUp value={summary.preventivo} /></h3>
+                <div className="pt-2 border-t border-white/10">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-500">Antes do venc.</span>
+                    <span className="font-semibold text-teal-500">{summary.preventivo} clientes</span>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div onClick={() => openPhaseDetail('reativo')} className="p-4 rounded-xl border border-[#f87171]/20 bg-[#f87171]/5 dark:bg-[#7c2d12]/10 cursor-pointer hover:border-[#f87171]/40 hover:shadow-md transition-all">
-              <p className="text-[10px] font-bold text-rose-600 dark:text-[#f87171] uppercase tracking-widest mb-1">Em atraso</p>
-              <p className="text-2xl font-black text-gray-800 dark:text-white">{summary.reativo}</p>
+            {/* 3) No Vencimento */}
+            <div onClick={() => openPhaseDetail('vencimento')} className="bg-dark-card border border-white/10 rounded-2xl p-5 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[140px] cursor-pointer hover:border-amber-500/40">
+              <div className="flex items-center justify-between mb-3">
+                <div className="p-2 rounded-xl bg-amber-500"><Clock size={16} className="text-white" /></div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Vencimento</p>
+              </div>
+              <div className="flex flex-col mt-auto">
+                <h3 className="text-3xl font-black tracking-tight mb-2 text-dark-text"><CountUp value={summary.vencimento} /></h3>
+                <div className="pt-2 border-t border-white/10">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-500">No dia</span>
+                    <span className="font-semibold text-amber-500">{summary.vencimento} clientes</span>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div onClick={() => openPhaseDetail('humano')} className="p-4 rounded-xl border border-[#a78bfa]/20 bg-[#a78bfa]/5 dark:bg-[#4c1d95]/10 relative overflow-hidden cursor-pointer hover:border-[#a78bfa]/40 hover:shadow-md transition-all">
-              <p className="text-[10px] font-bold text-violet-600 dark:text-[#a78bfa] uppercase tracking-widest mb-1 flex items-center gap-2">
-                Contato Humano
-                {summary.humano > 0 && <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shadow-[0_0_8px_rgba(244,63,94,0.8)]" />}
-              </p>
-              <p className="text-2xl font-black text-gray-800 dark:text-white">{summary.humano}</p>
+            {/* 4) Em Atraso */}
+            <div onClick={() => openPhaseDetail('reativo')} className="bg-dark-card border border-white/10 rounded-2xl p-5 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[140px] cursor-pointer hover:border-rose-500/40">
+              <div className="flex items-center justify-between mb-3">
+                <div className="p-2 rounded-xl bg-rose-600"><AlertTriangle size={16} className="text-white" /></div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Em Atraso</p>
+              </div>
+              <div className="flex flex-col mt-auto">
+                <h3 className={`text-3xl font-black tracking-tight mb-2 ${summary.reativo > 0 ? 'text-rose-400/80' : 'text-dark-text'}`}><CountUp value={summary.reativo} /></h3>
+                <div className="pt-2 border-t border-white/10">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-500">Pós-vencimento</span>
+                    <span className={`font-semibold ${summary.reativo > 0 ? 'text-rose-500' : 'text-slate-500'}`}>{summary.reativo} clientes</span>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div onClick={() => openPhaseDetail('suspensao')} className="p-4 rounded-xl border border-[#fb923c]/20 bg-[#fb923c]/5 dark:bg-[#7c2d12]/10 relative overflow-hidden cursor-pointer hover:border-[#fb923c]/40 hover:shadow-md transition-all">
-              <p className="text-[10px] font-bold text-orange-600 dark:text-[#fb923c] uppercase tracking-widest mb-1 flex items-center gap-2">
-                Suspensão
-                {summary.suspensao > 0 && <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse shadow-[0_0_8px_rgba(249,115,22,0.8)]" />}
-              </p>
-              <p className="text-2xl font-black text-gray-800 dark:text-white">{summary.suspensao}</p>
+            {/* 5) Contato Humano */}
+            <div onClick={() => openPhaseDetail('humano')} className="bg-dark-card border border-white/10 rounded-2xl p-5 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[140px] cursor-pointer hover:border-violet-500/40">
+              <div className="flex items-center justify-between mb-3">
+                <div className="p-2 rounded-xl bg-violet-600"><Phone size={16} className="text-white" /></div>
+                <div className="flex items-center gap-2">
+                  {summary.humano > 0 && <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shadow-[0_0_8px_rgba(244,63,94,0.8)]" />}
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Humano</p>
+                </div>
+              </div>
+              <div className="flex flex-col mt-auto">
+                <h3 className={`text-3xl font-black tracking-tight mb-2 ${summary.humano > 0 ? 'text-violet-400/80' : 'text-dark-text'}`}><CountUp value={summary.humano} /></h3>
+                <div className="pt-2 border-t border-white/10">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-500">D+10</span>
+                    <span className={`font-semibold ${summary.humano > 0 ? 'text-violet-500' : 'text-slate-500'}`}>{summary.humano} clientes</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            {/* 6) Suspensão */}
+            <div onClick={() => openPhaseDetail('suspensao')} className="bg-dark-card border border-white/10 rounded-2xl p-5 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[140px] cursor-pointer hover:border-orange-500/40">
+              <div className="flex items-center justify-between mb-3">
+                <div className="p-2 rounded-xl bg-orange-600"><ShieldAlert size={16} className="text-white" /></div>
+                <div className="flex items-center gap-2">
+                  {summary.suspensao > 0 && <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse shadow-[0_0_8px_rgba(249,115,22,0.8)]" />}
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Suspensão</p>
+                </div>
+              </div>
+              <div className="flex flex-col mt-auto">
+                <h3 className={`text-3xl font-black tracking-tight mb-2 ${summary.suspensao > 0 ? 'text-orange-400/80' : 'text-dark-text'}`}><CountUp value={summary.suspensao} /></h3>
+                <div className="pt-2 border-t border-white/10">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-500">D+15</span>
+                    <span className={`font-semibold ${summary.suspensao > 0 ? 'text-orange-500' : 'text-slate-500'}`}>{summary.suspensao} clientes</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
+          {/* Modal Régua de Cobrança */}
+          <AnimatePresence>
+            {showReguaModal && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                <motion.div
+                  className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                  onClick={() => setShowReguaModal(false)}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.25, ease: 'easeOut' }}
+                />
+                <motion.div
+                  className="relative bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-2xl w-full max-w-5xl shadow-2xl flex flex-col overflow-hidden max-h-[90vh]"
+                  onClick={e => e.stopPropagation()}
+                  initial={{ opacity: 0, scale: 0.92, y: 20 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.92, y: 20 }}
+                  transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
+                >
+                <div className="p-6 border-b border-gray-100 dark:border-white/10 flex items-center justify-between shrink-0">
+                  <div className="flex items-center gap-3">
+                    <Settings2 size={20} className="text-violet-500" />
+                    <h3 className="text-lg font-bold text-gray-900 dark:text-white tracking-tight">Régua de Cobrança</h3>
+                    <span className="px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-500 text-[10px] font-bold rounded-full uppercase tracking-widest flex items-center gap-1">
+                      <CheckCircle2 size={10} /> Ativa
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 dark:bg-white/5 hover:bg-gray-100 dark:hover:bg-white/10 border border-gray-200 dark:border-white/10 rounded-lg text-xs font-medium text-gray-600 dark:text-slate-300 transition-colors">
+                      <Settings size={14} /> Editar Régua
+                    </button>
+                    <button onClick={() => setShowReguaModal(false)} className="text-gray-400 dark:text-slate-400 hover:text-gray-700 dark:hover:text-white transition-colors">
+                      <X size={20} />
+                    </button>
+                  </div>
+                </div>
+                <div className="overflow-auto flex-1 p-6 space-y-6">
 
           {/* Legenda Timeline */}
           <div className="flex items-center gap-6 mb-8 text-xs font-semibold text-gray-500 dark:text-slate-300">
@@ -746,16 +847,19 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
           </div>
 
               {/* 5. Footer / Pausar */}
-              <div className="mt-8 pt-6 border-t border-gray-100 dark:border-white/5 flex justify-end">
+              <div className="pt-6 border-t border-gray-100 dark:border-white/5 flex justify-end">
                 <button className="flex items-center gap-2 px-4 py-2 text-rose-500 bg-rose-500/5 hover:bg-rose-500/10 border border-rose-500/10 rounded-xl text-xs font-bold transition-colors">
                   <Pause size={14} /> Pausar Régua
                 </button>
               </div>
-            </div>
-          )}
+                </div>
+                </motion.div>
+              </div>
+            )}
+          </AnimatePresence>
 
-          {/* Aba FILA DE DISPAROS */}
-          {activeTab === 'disparos' && (() => {
+          {/* Fila de Disparos Content */}
+          {(() => {
             // ── Filtros de sub-tab baseados em day_offset (como a régua original) ──
             const search = (i: any) => !searchTerm || i.customer_name?.toLowerCase().includes(searchTerm.toLowerCase());
 
@@ -850,24 +954,10 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
 
             return (
               <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-4">
-                {/* Stats */}
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="p-4 rounded-xl border border-gray-100 dark:border-white/5 bg-gray-50 dark:bg-dark-bg/50">
-                    <p className="text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest mb-1">Disparos Hoje</p>
-                    <p className="text-2xl font-black text-gray-900 dark:text-white">{dispatchStats.disparos_hoje}</p>
-                  </div>
-                  <div className="p-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
-                    <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-500 uppercase tracking-widest mb-1">Concluídos 7 dias</p>
-                    <p className="text-2xl font-black text-emerald-700 dark:text-emerald-400">{dispatchStats.concluidos_7_dias}</p>
-                  </div>
-                  <div className="p-4 rounded-xl border border-amber-500/20 bg-amber-500/5">
-                    <p className="text-[10px] font-bold text-amber-600 dark:text-amber-500 uppercase tracking-widest mb-1">Agendados/Pendentes</p>
-                    <p className="text-2xl font-black text-amber-700 dark:text-amber-400">{agendados.length}</p>
-                  </div>
-                </div>
+
 
                 {/* Table + Sub-tabs */}
-                <div className="rounded-xl border border-gray-100 dark:border-white/5">
+                <div className="bg-dark-card rounded-2xl border border-white/10 overflow-hidden">
                   <div className="flex items-center gap-6 px-4 pt-3 border-b border-gray-100 dark:border-white/5 bg-gray-50 dark:bg-dark-bg/50 rounded-t-xl">
                     {subTabCfg.map(({ key, label, color, items }) => {
                       const active = dispatchSubTab === key;
@@ -882,173 +972,215 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                       );
                     })}
                   </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="bg-gray-50 dark:bg-dark-bg/50 border-b border-gray-100 dark:border-white/5">
-                          {['Cliente / Valor','Contato','Obs','Regra','Canal','Agendado','Fatura','Status'].map(h => (
-                            <th key={h} className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest whitespace-nowrap">{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100 dark:divide-white/5">
-                        {currentItems.length === 0 ? (
-                          <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-400 dark:text-slate-500">Nenhum item nesta categoria.</td></tr>
-                        ) : currentItems.map((item) => {
-                          return (
+                  {/* Header */}
+                  <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] gap-4 px-5 py-3 bg-dark-bg/50 border-b border-white/5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                    <span>Cliente / Valor</span>
+                    <span>Regra</span>
+                    <span>Canal</span>
+                    <span>Agendado</span>
+                    <span>Status</span>
+                    <span className="w-8"></span>
+                  </div>
 
-                          <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
-                            <td className="px-4 py-3">
-                              <p className="text-sm font-bold text-gray-900 dark:text-white truncate max-w-[200px]">{item.customer_name}</p>
-                              <p className="text-xs text-gray-500 dark:text-slate-400">{formatCurrency(item.amount)} • {fmtDate(item.due_date)}</p>
-                            </td>
-                            {/* Coluna Contato — mostra e-mail ou telefone conforme billing_method */}
-                            <td className="px-4 py-3 whitespace-nowrap">
-                              {(() => {
-                                const cl = clientsMap.get((item.customer_name || '').toLowerCase().trim());
-                                const method = cl?.billingMethod;
-                                const contact = method === 'E-mail' ? (cl?.billingEmail || item.customer_phone || '—')
-                                              : method === 'Whatsapp' ? (cl?.billingPhone || item.customer_phone || '—')
-                                              : (item.customer_phone || '—');
-                                return <span className="text-xs font-medium text-gray-700 dark:text-slate-300">{contact}</span>;
-                              })()}
-                            </td>
-                            {/* Coluna Obs — ícone com tooltip de billing_notes */}
-                            <td className="px-4 py-3">
-                              {(() => {
-                                const cl = clientsMap.get((item.customer_name || '').toLowerCase().trim());
-                                const notes = cl?.billingNotes;
-                                if (!notes) return <span className="text-gray-300 dark:text-white/10"><MessageSquare size={13} /></span>;
-                                return (
-                                  <div className="relative group inline-flex">
-                                    <MessageSquare size={13} className="text-violet-500 cursor-default" />
-                                    <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 hidden group-hover:flex">
-                                      <div className="bg-gray-900 dark:bg-gray-800 text-white text-[11px] rounded-xl px-3 py-2 shadow-xl max-w-[240px] whitespace-pre-wrap leading-relaxed border border-white/10">
-                                        {notes}
-                                      </div>
-                                    </div>
-                                  </div>
-                                );
-                              })()}
-                            </td>
-                            <td className="px-4 py-3 whitespace-nowrap">
-                              <div className="flex items-center gap-2">
-                                {(() => {
-                                  const d = item.day_offset ?? 0;
-                                  const phaseKey = d < 0 ? 'preventivo' : d === 0 ? 'vencimento' : d >= 10 ? 'humano' : 'reativo';
-                                  const pillColors: Record<string, string> = {
-                                    preventivo: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20',
-                                    vencimento: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20',
-                                    reativo:    'bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20',
-                                    humano:     'bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20',
-                                  };
-                                  const label = d < 0 ? `D${d}` : d === 0 ? 'D0' : `D+${d}`;
-                                  return (
-                                    <span className={`px-2 py-0.5 rounded text-[9px] font-bold border ${pillColors[phaseKey]}`}>{label}</span>
-                                  );
-                                })()}
-                                <span className="text-xs text-gray-600 dark:text-slate-400">{item.rule_triggered || '—'}</span>
-                                <button onClick={() => copyDispatchMessage(item)} title="Copiar mensagem" className="p-1 rounded-md hover:bg-gray-200 dark:hover:bg-white/10 text-gray-400 hover:text-emerald-500 transition-colors ml-1">
-                                  {copiedDispatchId === item.id ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
-                                </button>
+                  {/* Rows */}
+                  <div className="divide-y divide-white/5">
+                    {currentItems.length === 0 ? (
+                      <div className="px-4 py-10 text-center text-sm text-slate-500">Nenhum item nesta categoria.</div>
+                    ) : currentItems.map((item, idx) => {
+                      const isRowExpanded = expandedDispatchId === item.id;
+                      const cl = clientsMap.get((item.customer_name || '').toLowerCase().trim());
+                      const method = cl?.billingMethod;
+                      const contact = method === 'E-mail' ? (cl?.billingEmail || item.customer_phone || '—')
+                                    : method === 'Whatsapp' ? (cl?.billingPhone || item.customer_phone || '—')
+                                    : (item.customer_phone || '—');
+                      const channelLabel = method || item.channel || '—';
+                      const isEmail = method === 'E-mail';
+                      const isWA = method === 'Whatsapp' || (!method && item.channel === 'WHATSAPP');
+                      const d = item.day_offset ?? 0;
+                      const phaseKey = d < 0 ? 'preventivo' : d === 0 ? 'vencimento' : d >= 10 ? 'humano' : 'reativo';
+                      const pillColors: Record<string, string> = {
+                        preventivo: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
+                        vencimento: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+                        reativo:    'bg-orange-500/10 text-orange-400 border-orange-500/20',
+                        humano:     'bg-violet-500/10 text-violet-400 border-violet-500/20',
+                      };
+                      const dayLabel = d < 0 ? `D${d}` : d === 0 ? 'D0' : `D+${d}`;
+
+                      return (
+                        <motion.div
+                          key={item.id}
+                          initial={{ opacity: 0, y: -18, scale: 0.98 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          transition={{
+                            duration: 0.35,
+                            delay: idx * 0.06,
+                            ease: [0.32, 0.72, 0, 1],
+                          }}
+                        >
+                          <div
+                            className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] gap-4 px-5 py-4 hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors cursor-pointer items-center"
+                            onClick={() => setExpandedDispatchId(isRowExpanded ? null : item.id)}
+                          >
+                            {/* Client Info */}
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-sm shrink-0 ${pillColors[phaseKey]}`}>
+                                {(item.customer_name || 'X').charAt(0).toUpperCase()}
                               </div>
-                            </td>
-                            <td className="px-4 py-3 whitespace-nowrap">
-                              {(() => {
-                                const cl = clientsMap.get((item.customer_name || '').toLowerCase().trim());
-                                const method = cl?.billingMethod;
-                                const label = method || item.channel || '—';
-                                const isEmail = method === 'E-mail';
-                                const isWA = method === 'Whatsapp' || (!method && item.channel === 'WHATSAPP');
+                              <div className="min-w-0">
+                                <p className="text-sm font-bold text-gray-900 dark:text-dark-text truncate">{item.customer_name}</p>
+                                <p className="text-[10px] text-gray-500 dark:text-slate-500">{formatCurrency(item.amount)} • {fmtDate(item.due_date)}</p>
+                              </div>
+                            </div>
+
+                            {/* Rule */}
+                            <div className="flex items-center gap-2">
+                              <span className={`px-2 py-0.5 rounded text-[9px] font-bold border ${pillColors[phaseKey]}`}>{dayLabel}</span>
+                              <span className="text-xs text-gray-500 dark:text-slate-400 truncate">{item.rule_triggered || '—'}</span>
+                            </div>
+
+                            {/* Channel */}
+                            <div>
+                              <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-md ${
+                                isEmail ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
+                                : isWA   ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                                : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-slate-400'
+                              }`}>{channelLabel}</span>
+                            </div>
+
+                            {/* Scheduled Date */}
+                            <div>
+                              <span className="text-xs text-gray-500 dark:text-slate-400">{fmtDate(item.scheduled_date)}</span>
+                            </div>
+
+                            {/* Status */}
+                            <div onClick={e => e.stopPropagation()}>
+                              {item.status === 'AGENDADO' && (
+                                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                  <Clock size={10} /> Agendado
+                                </span>
+                              )}
+                              {item.status === 'ENVIANDO' && (
+                                <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold bg-blue-500/10 text-blue-400">
+                                  <div className="w-2.5 h-2.5 border-2 border-blue-400/30 border-t-blue-500 rounded-full animate-spin" /> Enviando...
+                                </span>
+                              )}
+                              {item.status === 'ENVIADO' && (() => {
+                                const confirmed = !!item.n8n_ticket_id;
                                 return (
-                                  <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-md ${
-                                    isEmail ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
-                                    : isWA   ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                                    : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-slate-400'
-                                  }`}>{label}</span>
+                                  <span
+                                    onMouseEnter={e => showTooltip(e, item, 'sent')}
+                                    onMouseLeave={hideTooltip}
+                                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold cursor-default transition-all ${
+                                      confirmed
+                                        ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                                        : 'bg-white/5 text-slate-400 border border-white/10'
+                                    }`}
+                                  >
+                                    {confirmed ? <CheckCircle2 size={11} /> : <Clock size={10} />}
+                                    {confirmed ? 'Enviado' : 'Aguardando n8n'}
+                                  </span>
                                 );
                               })()}
-                            </td>
-                            <td className="px-4 py-3 whitespace-nowrap text-xs text-gray-600 dark:text-slate-400">
-                              {fmtDate(item.scheduled_date)}
-                            </td>
-                            <td className="px-4 py-3 whitespace-nowrap">
-                              {item.invoice_url
-                                ? <a href={item.invoice_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/20 hover:bg-violet-100 transition-all"><ExternalLink size={10} /> Ver</a>
-                                : <span className="text-xs text-gray-400">—</span>}
-                            </td>
-                            <td className="px-4 py-3 whitespace-nowrap">
-                              <div className="flex items-center gap-2">
-                                {item.status === 'AGENDADO' && (
-                                  <>
-                                    <button onClick={() => handleDispatchSend(item.id)} disabled={sendingId === item.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors">
-                                      <Play size={10} /> Enviar
-                                    </button>
-                                    <button onClick={() => handleDispatchMarkManual(item.id)} disabled={sendingId === item.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 hover:bg-violet-100 dark:hover:bg-violet-500/20 transition-colors" title="Marcar como enviado manualmente">
-                                      <CheckCircle2 size={10} /> Manual
-                                    </button>
-                                    <button onClick={() => handleDispatchCancel(item.id)} className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold text-gray-400 hover:text-rose-500 transition-colors">
-                                      <X size={10} />
-                                    </button>
-                                  </>
-                                )}
-                                {item.status === 'ENVIANDO' && (
-                                  <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400">
-                                    <div className="w-2.5 h-2.5 border-2 border-blue-400/30 border-t-blue-500 rounded-full animate-spin" /> Enviando...
-                                  </span>
-                                )}
-                                {item.status === 'ENVIADO' && (() => {
-                                  const confirmed = !!item.n8n_ticket_id;
-                                  return (
-                                    <div className="flex items-center gap-2">
-                                      <span
-                                        onMouseEnter={e => showTooltip(e, item, 'sent')}
-                                        onMouseLeave={hideTooltip}
-                                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold cursor-default transition-all ${
-                                          confirmed
-                                            ? 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/30'
-                                            : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-slate-400 border border-gray-200 dark:border-white/10'
-                                        }`}
-                                      >
-                                        {confirmed ? <CheckCircle2 size={11} /> : <Clock size={10} />}
-                                        {confirmed ? 'Enviado' : 'Aguardando n8n'}
-                                      </span>
-                                      <button
-                                        onClick={e => openMenu(e, item)}
-                                        className="p-1 rounded-full text-gray-400 hover:text-gray-700 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
-                                      >
-                                        <MoreHorizontal size={14} />
-                                      </button>
+                              {item.status === 'ERRO' && (
+                                <span
+                                  onMouseEnter={e => showTooltip(e, item, 'error')}
+                                  onMouseLeave={hideTooltip}
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold cursor-default bg-rose-500/15 text-rose-300 border border-rose-500/30"
+                                >
+                                  <AlertTriangle size={10} /> Erro
+                                </span>
+                              )}
+                              {item.status === 'CANCELADO' && (
+                                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-white/5 text-slate-500">Cancelado</span>
+                              )}
+                            </div>
+
+                            {/* Chevron */}
+                            <div className="w-8 flex justify-center">
+                              <button className={`transition-colors ${isRowExpanded ? 'text-violet-400' : 'text-slate-500'}`}>
+                                {isRowExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Expanded Detail */}
+                          {isRowExpanded && (
+                            <div className="bg-gray-50 dark:bg-dark-bg/50 border-t border-gray-100 dark:border-white/5 px-5 py-4">
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                {/* Contact Info */}
+                                <div className="space-y-2">
+                                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Contato</p>
+                                  <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-slate-300">
+                                    {isWA ? <MessageCircle size={12} className="text-emerald-400" /> : isEmail ? <Mail size={12} className="text-blue-400" /> : <Phone size={12} className="text-slate-400" />}
+                                    <span>{contact}</span>
+                                  </div>
+                                  {cl?.billingNotes && (
+                                    <div className="mt-2 p-2 bg-dark-card rounded-lg border border-white/5">
+                                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Observações</p>
+                                      <p className="text-xs text-slate-400 whitespace-pre-wrap">{cl.billingNotes}</p>
                                     </div>
-                                  );
-                                })()}
-                                {item.status === 'ERRO' && (() => {
-                                  return (
-                                    <div className="flex items-center gap-2">
-                                      <span
-                                        onMouseEnter={e => showTooltip(e, item, 'error')}
-                                        onMouseLeave={hideTooltip}
-                                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold cursor-default bg-rose-100 dark:bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-500/30"
-                                      >
-                                        <AlertTriangle size={10} /> Erro no envio
-                                      </span>
-                                      <button onClick={() => handleDispatchSend(item.id)} className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 hover:text-emerald-600 transition-colors">
+                                  )}
+                                </div>
+
+                                {/* Invoice & Rule details */}
+                                <div className="space-y-2">
+                                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Detalhes</p>
+                                  <div className="flex items-center gap-3 p-3 bg-dark-card rounded-xl border border-white/5">
+                                    <div className="min-w-0 flex-1">
+                                      <p className="text-xs font-bold text-dark-text">{formatCurrency(item.amount)}</p>
+                                      <p className="text-[10px] text-slate-500">Vencimento: {fmtDate(item.due_date)}</p>
+                                    </div>
+                                    {item.invoice_url && (
+                                      <a href={item.invoice_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 px-2 py-1 bg-violet-500/10 border border-violet-500/20 text-violet-400 hover:bg-violet-500/20 rounded-lg text-[10px] font-bold transition-all shrink-0">
+                                        <ExternalLink size={10} /> Ver Fatura
+                                      </a>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Actions */}
+                                <div className="space-y-2">
+                                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Ações</p>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    {item.status === 'AGENDADO' && (
+                                      <>
+                                        <button onClick={() => handleDispatchSend(item.id)} disabled={sendingId === item.id} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-colors">
+                                          <Play size={10} /> Enviar
+                                        </button>
+                                        <button onClick={() => handleDispatchMarkManual(item.id)} disabled={sendingId === item.id} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold bg-violet-500/10 border border-violet-500/20 text-violet-400 hover:bg-violet-500/20 transition-colors">
+                                          <CheckCircle2 size={10} /> Manual
+                                        </button>
+                                        <button onClick={() => handleDispatchCancel(item.id)} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold bg-white/5 border border-white/10 text-slate-400 hover:text-rose-400 hover:border-rose-500/20 transition-colors">
+                                          <X size={10} /> Cancelar
+                                        </button>
+                                      </>
+                                    )}
+                                    {item.status === 'ENVIADO' && (
+                                      <button onClick={e => openMenu(e, item)} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold bg-white/5 border border-white/10 text-slate-400 hover:text-white hover:border-white/20 transition-colors">
+                                        <MoreHorizontal size={10} /> Opções
+                                      </button>
+                                    )}
+                                    {item.status === 'ERRO' && (
+                                      <button onClick={() => handleDispatchSend(item.id)} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-emerald-500/10 hover:text-emerald-400 transition-colors">
                                         <RefreshCw size={10} /> Retentar
                                       </button>
-                                    </div>
-                                  );
-                                })()}
-                                {item.status === 'CANCELADO' && (
-                                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-gray-100 dark:bg-white/5 text-gray-400">Cancelado</span>
-                                )}
-
+                                    )}
+                                    <button onClick={() => copyDispatchMessage(item)} className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all border ${
+                                      copiedDispatchId === item.id
+                                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                                        : 'bg-white/5 border-white/10 text-slate-400 hover:text-white hover:border-white/20'
+                                    }`}>
+                                      {copiedDispatchId === item.id ? <Check size={10} /> : <Copy size={10} />}
+                                      {copiedDispatchId === item.id ? 'Copiado!' : 'Copiar Msg'}
+                                    </button>
+                                  </div>
+                                </div>
                               </div>
-                            </td>
-                          </tr>
-                        ); })}
-
-                      </tbody>
-                    </table>
+                            </div>
+                          )}
+                        </motion.div>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -1058,9 +1190,25 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
       )}
 
       {/* ── Config Modal ─────────────────────────────────────────────────────── */}
-      {showConfigModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowConfigModal(false)}>
-          <div className="bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-[22px] w-full max-w-md shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+      <AnimatePresence>
+        {showConfigModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={() => setShowConfigModal(false)}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.25, ease: 'easeOut' }}
+            />
+            <motion.div
+              className="relative bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-[22px] w-full max-w-md shadow-2xl overflow-hidden"
+              onClick={e => e.stopPropagation()}
+              initial={{ opacity: 0, scale: 0.92, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.92, y: 20 }}
+              transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
+            >
             <div className="px-6 py-5 border-b border-gray-100 dark:border-white/10 flex items-center justify-between">
               <h3 className="text-base font-bold text-gray-900 dark:text-white flex items-center gap-2"><Settings size={16} className="text-violet-500" /> Configurações de Disparo</h3>
               <button onClick={() => setShowConfigModal(false)} className="text-gray-400 hover:text-gray-700 dark:hover:text-white"><X size={18} /></button>
@@ -1173,30 +1321,64 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                 {savingCfg && <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />} Salvar
               </button>
             </div>
+            </motion.div>
           </div>
-        </div>
-      )}
+        )}
+      </AnimatePresence>
 
       {/* ── Send-all confirm ────────────────────────────────────────────────── */}
-      {showSendAllConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowSendAllConfirm(false)}>
-          <div className="bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-[22px] w-full max-w-sm shadow-2xl p-6" onClick={e => e.stopPropagation()}>
+      <AnimatePresence>
+        {showSendAllConfirm && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={() => setShowSendAllConfirm(false)}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.25, ease: 'easeOut' }}
+            />
+            <motion.div
+              className="relative bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-[22px] w-full max-w-sm shadow-2xl p-6"
+              onClick={e => e.stopPropagation()}
+              initial={{ opacity: 0, scale: 0.92, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.92, y: 20 }}
+              transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
+            >
             <h3 className="text-base font-bold text-gray-900 dark:text-white mb-2">Disparar fila completa?</h3>
             <p className="text-sm text-gray-500 dark:text-slate-400 mb-6">Isso irá enviar <strong className="text-gray-900 dark:text-white">{dispatchItems.filter(i => i.status === 'AGENDADO').length} mensagens</strong> agendadas para hoje, respeitando o intervalo configurado.</p>
             <div className="flex justify-end gap-3">
               <button onClick={() => setShowSendAllConfirm(false)} className="px-4 py-2 text-gray-500 text-xs font-bold">Cancelar</button>
               <button onClick={handleSendAll} className="px-5 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-xl text-xs font-bold">Confirmar</button>
             </div>
+            </motion.div>
           </div>
-        </div>
-      )}
+        )}
+      </AnimatePresence>
 
       {/* 6. Modal de Edição */}
-      {editingRule && (() => {
-        const style = timelineStyles[editingRule.phase] || timelineStyles.reativo;
-        return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setEditingRule(null)}>
-            <div className="bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-2xl w-full max-w-lg shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+      <AnimatePresence>
+        {editingRule && (() => {
+          const style = timelineStyles[editingRule.phase] || timelineStyles.reativo;
+          return (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+              <motion.div
+                className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                onClick={() => setEditingRule(null)}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.25, ease: 'easeOut' }}
+              />
+              <motion.div
+                className="relative bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-2xl w-full max-w-lg shadow-2xl flex flex-col overflow-hidden"
+                onClick={e => e.stopPropagation()}
+                initial={{ opacity: 0, scale: 0.92, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.92, y: 20 }}
+                transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
+              >
               <div className="p-6 border-b border-gray-100 dark:border-white/10 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <span className={`px-3 py-1 text-[10px] font-bold rounded-full border flex items-center justify-center ${style.pillBg} ${style.text} ${style.border}`}>
@@ -1252,15 +1434,32 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                   Salvar Mensagem
                 </button>
               </div>
+              </motion.div>
             </div>
-          </div>
-        );
-      })()}
+          );
+        })()}
+      </AnimatePresence>
 
       {/* 7. Modal Detalhe por Fase */}
-      {phaseDetail && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setPhaseDetail(null)}>
-          <div className="bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col overflow-hidden max-h-[80vh]" onClick={e => e.stopPropagation()}>
+      <AnimatePresence>
+        {phaseDetail && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={() => setPhaseDetail(null)}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.25, ease: 'easeOut' }}
+            />
+            <motion.div
+              className="relative bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col overflow-hidden max-h-[80vh]"
+              onClick={e => e.stopPropagation()}
+              initial={{ opacity: 0, scale: 0.92, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.92, y: 20 }}
+              transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
+            >
             <div className="p-6 border-b border-gray-100 dark:border-white/10 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className={`w-3 h-3 rounded-full ${phaseDetail.phase === 'preventivo' ? 'bg-[#2dd4bf]' : phaseDetail.phase === 'vencimento' ? 'bg-[#f59e0b]' : phaseDetail.phase === 'reativo' ? 'bg-[#f87171]' : phaseDetail.phase === 'suspensao' ? 'bg-[#fb923c]' : 'bg-[#a78bfa]'}`} />
@@ -1309,9 +1508,10 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                 </div>
               )}
             </div>
+            </motion.div>
           </div>
-        </div>
-      )}
+        )}
+      </AnimatePresence>
       {/* Global Fixed Tooltip */}
       {tooltipData && (() => {
         const { item, type, x, y } = tooltipData;
@@ -1480,43 +1680,75 @@ const InadimplentesBlock = ({ onCountChange }: { onCountChange?: (n: number) => 
   );
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+    <div className="space-y-6">
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-dark-card border border-rose-500/20 rounded-2xl p-5 flex flex-col">
-          <div className="flex items-center justify-between mb-3">
-            <div className="p-2 rounded-xl bg-rose-500/10"><Users size={16} className="text-rose-400" /></div>
-            <span className="text-[10px] font-bold text-rose-400 uppercase tracking-widest">Inadimplentes</span>
+        <div className="bg-dark-card border border-white/10 rounded-2xl p-6 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[160px]">
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-2.5 rounded-2xl bg-rose-500"><Users size={20} className="text-white" /></div>
+            <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Inadimplentes</p>
           </div>
-          <p className="text-3xl font-black text-rose-400">{clients.length}</p>
-          <p className="text-xs text-slate-500 mt-1">clientes com atraso</p>
+          <div className="flex flex-col mt-auto">
+            <h3 className="text-3xl font-black tracking-tight mb-3 text-dark-text">
+              <CountUp value={clients.length} />
+            </h3>
+            <div className="pt-3 border-t border-white/10">
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-slate-500">Clientes com atraso</span>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div className="bg-dark-card border border-orange-500/20 rounded-2xl p-5 flex flex-col">
-          <div className="flex items-center justify-between mb-3">
-            <div className="p-2 rounded-xl bg-orange-500/10"><DollarSign size={16} className="text-orange-400" /></div>
-            <span className="text-[10px] font-bold text-orange-400 uppercase tracking-widest">Total Em Risco</span>
+        <div className="bg-dark-card border border-white/10 rounded-2xl p-6 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[160px]">
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-2.5 rounded-2xl bg-orange-500"><DollarSign size={20} className="text-white" /></div>
+            <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Total Em Risco</p>
           </div>
-          <p className="text-3xl font-black text-orange-400">{formatCurrency(totalAmount)}</p>
-          <p className="text-xs text-slate-500 mt-1">em cobranças abertas</p>
+          <div className="flex flex-col mt-auto">
+            <h3 className="text-3xl font-black tracking-tight mb-3 text-dark-text">
+              <CountUp value={totalAmount} isCurrency />
+            </h3>
+            <div className="pt-3 border-t border-white/10">
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-slate-500">Em cobranças abertas</span>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div className="bg-dark-card border border-amber-500/20 rounded-2xl p-5 flex flex-col">
-          <div className="flex items-center justify-between mb-3">
-            <div className="p-2 rounded-xl bg-amber-500/10"><Clock size={16} className="text-amber-400" /></div>
-            <span className="text-[10px] font-bold text-amber-400 uppercase tracking-widest">Média De Atraso</span>
+        <div className="bg-dark-card border border-white/10 rounded-2xl p-6 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[160px]">
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-2.5 rounded-2xl bg-amber-500"><Clock size={20} className="text-white" /></div>
+            <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Média De Atraso</p>
           </div>
-          <p className="text-3xl font-black text-amber-400">{avgDays}d</p>
-          <p className="text-xs text-slate-500 mt-1">dias em média</p>
+          <div className="flex flex-col mt-auto">
+            <h3 className="text-3xl font-black tracking-tight mb-3 text-dark-text">
+              <CountUp value={avgDays} suffix="d" />
+            </h3>
+            <div className="pt-3 border-t border-white/10">
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-slate-500">Dias em média</span>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div className="bg-dark-card border border-rose-600/30 rounded-2xl p-5 flex flex-col">
-          <div className="flex items-center justify-between mb-3">
-            <div className="p-2 rounded-xl bg-rose-600/10"><AlertTriangle size={16} className="text-rose-500" /></div>
-            <span className="text-[10px] font-bold text-rose-500 uppercase tracking-widest">Críticos +30d</span>
+        <div className="bg-dark-card border border-white/10 rounded-2xl p-6 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[160px]">
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-2.5 rounded-2xl bg-rose-600"><AlertTriangle size={20} className="text-white" /></div>
+            <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Críticos +30d</p>
           </div>
-          <p className="text-3xl font-black text-rose-500">{criticalCount}</p>
-          <p className="text-xs text-slate-500 mt-1">clientes críticos</p>
+          <div className="flex flex-col mt-auto">
+            <h3 className="text-3xl font-black tracking-tight mb-3 text-red-500/80 dark:text-red-400/80">
+              <CountUp value={criticalCount} />
+            </h3>
+            <div className="pt-3 border-t border-white/10">
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-slate-500">Clientes críticos</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1575,7 +1807,7 @@ const InadimplentesBlock = ({ onCountChange }: { onCountChange?: (n: number) => 
 
             {/* Rows */}
             <div className="divide-y divide-white/5">
-              {filtered.map(client => {
+              {filtered.map((client, idx) => {
                 const daysColor = getDaysColor(client.max_days_overdue || 0);
                 const isExpanded = expandedId === client.customer_id;
                 const waMsg = getWhatsAppMessage(client);
@@ -1583,7 +1815,16 @@ const InadimplentesBlock = ({ onCountChange }: { onCountChange?: (n: number) => 
                 const waUrl = phone ? `https://wa.me/55${phone}?text=${waMsg}` : null;
 
                 return (
-                  <div key={client.customer_id}>
+                  <motion.div
+                    key={client.customer_id}
+                    initial={{ opacity: 0, y: -18, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{
+                      duration: 0.35,
+                      delay: idx * 0.06,
+                      ease: [0.32, 0.72, 0, 1],
+                    }}
+                  >
                     {/* Main Row */}
                     <div
                       className="grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 px-5 py-4 hover:bg-white/[0.02] transition-colors cursor-pointer items-center"
@@ -1708,7 +1949,7 @@ const InadimplentesBlock = ({ onCountChange }: { onCountChange?: (n: number) => 
                         )}
                       </div>
                     )}
-                  </div>
+                  </motion.div>
                 );
               })}
             </div>
@@ -1837,7 +2078,7 @@ export default function ContasAReceber() {
     date: item.transaction_date,
     value: Math.abs(parseFloat(item.value || '0')),
   }));
-  const [mainTab, setMainTab] = useState<'receber' | 'cobrancas' | 'inadimplentes'>('receber');
+  const [mainTab, setMainTab] = useState<'receber' | 'cobrancas' | 'inadimplentes'>('cobrancas');
   const [receberSubTab, setReceberSubTab] = useState<'pendentes' | 'recebidos'>('pendentes');
   const [inadimplenteCount, setInadimplenteCount] = useState(0);
 
@@ -1872,16 +2113,16 @@ export default function ContasAReceber() {
       {/* ── Tab Navigation ── */}
       <div className="px-6 md:px-8 mb-4 flex items-center gap-1 border-b border-white/5">
         <button
-          onClick={() => setMainTab('receber')}
-          className={`px-5 py-3 text-sm font-bold border-b-2 transition-colors ${mainTab === 'receber' ? 'border-violet-500 text-violet-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
-        >
-          A Receber
-        </button>
-        <button
           onClick={() => setMainTab('cobrancas')}
           className={`px-5 py-3 text-sm font-bold border-b-2 transition-colors ${mainTab === 'cobrancas' ? 'border-violet-500 text-violet-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
         >
           Cobranças
+        </button>
+        <button
+          onClick={() => setMainTab('receber')}
+          className={`px-5 py-3 text-sm font-bold border-b-2 transition-colors ${mainTab === 'receber' ? 'border-violet-500 text-violet-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
+        >
+          A Receber
         </button>
         <button
           onClick={() => setMainTab('inadimplentes')}
@@ -1905,52 +2146,74 @@ export default function ContasAReceber() {
                 {/* KPI Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   {/* 1) Recebidas */}
-                  <div className="bg-dark-card border border-white/10 rounded-2xl p-6 flex flex-col min-h-[150px]">
+                  <div className="bg-dark-card border border-white/10 rounded-2xl p-6 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[160px]">
                     <div className="flex items-center justify-between mb-4">
                       <div className="p-2.5 rounded-2xl bg-emerald-600"><TrendingUp size={20} className="text-white" /></div>
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Recebidas</p>
+                      <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Recebidas</p>
                     </div>
                     <div className="flex flex-col mt-auto">
-                      <h3 className="text-3xl font-black tracking-tight mb-3 text-emerald-400">{formatCurrency(summary.total_recebidas)}</h3>
+                      <h3 className="text-3xl font-black tracking-tight mb-3 text-dark-text">
+                        <CountUp value={summary.total_recebidas} isCurrency />
+                      </h3>
                       <div className="pt-3 border-t border-white/10">
-                        <div className="flex justify-between items-center text-sm"><span className="text-slate-500">Pix + Boleto</span><span className="font-semibold text-emerald-400">{recebidas.length} cobranças</span></div>
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-slate-500">Pix + Boleto</span>
+                          <span className="font-semibold text-emerald-500">{recebidas.length} cobranças</span>
+                        </div>
                       </div>
                     </div>
                   </div>
                   {/* 2) Confirmadas */}
-                  <div className="bg-dark-card border border-white/10 rounded-2xl p-6 flex flex-col min-h-[150px]">
+                  <div className="bg-dark-card border border-white/10 rounded-2xl p-6 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[160px]">
                     <div className="flex items-center justify-between mb-4">
                       <div className="p-2.5 rounded-2xl bg-blue-600"><Banknote size={20} className="text-white" /></div>
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Confirmadas</p>
+                      <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Confirmadas</p>
                     </div>
                     <div className="flex flex-col mt-auto">
-                      <h3 className="text-3xl font-black tracking-tight mb-3 text-blue-400">{formatCurrency(summary.total_confirmadas)}</h3>
+                      <h3 className="text-3xl font-black tracking-tight mb-3 text-dark-text">
+                        <CountUp value={summary.total_confirmadas} isCurrency />
+                      </h3>
                       <div className="pt-3 border-t border-white/10">
-                        <div className="flex justify-between items-center text-sm"><span className="text-slate-500">Cartão + Antecipadas</span><span className="font-semibold text-blue-400">{confirmadas.length} cobranças</span></div>
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-slate-500">Cartão + Antecipadas</span>
+                          <span className="font-semibold text-blue-500">{confirmadas.length} cobranças</span>
+                        </div>
                       </div>
                     </div>
                   </div>
                   {/* 3) A Receber */}
-                  <div className="bg-dark-card border border-white/10 rounded-2xl p-6 flex flex-col min-h-[150px]">
+                  <div className="bg-dark-card border border-white/10 rounded-2xl p-6 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[160px]">
                     <div className="flex items-center justify-between mb-4">
                       <div className="p-2.5 rounded-2xl bg-amber-500"><Clock size={20} className="text-white" /></div>
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">A Receber</p>
+                      <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">A Receber</p>
                     </div>
                     <div className="flex flex-col mt-auto">
-                      <h3 className="text-3xl font-black tracking-tight mb-3 text-amber-400">{formatCurrency(pendentes.reduce((s, r) => s + parseFloat(r.value || '0'), 0))}</h3>
-                      <div className="pt-3 border-t border-white/10"><div className="flex justify-between items-center text-sm"><span className="text-slate-500">Cobranças</span><span className="font-semibold text-amber-400">{pendentes.length} pendentes</span></div></div>
+                      <h3 className="text-3xl font-black tracking-tight mb-3 text-dark-text">
+                        <CountUp value={pendentes.reduce((s, r) => s + parseFloat(r.value || '0'), 0)} isCurrency />
+                      </h3>
+                      <div className="pt-3 border-t border-white/10">
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-slate-500">Cobranças</span>
+                          <span className="font-semibold text-amber-500">{pendentes.length} pendentes</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                   {/* 4) Vencidas */}
-                  <div className="bg-dark-card border border-white/10 rounded-2xl p-6 flex flex-col min-h-[150px]">
+                  <div className="bg-dark-card border border-white/10 rounded-2xl p-6 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[160px]">
                     <div className="flex items-center justify-between mb-4">
                       <div className="p-2.5 rounded-2xl bg-rose-600"><AlertTriangle size={20} className="text-white" /></div>
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Vencidas</p>
+                      <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Vencidas</p>
                     </div>
                     <div className="flex flex-col mt-auto">
-                      <h3 className={`text-3xl font-black tracking-tight mb-3 ${vencidos.length > 0 ? 'text-rose-400' : 'text-dark-text'}`}>{formatCurrency(vencidos.reduce((s, r) => s + parseFloat(r.value || '0'), 0))}</h3>
+                      <h3 className={`text-3xl font-black tracking-tight mb-3 ${vencidos.length > 0 ? 'text-red-500/80 dark:text-red-400/80' : 'text-dark-text'}`}>
+                        <CountUp value={vencidos.reduce((s, r) => s + parseFloat(r.value || '0'), 0)} isCurrency />
+                      </h3>
                       <div className="pt-3 border-t border-white/10">
-                        <div className="flex justify-between items-center text-sm"><span className="text-slate-500">Atrasadas</span><span className={`font-semibold ${vencidos.length > 0 ? 'text-rose-400' : 'text-slate-500'}`}>{vencidos.length} cobranças</span></div>
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-slate-500">Atrasadas</span>
+                          <span className={`font-semibold ${vencidos.length > 0 ? 'text-rose-500' : 'text-slate-500'}`}>{vencidos.length} cobranças</span>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1991,7 +2254,17 @@ export default function ContasAReceber() {
                             const isOverdue = inv.status === 'OVERDUE';
                             const bt = BILLING_LABELS[inv.billing_type] || BILLING_LABELS['UNDEFINED'];
                             return (
-                              <tr key={idx} className="hover:bg-white/[0.02] transition-colors">
+                              <motion.tr
+                                key={idx}
+                                className="hover:bg-white/[0.02] transition-colors"
+                                initial={{ opacity: 0, y: -18, scale: 0.98 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                transition={{
+                                  duration: 0.35,
+                                  delay: idx * 0.06,
+                                  ease: [0.32, 0.72, 0, 1],
+                                }}
+                              >
                                 <td className="px-4 py-3">
                                   <p className="text-sm font-bold text-gray-900 dark:text-white">{inv.customer_name || 'Desconhecido'}</p>
                                   {inv.description && <p className="text-xs text-slate-500 truncate max-w-[300px]">{inv.description}</p>}
@@ -2023,7 +2296,7 @@ export default function ContasAReceber() {
                                     </a>
                                   )}
                                 </td>
-                              </tr>
+                              </motion.tr>
                             );
                           })}
                         </tbody>
@@ -2051,7 +2324,17 @@ export default function ContasAReceber() {
                           ) : recebidos.map((inv: any, idx: number) => {
                             const bt = BILLING_LABELS[inv.billing_type] || BILLING_LABELS['UNDEFINED'];
                             return (
-                              <tr key={idx} className="hover:bg-white/[0.02] transition-colors">
+                              <motion.tr
+                                key={idx}
+                                className="hover:bg-white/[0.02] transition-colors"
+                                initial={{ opacity: 0, y: -18, scale: 0.98 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                transition={{
+                                  duration: 0.35,
+                                  delay: idx * 0.06,
+                                  ease: [0.32, 0.72, 0, 1],
+                                }}
+                              >
                                 <td className="px-4 py-3">
                                   <p className="text-sm font-bold text-gray-900 dark:text-white">{inv.customer_name || 'Desconhecido'}</p>
                                   {inv.description && <p className="text-xs text-slate-500 truncate max-w-[300px]">{inv.description}</p>}
@@ -2075,7 +2358,7 @@ export default function ContasAReceber() {
                                      <CheckCircle2 size={10} /> Recebido
                                    </span>
                                  </td>
-                               </tr>
+                               </motion.tr>
                              );
                            })}
                          </tbody>
