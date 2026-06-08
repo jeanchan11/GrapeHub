@@ -565,6 +565,12 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
 
     if (!dispatch_id) return res.status(400).json({ error: 'dispatch_id required (body or query)' });
 
+    // Se é um dispatch de teste, responde OK sem tocar no banco
+    if (String(dispatch_id).startsWith('test_')) {
+      console.log(`[dispatch-callback] Test callback received — id=${dispatch_id} success=${success}`);
+      return res.json({ ok: true, dispatch_id, success, _test: true });
+    }
+
     console.log(`[dispatch-callback] id=${dispatch_id} success=${success} ticket=${ticket_id || '-'}`);
 
     try {

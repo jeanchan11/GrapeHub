@@ -708,6 +708,45 @@ async function startServer() {
         created_at TIMESTAMP DEFAULT NOW()
       );
 
+      CREATE TABLE IF NOT EXISTS crm_comercial_checklist_template (
+        id SERIAL PRIMARY KEY,
+        item TEXT NOT NULL,
+        order_index INTEGER DEFAULT 0,
+        active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+
+      -- Seed checklist de entrada padrão
+      DO $$
+      DECLARE
+        tpl_count INTEGER;
+      BEGIN
+        SELECT COUNT(*) INTO tpl_count FROM crm_comercial_checklist_template;
+        IF tpl_count = 0 THEN
+          INSERT INTO crm_comercial_checklist_template (item, order_index) VALUES
+            ('Gerar contrato', 0),
+            ('Link forms', 1),
+            ('Faz copia do contrato no drive', 2),
+            ('Criar em pdf com os ajustes no claudio', 3),
+            ('Pix', 4),
+            ('Criar grupo', 5),
+            ('Mensagem boas vindas', 6),
+            ('Ganho CRM', 7),
+            ('Arquivar contrato após as assinaturas', 8);
+        END IF;
+      END $$;
+
+      CREATE TABLE IF NOT EXISTS crm_comercial_checklist (
+        id SERIAL PRIMARY KEY,
+        lead_id TEXT NOT NULL,
+        item TEXT NOT NULL,
+        order_index INTEGER DEFAULT 0,
+        completed BOOLEAN DEFAULT FALSE,
+        completed_by TEXT,
+        completed_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+
       CREATE TABLE IF NOT EXISTS task_subtasks (
         id SERIAL PRIMARY KEY,
         task_id TEXT,
@@ -9099,6 +9138,117 @@ app.get("/api/todos", async (req, res) => {
     } catch (err) {
       console.error("Error deleting file:", err);
       res.status(500).json({ error: "Failed to delete file" });
+    }
+  });
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // CRM Comercial — Checklist de Entrada
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  // GET checklist items for a lead (auto-creates from template if empty)
+  app.get("/api/crm-comercial/checklist", async (req, res) => {
+    try {
+      const { lead_id } = req.query as { lead_id: string };
+      if (!lead_id) return res.status(400).json({ error: "lead_id required" });
+
+      let result = await pool.query(
+        "SELECT * FROM crm_comercial_checklist WHERE lead_id = $1 ORDER BY order_index ASC",
+        [lead_id]
+      );
+
+      // Auto-populate from template if lead has no checklist yet
+      if (result.rows.length === 0) {
+        const tpl = await pool.query(
+          "SELECT item, order_index FROM crm_comercial_checklist_template WHERE active = true ORDER BY order_index ASC"
+        );
+        if (tpl.rows.length > 0) {
+          const values: any[] = [];
+          const placeholders: string[] = [];
+          tpl.rows.forEach((t: any, i: number) => {
+            const offset = i * 3;
+            placeholders.push(`($${offset + 1}, $${offset + 2}, $${offset + 3})`);
+            values.push(lead_id, t.item, t.order_index);
+          });
+          await pool.query(
+            `INSERT INTO crm_comercial_checklist (lead_id, item, order_index) VALUES ${placeholders.join(', ')}`,
+            values
+          );
+          result = await pool.query(
+            "SELECT * FROM crm_comercial_checklist WHERE lead_id = $1 ORDER BY order_index ASC",
+            [lead_id]
+          );
+        }
+      }
+
+      res.json(result.rows);
+    } catch (err) {
+      console.error("Error fetching checklist:", err);
+      res.status(500).json({ error: "Failed to fetch checklist" });
+    }
+  });
+
+  // PUT update a checklist item (toggle completed)
+  app.put("/api/crm-comercial/checklist/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { completed, completed_by } = req.body;
+      const result = await pool.query(
+        `UPDATE crm_comercial_checklist 
+         SET completed = $1, completed_by = $2, completed_at = $3
+         WHERE id = $4 RETURNING *`,
+        [completed, completed_by || null, completed ? new Date() : null, id]
+      );
+      if (!result.rows.length) return res.status(404).json({ error: "Item not found" });
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error("Error updating checklist item:", err);
+      res.status(500).json({ error: "Failed to update checklist item" });
+    }
+  });
+
+  // GET checklist template
+  app.get("/api/crm-comercial/checklist-template", async (_req, res) => {
+    try {
+      const result = await pool.query(
+        "SELECT * FROM crm_comercial_checklist_template WHERE active = true ORDER BY order_index ASC"
+      );
+      res.json(result.rows);
+    } catch (err) {
+      console.error("Error fetching checklist template:", err);
+      res.status(500).json({ error: "Failed to fetch template" });
+    }
+  });
+
+  // PUT replace entire checklist template
+  app.put("/api/crm-comercial/checklist-template", async (req, res) => {
+    try {
+      const { items } = req.body as { items: { item: string }[] };
+      if (!Array.isArray(items)) return res.status(400).json({ error: "items array required" });
+
+      // Soft-delete all existing, then insert new
+      await pool.query("UPDATE crm_comercial_checklist_template SET active = false");
+
+      if (items.length > 0) {
+        const values: any[] = [];
+        const placeholders: string[] = [];
+        items.forEach((t, i) => {
+          const offset = i * 2;
+          placeholders.push(`($${offset + 1}, $${offset + 2})`);
+          values.push(t.item, i);
+        });
+        await pool.query(
+          `INSERT INTO crm_comercial_checklist_template (item, order_index) VALUES ${placeholders.join(', ')}`,
+          values
+        );
+      }
+
+      const result = await pool.query(
+        "SELECT * FROM crm_comercial_checklist_template WHERE active = true ORDER BY order_index ASC"
+      );
+      res.json(result.rows);
+    } catch (err) {
+      console.error("Error updating checklist template:", err);
+      res.status(500).json({ error: "Failed to update template" });
     }
   });
 
