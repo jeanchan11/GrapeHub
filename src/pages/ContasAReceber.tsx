@@ -225,8 +225,10 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
   const [cfgForm, setCfgForm] = useState({ dispatch_enabled: true, dispatch_time: '09:00', dispatch_interval_seconds: 60, n8n_webhook_url: '' });
   const [savingCfg, setSavingCfg] = useState(false);
   const [copiedCallback, setCopiedCallback] = useState(false);
-  const [webhookTestStatus, setWebhookTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
-  const [webhookTestMessage, setWebhookTestMessage] = useState('');
+  const [webhookTestWA, setWebhookTestWA] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [webhookTestWAMsg, setWebhookTestWAMsg] = useState('');
+  const [webhookTestEmail, setWebhookTestEmail] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [webhookTestEmailMsg, setWebhookTestEmailMsg] = useState('');
   const callbackUrl = `${window.location.origin}/api/finance/dispatch/callback`;
   const [sendingId, setSendingId] = useState<string | null>(null);
   const [showSendAllConfirm, setShowSendAllConfirm] = useState(false);
@@ -994,7 +996,7 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                                     : method === 'Whatsapp' ? (cl?.billingPhone || item.customer_phone || '—')
                                     : (item.customer_phone || '—');
                       const channelLabel = method || item.channel || '—';
-                      const isEmail = method === 'E-mail';
+                      const isEmail = method === 'E-mail' || method === 'Email' || (!method && item.channel === 'EMAIL');
                       const isWA = method === 'Whatsapp' || (!method && item.channel === 'WHATSAPP');
                       const d = item.day_offset ?? 0;
                       const phaseKey = d < 0 ? 'preventivo' : d === 0 ? 'vencimento' : d >= 10 ? 'humano' : 'reativo';
@@ -1233,57 +1235,113 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
               </div>
               <div>
                 <label className="text-[10px] font-bold text-gray-500 dark:text-slate-500 uppercase tracking-widest block mb-1">URL do Webhook n8n</label>
-                <input type="url" value={cfgForm.n8n_webhook_url} onChange={e => { setCfgForm(f => ({ ...f, n8n_webhook_url: e.target.value })); setWebhookTestStatus('idle'); }}
+                <input type="url" value={cfgForm.n8n_webhook_url} onChange={e => { setCfgForm(f => ({ ...f, n8n_webhook_url: e.target.value })); setWebhookTestWA('idle'); setWebhookTestEmail('idle'); }}
                   placeholder="https://n8n.seudominio.com/webhook/..." className="w-full bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-violet-500/50" />
-                {/* Botão Testar Webhook */}
-                <button
-                  disabled={!cfgForm.n8n_webhook_url || webhookTestStatus === 'testing'}
-                  onClick={async () => {
-                    if (!cfgForm.n8n_webhook_url) return;
-                    setWebhookTestStatus('testing');
-                    setWebhookTestMessage('');
-                    try {
-                      const res = await fetch('/api/finance/dispatch/test-webhook', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ webhook_url: cfgForm.n8n_webhook_url }),
-                      });
-                      const data = await res.json();
-                      if (res.ok && data.success) {
-                        setWebhookTestStatus('success');
-                        setWebhookTestMessage(`Resposta: HTTP ${data.status_code} — Webhook respondeu com sucesso!`);
-                      } else {
-                        setWebhookTestStatus('error');
-                        setWebhookTestMessage(data.error || `Falha: HTTP ${data.status_code || '?'}`);
+                {/* Botões Testar Webhook */}
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  {/* Teste WhatsApp */}
+                  <button
+                    disabled={!cfgForm.n8n_webhook_url || webhookTestWA === 'testing'}
+                    onClick={async () => {
+                      if (!cfgForm.n8n_webhook_url) return;
+                      setWebhookTestWA('testing');
+                      setWebhookTestWAMsg('');
+                      try {
+                        const res = await fetch('/api/finance/dispatch/test-webhook', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ webhook_url: cfgForm.n8n_webhook_url, canal: 'Whatsapp' }),
+                        });
+                        const data = await res.json();
+                        if (res.ok && data.success) {
+                          setWebhookTestWA('success');
+                          setWebhookTestWAMsg(`HTTP ${data.status_code} — OK!`);
+                        } else {
+                          setWebhookTestWA('error');
+                          setWebhookTestWAMsg(data.error || `HTTP ${data.status_code || '?'}`);
+                        }
+                      } catch (err: any) {
+                        setWebhookTestWA('error');
+                        setWebhookTestWAMsg(err.message || 'Erro');
                       }
-                    } catch (err: any) {
-                      setWebhookTestStatus('error');
-                      setWebhookTestMessage(err.message || 'Erro de conexão');
-                    }
-                  }}
-                  className={`mt-2 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
-                    webhookTestStatus === 'success'
-                      ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-500/30'
-                      : webhookTestStatus === 'error'
-                        ? 'bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-300 dark:border-rose-500/30'
-                        : 'bg-amber-50 dark:bg-amber-500/5 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-500/20 hover:bg-amber-100 dark:hover:bg-amber-500/10'
-                  }`}
-                >
-                  {webhookTestStatus === 'testing' ? (
-                    <><div className="w-3 h-3 border-2 border-amber-400/30 border-t-amber-500 rounded-full animate-spin" /> Testando...</>
-                  ) : webhookTestStatus === 'success' ? (
-                    <><CheckCircle2 size={13} /> Webhook OK!</>
-                  ) : webhookTestStatus === 'error' ? (
-                    <><AlertTriangle size={13} /> Falha no teste</>
-                  ) : (
-                    <><Zap size={13} /> Testar Webhook</>
-                  )}
-                </button>
-                {webhookTestMessage && (
+                    }}
+                    className={`flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                      webhookTestWA === 'success'
+                        ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-500/30'
+                        : webhookTestWA === 'error'
+                          ? 'bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-300 dark:border-rose-500/30'
+                          : 'bg-emerald-50 dark:bg-emerald-500/5 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-500/20 hover:bg-emerald-100 dark:hover:bg-emerald-500/10'
+                    }`}
+                  >
+                    {webhookTestWA === 'testing' ? (
+                      <><div className="w-3 h-3 border-2 border-emerald-400/30 border-t-emerald-500 rounded-full animate-spin" /> Testando...</>
+                    ) : webhookTestWA === 'success' ? (
+                      <><CheckCircle2 size={13} /> WhatsApp OK!</>
+                    ) : webhookTestWA === 'error' ? (
+                      <><AlertTriangle size={13} /> Falha</>
+                    ) : (
+                      <><Zap size={13} /> Testar WhatsApp</>
+                    )}
+                  </button>
+
+                  {/* Teste Email */}
+                  <button
+                    disabled={!cfgForm.n8n_webhook_url || webhookTestEmail === 'testing'}
+                    onClick={async () => {
+                      if (!cfgForm.n8n_webhook_url) return;
+                      setWebhookTestEmail('testing');
+                      setWebhookTestEmailMsg('');
+                      try {
+                        const res = await fetch('/api/finance/dispatch/test-webhook', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ webhook_url: cfgForm.n8n_webhook_url, canal: 'E-mail' }),
+                        });
+                        const data = await res.json();
+                        if (res.ok && data.success) {
+                          setWebhookTestEmail('success');
+                          setWebhookTestEmailMsg(`HTTP ${data.status_code} — OK!`);
+                        } else {
+                          setWebhookTestEmail('error');
+                          setWebhookTestEmailMsg(data.error || `HTTP ${data.status_code || '?'}`);
+                        }
+                      } catch (err: any) {
+                        setWebhookTestEmail('error');
+                        setWebhookTestEmailMsg(err.message || 'Erro');
+                      }
+                    }}
+                    className={`flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                      webhookTestEmail === 'success'
+                        ? 'bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-300 dark:border-blue-500/30'
+                        : webhookTestEmail === 'error'
+                          ? 'bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-300 dark:border-rose-500/30'
+                          : 'bg-blue-50 dark:bg-blue-500/5 text-blue-700 dark:text-blue-400 border-blue-300 dark:border-blue-500/20 hover:bg-blue-100 dark:hover:bg-blue-500/10'
+                    }`}
+                  >
+                    {webhookTestEmail === 'testing' ? (
+                      <><div className="w-3 h-3 border-2 border-blue-400/30 border-t-blue-500 rounded-full animate-spin" /> Testando...</>
+                    ) : webhookTestEmail === 'success' ? (
+                      <><CheckCircle2 size={13} /> E-mail OK!</>
+                    ) : webhookTestEmail === 'error' ? (
+                      <><AlertTriangle size={13} /> Falha</>
+                    ) : (
+                      <><Mail size={13} /> Testar E-mail</>
+                    )}
+                  </button>
+                </div>
+                {/* Mensagens de resultado */}
+                {webhookTestWAMsg && (
                   <p className={`mt-1.5 text-[10px] font-medium ${
-                    webhookTestStatus === 'success' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
+                    webhookTestWA === 'success' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
                   }`}>
-                    {webhookTestMessage}
+                    WhatsApp: {webhookTestWAMsg}
+                  </p>
+                )}
+                {webhookTestEmailMsg && (
+                  <p className={`mt-1 text-[10px] font-medium ${
+                    webhookTestEmail === 'success' ? 'text-blue-600 dark:text-blue-400' : 'text-rose-600 dark:text-rose-400'
+                  }`}>
+                    E-mail: {webhookTestEmailMsg}
                   </p>
                 )}
               </div>
@@ -1516,7 +1574,13 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
       {tooltipData && (() => {
         const { item, type, x, y } = tooltipData;
         const isSent = type === 'sent';
-        const confirmed = !!item.n8n_ticket_id;
+        const ttCl = clientsMap.get((item.customer_name || '').toLowerCase().trim());
+        const ttMethod = ttCl?.billingMethod;
+        const ttIsEmail = ttMethod === 'E-mail' || ttMethod === 'Email' || (!ttMethod && item.channel === 'EMAIL');
+        const ttLabel = ttIsEmail ? 'E-mail' : 'WhatsApp';
+        const ttContact = ttIsEmail
+          ? (ttCl?.billingEmail || '—')
+          : (item.customer_phone || '—');
         const time = isSent
           ? (item.sent_at ? new Date(item.sent_at).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—')
           : (item.updated_at ? new Date(item.updated_at).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—');
@@ -1530,20 +1594,19 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                 {isSent ? 'Mensagem Enviada' : 'Falha no Envio'}
               </p>
               <div className="space-y-1.5">
+                <div className="flex gap-2 items-center">
+                  <span className="text-[10px] text-gray-500 dark:text-gray-400 w-16 shrink-0">Método</span>
+                  <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${ttIsEmail ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400' : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'}`}>{ttLabel}</span>
+                </div>
                 <div className="flex gap-2">
                   <span className="text-[10px] text-gray-500 dark:text-gray-400 w-16 shrink-0">Horário</span>
                   <span className="text-[10px] text-gray-900 dark:text-white font-medium">{time}</span>
                 </div>
                 <div className="flex gap-2">
-                  <span className="text-[10px] text-gray-500 dark:text-gray-400 w-16 shrink-0">Telefone</span>
-                  <span className="text-[10px] text-gray-900 dark:text-white font-medium">{item.customer_phone || '—'}</span>
+                  <span className="text-[10px] text-gray-500 dark:text-gray-400 w-16 shrink-0">{ttIsEmail ? 'E-mail' : 'Telefone'}</span>
+                  <span className="text-[10px] text-gray-900 dark:text-white font-medium truncate">{ttContact}</span>
                 </div>
-                {isSent && confirmed && (
-                  <div className="flex gap-2">
-                    <span className="text-[10px] text-gray-500 dark:text-gray-400 w-16 shrink-0">Ticket n8n</span>
-                    <span className="text-[10px] text-violet-600 dark:text-violet-300 font-mono truncate">{item.n8n_ticket_id}</span>
-                  </div>
-                )}
+
                 {isSent && item.message_rendered && (
                   <div className="pt-1.5 border-t border-gray-100 dark:border-white/10">
                     <p className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">Mensagem enviada</p>

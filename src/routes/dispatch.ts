@@ -130,6 +130,21 @@ async function runDailyBatchIfNeeded(pool: Pool) {
         AND dq.due_date IS NOT NULL
         AND dq.scheduled_date != dq.due_date::date + dq.day_offset
     `);
+    // 1a) Corrige canal e telefone dos itens existentes com base no cadastro do cliente
+    await pool.query(`
+      UPDATE fin_dispatch_queue dq
+      SET channel = CASE WHEN UPPER(COALESCE(c.billing_method,'')) IN ('E-MAIL','EMAIL') THEN 'EMAIL' ELSE 'WHATSAPP' END,
+          customer_phone = COALESCE(NULLIF(c.billing_phone,''), NULLIF(c.phone,''), NULLIF(fp.phone,''), dq.customer_phone),
+          updated_at = NOW()
+      FROM fin_people fp
+      JOIN clients c ON c.id = fp.grapehub_client_id
+      WHERE dq.status = 'AGENDADO'
+        AND fp.asaas_id = dq.customer_asaas_id
+        AND (
+          dq.channel != CASE WHEN UPPER(COALESCE(c.billing_method,'')) IN ('E-MAIL','EMAIL') THEN 'EMAIL' ELSE 'WHATSAPP' END
+          OR dq.customer_phone != COALESCE(NULLIF(c.billing_phone,''), NULLIF(c.phone,''), NULLIF(fp.phone,''), dq.customer_phone)
+        )
+    `);
     // 2) Cancela itens de clientes no CRM Financeiro
     await pool.query(`
       UPDATE fin_dispatch_queue dq
@@ -181,7 +196,8 @@ async function runDailyBatchIfNeeded(pool: Pool) {
         COALESCE(fp.name, fr.customer_name, 'Desconhecido'),
         COALESCE(NULLIF(c.billing_phone,''), NULLIF(c.phone,''), NULLIF(fp.phone,''), ''),
         fr.value, fr.due_date, fcr.day_offset, fcr.label,
-        'WHATSAPP', fcr.message_template, fcr.message_template,
+        CASE WHEN UPPER(COALESCE(c.billing_method,'')) IN ('E-MAIL','EMAIL') THEN 'EMAIL' ELSE 'WHATSAPP' END,
+        fcr.message_template, fcr.message_template,
         fr.due_date::date + fcr.day_offset,
         fr.asaas_id, fr.customer_id, fr.invoice_url
       FROM fin_receivables fr
@@ -223,15 +239,21 @@ async function runDailyBatchIfNeeded(pool: Pool) {
         [item.id]
       );
       try {
-        // Busca o telefone mais atualizado (prioriza billing_phone do cadastro)
-        const freshPhone = await pool.query(`
-          SELECT COALESCE(NULLIF(c.billing_phone,''), NULLIF(c.phone,''), NULLIF(fp.phone,''), dq.customer_phone) as phone
+        // Busca o telefone e canal mais atualizados (prioriza billing_phone do cadastro)
+        const freshData = await pool.query(`
+          SELECT
+            COALESCE(NULLIF(c.billing_phone,''), NULLIF(c.phone,''), NULLIF(fp.phone,''), dq.customer_phone) as phone,
+            COALESCE(NULLIF(c.billing_method,''), 'Whatsapp') as canal,
+            COALESCE(NULLIF(c.billing_email,''), NULLIF(c.email,''), '') as email
           FROM fin_dispatch_queue dq
           LEFT JOIN fin_people fp ON fp.asaas_id = dq.customer_asaas_id
           LEFT JOIN clients c ON c.id = fp.grapehub_client_id
           WHERE dq.id = $1
         `, [item.id]);
-        const resolvedPhone = freshPhone.rows[0]?.phone || item.customer_phone || '';
+        const row = freshData.rows[0];
+        const resolvedPhone = row?.phone || item.customer_phone || '';
+        const resolvedCanal = row?.canal || 'Whatsapp';
+        const resolvedEmail = row?.email || '';
         // Atualiza o customer_phone na fila com o valor correto
         if (resolvedPhone !== item.customer_phone) {
           await pool.query(`UPDATE fin_dispatch_queue SET customer_phone = $2 WHERE id = $1`, [item.id, resolvedPhone]);
@@ -244,7 +266,8 @@ async function runDailyBatchIfNeeded(pool: Pool) {
           telefone: resolvedPhone,
           mensagem,
           nome: item.customer_name,
-          email: '',
+          email: resolvedEmail,
+          metodo: resolvedCanal,
           dispatch_id: item.id,
         };
         const resp = await sendViaN8n(cfg.n8n_webhook_url, payload);
@@ -382,21 +405,27 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
 
       // Envia assíncronamente
       try {
-        // Busca o telefone mais atualizado (prioriza billing_phone do cadastro)
-        const freshPhone = await pool.query(`
-          SELECT COALESCE(NULLIF(c.billing_phone,''), NULLIF(c.phone,''), NULLIF(fp.phone,''), dq.customer_phone) as phone
+        // Busca o telefone e canal mais atualizados (prioriza billing_phone do cadastro)
+        const freshData = await pool.query(`
+          SELECT
+            COALESCE(NULLIF(c.billing_phone,''), NULLIF(c.phone,''), NULLIF(fp.phone,''), dq.customer_phone) as phone,
+            COALESCE(NULLIF(c.billing_method,''), 'Whatsapp') as canal,
+            COALESCE(NULLIF(c.billing_email,''), NULLIF(c.email,''), '') as email
           FROM fin_dispatch_queue dq
           LEFT JOIN fin_people fp ON fp.asaas_id = dq.customer_asaas_id
           LEFT JOIN clients c ON c.id = fp.grapehub_client_id
           WHERE dq.id = $1
         `, [id]);
-        const resolvedPhone = freshPhone.rows[0]?.phone || item.customer_phone || '';
+        const row = freshData.rows[0];
+        const resolvedPhone = row?.phone || item.customer_phone || '';
+        const resolvedCanal = row?.canal || 'Whatsapp';
+        const resolvedEmail = row?.email || '';
         if (resolvedPhone !== item.customer_phone) {
           await pool.query(`UPDATE fin_dispatch_queue SET customer_phone = $2 WHERE id = $1`, [id, resolvedPhone]);
         }
         const mensagem = renderMessage(item.message_template || '', item);
         await pool.query(`UPDATE fin_dispatch_queue SET message_rendered = $2 WHERE id = $1`, [id, mensagem]);
-        const payload = { telefone: resolvedPhone, mensagem, nome: item.customer_name, email: '', dispatch_id: id };
+        const payload = { telefone: resolvedPhone, mensagem, nome: item.customer_name, email: resolvedEmail, metodo: resolvedCanal, dispatch_id: id };
         const resp = await sendViaN8n(cfg.n8n_webhook_url, payload);
         await pool.query(`UPDATE fin_dispatch_queue SET status = 'ENVIADO', sent_at = NOW(), updated_at = NOW(), n8n_ticket_id = $2, n8n_contato_id = $3, n8n_contato_novo = $4, n8n_ticket_novo = $5 WHERE id = $1`,
           [id, resp?.ticket_id || null, resp?.contato_id || null, resp?.contato_novo ?? null, resp?.ticket_novo ?? null]);
@@ -489,21 +518,27 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
       for (const item of items) {
         await pool.query(`UPDATE fin_dispatch_queue SET status = 'ENVIANDO', updated_at = NOW() WHERE id = $1`, [item.id]);
         try {
-          // Busca o telefone mais atualizado (prioriza billing_phone do cadastro)
-          const freshPhone = await pool.query(`
-            SELECT COALESCE(NULLIF(c.billing_phone,''), NULLIF(c.phone,''), NULLIF(fp.phone,''), dq.customer_phone) as phone
+          // Busca o telefone e canal mais atualizados (prioriza billing_phone do cadastro)
+          const freshData = await pool.query(`
+            SELECT
+              COALESCE(NULLIF(c.billing_phone,''), NULLIF(c.phone,''), NULLIF(fp.phone,''), dq.customer_phone) as phone,
+              COALESCE(NULLIF(c.billing_method,''), 'Whatsapp') as canal,
+              COALESCE(NULLIF(c.billing_email,''), NULLIF(c.email,''), '') as email
             FROM fin_dispatch_queue dq
             LEFT JOIN fin_people fp ON fp.asaas_id = dq.customer_asaas_id
             LEFT JOIN clients c ON c.id = fp.grapehub_client_id
             WHERE dq.id = $1
           `, [item.id]);
-          const resolvedPhone = freshPhone.rows[0]?.phone || item.customer_phone || '';
+          const row = freshData.rows[0];
+          const resolvedPhone = row?.phone || item.customer_phone || '';
+          const resolvedCanal = row?.canal || 'Whatsapp';
+          const resolvedEmail = row?.email || '';
           if (resolvedPhone !== item.customer_phone) {
             await pool.query(`UPDATE fin_dispatch_queue SET customer_phone = $2 WHERE id = $1`, [item.id, resolvedPhone]);
           }
           const mensagem = renderMessage(item.message_template || '', item);
           await pool.query(`UPDATE fin_dispatch_queue SET message_rendered = $2 WHERE id = $1`, [item.id, mensagem]);
-          const payload = { telefone: resolvedPhone, mensagem, nome: item.customer_name, email: '', dispatch_id: item.id };
+          const payload = { telefone: resolvedPhone, mensagem, nome: item.customer_name, email: resolvedEmail, metodo: resolvedCanal, dispatch_id: item.id };
           const resp = await sendViaN8n(cfg.n8n_webhook_url, payload);
           await pool.query(`UPDATE fin_dispatch_queue SET status = 'ENVIADO', sent_at = NOW(), updated_at = NOW(), n8n_ticket_id = $2, n8n_contato_id = $3, n8n_contato_novo = $4, n8n_ticket_novo = $5 WHERE id = $1`,
             [item.id, resp?.ticket_id || null, resp?.contato_id || null, resp?.contato_novo ?? null, resp?.ticket_novo ?? null]);
@@ -562,14 +597,18 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
 
   // POST — test webhook connectivity
   app.post('/api/finance/dispatch/test-webhook', async (req, res) => {
-    const { webhook_url } = req.body;
+    const { webhook_url, canal } = req.body;
     if (!webhook_url) return res.status(400).json({ success: false, error: 'webhook_url é obrigatório' });
 
+    const isEmail = canal === 'Email' || canal === 'E-mail' || canal === 'EMAIL';
     const testPayload = {
-      telefone: '11999999999',
-      mensagem: '🔔 Teste GrapeHub — Esta é uma mensagem de teste para validar a conectividade do webhook. Se você recebeu, está tudo certo!',
+      telefone: isEmail ? '' : '5541996168921',
+      mensagem: isEmail
+        ? '🔔 Teste GrapeHub — Esta é uma mensagem de teste de E-MAIL para validar a conectividade do webhook.'
+        : '🔔 Teste GrapeHub — Esta é uma mensagem de teste de WHATSAPP para validar a conectividade do webhook.',
       nome: 'Teste GrapeHub',
-      email: '',
+      email: isEmail ? 'jeanchan@grapemidia.com' : '',
+      metodo: isEmail ? 'E-mail' : 'Whatsapp',
       dispatch_id: 'test_' + Date.now(),
       _test: true,
     };
@@ -616,6 +655,23 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
           AND dq.due_date IS NOT NULL
           AND dq.scheduled_date != dq.due_date::date + dq.day_offset
       `);
+
+      // 1a) Corrige canal e telefone dos itens existentes com base no cadastro do cliente
+      const fixChannel = await pool.query(`
+        UPDATE fin_dispatch_queue dq
+        SET channel = CASE WHEN UPPER(COALESCE(c.billing_method,'')) IN ('E-MAIL','EMAIL') THEN 'EMAIL' ELSE 'WHATSAPP' END,
+            customer_phone = COALESCE(NULLIF(c.billing_phone,''), NULLIF(c.phone,''), NULLIF(fp.phone,''), dq.customer_phone),
+            updated_at = NOW()
+        FROM fin_people fp
+        JOIN clients c ON c.id = fp.grapehub_client_id
+        WHERE dq.status = 'AGENDADO'
+          AND fp.asaas_id = dq.customer_asaas_id
+          AND (
+            dq.channel != CASE WHEN UPPER(COALESCE(c.billing_method,'')) IN ('E-MAIL','EMAIL') THEN 'EMAIL' ELSE 'WHATSAPP' END
+            OR dq.customer_phone != COALESCE(NULLIF(c.billing_phone,''), NULLIF(c.phone,''), NULLIF(fp.phone,''), dq.customer_phone)
+          )
+      `);
+      console.log(`[dispatch populate] Canal/telefone corrigido: ${fixChannel.rowCount} item(s)`);
 
       // 1b) Sync rápido: verifica status atual no Asaas para faturas AGENDADAS
       //     Garante que pagamentos recentes sejam detectados sem esperar sync completo
@@ -707,7 +763,7 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
           fr.due_date,
           fcr.day_offset,
           fcr.label,
-          'WHATSAPP',
+          CASE WHEN UPPER(COALESCE(c.billing_method,'')) IN ('E-MAIL','EMAIL') THEN 'EMAIL' ELSE 'WHATSAPP' END,
           fcr.message_template,
           fcr.message_template,
           -- Data correta: vencimento + offset da regra (D-5 = 5 dias antes, D+2 = 2 dias depois)
