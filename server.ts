@@ -116,6 +116,7 @@ const PUBLIC_ROUTES: Array<{ method?: string; pattern: RegExp }> = [
   { pattern: /^\/api\/api4com\/webhook$/, method: 'POST' },
   { pattern: /^\/api\/hiring\/public\// },
   { pattern: /^\/api\/onboarding\/submit$/, method: 'POST' },
+  { pattern: /^\/api\/finance\/dispatch\/callback$/, method: 'POST' },
 ];
 
 function isPublicRoute(method: string, path: string): boolean {
