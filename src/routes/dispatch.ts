@@ -522,6 +522,50 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
     }
   });
 
+  // POST — test webhook connectivity
+  app.post('/api/finance/dispatch/test-webhook', async (req, res) => {
+    const { webhook_url } = req.body;
+    if (!webhook_url) return res.status(400).json({ success: false, error: 'webhook_url é obrigatório' });
+
+    const testPayload = {
+      telefone: '11999999999',
+      mensagem: '🔔 Teste GrapeHub — Esta é uma mensagem de teste para validar a conectividade do webhook. Se você recebeu, está tudo certo!',
+      nome: 'Teste GrapeHub',
+      email: '',
+      dispatch_id: 'test_' + Date.now(),
+      _test: true,
+    };
+
+    const ctrl = new AbortController();
+    const timeout = setTimeout(() => ctrl.abort(), 15000);
+
+    try {
+      const response = await fetch(webhook_url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(testPayload),
+        signal: ctrl.signal,
+      });
+      clearTimeout(timeout);
+
+      const statusCode = response.status;
+      let body: any = null;
+      try { body = await response.json(); } catch { try { body = await response.text(); } catch {} }
+
+      if (statusCode >= 200 && statusCode < 300) {
+        res.json({ success: true, status_code: statusCode, response: body });
+      } else {
+        res.json({ success: false, status_code: statusCode, error: `Webhook retornou HTTP ${statusCode}`, response: body });
+      }
+    } catch (err: any) {
+      clearTimeout(timeout);
+      const message = err?.name === 'AbortError'
+        ? 'Timeout — webhook não respondeu em 15 segundos'
+        : (err?.message || 'Erro de conexão');
+      res.json({ success: false, error: message });
+    }
+  });
+
   // POST — popular fila a partir da queue existente (conversão de itens pending→dispatch)
   app.post('/api/finance/dispatch/queue/populate', async (_req, res) => {
     try {

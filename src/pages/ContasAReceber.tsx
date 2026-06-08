@@ -207,6 +207,8 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
   const [cfgForm, setCfgForm] = useState({ dispatch_enabled: true, dispatch_time: '09:00', dispatch_interval_seconds: 60, n8n_webhook_url: '' });
   const [savingCfg, setSavingCfg] = useState(false);
   const [copiedCallback, setCopiedCallback] = useState(false);
+  const [webhookTestStatus, setWebhookTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [webhookTestMessage, setWebhookTestMessage] = useState('');
   const callbackUrl = `${window.location.origin}/api/finance/dispatch/callback`;
   const [sendingId, setSendingId] = useState<string | null>(null);
   const [showSendAllConfirm, setShowSendAllConfirm] = useState(false);
@@ -1083,8 +1085,59 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
               </div>
               <div>
                 <label className="text-[10px] font-bold text-gray-500 dark:text-slate-500 uppercase tracking-widest block mb-1">URL do Webhook n8n</label>
-                <input type="url" value={cfgForm.n8n_webhook_url} onChange={e => setCfgForm(f => ({ ...f, n8n_webhook_url: e.target.value }))}
+                <input type="url" value={cfgForm.n8n_webhook_url} onChange={e => { setCfgForm(f => ({ ...f, n8n_webhook_url: e.target.value })); setWebhookTestStatus('idle'); }}
                   placeholder="https://n8n.seudominio.com/webhook/..." className="w-full bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-violet-500/50" />
+                {/* Botão Testar Webhook */}
+                <button
+                  disabled={!cfgForm.n8n_webhook_url || webhookTestStatus === 'testing'}
+                  onClick={async () => {
+                    if (!cfgForm.n8n_webhook_url) return;
+                    setWebhookTestStatus('testing');
+                    setWebhookTestMessage('');
+                    try {
+                      const res = await fetch('/api/finance/dispatch/test-webhook', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ webhook_url: cfgForm.n8n_webhook_url }),
+                      });
+                      const data = await res.json();
+                      if (res.ok && data.success) {
+                        setWebhookTestStatus('success');
+                        setWebhookTestMessage(`Resposta: HTTP ${data.status_code} — Webhook respondeu com sucesso!`);
+                      } else {
+                        setWebhookTestStatus('error');
+                        setWebhookTestMessage(data.error || `Falha: HTTP ${data.status_code || '?'}`);
+                      }
+                    } catch (err: any) {
+                      setWebhookTestStatus('error');
+                      setWebhookTestMessage(err.message || 'Erro de conexão');
+                    }
+                  }}
+                  className={`mt-2 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                    webhookTestStatus === 'success'
+                      ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-500/30'
+                      : webhookTestStatus === 'error'
+                        ? 'bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-300 dark:border-rose-500/30'
+                        : 'bg-amber-50 dark:bg-amber-500/5 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-500/20 hover:bg-amber-100 dark:hover:bg-amber-500/10'
+                  }`}
+                >
+                  {webhookTestStatus === 'testing' ? (
+                    <><div className="w-3 h-3 border-2 border-amber-400/30 border-t-amber-500 rounded-full animate-spin" /> Testando...</>
+                  ) : webhookTestStatus === 'success' ? (
+                    <><CheckCircle2 size={13} /> Webhook OK!</>
+                  ) : webhookTestStatus === 'error' ? (
+                    <><AlertTriangle size={13} /> Falha no teste</>
+                  ) : (
+                    <><Zap size={13} /> Testar Webhook</>
+                  )}
+                </button>
+                {webhookTestMessage && (
+                  <p className={`mt-1.5 text-[10px] font-medium ${
+                    webhookTestStatus === 'success' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
+                  }`}>
+                    {webhookTestMessage}
+                  </p>
+                )}
               </div>
               {/* Callback URL - para configurar no n8n */}
               <div className="border border-dashed border-emerald-400/40 bg-emerald-50/50 dark:bg-emerald-500/5 rounded-xl p-4">
