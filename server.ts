@@ -8143,7 +8143,7 @@ app.get("/api/todos", async (req, res) => {
   });
 
   // ── Reabrir lead (remove ganho e perda) ──────────────────────────────────
-  app.patch('/api/crm-comercial/leads/:id/reopen', async (req: Request, res: Response) => {
+  app.patch('/api/crm-comercial/leads/:id/reopen', async (req, res) => {
     const { id } = req.params;
     const { moved_by } = req.body ?? {};
     try {
@@ -8372,7 +8372,7 @@ app.get("/api/todos", async (req, res) => {
   // ── Sequências de Cadência ────────────────────────────────────────────────
 
   // Todas as sequências (sem filtro de kanban) — usado no builder de automações
-  app.get("/api/crm-comercial/sequences/all", async (req: Request, res: Response) => {
+  app.get("/api/crm-comercial/sequences/all", async (req, res) => {
     try {
       const seqs = await pool.query(
         `SELECT * FROM crm_sequences ORDER BY name ASC`
@@ -8398,7 +8398,7 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
-  app.get("/api/crm-comercial/sequences", async (req: Request, res: Response) => {
+  app.get("/api/crm-comercial/sequences", async (req, res) => {
     try {
       const { kanban_id } = req.query;
       const seqs = await pool.query(
@@ -8422,7 +8422,7 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
-  app.post("/api/crm-comercial/sequences", async (req: Request, res: Response) => {
+  app.post("/api/crm-comercial/sequences", async (req, res) => {
     try {
       const { kanban_id, name, description, skip_weekends, steps } = req.body;
       const seqRes = await pool.query(
@@ -8446,7 +8446,7 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
-  app.put("/api/crm-comercial/sequences/:id", async (req: Request, res: Response) => {
+  app.put("/api/crm-comercial/sequences/:id", async (req, res) => {
     try {
       const { id } = req.params;
       const { name, description, skip_weekends, steps } = req.body;
@@ -8471,7 +8471,7 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
-  app.delete("/api/crm-comercial/sequences/:id", async (req: Request, res: Response) => {
+  app.delete("/api/crm-comercial/sequences/:id", async (req, res) => {
     try {
       await pool.query(`DELETE FROM crm_sequences WHERE id = $1`, [req.params.id]);
       res.json({ success: true });
@@ -8485,7 +8485,7 @@ app.get("/api/todos", async (req, res) => {
 
   // GET /api/automations — list all with steps
   // Endpoint: buscar logs de execução de automações
-  app.get("/api/automations/logs", async (req: Request, res: Response) => {
+  app.get("/api/automations/logs", async (req, res) => {
     try {
       const limit = Number(req.query.limit) || 100;
       const automation_id = req.query.automation_id;
@@ -8504,7 +8504,7 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
-  app.get("/api/automations", async (req: Request, res: Response) => {
+  app.get("/api/automations", async (req, res) => {
     try {
       const aRes = await pool.query(`SELECT * FROM automations ORDER BY created_at DESC`);
       const automations = await Promise.all(aRes.rows.map(async (a) => {
@@ -8522,7 +8522,7 @@ app.get("/api/todos", async (req, res) => {
   });
 
   // POST /api/automations — create with steps
-  app.post("/api/automations", async (req: Request, res: Response) => {
+  app.post("/api/automations", async (req, res) => {
     try {
       const { name, description, steps = [] } = req.body;
       const aRes = await pool.query(
@@ -8547,7 +8547,7 @@ app.get("/api/todos", async (req, res) => {
   });
 
   // PUT /api/automations/:id — update name/description/steps
-  app.put("/api/automations/:id", async (req: Request, res: Response) => {
+  app.put("/api/automations/:id", async (req, res) => {
     try {
       const { id } = req.params;
       const { name, description, steps = [] } = req.body;
@@ -8574,7 +8574,7 @@ app.get("/api/todos", async (req, res) => {
   });
 
   // PATCH /api/automations/:id/toggle — toggle active
-  app.patch("/api/automations/:id/toggle", async (req: Request, res: Response) => {
+  app.patch("/api/automations/:id/toggle", async (req, res) => {
     try {
       const { id } = req.params;
       const result = await pool.query(
@@ -8588,7 +8588,7 @@ app.get("/api/todos", async (req, res) => {
   });
 
   // DELETE /api/automations/:id
-  app.delete("/api/automations/:id", async (req: Request, res: Response) => {
+  app.delete("/api/automations/:id", async (req, res) => {
     try {
       await pool.query(`DELETE FROM automations WHERE id = $1`, [req.params.id]);
       res.json({ success: true });
