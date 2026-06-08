@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 import SplitHeadline from '../components/SplitHeadline';
 import { createPortal } from 'react-dom';
-import { Plus, ChevronDown, ChevronRight, Calendar, Users, Tag, MoreHorizontal, Circle, CheckCircle2, Loader2, X, Trash2, GripVertical, Settings, FileText, Link as LinkIcon, Save, Heading1, Heading2, Heading3, Type, List, ListOrdered, CheckSquare, Check, Paperclip, Upload, MessageCircle, Clock, Image as ImageIcon, Download, Eye, Edit2, Palette } from 'lucide-react';
+import { Plus, ChevronDown, ChevronRight, Calendar, Users, Tag, MoreHorizontal, Circle, CheckCircle2, Loader2, X, Trash2, GripVertical, Settings, FileText, Link as LinkIcon, Save, Heading1, Heading2, Heading3, Type, List, ListOrdered, CheckSquare, Check, Paperclip, Upload, MessageCircle, Clock, Image as ImageIcon, Download, Eye, Edit2, Palette, Flag, Ban } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
 
 // ── Types ─────────────────────────────────────────────────
@@ -39,6 +40,7 @@ interface Comment {
   task_id: number;
   author_name: string | null;
   author_email: string | null;
+  author_avatar: string | null;
   text: string;
   created_at: string;
 }
@@ -810,6 +812,91 @@ const TaskFilesCell = ({ taskId }: { taskId: number }) => {
   );
 };
 
+// ── Priority Config & Picker ──────────────────────────────
+const PRIORITY_OPTIONS = [
+  { value: 'Urgente', label: 'Urgente', color: '#ef4444', bg: 'rgba(239,68,68,0.15)', border: 'rgba(239,68,68,0.3)' },
+  { value: 'Alta',    label: 'Alta',    color: '#f97316', bg: 'rgba(249,115,22,0.15)', border: 'rgba(249,115,22,0.3)' },
+  { value: 'Normal',  label: 'Normal',  color: '#eab308', bg: 'rgba(234,179,8,0.15)',  border: 'rgba(234,179,8,0.3)' },
+  { value: 'Baixa',   label: 'Baixa',   color: '#3b82f6', bg: 'rgba(59,130,246,0.15)', border: 'rgba(59,130,246,0.3)' },
+] as const;
+
+const getPriorityConfig = (value: string | null | undefined) =>
+  PRIORITY_OPTIONS.find(p => p.value === value) || null;
+
+const PriorityFlag = ({ color, size = 13 }: { color: string; size?: number }) => (
+  <Flag size={size} fill={color} stroke={color} strokeWidth={1.5} />
+);
+
+const PriorityPicker = ({ value, onChange, compact = false }: {
+  value: string | null | undefined;
+  onChange: (val: string | null) => void;
+  compact?: boolean;
+}) => {
+  const [open, setOpen] = useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
+  const cfg = getPriorityConfig(value);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className={`flex items-center gap-1.5 rounded-lg transition-all cursor-pointer ${
+          compact
+            ? 'px-2 py-1 text-[10px] font-bold uppercase tracking-wider border hover:bg-white/5'
+            : 'px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider border hover:bg-white/5'
+        }`}
+        style={cfg ? {
+          background: cfg.bg,
+          color: cfg.color,
+          borderColor: cfg.border,
+        } : {
+          background: 'transparent',
+          borderColor: compact ? 'transparent' : 'rgba(255,255,255,0.1)',
+          color: '#94a3b8',
+        }}
+      >
+        {cfg ? <PriorityFlag color={cfg.color} size={compact ? 11 : 12} /> : null}
+        {cfg ? cfg.label : (compact ? 'Prior.' : '—')}
+      </button>
+
+      {open && (
+        <div className="absolute top-full left-0 mt-1 z-50 bg-dark-card border border-white/10 rounded-xl shadow-2xl py-1.5 min-w-[160px] animate-in fade-in slide-in-from-top-1 duration-150">
+          <div className="px-3 py-1.5 text-[9px] font-bold text-slate-500 uppercase tracking-widest">Prioridade</div>
+          {PRIORITY_OPTIONS.map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => { onChange(opt.value); setOpen(false); }}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-dark-text hover:bg-white/5 transition-colors"
+            >
+              <PriorityFlag color={opt.color} size={14} />
+              <span className="flex-1 text-left font-medium">{opt.label}</span>
+              {value === opt.value && <Check size={14} className="text-slate-400 shrink-0" />}
+            </button>
+          ))}
+          <div className="border-t border-white/5 mt-1 pt-1">
+            <button
+              onClick={() => { onChange(null); setOpen(false); }}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-500 hover:bg-white/5 transition-colors"
+            >
+              <Ban size={14} className="text-slate-600" />
+              <span className="flex-1 text-left font-medium">Limpar</span>
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: { 
   task: OnboardingTask; 
   onUpdate: () => void; 
@@ -1153,10 +1240,10 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
 
         {/* Prioridade */}
         <div className="shrink-0 w-20">
-          <select
-            value={task.prioridade || ''}
-            onChange={(e) => {
-              const val = e.target.value;
+          <PriorityPicker
+            value={task.prioridade}
+            compact
+            onChange={(val) => {
               fetch(`/api/onboarding-tasks/${task.id}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
@@ -1164,18 +1251,7 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
               });
               onUpdate();
             }}
-            className={`w-full border rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer focus:outline-none ${
-              task.prioridade === 'Alta' ? 'bg-rose-500/15 text-rose-400 border-rose-500/30 focus:border-rose-500/50' :
-              task.prioridade === 'Média' ? 'bg-amber-500/15 text-amber-400 border-amber-500/30 focus:border-amber-500/50' :
-              task.prioridade === 'Baixa' ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30 focus:border-emerald-500/50' :
-              'bg-transparent border-transparent text-slate-400 hover:border-white/10 focus:border-white/20'
-            }`}
-          >
-            <option value="" className="bg-dark-bg text-slate-400">Prior.</option>
-            <option value="Alta" className="bg-dark-bg text-rose-400">Alta</option>
-            <option value="Média" className="bg-dark-bg text-amber-400">Média</option>
-            <option value="Baixa" className="bg-dark-bg text-emerald-400">Baixa</option>
-          </select>
+          />
         </div>
 
         {/* Hospedagem */}
@@ -2023,6 +2099,7 @@ interface TaskFile {
 
 const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; onClose: () => void; onUpdate: () => void }) => {
   const columnConfig = React.useContext(ColumnConfigContext);
+  const { user, userData } = useAuth();
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [loadingComments, setLoadingComments] = useState(true);
@@ -2078,11 +2155,19 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
 
   const addComment = async () => {
     if (!newComment.trim()) return;
+    const authorName = userData?.name || user?.displayName || null;
+    const authorEmail = userData?.email || user?.email || null;
+    const authorAvatar = userData?.picture || user?.photoURL || null;
     try {
       const res = await fetch(`/api/onboarding-tasks/${task.id}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: newComment }),
+        body: JSON.stringify({
+          text: newComment,
+          author_name: authorName,
+          author_email: authorEmail,
+          author_avatar: authorAvatar,
+        }),
       });
       if (res.ok) {
         const c = await res.json();
@@ -2199,15 +2284,17 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                 >
                   {currentGroup?.label || task.status_group}
                 </span>
-                {task.prioridade && (
-                  <span className={`text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md ${
-                    task.prioridade === 'Alta' ? 'bg-rose-500/15 text-rose-400' :
-                    task.prioridade === 'Média' ? 'bg-amber-500/15 text-amber-400' :
-                    'bg-emerald-500/15 text-emerald-400'
-                  }`}>
-                    {task.prioridade}
-                  </span>
-                )}
+                {task.prioridade && (() => {
+                  const pc = getPriorityConfig(task.prioridade);
+                  return pc ? (
+                    <span className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md"
+                      style={{ background: pc.bg, color: pc.color }}
+                    >
+                      <PriorityFlag color={pc.color} size={9} />
+                      {pc.label}
+                    </span>
+                  ) : null;
+                })()}
               </div>
             </div>
           </div>
@@ -2245,38 +2332,110 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                   {/* Squad */}
                   <div className="flex items-center gap-3">
                     <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider w-20 shrink-0">Squad</span>
-                    {task.squad ? (
-                      <span
-                        className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg border"
-                        style={squadColor ? { background: squadColor.bg, color: squadColor.text, borderColor: squadColor.border } : {}}
-                      >
-                        {task.squad}
-                      </span>
-                    ) : <span className="text-[10px] text-slate-600">—</span>}
+                    {(() => {
+                      const cs = findOptionColor(columnConfig.squad, task.squad);
+                      return (
+                        <select
+                          value={task.squad || ''}
+                          onChange={async (e) => {
+                            const val = e.target.value;
+                            await fetch(`/api/onboarding-tasks/${task.id}`, {
+                              method: 'PATCH',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ squad: val || null }),
+                            });
+                            onUpdate();
+                          }}
+                          className="border rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer focus:outline-none focus:ring-1 focus:ring-violet-500/30"
+                          style={cs ? {
+                            background: cs.bg,
+                            color: cs.text,
+                            borderColor: cs.border,
+                          } : {
+                            background: 'transparent',
+                            borderColor: 'rgba(255,255,255,0.1)',
+                            color: '#94a3b8',
+                          }}
+                        >
+                          <option value="" className="bg-dark-bg text-slate-400">—</option>
+                          {columnConfig.squad.map(opt => (
+                            <option key={opt.label} value={opt.label} className="bg-dark-bg text-dark-text">{opt.label}</option>
+                          ))}
+                        </select>
+                      );
+                    })()}
                   </div>
                   {/* Entregável */}
                   <div className="flex items-center gap-3">
                     <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider w-20 shrink-0">Entregável</span>
-                    {task.entregavel ? (
-                      <span
-                        className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg border"
-                        style={entregavelColor ? { background: entregavelColor.bg, color: entregavelColor.text, borderColor: entregavelColor.border } : {}}
-                      >
-                        {task.entregavel}
-                      </span>
-                    ) : <span className="text-[10px] text-slate-600">—</span>}
+                    {(() => {
+                      const cs = findOptionColor(columnConfig.entregavel, task.entregavel);
+                      return (
+                        <select
+                          value={task.entregavel || ''}
+                          onChange={async (e) => {
+                            const val = e.target.value;
+                            await fetch(`/api/onboarding-tasks/${task.id}`, {
+                              method: 'PATCH',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ entregavel: val || null }),
+                            });
+                            onUpdate();
+                          }}
+                          className="border rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer focus:outline-none focus:ring-1 focus:ring-violet-500/30"
+                          style={cs ? {
+                            background: cs.bg,
+                            color: cs.text,
+                            borderColor: cs.border,
+                          } : {
+                            background: 'transparent',
+                            borderColor: 'rgba(255,255,255,0.1)',
+                            color: '#94a3b8',
+                          }}
+                        >
+                          <option value="" className="bg-dark-bg text-slate-400">—</option>
+                          {columnConfig.entregavel.map(opt => (
+                            <option key={opt.label} value={opt.label} className="bg-dark-bg text-dark-text">{opt.label}</option>
+                          ))}
+                        </select>
+                      );
+                    })()}
                   </div>
                   {/* Hospedagem */}
                   <div className="flex items-center gap-3">
                     <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider w-20 shrink-0">Hospedagem</span>
-                    {task.hospedagem ? (
-                      <span
-                        className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg border"
-                        style={hospedagemColor ? { background: hospedagemColor.bg, color: hospedagemColor.text, borderColor: hospedagemColor.border } : {}}
-                      >
-                        {task.hospedagem}
-                      </span>
-                    ) : <span className="text-[10px] text-slate-600">—</span>}
+                    {(() => {
+                      const cs = findOptionColor(columnConfig.hospedagem, task.hospedagem);
+                      return (
+                        <select
+                          value={task.hospedagem || ''}
+                          onChange={async (e) => {
+                            const val = e.target.value;
+                            await fetch(`/api/onboarding-tasks/${task.id}`, {
+                              method: 'PATCH',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ hospedagem: val || null }),
+                            });
+                            onUpdate();
+                          }}
+                          className="border rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer focus:outline-none focus:ring-1 focus:ring-violet-500/30"
+                          style={cs ? {
+                            background: cs.bg,
+                            color: cs.text,
+                            borderColor: cs.border,
+                          } : {
+                            background: 'transparent',
+                            borderColor: 'rgba(255,255,255,0.1)',
+                            color: '#94a3b8',
+                          }}
+                        >
+                          <option value="" className="bg-dark-bg text-slate-400">—</option>
+                          {columnConfig.hospedagem.map(opt => (
+                            <option key={opt.label} value={opt.label} className="bg-dark-bg text-dark-text">{opt.label}</option>
+                          ))}
+                        </select>
+                      );
+                    })()}
                   </div>
                   {/* Responsável */}
                   <div className="flex items-center gap-3">
@@ -2294,29 +2453,90 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                       </div>
                     ) : <span className="text-[10px] text-slate-600">—</span>}
                   </div>
-                  {/* Datas */}
+                  {/* Prioridade */}
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider w-20 shrink-0">Prioridade</span>
+                    <PriorityPicker
+                      value={task.prioridade}
+                      onChange={async (val) => {
+                        await fetch(`/api/onboarding-tasks/${task.id}`, {
+                          method: 'PATCH',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ prioridade: val }),
+                        });
+                        onUpdate();
+                      }}
+                    />
+                  </div>
+                  {/* Status */}
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider w-20 shrink-0">Status</span>
+                    <select
+                      value={task.status_group || ''}
+                      onChange={async (e) => {
+                        const val = e.target.value;
+                        await fetch(`/api/onboarding-tasks/${task.id}`, {
+                          method: 'PATCH',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ status_group: val }),
+                        });
+                        onUpdate();
+                      }}
+                      className="border rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer focus:outline-none focus:ring-1 focus:ring-violet-500/30"
+                      style={{
+                        background: (currentGroup?.color || '#64748b') + '26',
+                        color: currentGroup?.color || '#64748b',
+                        borderColor: (currentGroup?.color || '#64748b') + '4D',
+                      }}
+                    >
+                      {statusGroups.map(sg => (
+                        <option key={sg.id} value={sg.id} className="bg-dark-bg text-dark-text">{sg.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {/* Data Início */}
                   <div className="flex items-center gap-3">
                     <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider w-20 shrink-0">Data Início</span>
-                    <span className="text-xs text-slate-400 flex items-center gap-1">
-                      <Calendar size={11} className="text-slate-600" />
-                      {task.start_date ? new Date(task.start_date).toLocaleDateString('pt-BR') : '—'}
-                    </span>
+                    <div className="flex items-center gap-1">
+                      <Calendar size={11} className="text-slate-600 shrink-0" />
+                      <input
+                        type="date"
+                        value={task.start_date ? new Date(task.start_date).toISOString().split('T')[0] : ''}
+                        onChange={async (e) => {
+                          await fetch(`/api/onboarding-tasks/${task.id}`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ start_date: e.target.value || null }),
+                          });
+                          onUpdate();
+                        }}
+                        className="bg-transparent text-xs text-slate-400 border-none outline-none cursor-pointer focus:text-dark-text transition-colors [color-scheme:dark]"
+                      />
+                    </div>
                   </div>
+                  {/* Vencimento */}
                   <div className="flex items-center gap-3">
                     <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider w-20 shrink-0">Vencimento</span>
-                    {(() => {
-                      const r = task.due_date ? fmtDate(task.due_date) : null;
-                      if (!r) return <span className="text-xs text-slate-600">—</span>;
-                      if (typeof r === 'object') {
-                        return (
-                          <span className={`text-xs font-semibold flex items-center gap-1 ${r.color}`}>
-                            <Calendar size={11} />
-                            {r.color === 'text-rose-400' ? r.text : r.formatted}
-                          </span>
-                        );
-                      }
-                      return <span className="text-xs text-slate-400 flex items-center gap-1"><Calendar size={11} className="text-slate-600" />{r}</span>;
-                    })()}
+                    <div className="flex items-center gap-1">
+                      <Calendar size={11} className="text-slate-600 shrink-0" />
+                      <input
+                        type="date"
+                        value={task.due_date ? new Date(task.due_date).toISOString().split('T')[0] : ''}
+                        onChange={async (e) => {
+                          await fetch(`/api/onboarding-tasks/${task.id}`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ due_date: e.target.value || null }),
+                          });
+                          onUpdate();
+                        }}
+                        className={`bg-transparent text-xs border-none outline-none cursor-pointer transition-colors [color-scheme:dark] ${
+                          task.due_date && fmtDate(task.due_date) && typeof fmtDate(task.due_date) === 'object' && (fmtDate(task.due_date) as any).color === 'text-rose-400'
+                            ? 'text-rose-400 font-semibold'
+                            : 'text-slate-400 focus:text-dark-text'
+                        }`}
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2537,9 +2757,13 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
               ) : (
                 [...comments].reverse().map(c => (
                   <div key={c.id} className="flex gap-2.5">
-                    <div className="w-7 h-7 rounded-full bg-violet-500/20 flex items-center justify-center text-violet-400 font-bold text-[10px] shrink-0 mt-0.5 uppercase">
-                      {(c.author_name || 'U').charAt(0)}
-                    </div>
+                    {c.author_avatar ? (
+                      <img src={c.author_avatar} alt="" className="w-7 h-7 rounded-full object-cover shrink-0 mt-0.5" />
+                    ) : (
+                      <div className="w-7 h-7 rounded-full bg-violet-500/20 flex items-center justify-center text-violet-400 font-bold text-[10px] shrink-0 mt-0.5 uppercase">
+                        {(c.author_name || 'U').charAt(0)}
+                      </div>
+                    )}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-baseline gap-2 mb-1">
                         <span className="text-xs font-bold text-dark-text">{c.author_name || 'Usuário'}</span>
@@ -3116,6 +3340,20 @@ export default function VisualHub() {
   const [showCompleted, setShowCompleted] = useState(false);
   const [columnConfig, setColumnConfig] = useState<ColumnConfig>(loadColumnConfig);
   const [showColumnConfig, setShowColumnConfig] = useState(false);
+  const [formDropdownOpen, setFormDropdownOpen] = useState(false);
+  const [briefingLinkCopied, setBriefingLinkCopied] = useState(false);
+  const formDropdownRef = React.useRef<HTMLDivElement>(null);
+
+  // Close form dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (formDropdownRef.current && !formDropdownRef.current.contains(e.target as Node)) {
+        setFormDropdownOpen(false);
+      }
+    };
+    if (formDropdownOpen) document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [formDropdownOpen]);
 
   // Dynamic status groups
   const [statusGroups, setStatusGroups] = useState<StatusGroupDef[]>(DEFAULT_STATUS_GROUPS);
@@ -3265,6 +3503,93 @@ export default function VisualHub() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          {/* Formulário dropdown */}
+          <div className="relative" ref={formDropdownRef}>
+            <button
+              onClick={() => setFormDropdownOpen(!formDropdownOpen)}
+              className={`flex items-center gap-2 px-4 py-2 bg-dark-card border text-[11px] font-bold rounded-xl transition-colors ${
+                formDropdownOpen
+                  ? 'border-fuchsia-500/30 text-fuchsia-400'
+                  : 'border-black/10 dark:border-white/10 hover:border-fuchsia-500/30 text-dark-text'
+              }`}
+            >
+              <FileText size={14} className="text-fuchsia-400" />
+              Formulário
+              <ChevronDown size={12} className={`transition-transform ${formDropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {formDropdownOpen && (
+              <div className="absolute right-0 top-full mt-2 w-52 bg-dark-card border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden">
+                <button
+                  onClick={async () => {
+                    try {
+                      // Check if briefing already exists (use first task as default)
+                      let briefingId: number | null = null;
+                      const resExisting = await fetch('/api/briefings');
+                      if (resExisting.ok) {
+                        const all = await resExisting.json();
+                        if (all.length > 0) briefingId = all[0].id;
+                      }
+                      if (!briefingId) {
+                        // Create a new briefing
+                        const resCreate = await fetch('/api/briefings', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ title: 'Briefing Identidade Visual' }),
+                        });
+                        if (resCreate.ok) {
+                          const data = await resCreate.json();
+                          briefingId = data.id;
+                        }
+                      }
+                      if (briefingId) {
+                        const baseUrl = window.location.origin;
+                        navigator.clipboard.writeText(`${baseUrl}/?briefing=${briefingId}`);
+                        setBriefingLinkCopied(true);
+                        setTimeout(() => setBriefingLinkCopied(false), 2000);
+                      }
+                    } catch { /* silent */ }
+                    setFormDropdownOpen(false);
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-xs text-slate-300 hover:bg-white/5 hover:text-white transition-colors"
+                >
+                  <LinkIcon size={13} className="text-fuchsia-400" />
+                  {briefingLinkCopied ? '✓ Link copiado!' : 'Link do formulário'}
+                </button>
+                <button
+                  onClick={async () => {
+                    try {
+                      let briefingId: number | null = null;
+                      const resExisting = await fetch('/api/briefings');
+                      if (resExisting.ok) {
+                        const all = await resExisting.json();
+                        if (all.length > 0) briefingId = all[0].id;
+                      }
+                      if (!briefingId) {
+                        const resCreate = await fetch('/api/briefings', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ title: 'Briefing Identidade Visual' }),
+                        });
+                        if (resCreate.ok) {
+                          const data = await resCreate.json();
+                          briefingId = data.id;
+                        }
+                      }
+                      if (briefingId) {
+                        const baseUrl = window.location.origin;
+                        window.open(`${baseUrl}/?briefing=${briefingId}`, '_blank');
+                      }
+                    } catch { /* silent */ }
+                    setFormDropdownOpen(false);
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-xs text-slate-300 hover:bg-white/5 hover:text-white transition-colors border-t border-white/5"
+                >
+                  <Edit2 size={13} className="text-fuchsia-400" />
+                  Editar formulário
+                </button>
+              </div>
+            )}
+          </div>
           <button
             onClick={() => setShowCompleted(!showCompleted)}
             className={`px-4 py-2 text-[11px] font-bold rounded-xl transition-colors border flex items-center gap-2 ${

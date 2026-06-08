@@ -47,6 +47,7 @@ import MeetingNotes from './src/pages/MeetingNotes';
 import PlanejamentoCrescimento from './src/pages/PlanejamentoCrescimento';
 import CandidateApplicationForm from './src/pages/CandidateApplicationForm';
 import CollaboratorOnboardingForm from './src/pages/CollaboratorOnboardingForm';
+import BriefingForm from './src/pages/BriefingForm';
 import SaboteurTestPage from './src/pages/SaboteurTestPage';
 import DiscTestPage from './src/pages/DiscTestPage';
 import SenhasPage from './src/pages/SenhasPage';
@@ -454,6 +455,10 @@ const App: React.FC = () => {
 
   if (window.location.search.includes('?onboarding=')) {
     return <CollaboratorOnboardingForm />;
+  }
+
+  if (window.location.search.includes('?briefing=')) {
+    return <BriefingForm />;
   }
 
   return (

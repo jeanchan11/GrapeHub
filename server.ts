@@ -10573,10 +10573,12 @@ app.get("/api/todos", async (req, res) => {
       task_id INT NOT NULL REFERENCES onboarding_tasks(id) ON DELETE CASCADE,
       author_name TEXT,
       author_email TEXT,
+      author_avatar TEXT,
       text TEXT NOT NULL,
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  await pool.query(`ALTER TABLE onboarding_comments ADD COLUMN IF NOT EXISTS author_avatar TEXT`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS onboarding_subtask_comments (
@@ -10597,6 +10599,19 @@ app.get("/api/todos", async (req, res) => {
       type TEXT NOT NULL, -- 'pdf', 'doc', 'link'
       url TEXT,
       content TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  // ── Briefing Forms ──
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS briefings (
+      id SERIAL PRIMARY KEY,
+      title TEXT NOT NULL DEFAULT 'Briefing Identidade Visual',
+      task_id INT REFERENCES onboarding_tasks(id) ON DELETE SET NULL,
+      task_name TEXT,
+      form_data JSONB,
+      submitted_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
@@ -11130,16 +11145,89 @@ app.get("/api/todos", async (req, res) => {
 
   app.post('/api/onboarding-tasks/:id/comments', async (req, res) => {
     try {
-      const { text, author_name, author_email } = req.body;
+      const { text, author_name, author_email, author_avatar } = req.body;
       if (!text?.trim()) return res.status(400).json({ error: 'text obrigatório.' });
       const result = await pool.query(
-        `INSERT INTO onboarding_comments (task_id, text, author_name, author_email) VALUES ($1, $2, $3, $4) RETURNING *`,
-        [req.params.id, text.trim(), author_name || null, author_email || null]
+        `INSERT INTO onboarding_comments (task_id, text, author_name, author_email, author_avatar) VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+        [req.params.id, text.trim(), author_name || null, author_email || null, author_avatar || null]
       );
       res.status(201).json(result.rows[0]);
     } catch (err) {
       console.error('POST /api/onboarding-comments error:', err);
       res.status(500).json({ error: 'Erro ao criar comentário.' });
+    }
+  });
+
+  // ── Briefing API ─────────────────────────────────────────
+  // Create a new briefing linked to a task
+  app.post('/api/briefings', async (req, res) => {
+    try {
+      const { task_id, task_name, title } = req.body;
+      const result = await pool.query(
+        `INSERT INTO briefings (task_id, task_name, title) VALUES ($1, $2, $3) RETURNING *`,
+        [task_id || null, task_name || null, title || 'Briefing Identidade Visual']
+      );
+      res.status(201).json(result.rows[0]);
+    } catch (err) {
+      console.error('POST /api/briefings error:', err);
+      res.status(500).json({ error: 'Erro ao criar briefing.' });
+    }
+  });
+
+  // Get briefing by task_id (internal)
+  app.get('/api/briefings/by-task/:taskId', async (req, res) => {
+    try {
+      const result = await pool.query(
+        'SELECT * FROM briefings WHERE task_id = $1 ORDER BY created_at DESC LIMIT 1',
+        [req.params.taskId]
+      );
+      if (result.rows.length === 0) return res.status(404).json({ error: 'Briefing não encontrado.' });
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error('GET /api/briefings/by-task error:', err);
+      res.status(500).json({ error: 'Erro ao buscar briefing.' });
+    }
+  });
+
+  // Public: get briefing info (no auth required)
+  app.get('/api/briefings/public/:id', async (req, res) => {
+    try {
+      const result = await pool.query(
+        'SELECT id, title, task_id, task_name, submitted_at FROM briefings WHERE id = $1',
+        [req.params.id]
+      );
+      if (result.rows.length === 0) return res.status(404).json({ error: 'Briefing não encontrado.' });
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error('GET /api/briefings/public error:', err);
+      res.status(500).json({ error: 'Erro ao buscar briefing.' });
+    }
+  });
+
+  // Public: submit briefing response
+  app.post('/api/briefings/public/:id/submit', async (req, res) => {
+    try {
+      const { form_data } = req.body;
+      const result = await pool.query(
+        `UPDATE briefings SET form_data = $1, submitted_at = NOW() WHERE id = $2 RETURNING *`,
+        [JSON.stringify(form_data), req.params.id]
+      );
+      if (result.rows.length === 0) return res.status(404).json({ error: 'Briefing não encontrado.' });
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error('POST /api/briefings/public/submit error:', err);
+      res.status(500).json({ error: 'Erro ao salvar briefing.' });
+    }
+  });
+
+  // Get all briefings (internal)
+  app.get('/api/briefings', async (req, res) => {
+    try {
+      const result = await pool.query('SELECT * FROM briefings ORDER BY created_at DESC');
+      res.json(result.rows);
+    } catch (err) {
+      console.error('GET /api/briefings error:', err);
+      res.status(500).json({ error: 'Erro ao buscar briefings.' });
     }
   });
 
