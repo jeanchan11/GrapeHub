@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -9,18 +10,51 @@ interface DatePickerProps {
   className?: string;
 }
 
+const parseDateString = (val: string | null) => {
+  if (!val) return new Date();
+  const datePart = val.split('T')[0];
+  return new Date(datePart + 'T12:00:00');
+};
+
 export const DatePicker: React.FC<DatePickerProps> = ({ value, onChange, placeholder = 'Data', className }) => {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const [popoverPos, setPopoverPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
 
   // Month is 0-indexed
-  const initialDate = value ? new Date(value + 'T12:00:00') : new Date();
+  const initialDate = parseDateString(value);
   const [currentMonth, setCurrentMonth] = useState(initialDate.getMonth());
   const [currentYear, setCurrentYear] = useState(initialDate.getFullYear());
 
+  // Calc position when opening
+  const updatePosition = useCallback(() => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const calWidth = 256; // w-64
+    const calHeight = 320;
+    let top = rect.bottom + 8;
+    let left = rect.right - calWidth;
+    // Prevent going off-screen right
+    if (left < 8) left = 8;
+    // Prevent going off-screen bottom
+    if (top + calHeight > window.innerHeight - 8) {
+      top = rect.top - calHeight - 8;
+    }
+    setPopoverPos({ top, left });
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) updatePosition();
+  }, [isOpen, updatePosition]);
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (
+        containerRef.current && !containerRef.current.contains(target) &&
+        popoverRef.current && !popoverRef.current.contains(target)
+      ) {
         setIsOpen(false);
       }
     };
@@ -31,7 +65,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({ value, onChange, placeho
   // Update internal calendar view if value changes externally
   useEffect(() => {
     if (value) {
-      const d = new Date(value + 'T12:00:00');
+      const d = parseDateString(value);
       setCurrentMonth(d.getMonth());
       setCurrentYear(d.getFullYear());
     }
@@ -87,7 +121,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({ value, onChange, placeho
   // Check if a day is selected
   const isSelected = (day: number) => {
     if (!value) return false;
-    const selectedDate = new Date(value + 'T12:00:00');
+    const selectedDate = parseDateString(value);
     return selectedDate.getDate() === day &&
            selectedDate.getMonth() === currentMonth &&
            selectedDate.getFullYear() === currentYear;
@@ -97,7 +131,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({ value, onChange, placeho
   if (value) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const dateVal = new Date(value + 'T12:00:00');
+    const dateVal = parseDateString(value);
     dateVal.setHours(0, 0, 0, 0);
 
     if (dateVal.getTime() === today.getTime()) {
@@ -105,11 +139,14 @@ export const DatePicker: React.FC<DatePickerProps> = ({ value, onChange, placeho
     } else if (dateVal.getTime() < today.getTime()) {
       textColorClass = "text-red-400";
     } else {
-      textColorClass = "text-white";
+      textColorClass = "text-white dark:text-white";
     }
   }
 
   const defaultClassName = `${textColorClass} text-[9px] font-semibold flex items-center gap-1 bg-dark-text/5 px-1.5 py-0.5 rounded-full hover:bg-dark-text/10 cursor-pointer transition-colors`;
+
+  // Detect dark mode
+  const isDark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
 
   return (
     <div className="relative" ref={containerRef} onClick={(e) => e.stopPropagation()}>
@@ -118,70 +155,76 @@ export const DatePicker: React.FC<DatePickerProps> = ({ value, onChange, placeho
         className={className || defaultClassName}
       >
         <CalendarIcon size={9} />
-        {value ? new Date(value + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : placeholder}
+        {value ? parseDateString(value).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : placeholder}
       </div>
 
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: -5 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -5 }}
-            className="absolute right-0 top-full mt-2 bg-[#14141f] border border-white/10 rounded-2xl shadow-2xl p-4 z-[70] w-64"
-          >
-            {/* Header */}
-            <div className="flex items-center justify-between mb-4">
-              <button 
-                onClick={handlePrevMonth}
-                className="p-1 hover:bg-white/10 rounded-full transition-colors text-dark-text/60 hover:text-white"
-              >
-                <ChevronLeft size={16} />
-              </button>
-              <span className="font-semibold text-sm text-white">
-                {monthNames[currentMonth]} {currentYear}
-              </span>
-              <button 
-                onClick={handleNextMonth}
-                className="p-1 hover:bg-white/10 rounded-full transition-colors text-dark-text/60 hover:text-white"
-              >
-                <ChevronRight size={16} />
-              </button>
-            </div>
+      {createPortal(
+        <AnimatePresence>
+          {isOpen && (
+            <motion.div
+              ref={popoverRef}
+              id="date-picker-portal"
+              initial={{ opacity: 0, y: -5 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -5 }}
+              style={{ position: 'fixed', top: popoverPos.top, left: popoverPos.left }}
+              className="bg-white dark:bg-[#14141f] border border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl p-4 z-[9999] w-64"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between mb-4">
+                <button 
+                  onClick={handlePrevMonth}
+                  className="p-1 hover:bg-gray-100 dark:hover:bg-white/10 rounded-full transition-colors text-gray-500 dark:text-dark-text/60 hover:text-gray-900 dark:hover:text-white"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <span className="font-semibold text-sm text-gray-900 dark:text-white">
+                  {monthNames[currentMonth]} {currentYear}
+                </span>
+                <button 
+                  onClick={handleNextMonth}
+                  className="p-1 hover:bg-gray-100 dark:hover:bg-white/10 rounded-full transition-colors text-gray-500 dark:text-dark-text/60 hover:text-gray-900 dark:hover:text-white"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
 
-            {/* Week Days */}
-            <div className="grid grid-cols-7 gap-1 mb-2">
-              {weekDays.map((day, idx) => (
-                <div key={idx} className="text-center text-[10px] font-medium text-dark-text/50">
-                  {day}
-                </div>
-              ))}
-            </div>
-
-            {/* Days Grid */}
-            <div className="grid grid-cols-7 gap-1">
-              {days.map((day, idx) => {
-                if (day === null) {
-                  return <div key={`empty-${idx}`} className="w-8 h-8" />;
-                }
-                const selected = isSelected(day);
-                return (
-                  <button
-                    key={idx}
-                    onClick={() => handleSelectDate(day)}
-                    className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium transition-all ${
-                      selected 
-                        ? 'bg-violet-600 text-white shadow-[0_0_15px_rgba(124,58,237,0.5)]' 
-                        : 'text-dark-text/80 hover:bg-white/10 hover:text-white'
-                    }`}
-                  >
+              {/* Week Days */}
+              <div className="grid grid-cols-7 gap-1 mb-2">
+                {weekDays.map((day, idx) => (
+                  <div key={idx} className="text-center text-[10px] font-medium text-gray-400 dark:text-dark-text/50">
                     {day}
-                  </button>
-                );
-              })}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+                  </div>
+                ))}
+              </div>
+
+              {/* Days Grid */}
+              <div className="grid grid-cols-7 gap-1">
+                {days.map((day, idx) => {
+                  if (day === null) {
+                    return <div key={`empty-${idx}`} className="w-8 h-8" />;
+                  }
+                  const selected = isSelected(day);
+                  return (
+                    <button
+                      key={idx}
+                      onClick={() => handleSelectDate(day)}
+                      className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium transition-all ${
+                        selected 
+                          ? 'bg-violet-600 text-white shadow-[0_0_15px_rgba(124,58,237,0.5)]' 
+                          : 'text-gray-700 dark:text-dark-text/80 hover:bg-gray-100 dark:hover:bg-white/10 hover:text-gray-900 dark:hover:text-white'
+                      }`}
+                    >
+                      {day}
+                    </button>
+                  );
+                })}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
     </div>
   );
 };

@@ -724,7 +724,10 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
     if (activeTab !== 'checklist' || !lead || checklistFetched) return;
     setChecklistLoading(true);
     fetch(`/api/crm-comercial/checklist?lead_id=${lead.id}`)
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) throw new Error('Failed to fetch checklist');
+        return res.json();
+      })
       .then(data => {
         setChecklistItems(Array.isArray(data) ? data : []);
         setChecklistFetched(true);
@@ -753,6 +756,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
     setTemplateLoading(true);
     try {
       const res = await fetch('/api/crm-comercial/checklist-template');
+      if (!res.ok) throw new Error('Failed to fetch template');
       const data = await res.json();
       setTemplateItems(Array.isArray(data) ? data.map((d: any) => ({ item: d.item })) : []);
     } catch {
@@ -765,14 +769,23 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   const handleSaveTemplate = async () => {
     setTemplateLoading(true);
     try {
-      await fetch('/api/crm-comercial/checklist-template', {
+      // Filter out empty items before saving
+      const validItems = templateItems.filter(t => t.item.trim() !== '');
+      const res = await fetch('/api/crm-comercial/checklist-template', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: templateItems })
+        body: JSON.stringify({ items: validItems })
       });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Falha ao salvar');
+      }
       setShowChecklistTemplateModal(false);
-    } catch {
-      alert('Erro ao salvar template');
+      // Reset checklist fetch so it reloads with updated template
+      setChecklistFetched(false);
+    } catch (e: any) {
+      console.error('Erro ao salvar template:', e);
+      alert(e?.message || 'Erro ao salvar template');
     } finally {
       setTemplateLoading(false);
     }

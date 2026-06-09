@@ -1,25 +1,9 @@
-const http = require('http');
-
-const options = {
-  hostname: 'localhost',
-  port: 3000,
-  path: '/api/clients/undefined', // we don't have a real ID but we can check if it crashes
-  method: 'PATCH',
-  headers: {
-    'Content-Type': 'application/json',
-  },
-};
-
-const req = http.request(options, res => {
-  console.log('statusCode:', res.statusCode);
-  res.on('data', d => {
-    process.stdout.write(d);
+import fetch from 'node-fetch';
+(async () => {
+  const res = await fetch('http://localhost:3000/api/tasks/1', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dueDate: '2026-06-15' })
   });
-});
-
-req.on('error', e => {
-  console.error(e);
-});
-
-req.write(JSON.stringify({ aviso_previo_date: '2026-05-14' }));
-req.end();
+  console.log(res.status, await res.text());
+})();

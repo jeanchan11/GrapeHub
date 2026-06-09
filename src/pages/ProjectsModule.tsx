@@ -22,6 +22,7 @@ import {
   Folder, File, Eye, Download, Trash2, Upload, FileText, GripVertical, Copy, Loader2, Star, Lock, LockOpen, Bot, Edit2, ThumbsUp, SmilePlus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import confetti from 'canvas-confetti';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
@@ -423,6 +424,8 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [groupModalProjectId, setGroupModalProjectId] = useState<string | null>(null);
+  const [isPageModalOpen, setIsPageModalOpen] = useState(false);
+  const [pageModalProjectId, setPageModalProjectId] = useState<string | null>(null);
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const [activeProductTab, setActiveProductTab] = useState<'resultado' | 'kpis'>('resultado');
   const [activeProjectTab, setActiveProjectTab] = useState<'resultado' | 'reunioes' | 'arquivos' | 'comentarios' | 'analise' | 'nps'>('resultado');
@@ -3054,6 +3057,89 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
         )}
       </AnimatePresence>
 
+      {/* Page Modal */}
+      <AnimatePresence>
+        {isPageModalOpen && (
+          <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={() => setIsPageModalOpen(false)}
+            ></motion.div>
+            
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="relative w-full max-w-sm bg-white dark:bg-[#14141f] rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 overflow-hidden"
+            >
+              <div className="p-5 border-b border-slate-200 dark:border-white/10 flex items-center justify-between">
+                <h3 className="text-lg font-bold text-light-text dark:text-white">Mudar de Página</h3>
+                <button 
+                  onClick={() => setIsPageModalOpen(false)}
+                  className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-2 max-h-[60vh] overflow-y-auto custom-scrollbar">
+                {(() => {
+                  const pages: {id: string, name: string}[] = [];
+                  if (menu) {
+                    for (const section of menu) {
+                      if (section.pages) section.pages.forEach((p: any) => pages.push({id: p.id, name: p.label || p.name}));
+                      if (section.subSessions) {
+                        section.subSessions.forEach((sub: any) => {
+                          if (sub.pages) sub.pages.forEach((p: any) => pages.push({id: p.id, name: p.label || p.name}));
+                          if (sub.subSubSessions) {
+                            sub.subSubSessions.forEach((subsub: any) => {
+                              if (subsub.pages) subsub.pages.forEach((p: any) => pages.push({id: p.id, name: p.label || p.name}));
+                            });
+                          }
+                        });
+                      }
+                    }
+                  }
+                  
+                  const projPages = pages.filter(p => {
+                    const n = p.name.toLowerCase();
+                    if (n.includes('parceiros squad')) return false;
+                    return n.includes('projeto') || n.includes('parceiro') || p.id.includes('project') || p.id.includes('parceiro');
+                  });
+                  
+                  if (projPages.length === 0) {
+                    return <p className="text-slate-500 text-sm">Nenhuma página de projetos encontrada.</p>;
+                  }
+
+                  return projPages.map((page) => (
+                    <button
+                      key={page.id}
+                      onClick={() => {
+                        if (!pageModalProjectId) return;
+                        const proj = projects.find(p => p.id === pageModalProjectId);
+                        if (proj) {
+                          const updated = { ...proj, page_id: page.id };
+                          setProjects(prev => prev.filter(p => p.id !== proj.id));
+                          saveProjects([updated]);
+                        }
+                        setIsPageModalOpen(false);
+                        setPageModalProjectId(null);
+                      }}
+                      className="w-full text-left px-4 py-3 rounded-xl hover:bg-violet-50 dark:hover:bg-violet-500/10 text-slate-700 dark:text-slate-300 hover:text-violet-600 dark:hover:text-violet-400 transition-colors font-medium"
+                    >
+                      {page.name}
+                    </button>
+                  ));
+                })()}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Meeting Modal */}
       <AnimatePresence>
         {isMeetingModalOpen && (
@@ -3677,20 +3763,26 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                         >
                           <Eye size={16} />
                         </button>
-                        <div className="relative flex items-center justify-center w-8 h-8">
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setOpenProjectMenuId(openProjectMenuId === project.id ? null : project.id);
-                            }}
-                            className="absolute inset-0 flex items-center justify-center rounded-lg hover:bg-slate-200 dark:hover:bg-white/10 text-slate-500 hover:text-light-text dark:hover:text-white transition-all"
-                          >
-                            <MoreHorizontal size={16} />
-                          </button>
-                          {openProjectMenuId === project.id && (
-                            <>
-                              <div className="fixed inset-0 z-[98]" onClick={() => setOpenProjectMenuId(null)} />
-                              <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-dark-card rounded-xl shadow-2xl border border-slate-200 dark:border-white/10 z-[99] overflow-hidden" style={{ minWidth: '160px' }}>
+                        <DropdownMenu.Root open={openProjectMenuId === project.id} onOpenChange={(open) => setOpenProjectMenuId(open ? project.id : null)}>
+                          <div className="relative flex items-center justify-center w-8 h-8">
+                            <DropdownMenu.Trigger asChild>
+                              <button 
+                                onClick={(e) => e.stopPropagation()}
+                                className="absolute inset-0 flex items-center justify-center rounded-lg hover:bg-slate-200 dark:hover:bg-white/10 text-slate-500 hover:text-light-text dark:hover:text-white transition-all"
+                              >
+                                <MoreHorizontal size={16} />
+                              </button>
+                            </DropdownMenu.Trigger>
+                          </div>
+                          <DropdownMenu.Portal>
+                            <DropdownMenu.Content 
+                              className="w-48 bg-white dark:bg-dark-card rounded-xl shadow-2xl border border-slate-200 dark:border-white/10 z-[9999] overflow-hidden" 
+                              style={{ minWidth: '160px' }}
+                              align="end"
+                              sideOffset={5}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <DropdownMenu.Item asChild>
                                 <button 
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -3698,24 +3790,39 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                     setIsGroupModalOpen(true);
                                     setOpenProjectMenuId(null);
                                   }}
-                                  className="w-full text-left px-4 py-2.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors"
+                                  className="w-full text-left px-4 py-2.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors cursor-pointer outline-none"
                                 >
                                   Mudar Grupo
                                 </button>
+                              </DropdownMenu.Item>
+                              <DropdownMenu.Item asChild>
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setPageModalProjectId(project.id);
+                                    setIsPageModalOpen(true);
+                                    setOpenProjectMenuId(null);
+                                  }}
+                                  className="w-full text-left px-4 py-2.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors cursor-pointer outline-none"
+                                >
+                                  Mudar de Página
+                                </button>
+                              </DropdownMenu.Item>
+                              <DropdownMenu.Item asChild>
                                 <button 
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     handleDeleteProject(project.id);
                                     setOpenProjectMenuId(null);
                                   }}
-                                  className="w-full text-left px-4 py-2.5 text-sm text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors"
+                                  className="w-full text-left px-4 py-2.5 text-sm text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors cursor-pointer outline-none"
                                 >
                                   Excluir Projeto
                                 </button>
-                              </div>
-                            </>
-                          )}
-                        </div>
+                              </DropdownMenu.Item>
+                            </DropdownMenu.Content>
+                          </DropdownMenu.Portal>
+                        </DropdownMenu.Root>
                       </div>
                     </td>
                   </SortableRowWrapper>
@@ -3799,35 +3906,40 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                         </div>
                                         <h5 className="font-bold text-slate-900 dark:text-white">{prod.name}</h5>
                                       </div>
-                                      <div className="relative">
-                                        <button 
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setOpenProductMenuId(openProductMenuId === prod.id ? null : prod.id);
-                                          }}
-                                          className="text-slate-500 hover:text-light-text dark:hover:text-white transition-colors p-1 rounded-lg hover:bg-white/10"
-                                        >
-                                          <MoreHorizontal size={18} />
-                                        </button>
-                                        {openProductMenuId === prod.id && (
-                                          <>
-                                            <div className="fixed inset-0 z-[98]" onClick={(e) => { e.stopPropagation(); setOpenProductMenuId(null); }} />
-                                            <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-dark-card rounded-xl shadow-lg border border-slate-200 dark:border-white/10 z-[99] overflow-hidden">
+                                      <DropdownMenu.Root open={openProductMenuId === prod.id} onOpenChange={(open) => setOpenProductMenuId(open ? prod.id : null)}>
+                                        <div className="relative">
+                                          <DropdownMenu.Trigger asChild>
+                                            <button 
+                                              onClick={(e) => e.stopPropagation()}
+                                              className="text-slate-500 hover:text-light-text dark:hover:text-white transition-colors p-1 rounded-lg hover:bg-white/10"
+                                            >
+                                              <MoreHorizontal size={18} />
+                                            </button>
+                                          </DropdownMenu.Trigger>
+                                        </div>
+                                        <DropdownMenu.Portal>
+                                          <DropdownMenu.Content
+                                            className="w-48 bg-white dark:bg-dark-card rounded-xl shadow-lg border border-slate-200 dark:border-white/10 z-[9999] overflow-hidden"
+                                            align="end"
+                                            sideOffset={5}
+                                            onClick={(e) => e.stopPropagation()}
+                                          >
+                                            <DropdownMenu.Item asChild>
                                               <button
                                                 onClick={(e) => {
                                                   e.stopPropagation();
                                                   setProductToDelete(prod.id);
                                                   setOpenProductMenuId(null);
                                                 }}
-                                                className="w-full text-left px-4 py-2.5 text-sm text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 flex items-center gap-2 transition-colors"
+                                                className="w-full text-left px-4 py-2.5 text-sm text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 flex items-center gap-2 transition-colors cursor-pointer outline-none"
                                               >
                                                 <Trash2 size={14} />
                                                 Excluir Produto
                                               </button>
-                                            </div>
-                                          </>
-                                        )}
-                                      </div>
+                                            </DropdownMenu.Item>
+                                          </DropdownMenu.Content>
+                                        </DropdownMenu.Portal>
+                                      </DropdownMenu.Root>
                                     </div>
 
                                     <div className="flex items-center justify-between mb-4">

@@ -21,22 +21,23 @@ export function setupAuthInterceptor(): void {
     if (isApiCall && !isPublicRoute && auth.currentUser) {
       try {
         const token = await auth.currentUser.getIdToken();
-        const headers = new Headers(init?.headers);
-        if (!headers.has('Authorization')) {
-          headers.set('Authorization', `Bearer ${token}`);
+        const response = await _doAuthFetch(input, init, token);
+
+        // If server rejected the token (key rotation / expiration), force-refresh
+        // the token once and retry. This covers the ~5 min window during Google
+        // key rotation where old tokens are rejected.
+        if (response.status === 401 && auth.currentUser) {
+          console.warn('[AuthInterceptor] 401 recebido — forçando refresh do token e retentando...');
+          try {
+            const freshToken = await auth.currentUser.getIdToken(true);
+            return await _doAuthFetch(input, init, freshToken);
+          } catch (retryErr) {
+            console.warn('[AuthInterceptor] Retry com token fresco falhou:', retryErr);
+            return response; // Return original 401 if retry also fails
+          }
         }
-        // When body is FormData, don't pass headers object so browser can set
-        // Content-Type: multipart/form-data with correct boundary automatically
-        const isFormData = init?.body instanceof FormData;
-        if (isFormData) {
-          // Build plain object headers to allow browser to append Content-Type
-          const headersObj: Record<string, string> = {};
-          headers.forEach((value, key) => { headersObj[key] = value; });
-          delete headersObj['content-type'];
-          delete headersObj['Content-Type'];
-          return originalFetch(input, { ...init, headers: headersObj });
-        }
-        return originalFetch(input, { ...init, headers });
+
+        return response;
       } catch (err) {
         console.warn('[AuthInterceptor] Failed to get token:', err);
       }
@@ -44,6 +45,24 @@ export function setupAuthInterceptor(): void {
 
     return originalFetch(input, init);
   };
+
+  /** Helper: executes the fetch with the given Bearer token */
+  function _doAuthFetch(input: RequestInfo | URL, init: RequestInit | undefined, token: string): Promise<Response> {
+    const headers = new Headers(init?.headers);
+    headers.set('Authorization', `Bearer ${token}`);
+
+    // When body is FormData, don't pass headers object so browser can set
+    // Content-Type: multipart/form-data with correct boundary automatically
+    const isFormData = init?.body instanceof FormData;
+    if (isFormData) {
+      const headersObj: Record<string, string> = {};
+      headers.forEach((value, key) => { headersObj[key] = value; });
+      delete headersObj['content-type'];
+      delete headersObj['Content-Type'];
+      return originalFetch(input, { ...init, headers: headersObj });
+    }
+    return originalFetch(input, { ...init, headers });
+  }
 
   console.log('[Auth] Global fetch interceptor installed.');
 }

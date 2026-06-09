@@ -76,23 +76,58 @@ async function getFirebasePublicKeys(): Promise<Record<string, string>> {
 }
 
 async function verifyFirebaseToken(token: string): Promise<any> {
-  // Decode header to get kid (key ID)
+  // ── Prefer Firebase Admin SDK — handles key rotation gracefully ──
+  if (firebaseAdminReady) {
+    try {
+      const decoded = await admin.auth().verifyIdToken(token);
+      return decoded;
+    } catch (adminErr: any) {
+      // If Admin SDK also fails, fall through to manual verification
+      // (covers edge cases like mismatched project IDs)
+      console.warn('[Auth] Firebase Admin verifyIdToken falhou, tentando verificação manual:', adminErr.message);
+    }
+  }
+
+  // ── Manual JWT verification (fallback when Admin SDK is unavailable) ──
   const parts = token.split('.');
   if (parts.length !== 3) throw new Error('Token JWT inválido');
   const header = JSON.parse(Buffer.from(parts[0], 'base64url').toString());
   const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
 
-  // Validate basic claims
+  // Validate basic claims with ±30s clock skew tolerance
+  // (Hostinger reverse-proxy + Firebase token issuance can drift up to ~20s)
   const now = Math.floor(Date.now() / 1000);
-  if (payload.exp < now) throw new Error('Token expirado');
-  if (payload.iat > now + 300) throw new Error('Token do futuro');
+  const CLOCK_SKEW = 30;
+  if (payload.exp < now - CLOCK_SKEW) throw new Error('Token expirado');
+  if (payload.iat > now + 300 + CLOCK_SKEW) throw new Error('Token do futuro');
   if (payload.aud !== FIREBASE_PROJECT_ID) throw new Error('Audience inválido');
   if (payload.iss !== `https://securetoken.google.com/${FIREBASE_PROJECT_ID}`) throw new Error('Issuer inválido');
 
   // Get matching public key and verify signature
-  const keys = await getFirebasePublicKeys();
-  const publicKey = keys[header.kid];
-  if (!publicKey) throw new Error('Chave pública não encontrada para kid: ' + header.kid);
+  let keys = await getFirebasePublicKeys();
+  let publicKey = keys[header.kid];
+
+  // Se o kid não está no cache, pode ser rotação de chaves do Google.
+  // Invalidar o cache e buscar as chaves atualizadas antes de falhar.
+  if (!publicKey) {
+    console.warn(`[Auth] kid "${header.kid}" não encontrado no cache — forçando refresh das chaves públicas...`);
+    _cacheExpiry = 0;
+    keys = await getFirebasePublicKeys();
+    publicKey = keys[header.kid];
+
+    // Retry with increasing delays to allow for Google CDN propagation
+    if (!publicKey) {
+      for (const delay of [3000, 5000]) {
+        console.warn(`[Auth] kid "${header.kid}" ainda não encontrado — aguardando ${delay / 1000}s para propagação do CDN...`);
+        await new Promise(r => setTimeout(r, delay));
+        _cacheExpiry = 0;
+        keys = await getFirebasePublicKeys();
+        publicKey = keys[header.kid];
+        if (publicKey) break;
+      }
+      if (!publicKey) throw new Error('Chave pública não encontrada para kid: ' + header.kid);
+    }
+  }
 
   const signatureInput = parts[0] + '.' + parts[1];
   const signature = Buffer.from(parts[2], 'base64url');
@@ -190,6 +225,10 @@ const __dirname = path.dirname(__filename);
 async function startServer() {
   const app = express();
 
+  // Hostinger usa reverse proxy (LiteSpeed) — necessário para o rate limiter
+  // identificar corretamente o IP real do usuário via X-Forwarded-For
+  app.set('trust proxy', 1);
+
   // ITEM 3 — Helmet (must be before routes)
   // ITEM 3 — Helmet (must be before routes)
   // Desabilitamos o CSP (Content Security Policy) porque a política estrita 
@@ -220,7 +259,7 @@ async function startServer() {
   const isDevMode = process.env.NODE_ENV !== 'production' && process.env.VITE_USER_NODE_ENV !== 'production';
   const globalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutos
-    max: isDevMode ? 2000 : 200,
+    max: isDevMode ? 2000 : 600,
     message: { error: 'Muitas requisições. Tente novamente em alguns minutos.' },
     standardHeaders: true,
     legacyHeaders: false,
@@ -716,13 +755,15 @@ async function startServer() {
         created_at TIMESTAMP DEFAULT NOW()
       );
 
-      -- Seed checklist de entrada padrão
+      -- Seed checklist de entrada padrão (conta apenas rows ativas)
       DO $$
       DECLARE
-        tpl_count INTEGER;
+        active_count INTEGER;
       BEGIN
-        SELECT COUNT(*) INTO tpl_count FROM crm_comercial_checklist_template;
-        IF tpl_count = 0 THEN
+        SELECT COUNT(*) INTO active_count FROM crm_comercial_checklist_template WHERE active = true;
+        IF active_count = 0 THEN
+          -- Limpar rows inativas órfãs antes de re-seed
+          DELETE FROM crm_comercial_checklist_template WHERE active = false;
           INSERT INTO crm_comercial_checklist_template (item, order_index) VALUES
             ('Gerar contrato', 0),
             ('Link forms', 1),
@@ -827,6 +868,28 @@ async function startServer() {
       ALTER TABLE todos ADD COLUMN IF NOT EXISTS page_id TEXT;
       ALTER TABLE todos ADD COLUMN IF NOT EXISTS project_id TEXT;
       ALTER TABLE todos ADD COLUMN IF NOT EXISTS tags JSONB DEFAULT '[]'::jsonb;
+      ALTER TABLE todos ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;
+      ALTER TABLE todos ADD COLUMN IF NOT EXISTS section_id TEXT;
+
+      -- Backfill: set completed_at for existing completed tasks that don't have it
+      UPDATE todos SET completed_at = created_at WHERE status = 'completed' AND completed_at IS NULL;
+
+      -- Todo sections (agrupamentos dentro de cada projeto)
+      CREATE TABLE IF NOT EXISTS todo_sections (
+        id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        project_id TEXT NOT NULL,
+        page_id TEXT,
+        name TEXT NOT NULL,
+        order_index INTEGER DEFAULT 0,
+        is_default BOOLEAN DEFAULT FALSE,
+        is_fixed BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+
+      -- Migrations: ensure all columns exist
+      ALTER TABLE todo_sections ADD COLUMN IF NOT EXISTS page_id TEXT;
+      ALTER TABLE todo_sections ADD COLUMN IF NOT EXISTS is_default BOOLEAN DEFAULT FALSE;
+      ALTER TABLE todo_sections ADD COLUMN IF NOT EXISTS is_fixed BOOLEAN DEFAULT FALSE;
 
       CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
@@ -3176,7 +3239,7 @@ async function startServer() {
         query += ` AND t.status = $${params.length}`;
       }
       
-      query += ` ORDER BY t.created_at DESC`;
+      query += ` ORDER BY t.order_index ASC, t.created_at DESC`;
       
       const result = await pool.query(query, params);
       
@@ -3198,7 +3261,15 @@ async function startServer() {
         }
       }
       
-      res.json(tasks);
+      const mappedTasks = tasks.map(t => ({
+        ...t,
+        dueDate: t.due_date,
+        createdAt: t.created_at,
+        createdBy: t.created_by,
+        assignedTo: t.assigned_to
+      }));
+      
+      res.json(mappedTasks);
     } catch (err) {
       console.error("Error fetching daily tasks:", err);
       res.status(500).json({ error: "Failed to fetch daily tasks" });
@@ -3257,7 +3328,7 @@ async function startServer() {
         query += " WHERE project_id = $1";
         params.push(project_id);
       }
-      query += " ORDER BY due_date ASC NULLS LAST, created_at DESC";
+      query += " ORDER BY order_index ASC, due_date ASC NULLS LAST, created_at DESC";
       const result = await pool.query(query, params);
       res.json(result.rows.map(row => ({
         id: row.id,
@@ -3270,7 +3341,8 @@ async function startServer() {
         assignedTo: row.assigned_to,
         project_id: row.project_id,
         priority: row.priority,
-        tags: row.tags || []
+        tags: row.tags || [],
+        section_id: row.section_id || null
       })));
     } catch (err) {
       console.error("Error fetching tasks:", err);
@@ -3279,13 +3351,13 @@ async function startServer() {
   });
 
   app.post("/api/tasks", async (req, res) => {
-    const { id, title, description, status, createdBy, assignedTo, dueDate, project_id, priority, subtasks, page_id, tags } = req.body;
+    const { id, title, description, status, createdBy, assignedTo, dueDate, project_id, priority, subtasks, page_id, tags, section_id } = req.body;
     try {
       const taskId = id || Date.now().toString();
       const finalProjectId = project_id === "" ? null : project_id;
       await pool.query(
-        `INSERT INTO todos (id, title, description, status, created_by, assigned_to, due_date, project_id, priority, subtasks, page_id, tags) 
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        `INSERT INTO todos (id, title, description, status, created_by, assigned_to, due_date, project_id, priority, subtasks, page_id, tags, section_id) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          ON CONFLICT (id) DO UPDATE SET 
            title = EXCLUDED.title, 
            description = EXCLUDED.description, 
@@ -3296,8 +3368,9 @@ async function startServer() {
            priority = EXCLUDED.priority,
            subtasks = EXCLUDED.subtasks,
            page_id = EXCLUDED.page_id,
-           tags = EXCLUDED.tags`,
-        [taskId, title, description, status || 'pending', createdBy, assignedTo, dueDate, finalProjectId, priority || 'Média', JSON.stringify(subtasks || []), page_id, JSON.stringify(tags || [])]
+           tags = EXCLUDED.tags,
+           section_id = EXCLUDED.section_id`,
+        [taskId, title, description, status || 'pending', createdBy, assignedTo, dueDate, finalProjectId, priority || 'Média', JSON.stringify(subtasks || []), page_id, JSON.stringify(tags || []), section_id || null]
       );
       
       // Add history if it's a new task (we can check if id was provided, but for simplicity we just log creation if id wasn't provided)
@@ -3315,6 +3388,58 @@ async function startServer() {
     }
   });
 
+  app.patch("/api/tasks/reorder", async (req, res) => {
+    try {
+      const { tasks } = req.body;
+      if (!Array.isArray(tasks)) return res.status(400).json({ error: "Invalid payload" });
+      
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        for (const task of tasks) {
+          await client.query(
+            'UPDATE todos SET section_id = $1, order_index = $2 WHERE id = $3',
+            [task.section_id, task.order_index, task.id]
+          );
+        }
+        await client.query('COMMIT');
+        res.json({ success: true });
+      } catch (e) {
+        await client.query('ROLLBACK');
+        throw e;
+      } finally {
+        client.release();
+      }
+    } catch (err) {
+      console.error("Error reordering tasks:", err);
+      res.status(500).json({ error: "Failed to reorder tasks" });
+    }
+  });
+
+
+  app.delete("/api/tasks/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      // Delete attachments associated with the task
+      await pool.query("DELETE FROM task_attachments WHERE task_id = $1", [id]);
+      
+      // Delete comments associated with the task
+      await pool.query("DELETE FROM task_comments WHERE task_id = $1", [id]);
+      
+      // Delete subtasks associated with the task
+      await pool.query("DELETE FROM task_subtasks WHERE task_id = $1", [id]);
+      
+      // Finally delete the task itself
+      await pool.query("DELETE FROM todos WHERE id = $1", [id]);
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error deleting task:', error);
+      res.status(500).json({ error: 'Failed to delete task' });
+    }
+  });
+
   app.patch("/api/tasks/:id", async (req, res) => {
     const { id } = req.params;
     const { user_id, ...updates } = req.body;
@@ -3324,7 +3449,7 @@ async function startServer() {
         title: 'title', description: 'description', status: 'status',
         priority: 'priority', dueDate: 'due_date', assignedTo: 'assigned_to',
         project_id: 'project_id', page_id: 'page_id', due_date: 'due_date',
-        assigned_to: 'assigned_to', tags: 'tags'
+        assigned_to: 'assigned_to', tags: 'tags', section_id: 'section_id'
       };
       const keys = Object.keys(updates).filter(k => k in ALLOWED_COLUMNS);
       if (keys.length === 0) return res.json({ success: true });
@@ -3342,6 +3467,16 @@ async function startServer() {
         `UPDATE todos SET ${setClause} WHERE id = $1`,
         [id, ...values]
       );
+      
+      // Track completed_at timestamp for archiving logic
+      if (updates.status && updates.status !== oldTask?.status) {
+        if (updates.status === 'completed') {
+          await pool.query(`UPDATE todos SET completed_at = NOW() WHERE id = $1`, [id]);
+        } else {
+          // If un-completing a task, clear completed_at
+          await pool.query(`UPDATE todos SET completed_at = NULL WHERE id = $1`, [id]);
+        }
+      }
       
       // Add history using authenticated user ID
       if (authenticatedUid) {
@@ -3568,6 +3703,106 @@ async function startServer() {
       res.status(500).json({ error: "Failed to fetch task history" });
     }
   });
+
+  // --- Todo Sections API ---
+  app.get("/api/todo-sections", async (req, res) => {
+    try {
+      const { project_id, page_id, auto_create } = req.query;
+      if (!project_id) return res.status(400).json({ error: 'project_id required' });
+
+      let query = "SELECT * FROM todo_sections WHERE project_id = $1";
+      const params: any[] = [project_id];
+      if (page_id) {
+        query += " AND (page_id = $2 OR page_id IS NULL)";
+        params.push(page_id);
+      }
+      query += " ORDER BY order_index ASC, created_at ASC";
+      const result = await pool.query(query, params);
+
+      // Auto-create default sections server-side if none exist
+      if (result.rows.length === 0 && auto_create === 'true') {
+        const DEFAULT_SECTIONS = ['CAMPANHA', 'CRM'];
+        const finalPageId = page_id || null;
+        const insertedRows: any[] = [];
+        for (let i = 0; i < DEFAULT_SECTIONS.length; i++) {
+          const newId = crypto.randomUUID();
+          const ins = await pool.query(
+            `INSERT INTO todo_sections (id, project_id, page_id, name, is_default, order_index)
+             VALUES ($1, $2, $3, $4, true, $5) RETURNING *`,
+            [newId, project_id, finalPageId, DEFAULT_SECTIONS[i], i]
+          );
+          insertedRows.push(ins.rows[0]);
+        }
+        console.log(`[TODO-SECTIONS] Auto-created ${insertedRows.length} default sections for project ${project_id}`);
+        return res.json(insertedRows);
+      }
+
+      res.json(result.rows);
+    } catch (err) {
+      console.error("Error fetching todo sections:", err);
+      res.status(500).json({ error: "Failed to fetch todo sections" });
+    }
+  });
+
+
+  app.post("/api/todo-sections", async (req, res) => {
+    try {
+      const { project_id, page_id, name, is_fixed, is_default, order_index } = req.body;
+      console.log('[TODO-SECTIONS POST] body:', { project_id, page_id, name, is_default, order_index });
+      if (!project_id || !name) return res.status(400).json({ error: 'project_id and name required' });
+      // Generate UUID in Node to avoid depending on DB DEFAULT which may not exist
+      const newId = crypto.randomUUID();
+      // Use page_id from body, or fall back to null (nullable now)
+      const finalPageId = page_id || null;
+      const result = await pool.query(
+        `INSERT INTO todo_sections (id, project_id, page_id, name, is_default, order_index) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+        [newId, project_id, finalPageId, name, is_default ?? is_fixed ?? false, order_index ?? 0]
+      );
+      console.log('[TODO-SECTIONS POST] Created:', result.rows[0].id, result.rows[0].name);
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error("Error creating todo section:", err);
+      res.status(500).json({ error: "Failed to create todo section" });
+    }
+  });
+
+  app.patch("/api/todo-sections/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { name, order_index } = req.body;
+      const updates: string[] = [];
+      const values: any[] = [];
+      if (name !== undefined) { updates.push(`name = $${values.length + 2}`); values.push(name); }
+      if (order_index !== undefined) { updates.push(`order_index = $${values.length + 2}`); values.push(order_index); }
+      if (updates.length === 0) return res.json({ success: true });
+      const result = await pool.query(
+        `UPDATE todo_sections SET ${updates.join(', ')} WHERE id = $1 RETURNING *`,
+        [id, ...values]
+      );
+      if (result.rowCount === 0) {
+        return res.status(404).json({ error: 'Section not found' });
+      }
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error("Error updating todo section:", err);
+      res.status(500).json({ error: "Failed to update todo section" });
+    }
+  });
+
+  app.delete("/api/todo-sections/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      // Move tasks in this section to null (unsectioned)
+      await pool.query("UPDATE todos SET section_id = NULL WHERE section_id = $1", [id]);
+      await pool.query("DELETE FROM todo_sections WHERE id = $1", [id]);
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Error deleting todo section:", err);
+      res.status(500).json({ error: "Failed to delete todo section" });
+    }
+  });
+
+
 
 // ═══════════════════════════════════════════════════════════
 // TASK ATTACHMENTS & COMMENTS
@@ -9221,34 +9456,45 @@ app.get("/api/todos", async (req, res) => {
 
   // PUT replace entire checklist template
   app.put("/api/crm-comercial/checklist-template", async (req, res) => {
+    const client = await pool.connect();
     try {
       const { items } = req.body as { items: { item: string }[] };
       if (!Array.isArray(items)) return res.status(400).json({ error: "items array required" });
 
-      // Soft-delete all existing, then insert new
-      await pool.query("UPDATE crm_comercial_checklist_template SET active = false");
+      // Filter out empty items
+      const validItems = items.filter(t => t.item && t.item.trim() !== '');
 
-      if (items.length > 0) {
+      await client.query('BEGIN');
+
+      // Soft-delete all existing
+      await client.query("UPDATE crm_comercial_checklist_template SET active = false");
+
+      if (validItems.length > 0) {
         const values: any[] = [];
         const placeholders: string[] = [];
-        items.forEach((t, i) => {
+        validItems.forEach((t, i) => {
           const offset = i * 2;
           placeholders.push(`($${offset + 1}, $${offset + 2})`);
-          values.push(t.item, i);
+          values.push(t.item.trim(), i);
         });
-        await pool.query(
+        await client.query(
           `INSERT INTO crm_comercial_checklist_template (item, order_index) VALUES ${placeholders.join(', ')}`,
           values
         );
       }
 
-      const result = await pool.query(
+      await client.query('COMMIT');
+
+      const result = await client.query(
         "SELECT * FROM crm_comercial_checklist_template WHERE active = true ORDER BY order_index ASC"
       );
       res.json(result.rows);
     } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
       console.error("Error updating checklist template:", err);
       res.status(500).json({ error: "Failed to update template" });
+    } finally {
+      client.release();
     }
   });
 

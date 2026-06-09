@@ -6,6 +6,7 @@ import {
   ChevronDown, Eye
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { DatePicker } from './ui/DatePicker';
 import { useAuth } from '../contexts/AuthContext';
 
 // ─── Types ─────────────────────────────────────────────────────────
@@ -66,6 +67,7 @@ interface TaskDetailModalProps {
   onSubtaskToggle: (subtask: TaskSubtask, taskId: string) => void;
   onSubtaskAdd: (taskId: string, title: string) => void;
   onRefresh: () => void;
+  onTaskDelete?: (taskId: string) => void;
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────
@@ -111,7 +113,8 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   onTaskUpdate,
   onSubtaskToggle,
   onSubtaskAdd,
-  onRefresh
+  onRefresh,
+  onTaskDelete
 }) => {
   const { userData: authUser } = useAuth();
   const [activeTab, setActiveTab] = useState<TabKey>('details');
@@ -169,7 +172,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
     try {
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('uploaded_by', authUser?.nome || authUser?.email || 'system');
+      formData.append('uploaded_by', authUser?.name || authUser?.email || 'system');
       const res = await fetch(`/api/tasks/${task.id}/attachments`, {
         method: 'POST',
         body: formData,
@@ -221,8 +224,8 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          author_name: authUser?.nome || authUser?.email || 'Anônimo',
-          author_avatar: authUser?.avatar || null,
+          author_name: authUser?.name || authUser?.email || 'Anônimo',
+          author_avatar: authUser?.picture || null,
           content: newComment.trim(),
         }),
       });
@@ -282,22 +285,55 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
           className="modal-container w-full max-w-3xl mx-auto my-8 overflow-hidden flex flex-col max-h-[85vh]"
         >
           {/* Header */}
-          <div className="p-6 border-b modal-divider flex items-center justify-between shrink-0">
-            <div className="flex items-center gap-3 min-w-0 flex-1">
-              <div className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 ${status.color}`}>
-                {status.icon} {status.label}
+          <div className="p-5 border-b modal-divider flex items-center justify-between shrink-0 gap-4">
+            <h2 className="text-lg font-bold modal-title truncate flex-1 leading-none self-center">{task.title}</h2>
+            
+            <div className="flex items-center gap-2 flex-shrink-0 flex-nowrap overflow-x-auto scrollbar-hide self-center">
+              <select
+                value={task.status}
+                onChange={(e) => onTaskUpdate(task.id, 'status', e.target.value)}
+                className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider cursor-pointer outline-none opacity-80 hover:opacity-100 transition-opacity appearance-none text-center ${status.color}`}
+                title="Alterar status"
+              >
+                <option value="pending" className="text-slate-800 dark:text-white bg-white dark:bg-[#1A1A24]">Pendente</option>
+                <option value="completed" className="text-slate-800 dark:text-white bg-white dark:bg-[#1A1A24]">Concluída</option>
+                <option value="gargalo" className="text-slate-800 dark:text-white bg-white dark:bg-[#1A1A24]">Gargalo</option>
+              </select>
+
+              <select
+                value={task.priority || 'Média'}
+                onChange={(e) => onTaskUpdate(task.id, 'priority', e.target.value)}
+                className={`px-2 py-1 rounded-md border text-[10px] font-bold uppercase tracking-wider cursor-pointer outline-none opacity-80 hover:opacity-100 transition-opacity appearance-none text-center ${priorityStyle}`}
+                title="Alterar prioridade"
+              >
+                <option value="Baixa" className="text-slate-800 dark:text-white bg-white dark:bg-[#1A1A24]">Baixa</option>
+                <option value="Média" className="text-slate-800 dark:text-white bg-white dark:bg-[#1A1A24]">Média</option>
+                <option value="Alta" className="text-slate-800 dark:text-white bg-white dark:bg-[#1A1A24]">Alta</option>
+                <option value="Urgente" className="text-slate-800 dark:text-white bg-white dark:bg-[#1A1A24]">Urgente</option>
+              </select>
+
+              <div className="flex items-center opacity-80 hover:opacity-100 transition-opacity ml-1">
+                <DatePicker value={task.dueDate || null} onChange={(val) => onTaskUpdate(task.id, 'dueDate', val)} />
               </div>
-              <h2 className="text-lg font-bold modal-title truncate">{task.title}</h2>
-            </div>
-            <div className="flex items-center gap-2 flex-shrink-0 ml-3">
-              <span className={`text-xs font-bold px-2.5 py-1 rounded-lg border ${priorityStyle}`}>
-                {task.priority || 'Média'}
-              </span>
+
+              {onTaskDelete && (
+                <button
+                  onClick={() => {
+                    onTaskDelete(task.id);
+                    onClose();
+                  }}
+                  className="p-1.5 hover:bg-red-100 dark:hover:bg-red-500/20 rounded-md text-slate-500/60 dark:text-gray-400/60 hover:text-red-500 dark:hover:text-red-400 transition-colors ml-1"
+                  title="Excluir tarefa"
+                >
+                  <Trash2 size={14} />
+                </button>
+              )}
+
               <button
                 onClick={onClose}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-lg text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
+                className="p-1.5 hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-md text-gray-500/60 dark:text-gray-400/60 hover:text-gray-900 dark:hover:text-white transition-colors"
               >
-                <X size={20} />
+                <X size={16} />
               </button>
             </div>
           </div>
@@ -343,48 +379,6 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                   exit={{ opacity: 0, x: 10 }}
                   className="space-y-5"
                 >
-                  {/* Meta Info */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div className="bg-slate-50 dark:bg-white/5 rounded-xl p-3 border border-slate-200 dark:border-white/10">
-                      <div className="text-[10px] font-bold text-slate-500 dark:text-gray-500 uppercase tracking-wider mb-1">Status</div>
-                      <select
-                        value={task.status}
-                        onChange={(e) => onTaskUpdate(task.id, 'status', e.target.value)}
-                        className="text-sm font-medium bg-transparent border-none text-slate-800 dark:text-white focus:ring-0 cursor-pointer p-0 w-full"
-                      >
-                        <option value="pending">Pendente</option>
-                        <option value="completed">Concluída</option>
-                        <option value="gargalo">Gargalo</option>
-                      </select>
-                    </div>
-                    <div className="bg-slate-50 dark:bg-white/5 rounded-xl p-3 border border-slate-200 dark:border-white/10">
-                      <div className="text-[10px] font-bold text-slate-500 dark:text-gray-500 uppercase tracking-wider mb-1">Prioridade</div>
-                      <select
-                        value={task.priority || 'Média'}
-                        onChange={(e) => onTaskUpdate(task.id, 'priority', e.target.value)}
-                        className="text-sm font-medium bg-transparent border-none text-slate-800 dark:text-white focus:ring-0 cursor-pointer p-0 w-full"
-                      >
-                        <option value="Baixa">Baixa</option>
-                        <option value="Média">Média</option>
-                        <option value="Alta">Alta</option>
-                        <option value="Urgente">Urgente</option>
-                      </select>
-                    </div>
-                    <div className="bg-slate-50 dark:bg-white/5 rounded-xl p-3 border border-slate-200 dark:border-white/10">
-                      <div className="text-[10px] font-bold text-slate-500 dark:text-gray-500 uppercase tracking-wider mb-1">Data</div>
-                      <div className="text-sm font-medium text-slate-800 dark:text-white flex items-center gap-1.5">
-                        <Clock size={14} className="text-purple-400" />
-                        {task.dueDate ? new Date(task.dueDate).toLocaleDateString('pt-BR') : 'Sem data'}
-                      </div>
-                    </div>
-                    <div className="bg-slate-50 dark:bg-white/5 rounded-xl p-3 border border-slate-200 dark:border-white/10">
-                      <div className="text-[10px] font-bold text-slate-500 dark:text-gray-500 uppercase tracking-wider mb-1">Projeto</div>
-                      <div className="text-sm font-medium text-slate-800 dark:text-white truncate">
-                        {task.project_name || 'Sem projeto'}
-                      </div>
-                    </div>
-                  </div>
-
                   {/* Description */}
                   <div>
                     <div className="flex items-center justify-between mb-2">
@@ -663,7 +657,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                   <div className="sticky bottom-0 bg-white dark:bg-[#1a1a2e] pt-4 border-t border-slate-200 dark:border-white/10">
                     <div className="flex gap-3">
                       <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-violet-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0 mt-1">
-                        {authUser?.nome?.charAt(0)?.toUpperCase() || '?'}
+                        {authUser?.name?.charAt(0)?.toUpperCase() || '?'}
                       </div>
                       <div className="flex-1">
                         <textarea
