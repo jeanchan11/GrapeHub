@@ -22,6 +22,7 @@ import Atividades from './src/pages/Atividades';
 import CrmLigacoes from './src/pages/CrmLigacoes';
 import CrmPessoas from './src/pages/CrmPessoas';
 import CrmEmpresas from './src/pages/CrmEmpresas';
+import CrmLeads from './src/pages/CrmLeads';
 import CrmMetas from './src/pages/CrmMetas';
 import CrmMetricas from './src/pages/CrmMetricas';
 import Automacoes from './src/pages/Automacoes';
@@ -329,10 +330,10 @@ const AppContent: React.FC = () => {
         return <TaskTemplates />;
       case 'crm-atividades':
         return <Atividades />;
-      case 'crm-pessoas':
-        return <CrmPessoas />;
-      case 'crm-empresas':
-        return <CrmEmpresas />;
+      case 'crm-leads':
+      case 'crm-pessoas':  // fallback — antiga página redireciona para Leads
+      case 'crm-empresas': // fallback — antiga página redireciona para Leads
+        return <CrmLeads />;
       case 'crm-metas':
         return <CrmMetas />;
       case 'crm-metricas':

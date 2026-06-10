@@ -1191,9 +1191,7 @@ async function startServer() {
       );
     `);
     
-    // Auto-fix template if user already created page named 'Empresas'
-    await pool.query(`UPDATE menu_pages SET template = 'crm-empresas' WHERE LOWER(label) = 'empresas' AND (template IS NULL OR template = 'blank')`);
-
+    
     // ── Sequências de Cadência ──────────────────────────────────────────────
     await pool.query(`
       CREATE TABLE IF NOT EXISTS crm_sequences (
@@ -1294,8 +1292,40 @@ async function startServer() {
 
 
     
-    // Auto-fix template if user already created page named 'Pessoas'
-    await pool.query(`UPDATE menu_pages SET template = 'crm-pessoas' WHERE LOWER(label) = 'pessoas'`);
+    // ── Migration: Replace Empresas + Pessoas with a single "Leads" page ──
+    // Step 1: Find the COMERCIAL section ID
+    const comercialSection = await pool.query(`SELECT id FROM menu_sections WHERE LOWER(title) = 'comercial' LIMIT 1`);
+    const comercialSectionId = comercialSection.rows[0]?.id;
+
+    if (comercialSectionId) {
+      // Step 2: Convert "Pessoas" → "Leads" (update label, template, icon, move to section)
+      await pool.query(`
+        UPDATE menu_pages 
+        SET label = 'Leads', 
+            template = 'crm-leads', 
+            icon = 'UserSearch',
+            section_id = $1,
+            subsession_id = NULL,
+            subsubsession_id = NULL
+        WHERE LOWER(label) = 'pessoas' AND template IN ('crm-pessoas', 'blank', 'default')
+      `, [comercialSectionId]);
+
+      // Also catch if already migrated (idempotent)
+      await pool.query(`
+        UPDATE menu_pages SET template = 'crm-leads'
+        WHERE LOWER(label) = 'leads' AND (template IS NULL OR template = 'blank')
+      `);
+
+      // Step 3: Delete "Empresas" page
+      await pool.query(`DELETE FROM menu_pages WHERE LOWER(label) = 'empresas' AND template IN ('crm-empresas', 'blank', 'default')`);
+
+      // Step 4: Clean up empty "contatos" subsession (if no pages left)
+      await pool.query(`
+        DELETE FROM menu_subsessions 
+        WHERE LOWER(label) = 'contatos'
+          AND NOT EXISTS (SELECT 1 FROM menu_pages WHERE subsession_id = menu_subsessions.id)
+      `);
+    }
     
     // Migração: Inserir Pessoas automaticamente a partir dos Leads existentes (basendo-se no telefone único)
     try {
@@ -8063,6 +8093,52 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
+  // ── Leads List (for CrmLeads page — includes JOINs for column, user, kanban names) ──
+  app.get("/api/crm-comercial/leads-list", async (req, res) => {
+    try {
+      const { search, kanban_id, status } = req.query;
+      let query = `
+        SELECT l.*, 
+               c.title as coluna_nome,
+               c.color as coluna_color,
+               u.name as responsavel_name,
+               k.nome as kanban_name
+        FROM crm_comercial_leads l
+        LEFT JOIN crm_comercial_columns c ON l.coluna::text = c.id::text
+        LEFT JOIN users u ON l.responsavel_id = u.email
+        LEFT JOIN crm_comercial_kanbans k ON l.kanban_id::text = k.id::text
+        WHERE 1=1
+      `;
+      const params: any[] = [];
+      let paramIdx = 1;
+
+      if (kanban_id) {
+        query += ` AND l.kanban_id::text = $${paramIdx}`;
+        params.push(kanban_id);
+        paramIdx++;
+      }
+
+      if (status === 'lost') {
+        query += ` AND l.is_lost = true`;
+      } else if (status === 'active') {
+        query += ` AND (l.is_lost IS NULL OR l.is_lost = false)`;
+      }
+
+      if (search) {
+        query += ` AND (l.nome ILIKE $${paramIdx} OR l.telefone ILIKE $${paramIdx} OR l.email ILIKE $${paramIdx})`;
+        params.push(`%${search}%`);
+        paramIdx++;
+      }
+
+      query += ` ORDER BY l.created_at DESC`;
+      const result = await pool.query(query, params);
+      res.json(result.rows);
+    } catch (err) {
+      console.error("Error fetching leads list:", err);
+      res.status(500).json({ error: "Failed to fetch leads list" });
+    }
+  });
+
   app.post("/api/crm-comercial/leads", async (req, res) => {
     try {
       const { nome, email, telefone, origem, responsavel_id, valor, observacoes, kanban_id, coluna } = req.body;
@@ -11025,6 +11101,31 @@ app.get("/api/todos", async (req, res) => {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+
+  // ── IA Status Groups (for Implementação IA page) ──
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ia_status_groups (
+      id TEXT PRIMARY KEY,
+      label TEXT NOT NULL,
+      color TEXT NOT NULL DEFAULT '#8b5cf6',
+      emoji TEXT NOT NULL DEFAULT '📌',
+      order_index INT NOT NULL DEFAULT 0
+    )
+  `);
+
+  // Seed default status groups if the table is empty
+  const sgCount = await pool.query('SELECT COUNT(*) FROM ia_status_groups');
+  if (parseInt(sgCount.rows[0].count) === 0) {
+    await pool.query(`
+      INSERT INTO ia_status_groups (id, label, color, emoji, order_index) VALUES
+        ('alteracoes', 'ALTERAÇÕES', '#7c3aed', '🔵', 0),
+        ('testes', 'TESTES', '#f97316', '🟠', 1)
+      ON CONFLICT (id) DO NOTHING
+    `);
+  }
+
+  // Add type column to onboarding_tasks if missing (shared with operacional)
+  await pool.query(`ALTER TABLE onboarding_tasks ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'operacional'`);
 
   // ── Briefing Forms ──
   await pool.query(`

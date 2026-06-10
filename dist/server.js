@@ -22704,7 +22704,6 @@ async function startServer() {
         updated_at TIMESTAMPTZ DEFAULT NOW()
       );
     `);
-    await pool.query(`UPDATE menu_pages SET template = 'crm-empresas' WHERE LOWER(label) = 'empresas' AND (template IS NULL OR template = 'blank')`);
     await pool.query(`
       CREATE TABLE IF NOT EXISTS crm_sequences (
         id SERIAL PRIMARY KEY,
@@ -22786,7 +22785,30 @@ async function startServer() {
     await pool.query(`UPDATE menu_pages SET template = 'crm-metricas' WHERE LOWER(label) LIKE '%m\xE9tricas%' OR LOWER(label) LIKE '%metricas%'`);
     await pool.query(`UPDATE menu_pages SET template = 'marketing-dashboard' WHERE LOWER(label) LIKE '%dashboard marketing%' AND (template IS NULL OR template = 'blank')`);
     await pool.query(`UPDATE menu_pages SET template = 'marketing-acoes' WHERE LOWER(label) LIKE '%a\xE7\xF5es%' AND (template IS NULL OR template = 'blank')`);
-    await pool.query(`UPDATE menu_pages SET template = 'crm-pessoas' WHERE LOWER(label) = 'pessoas'`);
+    const comercialSection = await pool.query(`SELECT id FROM menu_sections WHERE LOWER(title) = 'comercial' LIMIT 1`);
+    const comercialSectionId = comercialSection.rows[0]?.id;
+    if (comercialSectionId) {
+      await pool.query(`
+        UPDATE menu_pages 
+        SET label = 'Leads', 
+            template = 'crm-leads', 
+            icon = 'UserSearch',
+            section_id = $1,
+            subsession_id = NULL,
+            subsubsession_id = NULL
+        WHERE LOWER(label) = 'pessoas' AND template IN ('crm-pessoas', 'blank', 'default')
+      `, [comercialSectionId]);
+      await pool.query(`
+        UPDATE menu_pages SET template = 'crm-leads'
+        WHERE LOWER(label) = 'leads' AND (template IS NULL OR template = 'blank')
+      `);
+      await pool.query(`DELETE FROM menu_pages WHERE LOWER(label) = 'empresas' AND template IN ('crm-empresas', 'blank', 'default')`);
+      await pool.query(`
+        DELETE FROM menu_subsessions 
+        WHERE LOWER(label) = 'contatos'
+          AND NOT EXISTS (SELECT 1 FROM menu_pages WHERE subsession_id = menu_subsessions.id)
+      `);
+    }
     try {
       await pool.query(`ALTER TABLE crm_comercial_kanbans ADD COLUMN IF NOT EXISTS user_id TEXT`);
     } catch (e) {
@@ -28656,6 +28678,46 @@ async function startServer() {
       res.status(500).json({ error: "Failed to fetch leads" });
     }
   });
+  app.get("/api/crm-comercial/leads-list", async (req, res) => {
+    try {
+      const { search, kanban_id, status } = req.query;
+      let query = `
+        SELECT l.*, 
+               c.title as coluna_nome,
+               c.color as coluna_color,
+               u.name as responsavel_name,
+               k.nome as kanban_name
+        FROM crm_comercial_leads l
+        LEFT JOIN crm_comercial_columns c ON l.coluna::text = c.id::text
+        LEFT JOIN users u ON l.responsavel_id = u.email
+        LEFT JOIN crm_comercial_kanbans k ON l.kanban_id::text = k.id::text
+        WHERE 1=1
+      `;
+      const params = [];
+      let paramIdx = 1;
+      if (kanban_id) {
+        query += ` AND l.kanban_id::text = $${paramIdx}`;
+        params.push(kanban_id);
+        paramIdx++;
+      }
+      if (status === "lost") {
+        query += ` AND l.is_lost = true`;
+      } else if (status === "active") {
+        query += ` AND (l.is_lost IS NULL OR l.is_lost = false)`;
+      }
+      if (search) {
+        query += ` AND (l.nome ILIKE $${paramIdx} OR l.telefone ILIKE $${paramIdx} OR l.email ILIKE $${paramIdx})`;
+        params.push(`%${search}%`);
+        paramIdx++;
+      }
+      query += ` ORDER BY l.created_at DESC`;
+      const result = await pool.query(query, params);
+      res.json(result.rows);
+    } catch (err) {
+      console.error("Error fetching leads list:", err);
+      res.status(500).json({ error: "Failed to fetch leads list" });
+    }
+  });
   app.post("/api/crm-comercial/leads", async (req, res) => {
     try {
       const { nome, email, telefone, origem, responsavel_id, valor, observacoes, kanban_id, coluna } = req.body;
@@ -31271,6 +31333,25 @@ async function startServer() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ia_status_groups (
+      id TEXT PRIMARY KEY,
+      label TEXT NOT NULL,
+      color TEXT NOT NULL DEFAULT '#8b5cf6',
+      emoji TEXT NOT NULL DEFAULT '\u{1F4CC}',
+      order_index INT NOT NULL DEFAULT 0
+    )
+  `);
+  const sgCount = await pool.query("SELECT COUNT(*) FROM ia_status_groups");
+  if (parseInt(sgCount.rows[0].count) === 0) {
+    await pool.query(`
+      INSERT INTO ia_status_groups (id, label, color, emoji, order_index) VALUES
+        ('alteracoes', 'ALTERA\xC7\xD5ES', '#7c3aed', '\u{1F535}', 0),
+        ('testes', 'TESTES', '#f97316', '\u{1F7E0}', 1)
+      ON CONFLICT (id) DO NOTHING
+    `);
+  }
+  await pool.query(`ALTER TABLE onboarding_tasks ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'operacional'`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS briefings (
       id SERIAL PRIMARY KEY,
