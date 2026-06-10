@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import SplitHeadline from '../components/SplitHeadline';
 import { createPortal } from 'react-dom';
-import { Plus, ChevronDown, ChevronRight, Calendar, Users, Tag, MoreHorizontal, Circle, CheckCircle2, Loader2, X, Trash2, GripVertical, Settings, FileText, Link as LinkIcon, Save, Heading1, Heading2, Heading3, Type, List, ListOrdered, CheckSquare, Check } from 'lucide-react';
+import { Plus, ChevronDown, ChevronRight, Calendar, Users, Tag, MoreHorizontal, Circle, CheckCircle2, Loader2, X, Trash2, GripVertical, Settings, FileText, Link as LinkIcon, Save, Heading1, Heading2, Heading3, Type, List, ListOrdered, CheckSquare, Check, Edit2, Palette, Layers } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
+import { useAuth } from '../contexts/AuthContext';
 
 // ── Types ─────────────────────────────────────────────────
 interface OnboardingTask {
@@ -136,14 +137,356 @@ const saveColoredTags = (pageId: string, tags: ColoredTag[]) =>
 
 const uid = () => Math.random().toString(36).substr(2, 9);
 
-const STATUS_GROUPS: Omit<StatusGroup, 'tasks'>[] = [
-  { id: 'alteracoes',             label: 'ALTERAÇÕES',             color: '#ef4444', emoji: '🔄' },
-  { id: 'testes',                 label: 'TESTES',                 color: '#3b82f6', emoji: '⚙️🤖' },
-  { id: 'implementacao-n8n',      label: 'IMPLEMENTAÇÃO N8N',      color: '#ea580c', emoji: '⤵️🤖' },
-  { id: 'criando-prompt',         label: 'CRIANDO PROMPT',         color: '#8b5cf6', emoji: '📝' },
-  { id: 'a-implementar',          label: 'A IMPLEMENTAR',          color: '#71717a', emoji: '⏳' },
-  { id: 'aguardando-informacoes', label: 'AGUARDANDO INFORMAÇÕES', color: '#eab308', emoji: '' },
+export const StatusGroupsContext = React.createContext<Omit<StatusGroup, 'tasks'>[]>([]);
+
+// ── Column order system ────────────────────────────────────
+type ColId = 'tags' | 'squad' | 'resp' | 'start_date' | 'due_date';
+
+interface ColDef {
+  id: ColId;
+  label: string;
+  width: string; // tailwind class e.g. 'w-40'
+}
+
+const DEFAULT_COL_ORDER: ColId[] = ['tags', 'squad', 'resp', 'start_date', 'due_date'];
+
+const COL_DEFS: Record<ColId, ColDef> = {
+  tags:       { id: 'tags',       label: 'Tags',        width: 'w-40' },
+  squad:      { id: 'squad',      label: 'Squad',       width: 'w-36' },
+  resp:       { id: 'resp',       label: 'Resp.',       width: 'w-20' },
+  start_date: { id: 'start_date', label: 'Data Inicial', width: 'w-24' },
+  due_date:   { id: 'due_date',   label: 'Vencimento',  width: 'w-28' },
+};
+
+const loadColOrder = (): ColId[] => {
+  try {
+    const s = localStorage.getItem('grapehub_ia_col_order');
+    if (s) {
+      const parsed = JSON.parse(s) as ColId[];
+      // Validate — ensure all expected cols are present
+      if (DEFAULT_COL_ORDER.every(c => parsed.includes(c)) && parsed.length === DEFAULT_COL_ORDER.length)
+        return parsed;
+    }
+  } catch { /* fallback */ }
+  return [...DEFAULT_COL_ORDER];
+};
+
+const saveColOrder = (order: ColId[]) =>
+  localStorage.setItem('grapehub_ia_col_order', JSON.stringify(order));
+
+export const ColOrderContext = React.createContext<ColId[]>(DEFAULT_COL_ORDER);
+export const SetColOrderContext = React.createContext<React.Dispatch<React.SetStateAction<ColId[]>>>(() => {});
+
+
+// ── Paleta de cores para os status ────────────────────────
+const IA_COLOR_PALETTE = [
+  '#7c3aed', '#6d28d9', '#8b5cf6', '#a78bfa',
+  '#ea580c', '#f97316', '#ef4444', '#f43f5e',
+  '#10b981', '#14b8a6', '#06b6d4', '#0ea5e9',
+  '#3b82f6', '#6366f1', '#d946ef', '#ec4899',
+  '#84cc16', '#eab308', '#f59e0b', '#78716c',
+  '#52525b', '#3f3f46', '#94a3b8', '#64748b',
 ];
+
+const IA_EMOJI_OPTIONS = ['🔵','🟠','🟢','🔴','🟡','🟣','⚪','⏳','🚀','✅','📝','🎯','🔧','📋','💡','🔄','⤵️','⚙️','📌','🏆'];
+
+// ── Status Config Modal ────────────────────────────────────
+const StatusConfigModal = ({
+  groups,
+  onRename,
+  onUpdateColor,
+  onDelete,
+  onAdd,
+  onReorder,
+  onClose,
+}: {
+  groups: Omit<StatusGroup, 'tasks'>[];
+  onRename: (id: string, label: string) => void;
+  onUpdateColor: (id: string, fields: { color?: string; emoji?: string }) => void;
+  onDelete: (id: string) => void;
+  onAdd: (label: string, color: string, emoji: string) => void;
+  onReorder: (reordered: Omit<StatusGroup, 'tasks'>[]) => void;
+  onClose: () => void;
+}) => {
+  const [draft, setDraft] = useState(groups.map(g => ({ ...g })));
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editLabel, setEditLabel] = useState('');
+  const [showColorFor, setShowColorFor] = useState<string | null>(null);
+  const [showEmojiFor, setShowEmojiFor] = useState<string | null>(null);
+  const [confirmDelId, setConfirmDelId] = useState<string | null>(null);
+  const [newLabel, setNewLabel] = useState('');
+  const [newColor, setNewColor] = useState(IA_COLOR_PALETTE[0]);
+  const [newEmoji, setNewEmoji] = useState('📌');
+  const [showNewColorPicker, setShowNewColorPicker] = useState(false);
+  const [showNewEmojiPicker, setShowNewEmojiPicker] = useState(false);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+  const newLabelRef = React.useRef<HTMLInputElement>(null);
+
+  const startEdit = (g: Omit<StatusGroup,'tasks'>) => {
+    setEditingId(g.id);
+    setEditLabel(g.label);
+    setShowColorFor(null);
+    setShowEmojiFor(null);
+  };
+
+  const saveEdit = (id: string) => {
+    const trimmed = editLabel.trim();
+    if (trimmed) {
+      onRename(id, trimmed.toUpperCase());
+      setDraft(prev => prev.map(g => g.id === id ? { ...g, label: trimmed.toUpperCase() } : g));
+    }
+    setEditingId(null);
+  };
+
+  const handleColorChange = (id: string, color: string) => {
+    onUpdateColor(id, { color });
+    setDraft(prev => prev.map(g => g.id === id ? { ...g, color } : g));
+    setShowColorFor(null);
+  };
+
+  const handleEmojiChange = (id: string, emoji: string) => {
+    onUpdateColor(id, { emoji });
+    setDraft(prev => prev.map(g => g.id === id ? { ...g, emoji } : g));
+    setShowEmojiFor(null);
+  };
+
+  const handleDelete = (id: string) => {
+    if (confirmDelId !== id) { setConfirmDelId(id); return; }
+    onDelete(id);
+    setDraft(prev => prev.filter(g => g.id !== id));
+    setConfirmDelId(null);
+  };
+
+  const handleAdd = () => {
+    const val = newLabel.trim();
+    if (!val) return;
+    const id = val.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Date.now().toString(36);
+    const newGroup = { id, label: val.toUpperCase(), color: newColor, emoji: newEmoji };
+    onAdd(newGroup.label, newColor, newEmoji);
+    setDraft(prev => [...prev, { ...newGroup, order_index: prev.length }]);
+    setNewLabel('');
+    setNewColor(IA_COLOR_PALETTE[Math.floor(Math.random() * IA_COLOR_PALETTE.length)]);
+    setNewEmoji('📌');
+  };
+
+  const handleDragStart = (idx: number) => setDragIdx(idx);
+  const handleDragOver = (e: React.DragEvent, idx: number) => {
+    e.preventDefault();
+    if (dragIdx !== null && dragIdx !== idx) setDragOverIdx(idx);
+  };
+  const handleDrop = (idx: number) => {
+    if (dragIdx === null || dragIdx === idx) { setDragIdx(null); setDragOverIdx(null); return; }
+    const reordered = [...draft];
+    const [moved] = reordered.splice(dragIdx, 1);
+    reordered.splice(idx, 0, moved);
+    setDraft(reordered);
+    onReorder(reordered);
+    setDragIdx(null);
+    setDragOverIdx(null);
+  };
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-dark-card border border-white/10 rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-white/5 shrink-0">
+          <div>
+            <h2 className="text-base font-bold text-dark-text flex items-center gap-2">
+              <Layers size={18} className="text-violet-500" />
+              Configurar Status
+            </h2>
+            <p className="text-[10px] text-slate-500 mt-0.5">Reordene, renomeie, edite cores e emojis das etapas</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 text-slate-500 hover:text-white hover:bg-white/10 rounded-lg transition-colors">
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Groups list */}
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1" onDragEnd={() => { setDragIdx(null); setDragOverIdx(null); }}>
+          {draft.map((g, idx) => (
+            <div
+              key={g.id}
+              draggable
+              onDragStart={() => handleDragStart(idx)}
+              onDragOver={e => handleDragOver(e, idx)}
+              onDrop={() => handleDrop(idx)}
+              className={`flex items-center gap-3 p-3 rounded-xl border transition-all cursor-grab active:cursor-grabbing group ${
+                dragOverIdx === idx
+                  ? 'bg-white/10 border-white/20 scale-[1.01]'
+                  : 'bg-white/[0.02] border-white/5 hover:bg-white/5'
+              }`}
+              style={{ borderLeftColor: g.color, borderLeftWidth: 3 }}
+            >
+              {/* Drag handle */}
+              <GripVertical size={14} className="text-slate-700 group-hover:text-slate-500 shrink-0 transition-colors" />
+
+              {/* Emoji picker */}
+              <div className="relative shrink-0">
+                <button
+                  onClick={() => { setShowEmojiFor(showEmojiFor === g.id ? null : g.id); setShowColorFor(null); }}
+                  className="text-lg leading-none hover:scale-110 transition-transform"
+                  title="Alterar emoji"
+                >
+                  {g.emoji || '📌'}
+                </button>
+                {showEmojiFor === g.id && (
+                  <div className="absolute top-8 left-0 z-50 p-2 bg-dark-card border border-white/10 rounded-xl shadow-2xl grid grid-cols-5 gap-1 w-36">
+                    {IA_EMOJI_OPTIONS.map(em => (
+                      <button key={em} onClick={() => handleEmojiChange(g.id, em)}
+                        className="text-base hover:bg-white/10 rounded-lg p-1 transition-colors">{em}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Color dot */}
+              <div className="relative shrink-0">
+                <button
+                  onClick={() => { setShowColorFor(showColorFor === g.id ? null : g.id); setShowEmojiFor(null); }}
+                  className="w-4 h-4 rounded-full border-2 border-white/20 hover:scale-125 transition-transform"
+                  style={{ backgroundColor: g.color }}
+                  title="Alterar cor"
+                />
+                {showColorFor === g.id && (
+                  <div className="absolute top-6 left-0 z-50 p-2 bg-dark-card border border-white/10 rounded-xl shadow-2xl grid grid-cols-6 gap-1 w-40">
+                    {IA_COLOR_PALETTE.map(c => (
+                      <button key={c} onClick={() => handleColorChange(g.id, c)}
+                        className="w-5 h-5 rounded-full border-2 transition-all hover:scale-125"
+                        style={{
+                          backgroundColor: c,
+                          borderColor: g.color === c ? '#fff' : 'transparent',
+                          boxShadow: g.color === c ? `0 0 0 2px ${c}` : 'none',
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Label */}
+              <div className="flex-1 min-w-0">
+                {editingId === g.id ? (
+                  <input
+                    autoFocus
+                    value={editLabel}
+                    onChange={e => setEditLabel(e.target.value)}
+                    onBlur={() => saveEdit(g.id)}
+                    onKeyDown={e => { if (e.key === 'Enter') saveEdit(g.id); if (e.key === 'Escape') setEditingId(null); }}
+                    className="bg-transparent border-b border-violet-500/50 text-dark-text text-xs font-bold uppercase tracking-widest outline-none w-full"
+                  />
+                ) : (
+                  <span
+                    className="text-xs font-bold uppercase tracking-widest truncate block"
+                    style={{ color: g.color }}
+                    onDoubleClick={() => startEdit(g)}
+                    title="Duplo-clique para renomear"
+                  >
+                    {g.label}
+                  </span>
+                )}
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  onClick={() => startEdit(g)}
+                  className="p-1.5 text-slate-500 hover:text-violet-400 hover:bg-violet-500/10 rounded-lg transition-colors"
+                  title="Renomear"
+                >
+                  <Edit2 size={13} />
+                </button>
+                {confirmDelId === g.id ? (
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => handleDelete(g.id)} className="px-2 py-1 text-[10px] font-bold text-rose-400 bg-rose-500/10 rounded-lg hover:bg-rose-500/20 transition-colors">Sim</button>
+                    <button onClick={() => setConfirmDelId(null)} className="px-2 py-1 text-[10px] font-bold text-slate-400 bg-white/5 rounded-lg hover:bg-white/10 transition-colors">Não</button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => handleDelete(g.id)}
+                    className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
+                    title="Excluir"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Add new */}
+        <div className="px-4 py-3 border-t border-white/5 shrink-0">
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Novo Status</p>
+          <div className="flex items-center gap-2">
+            {/* Emoji for new */}
+            <div className="relative">
+              <button
+                onClick={() => { setShowNewEmojiPicker(v => !v); setShowNewColorPicker(false); }}
+                className="text-lg leading-none hover:scale-110 transition-transform"
+                title="Emoji"
+              >{newEmoji}</button>
+              {showNewEmojiPicker && (
+                <div className="absolute bottom-8 left-0 z-50 p-2 bg-dark-card border border-white/10 rounded-xl shadow-2xl grid grid-cols-5 gap-1 w-36">
+                  {IA_EMOJI_OPTIONS.map(em => (
+                    <button key={em} onClick={() => { setNewEmoji(em); setShowNewEmojiPicker(false); }}
+                      className="text-base hover:bg-white/10 rounded-lg p-1 transition-colors">{em}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Color for new */}
+            <div className="relative">
+              <button
+                onClick={() => { setShowNewColorPicker(v => !v); setShowNewEmojiPicker(false); }}
+                className="w-5 h-5 rounded-full border-2 border-white/20 hover:scale-110 transition-transform"
+                style={{ backgroundColor: newColor }}
+                title="Cor"
+              />
+              {showNewColorPicker && (
+                <div className="absolute bottom-8 left-0 z-50 p-2 bg-dark-card border border-white/10 rounded-xl shadow-2xl grid grid-cols-6 gap-1 w-40">
+                  {IA_COLOR_PALETTE.map(c => (
+                    <button key={c} onClick={() => { setNewColor(c); setShowNewColorPicker(false); }}
+                      className="w-5 h-5 rounded-full border-2 transition-all hover:scale-125"
+                      style={{ backgroundColor: c, borderColor: newColor === c ? '#fff' : 'transparent' }}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <input
+              ref={newLabelRef}
+              value={newLabel}
+              onChange={e => setNewLabel(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleAdd()}
+              placeholder="Nome do novo status..."
+              className="flex-1 bg-white/5 border border-white/10 focus:border-violet-500/50 rounded-xl px-3 py-2 text-xs text-dark-text placeholder-slate-600 focus:outline-none transition-all"
+            />
+            <button
+              onClick={handleAdd}
+              disabled={!newLabel.trim()}
+              className="px-3 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl transition-colors flex items-center gap-1"
+            >
+              <Plus size={12} />
+              Criar
+            </button>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-white/5 shrink-0">
+          <button onClick={onClose} className="px-5 py-2 bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold rounded-xl transition-colors">
+            Concluído
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+};
 
 // ── Tag Badge ─────────────────────────────────────────────
 const TagBadge = ({ label, defs, onRemove }: { label: string; defs?: ColoredTag[]; onRemove?: () => void }) => {
@@ -361,6 +704,76 @@ const fetchUsersOnce = () => {
   return fetchUsersPromise;
 };
 
+// ── Draggable Column Headers ───────────────────────────────
+const DraggableColHeaders = () => {
+  const colOrder = React.useContext(ColOrderContext);
+  const setColOrder = React.useContext(SetColOrderContext);
+  const dragColRef = React.useRef<ColId | null>(null);
+  const [draggingCol, setDraggingCol] = React.useState<ColId | null>(null);
+  const [overCol, setOverCol] = React.useState<ColId | null>(null);
+
+  const handleDragStart = (id: ColId, e: React.DragEvent) => {
+    dragColRef.current = id;
+    setDraggingCol(id);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (id: ColId, e: React.DragEvent) => {
+    e.preventDefault();
+    if (dragColRef.current && dragColRef.current !== id) setOverCol(id);
+  };
+
+  const handleDrop = (targetId: ColId) => {
+    const dragId = dragColRef.current;
+    if (!dragId || dragId === targetId) { reset(); return; }
+    const newOrder = [...colOrder];
+    const from = newOrder.indexOf(dragId);
+    const to = newOrder.indexOf(targetId);
+    newOrder.splice(from, 1);
+    newOrder.splice(to, 0, dragId);
+    setColOrder(newOrder);
+    saveColOrder(newOrder);
+    reset();
+  };
+
+  const reset = () => { dragColRef.current = null; setDraggingCol(null); setOverCol(null); };
+
+  return (
+    <div className="flex items-center gap-2 px-8 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-white/5">
+      <div className="w-[14px] shrink-0" />
+      <div className="w-4 shrink-0" />
+      {/* Fixed: Nome */}
+      <div className="flex-1 text-slate-500">Nome</div>
+      {/* Draggable columns */}
+      {colOrder.map(colId => {
+        const def = COL_DEFS[colId];
+        const isDragging = draggingCol === colId;
+        const isOver = overCol === colId;
+        return (
+          <div
+            key={colId}
+            draggable
+            onDragStart={e => handleDragStart(colId, e)}
+            onDragOver={e => handleDragOver(colId, e)}
+            onDrop={() => handleDrop(colId)}
+            onDragEnd={reset}
+            className={`shrink-0 ${def.width} flex items-center gap-1 group/col cursor-grab select-none transition-all ${
+              isDragging ? 'opacity-30' : isOver ? 'text-violet-400' : ''
+            } ${colId === 'resp' ? 'justify-center' : ''}`}
+          >
+            <GripVertical
+              size={10}
+              className="opacity-0 group-hover/col:opacity-60 transition-opacity shrink-0 text-slate-600"
+            />
+            <span className={`transition-colors ${isOver ? 'text-violet-400' : ''}`}>{def.label}</span>
+          </div>
+        );
+      })}
+      <div className="shrink-0 w-[22px]" />
+    </div>
+  );
+};
+
 // ── Task Row ──────────────────────────────────────────────
 const TaskRow = ({ task, coloredTagDefs, onUpdate, onOpenDetail, onOpenSubtask }: { 
   task: OnboardingTask;
@@ -375,6 +788,32 @@ const TaskRow = ({ task, coloredTagDefs, onUpdate, onOpenDetail, onOpenSubtask }
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [tagMenuOpen, setTagMenuOpen] = useState(false);
   const tagMenuRef = React.useRef<HTMLDivElement>(null);
+  const statusGroups = React.useContext(StatusGroupsContext);
+
+  const [editingName, setEditingName] = useState(false);
+  const [editNameValue, setEditNameValue] = useState(task.client_name);
+  const nameInputRef = React.useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editingName && nameInputRef.current) nameInputRef.current.focus();
+  }, [editingName]);
+
+  const handleSaveName = async () => {
+    const val = editNameValue.trim();
+    if (val && val !== task.client_name) {
+      try {
+        await fetch(`/api/onboarding-tasks/${task.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ client_name: val }),
+        });
+        onUpdate();
+      } catch { /* silent */ }
+    } else {
+      setEditNameValue(task.client_name);
+    }
+    setEditingName(false);
+  };
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -515,19 +954,19 @@ const TaskRow = ({ task, coloredTagDefs, onUpdate, onOpenDetail, onOpenSubtask }
       await fetch(`/api/onboarding-tasks/${task.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [field]: val }),
+        body: JSON.stringify({ [field]: val === '' ? null : val }),
       });
       onUpdate();
     } catch { /* silent */ }
   };
 
   const handleSubtaskDate = async (subId: number, field: 'start_date' | 'due_date', val: string) => {
-    setSubtasks(prev => prev.map(s => s.id === subId ? { ...s, [field]: val } : s));
+    setSubtasks(prev => prev.map(s => s.id === subId ? { ...s, [field]: val === '' ? null : val } : s));
     try {
       await fetch(`/api/onboarding-subtasks/${subId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [field]: val }),
+        body: JSON.stringify({ [field]: val === '' ? null : val }),
       });
     } catch { /* silent */ }
   };
@@ -577,9 +1016,128 @@ const TaskRow = ({ task, coloredTagDefs, onUpdate, onOpenDetail, onOpenSubtask }
     } catch { /* silent */ }
   };
 
-  const currentGroup = STATUS_GROUPS.find(g => g.id === task.status_group);
+  const currentGroup = statusGroups.find(g => g.id === task.status_group);
   const circleColor = currentGroup?.color || '#64748b';
   const completedCount = subtasks.filter(s => s.completed).length;
+
+  const colOrder = React.useContext(ColOrderContext);
+
+  // Helper: render a single column cell
+  const renderCell = (colId: ColId) => {
+    const def = COL_DEFS[colId];
+    switch (colId) {
+      case 'tags':
+        return (
+          <div key="tags" className={`shrink-0 ${def.width} flex items-center gap-1 flex-wrap relative`} ref={tagMenuRef}>
+            {task.tags.slice(0, 2).map(tg => {
+              const td = coloredTagDefs.find(c => c.name === tg);
+              return (
+                <span key={tg} className="px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap"
+                  style={{ backgroundColor: `${td?.color || '#7c3aed'}22`, color: td?.color || '#8b5cf6', border: `1px solid ${td?.color || '#7c3aed'}44` }}>
+                  {tg}
+                </span>
+              );
+            })}
+            {task.tags.length > 2 && (
+              <span className="text-[10px] text-slate-500 font-medium">+{task.tags.length - 2}</span>
+            )}
+            <button
+              onClick={e => { e.stopPropagation(); setTagMenuOpen(v => !v); }}
+              className="opacity-0 group-hover:opacity-100 transition-opacity w-4 h-4 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-slate-400"
+            >
+              <Plus size={12} />
+            </button>
+            {tagMenuOpen && (
+              <div className="absolute top-7 left-0 z-50 w-48 bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl p-2" onClick={e => e.stopPropagation()}>
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-2 mb-2">Adicionar / Remover</p>
+                <div className="max-h-40 overflow-y-auto space-y-1">
+                  {coloredTagDefs.map(c => {
+                    const hasTag = task.tags.includes(c.name);
+                    return (
+                      <button key={c.id} onClick={() => handleToggleTag(c.name)}
+                        className="w-full flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-white/5 transition-colors text-left">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: c.color }} />
+                          <span className="text-xs text-dark-text truncate">{c.name}</span>
+                        </div>
+                        {hasTag && <Check size={12} className="text-emerald-400 shrink-0" />}
+                      </button>
+                    );
+                  })}
+                  {coloredTagDefs.length === 0 && (
+                    <p className="text-xs text-slate-500 px-2 py-1">Nenhuma tag cadastrada.</p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      case 'squad':
+        return (
+          <div key="squad" className={`shrink-0 ${def.width}`}>
+            <select value={squad} onChange={e => handleSquadChange(e.target.value)}
+              className={`w-[calc(100%+0.75rem)] -ml-3 border rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer focus:outline-none ${
+                squad === 'Squad Able' ? 'bg-blue-500/15 text-blue-400 border-blue-500/30 focus:border-blue-500/50' :
+                squad === 'Squad Baker' ? 'bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/30 focus:border-fuchsia-500/50' :
+                'bg-white/5 text-slate-400 border-white/10 focus:border-white/20'
+              }`}
+            >
+              <option value="" className="bg-dark-bg text-slate-400">— SQUAD —</option>
+              {SQUAD_OPTIONS.map(s => <option key={s} value={s} className="bg-dark-bg text-dark-text">{s}</option>)}
+            </select>
+          </div>
+        );
+      case 'resp':
+        return (
+          <div key="resp" className={`shrink-0 ${def.width} flex items-center justify-center gap-1`}>
+            {task.responsible_name ? (
+              <button ref={taskRespRef} data-task-resp-btn
+                onClick={e => { e.stopPropagation(); if (!taskRespPicker && taskRespRef.current) { const r = taskRespRef.current.getBoundingClientRect(); setTaskRespPos({ top: r.bottom + 4, left: r.left - 140 }); } setTaskRespPicker(v => !v); }}
+                className="focus:outline-none hover:scale-110 transition-transform">
+                <Avatar name={task.responsible_name} url={task.responsible_avatar} size={6} />
+              </button>
+            ) : (
+              <button ref={taskRespRef} data-task-resp-btn
+                onClick={e => { e.stopPropagation(); if (!taskRespPicker && taskRespRef.current) { const r = taskRespRef.current.getBoundingClientRect(); setTaskRespPos({ top: r.bottom + 4, left: r.left - 140 }); } setTaskRespPicker(v => !v); }}
+                className="w-6 h-6 rounded-full border border-dashed border-slate-600 flex items-center justify-center hover:border-violet-500 hover:text-violet-500 transition-colors">
+                <Plus size={10} className="text-slate-600 hover:text-violet-500" />
+              </button>
+            )}
+            {taskRespPicker && createPortal(
+              <div data-task-resp-portal onClick={e => e.stopPropagation()}
+                style={{ position: 'fixed', top: taskRespPos.top, left: taskRespPos.left, zIndex: 9999, width: 192 }}
+                className="bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl p-1 max-h-48 overflow-y-auto">
+                <div className="px-2 py-1.5 border-b border-white/5 mb-1">
+                  <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Selecionar Responsável</span>
+                </div>
+                {cachedUsers.map(u => (
+                  <button key={u.id} onClick={e => { e.stopPropagation(); handleTaskResponsible(u.id, u.name, u.picture); }}
+                    className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-white/5 rounded-lg text-left transition-colors">
+                    <Avatar name={u.name} url={u.picture} size={5} />
+                    <span className="text-xs text-dark-text truncate">{u.name}</span>
+                  </button>
+                ))}
+              </div>,
+              document.body
+            )}
+          </div>
+        );
+      case 'start_date':
+        return (
+          <div key="start_date" className={`shrink-0 ${def.width} text-xs text-slate-400 font-medium`}>
+            <SingleDatePicker value={task.start_date || undefined} onChange={v => handleTaskDate('start_date', v)} align="left" />
+          </div>
+        );
+      case 'due_date':
+        return (
+          <div key="due_date" className={`shrink-0 ${def.width} text-xs text-slate-400 font-medium`}>
+            <SingleDatePicker value={task.due_date || undefined} onChange={v => handleTaskDate('due_date', v)} align="right" checkOverdue />
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
 
   return (
     <div>
@@ -605,7 +1163,7 @@ const TaskRow = ({ task, coloredTagDefs, onUpdate, onOpenDetail, onOpenSubtask }
                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Status</p>
               </div>
               <div className="py-1.5">
-                {STATUS_GROUPS.map(sg => {
+                {statusGroups.map(sg => {
                   const isActive = sg.id === task.status_group;
                   return (
                     <button key={sg.id} onClick={() => handleStatusChange(sg.id)}
@@ -623,7 +1181,25 @@ const TaskRow = ({ task, coloredTagDefs, onUpdate, onOpenDetail, onOpenSubtask }
 
         {/* Client Name + subtask count */}
         <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap pr-4">
-          <span onClick={() => onOpenDetail(task)} className="text-sm font-semibold text-dark-text truncate cursor-pointer hover:text-violet-400 transition-colors">{task.client_name}</span>
+          {editingName ? (
+            <input
+              ref={nameInputRef}
+              value={editNameValue}
+              onChange={e => setEditNameValue(e.target.value)}
+              onBlur={handleSaveName}
+              onKeyDown={e => { if (e.key === 'Enter') handleSaveName(); if (e.key === 'Escape') { setEditNameValue(task.client_name); setEditingName(false); } }}
+              className="text-sm font-semibold text-dark-text bg-transparent border-b border-violet-500/50 outline-none w-full max-w-xs"
+            />
+          ) : (
+            <span
+              onClick={() => onOpenDetail(task)}
+              onDoubleClick={() => { setEditNameValue(task.client_name); setEditingName(true); }}
+              title="Duplo-clique para renomear"
+              className="text-sm font-semibold text-dark-text truncate cursor-pointer hover:text-violet-400 transition-colors"
+            >
+              {task.client_name}
+            </span>
+          )}
           {task.subtask_count > 0 && (
             <span className="text-[10px] text-slate-500 font-mono bg-white/5 px-1.5 py-0.5 rounded">
               ↳ {task.subtask_count}
@@ -631,126 +1207,9 @@ const TaskRow = ({ task, coloredTagDefs, onUpdate, onOpenDetail, onOpenSubtask }
           )}
         </div>
 
-        {/* Tags */}
-        <div className="shrink-0 w-40 relative flex items-center flex-wrap gap-1 pr-2" ref={tagMenuRef}>
-          {task.tags.map(t => <TagBadge key={t} label={t} defs={coloredTagDefs} onRemove={() => handleToggleTag(t)} />)}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setTagMenuOpen(!tagMenuOpen);
-            }}
-            className="w-5 h-5 rounded flex items-center justify-center text-slate-500 hover:bg-white/10 transition-colors"
-          >
-            <Plus size={12} />
-          </button>
 
-          {tagMenuOpen && (
-            <div className="absolute top-7 left-0 z-50 w-48 bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl p-2" onClick={e => e.stopPropagation()}>
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-2 mb-2">Adicionar / Remover</p>
-              <div className="max-h-40 overflow-y-auto space-y-1">
-                {coloredTagDefs.map(c => {
-                  const hasTag = task.tags.includes(c.name);
-                  return (
-                    <button
-                      key={c.id}
-                      onClick={() => handleToggleTag(c.name)}
-                      className="w-full flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-white/5 transition-colors text-left"
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: c.color }} />
-                        <span className="text-xs text-dark-text truncate">{c.name}</span>
-                      </div>
-                      {hasTag && <Check size={12} className="text-emerald-400 shrink-0" />}
-                    </button>
-                  );
-                })}
-                {coloredTagDefs.length === 0 && (
-                  <p className="text-xs text-slate-500 px-2 py-1">Nenhuma tag cadastrada.</p>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Squad */}
-        <div className="shrink-0 w-36">
-          <select value={squad} onChange={e => handleSquadChange(e.target.value)}
-            className={`w-[calc(100%+0.75rem)] -ml-3 border rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer focus:outline-none ${
-              squad === 'Squad Able' ? 'bg-blue-500/15 text-blue-400 border-blue-500/30 focus:border-blue-500/50' :
-              squad === 'Squad Baker' ? 'bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/30 focus:border-fuchsia-500/50' :
-              'bg-white/5 text-slate-400 border-white/10 focus:border-white/20'
-            }`}
-          >
-            <option value="" className="bg-dark-bg text-slate-400">— SQUAD —</option>
-            {SQUAD_OPTIONS.map(s => <option key={s} value={s} className="bg-dark-bg text-dark-text">{s}</option>)}
-          </select>
-        </div>
-
-        {/* Responsável */}
-        <div className="shrink-0 w-20 flex items-center justify-center gap-1">
-          {task.responsible_name ? (
-            <button
-              ref={taskRespRef}
-              data-task-resp-btn
-              onClick={(e) => {
-                e.stopPropagation();
-                if (!taskRespPicker && taskRespRef.current) {
-                  const rect = taskRespRef.current.getBoundingClientRect();
-                  setTaskRespPos({ top: rect.bottom + 4, left: rect.left - 140 });
-                }
-                setTaskRespPicker(v => !v);
-              }}
-              className="focus:outline-none hover:scale-110 transition-transform"
-            >
-              <Avatar name={task.responsible_name} url={task.responsible_avatar} size={6} />
-            </button>
-          ) : (
-            <button
-              ref={taskRespRef}
-              data-task-resp-btn
-              onClick={(e) => {
-                e.stopPropagation();
-                if (!taskRespPicker && taskRespRef.current) {
-                  const rect = taskRespRef.current.getBoundingClientRect();
-                  setTaskRespPos({ top: rect.bottom + 4, left: rect.left - 140 });
-                }
-                setTaskRespPicker(v => !v);
-              }}
-              className="w-6 h-6 rounded-full border border-dashed border-slate-600 flex items-center justify-center hover:border-violet-500 hover:text-violet-500 transition-colors"
-            >
-              <Plus size={10} className="text-slate-600 hover:text-violet-500" />
-            </button>
-          )}
-          {taskRespPicker && createPortal(
-            <div
-              data-task-resp-portal
-              onClick={e => e.stopPropagation()}
-              style={{ position: 'fixed', top: taskRespPos.top, left: taskRespPos.left, zIndex: 9999, width: 192 }}
-              className="bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl p-1 max-h-48 overflow-y-auto"
-            >
-              <div className="px-2 py-1.5 border-b border-white/5 mb-1">
-                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Selecionar Responsável</span>
-              </div>
-              {cachedUsers.map(u => (
-                <button key={u.id} onClick={(e) => { e.stopPropagation(); handleTaskResponsible(u.id, u.name, u.picture); }} className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-white/5 rounded-lg text-left transition-colors">
-                  <Avatar name={u.name} url={u.picture} size={5} />
-                  <span className="text-xs text-dark-text truncate">{u.name}</span>
-                </button>
-              ))}
-            </div>,
-            document.body
-          )}
-        </div>
-
-        {/* Data Inicial */}
-        <div className="shrink-0 w-24 text-xs text-slate-400 font-medium">
-          <SingleDatePicker value={task.start_date || undefined} onChange={(v) => handleTaskDate('start_date', v)} align="left" />
-        </div>
-
-        {/* Data de vencimento */}
-        <div className="shrink-0 w-28 text-xs text-slate-400 font-medium">
-          <SingleDatePicker value={task.due_date || undefined} onChange={(v) => handleTaskDate('due_date', v)} align="right" checkOverdue />
-        </div>
+        {/* Dynamic columns in draggable order */}
+        {colOrder.map(colId => renderCell(colId))}
 
         {/* More — dropdown com Arquivar e Excluir */}
         <div className="relative shrink-0" ref={menuRef}>
@@ -793,28 +1252,36 @@ const TaskRow = ({ task, coloredTagDefs, onUpdate, onOpenDetail, onOpenSubtask }
       </div>
 
       {/* Subtasks panel */}
-      {expanded && (
-        <div className="bg-black/[0.01] dark:bg-white/[0.01] border-b border-black/5 dark:border-white/5">
-          {loadingSubs ? (
-            <div className="flex items-center gap-2 px-12 py-3 text-xs text-slate-600">
-              <Loader2 size={12} className="animate-spin" /> Carregando subtarefas...
-            </div>
-          ) : subtasks.length === 0 ? (
-            <div className="px-12 py-3 text-xs text-slate-600">Nenhuma subtarefa.</div>
-          ) : (
-            <div>
-              <div className="px-12 py-2 flex items-center gap-2">
-                <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">
-                  Subtarefas
-                </span>
-                <span className="text-[10px] text-slate-600">
-                  {completedCount}/{subtasks.length}
-                </span>
-                <div className="flex-1 h-1 bg-black/5 dark:bg-white/5 rounded-full overflow-hidden ml-1">
-                  <div className="h-full bg-violet-500 rounded-full transition-all duration-300"
-                    style={{ width: `${subtasks.length > 0 ? (completedCount / subtasks.length) * 100 : 0}%` }} />
-                </div>
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.25, ease: [0.32, 0.72, 0, 1] }}
+            style={{ overflow: 'hidden' }}
+            className="bg-black/[0.01] dark:bg-white/[0.01] border-b border-black/5 dark:border-white/5"
+          >
+            {loadingSubs ? (
+              <div className="flex items-center gap-2 px-12 py-3 text-xs text-slate-600">
+                <Loader2 size={12} className="animate-spin" /> Carregando subtarefas...
               </div>
+            ) : subtasks.length === 0 ? (
+              <div className="px-12 py-3 text-xs text-slate-600">Nenhuma subtarefa.</div>
+            ) : (
+              <div>
+                <div className="px-12 py-2 flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">
+                    Subtarefas
+                  </span>
+                  <span className="text-[10px] text-slate-600">
+                    {completedCount}/{subtasks.length}
+                  </span>
+                  <div className="flex-1 h-1 bg-black/5 dark:bg-white/5 rounded-full overflow-hidden ml-1">
+                    <div className="h-full bg-violet-500 rounded-full transition-all duration-300"
+                      style={{ width: `${subtasks.length > 0 ? (completedCount / subtasks.length) * 100 : 0}%` }} />
+                  </div>
+                </div>
               {subtasks.map(sub => (
                 <div key={sub.id}
                   className="w-full flex items-center gap-2 px-8 py-2.5 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors border-b border-black/[0.06] dark:border-white/[0.06] last:border-none">
@@ -894,92 +1361,184 @@ const TaskRow = ({ task, coloredTagDefs, onUpdate, onOpenDetail, onOpenSubtask }
                   <div className="shrink-0 w-[22px]" />
                 </div>
               ))}
-            </div>
-          )}
-        </div>
-      )}
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
 
 // ── Group Block ───────────────────────────────────────────
 
-const GroupBlock = ({ group, coloredTagDefs, onUpdate, onAddTask, onOpenDetail, onOpenSubtask }: {
+const GroupBlock = ({ group, coloredTagDefs, onUpdate, onAddTask, onOpenDetail, onOpenSubtask, onRenameGroup, onUpdateGroup, onDeleteGroup, onDragStart, onDragOver, onDrop, isDragOver }: {
   group: StatusGroup;
   coloredTagDefs: ColoredTag[];
   onUpdate: () => void;
   onAddTask: (groupId: string) => void;
-  onOpenDetail: (t: OnboardingTask) => void;
-  onOpenSubtask: (s: Subtask, t: OnboardingTask) => void;
+  onOpenDetail: (task: OnboardingTask) => void;
+  onOpenSubtask: (subtask: Subtask, task: OnboardingTask) => void;
+  onRenameGroup?: (id: string, label: string) => void;
+  onUpdateGroup?: (id: string, fields: { color?: string; emoji?: string }) => void;
+  onDeleteGroup?: (id: string) => void;
+  onDragStart?: (id: string) => void;
+  onDragOver?: (e: React.DragEvent, id: string) => void;
+  onDrop?: (id: string) => void;
+  isDragOver?: boolean;
 }) => {
+  const statusGroups = React.useContext(StatusGroupsContext);
   const [expanded, setExpanded] = useState(group.tasks.length > 0);
+  const [editing, setEditing] = useState(false);
+  const [editLabel, setEditLabel] = useState(group.label);
+  const [showGroupMenu, setShowGroupMenu] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(false);
+  const menuRef = React.useRef<HTMLDivElement>(null);
+  const inputRef = React.useRef<HTMLInputElement>(null);
 
   // Auto-expand when tasks arrive after mount
   const prevLenRef = React.useRef(group.tasks.length);
   React.useEffect(() => {
-    if (prevLenRef.current === 0 && group.tasks.length > 0) {
-      setExpanded(true);
-    }
+    if (prevLenRef.current === 0 && group.tasks.length > 0) setExpanded(true);
     prevLenRef.current = group.tasks.length;
   }, [group.tasks.length]);
+
+  React.useEffect(() => {
+    if (!showGroupMenu) { setConfirmDel(false); return; }
+    const handle = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowGroupMenu(false); setConfirmDel(false);
+      }
+    };
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, [showGroupMenu]);
+
+  React.useEffect(() => {
+    if (editing && inputRef.current) inputRef.current.focus();
+  }, [editing]);
+
+  const handleSaveLabel = () => {
+    const trimmed = editLabel.trim();
+    if (trimmed && trimmed !== group.label && onRenameGroup) onRenameGroup(group.id, trimmed.toUpperCase());
+    setEditing(false);
+  };
+
+  const handleDelete = () => {
+    if (!confirmDel) { setConfirmDel(true); return; }
+    onDeleteGroup?.(group.id);
+    setShowGroupMenu(false); setConfirmDel(false);
+  };
+
+  const renderGroupMenu = () => (
+    <div ref={menuRef} className="relative" onClick={e => e.stopPropagation()}>
+      <button
+        onClick={(e) => { e.stopPropagation(); setShowGroupMenu(v => !v); }}
+        className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-600 hover:text-slate-300 hover:bg-white/5 transition-colors opacity-0 group-hover/header:opacity-100"
+      >
+        <MoreHorizontal size={14} />
+      </button>
+      {showGroupMenu && (
+        <div className="absolute top-8 left-0 z-50 w-56 bg-dark-card border border-white/10 rounded-xl shadow-2xl overflow-hidden">
+          <div className="py-1">
+            <button onClick={() => { setShowGroupMenu(false); setEditLabel(group.label); setEditing(true); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-xs text-slate-300 hover:bg-white/5 transition-colors">
+              <Edit2 size={13} className="text-violet-400" />
+              Renomear
+            </button>
+            <div className="h-px bg-white/5 mx-2 my-1" />
+            {confirmDel ? (
+              <div className="p-2 animate-in fade-in slide-in-from-top-2">
+                <p className="text-[10px] text-rose-400 font-bold uppercase tracking-widest text-center mb-2">Tem certeza?</p>
+                <div className="flex gap-2">
+                  <button onClick={handleDelete} className="flex-1 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-[10px] font-bold rounded-lg transition-colors uppercase">Sim</button>
+                  <button onClick={() => setConfirmDel(false)} className="flex-1 py-1.5 bg-white/5 hover:bg-white/10 text-slate-300 text-[10px] font-bold rounded-lg transition-colors uppercase">Não</button>
+                </div>
+              </div>
+            ) : (
+              <button onClick={handleDelete} className="w-full flex items-center gap-3 px-4 py-2.5 text-xs text-slate-300 hover:bg-rose-500/10 hover:text-rose-400 transition-colors">
+                <Trash2 size={13} />
+                Excluir Status
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  const renderBadge = (compact: boolean) => (
+    <div
+      className={`${compact ? 'px-2.5 py-0.5' : 'px-3 py-1.5'} rounded-${compact ? 'md' : 'lg'} text-[${compact ? '10' : '11'}px] font-black uppercase tracking-widest flex items-center gap-${compact ? '1.5' : '2'} transition-transform`}
+      style={{ background: `${group.color}${compact ? '10' : '15'}`, color: compact ? `${group.color}80` : group.color, border: `1px solid ${group.color}${compact ? '15' : '30'}` }}
+    >
+      <span>{group.emoji}</span>
+      {editing ? (
+        <input
+          ref={inputRef}
+          value={editLabel}
+          onChange={e => setEditLabel(e.target.value)}
+          onBlur={handleSaveLabel}
+          onKeyDown={e => { if (e.key === 'Enter') handleSaveLabel(); if (e.key === 'Escape') { setEditLabel(group.label); setEditing(false); } }}
+          onClick={e => e.stopPropagation()}
+          className="bg-transparent border-b border-current text-current font-black uppercase tracking-widest outline-none w-40 text-inherit"
+          style={{ fontSize: 'inherit' }}
+        />
+      ) : (
+        <span
+          onDoubleClick={(e) => { e.stopPropagation(); setEditLabel(group.label); setEditing(true); }}
+          title="Duplo-clique para renomear"
+        >{group.label}</span>
+      )}
+      <span className={`ml-${compact ? '0.5' : '1'} px-${compact ? '1' : '1.5'} py-0.5 rounded-md bg-white/${compact ? '5' : '10'} text-[9px]`}>{group.tasks.length}</span>
+    </div>
+  );
 
   // Empty group — compact single-line
   if (group.tasks.length === 0 && !expanded) {
     return (
-      <div className="mb-1">
-        <button
-          onClick={() => setExpanded(true)}
-          className="w-full flex items-center gap-2.5 px-4 py-2 rounded-xl hover:bg-white/[0.03] transition-colors group"
-        >
-          <ChevronRight size={12} className="text-slate-700 group-hover:text-slate-500 transition-colors shrink-0" />
-          <div
-            className="px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5"
-            style={{ background: `${group.color}10`, color: `${group.color}80`, border: `1px solid ${group.color}15` }}
-          >
-            <span>{group.emoji}</span>
-            <span>{group.label}</span>
-            <span className="ml-0.5 px-1 py-0 rounded bg-white/5 text-[9px]">0</span>
-          </div>
-        </button>
+      <div 
+        className={`mb-1 group/header transition-all duration-300 ${isDragOver ? 'scale-[1.02]' : ''}`}
+        draggable
+        onDragStart={() => onDragStart?.(group.id)}
+        onDragOver={(e) => onDragOver?.(e, group.id)}
+        onDrop={() => onDrop?.(group.id)}
+      >
+        <div className={`w-full flex items-center justify-between gap-2 px-4 py-2 rounded-xl transition-colors ${isDragOver ? 'bg-white/5 ring-1 ring-white/10' : 'hover:bg-white/[0.03]'}`}>
+          <button onClick={() => setExpanded(true)} className="flex items-center gap-2.5 group">
+            <ChevronRight size={12} className="text-slate-700 group-hover:text-slate-500 transition-colors shrink-0" />
+            {renderBadge(true)}
+          </button>
+          {renderGroupMenu()}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="mb-6">
+    <div 
+      className={`mb-6 group/header transition-all duration-300 ${isDragOver ? 'scale-[1.02]' : ''}`}
+      draggable
+      onDragStart={(e) => { if (e.target === e.currentTarget) onDragStart?.(group.id); }}
+      onDragOver={(e) => onDragOver?.(e, group.id)}
+      onDrop={() => onDrop?.(group.id)}
+    >
       {/* Group header */}
-      <div className="flex items-center gap-3 px-2 py-2 sticky top-0 z-10">
-        <button onClick={() => setExpanded(v => !v)} className="flex items-center gap-2 group flex-1">
-          <div
-            className="px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-widest flex items-center gap-2 transition-transform group-hover:scale-105"
-            style={{ background: `${group.color}15`, color: group.color, border: `1px solid ${group.color}30` }}
-          >
-            <span>{group.emoji}</span>
-            <span>{group.label}</span>
-            <span className="ml-1 px-1.5 py-0.5 rounded-md bg-white/10">{group.tasks.length}</span>
-          </div>
+      <div className={`flex items-center justify-between gap-3 px-2 py-2 sticky top-0 z-10 transition-colors rounded-xl ${isDragOver ? 'bg-white/5 ring-1 ring-white/10 backdrop-blur-md' : 'bg-dark-bg/80 backdrop-blur-sm'}`}>
+        <button onClick={() => setExpanded(v => !v)} className="flex items-center gap-2 flex-1 group/btn">
+          {renderBadge(false)}
           {expanded
             ? <ChevronDown size={14} className="text-slate-500 ml-2" />
             : <ChevronRight size={14} className="text-slate-500 ml-2" />
           }
         </button>
+        {renderGroupMenu()}
       </div>
 
 
       {/* Column headers */}
       {expanded && (
         <>
-          <div className="flex items-center gap-2 px-8 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-white/5">
-            <div className="w-[14px] shrink-0" />
-            <div className="w-4 shrink-0" />
-            <div className="flex-1">Nome</div>
-            <div className="shrink-0 w-40">Tags</div>
-            <div className="shrink-0 w-36">Squad</div>
-            <div className="shrink-0 w-20 text-center">Resp.</div>
-            <div className="shrink-0 w-24">Data Inicial</div>
-            <div className="shrink-0 w-28">Vencimento</div>
-            <div className="shrink-0 w-[22px]" />
-          </div>
+          <DraggableColHeaders />
 
           <div className="flex flex-col">
             {group.tasks.length === 0 ? (
@@ -1286,6 +1845,7 @@ const TemplateModal = ({ onClose }: { onClose: () => void }) => {
   );
 };// ── Task Detail Modal ─────────────────────────────────────
 const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; onClose: () => void; onUpdate: () => void }) => {
+  const { user, userData } = useAuth();
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [loadingComments, setLoadingComments] = useState(true);
@@ -1321,11 +1881,19 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
 
   const addComment = async () => {
     if (!newComment.trim()) return;
+    const authorName = userData?.name || user?.displayName || null;
+    const authorEmail = userData?.email || user?.email || null;
+    const authorAvatar = userData?.picture || user?.photoURL || null;
     try {
       const res = await fetch(`/api/onboarding-tasks/${task.id}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: newComment }),
+        body: JSON.stringify({
+          text: newComment,
+          author_name: authorName,
+          author_email: authorEmail,
+          author_avatar: authorAvatar,
+        }),
       });
       if (res.ok) {
         const c = await res.json();
@@ -1404,9 +1972,13 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
               [...comments].reverse().map(c => (
                 <div key={c.id} className="flex gap-3">
                   {/* Avatar */}
-                  <div className="w-8 h-8 rounded-full bg-violet-500/20 flex items-center justify-center text-violet-400 font-bold text-xs shrink-0 mt-0.5 uppercase">
-                    {(c.author_name || 'U').charAt(0)}
-                  </div>
+                  {c.author_avatar ? (
+                    <img src={c.author_avatar} alt="" className="w-8 h-8 rounded-full object-cover shrink-0 mt-0.5" />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-violet-500/20 flex items-center justify-center text-violet-400 font-bold text-xs shrink-0 mt-0.5 uppercase">
+                      {(c.author_name || 'U').charAt(0)}
+                    </div>
+                  )}
                   {/* Bubble */}
                   <div className="flex-1">
                     <div className="flex items-baseline gap-2 mb-1">
@@ -1427,9 +1999,14 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
           {/* Input bar pinned to bottom */}
           <div className="border-t border-white/5 px-6 py-4 bg-dark-card">
             <div className="flex gap-3 items-end">
-              <div className="w-8 h-8 rounded-full bg-violet-500/20 flex items-center justify-center text-violet-400 font-bold text-xs shrink-0 uppercase">
-                G
-              </div>
+              {/* Current user avatar in input area */}
+              {(userData?.picture || user?.photoURL) ? (
+                <img src={userData?.picture || user?.photoURL || ''} alt="" className="w-8 h-8 rounded-full object-cover shrink-0" />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-violet-500/20 flex items-center justify-center text-violet-400 font-bold text-xs shrink-0 uppercase">
+                  {(userData?.name || user?.displayName || 'U').charAt(0)}
+                </div>
+              )}
               <div className="flex-1 relative">
                 <textarea
                   value={newComment}
@@ -2018,11 +2595,100 @@ const TagsManagerModal: React.FC<TagsManagerModalProps> = ({ tags, onChange, onC
 // ── Main Component ────────────────────────────────────────
 export default function ImplementacaoIA() {
   const [tasks, setTasks] = useState<OnboardingTask[]>([]);
+  const [statusGroups, setStatusGroups] = useState<Omit<StatusGroup, 'tasks'>[]>([]);
   const [loading, setLoading] = useState(true);
   const [addingToGroup, setAddingToGroup] = useState<string | null>(null);
   const [showTemplate, setShowTemplate] = useState(false);
   const [detailTask, setDetailTask] = useState<OnboardingTask | null>(null);
   const [detailSubtask, setDetailSubtask] = useState<{subtask: Subtask, task: OnboardingTask} | null>(null);
+  const [addingNewGroup, setAddingNewGroup] = useState(false);
+  const [newGroupLabel, setNewGroupLabel] = useState('');
+  const [draggingGroupId, setDraggingGroupId] = useState<string | null>(null);
+  const [dragOverGroupId, setDragOverGroupId] = useState<string | null>(null);
+  const newGroupRef = React.useRef<HTMLInputElement>(null);
+  const [colOrder, setColOrder] = useState<ColId[]>(loadColOrder);
+
+  useEffect(() => {
+    if (addingNewGroup && newGroupRef.current) newGroupRef.current.focus();
+  }, [addingNewGroup]);
+
+  const handleAddGroup = async () => {
+    const val = newGroupLabel.trim();
+    if (!val) { setAddingNewGroup(false); return; }
+    const id = val.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    try {
+      await fetch('/api/ia-status-groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id, label: val.toUpperCase(), color: '#8b5cf6', emoji: '📌', order_index: statusGroups.length
+        }),
+      });
+      fetchTasks(true);
+    } catch { /* silent */ }
+    setAddingNewGroup(false);
+    setNewGroupLabel('');
+  };
+
+  const handleRenameGroup = async (id: string, label: string) => {
+    try {
+      await fetch(`/api/ia-status-groups/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label }),
+      });
+      fetchTasks(true);
+    } catch { /* silent */ }
+  };
+
+  const handleUpdateGroup = async (id: string, fields: { color?: string; emoji?: string }) => {
+    try {
+      await fetch(`/api/ia-status-groups/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(fields),
+      });
+      fetchTasks(true);
+    } catch { /* silent */ }
+  };
+
+  const handleDeleteGroup = async (id: string) => {
+    try {
+      await fetch(`/api/ia-status-groups/${id}`, { method: 'DELETE' });
+      fetchTasks(true);
+    } catch { /* silent */ }
+  };
+
+  const handleGroupDragStart = (id: string) => setDraggingGroupId(id);
+
+  const handleGroupDragOver = (e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    if (draggingGroupId && targetId !== draggingGroupId) setDragOverGroupId(targetId);
+  };
+
+  const handleGroupDrop = async (targetId: string) => {
+    if (!draggingGroupId || draggingGroupId === targetId) {
+      setDraggingGroupId(null); setDragOverGroupId(null); return;
+    }
+    const fromIdx = statusGroups.findIndex(g => g.id === draggingGroupId);
+    const toIdx = statusGroups.findIndex(g => g.id === targetId);
+    if (fromIdx === -1 || toIdx === -1) { setDraggingGroupId(null); setDragOverGroupId(null); return; }
+
+    const reordered = [...statusGroups];
+    const [moved] = reordered.splice(fromIdx, 1);
+    reordered.splice(toIdx, 0, moved);
+    setStatusGroups(reordered);
+    setDraggingGroupId(null); setDragOverGroupId(null);
+
+    try {
+      await fetch('/api/ia-status-groups/reorder', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ groups: reordered.map((g, i) => ({ id: g.id, order_index: i })) }),
+      });
+    } catch { /* silent */ }
+  };
+
 
   const [tagsModal, setTagsModal] = useState(false);
   const [coloredTagDefs, setColoredTagDefs] = useState<ColoredTag[]>(() => loadColoredTags('onboarding'));
@@ -2032,23 +2698,41 @@ export default function ImplementacaoIA() {
   }, [coloredTagDefs]);
 
   const [showCompleted, setShowCompleted] = useState(false);
+  const [showStatusConfig, setShowStatusConfig] = useState(false);
 
-  const fetchTasks = async () => {
+  const handleAddGroupFromModal = async (label: string, color: string, emoji: string) => {
+    const id = label.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Date.now().toString(36);
     try {
-      setLoading(true);
-      const res = await fetch('/api/onboarding-tasks?type=implementacao-ia');
-      if (res.ok) {
-        const data = await res.json();
-        setTasks(data);
-      }
-    } catch { /* silent */ } finally { setLoading(false); }
+      await fetch('/api/ia-status-groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, label, color, emoji, order_index: statusGroups.length }),
+      });
+      fetchTasks(true);
+    } catch { /* silent */ }
+  };
+
+  const isFirstLoad = React.useRef(true);
+
+  const fetchTasks = async (silent = false) => {
+    const showSpinner = isFirstLoad.current && !silent;
+    try {
+      if (showSpinner) setLoading(true);
+      const [resTasks, resGroups] = await Promise.all([
+        fetch('/api/onboarding-tasks?type=implementacao-ia'),
+        fetch('/api/ia-status-groups')
+      ]);
+      if (resTasks.ok) setTasks(await resTasks.json());
+      if (resGroups.ok) setStatusGroups(await resGroups.json());
+      isFirstLoad.current = false;
+    } catch { /* silent */ } finally { if (showSpinner) setLoading(false); }
   };
 
   useEffect(() => { fetchTasks(); }, []);
 
   const activeGroups = showCompleted 
-    ? [{ id: 'arquivado', label: 'CONCLUÍDO', color: '#10b981', emoji: '🏆' }, ...STATUS_GROUPS]
-    : STATUS_GROUPS;
+    ? [{ id: 'arquivado', label: 'CONCLUÍDO', color: '#10b981', emoji: '🏆', order_index: -1 } as any, ...statusGroups]
+    : statusGroups;
 
   const groups: StatusGroup[] = activeGroups.map(sg => ({
     ...sg,
@@ -2056,6 +2740,9 @@ export default function ImplementacaoIA() {
   }));
 
   return (
+    <StatusGroupsContext.Provider value={statusGroups}>
+    <ColOrderContext.Provider value={colOrder}>
+    <SetColOrderContext.Provider value={setColOrder}>
     <div className="min-h-screen bg-dark-bg">
       {/* ── Header ── */}
       <div className="px-8 pt-8 pb-4 flex items-start justify-between">
@@ -2085,6 +2772,13 @@ export default function ImplementacaoIA() {
             {showCompleted ? 'Ocultar Concluídos' : 'Mostrar Concluídos'}
           </button>
           <button
+            onClick={() => setShowStatusConfig(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-dark-card border border-black/10 dark:border-white/10 hover:border-sky-500/30 text-dark-text text-[11px] font-bold rounded-xl transition-colors"
+          >
+            <Layers size={14} className="text-sky-400" />
+            Configurar Status
+          </button>
+          <button
             onClick={() => setShowTemplate(true)}
             className="flex items-center gap-2 px-4 py-2 bg-dark-card border border-black/10 dark:border-white/10 hover:border-violet-500/30 text-dark-text text-[11px] font-bold rounded-xl transition-colors"
           >
@@ -2101,33 +2795,55 @@ export default function ImplementacaoIA() {
         </div>
       ) : (
         <div className="px-8 pb-12">
+          <div onDragEnd={() => { setDraggingGroupId(null); setDragOverGroupId(null); }}>
           {groups.map((group, gIdx) => (
             <motion.div
               key={group.id}
               initial={{ opacity: 0, y: -24, scale: 0.985 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              transition={{
-                duration: 0.4,
-                delay: gIdx * 0.08,
-                ease: [0.32, 0.72, 0, 1],
-              }}
+              transition={{ duration: 0.4, delay: gIdx * 0.08, ease: [0.32, 0.72, 0, 1] }}
             >
               <GroupBlock
                 group={group}
                 coloredTagDefs={coloredTagDefs}
-                onUpdate={fetchTasks}
+                onUpdate={() => fetchTasks(true)}
                 onAddTask={setAddingToGroup}
                 onOpenSubtask={(s, t) => setDetailSubtask({subtask: s, task: t})}
                 onOpenDetail={setDetailTask}
+                onRenameGroup={handleRenameGroup}
+                onUpdateGroup={handleUpdateGroup}
+                onDeleteGroup={handleDeleteGroup}
+                onDragStart={handleGroupDragStart}
+                onDragOver={handleGroupDragOver}
+                onDrop={handleGroupDrop}
+                isDragOver={dragOverGroupId === group.id}
               />
             </motion.div>
           ))}
+          </div>
 
-          {/* New status button */}
-          <button className="flex items-center gap-2 text-xs text-slate-600 hover:text-slate-400 transition-colors mt-4 px-4 py-2">
-            <Plus size={14} />
-            Novo status
-          </button>
+          {/* New status button / inline form */}
+          {addingNewGroup ? (
+            <div className="flex items-center gap-2 mt-4 px-4 py-2">
+              <div className="w-3 h-3 rounded-full bg-violet-500/40" />
+              <input
+                ref={newGroupRef}
+                value={newGroupLabel}
+                onChange={e => setNewGroupLabel(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleAddGroup(); if (e.key === 'Escape') { setAddingNewGroup(false); setNewGroupLabel(''); } }}
+                onBlur={handleAddGroup}
+                placeholder="Nome da nova etapa..."
+                className="bg-transparent border-b border-violet-500/40 text-dark-text text-xs font-bold uppercase tracking-widest outline-none w-64 py-1 placeholder-slate-600"
+              />
+              <button onClick={handleAddGroup} className="text-[10px] text-violet-400 hover:text-violet-300 font-bold transition-colors">Salvar</button>
+              <button onClick={() => { setAddingNewGroup(false); setNewGroupLabel(''); }} className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors">Cancelar</button>
+            </div>
+          ) : (
+            <button onClick={() => setAddingNewGroup(true)} className="flex items-center gap-2 text-xs text-slate-600 hover:text-slate-400 transition-colors mt-4 px-4 py-2">
+              <Plus size={14} />
+              Novo status
+            </button>
+          )}
         </div>
       )}
 
@@ -2136,7 +2852,7 @@ export default function ImplementacaoIA() {
         <AddTaskModal
           groupId={addingToGroup}
           onClose={() => setAddingToGroup(null)}
-          onSaved={fetchTasks}
+          onSaved={() => fetchTasks(true)}
         />
       )}
 
@@ -2151,7 +2867,7 @@ export default function ImplementacaoIA() {
           subtask={detailSubtask.subtask}
           task={detailSubtask.task}
           onClose={() => setDetailSubtask(null)}
-          onUpdate={fetchTasks}
+          onUpdate={() => fetchTasks(true)}
         />
       )}
 
@@ -2160,7 +2876,7 @@ export default function ImplementacaoIA() {
         <TaskDetailModal
           task={detailTask}
           onClose={() => setDetailTask(null)}
-          onUpdate={fetchTasks}
+          onUpdate={() => fetchTasks(true)}
         />
       )}
 
@@ -2172,6 +2888,29 @@ export default function ImplementacaoIA() {
           onClose={() => setTagsModal(false)}
         />
       )}
+
+      {/* Status Config Modal */}
+      {showStatusConfig && (
+        <StatusConfigModal
+          groups={statusGroups}
+          onRename={handleRenameGroup}
+          onUpdateColor={handleUpdateGroup}
+          onDelete={handleDeleteGroup}
+          onAdd={handleAddGroupFromModal}
+          onReorder={groups => {
+            setStatusGroups(groups);
+            fetch('/api/ia-status-groups/reorder', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ groups: groups.map((g, i) => ({ id: g.id, order_index: i })) }),
+            }).catch(() => {});
+          }}
+          onClose={() => { setShowStatusConfig(false); fetchTasks(true); }}
+        />
+      )}
     </div>
+    </SetColOrderContext.Provider>
+    </ColOrderContext.Provider>
+    </StatusGroupsContext.Provider>
   );
 }

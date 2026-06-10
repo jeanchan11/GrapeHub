@@ -91,12 +91,11 @@ async function runDailyBatchIfNeeded(pool: Pool) {
 
   const today = todayBRT();
 
-  // ── GUARD: já disparou hoje? ──────────────────────────────
+  // ── GUARD: já disparou hoje? (leitura rápida antes do lock) ─
   const lastBatch = cfg.last_batch_date
     ? String(cfg.last_batch_date).slice(0, 10)
     : null;
   if (lastBatch === today) {
-    // Batch de hoje já foi executado — não faz nada
     return;
   }
 
@@ -106,20 +105,25 @@ async function runDailyBatchIfNeeded(pool: Pool) {
   const dispatchMinutes = dispH * 60 + dispM;
   const nowMinutes = now.getHours() * 60 + now.getMinutes();
   if (nowMinutes < dispatchMinutes) {
-    // Ainda não chegou o horário
     return;
   }
 
-  // ── EXECUTA O BATCH ───────────────────────────────────────
+  // ── LOCK ATÔMICO via PostgreSQL ────────────────────────────
+  // Usa UPDATE...WHERE para garantir que APENAS UM worker execute o batch.
+  // Se outro worker já atualizou last_batch_date para hoje, rowCount = 0.
+  const lockRes = await pool.query(
+    `UPDATE fin_dispatch_config SET last_batch_date = $1, updated_at = NOW() WHERE last_batch_date IS DISTINCT FROM $1 RETURNING *`,
+    [today]
+  );
+  if (lockRes.rowCount === 0) {
+    console.log(`[dispatch-scheduler] Batch já reivindicado por outro processo — ignorando.`);
+    return;
+  }
+
   isBatchRunning = true;
-  console.log(`[dispatch-scheduler] Iniciando batch diário para ${today}`);
+  console.log(`[dispatch-scheduler] Lock adquirido — iniciando batch diário para ${today}`);
 
   try {
-    // Marca imediatamente para evitar dupla execução em caso de restart
-    await pool.query(
-      `UPDATE fin_dispatch_config SET last_batch_date = $1, updated_at = NOW()`,
-      [today]
-    );
 
     // ── AUTO-POPULATE ─────────────────────────────────────────
     // 1) Corrige datas erradas
@@ -192,7 +196,7 @@ async function runDailyBatchIfNeeded(pool: Pool) {
         rule_triggered, channel, message_template, message_rendered,
         scheduled_date, receivable_asaas_id, customer_asaas_id, invoice_url
       )
-      SELECT
+      SELECT DISTINCT ON (fr.customer_id, fcr.day_offset)
         COALESCE(fp.name, fr.customer_name, 'Desconhecido'),
         COALESCE(NULLIF(c.billing_phone,''), NULLIF(c.phone,''), NULLIF(fp.phone,''), ''),
         fr.value, fr.due_date, fcr.day_offset, fcr.label,
@@ -212,32 +216,57 @@ async function runDailyBatchIfNeeded(pool: Pool) {
         -- Cartão de crédito só entra a partir do Contato Humano
         AND NOT (fr.billing_type = 'CREDIT_CARD' AND fcr.day_offset < 10)
         AND NOT (c.crm_status IS NOT NULL AND c.crm_status != '')
+        -- Evita duplicar: 1 disparo por CLIENTE por regra (não por fatura)
         AND NOT EXISTS (
           SELECT 1 FROM fin_dispatch_queue dq
-          WHERE dq.receivable_asaas_id = fr.asaas_id
+          WHERE dq.customer_asaas_id = fr.customer_id
             AND dq.day_offset = fcr.day_offset
             AND dq.status NOT IN ('CANCELADO','ERRO')
         )
+      ORDER BY fr.customer_id, fcr.day_offset, fr.due_date ASC
       LIMIT 500
       ON CONFLICT DO NOTHING
     `);
     console.log(`[dispatch-scheduler] Auto-populate: ${populated.rowCount} item(s) inserido(s)`);
     // ─────────────────────────────────────────────────────────
 
+    // ── LIMIT: máximo 1 disparo por cliente por dia ─────────────
     const qRes = await pool.query(
-      `SELECT * FROM fin_dispatch_queue WHERE status = 'AGENDADO' AND scheduled_date = $1 ORDER BY created_at ASC`,
+      `SELECT DISTINCT ON (customer_asaas_id) *
+       FROM fin_dispatch_queue
+       WHERE status = 'AGENDADO' AND scheduled_date <= $1
+       ORDER BY customer_asaas_id, scheduled_date ASC, created_at ASC`,
       [today]
     );
     const items = qRes.rows;
-    console.log(`[dispatch-scheduler] ${items.length} item(s) a enviar`);
+    console.log(`[dispatch-scheduler] ${items.length} item(s) a enviar (1 por cliente/dia)`);
+
+    // Reagenda itens excedentes do mesmo cliente para o próximo dia
+    if (items.length > 0) {
+      const sentIds = items.map(i => i.id);
+      await pool.query(
+        `UPDATE fin_dispatch_queue
+         SET scheduled_date = CURRENT_DATE + 1, updated_at = NOW()
+         WHERE status = 'AGENDADO'
+           AND scheduled_date <= $1
+           AND id != ALL($2::uuid[])`,
+        [today, sentIds]
+      );
+    }
 
     const intervalMs = (cfg.dispatch_interval_seconds || 60) * 1000;
 
     for (const item of items) {
-      await pool.query(
-        `UPDATE fin_dispatch_queue SET status = 'ENVIANDO', updated_at = NOW() WHERE id = $1`,
+      // Claim atômico: só prossegue se o item ainda está AGENDADO.
+      // Previne que múltiplos workers enviem o mesmo item.
+      const claim = await pool.query(
+        `UPDATE fin_dispatch_queue SET status = 'ENVIANDO', updated_at = NOW() WHERE id = $1 AND status = 'AGENDADO' RETURNING id`,
         [item.id]
       );
+      if (claim.rowCount === 0) {
+        console.log(`[dispatch-scheduler] Item ${item.id} já foi reivindicado por outro processo — pulando.`);
+        continue;
+      }
       try {
         // Busca o telefone e canal mais atualizados (prioriza billing_phone do cadastro)
         const freshData = await pool.query(`
@@ -509,9 +538,29 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
       if (!cfg?.n8n_webhook_url) return res.status(400).json({ error: 'Webhook n8n não configurado' });
 
       const today = nowBRT().toISOString().split('T')[0];
-      const qRes = await pool.query(`SELECT * FROM fin_dispatch_queue WHERE status = 'AGENDADO' AND scheduled_date = $1 ORDER BY created_at ASC`, [today]);
+      // 1 disparo por cliente por dia
+      const qRes = await pool.query(
+        `SELECT DISTINCT ON (customer_asaas_id) *
+         FROM fin_dispatch_queue
+         WHERE status = 'AGENDADO' AND scheduled_date <= $1
+         ORDER BY customer_asaas_id, scheduled_date ASC, created_at ASC`,
+        [today]
+      );
       const items = qRes.rows;
       res.json({ ok: true, total: items.length });
+
+      // Reagenda itens excedentes do mesmo cliente para o próximo dia
+      if (items.length > 0) {
+        const sentIds = items.map(i => i.id);
+        await pool.query(
+          `UPDATE fin_dispatch_queue
+           SET scheduled_date = CURRENT_DATE + 1, updated_at = NOW()
+           WHERE status = 'AGENDADO'
+             AND scheduled_date <= $1
+             AND id != ALL($2::uuid[])`,
+          [today, sentIds]
+        );
+      }
 
       // Dispara sequencialmente com intervalo
       const intervalMs = (cfg.dispatch_interval_seconds || 60) * 1000;
@@ -762,7 +811,7 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
           rule_triggered, channel, message_template, message_rendered,
           scheduled_date, receivable_asaas_id, customer_asaas_id, invoice_url
         )
-        SELECT
+        SELECT DISTINCT ON (fr.customer_id, fcr.day_offset)
           COALESCE(fp.name, fr.customer_name, 'Desconhecido'),
           COALESCE(NULLIF(c.billing_phone,''), NULLIF(c.phone,''), NULLIF(fp.phone,''), ''),
           fr.value,
@@ -795,13 +844,14 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
           AND NOT (
             fr.billing_type = 'CREDIT_CARD' AND fcr.day_offset < 10
           )
-          -- Evita duplicar a mesma fatura + regra
+          -- Evita duplicar: 1 disparo por CLIENTE por regra (não por fatura)
           AND NOT EXISTS (
             SELECT 1 FROM fin_dispatch_queue dq
-            WHERE dq.receivable_asaas_id = fr.asaas_id
+            WHERE dq.customer_asaas_id = fr.customer_id
               AND dq.day_offset = fcr.day_offset
               AND dq.status NOT IN ('CANCELADO','ERRO')
           )
+        ORDER BY fr.customer_id, fcr.day_offset, fr.due_date ASC
         LIMIT 500
         ON CONFLICT DO NOTHING
       `);

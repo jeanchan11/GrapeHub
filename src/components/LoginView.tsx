@@ -22,12 +22,12 @@ const Login: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [teamMembers, setTeamMembers] = useState<{ id: string; name: string; picture?: string; role: string }[]>([]);
-  const [theme, setTheme] = useState<'light' | 'dark' | 'darker'>(() => {
+  const [theme, setTheme] = useState<'light' | 'darker'>(() => {
     if (typeof window !== 'undefined') {
       const savedTheme = localStorage.getItem('theme');
-      return (savedTheme as 'light' | 'dark' | 'darker') || 'light';
+      return (savedTheme === 'light') ? 'light' : 'darker';
     }
-    return 'light';
+    return 'darker';
   });
 
   useEffect(() => {
@@ -54,7 +54,7 @@ const Login: React.FC = () => {
   }, []);
 
   const toggleTheme = () => {
-    setTheme(prev => prev === 'light' ? 'dark' : prev === 'dark' ? 'darker' : 'light');
+    setTheme(prev => prev === 'light' ? 'darker' : 'light');
   };
 
   const firebaseConfig = {
@@ -93,7 +93,7 @@ const Login: React.FC = () => {
         onClick={toggleTheme}
         className="absolute top-6 right-6 p-3 rounded-full bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-white/20 transition-colors"
       >
-        {theme === 'light' ? <Moon size={20} /> : theme === 'dark' ? <Zap size={20} /> : <Sun size={20} />}
+        {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
       </button>
       <motion.div 
         initial={{ opacity: 0, y: 20 }}

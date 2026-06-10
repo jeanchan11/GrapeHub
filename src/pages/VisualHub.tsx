@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import SplitHeadline from '../components/SplitHeadline';
 import { createPortal } from 'react-dom';
@@ -1424,12 +1425,20 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
       </div>
 
       {/* Subtasks panel */}
-      {expanded && (
-        <div className="bg-black/[0.01] dark:bg-white/[0.01] border-b border-black/5 dark:border-white/5">
-          {loadingSubs ? (
-            <div className="flex items-center gap-2 px-12 py-3 text-xs text-slate-600">
-              <Loader2 size={12} className="animate-spin" /> Carregando subtarefas...
-            </div>
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.25, ease: [0.32, 0.72, 0, 1] }}
+            style={{ overflow: 'hidden' }}
+            className="bg-black/[0.01] dark:bg-white/[0.01] border-b border-black/5 dark:border-white/5"
+          >
+            {loadingSubs ? (
+              <div className="flex items-center gap-2 px-12 py-3 text-xs text-slate-600">
+                <Loader2 size={12} className="animate-spin" /> Carregando subtarefas...
+              </div>
           ) : subtasks.length === 0 ? (
             <div className="px-12 py-3 text-xs text-slate-600">Nenhuma subtarefa.</div>
           ) : (
@@ -1527,8 +1536,9 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
               ))}
             </div>
           )}
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
@@ -3371,15 +3381,19 @@ export default function VisualHub() {
     } catch { /* fallback to defaults */ }
   };
 
-  const fetchTasks = async () => {
+  const isFirstLoad = React.useRef(true);
+
+  const fetchTasks = async (silent = false) => {
+    const showSpinner = isFirstLoad.current && !silent;
     try {
-      setLoading(true);
+      if (showSpinner) setLoading(true);
       const res = await fetch('/api/onboarding-tasks?type=visual-hub');
       if (res.ok) {
         const data = await res.json();
         setTasks(data);
       }
-    } catch { /* silent */ } finally { setLoading(false); }
+      isFirstLoad.current = false;
+    } catch { /* silent */ } finally { if (showSpinner) setLoading(false); }
   };
 
   useEffect(() => { fetchStatusGroups().then(() => fetchTasks()); }, []);
@@ -3436,7 +3450,7 @@ export default function VisualHub() {
     setStatusGroups(prev => prev.filter(g => g.id !== id));
     try {
       await fetch(`/api/visual-hub-status-groups/${id}`, { method: 'DELETE' });
-      fetchTasks(); // refresh tasks since they may have been moved
+      fetchTasks(true); // refresh tasks since they may have been moved
     } catch { /* silent */ }
   };
 
@@ -3522,15 +3536,15 @@ export default function VisualHub() {
                 <button
                   onClick={async () => {
                     try {
-                      // Check if briefing already exists (use first task as default)
                       let briefingId: number | null = null;
                       const resExisting = await fetch('/api/briefings');
                       if (resExisting.ok) {
                         const all = await resExisting.json();
-                        if (all.length > 0) briefingId = all[0].id;
+                        // Find an unsubmitted briefing to reuse
+                        const emptyBriefing = all.find((b: any) => !b.submitted_at);
+                        if (emptyBriefing) briefingId = emptyBriefing.id;
                       }
                       if (!briefingId) {
-                        // Create a new briefing
                         const resCreate = await fetch('/api/briefings', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
@@ -3543,7 +3557,9 @@ export default function VisualHub() {
                       }
                       if (briefingId) {
                         const baseUrl = window.location.origin;
-                        navigator.clipboard.writeText(`${baseUrl}/?briefing=${briefingId}`);
+                        // For clipboard, writeText works in most modern browsers even after await if the site has focus,
+                        // but to be safe we can use the Clipboard API correctly.
+                        await navigator.clipboard.writeText(`${baseUrl}/?briefing=${briefingId}`);
                         setBriefingLinkCopied(true);
                         setTimeout(() => setBriefingLinkCopied(false), 2000);
                       }
@@ -3557,12 +3573,16 @@ export default function VisualHub() {
                 </button>
                 <button
                   onClick={async () => {
+                    // Open window synchronously to avoid popup blockers
+                    const newWindow = window.open('about:blank', '_blank');
                     try {
                       let briefingId: number | null = null;
                       const resExisting = await fetch('/api/briefings');
                       if (resExisting.ok) {
                         const all = await resExisting.json();
-                        if (all.length > 0) briefingId = all[0].id;
+                        // Find an unsubmitted briefing to reuse
+                        const emptyBriefing = all.find((b: any) => !b.submitted_at);
+                        if (emptyBriefing) briefingId = emptyBriefing.id;
                       }
                       if (!briefingId) {
                         const resCreate = await fetch('/api/briefings', {
@@ -3575,11 +3595,15 @@ export default function VisualHub() {
                           briefingId = data.id;
                         }
                       }
-                      if (briefingId) {
+                      if (briefingId && newWindow) {
                         const baseUrl = window.location.origin;
-                        window.open(`${baseUrl}/?briefing=${briefingId}`, '_blank');
+                        newWindow.location.href = `${baseUrl}/?briefing=${briefingId}`;
+                      } else if (newWindow) {
+                        newWindow.close();
                       }
-                    } catch { /* silent */ }
+                    } catch {
+                      if (newWindow) newWindow.close();
+                    }
                     setFormDropdownOpen(false);
                   }}
                   className="w-full flex items-center gap-3 px-4 py-3 text-xs text-slate-300 hover:bg-white/5 hover:text-white transition-colors border-t border-white/5"
@@ -3626,22 +3650,28 @@ export default function VisualHub() {
       ) : (
         <div className="px-8 pb-12">
           <div onDragEnd={() => { setDraggingGroupId(null); setDragOverGroupId(null); }}>
-          {groups.map(group => (
-            <GroupBlock
+          {groups.map((group, gIdx) => (
+            <motion.div
               key={group.id}
-              group={group}
-              onUpdate={fetchTasks}
-              onAddTask={setAddingToGroup}
-              onOpenSubtask={(s, t) => setDetailSubtask({subtask: s, task: t})}
-              onOpenDetail={setDetailTask}
-              onRenameGroup={handleRenameGroup}
-              onUpdateGroup={handleUpdateGroup}
-              onDeleteGroup={handleDeleteGroup}
-              onDragStart={handleGroupDragStart}
-              onDragOver={handleGroupDragOver}
-              onDrop={handleGroupDrop}
-              isDragOver={dragOverGroupId === group.id}
-            />
+              initial={{ opacity: 0, y: -24, scale: 0.985 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ duration: 0.4, delay: gIdx * 0.08, ease: [0.32, 0.72, 0, 1] }}
+            >
+              <GroupBlock
+                group={group}
+                onUpdate={() => fetchTasks(true)}
+                onAddTask={setAddingToGroup}
+                onOpenSubtask={(s, t) => setDetailSubtask({subtask: s, task: t})}
+                onOpenDetail={setDetailTask}
+                onRenameGroup={handleRenameGroup}
+                onUpdateGroup={handleUpdateGroup}
+                onDeleteGroup={handleDeleteGroup}
+                onDragStart={handleGroupDragStart}
+                onDragOver={handleGroupDragOver}
+                onDrop={handleGroupDrop}
+                isDragOver={dragOverGroupId === group.id}
+              />
+            </motion.div>
           ))}
           </div>
 
@@ -3688,7 +3718,7 @@ export default function VisualHub() {
         <AddTaskModal
           groupId={addingToGroup}
           onClose={() => setAddingToGroup(null)}
-          onSaved={fetchTasks}
+          onSaved={() => fetchTasks(true)}
         />
       )}
 
@@ -3703,7 +3733,7 @@ export default function VisualHub() {
           subtask={detailSubtask.subtask}
           task={detailSubtask.task}
           onClose={() => setDetailSubtask(null)}
-          onUpdate={fetchTasks}
+          onUpdate={() => fetchTasks(true)}
         />
       )}
 
@@ -3712,7 +3742,7 @@ export default function VisualHub() {
         <TaskDetailModal
           task={detailTask}
           onClose={() => setDetailTask(null)}
-          onUpdate={fetchTasks}
+          onUpdate={() => fetchTasks(true)}
         />
       )}
 

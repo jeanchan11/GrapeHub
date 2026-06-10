@@ -26,7 +26,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const authFetch = async (url: string, options?: RequestInit): Promise<Response> => {
       const token = await firebaseUser.getIdToken();
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 10000);
+      const timer = setTimeout(() => ctrl.abort(), 15000);
       try {
         return await fetch(url, {
           ...options,
@@ -111,12 +111,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   useEffect(() => {
+    let bgRetryTimer: ReturnType<typeof setInterval> | null = null;
+
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
       
       if (!firebaseUser) {
         setUserData(null);
         setLoading(false);
+        if (bgRetryTimer) { clearInterval(bgRetryTimer); bgRetryTimer = null; }
         return;
       }
 
@@ -125,14 +128,29 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       for (let attempt = 0; attempt < 3; attempt++) {
         result = await fetchUserDataFromApi(firebaseUser);
         if (result) break;
-        // Wait 1s, 2s, 4s before retrying
-        await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)));
+        // Wait 2s, 4s, 8s before retrying (longer waits for cold starts)
+        await new Promise(r => setTimeout(r, 2000 * Math.pow(2, attempt)));
         console.warn(`[AuthContext] Retry ${attempt + 1}/3 fetching userData...`);
       }
       setLoading(false);
+
+      // If all 3 attempts failed, keep retrying in background every 5s
+      if (!result && firebaseUser) {
+        console.warn('[AuthContext] Initial fetch failed, starting background retry...');
+        bgRetryTimer = setInterval(async () => {
+          const retryResult = await fetchUserDataFromApi(firebaseUser);
+          if (retryResult) {
+            console.log('[AuthContext] Background retry succeeded!');
+            if (bgRetryTimer) { clearInterval(bgRetryTimer); bgRetryTimer = null; }
+          }
+        }, 5000);
+      }
     });
 
-    return () => unsubscribeAuth();
+    return () => {
+      unsubscribeAuth();
+      if (bgRetryTimer) clearInterval(bgRetryTimer);
+    };
   }, []);
 
   // Removed Firestore onSnapshot effect as we're using Postgres now

@@ -71,8 +71,8 @@ import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { MenuProvider, useMenu } from './src/context/MenuContext';
 
 const AppContent: React.FC = () => {
-  const { user, userData, loading } = useAuth();
-  const { menu } = useMenu();
+  const { user, userData, loading, refreshUserData } = useAuth();
+  const { menu, refreshMenu } = useMenu();
   console.log('AppContent userData:', userData);
   const [activePage, setActivePage] = useState(() => {
     // Read from URL hash first (e.g. /#/chamados-grapehub)
@@ -81,9 +81,10 @@ const AppContent: React.FC = () => {
     // Fallback to localStorage for backward compatibility
     return localStorage.getItem('activePage') || 'welcome';
   });
-  const [theme, setTheme] = useState<'light' | 'dark' | 'darker'>(() => {
+  const [theme, setTheme] = useState<'light' | 'darker'>(() => {
     const saved = localStorage.getItem('theme');
-    return (saved as 'light' | 'dark' | 'darker') || 'dark';
+    if (saved === 'light') return 'light';
+    return 'darker'; // 'dark' and 'darker' both map to 'darker'
   });
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try { return localStorage.getItem('sidebar-collapsed') === 'true'; } catch { return false; }
@@ -212,16 +213,39 @@ const AppContent: React.FC = () => {
   }, [theme]);
 
   const toggleTheme = () => {
-    setTheme(prev => prev === 'dark' ? 'darker' : prev === 'darker' ? 'light' : 'dark');
+    setTheme(prev => prev === 'light' ? 'darker' : 'light');
   };
 
   const renderPage = () => {
-    // Guard: if user is logged in but userData hasn't loaded yet, show spinner
-    // This prevents the "Acesso Restrito" flash during token refresh or slow API
+    // Guard: if user is logged in but userData hasn't loaded yet
     if (user && !userData) {
+      // If still in initial loading phase, show spinner
+      if (loading) {
+        return (
+          <div className="flex items-center justify-center h-full">
+            <LoadingSpinner size="lg" />
+          </div>
+        );
+      }
+      // Loading finished but userData is null — API failed. Show recovery UI.
       return (
         <div className="flex items-center justify-center h-full">
-          <LoadingSpinner size="lg" />
+          <div className="text-center space-y-6">
+            <LoadingSpinner size="lg" />
+            <div>
+              <p className="text-lg font-semibold text-dark-text dark:text-white">Conectando ao servidor...</p>
+              <p className="text-sm text-slate-500 mt-1">Pode levar alguns segundos na primeira conexão.</p>
+            </div>
+            <button
+              onClick={async () => {
+                await refreshUserData();
+                await refreshMenu();
+              }}
+              className="px-6 py-2.5 bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold rounded-xl transition-colors shadow-lg"
+            >
+              Reconectar
+            </button>
+          </div>
         </div>
       );
     }

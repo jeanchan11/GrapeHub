@@ -152,6 +152,7 @@ const PUBLIC_ROUTES: Array<{ method?: string; pattern: RegExp }> = [
   { pattern: /^\/api\/hiring\/public\// },
   { pattern: /^\/api\/onboarding\/submit$/, method: 'POST' },
   { pattern: /^\/api\/finance\/dispatch\/callback$/, method: 'POST' },
+  { pattern: /^\/api\/briefings\/public\// },
 ];
 
 function isPublicRoute(method: string, path: string): boolean {
@@ -996,6 +997,7 @@ async function startServer() {
       ALTER TABLE fin_dispatch_queue ADD COLUMN IF NOT EXISTS day_offset INTEGER DEFAULT 0;
       CREATE INDEX IF NOT EXISTS idx_dispatch_queue_status ON fin_dispatch_queue(status);
       CREATE INDEX IF NOT EXISTS idx_dispatch_queue_scheduled ON fin_dispatch_queue(scheduled_date, scheduled_time);
+      -- Dedup index migrado para bloco separado (agora por CLIENTE, não por fatura).
 
       CREATE TABLE IF NOT EXISTS fin_dispatch_config (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1011,6 +1013,30 @@ async function startServer() {
       ALTER TABLE fin_dispatch_config ADD COLUMN IF NOT EXISTS last_batch_date DATE;
     `);
     console.log("Database tables initialized successfully.");
+
+    // ── Migration: dispatch dedup por CLIENTE (não por fatura) ──────────────
+    try {
+      // Remove índice antigo (era por fatura — causava disparos duplicados por cliente)
+      await pool.query(`DROP INDEX IF EXISTS idx_dispatch_queue_dedup`);
+      // Cancela duplicatas existentes (mantém o mais antigo por cliente + day_offset)
+      await pool.query(`
+        UPDATE fin_dispatch_queue SET status = 'CANCELADO', updated_at = NOW()
+        WHERE id IN (
+          SELECT id FROM (
+            SELECT id, ROW_NUMBER() OVER(PARTITION BY customer_asaas_id, day_offset ORDER BY created_at ASC) as rn
+            FROM fin_dispatch_queue WHERE status NOT IN ('CANCELADO', 'ERRO')
+          ) sub WHERE sub.rn > 1
+        )
+      `);
+      // Cria novo índice: 1 disparo por CLIENTE por regra (day_offset)
+      await pool.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_dispatch_queue_dedup_client
+        ON fin_dispatch_queue (customer_asaas_id, day_offset)
+        WHERE status NOT IN ('CANCELADO', 'ERRO')
+      `);
+    } catch (e: any) {
+      console.warn('[migration] dispatch dedup index:', e?.message);
+    }
     
     // Initial menu data population removed to prevent overwriting user changes.
     // The menu should now be managed exclusively through the Admin Panel.
@@ -11134,6 +11160,80 @@ app.get("/api/todos", async (req, res) => {
       res.json(result.rows);
     } catch (err) {
       console.error('PUT /api/visual-hub-status-groups/reorder error:', err);
+      res.status(500).json({ error: 'Erro ao reordenar.' });
+    }
+  });
+
+  // ── IA Status Groups API ──
+  app.get('/api/ia-status-groups', async (req, res) => {
+    try {
+      const result = await pool.query('SELECT * FROM ia_status_groups ORDER BY order_index ASC');
+      res.json(result.rows);
+    } catch (err) {
+      console.error('GET /api/ia-status-groups error:', err);
+      res.status(500).json({ error: 'Erro ao buscar status.' });
+    }
+  });
+
+  app.post('/api/ia-status-groups', async (req, res) => {
+    try {
+      const { id, label, color, emoji, order_index } = req.body;
+      const result = await pool.query(
+        `INSERT INTO ia_status_groups (id, label, color, emoji, order_index)
+         VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+        [id, label, color, emoji, order_index]
+      );
+      res.status(201).json(result.rows[0]);
+    } catch (err) {
+      console.error('POST /api/ia-status-groups error:', err);
+      res.status(500).json({ error: 'Erro ao criar status.' });
+    }
+  });
+
+  app.patch('/api/ia-status-groups/:id', async (req, res) => {
+    try {
+      const { label, color, emoji } = req.body;
+      const result = await pool.query(
+        `UPDATE ia_status_groups SET label = $1, color = $2, emoji = $3 WHERE id = $4 RETURNING *`,
+        [label, color, emoji, req.params.id]
+      );
+      if (result.rows.length === 0) return res.status(404).json({ error: 'Status não encontrado' });
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error('PATCH /api/ia-status-groups error:', err);
+      res.status(500).json({ error: 'Erro ao atualizar status.' });
+    }
+  });
+
+  app.delete('/api/ia-status-groups/:id', async (req, res) => {
+    try {
+      await pool.query('BEGIN');
+      // Update tasks referencing this group
+      await pool.query(
+        `UPDATE onboarding_tasks SET status_group = 'a-implementar' WHERE status_group = $1 AND type = 'implementacao-ia'`,
+        [req.params.id]
+      );
+      await pool.query('DELETE FROM ia_status_groups WHERE id = $1', [req.params.id]);
+      await pool.query('COMMIT');
+      res.json({ success: true });
+    } catch (err) {
+      await pool.query('ROLLBACK');
+      console.error('DELETE /api/ia-status-groups error:', err);
+      res.status(500).json({ error: 'Erro ao excluir status.' });
+    }
+  });
+
+  app.put('/api/ia-status-groups/reorder', async (req, res) => {
+    try {
+      const { groups } = req.body;
+      if (!Array.isArray(groups)) return res.status(400).json({ error: 'groups array required.' });
+      for (const g of groups) {
+        await pool.query('UPDATE ia_status_groups SET order_index = $1 WHERE id = $2', [g.order_index, g.id]);
+      }
+      const result = await pool.query('SELECT * FROM ia_status_groups ORDER BY order_index ASC');
+      res.json(result.rows);
+    } catch (err) {
+      console.error('PUT /api/ia-status-groups/reorder error:', err);
       res.status(500).json({ error: 'Erro ao reordenar.' });
     }
   });

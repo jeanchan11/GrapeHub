@@ -23,15 +23,15 @@
             --accent-color-dark: 109 40 217; /* #6d28d9 */
         }
         
-        /* Tema Escuro Profundo (Preto) */
+        /* Tema Escuro Profundo */
         html.darker {
-            --dark-bg: 0 0 0; /* #000000 */
-            --dark-card: 10 10 10; /* #0a0a0a */
-            --dark-sidebar: 0 0 0; /* #000000 */
-            --dark-text: 229 229 229; /* #e5e5e5 */
-            --dark-card-hover: 18 18 18; /* #121212 */
-            --dark-input: 10 10 10; /* #0a0a0a */
-            --dark-tooltip: 0 0 0; /* #000000 */
+            --dark-bg: 13 11 20; /* #0D0B14 */
+            --dark-card: 26 23 38; /* #1A1726 */
+            --dark-sidebar: 17 14 26; /* #110E1A */
+            --dark-text: 232 230 242; /* #E8E6F2 */
+            --dark-card-hover: 33 30 48; /* #211E30 */
+            --dark-input: 21 18 31; /* #15121F */
+            --dark-tooltip: 13 11 20; /* #0D0B14 */
             --accent-color: 124 58 237; /* #7c3aed */
             --accent-color-dark: 109 40 217; /* #6d28d9 */
         }
@@ -171,35 +171,134 @@
 
         /* Escuro Profundo (preto) */
         html.darker .modal-overlay {
-            background: rgba(0, 0, 0, 0.75);
+            background: rgba(13, 11, 20, 0.90);
         }
         html.darker .modal-container {
-            background: #0D0B14;
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            box-shadow: 0 8px 40px rgba(0, 0, 0, 0.80);
+            background: #1A1726;
+            border: 1px solid #2A2640;
+            box-shadow: 0 8px 40px rgba(13, 11, 20, 0.90);
             border-radius: 22px;
         }
         html.darker .modal-input {
-            background: #160F2A;
-            border: 1px solid rgba(196, 181, 253, 0.10);
-            color: #E9E3FF;
+            background: #15121F;
+            border: 1px solid #2A2640;
+            color: #E8E6F2;
         }
         html.darker .modal-input::placeholder {
-            color: #3D3566;
+            color: #4A4660;
         }
         html.darker .modal-divider {
-            border-color: rgba(255, 255, 255, 0.05);
+            border-color: #2A2640;
         }
         html.darker .modal-title {
-            color: #F0EEFF;
+            color: #E8E6F2;
         }
         html.darker .modal-tab-active {
             color: #C4B5FD;
         }
         html.darker .modal-btn-cancel {
-            background: rgba(255, 255, 255, 0.04);
-            border: 1.5px solid rgba(255, 255, 255, 0.10);
-            color: #8B7EC8;
+            background: #15121F;
+            border: 1.5px solid #2A2640;
+            color: #7A7690;
+        }
+
+        /* ── Escuro Profundo — Overrides globais ─────────────── */
+
+        /* Sidebar — fundo, borda, nav text, section titles */
+        html.darker aside {
+            background-color: #110E1A !important;
+            border-color: #2A2640 !important;
+        }
+
+        /* Sidebar section titles (COMERCIAL, FINANCEIRO, etc.) */
+        html.darker aside .text-slate-500,
+        html.darker aside .dark\:text-slate-500 {
+            color: #4A4660 !important;
+        }
+
+        /* Sidebar nav items — default text */
+        html.darker aside .text-slate-600,
+        html.darker aside .dark\:text-slate-400 {
+            color: #7A7690 !important;
+        }
+
+        /* Sidebar dividers */
+        html.darker aside .dark\:border-white\/5,
+        html.darker aside .dark\:border-white\/10,
+        html.darker aside .border-white\/10 {
+            border-color: #2A2640 !important;
+        }
+
+        /* Global border overrides for darker theme */
+        html.darker .dark\:border-white\/5,
+        html.darker .dark\:border-white\/10,
+        html.darker .border-white\/5,
+        html.darker .border-white\/10 {
+            border-color: #2A2640 !important;
+        }
+
+        /* Secondary text color */
+        html.darker .text-slate-500 {
+            color: #7A7690 !important;
+        }
+        html.darker .text-slate-600 {
+            color: #7A7690 !important;
+        }
+
+        /* Cards — closed state */
+        html.darker .dark\:bg-dark-card {
+            background-color: #1A1726 !important;
+        }
+
+        /* Cards — expanded/hover state */
+        html.darker .dark\:bg-white\/\[0\.02\],
+        html.darker .dark\:hover\:bg-white\/\[0\.02\]:hover {
+            background-color: rgba(33, 30, 48, 0.5) !important;
+        }
+
+        /* Internal sections background */
+        html.darker .dark\:bg-dark-input {
+            background-color: #15121F !important;
+        }
+
+        /* Dropdowns & menus */
+        html.darker select option {
+            background-color: #1A1726 !important;
+        }
+
+        /* Progress bar backgrounds */
+        html.darker .bg-white\/10,
+        html.darker .dark\:bg-white\/10 {
+            background-color: #2A2640 !important;
+        }
+
+        /* Scrollbar for darker theme */
+        html.darker ::-webkit-scrollbar-thumb {
+            background: #2A2640;
+        }
+        html.darker ::-webkit-scrollbar-thumb:hover {
+            background: #3D3566;
+        }
+
+        /* ── Escuro Profundo — Tabelas (zebra + divisórias) ──── */
+
+        /* Linha divisória entre rows normais */
+        html.darker .dark\:border-white\/5.border-b,
+        html.darker .border-b.dark\:border-white\/5,
+        html.darker .border-b.border-black\/5.dark\:border-white\/5,
+        html.darker .border-b.dark\:border-white\/\[0\.06\] {
+            border-bottom-color: rgba(42, 38, 64, 0.2) !important;
+        }
+
+        /* Linha divisória do cabeçalho (NOME, TAGS, SQUAD…) — mais visível */
+        html.darker .tracking-widest.border-b,
+        html.darker .uppercase.tracking-widest.border-b {
+            border-bottom-color: rgba(42, 38, 64, 0.35) !important;
+        }
+
+        /* Zebra — linhas alternadas dentro dos grupos */
+        html.darker .flex.flex-col > div:nth-child(even) > .flex.items-center.gap-2.px-8.py-3.border-b {
+            background-color: #110E1A !important;
         }
 
         /* Botões Modais (Compartilhado) */
@@ -570,7 +669,7 @@
             }
         };
     </script>
-  <script type="module" crossorigin src="/assets/index-0a9UaBKS.js"></script>
+  <script type="module" crossorigin src="/assets/index-BMlFr1gm.js"></script>
   <link rel="stylesheet" crossorigin href="/assets/index-B5oZ1nOz.css">
 </head>
 <body>

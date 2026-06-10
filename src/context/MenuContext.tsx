@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { auth } from '../firebase';
 
 const MenuContext = createContext<{ menu: any[], setMenu: React.Dispatch<React.SetStateAction<any[]>>, refreshMenu: () => Promise<void> }>({ menu: [], setMenu: () => {}, refreshMenu: async () => {} });
@@ -7,47 +7,78 @@ const MenuContext = createContext<{ menu: any[], setMenu: React.Dispatch<React.S
 export const MenuProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [menu, setMenu] = useState<any[]>([]);
 
-  const refreshMenu = async () => {
+  // Authenticated fetch helper with timeout
+  const fetchMenuAuth = async (firebaseUser: FirebaseUser): Promise<boolean> => {
     try {
-      let res;
+      const token = await firebaseUser.getIdToken();
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 15000);
+
+      let res: Response;
       try {
-        res = await fetch('/api/menu');
+        res = await fetch('/api/menu', {
+          signal: ctrl.signal,
+          headers: { Authorization: `Bearer ${token}` },
+        });
       } catch (e) {
-        console.warn('Relative fetch failed, trying absolute URL...', e);
-        res = await fetch('http://localhost:3000/api/menu');
+        // Fallback for dev
+        res = await fetch('http://localhost:3000/api/menu', {
+          signal: ctrl.signal,
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } finally {
+        clearTimeout(timer);
       }
-      
-      if (!res.ok) {
-        throw new Error(`HTTP error! status: ${res.status}`);
-      }
-      
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
       const data = await res.json();
-      console.log('Menu data fetched:', data);
-      if (Array.isArray(data)) {
-        // Force a completely new state to ensure UI updates
-        setMenu([]); 
-        setTimeout(() => {
-            setMenu(data);
-        }, 0);
+      if (Array.isArray(data) && data.length > 0) {
+        setMenu(data);
+        return true;
       } else {
-        console.error('Menu data is not an array:', data);
-        setMenu([]);
+        console.warn('[MenuContext] Menu data empty or not an array');
+        return false;
       }
     } catch (err) {
-      console.error('Menu fetch error:', err);
+      console.error('[MenuContext] Fetch error:', err);
+      return false;
     }
   };
 
+  const refreshMenu = async () => {
+    const user = auth.currentUser;
+    if (user) await fetchMenuAuth(user);
+  };
+
   useEffect(() => {
-    // Wait for Firebase Auth to be ready before fetching menu
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let retryCount = 0;
+    const MAX_RETRIES = 5;
+
+    const startRetrying = async (user: FirebaseUser) => {
+      const success = await fetchMenuAuth(user);
+      if (!success && retryCount < MAX_RETRIES) {
+        retryCount++;
+        console.warn(`[MenuContext] Retry ${retryCount}/${MAX_RETRIES} in 3s...`);
+        retryTimer = setTimeout(() => startRetrying(user), 3000);
+      }
+    };
+
     const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
       if (user) {
-        refreshMenu();
+        retryCount = 0;
+        startRetrying(user);
       } else {
         setMenu([]);
       }
     });
-    return () => unsubscribe();
+
+    return () => {
+      unsubscribe();
+      if (retryTimer) clearTimeout(retryTimer);
+    };
   }, []);
 
   return <MenuContext.Provider value={{ menu, setMenu, refreshMenu }}>{children}</MenuContext.Provider>;

@@ -301,7 +301,7 @@ interface SidebarProps {
   onPageChange: (page: string) => void;
   user: FirebaseUser;
   userData: UserData | null;
-  theme: 'light' | 'dark' | 'darker';
+  theme: 'light' | 'darker';
   toggleTheme: () => void;
   onCollapseChange?: (collapsed: boolean) => void;
 }
@@ -813,16 +813,16 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
             }`}
           >
             <div className="shrink-0 flex items-center justify-center">
-              {theme === 'light' ? <Sun size={20} /> : theme === 'dark' ? <Moon size={20} /> : <Zap size={20} />}
+              {theme === 'light' ? <Sun size={20} /> : <Moon size={20} />}
             </div>
             {!isCollapsed && (
               <span className="text-sm font-medium whitespace-nowrap">
-                {theme === 'light' ? 'Claro' : theme === 'dark' ? 'Escuro' : 'Escuro Profundo'}
+                {theme === 'light' ? 'Claro' : 'Escuro'}
               </span>
             )}
             {isCollapsed && (
               <div className="absolute left-full ml-4 px-3 py-2 bg-light-card dark:bg-dark-tooltip text-light-text dark:text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity shadow-xl border border-slate-200 dark:border-violet-500/10 whitespace-nowrap z-[100]">
-                {theme === 'light' ? 'Claro' : theme === 'dark' ? 'Escuro' : 'Escuro Profundo'}
+                {theme === 'light' ? 'Claro' : 'Escuro'}
               </div>
             )}
           </button>
@@ -897,17 +897,8 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
               </button>
             )}
           </div>
-          
-          {/* ── Version Indicator ── */}
-          <div className={`flex items-center gap-2 mt-4 transition-all duration-300 ${isCollapsed ? 'justify-center' : 'justify-start px-2'}`}>
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] shrink-0"></div>
-            {!isCollapsed && (
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                {/* @ts-ignore */}
-                {typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'v2.3.7'}
-              </span>
-            )}
-          </div>
+
+
         </div>
       </aside>
 
