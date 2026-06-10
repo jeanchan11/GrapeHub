@@ -418,6 +418,8 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
     setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
 
   const isPageAllowed = (pageId: string) => {
+    // Metas is now a popup inside CRM Kanban — hide from sidebar
+    if (pageId === 'crm-metas') return false;
     if (userData?.role === 'superadmin') return true;
     return userData?.allowedPages?.includes(pageId);
   };

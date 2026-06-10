@@ -5,7 +5,7 @@ import {
   ChevronRight, ChevronLeft, Flame, DollarSign, X, Edit2, ChevronDown, Check, Users, LayoutGrid,
   TrendingUp, TrendingDown, MoreHorizontal, ArrowRightLeft, Send, History, Phone, Mail,
   ArrowRight, Calendar, CheckSquare, FileText, Paperclip, Trophy, Star, Eye, EyeOff, Settings, PhoneCall, Loader2, Mic, MicOff,
-  CheckCircle2, Circle, Video, Tag, Instagram, Briefcase, Award, Copy,
+  CheckCircle2, Circle, Video, Tag, Instagram, Briefcase, Award, Copy, Target,
   Handshake, RefreshCw, XCircle, ClipboardList, Upload, Folder, Download, File, Bot, Zap,
   Volume1, Volume2, VolumeX, GripVertical
 } from 'lucide-react';
@@ -32,7 +32,7 @@ import {
   useSortable
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useMotionValue, useTransform, animate as motionAnimate } from 'framer-motion';
 import { Modal } from '../components/ui/Modal';
 import { PageHeader } from '../components/ui/PageHeader';
 import { NovaAtividadeModal } from './Atividades';
@@ -42,6 +42,7 @@ import confetti from 'canvas-confetti';
 import { useSoftphone, formatCallTime } from '../hooks/useSoftphone';
 import { AIChat } from '../components/AIChat/AIChat';
 import fredImg from '../assets/fred.png';
+import MetasPopup from '../components/MetasPopup';
 
 interface Lead {
   id: string;
@@ -329,7 +330,7 @@ const SortableColumn = ({ column, children, setEditColumnData, setIsEditColumnMo
   };
 
   return (
-    <div ref={setNodeRef} style={style} className="flex flex-col flex-1 min-h-[500px] min-w-[200px] max-w-[320px] snap-start bg-slate-50/50 dark:bg-white/[0.02] rounded-3xl border border-gray-200 dark:border-white/5 p-2 relative">
+    <div ref={setNodeRef} style={style} className="flex flex-col flex-1 min-h-[500px] min-w-[200px] snap-start bg-slate-50/50 dark:bg-white/[0.02] rounded-3xl border border-gray-200 dark:border-white/5 p-2 relative">
       <div className="p-3 flex items-start justify-between mb-2 cursor-grab active:cursor-grabbing" {...attributes} {...listeners}>
         <div className="flex items-start gap-2 pt-1 pl-1 w-full overflow-hidden">
           <div className={`w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 mt-0.5 ${column.color === 'orange' ? 'bg-orange-500' :
@@ -357,8 +358,8 @@ const SortableColumn = ({ column, children, setEditColumnData, setIsEditColumnMo
                 <MoreHorizontal size={16} />
               </button>
             </DropdownMenu.Trigger>
-            <DropdownMenu.Portal>
-              <DropdownMenu.Content align="end" sideOffset={5} className="min-w-[160px] bg-white dark:bg-slate-800 border border-gray-100 dark:border-white/10 rounded-xl shadow-xl p-2 z-[1100]">
+
+              <DropdownMenu.Content align="end" sideOffset={5} className="min-w-[160px] bg-white dark:bg-slate-800 border border-gray-100 dark:border-white/10 rounded-xl shadow-xl p-2 z-[1100]" style={{ opacity: 1, animation: 'none' }}>
                 <DropdownMenu.Item
                   onClick={() => {
                     setEditColumnData({ id: column.id, title: column.title, color: column.color || 'orange', icon: column.icon || 'LayoutGrid' });
@@ -377,7 +378,7 @@ const SortableColumn = ({ column, children, setEditColumnData, setIsEditColumnMo
                   Excluir
                 </DropdownMenu.Item>
               </DropdownMenu.Content>
-            </DropdownMenu.Portal>
+
           </DropdownMenu.Root>
         </div>
       </div>
@@ -3481,8 +3482,8 @@ const GerenciarKanbansModal = ({ isOpen, onClose, kanbans, columns, leads, onRen
                       <MoreHorizontal size={18} />
                     </button>
                   </DropdownMenu.Trigger>
-                  <DropdownMenu.Portal>
-                    <DropdownMenu.Content align="end" sideOffset={5} className="min-w-[180px] bg-white dark:bg-slate-800 border border-gray-100 dark:border-white/10 rounded-xl shadow-xl p-2 z-[1100]">
+
+                    <DropdownMenu.Content align="end" sideOffset={5} className="min-w-[180px] bg-white dark:bg-slate-800 border border-gray-100 dark:border-white/10 rounded-xl shadow-xl p-2 z-[1100]" style={{ opacity: 1, animation: 'none' }}>
                       <DropdownMenu.Item className="flex items-center gap-2.5 px-3 py-2.5 text-sm font-semibold text-gray-600 dark:text-slate-300 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer outline-none transition-colors opacity-50 cursor-not-allowed">
                         <Copy size={15} />
                         Criar cópia
@@ -3512,7 +3513,7 @@ const GerenciarKanbansModal = ({ isOpen, onClose, kanbans, columns, leads, onRen
                         </>
                       )}
                     </DropdownMenu.Content>
-                  </DropdownMenu.Portal>
+
                 </DropdownMenu.Root>
 
               </div>
@@ -3524,10 +3525,184 @@ const GerenciarKanbansModal = ({ isOpen, onClose, kanbans, columns, leads, onRen
     </div>
   );
 };
+// ============================================================
+// MINI HEADER META WIDGET — dropdown com todas as metas
+// ============================================================
+const MINI_SIZE = 36;
+const MINI_STROKE = 4;
+const MINI_RADIUS = (MINI_SIZE - MINI_STROKE) / 2;
+const MINI_CIRC = 2 * Math.PI * MINI_RADIUS;
+
+const getMetaColor = (pct: number) => {
+  if (pct >= 100) return '#10b981';
+  if (pct >= 60) return '#f59e0b';
+  if (pct >= 30) return '#8b5cf6';
+  return '#ef4444';
+};
+
+interface HeaderMetaItem {
+  id: string;
+  nome: string;
+  tipo: string;
+  metrica: string;
+  valor_atual: number;
+  alvo: number;
+  percentual: number;
+}
+
+const formatMetaValue = (tipo: string, metrica: string, value: number) => {
+  if (tipo === 'receita' || metrica === 'valor') {
+    return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 0 });
+  }
+  return String(Math.round(value));
+};
+
+// Mini circle — static (no animation, used inside dropdown items)
+const MiniCircleStatic: React.FC<{ pct: number; color: string; size?: number }> = ({ pct, color, size = 28 }) => {
+  const s = size;
+  const sw = 3;
+  const r = (s - sw) / 2;
+  const c = 2 * Math.PI * r;
+  const clamped = Math.min(pct, 100);
+  const offset = c - (clamped / 100) * c;
+  return (
+    <div className="relative flex items-center justify-center" style={{ width: s, height: s }}>
+      <svg width={s} height={s} viewBox={`0 0 ${s} ${s}`} className="transform -rotate-90">
+        <circle cx={s / 2} cy={s / 2} r={r} fill="none" stroke="currentColor" className="text-slate-200 dark:text-white/[0.06]" strokeWidth={sw} />
+        <circle cx={s / 2} cy={s / 2} r={r} fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round" strokeDasharray={c} strokeDashoffset={offset} style={{ transition: 'stroke-dashoffset 0.5s ease' }} />
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center">
+        <span className="text-[7px] font-black text-slate-900 dark:text-white tabular-nums">{Math.round(clamped)}%</span>
+      </div>
+    </div>
+  );
+};
+
+// Animated circle for the header button
+const MiniCircleAnimated: React.FC<{ pct: number; color: string }> = ({ pct, color }) => {
+  const progress = useMotionValue(0);
+  const dashOffset = useTransform(progress, (v) => {
+    const clamped = Math.min(v, 100);
+    return MINI_CIRC - (clamped / 100) * MINI_CIRC;
+  });
+  const blurFilter = useTransform(progress, (v) => {
+    const ratio = pct > 0 ? Math.min(v, pct) / pct : 1;
+    return `blur(${4 * (1 - ratio)}px)`;
+  });
+  const textOpacity = useTransform(progress, (v) => {
+    const ratio = pct > 0 ? Math.min(v, pct) / pct : 1;
+    return 0.3 + 0.7 * ratio;
+  });
+  const [displayPct, setDisplayPct] = useState(0);
+
+  React.useEffect(() => {
+    const clamped = Math.min(pct, 100);
+    const controls = motionAnimate(progress, clamped, { duration: 2.5, ease: [0.16, 1, 0.3, 1] });
+    const unsub = progress.on('change', (v) => setDisplayPct(Math.round(v)));
+    return () => { controls.stop(); unsub(); };
+  }, [pct]);
+
+  return (
+    <div className="relative flex items-center justify-center" style={{ width: MINI_SIZE, height: MINI_SIZE }}>
+      <svg width={MINI_SIZE} height={MINI_SIZE} viewBox={`0 0 ${MINI_SIZE} ${MINI_SIZE}`} className="transform -rotate-90">
+        <circle cx={MINI_SIZE / 2} cy={MINI_SIZE / 2} r={MINI_RADIUS} fill="none" stroke="currentColor" className="text-slate-200 dark:text-white/[0.06]" strokeWidth={MINI_STROKE} />
+        <motion.circle cx={MINI_SIZE / 2} cy={MINI_SIZE / 2} r={MINI_RADIUS} fill="none" stroke={color} strokeWidth={MINI_STROKE} strokeLinecap="round" strokeDasharray={MINI_CIRC} style={{ strokeDashoffset: dashOffset }} />
+      </svg>
+      <motion.div className="absolute inset-0 flex items-center justify-center" style={{ filter: blurFilter, opacity: textOpacity }}>
+        <span className="text-[9px] font-black text-slate-900 dark:text-white tabular-nums">{displayPct}%</span>
+      </motion.div>
+    </div>
+  );
+};
+
+const HeaderMetaWidget: React.FC<{
+  metas: HeaderMetaItem[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  onOpenMetas: () => void;
+}> = ({ metas, selectedId, onSelect, onOpenMetas }) => {
+  const selected = metas.find(m => m.id === selectedId) || metas[0];
+  if (!selected) return null;
+  const color = getMetaColor(selected.percentual);
+
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <button
+          className="flex items-center gap-3 px-3 py-1.5 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-dark-card hover:border-violet-500/30 hover:bg-violet-500/5 transition-all cursor-pointer"
+          title="Meta selecionada — Clique para trocar"
+        >
+          <MiniCircleAnimated pct={selected.percentual} color={color} />
+          <div className="flex flex-col items-start">
+            <span className="text-xs font-black text-slate-900 dark:text-white leading-tight">
+              {formatMetaValue(selected.tipo, selected.metrica, selected.valor_atual)}
+            </span>
+            <span className="text-[10px] text-slate-400 leading-tight">
+              de {formatMetaValue(selected.tipo, selected.metrica, selected.alvo)}
+            </span>
+          </div>
+          <ChevronDown size={14} className="text-slate-400 ml-1" />
+        </button>
+      </DropdownMenu.Trigger>
+
+        <DropdownMenu.Content
+          className="bg-white dark:bg-[#1A1625] border border-gray-200 dark:border-white/10 rounded-xl p-2 min-w-[260px] shadow-2xl z-[200]"
+          align="start"
+          sideOffset={6}
+          style={{ opacity: 1, animation: 'none' }}
+        >
+          <div className="px-2 py-1.5 mb-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Selecione uma meta</span>
+          </div>
+          {metas.map(meta => {
+            const isActive = meta.id === selected.id;
+            const mColor = getMetaColor(meta.percentual);
+            return (
+              <DropdownMenu.Item
+                key={meta.id}
+                onClick={() => onSelect(meta.id)}
+                className={`flex items-center gap-3 p-2.5 rounded-lg cursor-pointer outline-none transition-colors ${
+                  isActive
+                    ? 'bg-violet-500/10 dark:bg-violet-500/15'
+                    : 'hover:bg-gray-50 dark:hover:bg-white/5'
+                }`}
+              >
+                <MiniCircleStatic pct={meta.percentual} color={mColor} />
+                <div className="flex-1 min-w-0">
+                  <p className={`text-xs font-bold truncate ${isActive ? 'text-violet-600 dark:text-violet-400' : 'text-slate-800 dark:text-white'}`}>{meta.nome}</p>
+                  <p className="text-[10px] text-slate-400 truncate">
+                    {formatMetaValue(meta.tipo, meta.metrica, meta.valor_atual)} de {formatMetaValue(meta.tipo, meta.metrica, meta.alvo)}
+                  </p>
+                </div>
+                {isActive && <Check size={14} className="text-violet-500 shrink-0" />}
+              </DropdownMenu.Item>
+            );
+          })}
+          <DropdownMenu.Separator className="h-px bg-gray-200 dark:bg-white/10 my-1.5" />
+          <DropdownMenu.Item
+            onClick={onOpenMetas}
+            className="flex items-center gap-2 p-2.5 rounded-lg cursor-pointer outline-none hover:bg-gray-50 dark:hover:bg-white/5 text-violet-600 dark:text-violet-400 font-bold text-xs"
+          >
+            <Target size={14} />
+            Ver todas as metas
+          </DropdownMenu.Item>
+        </DropdownMenu.Content>
+
+    </DropdownMenu.Root>
+  );
+};
+
 
 const CrmComercial = () => {
   const { user, userData } = useAuth();
   const [showAI, setShowAI] = useState(false);
+  const [showMetasPopup, setShowMetasPopup] = useState(false);
+  const [headerMetas, setHeaderMetas] = useState<HeaderMetaItem[]>([]);
+  const [selectedHeaderMetaId, setSelectedHeaderMetaId] = useState<string | null>(() => localStorage.getItem('selectedHeaderMetaId'));
+  const handleSelectHeaderMeta = (id: string) => {
+    setSelectedHeaderMetaId(id);
+    localStorage.setItem('selectedHeaderMetaId', id);
+  };
   const kanbanBoardRef = useRef<HTMLDivElement>(null);
   const [celebrationDetails, setCelebrationDetails] = useState<{ gif: string, value: number, name: string } | null>(null);
 
@@ -3865,6 +4040,27 @@ const CrmComercial = () => {
           setApi4comSettings({ configured: !!(data.configured || data.api4com_token), sip_extension: data.sip_extension });
         })
         .catch(() => setApi4comSettings({ configured: false }));
+
+      // Fetch todas as metas para exibir no header
+      fetch('/api/crm-metas')
+        .then(r => r.ok ? r.json() : [])
+        .then((metas: any[]) => {
+          const items: HeaderMetaItem[] = metas.map((m: any) => ({
+            id: m.id,
+            nome: m.nome,
+            tipo: m.tipo,
+            metrica: m.metrica,
+            valor_atual: m.valor_atual,
+            alvo: m.alvo,
+            percentual: m.percentual,
+          }));
+          setHeaderMetas(items);
+          // Se nenhuma meta selecionada, seleciona a primeira
+          if (items.length > 0) {
+            setSelectedHeaderMetaId(prev => prev && items.find(i => i.id === prev) ? prev : items[0].id);
+          }
+        })
+        .catch(() => setHeaderMetas([]));
     }
   }, [user?.email, activeKanbanId]);
 
@@ -4756,6 +4952,20 @@ const CrmComercial = () => {
 
   return (
     <div className="p-8 w-full min-h-screen flex flex-col">
+      {/* Fix: Remove Radix DropdownMenu fade-in animation that causes transparency on first open */}
+      <style>{`
+        [data-radix-popper-content-wrapper] {
+          animation: none !important;
+          opacity: 1 !important;
+          transition: none !important;
+        }
+        [data-radix-popper-content-wrapper] > [role="menu"] {
+          animation: none !important;
+          opacity: 1 !important;
+          transform: none !important;
+          transition: none !important;
+        }
+      `}</style>
       <PageHeader
         title="CRM"
         titleAccent={kanbans.find(k => k.id === activeKanbanId)?.nome || 'Comercial'}
@@ -4763,71 +4973,27 @@ const CrmComercial = () => {
       >
         <div className="flex items-center gap-3">
 
-          {/* Botão Consultar Fred IA */}
+          {/* 1 — Mini meta dropdown no header */}
+          {headerMetas.length > 0 && (
+            <HeaderMetaWidget
+              metas={headerMetas}
+              selectedId={selectedHeaderMetaId}
+              onSelect={handleSelectHeaderMeta}
+              onOpenMetas={() => setShowMetasPopup(true)}
+            />
+          )}
+
+          {/* 2 — Botão Metas */}
           <button
-            onClick={() => setShowAI(o => !o)}
-            className={`flex items-center gap-2 px-3 py-2 rounded-xl border font-bold text-xs transition-all ${
-              showAI
-                ? 'bg-violet-500 border-violet-500 text-white shadow-lg shadow-violet-500/30'
-                : 'bg-white dark:bg-dark-card border-gray-200 dark:border-white/10 text-violet-400 hover:border-violet-500/50 hover:bg-violet-500/10'
-            }`}
-            title="Perguntar ao Fred (especialista financeiro IA)"
+            onClick={() => setShowMetasPopup(true)}
+            className="flex items-center gap-2 px-3 py-2 rounded-xl border font-bold text-xs bg-white dark:bg-dark-card border-gray-200 dark:border-white/10 text-amber-500 hover:border-amber-500/50 hover:bg-amber-500/10 transition-all"
+            title="Metas de vendas"
           >
-            <div style={{ width: 22, height: 22, flexShrink: 0 }}>
-              <img src={fredImg} alt="Fred" style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
-            </div>
-            <span>Consultar Fred</span>
+            <Target size={16} />
+            <span>Metas</span>
           </button>
 
-          {/* Gear + telephony status badge */}
-          <div className="flex items-center gap-1.5">
-            <button
-              title={`Configurações do CRM — Ramal: ${softphone.sipStatus === 'registered' ? '✓ Registrado' :
-                  softphone.sipStatus === 'connecting' ? 'Conectando...' :
-                    softphone.sipStatus === 'error' ? '✗ Falha no registro' : 'Não conectado'
-                }`}
-              onClick={() => { setSettingsTab('webhook'); fetchLossReasons(); setIsTelefonySettingsOpen(true); }}
-              className="relative flex items-center justify-center w-[38px] h-[38px] flex-shrink-0 bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-lg text-gray-500 dark:text-slate-400 hover:text-violet-600 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-white/5 transition-all shadow-sm"
-            >
-              <Settings size={18} />
-              {/* SIP status dot on gear */}
-              <span className="absolute -top-[3px] -right-[3px] w-2.5 h-2.5 rounded-full border border-white dark:border-[#0d0b14]" style={{
-                background: softphone.sipStatus === 'registered' ? '#22c55e' :
-                  softphone.sipStatus === 'connecting' ? '#f59e0b' :
-                    softphone.sipStatus === 'error' ? '#ef4444' : '#374151'
-              }} />
-            </button>
-
-            {/* Telephony status pill — same colors as the dot */}
-            <button
-              onClick={() => { setTestResult(null); setSettingsTab('telefonia'); fetchLossReasons(); setIsTelefonySettingsOpen(true); }}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-all text-xs font-semibold"
-              style={{
-                background: softphone.sipStatus === 'registered' ? 'rgba(34,197,94,0.1)' :
-                  softphone.sipStatus === 'connecting' ? 'rgba(245,158,11,0.1)' :
-                    softphone.sipStatus === 'error' ? 'rgba(239,68,68,0.1)' : 'rgba(55,65,81,0.15)',
-                borderColor: softphone.sipStatus === 'registered' ? 'rgba(34,197,94,0.3)' :
-                  softphone.sipStatus === 'connecting' ? 'rgba(245,158,11,0.3)' :
-                    softphone.sipStatus === 'error' ? 'rgba(239,68,68,0.3)' : 'rgba(55,65,81,0.3)',
-                color: softphone.sipStatus === 'registered' ? '#22c55e' :
-                  softphone.sipStatus === 'connecting' ? '#f59e0b' :
-                    softphone.sipStatus === 'error' ? '#ef4444' : '#9ca3af',
-              }}
-            >
-              <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{
-                background: softphone.sipStatus === 'registered' ? '#22c55e' :
-                  softphone.sipStatus === 'connecting' ? '#f59e0b' :
-                    softphone.sipStatus === 'error' ? '#ef4444' : '#374151',
-                boxShadow: softphone.sipStatus === 'registered' ? '0 0 5px #22c55e99' :
-                  softphone.sipStatus === 'connecting' ? '0 0 5px #f59e0b99' :
-                    softphone.sipStatus === 'error' ? '0 0 5px #ef444499' : 'none',
-              }} />
-              {softphone.sipStatus === 'registered' ? 'Ramal ativo' :
-                softphone.sipStatus === 'connecting' ? 'Conectando...' :
-                  softphone.sipStatus === 'error' ? 'Falha' : 'Ramal offline'}
-            </button>
-          </div>
-
+          {/* 3 — Kanban selector */}
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>
               <button className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-lg text-sm text-gray-700 dark:text-white hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
@@ -4837,8 +5003,8 @@ const CrmComercial = () => {
                 <ChevronDown size={16} className="text-gray-500 dark:text-slate-400" />
               </button>
             </DropdownMenu.Trigger>
-            <DropdownMenu.Portal>
-              <DropdownMenu.Content className="bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-xl p-2 min-w-[280px] shadow-xl z-50">
+
+              <DropdownMenu.Content className="bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-xl p-2 min-w-[280px] shadow-xl z-50" style={{ opacity: 1, animation: 'none' }}>
                 {kanbans.map(kanban => (
                   <DropdownMenu.Item
                     key={kanban.id}
@@ -4879,24 +5045,95 @@ const CrmComercial = () => {
                   Gerenciar Kanbans
                 </DropdownMenu.Item>
               </DropdownMenu.Content>
-            </DropdownMenu.Portal>
+
           </DropdownMenu.Root>
 
-          <button
-            onClick={() => setIsNewColumnModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 text-gray-700 dark:text-white rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
-          >
-            <Plus size={16} />
-            Nova Coluna
-          </button>
+          {/* 4 — Dropdown "Mais" com Fred, Ramal, Novo Lead */}
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger asChild>
+              <button
+                className="flex items-center justify-center w-[38px] h-[38px] bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-lg text-gray-500 dark:text-slate-400 hover:text-violet-600 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-white/5 transition-all"
+                title="Mais opções"
+              >
+                <MoreHorizontal size={18} />
+              </button>
+            </DropdownMenu.Trigger>
 
-          <button
-            onClick={() => setIsNewLeadModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-violet-600 text-white rounded-lg text-sm font-medium hover:bg-violet-700 transition-colors"
-          >
-            <Plus size={16} />
-            Novo Lead
-          </button>
+              <DropdownMenu.Content
+                className="bg-white dark:bg-[#1A1625] border border-gray-200 dark:border-white/10 rounded-xl p-2 min-w-[220px] shadow-2xl z-[200]"
+                align="end"
+                sideOffset={6}
+                style={{ opacity: 1, animation: 'none' }}
+              >
+                {/* Novo Lead */}
+                <DropdownMenu.Item
+                  onClick={() => setIsNewLeadModalOpen(true)}
+                  className="flex items-center gap-3 p-2.5 rounded-lg cursor-pointer outline-none hover:bg-violet-500/10 dark:hover:bg-violet-500/15 transition-colors"
+                >
+                  <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-violet-500/10 text-violet-500">
+                    <Plus size={15} />
+                  </div>
+                  <span className="text-xs font-bold text-gray-800 dark:text-white">Novo Lead</span>
+                </DropdownMenu.Item>
+
+                {/* Consultar Fred IA */}
+                <DropdownMenu.Item
+                  onClick={() => setShowAI(o => !o)}
+                  className="flex items-center gap-3 p-2.5 rounded-lg cursor-pointer outline-none hover:bg-violet-500/10 dark:hover:bg-violet-500/15 transition-colors"
+                >
+                  <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-violet-500/10 overflow-hidden">
+                    <img src={fredImg} alt="Fred" style={{ width: 18, height: 18, objectFit: 'contain' }} />
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-xs font-bold text-gray-800 dark:text-white">Consultar Fred</span>
+                    <span className="text-[10px] text-slate-400">Especialista financeiro IA</span>
+                  </div>
+                  {showAI && <Check size={14} className="text-violet-500 ml-auto" />}
+                </DropdownMenu.Item>
+
+                <DropdownMenu.Separator className="h-px bg-gray-200 dark:bg-white/10 my-1.5" />
+
+                {/* Configurações CRM */}
+                <DropdownMenu.Item
+                  onClick={() => { setSettingsTab('webhook'); fetchLossReasons(); setIsTelefonySettingsOpen(true); }}
+                  className="flex items-center gap-3 p-2.5 rounded-lg cursor-pointer outline-none hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+                >
+                  <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-slate-400">
+                    <Settings size={15} />
+                  </div>
+                  <span className="text-xs font-bold text-gray-800 dark:text-white">Configurações</span>
+                </DropdownMenu.Item>
+
+                {/* Ramal / Telefonia */}
+                <DropdownMenu.Item
+                  onClick={() => { setTestResult(null); setSettingsTab('telefonia'); fetchLossReasons(); setIsTelefonySettingsOpen(true); }}
+                  className="flex items-center gap-3 p-2.5 rounded-lg cursor-pointer outline-none hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+                >
+                  <div className="relative flex items-center justify-center w-7 h-7 rounded-lg bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-slate-400">
+                    <Phone size={15} />
+                    <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full border border-white dark:border-[#1A1625]" style={{
+                      background: softphone.sipStatus === 'registered' ? '#22c55e' :
+                        softphone.sipStatus === 'connecting' ? '#f59e0b' :
+                          softphone.sipStatus === 'error' ? '#ef4444' : '#374151'
+                    }} />
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-xs font-bold text-gray-800 dark:text-white">Telefonia</span>
+                    <span className="text-[10px]" style={{
+                      color: softphone.sipStatus === 'registered' ? '#22c55e' :
+                        softphone.sipStatus === 'connecting' ? '#f59e0b' :
+                          softphone.sipStatus === 'error' ? '#ef4444' : '#9ca3af',
+                    }}>
+                      {softphone.sipStatus === 'registered' ? 'Ramal ativo' :
+                        softphone.sipStatus === 'connecting' ? 'Conectando...' :
+                          softphone.sipStatus === 'error' ? 'Falha' : 'Ramal offline'}
+                    </span>
+                  </div>
+                </DropdownMenu.Item>
+              </DropdownMenu.Content>
+
+          </DropdownMenu.Root>
+
         </div>
       </PageHeader>
 
@@ -4912,19 +5149,6 @@ const CrmComercial = () => {
           />
         </div>
 
-        <button className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-lg text-sm text-gray-700 dark:text-white hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
-          <Filter size={16} />
-          Filtros
-        </button>
-
-        <button className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-lg text-sm text-gray-700 dark:text-white hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="9 11 12 14 22 4"></polyline>
-            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
-          </svg>
-          Selecionar
-        </button>
-
         <DropdownMenu.Root>
           <DropdownMenu.Trigger asChild>
             <button className="p-2 bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-lg text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
@@ -4935,8 +5159,16 @@ const CrmComercial = () => {
               </svg>
             </button>
           </DropdownMenu.Trigger>
-          <DropdownMenu.Portal>
-            <DropdownMenu.Content className="m-2 min-w-[200px] bg-white dark:bg-[#1A1625] rounded-xl shadow-xl border border-gray-100 dark:border-white/10 p-2 z-[100]" align="end">
+
+            <DropdownMenu.Content className="m-2 min-w-[200px] bg-white dark:bg-[#1A1625] rounded-xl shadow-xl border border-gray-100 dark:border-white/10 p-2 z-[100]" align="end" style={{ opacity: 1, animation: 'none' }}>
+              <DropdownMenu.Item
+                onClick={() => setIsNewColumnModalOpen(true)}
+                className="flex items-center gap-2 p-2 hover:bg-gray-50 dark:hover:bg-white/5 rounded-lg cursor-pointer text-violet-600 dark:text-violet-400 font-bold text-sm outline-none"
+              >
+                <Plus size={14} />
+                Nova Coluna
+              </DropdownMenu.Item>
+              <DropdownMenu.Separator className="h-px bg-gray-200 dark:bg-white/10 my-1" />
               <DropdownMenu.Item
                 onClick={() => setShowWonLeads(!showWonLeads)}
                 className="flex items-center gap-2 p-2 hover:bg-gray-50 dark:hover:bg-white/5 rounded-lg cursor-pointer text-gray-700 dark:text-slate-300 font-medium text-sm outline-none"
@@ -4952,7 +5184,7 @@ const CrmComercial = () => {
                 Mostrar perdidos
               </DropdownMenu.Item>
             </DropdownMenu.Content>
-          </DropdownMenu.Portal>
+
         </DropdownMenu.Root>
       </div>
 
@@ -4981,7 +5213,7 @@ const CrmComercial = () => {
                   delay: colIdx * 0.07,
                   ease: [0.32, 0.72, 0, 1],
                 }}
-                style={{ display: 'flex', flexShrink: 0 }}
+                style={{ display: 'flex', flex: 1, minWidth: 200 }}
               >
               <SortableColumn
                 column={column}
@@ -6541,6 +6773,7 @@ const CrmComercial = () => {
         externalOpen={showAI}
         onExternalToggle={() => setShowAI(o => !o)}
       />
+      <MetasPopup isOpen={showMetasPopup} onClose={() => setShowMetasPopup(false)} />
     </div>
   );
 };

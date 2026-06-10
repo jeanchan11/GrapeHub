@@ -8139,6 +8139,27 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
+  // ── Lead History (timeline for popup) ──
+  app.get("/api/crm-comercial/lead-history/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const result = await pool.query(
+        `SELECT h.*, c_from.title as from_coluna_name, c_to.title as to_coluna_name
+         FROM crm_comercial_history h
+         LEFT JOIN crm_comercial_columns c_from ON h.from_coluna::text = c_from.id::text
+         LEFT JOIN crm_comercial_columns c_to ON h.to_coluna::text = c_to.id::text
+         WHERE h.lead_id = $1
+         ORDER BY h.created_at DESC
+         LIMIT 50`,
+        [id]
+      );
+      res.json(result.rows);
+    } catch (err) {
+      console.error("Error fetching lead history:", err);
+      res.status(500).json({ error: "Failed to fetch lead history" });
+    }
+  });
+
   app.post("/api/crm-comercial/leads", async (req, res) => {
     try {
       const { nome, email, telefone, origem, responsavel_id, valor, observacoes, kanban_id, coluna } = req.body;
@@ -11293,12 +11314,22 @@ app.get("/api/todos", async (req, res) => {
 
   app.patch('/api/ia-status-groups/:id', async (req, res) => {
     try {
-      const { label, color, emoji } = req.body;
+      const { id } = req.params;
+      const fields = req.body;
+      const allowed = ['label', 'color', 'emoji', 'order_index'];
+      const sets: string[] = [];
+      const vals: any[] = [];
+      let idx = 1;
+      for (const key of allowed) {
+        if (key in fields) { sets.push(`${key} = $${idx++}`); vals.push(fields[key]); }
+      }
+      if (sets.length === 0) return res.status(400).json({ error: 'Nenhum campo para atualizar.' });
+      vals.push(id);
       const result = await pool.query(
-        `UPDATE ia_status_groups SET label = $1, color = $2, emoji = $3 WHERE id = $4 RETURNING *`,
-        [label, color, emoji, req.params.id]
+        `UPDATE ia_status_groups SET ${sets.join(', ')} WHERE id = $${idx} RETURNING *`,
+        vals
       );
-      if (result.rows.length === 0) return res.status(404).json({ error: 'Status não encontrado' });
+      if (result.rowCount === 0) return res.status(404).json({ error: 'Status não encontrado.' });
       res.json(result.rows[0]);
     } catch (err) {
       console.error('PATCH /api/ia-status-groups error:', err);

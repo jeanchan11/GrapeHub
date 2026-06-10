@@ -70,6 +70,7 @@ import {
 
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { MenuProvider, useMenu } from './src/context/MenuContext';
+import ActivityToastStack from './src/components/ActivityToastStack';
 
 const AppContent: React.FC = () => {
   const { user, userData, loading, refreshUserData } = useAuth();
@@ -461,6 +462,7 @@ const AppContent: React.FC = () => {
           {renderPage()}
         </PageTransition>
       </main>
+      <ActivityToastStack />
     </div>
   );
 };

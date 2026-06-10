@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, GripVertical, ChevronDown, ChevronRight, Edit, Trash2, CheckCircle2, Copy, Check, Settings, X, Link } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { Plus, Search, ChevronDown, Edit, Trash2, CheckCircle2, Copy, Check, Settings, X, Link } from 'lucide-react';
 import LoadingSpinner from '../components/LoadingSpinner';
 import SplitHeadline from '../components/SplitHeadline';
 import Organograma from '../components/Organograma';
@@ -241,7 +242,7 @@ export default function ColaboradoresPage() {
   if (loading) return <div className="flex justify-center items-center h-full"><LoadingSpinner size="lg" /></div>;
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 bg-light-bg dark:bg-dark-bg p-6 font-sans">
+    <div className="min-h-full bg-light-bg dark:bg-dark-bg text-slate-900 dark:text-slate-100 font-sans p-8 overflow-y-auto w-full">
       <div className="flex items-center justify-between mb-8">
         <div>
           <SplitHeadline text="Colaboradores " highlight="Grape" className="text-3xl font-black text-slate-800 dark:text-white tracking-tight mb-1" subtitle="Gestão centralizada do time Grape Mídia" subtitleClassName="text-slate-500 dark:text-slate-400 text-sm font-medium" />
@@ -297,111 +298,157 @@ export default function ColaboradoresPage() {
       </div>
 
       {mainTab === 'dados' ? (
-        <div className="flex-1 overflow-auto">
-          <div className="min-w-max">
-            {statuses.map(status => {
-              const list = filtered(grouped[status]);
-              const isExpanded = expandedGroups[status] !== false;
-              
-              // Only show empty default statuses if there's no search
-              if (list.length === 0 && search) return null;
+        <>
+        <style>{`
+          @keyframes collabRowFadeIn {
+            from { opacity: 0; transform: translateY(-8px); }
+            to   { opacity: 1; transform: translateY(0); }
+          }
+        `}</style>
+        <div className="bg-white dark:bg-[#151221] rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm overflow-hidden min-h-[500px]">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm whitespace-nowrap">
+              <thead>
+                <tr className="border-b border-slate-100 dark:border-white/[0.06] bg-slate-50/50 dark:bg-white/[0.03]">
+                  <th className="px-6 py-4 font-semibold text-slate-600 dark:text-slate-400">Nome</th>
+                  <th className="px-4 py-4 font-semibold text-slate-600 dark:text-slate-400">Status</th>
+                  <th className="px-4 py-4 font-semibold text-slate-600 dark:text-slate-400">Grupo</th>
+                  <th className="px-4 py-4 font-semibold text-slate-600 dark:text-slate-400">Cargo</th>
+                  <th className="px-4 py-4 font-semibold text-slate-600 dark:text-slate-400">Senioridade</th>
+                  <th className="px-4 py-4 font-semibold text-slate-600 dark:text-slate-400">Data Aniversário</th>
+                  <th className="px-4 py-4 w-[60px]"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {statuses.map(status => {
+                  const list = filtered(grouped[status]);
+                  const isExpanded = expandedGroups[status] !== false;
+                  
+                  if (list.length === 0 && search) return null;
 
-              return (
-                <div key={status} className="mb-6 bg-light-card dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl overflow-hidden shadow-sm">
-                  {/* Group Header */}
-                  <div 
-                    className="flex items-center gap-3 px-4 py-3 bg-slate-50 dark:bg-white/[0.02] cursor-pointer border-b border-slate-100 dark:border-white/5 select-none"
-                    onClick={() => toggleGroup(status)}
-                  >
-                    <div className="flex items-center gap-2 flex-1">
-                      {isExpanded ? <ChevronDown size={16} className="text-slate-400 dark:text-slate-500" /> : <ChevronRight size={16} className="text-slate-400 dark:text-slate-500" />}
-                      <div className={`w-2.5 h-2.5 rounded-full ${getStatusColor(status)}`} />
-                      <h2 className="text-sm font-bold text-slate-800 dark:text-white uppercase tracking-wider">{status}</h2>
-                      <span className="text-xs text-slate-500 ml-2">{list.length}</span>
-                    </div>
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); openAddModal(status); }}
-                      className="p-1.5 hover:bg-slate-200 dark:hover:bg-white/10 rounded-lg text-slate-500 dark:text-slate-400 transition-colors"
-                    >
-                      <Plus size={14} />
-                    </button>
-                  </div>
+                  return (
+                    <React.Fragment key={status}>
+                      {/* Group separator row */}
+                      <tr 
+                        className="cursor-pointer select-none"
+                        onClick={() => toggleGroup(status)}
+                      >
+                        <td colSpan={7} className="px-6 py-3 bg-slate-100/60 dark:bg-white/[0.02] border-y border-slate-100 dark:border-white/[0.06]">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2.5">
+                              <motion.div animate={{ rotate: isExpanded ? 0 : -90 }} transition={{ duration: 0.2, ease: 'easeInOut' }}>
+                                <ChevronDown size={14} className="text-slate-400" />
+                              </motion.div>
+                              <div className={`w-2 h-2 rounded-full ${getStatusColor(status)}`} />
+                              <span className="text-xs font-bold text-slate-700 dark:text-white uppercase tracking-widest">{status}</span>
+                              <span className="text-xs bg-violet-500/10 text-violet-400 border border-violet-500/20 px-2 py-0.5 rounded-full font-semibold">
+                                {list.length}
+                              </span>
+                            </div>
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); openAddModal(status); }}
+                              className="p-1 hover:bg-white/10 rounded-lg text-slate-500 dark:text-slate-400 transition-colors"
+                            >
+                              <Plus size={14} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
 
-                  {/* Table */}
-                  {isExpanded && (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left border-collapse">
-                        <thead>
-                          <tr className="border-b border-slate-100 dark:border-white/5 text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider">
-                            <th className="py-2.5 px-4 font-semibold w-[250px]">Nome</th>
-                            <th className="py-2.5 px-4 font-semibold w-[150px]">Grupo</th>
-                            <th className="py-2.5 px-4 font-semibold w-[150px]">Cargo</th>
-                            <th className="py-2.5 px-4 font-semibold w-[120px]">Senioridade</th>
-                            <th className="py-2.5 px-4 font-semibold w-[150px]">Data Aniversário</th>
-                            <th className="py-2.5 px-4 w-[60px]"></th>
+                      {/* Rows with staggered animation */}
+                      {isExpanded && (
+                        list.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="text-center py-8 text-slate-400">
+                              <div className="flex flex-col items-center gap-2">
+                                <p className="text-sm">Nenhum colaborador nesta lista.</p>
+                              </div>
+                            </td>
                           </tr>
-                        </thead>
-                        <tbody>
-                          {list.length === 0 ? (
-                            <tr>
-                              <td colSpan={15} className="py-4 text-center text-sm text-slate-500">Nenhum colaborador nesta lista.</td>
+                        ) : (
+                          list.map((c, idx) => (
+                            <tr 
+                              key={c.id} 
+                              onClick={() => openEditModal(c)} 
+                              className="border-b border-slate-50 dark:border-white/[0.04] hover:bg-slate-50 dark:hover:bg-white/[0.04] transition-colors cursor-pointer group"
+                              style={{ animation: 'collabRowFadeIn 0.3s ease both', animationDelay: `${idx * 0.04}s` }}
+                            >
+                              {/* Nome */}
+                              <td className="px-6 py-3">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs shrink-0 overflow-hidden bg-violet-500/20 text-violet-400">
+                                    {c.linked_picture
+                                      ? <img src={c.linked_picture} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                      : c.name.charAt(0).toUpperCase()
+                                    }
+                                  </div>
+                                  <span className="font-semibold text-slate-800 dark:text-white">{c.name}</span>
+                                </div>
+                              </td>
+
+                              {/* Status */}
+                              <td className="px-4 py-3">
+                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${
+                                  status === 'Efetivado' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                                  status === 'Desligamento' ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' :
+                                  status === 'Turnover' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
+                                  'bg-slate-500/10 text-slate-400 border-slate-500/20'
+                                }`}>
+                                  {status}
+                                </span>
+                              </td>
+
+                              {/* Grupo */}
+                              <td className="px-4 py-3">
+                                {(() => {
+                                  const s = settings.find(set => set.type === 'group' && set.name === c.group_name);
+                                  if (s) return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border" style={{ backgroundColor: `${s.color}15`, color: s.color, borderColor: `${s.color}30` }}>{c.group_name}</span>;
+                                  return <span className="text-slate-500 dark:text-slate-400">{c.group_name || '-'}</span>;
+                                })()}
+                              </td>
+
+                              {/* Cargo */}
+                              <td className="px-4 py-3">
+                                {(() => {
+                                  const s = settings.find(set => set.type === 'role' && set.name === c.role);
+                                  if (s) return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border" style={{ backgroundColor: `${s.color}15`, color: s.color, borderColor: `${s.color}30` }}>{c.role}</span>;
+                                  return <span className="text-slate-500 dark:text-slate-400">{c.role || '-'}</span>;
+                                })()}
+                              </td>
+
+                              {/* Senioridade */}
+                              <td className="px-4 py-3">
+                                {(() => {
+                                  const s = settings.find(set => set.type === 'seniority' && set.name === c.seniority_level);
+                                  if (s) return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border" style={{ backgroundColor: `${s.color}15`, color: s.color, borderColor: `${s.color}30` }}>{c.seniority_level}</span>;
+                                  return <span className="text-slate-500 dark:text-slate-400">{c.seniority_level || '-'}</span>;
+                                })()}
+                              </td>
+
+                              {/* Data Aniversário */}
+                              <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs">
+                                {c.birth_date || '-'}
+                              </td>
+
+                              {/* Actions */}
+                              <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                                <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <button onClick={() => openEditModal(c)} className="w-7 h-7 rounded-lg hover:bg-white/10 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-white transition-colors"><Edit size={13} /></button>
+                                  <button onClick={() => handleDelete(c.id)} className="w-7 h-7 rounded-lg hover:bg-rose-500/10 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-rose-400 transition-colors"><Trash2 size={13} /></button>
+                                </div>
+                              </td>
                             </tr>
-                          ) : (
-                            list.map((c) => (
-                              <tr key={c.id} onClick={() => openEditModal(c)} className="border-b border-slate-100 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-white/[0.02] cursor-pointer group transition-colors">
-                                <td className="py-2.5 px-4">
-                                  <div className="flex items-center gap-2">
-                                    <GripVertical size={14} className="text-slate-400 dark:text-slate-600 opacity-0 group-hover:opacity-100 cursor-grab shrink-0" />
-                                    <div className="w-6 h-6 rounded-full bg-violet-500/20 text-violet-600 dark:text-violet-400 flex items-center justify-center text-xs font-bold shrink-0 overflow-hidden">
-                                      {c.linked_picture
-                                        ? <img src={c.linked_picture} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                                        : c.name.charAt(0).toUpperCase()
-                                      }
-                                    </div>
-                                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap overflow-hidden text-ellipsis">{c.name}</span>
-                                  </div>
-                                </td>
-                                <td className="py-2.5 px-4">
-                                  {(() => {
-                                    const s = settings.find(set => set.type === 'group' && set.name === c.group_name);
-                                    if (s) return <span className="text-xs font-bold px-2 py-0.5 rounded" style={{ backgroundColor: `${s.color}20`, color: s.color }}>{c.group_name}</span>;
-                                    return <span className="text-xs bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 px-2 py-0.5 rounded-md text-slate-700 dark:text-slate-300">{c.group_name || '-'}</span>;
-                                  })()}
-                                </td>
-                                <td className="py-2.5 px-4 text-xs text-slate-700 dark:text-slate-300 font-medium">
-                                  {(() => {
-                                    const s = settings.find(set => set.type === 'role' && set.name === c.role);
-                                    if (s) return <span className="text-xs font-bold px-2 py-0.5 rounded" style={{ backgroundColor: `${s.color}20`, color: s.color }}>{c.role}</span>;
-                                    return c.role || '-';
-                                  })()}
-                                </td>
-                                <td className="py-2.5 px-4">
-                                  {(() => {
-                                    const s = settings.find(set => set.type === 'seniority' && set.name === c.seniority_level);
-                                    if (s) return <span className="text-xs font-bold px-2 py-0.5 rounded" style={{ backgroundColor: `${s.color}20`, color: s.color }}>{c.seniority_level}</span>;
-                                    return <span className="text-xs bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 px-2 py-0.5 rounded text-slate-600 dark:text-slate-400">{c.seniority_level || '-'}</span>;
-                                  })()}
-                                </td>
-                                <td className="py-2.5 px-4 text-xs text-slate-600 dark:text-slate-400">{c.birth_date || '-'}</td>
-                                
-                                <td className="py-2.5 px-4" onClick={e => e.stopPropagation()}>
-                                  <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <button onClick={() => openEditModal(c)} className="w-6 h-6 rounded hover:bg-slate-200 dark:hover:bg-white/10 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white transition-colors"><Edit size={12} /></button>
-                                    <button onClick={() => handleDelete(c.id)} className="w-6 h-6 rounded hover:bg-rose-500/10 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors"><Trash2 size={12} /></button>
-                                  </div>
-                                </td>
-                              </tr>
-                            ))
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                          ))
+                        )
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
+        </>
       ) : (
         <Organograma collaborators={collaborators.filter(c => c.status === 'Efetivado')} settings={settings} />
       )}
@@ -671,10 +718,32 @@ export default function ColaboradoresPage() {
                               : <div className="w-full h-full flex items-center justify-center text-violet-600 text-xs font-bold">{(formData.linked_user_name || '?')[0]}</div>
                             }
                           </div>
-                          <div>
+                          <div className="flex-1 min-w-0">
                             <div className="text-sm font-medium text-slate-800 dark:text-white">{formData.linked_user_name}</div>
                             <div className="text-xs text-slate-500">{formData.linked_user_email}</div>
                           </div>
+                          <button
+                            type="button"
+                            title="Desvincular usuário"
+                            onClick={async () => {
+                              if (!editingItem?.id) return;
+                              if (!confirm('Desvincular este usuário do colaborador?')) return;
+                              try {
+                                const res = await fetch(`/api/collaborators/${editingItem.id}`, {
+                                  method: 'PUT',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ ...formData, linked_user_id: null, linked_picture: null, linked_user_name: null, linked_user_email: null })
+                                });
+                                if (res.ok) {
+                                  setFormData({ ...formData, linked_user_id: null, linked_picture: null, linked_user_name: null, linked_user_email: null });
+                                  await loadCollaborators();
+                                }
+                              } catch (e) { console.error(e); }
+                            }}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-all"
+                          >
+                            <X size={14} />
+                          </button>
                         </div>
                       ) : (
                         <div className="text-sm text-slate-400">Nenhum usuário vinculado</div>

@@ -640,6 +640,7 @@ const Atividades: React.FC = () => {
   const [showKanbanDropdown, setShowKanbanDropdown] = useState(false);
   const typeDropdownRef = useRef<HTMLDivElement>(null);
   const kanbanDropdownRef = useRef<HTMLDivElement>(null);
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
 
   const allTypes = ['all', ...Object.keys(TYPE_CONFIG)];
 
@@ -716,6 +717,16 @@ const Atividades: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-light-bg dark:bg-dark-bg transition-colors duration-300">
+      <style>{`
+        @keyframes rowFadeIn {
+          from { opacity: 0; transform: translateY(-10px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes sectionExpand {
+          from { opacity: 0; max-height: 0; }
+          to   { opacity: 1; max-height: 2000px; }
+        }
+      `}</style>
 
       {/* ── Top Bar ── */}
       <div className="sticky top-0 z-30 bg-white/80 dark:bg-dark-bg/95 border-b border-slate-200/70 dark:border-white/[0.06] backdrop-blur-sm">
@@ -902,33 +913,60 @@ const Atividades: React.FC = () => {
           <CalendarView activities={activities} onToggle={handleToggle} />
         ) : (
           <div className="space-y-7">
-            {grouped.map(group => (
-              <div key={group.key}>
-                {/* Group header */}
-                <div className="flex items-center gap-3 mb-3">
-                  <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
-                    {group.label}
-                  </span>
-                  <div className="flex-1 h-px bg-slate-100 dark:bg-white/[0.06]" />
-                  <span className="text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400">
-                    {group.items.length}
-                  </span>
-                </div>
-
-                {/* Cards */}
-                <div className="space-y-2">
-                  {group.items.map(activity => (
-                    <ActivityCard
-                      key={activity.id}
-                      activity={activity}
-                      onToggle={handleToggle}
-                      onDelete={handleDelete}
-                      onEdit={handleEdit}
+            {grouped.map(group => {
+              const isCollapsed = collapsedSections[group.key] || false;
+              return (
+                <div key={group.key}>
+                  {/* Group header — clickable to toggle */}
+                  <button
+                    onClick={() => setCollapsedSections(prev => ({ ...prev, [group.key]: !prev[group.key] }))}
+                    className="flex items-center gap-3 mb-3 w-full group/header"
+                  >
+                    <ChevronDown
+                      size={14}
+                      className={`text-slate-400 dark:text-slate-500 transition-transform duration-300 ${
+                        isCollapsed ? '-rotate-90' : 'rotate-0'
+                      }`}
                     />
-                  ))}
+                    <span className={`text-xs font-bold uppercase tracking-widest transition-colors ${
+                      group.key === 'overdue'
+                        ? 'text-rose-400'
+                        : 'text-slate-400 dark:text-slate-500 group-hover/header:text-violet-400'
+                    }`}>
+                      {group.label}
+                    </span>
+                    <div className="flex-1 h-px bg-slate-100 dark:bg-white/[0.06]" />
+                    <span className="text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400">
+                      {group.items.length}
+                    </span>
+                  </button>
+
+                  {/* Cards — collapsible with animation */}
+                  <div
+                    className={`overflow-hidden transition-all duration-300 ease-in-out ${
+                      isCollapsed ? 'max-h-0 opacity-0' : 'opacity-100'
+                    }`}
+                    style={!isCollapsed ? { maxHeight: `${group.items.length * 120 + 100}px` } : undefined}
+                  >
+                    <div className="space-y-2">
+                      {group.items.map((activity, idx) => (
+                        <div
+                          key={activity.id}
+                          style={{ animation: 'rowFadeIn 0.3s ease both', animationDelay: `${idx * 0.04}s` }}
+                        >
+                          <ActivityCard
+                            activity={activity}
+                            onToggle={handleToggle}
+                            onDelete={handleDelete}
+                            onEdit={handleEdit}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
