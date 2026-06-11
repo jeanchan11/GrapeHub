@@ -1067,19 +1067,13 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                                 </span>
                               )}
                               {item.status === 'ENVIADO' && (() => {
-                                const confirmed = !!item.n8n_ticket_id;
                                 return (
                                   <span
                                     onMouseEnter={e => showTooltip(e, item, 'sent')}
                                     onMouseLeave={hideTooltip}
-                                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold cursor-default transition-all ${
-                                      confirmed
-                                        ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
-                                        : 'bg-white/5 text-slate-400 border border-white/10'
-                                    }`}
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold cursor-default transition-all bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
                                   >
-                                    {confirmed ? <CheckCircle2 size={11} /> : <Clock size={10} />}
-                                    {confirmed ? 'Enviado' : 'Aguardando n8n'}
+                                    <CheckCircle2 size={11} /> Enviado
                                   </span>
                                 );
                               })()}
