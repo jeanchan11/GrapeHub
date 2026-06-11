@@ -243,6 +243,7 @@ async function startServer() {
   // ITEM 2 — CORS com origem explícita
   const allowedOrigins = [
     'https://hub.grapemidia.com.br',
+    'https://n8n.srv942411.hstgr.cloud',
     'http://localhost:5173',
     'http://localhost:3000',
   ];

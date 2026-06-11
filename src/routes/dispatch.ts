@@ -604,13 +604,20 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
 
   // POST callback n8n — confirmação de envio bem-sucedido
   app.post('/api/finance/dispatch/callback', async (req, res) => {
+    console.log(`[dispatch-callback] Body recebido:`, JSON.stringify(req.body));
+    console.log(`[dispatch-callback] Query recebida:`, JSON.stringify(req.query));
+
     // Aceita dispatch_id tanto no body quanto na query string (flexibilidade n8n)
     const dispatch_id = req.body?.dispatch_id || req.query?.dispatch_id;
     const { ticket_id, contato_id, contato_novo, ticket_novo } = req.body || {};
 
-    // Normaliza success: aceita boolean true, string "true", número 1
+    // ── FIX: Se n8n chama o callback, assume sucesso por padrão ──
+    // O callback só é chamado pelo branch de sucesso do n8n,
+    // então se "success" não foi enviado explicitamente, default = true.
+    // Só marca como erro se success for EXPLICITAMENTE false/0/"false"/"0".
     const raw = req.body?.success ?? req.query?.success;
-    const success = raw === true || raw === 'true' || raw === 1 || raw === '1';
+    const isExplicitError = raw === false || raw === 'false' || raw === 0 || raw === '0';
+    const success = !isExplicitError;
 
     if (!dispatch_id) return res.status(400).json({ error: 'dispatch_id required (body or query)' });
 
@@ -620,7 +627,11 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
       return res.json({ ok: true, dispatch_id, success, _test: true });
     }
 
-    console.log(`[dispatch-callback] id=${dispatch_id} success=${success} ticket=${ticket_id || '-'}`);
+    // ── FIX: Se não veio ticket_id, usa um marcador padrão ──
+    // O frontend depende de n8n_ticket_id ser truthy para mostrar "Enviado".
+    const resolvedTicketId = ticket_id || 'CALLBACK_OK';
+
+    console.log(`[dispatch-callback] id=${dispatch_id} success=${success} ticket=${resolvedTicketId}`);
 
     try {
       if (success) {
@@ -634,7 +645,7 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
               n8n_ticket_novo = $5,
               updated_at = NOW()
           WHERE id = $1
-        `, [dispatch_id, ticket_id || null, contato_id || null, contato_novo ?? null, ticket_novo ?? null]);
+        `, [dispatch_id, resolvedTicketId, contato_id || null, contato_novo ?? null, ticket_novo ?? null]);
       } else {
         const errMsg = req.body?.error_message || req.body?.message || 'Falha reportada pelo n8n';
         await pool.query(`
