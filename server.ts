@@ -190,6 +190,7 @@ async function verifyFirebaseToken(token: string): Promise<any> {
 // Routes that must remain public (webhooks, health, public forms)
 const PUBLIC_ROUTES: Array<{ method?: string; pattern: RegExp }> = [
   { pattern: /^\/api\/health$/ },
+  { pattern: /^\/api\/firebase-config$/ },
   { pattern: /^\/api\/nps\/submit$/, method: 'POST' },
   { pattern: /^\/api\/crm-comercial\/webhook$/, method: 'POST' },
   { pattern: /^\/api\/public\// },
@@ -2280,6 +2281,19 @@ async function startServer() {
     } catch (err) {
       res.status(500).json({ status: "error", env: process.env.NODE_ENV, db: "disconnected", error: String(err) });
     }
+  });
+
+  // Public Firebase config endpoint — fallback for when LiteSpeed serves HTML
+  // without Express injection. Firebase config is public info (exposed in all web apps).
+  app.get("/api/firebase-config", (req, res) => {
+    res.json({
+      apiKey: process.env.VITE_FIREBASE_API_KEY || process.env.FIREBASE_API_KEY || '',
+      authDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN || process.env.FIREBASE_AUTH_DOMAIN || '',
+      projectId: process.env.VITE_FIREBASE_PROJECT_ID || process.env.FIREBASE_PROJECT_ID || '',
+      appId: process.env.VITE_FIREBASE_APP_ID || process.env.FIREBASE_APP_ID || '',
+      storageBucket: (process.env.VITE_FIREBASE_STORAGE_BUCKET || process.env.FIREBASE_STORAGE_BUCKET || '').replace(/^gs:\/\//, ''),
+      firestoreDatabaseId: process.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID || process.env.FIREBASE_FIRESTORE_DATABASE_ID || '(default)',
+    });
   });
 
   // API Routes
@@ -13930,44 +13944,76 @@ function setupStaticServing(app: any) {
   } else {
     console.error(`[STATIC] ERROR: index.html NOT found in ${distPath}`);
   }
-  
-  app.use(express.static(distPath));
-  app.get("*all", (req, res) => {
-    const indexPath = path.join(distPath, "index.html");
-    if (fs.existsSync(indexPath)) {
-      // Read index.html and inject environment variables for the frontend
-      let html = fs.readFileSync(indexPath, 'utf8');
-      
-      const config = {
-        FIREBASE_API_KEY: process.env.VITE_FIREBASE_API_KEY || process.env.FIREBASE_API_KEY,
-        FIREBASE_AUTH_DOMAIN: process.env.VITE_FIREBASE_AUTH_DOMAIN || process.env.FIREBASE_AUTH_DOMAIN,
-        FIREBASE_PROJECT_ID: process.env.VITE_FIREBASE_PROJECT_ID || process.env.FIREBASE_PROJECT_ID,
-        FIREBASE_APP_ID: process.env.VITE_FIREBASE_APP_ID || process.env.FIREBASE_APP_ID,
-        FIREBASE_FIRESTORE_DATABASE_ID: process.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID || process.env.FIREBASE_FIRESTORE_DATABASE_ID || '(default)'
-      };
 
-      console.log("[CONFIG] Firebase Variables Check:", {
-        apiKey: config.FIREBASE_API_KEY ? "FOUND" : "MISSING",
-        authDomain: config.FIREBASE_AUTH_DOMAIN ? "FOUND" : "MISSING",
-        projectId: config.FIREBASE_PROJECT_ID ? "FOUND" : "MISSING",
-        appId: config.FIREBASE_APP_ID ? "FOUND" : "MISSING"
-      });
+  // Pre-read and cache the injected HTML once at startup
+  // (avoids re-reading from disk on every request)
+  const indexPath = path.join(distPath, "index.html");
+  let cachedInjectedHtml: string | null = null;
 
-      const injection = `
-        <script>
-          window.FIREBASE_CONFIG = ${JSON.stringify(config)};
-          // Compatibility fallbacks
-          window.FIREBASE_API_KEY = "${config.FIREBASE_API_KEY || ''}";
-          window.FIREBASE_AUTH_DOMAIN = "${config.FIREBASE_AUTH_DOMAIN || ''}";
-          window.FIREBASE_PROJECT_ID = "${config.FIREBASE_PROJECT_ID || ''}";
-          window.FIREBASE_APP_ID = "${config.FIREBASE_APP_ID || ''}";
-        </script>
-      `;
+  function getInjectedHtml(): string | null {
+    if (cachedInjectedHtml) return cachedInjectedHtml;
+    if (!fs.existsSync(indexPath)) return null;
 
-      // Insert before </head>
-      html = html.replace('</head>', `${injection}</head>`);
-      
-      res.send(html);
+    let html = fs.readFileSync(indexPath, 'utf8');
+
+    const config = {
+      FIREBASE_API_KEY: process.env.VITE_FIREBASE_API_KEY || process.env.FIREBASE_API_KEY,
+      FIREBASE_AUTH_DOMAIN: process.env.VITE_FIREBASE_AUTH_DOMAIN || process.env.FIREBASE_AUTH_DOMAIN,
+      FIREBASE_PROJECT_ID: process.env.VITE_FIREBASE_PROJECT_ID || process.env.FIREBASE_PROJECT_ID,
+      FIREBASE_APP_ID: process.env.VITE_FIREBASE_APP_ID || process.env.FIREBASE_APP_ID,
+      FIREBASE_STORAGE_BUCKET: process.env.VITE_FIREBASE_STORAGE_BUCKET || process.env.FIREBASE_STORAGE_BUCKET,
+      FIREBASE_FIRESTORE_DATABASE_ID: process.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID || process.env.FIREBASE_FIRESTORE_DATABASE_ID || '(default)'
+    };
+
+    console.log("[CONFIG] Firebase Variables Check:", {
+      apiKey: config.FIREBASE_API_KEY ? "FOUND" : "MISSING",
+      authDomain: config.FIREBASE_AUTH_DOMAIN ? "FOUND" : "MISSING",
+      projectId: config.FIREBASE_PROJECT_ID ? "FOUND" : "MISSING",
+      appId: config.FIREBASE_APP_ID ? "FOUND" : "MISSING",
+      storageBucket: config.FIREBASE_STORAGE_BUCKET ? "FOUND" : "MISSING"
+    });
+
+    const storageBucketClean = (config.FIREBASE_STORAGE_BUCKET || '').replace(/^gs:\/\//, '');
+
+    const injection = `
+      <script>
+        // [INJECTED BY setupStaticServing]
+        window.FIREBASE_CONFIG = ${JSON.stringify(config)};
+        window.FIREBASE_API_KEY = "${config.FIREBASE_API_KEY || ''}";
+        window.FIREBASE_AUTH_DOMAIN = "${config.FIREBASE_AUTH_DOMAIN || ''}";
+        window.FIREBASE_PROJECT_ID = "${config.FIREBASE_PROJECT_ID || ''}";
+        window.FIREBASE_APP_ID = "${config.FIREBASE_APP_ID || ''}";
+        window.FIREBASE_STORAGE_BUCKET = "${storageBucketClean}";
+        window.FIREBASE_FIRESTORE_DATABASE_ID = "${config.FIREBASE_FIRESTORE_DATABASE_ID || '(default)'}";
+      </script>
+    `;
+
+    // Insert before </head>
+    html = html.replace('</head>', `${injection}</head>`);
+    cachedInjectedHtml = html;
+    return html;
+  }
+
+  // IMPORTANT: Serve index.html with Firebase config injection BEFORE express.static
+  // express.static would serve the raw index.html (without injection) if it matches first
+  app.get("/", (req: any, res: any) => {
+    const html = getInjectedHtml();
+    if (html) {
+      res.set('Content-Type', 'text/html').send(html);
+    } else {
+      res.status(404).send(`Frontend build not found. Searched in: ${distPath}`);
+    }
+  });
+
+  // Serve static assets (JS, CSS, images, fonts) — but index.html won't match
+  // because the explicit "/" handler above takes priority
+  app.use(express.static(distPath, { index: false }));
+
+  // SPA fallback: any other non-API route gets the injected index.html
+  app.get("*all", (req: any, res: any) => {
+    const html = getInjectedHtml();
+    if (html) {
+      res.set('Content-Type', 'text/html').send(html);
     } else {
       res.status(404).send(`Frontend build not found. Searched in: ${distPath}. Please check your deployment.`);
     }
