@@ -223,6 +223,7 @@ interface Lead {
   responsavel_name: string | null;
   tags: Array<string | { name: string; color?: string }>;
   created_at: string;
+  etapa_updated_at: string | null;
   kanban_name: string | null;
   is_lost: boolean;
   observacoes: string | null;
@@ -668,11 +669,15 @@ export default function CrmLeads() {
       (statusFilter === 'ganhos' && st === 'ganho') ||
       (statusFilter === 'perdidos' && st === 'perdido');
 
-    // Date filter
+    // Date filter — use etapa_updated_at for ganhos/perdidos, created_at for others
     let matchesDate = true;
-    if (dateRange.start && dateRange.end && l.created_at) {
-      const created = l.created_at.slice(0, 10);
-      matchesDate = created >= dateRange.start && created <= dateRange.end;
+    if (dateRange.start && dateRange.end) {
+      const useStatusDate = (statusFilter === 'ganhos' || statusFilter === 'perdidos') && l.etapa_updated_at;
+      const dateRef = useStatusDate ? l.etapa_updated_at! : l.created_at;
+      if (dateRef) {
+        const dateSlice = dateRef.slice(0, 10);
+        matchesDate = dateSlice >= dateRange.start && dateSlice <= dateRange.end;
+      }
     }
 
     return matchesSearch && matchesKanban && matchesStatus && matchesDate;
@@ -682,7 +687,7 @@ export default function CrmLeads() {
   const handleExportCSV = () => {
     const headers = [
       'Nome', 'Telefone', 'Email', 'Origem', 'Valor', 'Etapa', 'Status',
-      'Responsável', 'Tags', 'Kanban', 'Criado em',
+      'Responsável', 'Tags', 'Kanban', 'Criado em', 'Mudou status',
     ];
     const rows = filteredLeads.map((l) => [
       `"${l.nome || ''}"`,
@@ -696,6 +701,7 @@ export default function CrmLeads() {
       `"${(l.tags || []).map(t => typeof t === 'string' ? t : t.name).join(', ')}"`,
       `"${l.kanban_name || ''}"`,
       `"${l.created_at || ''}"`,
+      `"${l.etapa_updated_at || ''}"`,
     ]);
 
     const csvContent =
@@ -812,12 +818,13 @@ export default function CrmLeads() {
                   <th className="px-4 py-4 font-semibold text-slate-600 dark:text-slate-400">Responsável</th>
                   <th className="px-4 py-4 font-semibold text-slate-600 dark:text-slate-400">Tags</th>
                   <th className="px-4 py-4 font-semibold text-slate-600 dark:text-slate-400">Criado em</th>
+                  <th className="px-4 py-4 font-semibold text-slate-600 dark:text-slate-400">Mudou status</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredLeads.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="text-center py-20 text-slate-400">
+                    <td colSpan={11} className="text-center py-20 text-slate-400">
                       <div className="flex flex-col items-center gap-3">
                         <Users size={32} className="opacity-20" />
                         <p>Nenhum lead encontrado.</p>
@@ -940,6 +947,17 @@ export default function CrmLeads() {
                         {/* Criado em */}
                         <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs">
                           {l.created_at ? timeAgo(l.created_at) : '-'}
+                        </td>
+
+                        {/* Mudou status */}
+                        <td className="px-4 py-3 text-xs">
+                          {l.etapa_updated_at ? (
+                            <span className="text-slate-500 dark:text-slate-400">
+                              {timeAgo(l.etapa_updated_at)}
+                            </span>
+                          ) : (
+                            <span className="text-slate-500">-</span>
+                          )}
                         </td>
                       </tr>
                     );

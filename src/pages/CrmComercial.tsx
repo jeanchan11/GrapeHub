@@ -3528,8 +3528,8 @@ const GerenciarKanbansModal = ({ isOpen, onClose, kanbans, columns, leads, onRen
 // ============================================================
 // MINI HEADER META WIDGET — dropdown com todas as metas
 // ============================================================
-const MINI_SIZE = 36;
-const MINI_STROKE = 4;
+const MINI_SIZE = 42;
+const MINI_STROKE = 4.5;
 const MINI_RADIUS = (MINI_SIZE - MINI_STROKE) / 2;
 const MINI_CIRC = 2 * Math.PI * MINI_RADIUS;
 
@@ -3551,10 +3551,13 @@ interface HeaderMetaItem {
 }
 
 const formatMetaValue = (tipo: string, metrica: string, value: number) => {
-  if (tipo === 'receita' || metrica === 'valor') {
-    return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 0 });
+  if (tipo === 'taxa_conversao') {
+    return `${Number(value || 0).toFixed(1)}%`;
   }
-  return String(Math.round(value));
+  if (tipo === 'receita' || metrica === 'valor') {
+    return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 0 });
+  }
+  return String(Math.round(Number(value || 0)));
 };
 
 // Mini circle — static (no animation, used inside dropdown items)
@@ -3609,7 +3612,7 @@ const MiniCircleAnimated: React.FC<{ pct: number; color: string }> = ({ pct, col
         <motion.circle cx={MINI_SIZE / 2} cy={MINI_SIZE / 2} r={MINI_RADIUS} fill="none" stroke={color} strokeWidth={MINI_STROKE} strokeLinecap="round" strokeDasharray={MINI_CIRC} style={{ strokeDashoffset: dashOffset }} />
       </svg>
       <motion.div className="absolute inset-0 flex items-center justify-center" style={{ filter: blurFilter, opacity: textOpacity }}>
-        <span className="text-[9px] font-black text-slate-900 dark:text-white tabular-nums">{displayPct}%</span>
+        <span className="text-[10px] font-black text-slate-900 dark:text-white tabular-nums">{displayPct}%</span>
       </motion.div>
     </div>
   );
@@ -3617,78 +3620,153 @@ const MiniCircleAnimated: React.FC<{ pct: number; color: string }> = ({ pct, col
 
 const HeaderMetaWidget: React.FC<{
   metas: HeaderMetaItem[];
-  selectedId: string | null;
-  onSelect: (id: string) => void;
+  slots: (string | null)[];
+  onSlotChange: (slotIndex: number, metaId: string) => void;
   onOpenMetas: () => void;
-}> = ({ metas, selectedId, onSelect, onOpenMetas }) => {
-  const selected = metas.find(m => m.id === selectedId) || metas[0];
-  if (!selected) return null;
-  const color = getMetaColor(selected.percentual);
+}> = ({ metas, slots, onSlotChange, onOpenMetas }) => {
+  if (metas.length === 0) return null;
+
+  // Build the 3 slot entries — resolve each slot to a meta (or null)
+  const slotCount = Math.min(3, Math.max(metas.length, 1));
 
   return (
-    <DropdownMenu.Root>
-      <DropdownMenu.Trigger asChild>
-        <button
-          className="flex items-center gap-3 px-3 py-1.5 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-dark-card hover:border-violet-500/30 hover:bg-violet-500/5 transition-all cursor-pointer"
-          title="Meta selecionada — Clique para trocar"
-        >
-          <MiniCircleAnimated pct={selected.percentual} color={color} />
-          <div className="flex flex-col items-start">
-            <span className="text-xs font-black text-slate-900 dark:text-white leading-tight">
-              {formatMetaValue(selected.tipo, selected.metrica, selected.valor_atual)}
-            </span>
-            <span className="text-[10px] text-slate-400 leading-tight">
-              de {formatMetaValue(selected.tipo, selected.metrica, selected.alvo)}
-            </span>
-          </div>
-          <ChevronDown size={14} className="text-slate-400 ml-1" />
-        </button>
-      </DropdownMenu.Trigger>
+    <div className="flex items-center gap-2">
+      {Array.from({ length: slotCount }).map((_, idx) => {
+        const assignedId = slots[idx];
+        const meta = metas.find(m => m.id === assignedId) || null;
 
-        <DropdownMenu.Content
-          className="bg-white dark:bg-[#1A1625] border border-gray-200 dark:border-white/10 rounded-xl p-2 min-w-[260px] shadow-2xl z-[200]"
-          align="start"
-          sideOffset={6}
-          style={{ opacity: 1, animation: 'none' }}
-        >
-          <div className="px-2 py-1.5 mb-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Selecione uma meta</span>
-          </div>
-          {metas.map(meta => {
-            const isActive = meta.id === selected.id;
-            const mColor = getMetaColor(meta.percentual);
-            return (
-              <DropdownMenu.Item
-                key={meta.id}
-                onClick={() => onSelect(meta.id)}
-                className={`flex items-center gap-3 p-2.5 rounded-lg cursor-pointer outline-none transition-colors ${
-                  isActive
-                    ? 'bg-violet-500/10 dark:bg-violet-500/15'
-                    : 'hover:bg-gray-50 dark:hover:bg-white/5'
-                }`}
+        if (!meta) {
+          // Empty slot — show placeholder with dropdown to pick
+          return (
+            <DropdownMenu.Root key={`slot-${idx}`}>
+              <DropdownMenu.Trigger asChild>
+                <button
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-xl border border-dashed border-gray-300 dark:border-white/15 bg-white dark:bg-dark-card hover:border-violet-500/30 hover:bg-violet-500/5 transition-all cursor-pointer min-h-[52px] min-w-[120px] justify-center"
+                  title="Clique para atribuir uma meta"
+                >
+                  <Target size={16} className="text-slate-400" />
+                  <span className="text-[11px] text-slate-400 font-medium">Selecionar meta</span>
+                  <ChevronDown size={12} className="text-slate-400" />
+                </button>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Content
+                className="bg-white dark:bg-[#1A1625] border border-gray-200 dark:border-white/10 rounded-xl p-2 min-w-[240px] shadow-2xl z-[200]"
+                align="start"
+                sideOffset={6}
+                style={{ opacity: 1, animation: 'none' }}
               >
-                <MiniCircleStatic pct={meta.percentual} color={mColor} />
-                <div className="flex-1 min-w-0">
-                  <p className={`text-xs font-bold truncate ${isActive ? 'text-violet-600 dark:text-violet-400' : 'text-slate-800 dark:text-white'}`}>{meta.nome}</p>
-                  <p className="text-[10px] text-slate-400 truncate">
-                    {formatMetaValue(meta.tipo, meta.metrica, meta.valor_atual)} de {formatMetaValue(meta.tipo, meta.metrica, meta.alvo)}
-                  </p>
+                <div className="px-2 py-1.5 mb-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Selecione uma meta</span>
                 </div>
-                {isActive && <Check size={14} className="text-violet-500 shrink-0" />}
-              </DropdownMenu.Item>
-            );
-          })}
-          <DropdownMenu.Separator className="h-px bg-gray-200 dark:bg-white/10 my-1.5" />
-          <DropdownMenu.Item
-            onClick={onOpenMetas}
-            className="flex items-center gap-2 p-2.5 rounded-lg cursor-pointer outline-none hover:bg-gray-50 dark:hover:bg-white/5 text-violet-600 dark:text-violet-400 font-bold text-xs"
-          >
-            <Target size={14} />
-            Ver todas as metas
-          </DropdownMenu.Item>
-        </DropdownMenu.Content>
+                {metas.map(m => {
+                  const mColor = getMetaColor(m.percentual);
+                  return (
+                    <DropdownMenu.Item
+                      key={m.id}
+                      onClick={() => onSlotChange(idx, m.id)}
+                      className="flex items-center gap-3 p-2.5 rounded-lg cursor-pointer outline-none transition-colors hover:bg-gray-50 dark:hover:bg-white/5"
+                    >
+                      <MiniCircleStatic pct={m.percentual} color={mColor} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold truncate text-slate-800 dark:text-white">{m.nome}</p>
+                        <p className="text-[10px] text-slate-400 truncate">
+                          {formatMetaValue(m.tipo, m.metrica, m.valor_atual)} de {formatMetaValue(m.tipo, m.metrica, m.alvo)}
+                        </p>
+                      </div>
+                    </DropdownMenu.Item>
+                  );
+                })}
+              </DropdownMenu.Content>
+            </DropdownMenu.Root>
+          );
+        }
 
-    </DropdownMenu.Root>
+        const color = getMetaColor(meta.percentual);
+        return (
+          <DropdownMenu.Root key={`slot-${idx}`}>
+            <DropdownMenu.Trigger asChild>
+              <button
+                className="flex items-center gap-3 px-3 py-2 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-dark-card hover:border-violet-500/30 hover:bg-violet-500/5 transition-all cursor-pointer min-h-[52px]"
+                title={`${meta.nome} — Clique para trocar`}
+              >
+                {meta.tipo === 'taxa_conversao' ? (
+                  (() => {
+                    const rateColor = Number(meta.valor_atual || 0) >= meta.alvo ? '#10b981' : '#f59e0b';
+                    return (
+                      <div className="flex flex-col items-start">
+                        <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 leading-tight whitespace-nowrap uppercase tracking-wider">
+                          {meta.nome}
+                        </span>
+                        <span className="text-[13px] font-black leading-tight whitespace-nowrap mt-0.5 tabular-nums" style={{ color: rateColor }}>
+                          {formatMetaValue(meta.tipo, meta.metrica, meta.valor_atual)}
+                          <span className="text-[10px] font-medium text-slate-400 ml-1">/ {formatMetaValue(meta.tipo, meta.metrica, meta.alvo)}</span>
+                        </span>
+                      </div>
+                    );
+                  })()
+                ) : (
+                  <>
+                    <MiniCircleAnimated pct={meta.percentual} color={color} />
+                    <div className="flex flex-col items-start">
+                      <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 leading-tight whitespace-nowrap uppercase tracking-wider">
+                        {meta.nome}
+                      </span>
+                      <span className="text-[13px] font-black text-slate-900 dark:text-white leading-tight whitespace-nowrap mt-0.5">
+                        {formatMetaValue(meta.tipo, meta.metrica, meta.valor_atual)}
+                        <span className="text-[10px] font-medium text-slate-400 ml-1">/ {formatMetaValue(meta.tipo, meta.metrica, meta.alvo)}</span>
+                      </span>
+                    </div>
+                  </>
+                )}
+                <ChevronDown size={12} className="text-slate-400 ml-0.5" />
+              </button>
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Content
+              className="bg-white dark:bg-[#1A1625] border border-gray-200 dark:border-white/10 rounded-xl p-2 min-w-[240px] shadow-2xl z-[200]"
+              align="start"
+              sideOffset={6}
+              style={{ opacity: 1, animation: 'none' }}
+            >
+              <div className="px-2 py-1.5 mb-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Trocar meta deste slot</span>
+              </div>
+              {metas.map(m => {
+                const isActive = m.id === meta.id;
+                const mColor = getMetaColor(m.percentual);
+                return (
+                  <DropdownMenu.Item
+                    key={m.id}
+                    onClick={() => onSlotChange(idx, m.id)}
+                    className={`flex items-center gap-3 p-2.5 rounded-lg cursor-pointer outline-none transition-colors ${
+                      isActive
+                        ? 'bg-violet-500/10 dark:bg-violet-500/15'
+                        : 'hover:bg-gray-50 dark:hover:bg-white/5'
+                    }`}
+                  >
+                    <MiniCircleStatic pct={m.percentual} color={mColor} />
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-xs font-bold truncate ${isActive ? 'text-violet-600 dark:text-violet-400' : 'text-slate-800 dark:text-white'}`}>{m.nome}</p>
+                      <p className="text-[10px] text-slate-400 truncate">
+                        {formatMetaValue(m.tipo, m.metrica, m.valor_atual)} de {formatMetaValue(m.tipo, m.metrica, m.alvo)}
+                      </p>
+                    </div>
+                    {isActive && <Check size={14} className="text-violet-500 shrink-0" />}
+                  </DropdownMenu.Item>
+                );
+              })}
+              <DropdownMenu.Separator className="h-px bg-gray-200 dark:bg-white/10 my-1.5" />
+              <DropdownMenu.Item
+                onClick={onOpenMetas}
+                className="flex items-center gap-2 p-2.5 rounded-lg cursor-pointer outline-none hover:bg-gray-50 dark:hover:bg-white/5 text-violet-600 dark:text-violet-400 font-bold text-xs"
+              >
+                <Target size={14} />
+                Ver todas as metas
+              </DropdownMenu.Item>
+            </DropdownMenu.Content>
+          </DropdownMenu.Root>
+        );
+      })}
+    </div>
   );
 };
 
@@ -3698,10 +3776,21 @@ const CrmComercial = () => {
   const [showAI, setShowAI] = useState(false);
   const [showMetasPopup, setShowMetasPopup] = useState(false);
   const [headerMetas, setHeaderMetas] = useState<HeaderMetaItem[]>([]);
-  const [selectedHeaderMetaId, setSelectedHeaderMetaId] = useState<string | null>(() => localStorage.getItem('selectedHeaderMetaId'));
-  const handleSelectHeaderMeta = (id: string) => {
-    setSelectedHeaderMetaId(id);
-    localStorage.setItem('selectedHeaderMetaId', id);
+  const [headerMetaSlots, setHeaderMetaSlots] = useState<(string | null)[]>(() => {
+    try {
+      const saved = localStorage.getItem('headerMetaSlots');
+      return saved ? JSON.parse(saved) : [null, null, null];
+    } catch { return [null, null, null]; }
+  });
+  const handleSlotChange = (slotIndex: number, metaId: string) => {
+    setHeaderMetaSlots(prev => {
+      const next = [...prev];
+      // Ensure array is at least 3 long
+      while (next.length < 3) next.push(null);
+      next[slotIndex] = metaId;
+      localStorage.setItem('headerMetaSlots', JSON.stringify(next));
+      return next;
+    });
   };
   const kanbanBoardRef = useRef<HTMLDivElement>(null);
   const [celebrationDetails, setCelebrationDetails] = useState<{ gif: string, value: number, name: string } | null>(null);
@@ -4055,9 +4144,21 @@ const CrmComercial = () => {
             percentual: m.percentual,
           }));
           setHeaderMetas(items);
-          // Se nenhuma meta selecionada, seleciona a primeira
+          // Auto-populate empty slots with the first available metas
           if (items.length > 0) {
-            setSelectedHeaderMetaId(prev => prev && items.find(i => i.id === prev) ? prev : items[0].id);
+            setHeaderMetaSlots(prev => {
+              const next = [...prev];
+              while (next.length < 3) next.push(null);
+              const allEmpty = next.every(s => s === null);
+              if (allEmpty) {
+                // First-time: fill slots with first N metas
+                for (let i = 0; i < Math.min(3, items.length); i++) {
+                  next[i] = items[i].id;
+                }
+                localStorage.setItem('headerMetaSlots', JSON.stringify(next));
+              }
+              return next;
+            });
           }
         })
         .catch(() => setHeaderMetas([]));
@@ -4977,8 +5078,8 @@ const CrmComercial = () => {
           {headerMetas.length > 0 && (
             <HeaderMetaWidget
               metas={headerMetas}
-              selectedId={selectedHeaderMetaId}
-              onSelect={handleSelectHeaderMeta}
+              slots={headerMetaSlots}
+              onSlotChange={handleSlotChange}
               onOpenMetas={() => setShowMetasPopup(true)}
             />
           )}

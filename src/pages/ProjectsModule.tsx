@@ -19,7 +19,7 @@ import {
   Gavel, Scale, HeartPulse, ShieldCheck, 
   Hammer, Landmark, Banknote, ShoppingCart, 
   Home, Stethoscope, Building2, Image as ImageIcon,
-  Folder, File, Eye, Download, Trash2, Upload, FileText, GripVertical, Copy, Loader2, Star, Lock, LockOpen, Bot, Edit2, ThumbsUp, SmilePlus
+  Folder, File, Eye, Download, Trash2, Upload, FileText, GripVertical, Copy, Loader2, Star, Lock, LockOpen, Bot, Edit2, ThumbsUp, SmilePlus, KeyRound
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
@@ -128,6 +128,21 @@ const formatDateShort = (dateStr?: string) => {
   const months = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
   const monthName = months[parseInt(month, 10) - 1];
   return `${monthName} ${parseInt(day, 10)}`;
+};
+
+// Fix timezone: date-only strings ("2026-06-11") are parsed as UTC by JS,
+// which shifts them back 1 day in negative-UTC timezones (e.g. Brazil UTC-3).
+// This helper ensures the date stays on the correct calendar day.
+const parseLocalDate = (dateStr: string): Date => {
+  if (!dateStr) return new Date();
+  // If it's a date-only string (YYYY-MM-DD, 10 chars), append noon to avoid timezone shift
+  if (dateStr.length === 10 && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    return new Date(dateStr + 'T12:00:00');
+  }
+  // For full ISO timestamps, also normalize to avoid day shift
+  // Extract just the date part if it's a full timestamp with time at midnight
+  const d = new Date(dateStr);
+  return d;
 };
 
 const DragHandle = () => {
@@ -428,7 +443,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
   const [pageModalProjectId, setPageModalProjectId] = useState<string | null>(null);
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const [activeProductTab, setActiveProductTab] = useState<'resultado' | 'kpis'>('resultado');
-  const [activeProjectTab, setActiveProjectTab] = useState<'resultado' | 'reunioes' | 'arquivos' | 'comentarios' | 'analise' | 'nps'>('resultado');
+  const [activeProjectTab, setActiveProjectTab] = useState<'resultado' | 'reunioes' | 'arquivos' | 'comentarios' | 'analise' | 'nps' | 'tokens'>('resultado');
   const [npsResponses, setNpsResponses] = useState<any[]>([]);
   const [isNpsLoading, setIsNpsLoading] = useState(false);
   const [timelineFilter, setTimelineFilter] = useState('Todos');
@@ -567,6 +582,13 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
   const [isMeetingModalOpen, setIsMeetingModalOpen] = useState(false);
   const [meetings, setMeetings] = useState<any[]>([]);
   const [meetingData, setMeetingData] = useState({ id: '', title: '', date: '', attendees: '', actions: '' });
+  const [projectTokens, setProjectTokens] = useState<{id: string; project_id: string; service_name: string; token_value?: string; notes?: string; created_at: string}[]>([]);
+  const [isTokenModalOpen, setIsTokenModalOpen] = useState(false);
+  const [editingToken, setEditingToken] = useState<any>(null);
+  const [isTokenEditing, setIsTokenEditing] = useState(false);
+  const [tokenForm, setTokenForm] = useState({ service_name: '', token_value: '', notes: '' });
+  const [isTokenSubmitting, setIsTokenSubmitting] = useState(false);
+  const [tokensLoading, setTokensLoading] = useState(false);
   const [tempGoals, setTempGoals] = useState({ cpa: '', leads: '', cac: '', fechamentos: '' });
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -603,7 +625,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       authorPhoto: userData?.picture || auth.currentUser?.photoURL || '',
       role: 'Reunião',
       message: `${m.title}\nParticipantes: ${m.attendees}\nAções: ${m.actions}`,
-      date: new Date(m.date).toLocaleDateString('pt-BR'),
+      date: parseLocalDate(m.date).toLocaleDateString('pt-BR'),
       time: new Date(m.created_at || m.date).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
       rawDate: m.date,
       createdAt: m.created_at || m.date,
@@ -638,6 +660,18 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       fetchMeetings();
     }
   }, [selectedProject]);
+
+  // Fetch project tokens
+  useEffect(() => {
+    if (selectedProject && activeProjectTab === 'tokens') {
+      setTokensLoading(true);
+      fetch(`/api/project-tokens?project_id=${encodeURIComponent(selectedProject.id)}`)
+        .then(r => r.ok ? r.json() : [])
+        .then(data => setProjectTokens(Array.isArray(data) ? data : []))
+        .catch(err => console.error('Failed to fetch tokens:', err))
+        .finally(() => setTokensLoading(false));
+    }
+  }, [selectedProject, activeProjectTab]);
 
   // Fetch project comments from DB when a project is opened
   useEffect(() => {
@@ -1233,6 +1267,72 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     } catch (err) {
       console.error('Error saving meeting:', err);
     }
+  };
+
+  // Token handlers
+  const openNewToken = () => {
+    setEditingToken(null);
+    setTokenForm({ service_name: '', token_value: '', notes: '' });
+    setIsTokenEditing(true);
+    setIsTokenModalOpen(true);
+  };
+
+  const openViewToken = (token: any) => {
+    setEditingToken(token);
+    setTokenForm({ service_name: token.service_name, token_value: token.token_value || '', notes: token.notes || '' });
+    setIsTokenEditing(false);
+    setIsTokenModalOpen(true);
+  };
+
+  const handleSaveToken = async () => {
+    if (!selectedProject || !tokenForm.service_name.trim()) return;
+    setIsTokenSubmitting(true);
+    try {
+      if (editingToken) {
+        const res = await fetch(`/api/project-tokens/${editingToken.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(tokenForm)
+        });
+        if (res.ok) {
+          const updated = await res.json();
+          setProjectTokens(prev => prev.map(t => t.id === editingToken.id ? updated : t));
+          setIsTokenModalOpen(false);
+        }
+      } else {
+        const res = await fetch('/api/project-tokens', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project_id: selectedProject.id, ...tokenForm })
+        });
+        if (res.ok) {
+          const created = await res.json();
+          setProjectTokens(prev => [created, ...prev]);
+          setIsTokenModalOpen(false);
+        }
+      }
+    } catch (err) {
+      console.error('Error saving token:', err);
+    } finally {
+      setIsTokenSubmitting(false);
+    }
+  };
+
+  const handleDeleteToken = async (id: string) => {
+    if (!confirm('Deseja realmente excluir este token?')) return;
+    try {
+      const res = await fetch(`/api/project-tokens/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setProjectTokens(prev => prev.filter(t => t.id !== id));
+        setIsTokenModalOpen(false);
+      }
+    } catch (err) {
+      console.error('Error deleting token:', err);
+    }
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
   };
 
   const handleSaveGoals = () => {
@@ -4052,7 +4152,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
         <div className="flex flex-col min-h-[750px]">
           {/* Tabs */}
           <div className="flex items-center gap-6 mb-6 border-b modal-divider shrink-0">
-            {(['resultado', 'reunioes', 'comentarios', 'analise', 'arquivos', 'nps'] as const).map((tab) => (
+            {(['resultado', 'reunioes', 'comentarios', 'analise', 'arquivos', 'nps', 'tokens'] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveProjectTab(tab as any)}
@@ -4062,7 +4162,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     : 'text-slate-500 hover:text-gray-900 dark:hover:text-white'
                 }`}
               >
-                {tab === 'resultado' ? 'Resultado do projeto' : tab === 'reunioes' ? 'Reuniões' : tab === 'arquivos' ? 'Arquivos do projeto' : tab === 'comentarios' ? 'Comentários' : tab === 'nps' ? 'NPS' : 'Análise de Leads'}
+                {tab === 'resultado' ? 'Resultado do projeto' : tab === 'reunioes' ? 'Reuniões' : tab === 'arquivos' ? 'Arquivos do projeto' : tab === 'comentarios' ? 'Comentários' : tab === 'nps' ? 'NPS' : tab === 'tokens' ? 'Tokens' : 'Análise de Leads'}
                 {activeProjectTab === tab && (
                   <motion.div
                     layoutId="project-tab-indicator"
@@ -4306,8 +4406,8 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                   <div className="flex items-start justify-between mb-4">
                                     <div className="flex items-center gap-3">
                                       <div className="w-12 h-12 flex flex-col items-center justify-center bg-violet-50 dark:bg-violet-900/20 rounded-xl border border-violet-100 dark:border-violet-800">
-                                        <span className="text-xs font-bold text-violet-600 dark:text-violet-400 uppercase">{new Date(opt.rawDate).toLocaleDateString('pt-BR', { month: 'short' })}</span>
-                                        <span className="text-lg font-bold text-violet-800 dark:text-violet-200">{new Date(opt.rawDate).getDate()}</span>
+                                        <span className="text-xs font-bold text-violet-600 dark:text-violet-400 uppercase">{parseLocalDate(opt.rawDate).toLocaleDateString('pt-BR', { month: 'short' })}</span>
+                                        <span className="text-lg font-bold text-violet-800 dark:text-violet-200">{parseLocalDate(opt.rawDate).getDate()}</span>
                                       </div>
                                       <div>
                                         <h4 className="text-sm font-bold text-slate-900 dark:text-white">{opt.title || opt.message?.split('\n')[0]}</h4>
@@ -4554,8 +4654,8 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                 <div className="flex items-start justify-between mb-4">
                                   <div className="flex items-center gap-3">
                                     <div className="w-12 h-12 flex flex-col items-center justify-center bg-violet-50 dark:bg-violet-900/20 rounded-xl border border-violet-100 dark:border-violet-800">
-                                      <span className="text-xs font-bold text-violet-600 dark:text-violet-400 uppercase">{new Date(opt.rawDate).toLocaleDateString('pt-BR', { month: 'short' })}</span>
-                                      <span className="text-lg font-bold text-violet-800 dark:text-violet-200">{new Date(opt.rawDate).getDate()}</span>
+                                      <span className="text-xs font-bold text-violet-600 dark:text-violet-400 uppercase">{parseLocalDate(opt.rawDate).toLocaleDateString('pt-BR', { month: 'short' })}</span>
+                                      <span className="text-lg font-bold text-violet-800 dark:text-violet-200">{parseLocalDate(opt.rawDate).getDate()}</span>
                                     </div>
                                     <div>
                                       <h4 className="text-sm font-bold text-slate-900 dark:text-white">{opt.title || opt.message?.split('\n')[0]}</h4>
@@ -4956,6 +5056,69 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                   </div>
                 )}
 
+                {activeProjectTab === 'tokens' && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Tokens de Acesso</h4>
+                    </div>
+
+                    {tokensLoading ? (
+                      <div className="flex justify-center py-12">
+                        <Loader2 className="animate-spin text-violet-500" size={32} />
+                      </div>
+                    ) : (
+                      <div className="bg-white dark:bg-[#11111b] border border-slate-200 dark:border-white/5 shadow-sm dark:shadow-none rounded-xl overflow-hidden">
+                        <div className="p-2 space-y-1">
+                          {projectTokens.map((token, idx) => (
+                            <motion.div
+                              key={token.id}
+                              initial={{ opacity: 0, y: -18, scale: 0.98 }}
+                              animate={{ opacity: 1, y: 0, scale: 1 }}
+                              transition={{
+                                duration: 0.35,
+                                delay: idx * 0.06,
+                                ease: [0.32, 0.72, 0, 1],
+                              }}
+                            >
+                              <div
+                                className="flex items-center gap-3 p-3 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 cursor-pointer transition-colors"
+                                onClick={() => openViewToken(token)}
+                              >
+                                <div className="w-8 h-8 rounded-full border border-violet-500/50 flex items-center justify-center bg-violet-500/10 text-violet-500">
+                                  <KeyRound size={16} />
+                                </div>
+                                <div className="flex-1">
+                                  <span className="text-sm font-medium text-slate-800 dark:text-gray-200">
+                                    {token.service_name}
+                                  </span>
+                                </div>
+                                <button className="text-xs text-slate-400 dark:text-gray-500 hover:text-violet-500 transition-colors">
+                                  Ver dados
+                                </button>
+                              </div>
+                            </motion.div>
+                          ))}
+
+                          {projectTokens.length === 0 && (
+                            <div className="p-8 text-center text-slate-500 text-sm">
+                              Nenhum token cadastrado ainda.
+                            </div>
+                          )}
+
+                          <div className="p-3 mt-2">
+                            <button
+                              onClick={openNewToken}
+                              className="text-sm text-slate-500 dark:text-gray-500 hover:text-violet-600 dark:hover:text-violet-400 flex items-center gap-2 font-medium transition-colors"
+                            >
+                              <Plus size={16} /> ADICIONAR TOKEN
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
 
                 {activeProjectTab === 'comentarios' && (() => {
                   const allComments = projectComments[selectedProject.id] || [];
@@ -5185,6 +5348,135 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       </Modal>
     </div>
 
+
+      {/* Token Detail Modal */}
+      <AnimatePresence>
+        {isTokenModalOpen && (
+          <div className="fixed inset-0 z-[1000] flex items-start justify-center p-4 overflow-y-auto pt-10 pb-10 scrollbar-hide">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsTokenModalOpen(false)}
+              className="fixed inset-0 modal-overlay"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-lg modal-container overflow-hidden my-auto transition-colors duration-300"
+            >
+              <div className="p-6 space-y-6">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xl font-bold text-light-text dark:text-white">
+                    {editingToken ? 'Dados do Token' : 'Novo Token'}
+                  </h2>
+                  <button onClick={() => setIsTokenModalOpen(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl text-slate-500 hover:text-light-text dark:hover:text-white transition-all">
+                    <X size={20} />
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Serviço / Plataforma</label>
+                    {isTokenEditing ? (
+                      <input
+                        type="text"
+                        value={tokenForm.service_name}
+                        onChange={(e) => setTokenForm(prev => ({ ...prev, service_name: e.target.value }))}
+                        placeholder="Ex: Google Ads, Meta Ads"
+                        className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-light-text dark:text-white placeholder:text-slate-400 focus:border-violet-500 outline-none transition-all"
+                      />
+                    ) : (
+                      <div className="py-2 text-light-text dark:text-white font-medium">{tokenForm.service_name}</div>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Token de Acesso</label>
+                    {isTokenEditing ? (
+                      <div className="relative">
+                        <textarea
+                          value={tokenForm.token_value}
+                          onChange={(e) => setTokenForm(prev => ({ ...prev, token_value: e.target.value }))}
+                          placeholder="Cole o token aqui"
+                          className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 pr-10 text-light-text dark:text-white placeholder:text-slate-400 focus:border-violet-500 outline-none transition-all font-mono text-sm min-h-[80px] resize-y"
+                        />
+                        <button
+                          onClick={() => copyToClipboard(tokenForm.token_value)}
+                          className="absolute right-2 top-3 p-1.5 text-slate-400 hover:text-violet-500 rounded-md transition-colors"
+                          title="Copiar token"
+                        >
+                          <Copy size={14} />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-start justify-between py-2 group">
+                        <span className="text-light-text dark:text-white font-mono text-sm break-all mr-2">{tokenForm.token_value || <span className="text-slate-400 italic">Sem token cadastrado</span>}</span>
+                        {tokenForm.token_value && (
+                          <button
+                            onClick={() => copyToClipboard(tokenForm.token_value)}
+                            className="p-1.5 text-slate-400 hover:text-violet-500 rounded-md transition-colors opacity-100 md:opacity-0 group-hover:opacity-100 shrink-0"
+                            title="Copiar token"
+                          >
+                            <Copy size={14} />
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Observações</label>
+                    {isTokenEditing ? (
+                      <textarea
+                        value={tokenForm.notes}
+                        onChange={(e) => setTokenForm(prev => ({ ...prev, notes: e.target.value }))}
+                        placeholder="Notas adicionais sobre este token"
+                        className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-light-text dark:text-white placeholder:text-slate-400 focus:border-violet-500 outline-none transition-all min-h-[60px] resize-y"
+                      />
+                    ) : (
+                      <div className="py-2 text-light-text dark:text-white text-sm">{tokenForm.notes || <span className="text-slate-400 italic">Sem observações</span>}</div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-white/10">
+                  {isTokenEditing && editingToken ? (
+                    <button
+                      onClick={() => handleDeleteToken(editingToken.id)}
+                      className="text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+                    >
+                      <Trash2 size={16} /> Excluir
+                    </button>
+                  ) : (
+                    <div></div>
+                  )}
+
+                  {isTokenEditing ? (
+                    <button
+                      onClick={handleSaveToken}
+                      disabled={isTokenSubmitting || !tokenForm.service_name.trim()}
+                      className="bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white px-6 py-2 rounded-lg font-medium transition-colors flex items-center gap-2"
+                    >
+                      {isTokenSubmitting ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
+                      Concluir
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setIsTokenEditing(true)}
+                      className="bg-slate-100 hover:bg-slate-200 dark:bg-white/10 dark:hover:bg-white/20 text-slate-800 dark:text-white px-6 py-2 rounded-lg font-medium transition-colors flex items-center gap-2"
+                    >
+                      <Edit2 size={18} />
+                      Editar
+                    </button>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
     {/* Image Preview Modal */}
     <AnimatePresence>

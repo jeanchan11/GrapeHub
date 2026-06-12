@@ -150,6 +150,8 @@ const PUBLIC_ROUTES: Array<{ method?: string; pattern: RegExp }> = [
   { pattern: /^\/api\/crm\/webhooks\/trigger\/whatsapp\// },
   { pattern: /^\/api\/api4com\/webhook$/, method: 'POST' },
   { pattern: /^\/api\/hiring\/public\// },
+  { pattern: /^\/api\/hiring\/candidates\/\d+\/saboteurs$/ },
+  { pattern: /^\/api\/hiring\/candidates\/\d+\/disc$/ },
   { pattern: /^\/api\/onboarding\/submit$/, method: 'POST' },
   { pattern: /^\/api\/finance\/dispatch\/callback$/, method: 'POST' },
   { pattern: /^\/api\/briefings\/public\// },
@@ -1543,6 +1545,18 @@ async function startServer() {
     `);
     
     await pool.query(`ALTER TABLE passwords ADD COLUMN IF NOT EXISTS url TEXT;`).catch(e => console.error("Error migrating passwords columns", e));
+
+    // Project Tokens table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS project_tokens (
+        id SERIAL PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        service_name TEXT NOT NULL,
+        token_value TEXT,
+        notes TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
 
     // ── Hiring / Contratação tables ──────────────────────────────────────────
     await pool.query(`
@@ -7569,60 +7583,67 @@ app.get("/api/todos", async (req, res) => {
         dateParams
       );
 
-      // ── Reuniões (from reunioes table & history) ────
+      // ── Reuniões (same logic as CRM Métricas dashboard) ────
       let reunioesMarcadas = 0;
       let reunioesRealizadas = 0;
       let reunioesTotal = 0;
       
-      // 1. Reuniões Realizadas (Count unique leads with a filled meeting record)
+      // 1. Reuniões Marcadas — leads DISTINTOS que passaram pela coluna "Reunião Marcada"
+      // (mesma lógica do /api/crm-metricas-dashboard)
       try {
-        let reuniaoSQL = `
-          SELECT COUNT(DISTINCT lead_id)::int AS realizadas
-          FROM crm_comercial_meetings
-        `;
-        let reuniaoParams: any[] = [];
+        const marcadasResult = await pool.query(`
+          SELECT COUNT(DISTINCT sub.lead_id)::int AS marcadas
+          FROM (
+            SELECT h.lead_id
+            FROM crm_comercial_history h
+            JOIN crm_comercial_columns c ON h.to_coluna = c.id::text
+            WHERE (LOWER(c.title) LIKE '%reunião marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%')
+              ${startDate && endDate ? `AND h.created_at >= $1 AND h.created_at <= ($2::date + interval '1 day')` : ''}
+            UNION
+            SELECT l.id AS lead_id
+            FROM crm_comercial_leads l
+            JOIN crm_comercial_columns c ON l.coluna = c.id::text
+            WHERE (LOWER(c.title) LIKE '%reunião marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%')
+              ${startDate && endDate ? `AND l.created_at >= $1 AND l.created_at <= ($2::date + interval '1 day')` : ''}
+            UNION
+            SELECT h.lead_id
+            FROM crm_comercial_history h
+            JOIN crm_comercial_columns c ON h.from_coluna = c.id::text
+            WHERE (LOWER(c.title) LIKE '%reunião marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%')
+              ${startDate && endDate ? `AND h.created_at >= $1 AND h.created_at <= ($2::date + interval '1 day')` : ''}
+          ) sub
+        `, startDate && endDate ? [startDate, endDate] : []);
+        reunioesMarcadas = marcadasResult.rows[0]?.marcadas || 0;
+      } catch (e: any) {
+        console.error('[marketing-dashboard] marcadas error:', e.message);
+      }
 
-        if (startDate && endDate) {
-          reuniaoSQL += ` WHERE meeting_date >= $1 AND meeting_date <= $2`;
-          reuniaoParams = [startDate, endDate + ' 23:59:59'];
-        }
-
-        const reuniaoResult = await pool.query(reuniaoSQL, reuniaoParams);
-        reunioesRealizadas = reuniaoResult.rows[0]?.realizadas || 0;
+      // 2. Reuniões Realizadas — leads DISTINTOS com registro em crm_comercial_meetings
+      // (mesma lógica do /api/crm-metricas-dashboard)
+      try {
+        const realizadasResult = await pool.query(`
+          SELECT COUNT(DISTINCT m.lead_id)::int AS realizadas
+          FROM crm_comercial_meetings m
+          ${startDate && endDate ? `WHERE m.meeting_date >= $1 AND m.meeting_date <= ($2::date + interval '1 day')` : ''}
+        `, startDate && endDate ? [startDate, endDate] : []);
+        reunioesRealizadas = realizadasResult.rows[0]?.realizadas || 0;
         reunioesTotal = reunioesRealizadas;
       } catch (e: any) {
-        console.error('[marketing-dashboard] reunioes error:', e.message);
+        console.error('[marketing-dashboard] realizadas error:', e.message);
       }
 
-      // 2. Reuniões Marcadas (Count unique leads that passed through "Reunião Marcada" column)
+
+      // ── Vendas (fechamentos) para cálculo do CAC ────
+      let totalVendas = 0;
       try {
-        let historySQL = `
-          SELECT COUNT(DISTINCT lead_id)::int AS marcadas
-          FROM (
-            SELECT h.lead_id, h.created_at
-            FROM crm_comercial_history h
-            JOIN crm_comercial_columns c ON h.to_coluna = c.id
-            WHERE LOWER(c.title) LIKE '%reunião marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%'
-            
-            UNION
-            
-            SELECT l.id AS lead_id, l.created_at
-            FROM crm_comercial_leads l
-            JOIN crm_comercial_columns c ON l.coluna = c.id
-            WHERE LOWER(c.title) LIKE '%reunião marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%'
-          ) sub
-        `;
-        let historyParams: any[] = [];
-        if (startDate && endDate) {
-          historySQL += ` WHERE sub.created_at >= $1 AND sub.created_at <= $2`;
-          historyParams = [startDate, endDate + ' 23:59:59'];
-        }
-        const histResult = await pool.query(historySQL, historyParams);
-        reunioesMarcadas = histResult.rows[0]?.marcadas || 0;
+        const vendasResult = await pool.query(`
+          SELECT COUNT(*) AS vendas FROM fechamentos
+          ${startDate && endDate ? `WHERE day >= $1 AND day <= $2` : ''}
+        `, startDate && endDate ? [startDate, endDate] : []);
+        totalVendas = Number(vendasResult.rows[0]?.vendas) || 0;
       } catch (e: any) {
-        console.error('[marketing-dashboard] history marcadas error:', e.message);
+        console.error('[marketing-dashboard] vendas error:', e.message);
       }
-
 
       const fb = fbResult.rows[0];
       const form = formResult.rows[0];
@@ -7647,6 +7668,8 @@ app.get("/api/todos", async (req, res) => {
           total_clicks: fb.total_clicks || 0,
           total_impressions: fb.total_impressions || 0,
           total_campaigns: fb.total_campaigns || 0,
+          total_vendas: totalVendas,
+          cac: totalVendas > 0 ? totalSpend / totalVendas : 0,
         },
         daily_spend: fbDailyResult.rows,
         daily_leads: formDailyResult.rows,
@@ -7968,6 +7991,12 @@ app.get("/api/todos", async (req, res) => {
                  JOIN crm_comercial_columns c ON l.coluna = c.id::text
                  WHERE (LOWER(c.title) LIKE '%reunião marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%')
                    AND l.created_at >= $1 AND l.created_at <= ($2::date + interval '1 day')
+                 UNION
+                 SELECT h.lead_id
+                 FROM crm_comercial_history h
+                 JOIN crm_comercial_columns c ON h.from_coluna = c.id::text
+                 WHERE (LOWER(c.title) LIKE '%reunião marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%')
+                   AND h.created_at >= $1 AND h.created_at <= ($2::date + interval '1 day')
                ) sub`,
               [startStr, endStr]
             );
@@ -7989,6 +8018,37 @@ app.get("/api/todos", async (req, res) => {
               [startStr, endStr]
             );
             valorAtual = Number(q.rows[0]?.total || 0);
+
+          // ──────────────────────────────────────────────────────────────
+          // TAXA DE CONVERSÃO
+          // Calcula: Fechamentos / Reuniões Realizadas * 100
+          // O resultado é uma porcentagem (ex: 66.7%).
+          // "alvo" também é uma porcentagem (ex: meta de 50%).
+          // ──────────────────────────────────────────────────────────────
+          } else if (meta.tipo === 'taxa_conversao') {
+            const startStr = dataInicio.toISOString().slice(0, 10);
+            const endStr   = dataFim.toISOString().slice(0, 10);
+
+            // Reuniões realizadas no período
+            const qReun = await pool.query(
+              `SELECT COUNT(DISTINCT m.lead_id)::int AS total
+               FROM crm_comercial_meetings m
+               WHERE m.meeting_date >= $1 AND m.meeting_date <= ($2::date + interval '1 day')`,
+              [startStr, endStr]
+            );
+            const reunioes = Number(qReun.rows[0]?.total || 0);
+
+            // Fechamentos no período
+            const qFech = await pool.query(
+              `SELECT COUNT(*)::int AS total FROM fechamentos WHERE day >= $1 AND day <= $2`,
+              [startStr, endStr]
+            );
+            const fechamentos = Number(qFech.rows[0]?.total || 0);
+
+            // Taxa = (fechamentos / reuniões) * 100
+            valorAtual = reunioes > 0
+              ? Math.round((fechamentos / reunioes) * 1000) / 10  // 1 decimal
+              : 0;
           }
         } catch (err: any) {
           console.error(`[crm-metas] calc error for tipo=${meta.tipo}:`, err.message);
@@ -10650,6 +10710,12 @@ app.get("/api/todos", async (req, res) => {
           JOIN crm_comercial_columns c ON l.coluna = c.id::text
           WHERE (LOWER(c.title) LIKE '%reunião marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%')
             AND l.created_at >= $1 AND l.created_at <= ($2::date + interval '1 day')
+          UNION
+          SELECT h.lead_id
+          FROM crm_comercial_history h
+          JOIN crm_comercial_columns c ON h.from_coluna = c.id::text
+          WHERE (LOWER(c.title) LIKE '%reunião marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%')
+            AND h.created_at >= $1 AND h.created_at <= ($2::date + interval '1 day')
         ) sub
       `, [startDate, endDate]);
 
@@ -10833,6 +10899,12 @@ app.get("/api/todos", async (req, res) => {
           JOIN crm_comercial_columns c ON l.coluna = c.id::text
           WHERE (LOWER(c.title) LIKE '%reunião marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%')
             AND l.created_at >= $1 AND l.created_at <= ($2::date + interval '1 day')
+          UNION
+          SELECT h.lead_id
+          FROM crm_comercial_history h
+          JOIN crm_comercial_columns c ON h.from_coluna = c.id::text
+          WHERE (LOWER(c.title) LIKE '%reunião marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%')
+            AND h.created_at >= $1 AND h.created_at <= ($2::date + interval '1 day')
         ) sub
       `, [prevStart, prevEnd]);
 
@@ -13516,6 +13588,47 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
   app.delete('/api/passwords/:id', async (req, res) => {
     try {
       await pool.query(`DELETE FROM passwords WHERE id = $1`, [req.params.id]);
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Project Tokens endpoints
+  app.get('/api/project-tokens', async (req, res) => {
+    try {
+      const { project_id } = req.query;
+      const r = await pool.query(
+        `SELECT * FROM project_tokens WHERE project_id = $1 ORDER BY created_at DESC`,
+        [project_id]
+      );
+      res.json(r.rows);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.post('/api/project-tokens', async (req, res) => {
+    try {
+      const { project_id, service_name, token_value, notes } = req.body;
+      const r = await pool.query(
+        `INSERT INTO project_tokens (project_id, service_name, token_value, notes) VALUES ($1,$2,$3,$4) RETURNING *`,
+        [project_id, service_name, token_value, notes]
+      );
+      res.json(r.rows[0]);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.patch('/api/project-tokens/:id', async (req, res) => {
+    try {
+      const { service_name, token_value, notes } = req.body;
+      const r = await pool.query(
+        `UPDATE project_tokens SET service_name = COALESCE($1, service_name), token_value = COALESCE($2, token_value), notes = COALESCE($3, notes) WHERE id = $4 RETURNING *`,
+        [service_name, token_value, notes, req.params.id]
+      );
+      res.json(r.rows[0]);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.delete('/api/project-tokens/:id', async (req, res) => {
+    try {
+      await pool.query(`DELETE FROM project_tokens WHERE id = $1`, [req.params.id]);
       res.json({ ok: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });

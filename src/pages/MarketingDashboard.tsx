@@ -44,6 +44,8 @@ interface Kpis {
   total_clicks: number;
   total_impressions: number;
   total_campaigns: number;
+  total_vendas: number;
+  cac: number;
 }
 interface DashData {
   kpis: Kpis;
@@ -388,6 +390,8 @@ export default function MarketingDashboard() {
   const valQuali = kpis.leads_qualificados || 0;
   const valReuniMarcadas = kpis.reunioes_marcadas || 0;
   const valReuniRealizadas = kpis.reunioes_realizadas || 0;
+  const valVendas = kpis.total_vendas || 0;
+  const valCAC = kpis.cac || 0;
 
   const dailySpend = (data?.daily_spend || []).map(d => ({ ...d, day: getDay(d.date) }));
   const dailyLeads = (data?.daily_leads || []).map(d => ({ ...d, day: getDay(d.date) }));
@@ -445,10 +449,15 @@ export default function MarketingDashboard() {
             />
             <KpiCard
               iconBg="bg-blue-500/15"
-              icon={<Users size={17} className="text-blue-500" />}
-              label="Leads Gerados"
-              value={fmtInt(valLeads)}
-              sub="Cadastros únicos no período"
+              icon={<Target size={17} className="text-blue-500" />}
+              label="CAC"
+              value={fmtCurrency(valCAC)}
+              sub={
+                <span>
+                  Vendas no período: <span className="text-blue-500 font-bold">{fmtInt(valVendas)}</span>
+                </span>
+              }
+              extra={<div className="text-[10px] text-slate-500 mt-0.5">Custo de Aquisição de Cliente</div>}
             />
             <KpiCard
               iconBg="bg-pink-500/15"

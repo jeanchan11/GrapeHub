@@ -4,7 +4,7 @@ import {
   Plus, Trash2, Trophy, TrendingUp, TrendingDown, DollarSign,
   Activity, Target, CheckCircle2, Clock, AlertCircle, X,
   ChevronRight, ChevronLeft, BarChart3, RefreshCw, Pencil,
-  Calendar, Video
+  Calendar, Video, Percent
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -97,6 +97,15 @@ const TIPOS_META = [
     bg: 'bg-teal-50 dark:bg-teal-500/10',
     border: 'border-teal-200 dark:border-teal-500/30',
   },
+  {
+    id: 'taxa_conversao',
+    label: 'Taxa de Conversão',
+    desc: 'Reuniões realizadas ÷ Fechamentos do mês',
+    icon: Percent,
+    color: 'text-orange-500',
+    bg: 'bg-orange-50 dark:bg-orange-500/10',
+    border: 'border-orange-200 dark:border-orange-500/30',
+  },
 ];
 
 const PERIODOS = [
@@ -108,10 +117,13 @@ const PERIODOS = [
 ];
 
 const formatValue = (tipo: string, metrica: string, value: number) => {
-  if (tipo === 'receita' || metrica === 'valor') {
-    return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 0 });
+  if (tipo === 'taxa_conversao') {
+    return `${Number(value || 0).toFixed(1)}%`;
   }
-  return String(Math.round(value));
+  if (tipo === 'receita' || metrica === 'valor') {
+    return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 0 });
+  }
+  return String(Math.round(Number(value || 0)));
 };
 
 const getProgressColor = (pct: number) => {
@@ -368,34 +380,47 @@ export default function CrmMetas() {
                   </div>
                 </div>
 
-                {/* Valor atual */}
-                <div className="flex items-end justify-between">
-                  <span className="text-3xl font-black">
-                    {formatValue(meta.tipo, meta.metrica, meta.valor_atual)}
-                  </span>
-                  <span className="text-sm text-slate-400">
-                    de {formatValue(meta.tipo, meta.metrica, meta.alvo)}
-                  </span>
-                </div>
-
-                {/* Barra de progresso */}
-                <div className="space-y-2">
-                  <div className="w-full bg-slate-100 dark:bg-white/5 rounded-full h-1.5 overflow-hidden">
-                    <div
-                      className="h-full rounded-full transition-all duration-700"
-                      style={{ width: `${meta.percentual}%`, backgroundColor: barColor }}
-                    />
+                {meta.tipo === 'taxa_conversao' ? (
+                  <div className="flex flex-col items-center justify-center py-3">
+                    <span className="text-4xl font-black tabular-nums">
+                      {formatValue(meta.tipo, meta.metrica, meta.valor_atual)}
+                    </span>
+                    <span className="text-xs text-slate-400 mt-2">
+                      Meta: {formatValue(meta.tipo, meta.metrica, meta.alvo)}
+                    </span>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <div className={`flex items-center gap-1 text-xs ${status.color}`}>
-                      <StatusIcon size={12} />
-                      {status.label}
+                ) : (
+                  <>
+                    {/* Valor atual */}
+                    <div className="flex items-end justify-between">
+                      <span className="text-3xl font-black">
+                        {formatValue(meta.tipo, meta.metrica, meta.valor_atual)}
+                      </span>
+                      <span className="text-sm text-slate-400">
+                        de {formatValue(meta.tipo, meta.metrica, meta.alvo)}
+                      </span>
                     </div>
+
+                    {/* Barra de progresso */}
+                    <div className="space-y-2">
+                      <div className="w-full bg-slate-100 dark:bg-white/5 rounded-full h-1.5 overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all duration-700"
+                          style={{ width: `${meta.percentual}%`, backgroundColor: barColor }}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div className={`flex items-center gap-1 text-xs ${status.color}`}>
+                          <StatusIcon size={12} />
+                          {status.label}
+                        </div>
                     <span className="text-xs font-bold" style={{ color: barColor }}>
                       {meta.percentual}%
                     </span>
                   </div>
                 </div>
+                  </>
+                )}
               </div>
             );
           })}
@@ -496,7 +521,7 @@ export default function CrmMetas() {
 
                 <div className="grid grid-cols-2 gap-3">
                   {/* Métrica — oculta para atividades, receita, reuniões (que são sempre quantidade) */}
-                  {form.tipo !== 'atividades' && form.tipo !== 'receita' && form.tipo !== 'reunioes_marcadas' && form.tipo !== 'reunioes_realizadas' && (
+                  {form.tipo !== 'atividades' && form.tipo !== 'receita' && form.tipo !== 'reunioes_marcadas' && form.tipo !== 'reunioes_realizadas' && form.tipo !== 'taxa_conversao' && (
                     <div>
                       <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5 uppercase tracking-wide">Métrica</label>
                       <select
@@ -509,7 +534,7 @@ export default function CrmMetas() {
                       </select>
                     </div>
                   )}
-                  <div className={form.tipo === 'atividades' || form.tipo === 'receita' || form.tipo === 'reunioes_marcadas' || form.tipo === 'reunioes_realizadas' ? 'col-span-2' : ''}>
+                  <div className={form.tipo === 'atividades' || form.tipo === 'receita' || form.tipo === 'reunioes_marcadas' || form.tipo === 'reunioes_realizadas' || form.tipo === 'taxa_conversao' ? 'col-span-2' : ''}>
                     <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5 uppercase tracking-wide">Período</label>
                     <select
                       value={form.periodo}
@@ -523,7 +548,7 @@ export default function CrmMetas() {
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5 uppercase tracking-wide">
-                    {(form.tipo === 'receita' || form.metrica === 'valor') ? 'Valor alvo (R$)' : 'Quantidade alvo'}
+                    {form.tipo === 'taxa_conversao' ? 'Taxa alvo (%)' : (form.tipo === 'receita' || form.metrica === 'valor') ? 'Valor alvo (R$)' : 'Quantidade alvo'}
                   </label>
                   <input
                     type="number"

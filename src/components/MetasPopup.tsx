@@ -3,7 +3,7 @@ import {
   Plus, Trash2, Trophy, TrendingUp, DollarSign,
   Activity, Target, CheckCircle2, Clock, AlertCircle, X,
   ChevronRight, ChevronLeft, BarChart3, RefreshCw, Pencil,
-  Calendar, Video
+  Calendar, Video, Percent
 } from 'lucide-react';
 import { motion, AnimatePresence, useMotionValue, useTransform, animate } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
@@ -96,6 +96,15 @@ const TIPOS_META = [
     bg: 'bg-teal-50 dark:bg-teal-500/10',
     border: 'border-teal-200 dark:border-teal-500/30',
   },
+  {
+    id: 'taxa_conversao',
+    label: 'Taxa de Conversão',
+    desc: 'Reuniões realizadas ÷ Fechamentos do mês',
+    icon: Percent,
+    color: 'text-orange-500',
+    bg: 'bg-orange-50 dark:bg-orange-500/10',
+    border: 'border-orange-200 dark:border-orange-500/30',
+  },
 ];
 
 const PERIODOS = [
@@ -114,10 +123,13 @@ const ACTIVITY_TYPES = [
 ];
 
 const formatValue = (tipo: string, metrica: string, value: number) => {
-  if (tipo === 'receita' || metrica === 'valor') {
-    return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 0 });
+  if (tipo === 'taxa_conversao') {
+    return `${Number(value || 0).toFixed(1)}%`;
   }
-  return String(Math.round(value));
+  if (tipo === 'receita' || metrica === 'valor') {
+    return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 0 });
+  }
+  return String(Math.round(Number(value || 0)));
 };
 
 const getProgressColor = (pct: number) => {
@@ -219,6 +231,43 @@ const CircularProgress: React.FC<{ percentage: number; color: string }> = ({ per
     </div>
   );
 };
+
+// ============================================================
+// ANIMATED RATE (blur-to-sharp count-up, no circle)
+// ============================================================
+const AnimatedRate: React.FC<{ value: number; color: string }> = ({ value, color }) => {
+  const progress = useMotionValue(0);
+  const [displayValue, setDisplayValue] = useState('0.0');
+  const blurFilter = useTransform(progress, (v) => {
+    const ratio = value > 0 ? Math.min(v / value, 1) : 1;
+    return `blur(${8 * (1 - ratio)}px)`;
+  });
+  const textOpacity = useTransform(progress, (v) => {
+    const ratio = value > 0 ? Math.min(v / value, 1) : 1;
+    return 0.3 + 0.7 * ratio;
+  });
+
+  useEffect(() => {
+    const controls = animate(progress, value, {
+      duration: 2.5,
+      ease: [0.16, 1, 0.3, 1],
+    });
+    const unsubscribe = progress.on('change', (v) => setDisplayValue(v.toFixed(1)));
+    return () => { controls.stop(); unsubscribe(); };
+  }, [value]);
+
+  return (
+    <motion.div
+      className="flex items-center justify-center"
+      style={{ filter: blurFilter, opacity: textOpacity, height: CIRCLE_SIZE }}
+    >
+      <span className="text-4xl font-black tabular-nums" style={{ color }}>
+        {displayValue}%
+      </span>
+    </motion.div>
+  );
+};
+
 // COMPONENTE POPUP
 // ============================================================
 interface MetasPopupProps {
@@ -478,20 +527,42 @@ const MetasPopup: React.FC<MetasPopupProps> = ({ isOpen, onClose }) => {
                           </div>
                         </div>
 
-                        {/* Circular progress ring — centro do card */}
-                        <div className="flex items-center justify-center py-4">
-                          <CircularProgress percentage={meta.percentual} color={barColor} />
-                        </div>
+                        {meta.tipo === 'taxa_conversao' ? (
+                          /* Taxa de Conversão — animated percentage, same height as circle */
+                          (() => {
+                            const rateColor = Number(meta.valor_atual || 0) >= meta.alvo ? '#10b981' : '#f59e0b';
+                            return (
+                              <>
+                                <div className="flex items-center justify-center py-4">
+                                  <AnimatedRate value={Number(meta.valor_atual || 0)} color={rateColor} />
+                                </div>
+                                <div className="mt-auto pt-4 flex items-baseline justify-between gap-2">
+                                  <span className="text-xs text-slate-400">Taxa de conversão</span>
+                                  <span className="text-xs text-slate-400 whitespace-nowrap shrink-0">
+                                    Meta: {formatValue(meta.tipo, meta.metrica, meta.alvo)}
+                                  </span>
+                                </div>
+                              </>
+                            );
+                          })()
+                        ) : (
+                          <>
+                            {/* Circular progress ring — centro do card */}
+                            <div className="flex items-center justify-center py-4">
+                              <CircularProgress percentage={meta.percentual} color={barColor} />
+                            </div>
 
-                        {/* Valores — empurrados para baixo */}
-                        <div className="mt-auto pt-4 flex items-baseline justify-between gap-2">
-                          <span className="text-2xl font-black text-slate-900 dark:text-white leading-none truncate">
-                            {formatValue(meta.tipo, meta.metrica, meta.valor_atual)}
-                          </span>
-                          <span className="text-xs text-slate-400 whitespace-nowrap shrink-0">
-                            de {formatValue(meta.tipo, meta.metrica, meta.alvo)}
-                          </span>
-                        </div>
+                            {/* Valores — empurrados para baixo */}
+                            <div className="mt-auto pt-4 flex items-baseline justify-between gap-2">
+                              <span className="text-2xl font-black text-slate-900 dark:text-white leading-none truncate">
+                                {formatValue(meta.tipo, meta.metrica, meta.valor_atual)}
+                              </span>
+                              <span className="text-xs text-slate-400 whitespace-nowrap shrink-0">
+                                de {formatValue(meta.tipo, meta.metrica, meta.alvo)}
+                              </span>
+                            </div>
+                          </>
+                        )}
 
                         {/* Status */}
                         <div className="flex items-center justify-between pt-2 mt-2 border-t border-slate-100 dark:border-white/[0.04]">
@@ -606,7 +677,7 @@ const MetasPopup: React.FC<MetasPopupProps> = ({ isOpen, onClose }) => {
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
-                      {form.tipo !== 'atividades' && form.tipo !== 'receita' && form.tipo !== 'reunioes_marcadas' && form.tipo !== 'reunioes_realizadas' && (
+                      {form.tipo !== 'atividades' && form.tipo !== 'receita' && form.tipo !== 'reunioes_marcadas' && form.tipo !== 'reunioes_realizadas' && form.tipo !== 'taxa_conversao' && (
                         <div>
                           <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5 uppercase tracking-wide">Métrica</label>
                           <select
@@ -619,7 +690,7 @@ const MetasPopup: React.FC<MetasPopupProps> = ({ isOpen, onClose }) => {
                           </select>
                         </div>
                       )}
-                      <div className={form.tipo === 'atividades' || form.tipo === 'receita' || form.tipo === 'reunioes_marcadas' || form.tipo === 'reunioes_realizadas' ? 'col-span-2' : ''}>
+                      <div className={form.tipo === 'atividades' || form.tipo === 'receita' || form.tipo === 'reunioes_marcadas' || form.tipo === 'reunioes_realizadas' || form.tipo === 'taxa_conversao' ? 'col-span-2' : ''}>
                         <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5 uppercase tracking-wide">Período</label>
                         <select
                           value={form.periodo}
@@ -633,7 +704,7 @@ const MetasPopup: React.FC<MetasPopupProps> = ({ isOpen, onClose }) => {
 
                     <div>
                       <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5 uppercase tracking-wide">
-                        {(form.tipo === 'receita' || form.metrica === 'valor') ? 'Valor alvo (R$)' : 'Quantidade alvo'}
+                        {form.tipo === 'taxa_conversao' ? 'Taxa alvo (%)' : (form.tipo === 'receita' || form.metrica === 'valor') ? 'Valor alvo (R$)' : 'Quantidade alvo'}
                       </label>
                       <input
                         type="number"
