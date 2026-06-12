@@ -51,9 +51,10 @@ const config = {
 const critical = ['FIREBASE_API_KEY', 'FIREBASE_PROJECT_ID', 'FIREBASE_APP_ID'];
 const missing = critical.filter(k => !config[k]);
 if (missing.length > 0) {
-  console.error(`[inject-firebase-config] ❌ ERRO: Variáveis críticas ausentes no .env: ${missing.join(', ')}`);
-  console.error(`[inject-firebase-config] O .env deve conter VITE_FIREBASE_API_KEY, VITE_FIREBASE_PROJECT_ID e VITE_FIREBASE_APP_ID`);
-  process.exit(1);
+  console.warn(`[inject-firebase-config] ⚠️  Variáveis ausentes no .env: ${missing.join(', ')}`);
+  console.warn(`[inject-firebase-config] ℹ️  Isso é OK — o servidor injeta essas variáveis em runtime via setupStaticServing.`);
+  console.warn(`[inject-firebase-config] ℹ️  Pulando injeção no build. O dist/index.html será injetado pelo servidor ao servir.`);
+  process.exit(0); // Exit successfully — not a fatal error
 }
 
 const indexPath = path.join(rootDir, 'dist', 'index.html');
