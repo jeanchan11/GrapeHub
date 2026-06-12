@@ -287,8 +287,9 @@ const ActivityToastStack: React.FC = () => {
   const dismissedIdsRef = useRef<Set<string>>(new Set());
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const allowedRoles = ['superadmin', 'gerente-comercial'];
-  const hasAccess = userData?.role && allowedRoles.includes(userData.role);
+  // Notifications are shown to any user who has CRM activities assigned to them
+  const userId = userData?.id;
+  const hasAccess = !!userId;
 
   // Watch for theme changes instantly
   useEffect(() => {
@@ -324,13 +325,16 @@ const ActivityToastStack: React.FC = () => {
   }, []);
 
   const fetchAndNotify = useCallback(async () => {
-    if (!hasAccess) return;
+    if (!hasAccess || !userId) return;
     try {
-      const res = await fetch('/api/crm-comercial/activities?completed=false');
+      // Fetch only activities assigned to the current user
+      const res = await fetch(`/api/crm-comercial/activities?completed=false&responsible_id=${encodeURIComponent(userId)}`);
       if (!res.ok) return;
       const activities: Activity[] = await res.json();
+      // Client-side safety filter: only this user's activities
       const relevant = activities.filter(a => {
         if (!a.due_date || a.completed) return false;
+        if (a.responsible_id && String(a.responsible_id) !== String(userId)) return false;
         return isOverdue(a.due_date, a.start_time) || isUpcoming(a.due_date, a.start_time);
       });
       const newToasts: ToastItem[] = [];
@@ -351,7 +355,7 @@ const ActivityToastStack: React.FC = () => {
     } catch (err) {
       console.error('[ActivityToast] Error fetching:', err);
     }
-  }, [hasAccess, activityToToast]);
+  }, [hasAccess, userId, activityToToast]);
 
   useEffect(() => {
     if (!hasAccess) return;

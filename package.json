@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "NODE_ENV=development tsx watch server.ts",
-    "build": "mkdir -p dist && npx vite build && npx esbuild server.ts --bundle --platform=node --format=esm --outfile=dist/server.js --external:vite --external:pg --external:express --external:dotenv --external:@anthropic-ai/sdk --external:crypto --external:https --external:firebase-admin --external:multer",
+    "build": "mkdir -p dist && npx vite build && npx esbuild server.ts --bundle --platform=node --format=esm --outfile=dist/server.js --external:vite --external:pg --external:express --external:dotenv --external:@anthropic-ai/sdk --external:crypto --external:https --external:firebase-admin --external:cors --external:helmet --external:express-rate-limit --external:multer --external:busboy && node -e \"require('fs').existsSync('dist/server.js') || process.exit(1)\"",
     "start": "NODE_ENV=production node dist/server.js",
     "preview": "vite preview",
     "lint": "tsc --noEmit"

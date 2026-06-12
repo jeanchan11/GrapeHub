@@ -75,11 +75,55 @@ async function getFirebasePublicKeys(): Promise<Record<string, string>> {
   return _cachedPublicKeys;
 }
 
+// ── Verified-token cache ──────────────────────────────────────────────────────
+// Firebase ID tokens last 1 hour. Once we verify a token's signature, we cache
+// the decoded payload so subsequent requests with the same JWT skip the expensive
+// crypto verification (and, crucially, skip the 8s+ retry loop during Google
+// key rotation). Cache entries auto-expire when the JWT itself expires.
+const _verifiedTokens = new Map<string, { payload: any; expiresAt: number }>();
+const VERIFIED_TOKENS_MAX = 300;
+
+function _tokenCacheKey(token: string): string {
+  // Use first 20 + last 20 chars — unique enough, avoids hashing overhead
+  return token.length > 40
+    ? token.slice(0, 20) + token.slice(-20)
+    : token;
+}
+
+function getCachedVerifiedToken(token: string): any | null {
+  const key = _tokenCacheKey(token);
+  const entry = _verifiedTokens.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    _verifiedTokens.delete(key);
+    return null;
+  }
+  return entry.payload;
+}
+
+function cacheVerifiedToken(token: string, payload: any): void {
+  // Evict oldest entries if cache is full
+  if (_verifiedTokens.size >= VERIFIED_TOKENS_MAX) {
+    const firstKey = _verifiedTokens.keys().next().value;
+    if (firstKey) _verifiedTokens.delete(firstKey as string);
+  }
+  // Expire 60s before the token's own exp (safety margin)
+  const expiresAt = payload.exp
+    ? (payload.exp * 1000) - 60_000
+    : Date.now() + 55 * 60_000; // fallback: 55 min
+  _verifiedTokens.set(_tokenCacheKey(token), { payload, expiresAt });
+}
+
 async function verifyFirebaseToken(token: string): Promise<any> {
-  // ── Prefer Firebase Admin SDK — handles key rotation gracefully ──
+  // ── 1. Check verified-token cache first (instant, no crypto) ──
+  const cached = getCachedVerifiedToken(token);
+  if (cached) return cached;
+
+  // ── 2. Prefer Firebase Admin SDK — handles key rotation gracefully ──
   if (firebaseAdminReady) {
     try {
       const decoded = await admin.auth().verifyIdToken(token);
+      cacheVerifiedToken(token, decoded);
       return decoded;
     } catch (adminErr: any) {
       // If Admin SDK also fails, fall through to manual verification
@@ -88,7 +132,7 @@ async function verifyFirebaseToken(token: string): Promise<any> {
     }
   }
 
-  // ── Manual JWT verification (fallback when Admin SDK is unavailable) ──
+  // ── 3. Manual JWT verification (fallback when Admin SDK is unavailable) ──
   const parts = token.split('.');
   if (parts.length !== 3) throw new Error('Token JWT inválido');
   const header = JSON.parse(Buffer.from(parts[0], 'base64url').toString());
@@ -136,6 +180,8 @@ async function verifyFirebaseToken(token: string): Promise<any> {
   const valid = verify.verify(publicKey, signature);
   if (!valid) throw new Error('Assinatura JWT inválida');
 
+  // ── 4. Cache successful verification ──
+  cacheVerifiedToken(token, payload);
   return payload;
 }
 
