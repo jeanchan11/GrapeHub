@@ -201,6 +201,13 @@ const PUBLIC_ROUTES: Array<{ method?: string; pattern: RegExp }> = [
   { pattern: /^\/api\/onboarding\/submit$/, method: 'POST' },
   { pattern: /^\/api\/finance\/dispatch\/callback$/, method: 'POST' },
   { pattern: /^\/api\/briefings\/public\// },
+  { pattern: /^\/api\/ia-status-groups/ },
+  { pattern: /^\/api\/onboarding-tasks/ },
+  { pattern: /^\/api\/visual-hub-status-groups/ },
+  { pattern: /^\/api\/crm-checklist/ },
+  { pattern: /^\/api\/crm-checklist-template/ },
+  { pattern: /^\/api\/crm-comercial\/checklist/ },
+  { pattern: /^\/api\/crm-comercial\/checklist-template/ },
 ];
 
 function isPublicRoute(method: string, path: string): boolean {
@@ -307,16 +314,26 @@ async function startServer() {
   }));
 
   const isDevMode = process.env.NODE_ENV !== 'production' && process.env.VITE_USER_NODE_ENV !== 'production';
+
+  // Rotas essenciais para o app funcionar — nunca devem ser bloqueadas pelo rate limiter,
+  // pois causam a tela "Conectando ao servidor..." quando recebem 429.
+  const RATE_LIMIT_SKIP_ROUTES = [
+    '/api/users/profile/',
+    '/api/menu',
+    '/api/health',
+  ];
+
   const globalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutos
-    max: isDevMode ? 2000 : 600,
+    max: isDevMode ? 2000 : 1500,
     message: { error: 'Muitas requisições. Tente novamente em alguns minutos.' },
     standardHeaders: true,
     legacyHeaders: false,
+    skip: (req) => RATE_LIMIT_SKIP_ROUTES.some(route => req.path.startsWith(route)),
   });
   const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 20,
+    max: 30,
     message: { error: 'Muitas tentativas de login. Tente novamente em 15 minutos.' },
     standardHeaders: true,
     legacyHeaders: false,

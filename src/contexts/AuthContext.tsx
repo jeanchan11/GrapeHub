@@ -71,6 +71,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         console.log('Fetched userData:', data);
         return data;
 
+      } else if (response.status === 429) {
+        // Rate limited — log and retry later
+        console.warn('[AuthContext] Rate limited (429). O servidor está bloqueando requisições. Retentando em breve...');
+        return null;
+
       } else if (response.status === 404) {
         // Usuário novo — cria no banco
         const isSuperAdmin = email === 'jeanchan@grapemidia.com';
@@ -97,6 +102,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             return data;
           }
         }
+      } else {
+        console.error(`[AuthContext] Erro inesperado (HTTP ${response.status}) ao buscar perfil do usuário.`);
       }
     } catch (error) {
       console.error('[AuthContext] Erro ao buscar dados do usuário:', error);
