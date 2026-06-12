@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import SplitHeadline from '../components/SplitHeadline';
+import { useAuth } from '../contexts/AuthContext';
 import {
   Phone, Mail, Users, CheckSquare, Calendar, Clock, Filter,
   Plus, RefreshCw, ChevronDown, Circle, CheckCircle2,
@@ -107,6 +108,7 @@ export interface NovaAtividadeModalProps {
 }
 
 export const NovaAtividadeModal: React.FC<NovaAtividadeModalProps> = ({ onClose, onSave, initialLead, initialTask }) => {
+  const { userData } = useAuth();
   const [selectedType, setSelectedType] = useState(initialTask?.type || 'Ligação');
   const [title, setTitle] = useState(initialTask?.title || '');
   const [datetime, setDatetime] = useState(() => {
@@ -186,7 +188,15 @@ export const NovaAtividadeModal: React.FC<NovaAtividadeModalProps> = ({ onClose,
       await fetch(endpoint, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, type: selectedType, due_date, start_time, observations: notes }),
+        body: JSON.stringify({
+          title,
+          type: selectedType,
+          due_date,
+          start_time,
+          observations: notes,
+          // Auto-assign the current user as responsible so notifications work correctly
+          ...((!initialTask && userData?.id) ? { responsible_id: String(userData.id) } : {}),
+        }),
       });
       onSave();
       onClose();

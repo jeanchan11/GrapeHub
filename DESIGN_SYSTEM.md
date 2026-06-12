@@ -215,3 +215,88 @@ Para dashboards com filtro de data por mês/ano, use o componente `MonthPicker` 
 | Borda padrão | `border border-white/10` | `border-slate-200 dark:border-white/5` |
 | Arredondamento card | `rounded-2xl` | `rounded-3xl` (reservado para modais) |
 | Transição | `transition-colors duration-200` | (sem transição) |
+
+---
+
+## 5. Drag and Drop (Listas Ordenáveis)
+
+Sempre que precisar de uma lista ordenável (arrastar e soltar), utilize a biblioteca **`@dnd-kit`** para garantir transições suaves e um comportamento nativo consistente (nada de HTML5 nativo "seco").
+
+### 5.1 Bibliotecas Base
+Importe sempre do pacote `@dnd-kit`:
+```tsx
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
+import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+```
+
+### 5.2 Wrapper do Item (SortableItem)
+Crie um wrapper padronizado que injeta o comportamento e a animação correta no card:
+```tsx
+const SortableItemWrapper: React.FC<{
+  id: string;
+  children: (dragHandleProps: { attributes: any; listeners: any }) => React.ReactNode;
+}> = ({ id, children }) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1, // Opacidade reduzida enquanto arrasta
+    zIndex: isDragging ? 50 : undefined,
+    position: 'relative',
+  };
+  return (
+    <div ref={setNodeRef} style={style}>
+      {children({ attributes, listeners })}
+    </div>
+  );
+};
+```
+
+### 5.3 O Grip (Ícone de Arrasto)
+O ícone de arrasto (GripVertical) deve sempre seguir este padrão visual, preferencialmente usando `lucide-react`:
+```tsx
+<button
+  {...dragHandleProps.attributes}
+  {...dragHandleProps.listeners}
+  className="cursor-grab active:cursor-grabbing text-slate-400 dark:text-dark-text/20 hover:text-violet-500 dark:hover:text-violet-400 transition-colors touch-none flex-shrink-0"
+  title="Arrastar para reordenar"
+>
+  <GripVertical size={12} />
+</button>
+```
+
+### 5.4 Drag Overlay (O Fantasma)
+Sempre implemente um `DragOverlay` para renderizar o card que fica grudado no cursor enquanto o usuário arrasta. Ele deve ter sombra e efeito blur:
+```tsx
+<DragOverlay dropAnimation={null}>
+  {activeDragItem && (
+    <div className="bg-white dark:bg-dark-card/95 backdrop-blur-sm border border-violet-500/30 rounded-xl px-4 py-2 shadow-2xl shadow-violet-500/10 cursor-grabbing flex items-center gap-2 max-w-md">
+      {/* O mesmo grip, mas sem listeners/atributos */}
+      <GripVertical size={12} className="text-violet-500 dark:text-violet-400 flex-shrink-0" />
+      <span className="text-sm font-medium text-slate-700 dark:text-white truncate">
+        {activeDragItem.title}
+      </span>
+    </div>
+  )}
+</DragOverlay>
+```
+
+### 5.5 Estrutura Principal
+Englobe a lista no `DndContext` e `SortableContext`:
+```tsx
+const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+<DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+  <SortableContext items={items.map(i => i.id)} strategy={verticalListSortingStrategy}>
+    {items.map(item => (
+      <SortableItemWrapper key={item.id} id={item.id}>
+        {(dragHandleProps) => (
+           <SeuComponenteCard item={item} dragHandleProps={dragHandleProps} />
+        )}
+      </SortableItemWrapper>
+    ))}
+  </SortableContext>
+  <DragOverlay>... (veja acima)</DragOverlay>
+</DndContext>
+```

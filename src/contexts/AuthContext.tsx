@@ -15,8 +15,24 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<FirebaseUser | null>(null);
-  const [userData, setUserData] = useState<UserData | null>(null);
+  const [userData, setUserData] = useState<UserData | null>(() => {
+    // Carregar userData do cache da sessão para evitar chamadas API desnecessárias
+    // Isso reduz o número de requests que atingem o rate limit da CDN da Hostinger
+    try {
+      const cached = sessionStorage.getItem('grapehub_userData');
+      return cached ? JSON.parse(cached) : null;
+    } catch { return null; }
+  });
   const [loading, setLoading] = useState(true);
+
+  // Salva userData no sessionStorage sempre que mudar
+  const setUserDataCached = (data: UserData | null) => {
+    setUserData(data);
+    try {
+      if (data) sessionStorage.setItem('grapehub_userData', JSON.stringify(data));
+      else sessionStorage.removeItem('grapehub_userData');
+    } catch { /* ignore */ }
+  };
 
   const fetchUserDataFromApi = async (firebaseUser: FirebaseUser) => {
     const email = firebaseUser.email;
@@ -67,7 +83,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           data.picture = newPicture;
         }
 
-        setUserData(data);
+        setUserDataCached(data);
         console.log('Fetched userData:', data);
         return data;
 
@@ -98,7 +114,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           const secondRes = await authFetch(`/api/users/profile/${encodeURIComponent(email)}`);
           if (secondRes.ok) {
             const data = await secondRes.json();
-            setUserData(data);
+            setUserDataCached(data);
             return data;
           }
         }
@@ -124,13 +140,24 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setUser(firebaseUser);
       
       if (!firebaseUser) {
-        setUserData(null);
+        setUserDataCached(null);
         setLoading(false);
         if (bgRetryTimer) { clearInterval(bgRetryTimer); bgRetryTimer = null; }
         return;
       }
 
-      // Retry up to 3 times with exponential backoff if the API call fails
+      // Se já tem dados em cache (sessionStorage), usa eles imediatamente
+      // e faz refresh em background para evitar consumir rate limit
+      const cachedData = userData;
+      if (cachedData && cachedData.email === firebaseUser.email) {
+        console.log('[AuthContext] Usando userData em cache, refresh em background...');
+        setLoading(false);
+        // Refresh silencioso em background (se falhar, mantém o cache)
+        fetchUserDataFromApi(firebaseUser).catch(() => {});
+        return;
+      }
+
+      // Sem cache — buscar da API com retry
       let result = null;
       for (let attempt = 0; attempt < 3; attempt++) {
         result = await fetchUserDataFromApi(firebaseUser);
@@ -141,7 +168,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
       setLoading(false);
 
-      // If all 3 attempts failed, keep retrying in background every 5s
+      // If all 3 attempts failed, keep retrying in background every 8s
+      // (8s instead of 5s to avoid burning through rate limit)
       if (!result && firebaseUser) {
         console.warn('[AuthContext] Initial fetch failed, starting background retry...');
         bgRetryTimer = setInterval(async () => {
@@ -150,7 +178,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             console.log('[AuthContext] Background retry succeeded!');
             if (bgRetryTimer) { clearInterval(bgRetryTimer); bgRetryTimer = null; }
           }
-        }, 5000);
+        }, 8000);
       }
     });
 

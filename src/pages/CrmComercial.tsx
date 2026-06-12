@@ -615,9 +615,11 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   const [checklistLoading, setChecklistLoading] = useState(false);
   const [checklistFetched, setChecklistFetched] = useState(false);
   const [showChecklistTemplateModal, setShowChecklistTemplateModal] = useState(false);
-  const [templateItems, setTemplateItems] = useState<{item: string}[]>([]);
+  const [templateItems, setTemplateItems] = useState<{item: string; description?: string}[]>([]);
   const [templateLoading, setTemplateLoading] = useState(false);
   const [dragTemplateIdx, setDragTemplateIdx] = useState<number | null>(null);
+  const [taskDetailPopup, setTaskDetailPopup] = useState<any | null>(null);
+  const [editingTemplateDesc, setEditingTemplateDesc] = useState<number | null>(null);
 
 
   const moveRef = useRef<HTMLDivElement>(null);
@@ -759,7 +761,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
       const res = await fetch('/api/crm-comercial/checklist-template');
       if (!res.ok) throw new Error('Failed to fetch template');
       const data = await res.json();
-      setTemplateItems(Array.isArray(data) ? data.map((d: any) => ({ item: d.item })) : []);
+      setTemplateItems(Array.isArray(data) ? data.map((d: any) => ({ item: d.item, description: d.description || '' })) : []);
     } catch {
       setTemplateItems([]);
     } finally {
@@ -789,6 +791,31 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
       alert(e?.message || 'Erro ao salvar template');
     } finally {
       setTemplateLoading(false);
+    }
+  };
+
+  const handleReapplyTemplate = async () => {
+    if (!lead) return;
+    const confirmed = window.confirm(
+      'Isso vai substituir TODAS as tarefas atuais deste lead pelo modelo padrão atualizado.\n\nTarefas já marcadas como concluídas serão perdidas.\n\nDeseja continuar?'
+    );
+    if (!confirmed) return;
+
+    setChecklistLoading(true);
+    try {
+      const res = await fetch('/api/crm-comercial/checklist/reapply-template', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead_id: lead.id })
+      });
+      if (!res.ok) throw new Error('Falha ao reaplicar modelo');
+      const newItems = await res.json();
+      setChecklistItems(newItems);
+    } catch (e: any) {
+      console.error('Erro ao reaplicar template:', e);
+      alert(e?.message || 'Erro ao reaplicar modelo padrão');
+    } finally {
+      setChecklistLoading(false);
     }
   };
 
@@ -2646,21 +2673,24 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                         {checklistItems.map((ci, idx) => (
                           <div
                             key={ci.id}
-                            onClick={() => handleToggleChecklistItem(ci.id, !ci.completed)}
+                            onClick={() => setTaskDetailPopup(ci)}
                             className={`group flex items-start gap-3 p-3 rounded-xl cursor-pointer transition-all duration-200 ${
                               ci.completed
                                 ? 'bg-emerald-500/5 dark:bg-emerald-500/10'
                                 : 'bg-gray-50 dark:bg-white/5 hover:bg-gray-100 dark:hover:bg-white/10'
                             }`}
                           >
-                            {/* Checkbox */}
-                            <div className={`flex-shrink-0 w-5 h-5 rounded-md border-2 flex items-center justify-center mt-0.5 transition-all duration-200 ${
-                              ci.completed
-                                ? 'bg-emerald-500 border-emerald-500'
-                                : 'border-gray-300 dark:border-gray-600 group-hover:border-violet-400'
-                            }`}>
+                            {/* Checkbox - clicking only toggles */}
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleToggleChecklistItem(ci.id, !ci.completed); }}
+                              className={`flex-shrink-0 w-5 h-5 rounded-md border-2 flex items-center justify-center mt-0.5 transition-all duration-200 focus:outline-none ${
+                                ci.completed
+                                  ? 'bg-emerald-500 border-emerald-500 hover:bg-emerald-600 hover:border-emerald-600'
+                                  : 'border-gray-300 dark:border-gray-600 hover:border-violet-500 hover:bg-violet-500/10'
+                              }`}
+                            >
                               {ci.completed && <Check size={12} className="text-white" strokeWidth={3} />}
-                            </div>
+                            </button>
 
                             {/* Content */}
                             <div className="flex-1 min-w-0">
@@ -2671,6 +2701,11 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                               }`}>
                                 {ci.item}
                               </span>
+                              {ci.description && !ci.completed && (
+                                <p className="text-[10px] text-violet-500/70 mt-0.5 flex items-center gap-1">
+                                  <FileText size={9} /> Clique para ver detalhes
+                                </p>
+                              )}
                               {ci.completed && ci.completed_by && (
                                 <div className="flex items-center gap-1.5 mt-1">
                                   <CheckCircle2 size={10} className="text-emerald-500" />
@@ -2690,14 +2725,22 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                         ))}
                       </div>
 
-                      {/* Settings button */}
-                      <div className="pt-3 border-t border-gray-100 dark:border-white/5">
+                      {/* Settings & Re-apply buttons */}
+                      <div className="pt-3 border-t border-gray-100 dark:border-white/5 flex items-center gap-2 flex-wrap">
                         <button
                           onClick={handleOpenTemplateEditor}
                           className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
                         >
                           <Settings size={13} />
                           Configurar padrão de tarefas
+                        </button>
+                        <button
+                          onClick={handleReapplyTemplate}
+                          className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-violet-500 hover:bg-violet-500/10 transition-colors"
+                          title="Substituir checklist atual pelo modelo padrão atualizado"
+                        >
+                          <RefreshCw size={13} />
+                          Aplicar modelo padrão
                         </button>
                       </div>
                     </div>
@@ -2763,32 +2806,68 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                               setDragTemplateIdx(null);
                             }}
                             onDragEnd={() => setDragTemplateIdx(null)}
-                            className={`flex items-center gap-2 group transition-opacity ${dragTemplateIdx === idx ? 'opacity-40' : ''}`}
+                            className={`group transition-opacity ${dragTemplateIdx === idx ? 'opacity-40' : ''}`}
                           >
-                            <GripVertical size={14} className="text-gray-300 dark:text-gray-600 flex-shrink-0 cursor-grab active:cursor-grabbing" />
-                            <input
-                              type="text"
-                              value={ti.item}
-                              onChange={(e) => {
-                                const updated = [...templateItems];
-                                updated[idx] = { item: e.target.value };
-                                setTemplateItems(updated);
-                              }}
-                              onMouseDown={(e) => e.stopPropagation()}
-                              className="flex-1 px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-white/10 bg-transparent text-gray-800 dark:text-white focus:outline-none focus:border-violet-500 transition-colors"
-                              placeholder="Nome da tarefa..."
-                            />
-                            <button
-                              onClick={() => setTemplateItems(prev => prev.filter((_, i) => i !== idx))}
-                              className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all"
-                            >
-                              <Trash2 size={13} />
-                            </button>
+                            <div className="flex items-center gap-2">
+                              <GripVertical size={14} className="text-gray-300 dark:text-gray-600 flex-shrink-0 cursor-grab active:cursor-grabbing" />
+                              <input
+                                type="text"
+                                value={ti.item}
+                                onChange={(e) => {
+                                  const updated = [...templateItems];
+                                  updated[idx] = { ...updated[idx], item: e.target.value };
+                                  setTemplateItems(updated);
+                                }}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                className="flex-1 px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-white/10 bg-transparent text-gray-800 dark:text-white focus:outline-none focus:border-violet-500 transition-colors"
+                                placeholder="Nome da tarefa..."
+                              />
+                              <button
+                                onClick={() => setEditingTemplateDesc(editingTemplateDesc === idx ? null : idx)}
+                                title="Adicionar explicação da tarefa"
+                                className={`p-1.5 rounded-lg transition-all ${
+                                  ti.description ? 'text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-500/10' : 'text-gray-400 hover:text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-500/10 opacity-0 group-hover:opacity-100'
+                                }`}
+                              >
+                                <FileText size={13} />
+                              </button>
+                              <button
+                                onClick={() => setTemplateItems(prev => prev.filter((_, i) => i !== idx))}
+                                className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                            {/* Description textarea - expandable */}
+                            {editingTemplateDesc === idx && (
+                              <div className="ml-6 mt-1.5 mb-1">
+                                <textarea
+                                  autoFocus
+                                  value={ti.description || ''}
+                                  onChange={(e) => {
+                                    const updated = [...templateItems];
+                                    updated[idx] = { ...updated[idx], description: e.target.value };
+                                    setTemplateItems(updated);
+                                  }}
+                                  onMouseDown={(e) => e.stopPropagation()}
+                                  placeholder="Explique o que deve ser feito nesta tarefa..."
+                                  rows={3}
+                                  className="w-full px-3 py-2 text-xs rounded-lg border border-violet-200 dark:border-violet-500/20 bg-violet-50/50 dark:bg-violet-500/5 text-gray-700 dark:text-gray-300 focus:outline-none focus:border-violet-500 transition-colors resize-none placeholder:text-gray-400"
+                                />
+                                <p className="text-[10px] text-gray-400 mt-1">Essa explicação aparecerá ao clicar no item do checklist</p>
+                              </div>
+                            )}
+                            {/* Show description preview when not editing */}
+                            {editingTemplateDesc !== idx && ti.description && (
+                              <p className="ml-6 mt-0.5 text-[10px] text-violet-500/70 truncate cursor-pointer" onClick={() => setEditingTemplateDesc(idx)}>
+                                <FileText size={9} className="inline mr-1" />{ti.description.length > 80 ? ti.description.slice(0, 80) + '...' : ti.description}
+                              </p>
+                            )}
                           </div>
                         ))}
 
                         <button
-                          onClick={() => setTemplateItems(prev => [...prev, { item: '' }])}
+                          onClick={() => setTemplateItems(prev => [...prev, { item: '', description: '' }])}
                           className="flex items-center gap-2 w-full px-3 py-2.5 rounded-lg border border-dashed border-gray-300 dark:border-white/15 text-sm text-gray-500 dark:text-gray-400 hover:border-violet-400 hover:text-violet-500 transition-colors"
                         >
                           <Plus size={14} />
@@ -2813,6 +2892,97 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                     >
                       {templateLoading && <Loader2 size={14} className="animate-spin" />}
                       Salvar Padrão
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Task Detail Popup */}
+            {taskDetailPopup && (
+              <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999]" onClick={(e) => { if (e.target === e.currentTarget) setTaskDetailPopup(null); }}>
+                <div className="bg-white dark:bg-[#1a1a2e] rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                  {/* Header */}
+                  <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-white/10">
+                    <div className="flex items-center gap-2.5">
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
+                        taskDetailPopup.completed ? 'bg-emerald-500/10' : 'bg-violet-500/10'
+                      }`}>
+                        {taskDetailPopup.completed
+                          ? <CheckCircle2 size={16} className="text-emerald-500" />
+                          : <ClipboardList size={16} className="text-violet-500" />
+                        }
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-gray-900 dark:text-white">Detalhes da Tarefa</h3>
+                        <p className="text-[10px] text-gray-400 mt-0.5">
+                          {taskDetailPopup.completed ? 'Concluída' : 'Pendente'}
+                          {taskDetailPopup.completed_by && ` por ${taskDetailPopup.completed_by}`}
+                        </p>
+                      </div>
+                    </div>
+                    <button onClick={() => setTaskDetailPopup(null)} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 transition-colors">
+                      <X size={16} className="text-gray-500" />
+                    </button>
+                  </div>
+
+                  {/* Content */}
+                  <div className="px-5 py-4">
+                    <h4 className={`text-base font-semibold mb-3 ${
+                      taskDetailPopup.completed ? 'text-gray-400 line-through' : 'text-gray-900 dark:text-white'
+                    }`}>
+                      {taskDetailPopup.item}
+                    </h4>
+
+                    {taskDetailPopup.description ? (
+                      <div className="p-3.5 rounded-xl bg-violet-50 dark:bg-violet-500/10 border border-violet-100 dark:border-violet-500/20">
+                        <p className="text-[10px] font-bold text-violet-500 uppercase tracking-widest mb-2">Explicação</p>
+                        <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">
+                          {taskDetailPopup.description}
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="p-3.5 rounded-xl bg-gray-50 dark:bg-white/5 border border-gray-100 dark:border-white/10 text-center">
+                        <FileText size={20} className="text-gray-300 dark:text-gray-600 mx-auto mb-1.5" />
+                        <p className="text-xs text-gray-400 dark:text-gray-500">Nenhuma explicação configurada para esta tarefa</p>
+                        <p className="text-[10px] text-gray-400/70 dark:text-gray-600 mt-0.5">Configure no "Padrão de Tarefas"</p>
+                      </div>
+                    )}
+
+                    {taskDetailPopup.completed_at && (
+                      <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-100 dark:border-white/5">
+                        <Clock size={12} className="text-gray-400" />
+                        <span className="text-[11px] text-gray-400">
+                          Concluída em {new Date(taskDetailPopup.completed_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Footer */}
+                  <div className="px-5 pb-4 flex gap-2">
+                    <button
+                      onClick={() => setTaskDetailPopup(null)}
+                      className="flex-1 py-2.5 rounded-xl text-sm font-medium text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-white/10 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+                    >
+                      Fechar
+                    </button>
+                    <button
+                      onClick={() => {
+                        handleToggleChecklistItem(taskDetailPopup.id, !taskDetailPopup.completed);
+                        setTaskDetailPopup(null);
+                      }}
+                      className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2 ${
+                        taskDetailPopup.completed
+                          ? 'bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/15'
+                          : 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg shadow-emerald-500/20'
+                      }`}
+                    >
+                      {taskDetailPopup.completed ? (
+                        <><XCircle size={14} /> Desmarcar</>
+                      ) : (
+                        <><Check size={14} /> Concluir</>
+                      )}
                     </button>
                   </div>
                 </div>

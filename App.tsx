@@ -34,6 +34,7 @@ import DashboardOperacional from './src/pages/DashboardOperacional';
 import ParceirosSquad from './src/pages/ParceirosSquad';
 import TodoStaff from './src/pages/TodoStaff';
 import ChamadosGrapehub from './src/pages/ChamadosGrapehub';
+import IdeaisCriativos from './src/pages/IdeaisCriativos';
 import OnboardingOperacional from './src/pages/OnboardingOperacional';
 import ImplementacaoIA from './src/pages/ImplementacaoIA';
 import VisualHub from './src/pages/VisualHub';
@@ -357,6 +358,8 @@ const AppContent: React.FC = () => {
         return <TodoStaff key={activePage} activePage={activePage} />;
       case 'chamados-grapehub':
         return <ChamadosGrapehub key={activePage} activePage={activePage} />;
+      case 'ideais-criativos':
+        return <IdeaisCriativos key={activePage} activePage={activePage} />;
       case 'onboarding-operacional':
         return <OnboardingOperacional />;
       case 'implementacao-ia':

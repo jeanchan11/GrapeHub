@@ -1,4 +1,7 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragOverlay, useDroppable } from '@dnd-kit/core';
+import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { motion } from 'framer-motion';
 import SplitHeadline from '../components/SplitHeadline';
 import {
@@ -870,12 +873,62 @@ interface TaskDetailModalProps {
   onAddComment: (taskId: string, text: string) => void;
 }
 
+const SortableSubtaskItem: React.FC<{ subtask: Subtask; onToggle: () => void }> = ({ subtask, onToggle }) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: subtask.id });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+    zIndex: isDragging ? 50 : undefined,
+    position: 'relative' as const,
+  };
+  return (
+    <div ref={setNodeRef} style={style} className="flex items-center gap-2 group/sub">
+      <span
+        {...attributes}
+        {...listeners}
+        className="text-dark-text/20 hover:text-violet-400 cursor-grab active:cursor-grabbing flex-shrink-0 touch-none transition-colors"
+      >
+        <GripVertical size={12} />
+      </span>
+      <button
+        onClick={onToggle}
+        className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl bg-dark-card border border-dark-text/[0.06] hover:border-violet-500/20 transition-all group/check flex-1`}
+      >
+        <div className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition-all ${
+          subtask.done ? 'bg-emerald-500 border-emerald-500' : 'border-dark-text/20 group-hover/check:border-violet-400'
+        }`}>
+          {subtask.done && <Check size={9} className="text-white" />}
+        </div>
+        <span className={`text-sm text-left ${subtask.done ? 'line-through text-dark-text/30' : 'text-dark-text/80'}`}>
+          {subtask.title}
+        </span>
+      </button>
+    </div>
+  );
+};
+
 const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ item, allColumns, coloredTagDefs, enableImageUpload, onEdit, onClose, onSubtaskToggle, onSubtasksReorder, onAddSubtask, onAddComment }) => {
   const [newComment, setNewComment] = useState('');
   const [newSubtask, setNewSubtask] = useState('');
-  const [subDragFrom, setSubDragFrom] = useState<number | null>(null);
-  const [subDragOver, setSubDragOver] = useState<number | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+
+  const subtaskSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  );
+
+  const handleSubtaskDragEnd = (event: any) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      const oldIndex = item.subtasks.findIndex(s => s.id === active.id);
+      const newIndex = item.subtasks.findIndex(s => s.id === over.id);
+      
+      const arr = [...item.subtasks];
+      const [moved] = arr.splice(oldIndex, 1);
+      arr.splice(newIndex, 0, moved);
+      onSubtasksReorder(item.id, arr);
+    }
+  };
 
   const handleHtmlClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (e.target instanceof HTMLImageElement) {
@@ -983,46 +1036,13 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ item, allColumns, col
                 />
               </div>
               <div className="space-y-1.5">
-                {item.subtasks.map((s, i) => (
-                  <React.Fragment key={s.id}>
-                    {subDragOver === i && subDragFrom !== i && <DropLine />}
-                    <div
-                      draggable
-                      onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('sub-idx', String(i)); setSubDragFrom(i); setSubDragOver(null); }}
-                      onDragOver={e => { e.preventDefault(); if (subDragOver !== i) setSubDragOver(i); }}
-                      onDragLeave={() => setSubDragOver(null)}
-                      onDrop={e => {
-                        e.preventDefault();
-                        const from = Number(e.dataTransfer.getData('sub-idx'));
-                        if (from !== i) {
-                          const arr = [...item.subtasks];
-                          const [moved] = arr.splice(from, 1);
-                          arr.splice(i, 0, moved);
-                          onSubtasksReorder(item.id, arr);
-                        }
-                        setSubDragFrom(null); setSubDragOver(null);
-                      }}
-                      onDragEnd={() => { setSubDragFrom(null); setSubDragOver(null); }}
-                      className="flex items-center gap-2 group/sub"
-                    >
-                      <span className="text-dark-text/20 cursor-grab active:cursor-grabbing flex-shrink-0"><GripVertical size={12} /></span>
-                      <button
-                        onClick={() => onSubtaskToggle(item.id, s.id)}
-                        className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl bg-dark-card border border-dark-text/[0.06] hover:border-violet-500/20 transition-all group/check flex-1`}
-                      >
-                        <div className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition-all ${
-                          s.done ? 'bg-emerald-500 border-emerald-500' : 'border-dark-text/20 group-hover/check:border-violet-400'
-                        }`}>
-                          {s.done && <Check size={9} className="text-white" />}
-                        </div>
-                        <span className={`text-sm text-left ${s.done ? 'line-through text-dark-text/30' : 'text-dark-text/80'}`}>
-                          {s.title}
-                        </span>
-                      </button>
-                    </div>
-                  </React.Fragment>
-                ))}
-                {subDragOver === item.subtasks.length && <DropLine />}
+                <DndContext sensors={subtaskSensors} collisionDetection={closestCenter} onDragEnd={handleSubtaskDragEnd}>
+                  <SortableContext items={item.subtasks.map(s => s.id)} strategy={verticalListSortingStrategy}>
+                    {item.subtasks.map(s => (
+                      <SortableSubtaskItem key={s.id} subtask={s} onToggle={() => onSubtaskToggle(item.id, s.id)} />
+                    ))}
+                  </SortableContext>
+                </DndContext>
               </div>
             </div>
           )}
@@ -1504,6 +1524,39 @@ const IdeaDetailModal: React.FC<IdeaDetailModalProps> = ({ idea, onEdit, onClose
   );
 };
 
+// ─── dnd-kit: Sortable wrapper + Droppable column ─────────────────────────────
+
+const SortableTaskItem: React.FC<{
+  id: string;
+  children: (dragHandleProps: { attributes: any; listeners: any }) => React.ReactNode;
+}> = ({ id, children }) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+    zIndex: isDragging ? 50 : undefined,
+    position: 'relative' as const,
+  };
+  return (
+    <div ref={setNodeRef} style={style}>
+      {children({ attributes, listeners })}
+    </div>
+  );
+};
+
+const DroppableColumn: React.FC<{ status: string; children: React.ReactNode }> = ({ status, children }) => {
+  const { setNodeRef, isOver } = useDroppable({ id: `column-${status}`, data: { type: 'column', status } });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`flex flex-col gap-1.5 min-h-[100px] p-1 -m-1 rounded-2xl transition-colors ${isOver ? 'bg-violet-500/5 border border-dashed border-violet-500/20' : ''}`}
+    >
+      {children}
+    </div>
+  );
+};
+
 // ─── Compact Todo Row ─────────────────────────────────────────────────────────
 
 interface RowProps {
@@ -1514,13 +1567,10 @@ interface RowProps {
   onEdit: (item: TodoItem) => void;
   onDelete: (id: string) => void;
   onStatusChange: (id: string, status: Status) => void;
-  onDragStart: (id: string) => void;
-  onDragOver: (id: string) => void;
-  onDrop: (e?: React.DragEvent) => void;
-  isDragOver?: boolean;
+  dragHandleProps?: { attributes: any; listeners: any };
 }
 
-const TodoRow: React.FC<RowProps> = ({ item, allColumns, coloredTagDefs, onView, onEdit, onDelete, onStatusChange, onDragStart, onDragOver, onDrop, isDragOver }) => {
+const TodoRow: React.FC<RowProps> = ({ item, allColumns, coloredTagDefs, onView, onEdit, onDelete, onStatusChange, dragHandleProps }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -1532,27 +1582,32 @@ const TodoRow: React.FC<RowProps> = ({ item, allColumns, coloredTagDefs, onView,
 
   return (
     <div
-      draggable
-      onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; onDragStart(item.id); }}
-      onDragOver={e => { e.preventDefault(); e.stopPropagation(); onDragOver(item.id); }}
-      onDrop={e => { e.preventDefault(); e.stopPropagation(); onDrop(e); }}
-      onDragEnd={() => {}}
-      className="group flex items-center gap-3 px-3 py-2 rounded-xl bg-dark-card border border-white/[0.06] hover:border-violet-500/25 transition-all duration-150"
+      className="group flex items-center gap-2 px-3 py-2 rounded-xl bg-white dark:bg-dark-card border border-slate-200 dark:border-white/[0.06] shadow-sm dark:shadow-none hover:border-violet-500/25 dark:hover:border-violet-500/25 transition-all duration-150"
     >
+      {/* Drag handle — só aparece quando dentro de SortableTaskItem */}
+      {dragHandleProps && (
+        <button
+          {...dragHandleProps.attributes}
+          {...dragHandleProps.listeners}
+          className="cursor-grab active:cursor-grabbing text-slate-400 dark:text-dark-text/20 hover:text-violet-500 dark:hover:text-violet-400 transition-colors touch-none flex-shrink-0"
+          title="Arrastar para reordenar"
+          onClick={e => e.stopPropagation()}
+        >
+          <GripVertical size={12} />
+        </button>
+      )}
+
       {/* Check circle */}
       <button
         onClick={e => { e.stopPropagation(); onStatusChange(item.id, item.status === 'done' ? 'todo' : 'done'); }}
         className={`w-4 h-4 rounded-full border flex-shrink-0 flex items-center justify-center transition-all ${
           item.status === 'done'
             ? 'bg-emerald-500 border-emerald-500'
-            : 'border-dark-text/20 hover:border-violet-400'
+            : 'border-slate-300 dark:border-dark-text/20 hover:border-violet-500 dark:hover:border-violet-400'
         }`}
       >
         {item.status === 'done' && <Check size={9} className="text-white" />}
       </button>
-
-      {/* Grip handle */}
-      <span className="text-dark-text/20 cursor-grab active:cursor-grabbing flex-shrink-0"><GripVertical size={12} /></span>
 
       {/* Priority dot */}
       <PriorityDot priority={item.priority} />
@@ -1562,7 +1617,7 @@ const TodoRow: React.FC<RowProps> = ({ item, allColumns, coloredTagDefs, onView,
         {/* Title row: title on left, tag pill on right */}
         <div className="flex items-center gap-2 min-w-0">
           <span
-            className={`flex-1 text-sm text-dark-text truncate hover:text-violet-400 transition-colors ${item.status === 'done' ? 'line-through opacity-40' : ''}`}
+            className={`flex-1 text-sm text-slate-700 dark:text-dark-text truncate hover:text-violet-600 dark:hover:text-violet-400 transition-colors ${item.status === 'done' ? 'line-through opacity-40' : ''}`}
           >
             {item.title}
           </span>
@@ -1574,7 +1629,7 @@ const TodoRow: React.FC<RowProps> = ({ item, allColumns, coloredTagDefs, onView,
             return (
               <span
                 className={`flex-shrink-0 px-1.5 py-0.5 rounded-full text-[9px] font-bold border ${
-                  ctag ? '' : 'bg-violet-500/10 text-violet-400 border-violet-500/15'
+                  ctag ? '' : 'bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/15'
                 }`}
                 style={tagStyle}
               >
@@ -1595,7 +1650,7 @@ const TodoRow: React.FC<RowProps> = ({ item, allColumns, coloredTagDefs, onView,
               const fmt = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
               return (
                 <span className={`text-[9px] font-semibold ${
-                  overdue ? 'text-red-400' : isToday ? 'text-amber-400' : 'text-dark-text/30'
+                  overdue ? 'text-red-500 dark:text-red-400' : isToday ? 'text-amber-500 dark:text-amber-400' : 'text-slate-400 dark:text-dark-text/30'
                 }`}>
                   {fmt}
                 </span>
@@ -1777,7 +1832,7 @@ const EmptyCol = ({ onAdd, label }: { onAdd: () => void; label: string }) => (
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitle?: string; hideRecurring?: boolean; hideDocument?: boolean; enableColoredTags?: boolean; enableImageUpload?: boolean }> = ({ activePage, pageTitle, pageSubtitle, hideRecurring = false, hideDocument = false, enableColoredTags = false, enableImageUpload = false }) => {
+const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitle?: string; hideRecurring?: boolean; hideDocument?: boolean; hideIdeas?: boolean; todoLabel?: string; enableColoredTags?: boolean; enableImageUpload?: boolean }> = ({ activePage, pageTitle, pageSubtitle, hideRecurring = false, hideDocument = false, hideIdeas = false, todoLabel, enableColoredTags = false, enableImageUpload = false }) => {
   const [todos,      setTodos]      = useState<TodoItem[]>([]);
   const [recurring,  setRecurring]  = useState<RecurringItem[]>([]);
   const [ideas,      setIdeas]      = useState<IdeaItem[]>([]);
@@ -1821,7 +1876,14 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
   );
   const [tagsModal, setTagsModal] = useState(false);
 
+  // Coluna "A Fazer" com label customizável via prop todoLabel
+  const derivedColumns = useMemo(() =>
+    COLUMNS.map(c => c.id === 'todo' && todoLabel ? { ...c, label: todoLabel } : c),
+    [todoLabel]
+  );
+
   // ── Load data from API on mount ──
+
   useEffect(() => {
     const queryStr = activePage ? `?page_id=${encodeURIComponent(activePage)}` : '';
     Promise.all([
@@ -1926,70 +1988,75 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
     if (item) apiCall('PUT', `/api/todo-staff/tasks/${taskId}`, todoToApi({ ...item, subtasks: [...(item.subtasks || []), newSub] }));
   };
 
-  // drag-and-drop state for task rows
-  const dragFromId = useRef<string | null>(null);
-  const dragOverId = useRef<string | null>(null);
-  const [dragOverState, setDragOverState] = useState<string | null>(null);
+  // ── dnd-kit drag-and-drop ──────────────────────────────────────────────────
+  const [activeDragTask, setActiveDragTask] = useState<TodoItem | null>(null);
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  );
 
-  const handleTaskDragStart = (id: string) => { dragFromId.current = id; };
-  const handleTaskDragOver  = (id: string) => { dragOverId.current = id; setDragOverState(id); };
-  const handleTaskDrop = (e?: React.DragEvent) => {
-    if (e) e.stopPropagation();
-    const fromId = dragFromId.current;
-    const toId   = dragOverId.current;
-    if (!fromId || !toId || fromId === toId) { dragFromId.current = null; dragOverId.current = null; setDragOverState(null); return; }
-    
-    setTodos(prev => {
-      const arr = [...prev];
-      const fromIdx = arr.findIndex(t => t.id === fromId);
-      const toIdx   = arr.findIndex(t => t.id === toId);
-      if (fromIdx < 0 || toIdx < 0) return prev;
-      
-      const toStatus = arr[toIdx].status;
-      const [moved] = arr.splice(fromIdx, 1);
-      
-      if (moved.status !== toStatus) {
-        moved.status = toStatus;
-        if (toStatus === 'done') moved.doneAt = new Date().toISOString();
-        else moved.doneAt = undefined;
-        apiCall('PUT', `/api/todo-staff/tasks/${moved.id}`, todoToApi(moved));
-      }
-      
-      arr.splice(toIdx, 0, moved);
-      return arr;
-    });
-    dragFromId.current = null;
-    dragOverId.current = null;
-    setDragOverState(null);
+  const handleDndStart = (event: any) => {
+    const task = todos.find(t => t.id === event.active.id);
+    if (task) setActiveDragTask(task);
   };
 
-  const handleColDrop = (colId: Status, e: React.DragEvent) => {
-    e.preventDefault();
-    const fromId = dragFromId.current;
-    if (!fromId) return;
-    
-    // If dropping on column space explicitly or dragOverId is clear
-    if (dragOverState === `col-${colId}` || !dragOverId.current) {
+  const handleDndOver = (event: any) => {
+    const { active, over } = event;
+    if (!over) return;
+    const activeTask = todos.find(t => t.id === active.id);
+    if (!activeTask) return;
+
+    // If dropping on a column container
+    const overData = over.data?.current;
+    if (overData?.type === 'column') {
+      const newStatus = overData.status as Status;
+      if (activeTask.status !== newStatus) {
+        setTodos(prev => prev.map(t => {
+          if (t.id !== active.id) return t;
+          const updated = { ...t, status: newStatus };
+          if (newStatus === 'done') updated.doneAt = new Date().toISOString();
+          else updated.doneAt = undefined;
+          return updated;
+        }));
+      }
+      return;
+    }
+
+    // If dropping on another task — move to that task's column
+    const overTask = todos.find(t => t.id === over.id);
+    if (overTask && activeTask.status !== overTask.status) {
+      setTodos(prev => prev.map(t => {
+        if (t.id !== active.id) return t;
+        const updated = { ...t, status: overTask.status };
+        if (overTask.status === 'done') updated.doneAt = new Date().toISOString();
+        else updated.doneAt = undefined;
+        return updated;
+      }));
+    }
+  };
+
+  const handleDndEnd = (event: any) => {
+    const { active, over } = event;
+    setActiveDragTask(null);
+    if (!over) return;
+
+    // Reorder within list
+    if (active.id !== over.id && over.data?.current?.type !== 'column') {
       setTodos(prev => {
+        const oldIndex = prev.findIndex(t => t.id === active.id);
+        const newIndex = prev.findIndex(t => t.id === over.id);
+        if (oldIndex < 0 || newIndex < 0) return prev;
         const arr = [...prev];
-        const fromIdx = arr.findIndex(t => t.id === fromId);
-        if (fromIdx < 0) return prev;
-        
-        const [moved] = arr.splice(fromIdx, 1);
-        if (moved.status !== colId) {
-          moved.status = colId;
-          if (colId === 'done') moved.doneAt = new Date().toISOString();
-          else moved.doneAt = undefined;
-          apiCall('PUT', `/api/todo-staff/tasks/${moved.id}`, todoToApi(moved));
-        }
-        
-        arr.push(moved);
+        const [moved] = arr.splice(oldIndex, 1);
+        arr.splice(newIndex, 0, moved);
         return arr;
       });
     }
-    dragFromId.current = null;
-    dragOverId.current = null;
-    setDragOverState(null);
+
+    // Persist status change to API
+    const updated = todos.find(t => t.id === active.id);
+    if (updated) {
+      apiCall('PUT', `/api/todo-staff/tasks/${updated.id}`, todoToApi(updated));
+    }
   };
 
   const reorderSubtasks = (taskId: string, newSubtasks: Subtask[]) => {
@@ -2168,16 +2235,18 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
           >
             <ListChecks size={13} /> Tarefas
           </button>
-          <button
-            onClick={() => setActiveTab('ideias')}
-            className={`flex items-center gap-2 px-4 py-1.5 rounded-xl text-xs font-bold transition-all ${
-              activeTab === 'ideias'
-                ? 'bg-violet-600 text-white shadow-lg shadow-violet-500/20'
-                : 'text-dark-text/50 hover:text-dark-text/80'
-            }`}
-          >
-            <Lightbulb size={13} /> Ideias
-          </button>
+          {!hideIdeas && (
+            <button
+              onClick={() => setActiveTab('ideias')}
+              className={`flex items-center gap-2 px-4 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                activeTab === 'ideias'
+                  ? 'bg-violet-600 text-white shadow-lg shadow-violet-500/20'
+                  : 'text-dark-text/50 hover:text-dark-text/80'
+              }`}
+            >
+              <Lightbulb size={13} /> Ideias
+            </button>
+          )}
         </div>
       </div>
 
@@ -2528,10 +2597,11 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
         </div>
       ) : (
         <div className="px-6 md:px-8 pb-10">
+          <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragStart={handleDndStart} onDragOver={handleDndOver} onDragEnd={handleDndEnd}>
           <div className={viewMode === 'kanban' ? "grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4" : "flex flex-col gap-6"}>
 
           {/* ── 3 colunas de status ─── */}
-          {COLUMNS.map(col => {
+          {derivedColumns.map(col => {
             let items = byStatus(col.id);
             
             // Sort "A Fazer" items
@@ -2607,17 +2677,8 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
                   </div>
                 </div>
                 {!isCollapsed && (
-                  <div
-                    className={`flex flex-col gap-1.5 min-h-[100px] p-1 -m-1 rounded-2xl transition-colors ${dragOverState === `col-${col.id}` ? 'bg-white/5 border border-dashed border-white/10' : ''}`}
-                    onDragOver={e => {
-                      e.preventDefault();
-                      setDragOverState(`col-${col.id}`);
-                    }}
-                    onDragLeave={() => {
-                      if (dragOverState === `col-${col.id}`) setDragOverState(null);
-                    }}
-                    onDrop={e => handleColDrop(col.id, e)}
-                  >
+                  <DroppableColumn status={col.id}>
+                    <SortableContext items={items.map(t => t.id)} strategy={verticalListSortingStrategy}>
                     {/* Recurring items inside A Fazer */}
                     {col.id === 'todo' && filteredRec.length > 0 && (
                       <>
@@ -2634,40 +2695,69 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
                     {items.length === 0 && (col.id !== 'todo' || filteredRec.length === 0)
                       ? <EmptyCol onAdd={() => openNewTodo(col.id)} label="Adicionar" />
                       : items.map((item, idx) => (
-                        <React.Fragment key={item.id}>
-                          {dragOverState === item.id && <DropLine />}
-                          <motion.div
-                            initial={{ opacity: 0, y: -18, scale: 0.98 }}
-                            animate={{ opacity: 1, y: 0, scale: 1 }}
-                            transition={{
-                              duration: 0.35,
-                              delay: idx * 0.06,
-                              ease: [0.32, 0.72, 0, 1],
-                            }}
-                          >
-                            <TodoRow
-                              item={item} allColumns={COLUMNS}
-                              coloredTagDefs={enableColoredTags ? coloredTagDefs : undefined}
-                              onView={item => setViewingTodo(item)}
-                              onEdit={item => { setEditing(item); setTodoModal(true); }}
-                              onDelete={deleteTodo}
-                              onStatusChange={changeStatus}
-                              onDragStart={handleTaskDragStart}
-                              onDragOver={handleTaskDragOver}
-                              onDrop={handleTaskDrop}
-                              isDragOver={false}
-                            />
-                          </motion.div>
-                        </React.Fragment>
+                        <motion.div
+                          key={item.id}
+                          initial={{ opacity: 0, y: -18, scale: 0.98 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          transition={{
+                            duration: 0.35,
+                            delay: idx * 0.06,
+                            ease: [0.32, 0.72, 0, 1],
+                          }}
+                        >
+                          <SortableTaskItem id={item.id}>
+                            {(dragHandleProps) => (
+                              <TodoRow
+                                item={item} allColumns={derivedColumns}
+                                coloredTagDefs={enableColoredTags ? coloredTagDefs : undefined}
+                                onView={item => setViewingTodo(item)}
+                                onEdit={item => { setEditing(item); setTodoModal(true); }}
+                                onDelete={deleteTodo}
+                                onStatusChange={changeStatus}
+                                dragHandleProps={dragHandleProps}
+                              />
+                            )}
+                          </SortableTaskItem>
+                        </motion.div>
                       ))
                     }
-                  </div>
+                    </SortableContext>
+                  </DroppableColumn>
                 )}
               </div>
             );
           })}
 
         </div>
+        <DragOverlay dropAnimation={null}>
+          {activeDragTask && (
+            <div className="bg-white dark:bg-dark-card/95 backdrop-blur-sm border border-violet-500/30 rounded-xl px-4 py-2.5 shadow-2xl shadow-violet-500/10 cursor-grabbing flex items-center gap-2 max-w-md">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" className="text-violet-500 dark:text-violet-400 flex-shrink-0">
+                <circle cx="5" cy="3" r="1.5" /><circle cx="11" cy="3" r="1.5" />
+                <circle cx="5" cy="8" r="1.5" /><circle cx="11" cy="8" r="1.5" />
+                <circle cx="5" cy="13" r="1.5" /><circle cx="11" cy="13" r="1.5" />
+              </svg>
+              <span className="text-sm font-medium text-slate-700 dark:text-white truncate">{activeDragTask.title}</span>
+              {activeDragTask.tags[0] && (() => {
+                const ctag = (enableColoredTags ? coloredTagDefs : [])?.find(c => c.name.trim().toLowerCase() === activeDragTask.tags[0].trim().toLowerCase());
+                const tagStyle = ctag
+                  ? { backgroundColor: ctag.color + '26', color: ctag.color, borderColor: ctag.color + '66' }
+                  : undefined;
+                return (
+                  <span
+                    className={`flex-shrink-0 px-1.5 py-0.5 rounded-full text-[9px] font-bold border ml-auto ${
+                      ctag ? '' : 'bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/15'
+                    }`}
+                    style={tagStyle}
+                  >
+                    {activeDragTask.tags[0]}{activeDragTask.tags.length > 1 ? ` +${activeDragTask.tags.length - 1}` : ''}
+                  </span>
+                );
+              })()}
+            </div>
+          )}
+        </DragOverlay>
+        </DndContext>
       </div>
       )}
       </>)}
@@ -2748,7 +2838,7 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
       {viewingTodo && (
         <TaskDetailModal
           item={viewingTodo}
-          allColumns={COLUMNS}
+          allColumns={derivedColumns}
           coloredTagDefs={enableColoredTags ? coloredTagDefs : undefined}
           enableImageUpload={enableImageUpload}
           onEdit={() => { setEditing(viewingTodo); setViewingTodo(undefined); setTodoModal(true); }}
@@ -2762,7 +2852,7 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
       {todoModal && (
         <TodoModal
           initial={editing ?? { status: defaultStatus }}
-          allColumns={COLUMNS}
+          allColumns={derivedColumns}
           globalTags={globalTags}
           coloredTagDefs={enableColoredTags ? coloredTagDefs : undefined}
           enableImageUpload={enableImageUpload}

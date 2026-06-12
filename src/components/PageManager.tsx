@@ -415,6 +415,8 @@ const templates = (() => {
     { id: 'gerente-operacional', label: 'Calculadora Gerente Operacional' },
     { id: 'sdr', label: 'Calculadora SDR' },
     { id: 'chamados-grapehub', label: 'Chamados Grapehub' },
+    { id: 'ideais-criativos', label: 'Ideais Criativos' },
+
     { id: 'checklist-integracao', label: 'Checklist Integração' },
     { id: 'checklist-saida', label: 'Checklist Saída' },
     { id: 'colaboradores', label: 'Colaboradores' },

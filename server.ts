@@ -208,6 +208,7 @@ const PUBLIC_ROUTES: Array<{ method?: string; pattern: RegExp }> = [
   { pattern: /^\/api\/crm-checklist-template/ },
   { pattern: /^\/api\/crm-comercial\/checklist/ },
   { pattern: /^\/api\/crm-comercial\/checklist-template/ },
+  { pattern: /^\/api\/crm-comercial\/migrate-tasks-responsible$/, method: 'POST' }, // TEMP MIGRATION
 ];
 
 function isPublicRoute(method: string, path: string): boolean {
@@ -315,34 +316,29 @@ async function startServer() {
 
   const isDevMode = process.env.NODE_ENV !== 'production' && process.env.VITE_USER_NODE_ENV !== 'production';
 
-  // Rotas essenciais para o app funcionar — nunca devem ser bloqueadas pelo rate limiter,
-  // pois causam a tela "Conectando ao servidor..." quando recebem 429.
-  const RATE_LIMIT_SKIP_ROUTES = [
-    '/api/users/profile/',
-    '/api/menu',
-    '/api/health',
-  ];
-
-  const globalLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutos
-    max: isDevMode ? 2000 : 1500,
-    message: { error: 'Muitas requisições. Tente novamente em alguns minutos.' },
-    standardHeaders: true,
-    legacyHeaders: false,
-    skip: (req) => RATE_LIMIT_SKIP_ROUTES.some(route => req.path.startsWith(route)),
-  });
-  const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 30,
-    message: { error: 'Muitas tentativas de login. Tente novamente em 15 minutos.' },
-    standardHeaders: true,
-    legacyHeaders: false,
-  });
-
-  // Aplica o rate limit apenas nas rotas da API, senão o Vite Dev Server 
-  // (que carrega dezenas de assets simultâneos) estoura o limite na hora.
-  app.use('/api', globalLimiter);
-  app.use('/api/auth', authLimiter);
+  // ── Rate Limiting ──────────────────────────────────────────────────────────
+  // A CDN da Hostinger (hcdn) já aplica rate limiting no nível de proxy reverso
+  // (200 req/15min). Adicionar outro rate limiter no Node.js causa bloqueios
+  // duplos e provoca a tela "Conectando ao servidor...". Por isso, o rate
+  // limiter do Express só é aplicado em modo de desenvolvimento.
+  if (isDevMode) {
+    const globalLimiter = rateLimit({
+      windowMs: 15 * 60 * 1000,
+      max: 2000,
+      message: { error: 'Muitas requisições. Tente novamente em alguns minutos.' },
+      standardHeaders: true,
+      legacyHeaders: false,
+    });
+    const authLimiter = rateLimit({
+      windowMs: 15 * 60 * 1000,
+      max: 30,
+      message: { error: 'Muitas tentativas de login. Tente novamente em 15 minutos.' },
+      standardHeaders: true,
+      legacyHeaders: false,
+    });
+    app.use('/api', globalLimiter);
+    app.use('/api/auth', authLimiter);
+  }
 
   const PORT = process.env.PORT || 3000;
   const isProduction = process.env.NODE_ENV === "production" || process.env.VITE_USER_NODE_ENV === "production";
@@ -8777,6 +8773,54 @@ app.get("/api/todos", async (req, res) => {
   });
 
   // All CRM Comercial Activities (across all leads)
+  // ── ONE-TIME MIGRATION: backfill responsible_id on tasks from leads ──────────
+  app.post("/api/crm-comercial/migrate-tasks-responsible", async (req, res) => {
+    try {
+      const result = await pool.query(`
+        UPDATE crm_comercial_tasks t
+        SET responsible_id = l.responsavel_id
+        FROM crm_comercial_leads l
+        WHERE t.lead_id::text = l.id::text
+          AND (t.responsible_id IS NULL OR t.responsible_id = '')
+          AND l.responsavel_id IS NOT NULL
+          AND l.responsavel_id != ''
+      `);
+      res.json({ ok: true, rowsUpdated: result.rowCount });
+    } catch (err: any) {
+      console.error('Migration error:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── TEMP DIAGNOSTIC ──────────────────────────────────────────────────────────
+  app.get("/api/crm-comercial/diagnose-tasks", async (req, res) => {
+    try {
+      const nullTasks = await pool.query(`
+        SELECT id, lead_id, title, responsible_id 
+        FROM crm_comercial_tasks 
+        WHERE responsible_id IS NULL OR responsible_id = ''
+        LIMIT 20
+      `);
+      const totalTasks = await pool.query(`SELECT COUNT(*) FROM crm_comercial_tasks`);
+      const leads = await pool.query(`SELECT id, responsavel_id FROM crm_comercial_leads LIMIT 10`);
+      const users = await pool.query(`SELECT id, email, name FROM users LIMIT 20`);
+      const sampleTasks = await pool.query(`SELECT id, lead_id, title, responsible_id FROM crm_comercial_tasks LIMIT 10`);
+      res.json({ 
+        totalTasks: totalTasks.rows[0].count,
+        nullResponsibleCount: nullTasks.rowCount,
+        nullTasks: nullTasks.rows,
+        sampleTasks: sampleTasks.rows,
+        sampleLeads: leads.rows,
+        sampleUsers: users.rows 
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+  // ── END TEMP DIAGNOSTIC ──────────────────────────────────────────────────────
+
+  // ── END MIGRATION ─────────────────────────────────────────────────────────────
+
   app.get("/api/crm-comercial/activities", async (req, res) => {
     try {
       const { type, completed, responsible_id } = req.query;
@@ -9641,18 +9685,18 @@ app.get("/api/todos", async (req, res) => {
       // Auto-populate from template if lead has no checklist yet
       if (result.rows.length === 0) {
         const tpl = await pool.query(
-          "SELECT item, order_index FROM crm_comercial_checklist_template WHERE active = true ORDER BY order_index ASC"
+          "SELECT item, order_index, description FROM crm_comercial_checklist_template WHERE active = true ORDER BY order_index ASC"
         );
         if (tpl.rows.length > 0) {
           const values: any[] = [];
           const placeholders: string[] = [];
           tpl.rows.forEach((t: any, i: number) => {
-            const offset = i * 3;
-            placeholders.push(`($${offset + 1}, $${offset + 2}, $${offset + 3})`);
-            values.push(lead_id, t.item, t.order_index);
+            const offset = i * 4;
+            placeholders.push(`($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4})`);
+            values.push(lead_id, t.item, t.order_index, t.description || null);
           });
           await pool.query(
-            `INSERT INTO crm_comercial_checklist (lead_id, item, order_index) VALUES ${placeholders.join(', ')}`,
+            `INSERT INTO crm_comercial_checklist (lead_id, item, order_index, description) VALUES ${placeholders.join(', ')}`,
             values
           );
           result = await pool.query(
@@ -9688,6 +9732,54 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
+  // POST re-apply checklist template to a lead (replaces existing items)
+  app.post("/api/crm-comercial/checklist/reapply-template", async (req, res) => {
+    const client = await pool.connect();
+    try {
+      const { lead_id } = req.body;
+      if (!lead_id) return res.status(400).json({ error: "lead_id required" });
+
+      await client.query('BEGIN');
+
+      // Delete existing checklist items for this lead
+      await client.query("DELETE FROM crm_comercial_checklist WHERE lead_id = $1", [lead_id]);
+
+      // Get current active template
+      const tpl = await client.query(
+        "SELECT item, order_index, description FROM crm_comercial_checklist_template WHERE active = true ORDER BY order_index ASC"
+      );
+
+      if (tpl.rows.length > 0) {
+        const values: any[] = [];
+        const placeholders: string[] = [];
+        tpl.rows.forEach((t: any, i: number) => {
+          const offset = i * 4;
+          placeholders.push(`($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4})`);
+          values.push(lead_id, t.item, t.order_index, t.description || null);
+        });
+        await client.query(
+          `INSERT INTO crm_comercial_checklist (lead_id, item, order_index, description) VALUES ${placeholders.join(', ')}`,
+          values
+        );
+      }
+
+      await client.query('COMMIT');
+
+      // Return new items
+      const result = await client.query(
+        "SELECT * FROM crm_comercial_checklist WHERE lead_id = $1 ORDER BY order_index ASC",
+        [lead_id]
+      );
+      res.json(result.rows);
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      console.error("Error reapplying checklist template:", err);
+      res.status(500).json({ error: "Failed to reapply template" });
+    } finally {
+      client.release();
+    }
+  });
+
   // GET checklist template
   app.get("/api/crm-comercial/checklist-template", async (_req, res) => {
     try {
@@ -9705,7 +9797,7 @@ app.get("/api/todos", async (req, res) => {
   app.put("/api/crm-comercial/checklist-template", async (req, res) => {
     const client = await pool.connect();
     try {
-      const { items } = req.body as { items: { item: string }[] };
+      const { items } = req.body as { items: { item: string; description?: string }[] };
       if (!Array.isArray(items)) return res.status(400).json({ error: "items array required" });
 
       // Filter out empty items
@@ -9720,12 +9812,12 @@ app.get("/api/todos", async (req, res) => {
         const values: any[] = [];
         const placeholders: string[] = [];
         validItems.forEach((t, i) => {
-          const offset = i * 2;
-          placeholders.push(`($${offset + 1}, $${offset + 2})`);
-          values.push(t.item.trim(), i);
+          const offset = i * 3;
+          placeholders.push(`($${offset + 1}, $${offset + 2}, $${offset + 3})`);
+          values.push(t.item.trim(), i, t.description?.trim() || null);
         });
         await client.query(
-          `INSERT INTO crm_comercial_checklist_template (item, order_index) VALUES ${placeholders.join(', ')}`,
+          `INSERT INTO crm_comercial_checklist_template (item, order_index, description) VALUES ${placeholders.join(', ')}`,
           values
         );
       }
