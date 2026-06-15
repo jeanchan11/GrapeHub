@@ -351,8 +351,9 @@ const AddTaskModal = ({ groupId, pageId, onClose, onSaved }: { groupId: string; 
 };
 
 // ── Main Component ────────────────────────────────────────
-export default function ListaPage({ activePage }: { activePage: string }) {
+export default function ListaPage({ activePage, pageLabel }: { activePage: string; pageLabel?: string }) {
   const pageId = activePage;
+  const defaultHeadline = pageLabel || 'Minha Lista';
   const [tasks, setTasks] = useState<Task[]>([]);
   const [statusGroups, setStatusGroups] = useState<StatusGroupDef[]>([]);
   const [loading, setLoading] = useState(true);
@@ -362,7 +363,7 @@ export default function ListaPage({ activePage }: { activePage: string }) {
   const newGroupRef = useRef<HTMLInputElement>(null);
 
   // Headline editing
-  const [headline, setHeadline] = useState('Minha Lista');
+  const [headline, setHeadline] = useState(defaultHeadline);
   const [subtitle, setSubtitle] = useState('GESTÃO DE TAREFAS');
   const [editingHeadline, setEditingHeadline] = useState(false);
   const [editHeadlineVal, setEditHeadlineVal] = useState('');
@@ -406,7 +407,7 @@ export default function ListaPage({ activePage }: { activePage: string }) {
       }
       if (resSettings.ok) {
         const settings = await resSettings.json();
-        setHeadline(settings.headline || 'Minha Lista');
+        setHeadline(settings.headline || defaultHeadline);
         setSubtitle(settings.subtitle || 'GESTÃO DE TAREFAS');
       }
       isFirstLoad.current = false;
