@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import SplitHeadline from '../components/SplitHeadline';
+import ListaTaskDetailModal from '../components/ListaTaskDetailModal';
 import { Plus, ChevronDown, ChevronRight, Calendar, Users, Tag, MoreHorizontal, Circle, CheckCircle2, Loader2, X, Trash2, GripVertical, Settings, Check, Edit2, Layers, Pencil } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -59,7 +60,7 @@ interface StatusGroup extends StatusGroupDef {
 }
 
 // ── TaskRow ───────────────────────────────────────────────
-const TaskRow = ({ task, onUpdate, onDelete }: { task: Task; onUpdate: () => void; onDelete: (id: number) => void }) => {
+const TaskRow = ({ task, onUpdate, onDelete, onOpenDetail, dragHandleProps }: { task: Task; onUpdate: () => void; onDelete: (id: number) => void; onOpenDetail: (task: Task) => void; dragHandleProps?: any }) => {
   const [expanded, setExpanded] = useState(false);
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
   const [loadingSubs, setLoadingSubs] = useState(false);
@@ -78,35 +79,38 @@ const TaskRow = ({ task, onUpdate, onDelete }: { task: Task; onUpdate: () => voi
   }, [expanded]);
 
   const toggleSubtask = async (sub: Subtask) => {
+    const newVal = !sub.completed;
+    setSubtasks(prev => prev.map(s => s.id === sub.id ? { ...s, completed: newVal } : s));
     try {
       await fetch(`/api/onboarding-subtasks/${sub.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ completed: !sub.completed }),
+        body: JSON.stringify({ completed: newVal }),
       });
-      fetchSubtasks();
-      onUpdate();
     } catch { /* silent */ }
   };
 
   const addSubtask = async () => {
     if (!newSubTitle.trim()) return;
     try {
-      await fetch(`/api/onboarding-tasks/${task.id}/subtasks`, {
+      const res = await fetch(`/api/onboarding-tasks/${task.id}/subtasks`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: newSubTitle.trim() }),
       });
-      setNewSubTitle('');
-      fetchSubtasks();
-      onUpdate();
+      if (res.ok) {
+        const newSub = await res.json();
+        setSubtasks(prev => [...prev, newSub]);
+        setNewSubTitle('');
+        onUpdate();
+      }
     } catch { /* silent */ }
   };
 
   const deleteSubtask = async (subId: number) => {
+    setSubtasks(prev => prev.filter(s => s.id !== subId));
     try {
       await fetch(`/api/onboarding-subtasks/${subId}`, { method: 'DELETE' });
-      fetchSubtasks();
       onUpdate();
     } catch { /* silent */ }
   };
@@ -114,16 +118,22 @@ const TaskRow = ({ task, onUpdate, onDelete }: { task: Task; onUpdate: () => voi
   const completedCount = subtasks.filter(s => s.completed).length;
 
   return (
-    <div className="border-t border-white/5">
+    <div className="border-b border-black/[0.06] dark:border-white/[0.06] last:border-none">
       <div className="flex items-center gap-3 px-4 py-3 hover:bg-white/[0.02] transition-colors group">
+        <div {...(dragHandleProps?.attributes || {})} {...(dragHandleProps?.listeners || {})} className="w-[14px] shrink-0 flex justify-center cursor-grab active:cursor-grabbing text-slate-700 hover:text-slate-500">
+          <GripVertical size={12} />
+        </div>
         <button onClick={() => setExpanded(!expanded)} className="text-slate-500 hover:text-slate-300 transition-colors">
           {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
         </button>
-        <div className="flex-1 min-w-0">
-          <span className="text-sm font-medium text-dark-text">{task.client_name}</span>
+        <div className="w-5 h-5 rounded-full border-2 border-slate-600 flex items-center justify-center shrink-0">
+          <div className="w-2 h-2 rounded-full bg-slate-500" />
+        </div>
+        <div className="flex-1 min-w-0 cursor-pointer" onClick={() => onOpenDetail(task)}>
+          <span className="text-sm font-medium text-dark-text hover:text-violet-400 transition-colors">{task.client_name}</span>
         </div>
         {task.subtask_count > 0 && (
-          <span className="text-[10px] text-slate-500 bg-white/5 px-2 py-0.5 rounded-full">
+          <span className="text-[10px] text-slate-500 bg-white/5 px-2 py-0.5 rounded-full flex items-center gap-1">
             ↳ {task.subtask_count}
           </span>
         )}
@@ -135,55 +145,77 @@ const TaskRow = ({ task, onUpdate, onDelete }: { task: Task; onUpdate: () => voi
         </button>
       </div>
 
-      {expanded && (
-        <div className="pl-12 pr-4 pb-3 space-y-1">
-          {loadingSubs ? (
-            <div className="flex items-center gap-2 py-2 text-xs text-slate-500">
-              <Loader2 size={12} className="animate-spin" /> Carregando...
-            </div>
-          ) : (
-            <>
-              {subtasks.map(sub => (
-                <div key={sub.id} className="flex items-center gap-2 py-1.5 group/sub">
-                  <button
-                    onClick={() => toggleSubtask(sub)}
-                    className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
-                      sub.completed ? 'bg-emerald-500 border-emerald-500' : 'border-slate-600 hover:border-violet-500'
-                    }`}
-                  >
-                    {sub.completed && <Check size={10} className="text-white" />}
-                  </button>
-                  <span className={`text-xs flex-1 ${sub.completed ? 'text-slate-500 line-through' : 'text-dark-text'}`}>
-                    {sub.title}
-                  </span>
-                  <button
-                    onClick={() => deleteSubtask(sub.id)}
-                    className="opacity-0 group-hover/sub:opacity-100 p-0.5 text-slate-600 hover:text-red-400 transition-all"
-                  >
-                    <X size={12} />
-                  </button>
-                </div>
-              ))}
-              <div className="flex items-center gap-2 mt-2">
-                <input
-                  value={newSubTitle}
-                  onChange={e => setNewSubTitle(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && addSubtask()}
-                  placeholder="Nova subtarefa..."
-                  className="flex-1 bg-transparent border-b border-white/10 text-xs text-dark-text placeholder-slate-600 py-1 outline-none focus:border-violet-500/50 transition-colors"
-                />
-                <button
-                  onClick={addSubtask}
-                  disabled={!newSubTitle.trim()}
-                  className="text-[10px] text-violet-400 hover:text-violet-300 font-bold disabled:opacity-30 transition-colors"
-                >
-                  Adicionar
-                </button>
+      {/* Subtasks inline */}
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.25, ease: [0.32, 0.72, 0, 1] }}
+            style={{ overflow: 'hidden' }}
+            className="bg-black/[0.01] dark:bg-white/[0.01] border-b border-black/5 dark:border-white/5"
+          >
+            {loadingSubs ? (
+              <div className="flex items-center gap-2 px-12 py-3 text-xs text-slate-500">
+                <Loader2 size={12} className="animate-spin" /> Carregando subtarefas...
               </div>
-            </>
-          )}
-        </div>
-      )}
+            ) : (
+              <div className="pb-2">
+                <div className="px-12 py-2 flex items-center gap-2 border-b border-white/5 mb-1 bg-white/5">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                    Subtarefas
+                  </span>
+                  <span className="text-[10px] text-slate-500">
+                    {completedCount}/{subtasks.length}
+                  </span>
+                  <div className="flex-1 h-1 bg-white/10 rounded-full overflow-hidden ml-1 max-w-[200px]">
+                    <div className="h-full bg-violet-500 rounded-full transition-all duration-300"
+                      style={{ width: `${subtasks.length > 0 ? (completedCount / subtasks.length) * 100 : 0}%` }} />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  {subtasks.map(sub => (
+                    <div key={sub.id} className="flex items-center gap-2 px-12 py-1.5 hover:bg-white/[0.02] transition-colors group/sub">
+                      <div className="w-4 shrink-0 flex items-center justify-center">
+                        <button
+                          onClick={() => toggleSubtask(sub)}
+                          className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                            sub.completed ? 'bg-emerald-500 border-emerald-500' : 'border-slate-600 hover:border-violet-500'
+                          }`}
+                        >
+                          {sub.completed && <CheckCircle2 size={10} className="text-white" />}
+                        </button>
+                      </div>
+                      <span className={`text-xs flex-1 ${sub.completed ? 'text-slate-500 line-through' : 'text-dark-text'}`}>
+                        {sub.title}
+                      </span>
+                      <button
+                        onClick={() => deleteSubtask(sub.id)}
+                        className="opacity-0 group-hover/sub:opacity-100 p-0.5 text-slate-600 hover:text-red-400 transition-all"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  ))}
+                  <div className="flex items-center gap-2 px-12 py-1.5">
+                    <div className="w-4 shrink-0 flex justify-center">
+                      <Plus size={12} className="text-slate-600" />
+                    </div>
+                    <input
+                      value={newSubTitle}
+                      onChange={e => setNewSubTitle(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && addSubtask()}
+                      placeholder="Adicionar Tarefa..."
+                      className="flex-1 bg-transparent text-xs text-dark-text placeholder-slate-600 outline-none transition-colors"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
@@ -198,6 +230,7 @@ const GroupBlock = ({
   onUpdateGroup,
   onDeleteGroup,
   onDeleteTask,
+  onOpenDetail,
   dragHandleProps,
 }: {
   group: StatusGroup;
@@ -208,6 +241,7 @@ const GroupBlock = ({
   onUpdateGroup: (id: string, fields: { color?: string; emoji?: string }) => void;
   onDeleteGroup: (id: string) => void;
   onDeleteTask: (id: number) => void;
+  onOpenDetail: (task: Task) => void;
   dragHandleProps: any;
 }) => {
   const [collapsed, setCollapsed] = useState(false);
@@ -281,8 +315,8 @@ const GroupBlock = ({
             <SortableContext items={group.tasks.map(t => `task-${t.id}`)} strategy={verticalListSortingStrategy}>
               {group.tasks.map(task => (
                 <SortableListRow key={`task-${task.id}`} id={`task-${task.id}`}>
-                  {() => (
-                    <TaskRow task={task} onUpdate={onUpdate} onDelete={onDeleteTask} />
+                  {(dragHandleProps) => (
+                    <TaskRow task={task} onUpdate={onUpdate} onDelete={onDeleteTask} onOpenDetail={onOpenDetail} dragHandleProps={dragHandleProps} />
                   )}
                 </SortableListRow>
               ))}
@@ -370,6 +404,7 @@ export default function ListaPage({ activePage, pageLabel }: { activePage: strin
 
   const [showCompleted, setShowCompleted] = useState(false);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
   const isFirstLoad = useRef(true);
 
@@ -683,6 +718,7 @@ export default function ListaPage({ activePage, pageLabel }: { activePage: strin
                           onUpdateGroup={handleUpdateGroup}
                           onDeleteGroup={handleDeleteGroup}
                           onDeleteTask={handleDeleteTask}
+                          onOpenDetail={(task) => setSelectedTask(task)}
                           dragHandleProps={{ attributes, listeners }}
                         />
                       </motion.div>
@@ -736,6 +772,16 @@ export default function ListaPage({ activePage, pageLabel }: { activePage: strin
           pageId={pageId}
           onClose={() => setAddingToGroup(null)}
           onSaved={() => fetchData(true)}
+        />
+      )}
+
+      {/* Task Detail Modal */}
+      {selectedTask && (
+        <ListaTaskDetailModal
+          task={selectedTask}
+          onClose={() => setSelectedTask(null)}
+          onUpdate={() => { fetchData(true); }}
+          onDelete={(id) => { handleDeleteTask(id); setSelectedTask(null); }}
         />
       )}
     </div>

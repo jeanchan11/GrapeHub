@@ -11216,7 +11216,7 @@ app.get("/api/todos", async (req, res) => {
     try {
       const { id } = req.params;
       const fields = req.body;
-      const allowed = ['client_name','squad','responsible_id','responsible_name','responsible_avatar','start_date','due_date','status_group','tags','subtask_count','nome_completo','nome_fantasia','telefone_whatsapp','cnpj_cpf','cep','cidade','uf','produto','responsavel_projeto_id','responsavel_projeto_name','responsavel_projeto_avatar','hospedagem','entregavel','prioridade'];
+      const allowed = ['client_name','squad','responsible_id','responsible_name','responsible_avatar','start_date','due_date','status_group','tags','subtask_count','nome_completo','nome_fantasia','telefone_whatsapp','cnpj_cpf','cep','cidade','uf','produto','responsavel_projeto_id','responsavel_projeto_name','responsavel_projeto_avatar','hospedagem','entregavel','prioridade','description'];
       const DATE_FIELDS = ['start_date', 'due_date'];
       const sets: string[] = [];
       const vals: any[] = [];
@@ -11300,6 +11300,7 @@ app.get("/api/todos", async (req, res) => {
 
   // Add order_index for drag-and-drop reordering
   await pool.query(`ALTER TABLE onboarding_tasks ADD COLUMN IF NOT EXISTS order_index INTEGER DEFAULT 0`).catch(e => console.error(e));
+  await pool.query(`ALTER TABLE onboarding_tasks ADD COLUMN IF NOT EXISTS description TEXT`).catch(e => console.error(e));
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS onboarding_template_items (
@@ -11349,6 +11350,7 @@ app.get("/api/todos", async (req, res) => {
     )
   `);
   await pool.query(`ALTER TABLE onboarding_comments ADD COLUMN IF NOT EXISTS author_avatar TEXT`);
+  await pool.query(`ALTER TABLE onboarding_comments ADD COLUMN IF NOT EXISTS files JSONB`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS onboarding_subtask_comments (
@@ -11950,6 +11952,45 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
+  app.post('/api/onboarding-tasks/:id/subtasks', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { title } = req.body;
+      if (!title?.trim()) return res.status(400).json({ error: 'title obrigatório.' });
+      // Get next order_index
+      const countRes = await pool.query('SELECT COUNT(*) FROM onboarding_subtasks WHERE task_id = $1', [id]);
+      const orderIndex = parseInt(countRes.rows[0].count) || 0;
+      const result = await pool.query(
+        'INSERT INTO onboarding_subtasks (task_id, title, order_index) VALUES ($1, $2, $3) RETURNING *',
+        [id, title.trim(), orderIndex]
+      );
+      // Update subtask_count
+      await pool.query('UPDATE onboarding_tasks SET subtask_count = subtask_count + 1 WHERE id = $1', [id]);
+      res.status(201).json(result.rows[0]);
+    } catch (err) {
+      console.error('POST /api/onboarding-subtasks error:', err);
+      res.status(500).json({ error: 'Erro ao criar subtarefa.' });
+    }
+  });
+
+  app.delete('/api/onboarding-subtasks/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const sub = await pool.query('SELECT task_id FROM onboarding_subtasks WHERE id = $1', [id]);
+      await pool.query('DELETE FROM onboarding_subtasks WHERE id = $1', [id]);
+      if (sub.rows.length > 0) {
+        await pool.query(
+          'UPDATE onboarding_tasks SET subtask_count = GREATEST(subtask_count - 1, 0) WHERE id = $1',
+          [sub.rows[0].task_id]
+        );
+      }
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('DELETE /api/onboarding-subtasks error:', err);
+      res.status(500).json({ error: 'Erro ao excluir subtarefa.' });
+    }
+  });
+
   // ── PATCH subtask (toggle completed, update details) ──
   app.patch('/api/onboarding-subtasks/:id', async (req, res) => {
     try {
@@ -12200,16 +12241,27 @@ app.get("/api/todos", async (req, res) => {
 
   app.post('/api/onboarding-tasks/:id/comments', async (req, res) => {
     try {
-      const { text, author_name, author_email, author_avatar } = req.body;
-      if (!text?.trim()) return res.status(400).json({ error: 'text obrigatório.' });
+      const { text, author_name, author_email, author_avatar, files } = req.body;
+      if (!text?.trim() && (!files || files.length === 0)) return res.status(400).json({ error: 'text ou files obrigatório.' });
       const result = await pool.query(
-        `INSERT INTO onboarding_comments (task_id, text, author_name, author_email, author_avatar) VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-        [req.params.id, text.trim(), author_name || null, author_email || null, author_avatar || null]
+        `INSERT INTO onboarding_comments (task_id, text, author_name, author_email, author_avatar, files) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+        [req.params.id, text?.trim() || '', author_name || null, author_email || null, author_avatar || null, files ? JSON.stringify(files) : null]
       );
       res.status(201).json(result.rows[0]);
     } catch (err) {
       console.error('POST /api/onboarding-comments error:', err);
       res.status(500).json({ error: 'Erro ao criar comentário.' });
+    }
+  });
+
+  app.delete('/api/onboarding-tasks/:taskId/comments/:commentId', async (req, res) => {
+    try {
+      const { commentId } = req.params;
+      await pool.query('DELETE FROM onboarding_comments WHERE id = $1', [commentId]);
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('DELETE /api/onboarding-comment error:', err);
+      res.status(500).json({ error: 'Erro ao excluir comentário.' });
     }
   });
 
