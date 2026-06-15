@@ -1,8 +1,28 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import SplitHeadline from '../components/SplitHeadline';
 import { createPortal } from 'react-dom';
-import { Plus, ChevronDown, ChevronRight, Calendar, Users, Tag, MoreHorizontal, Circle, CheckCircle2, Loader2, X, Trash2, GripVertical, Settings, FileText, Link as LinkIcon, Save, Heading1, Heading2, Heading3, Type, List, ListOrdered, CheckSquare, Check } from 'lucide-react';
+import { Plus, ChevronDown, ChevronRight, Calendar, Users, Tag, MoreHorizontal, Circle, CheckCircle2, Loader2, X, Trash2, GripVertical, Settings, FileText, Link as LinkIcon, Save, Heading1, Heading2, Heading3, Type, List, ListOrdered, CheckSquare, Check, Edit2, Palette, Layers, FileVideo, Globe, MessageCircle, PlaySquare, FileSignature, MonitorPlay, ShoppingBag } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
+import {
+  DndContext,
+  closestCorners,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragOverlay,
+  DragStartEvent,
+  DragOverEvent,
+  DragEndEvent
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy
+} from '@dnd-kit/sortable';
+import { SortableListRow } from '../components/kanban/SortableListRow';
+import { DroppableListGroup } from '../components/kanban/DroppableListGroup';
 
 // ── Types ─────────────────────────────────────────────────
 interface OnboardingTask {
@@ -304,11 +324,12 @@ const fetchUsersOnce = () => {
 };
 
 // ── Task Row ──────────────────────────────────────────────
-const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: { 
+const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask, dragHandleProps }: { 
   task: OnboardingTask; 
   onUpdate: () => void; 
   onOpenDetail: (t: OnboardingTask) => void;
   onOpenSubtask: (s: Subtask, t: OnboardingTask) => void;
+  dragHandleProps?: { attributes: any; listeners: any };
 }) => {
   const [squad, setSquad] = useState(task.squad || '');
   const [showStatusPicker, setShowStatusPicker] = useState(false);
@@ -496,6 +517,17 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
   return (
     <div>
       <div className="flex items-center gap-2 px-8 py-3 border-b border-black/5 dark:border-white/5 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors group">
+        {dragHandleProps && (
+          <button
+            {...dragHandleProps.attributes}
+            {...dragHandleProps.listeners}
+            className="cursor-grab active:cursor-grabbing text-slate-400 dark:text-dark-text/20 hover:text-violet-500 dark:hover:text-violet-400 transition-colors touch-none flex-shrink-0"
+            title="Arrastar para reordenar"
+            onClick={e => e.stopPropagation()}
+          >
+            <GripVertical size={12} />
+          </button>
+        )}
         {/* Expand toggle */}
         <button onClick={toggleExpand} className="shrink-0 text-slate-600 hover:text-slate-400 transition-all">
           <ChevronRight size={14} className={`transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`} />
@@ -785,7 +817,7 @@ const GroupBlock = ({ group, onUpdate, onAddTask, onOpenDetail, onOpenSubtask }:
   const [expanded, setExpanded] = useState(group.tasks.length > 0);
 
   return (
-    <div className="mb-6 bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl overflow-hidden shadow-sm">
+    <DroppableListGroup id={`group-${group.id}`} className="mb-6 bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl overflow-hidden shadow-sm">
       {/* Group header */}
       <div className="flex items-center gap-3 px-6 py-4 bg-dark-card border-b border-black/8 dark:border-white/5 sticky top-0 z-10">
         <button onClick={() => setExpanded(v => !v)} className="flex items-center gap-2 group flex-1">
@@ -818,14 +850,30 @@ const GroupBlock = ({ group, onUpdate, onAddTask, onOpenDetail, onOpenSubtask }:
             <div className="shrink-0 w-[22px]" />
           </div>
 
-          <div className="flex flex-col">
+          <div className="flex flex-col min-h-[40px]">
+            <SortableContext items={group.tasks.map(t => `task-${t.id}`)} strategy={verticalListSortingStrategy}>
             {group.tasks.length === 0 ? (
               <div className="py-12 text-center text-slate-500 text-xs font-medium">Nenhum colaborador neste grupo.</div>
             ) : (
-              group.tasks.map(task => (
-                <TaskRow key={task.id} task={task} onUpdate={onUpdate} onOpenDetail={onOpenDetail} onOpenSubtask={onOpenSubtask} />
+              group.tasks.map((task, idx) => (
+                <SortableListRow key={task.id} id={`task-${task.id}`}>
+                  {(dragHandleProps) => (
+                    <motion.div
+                      initial={{ opacity: 0, y: -18, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      transition={{
+                        duration: 0.35,
+                        delay: idx * 0.06,
+                        ease: [0.32, 0.72, 0, 1],
+                      }}
+                    >
+                      <TaskRow task={task} onUpdate={onUpdate} onOpenDetail={onOpenDetail} onOpenSubtask={onOpenSubtask} dragHandleProps={dragHandleProps} />
+                    </motion.div>
+                  )}
+                </SortableListRow>
               ))
             )}
+            </SortableContext>
             {/* Add task row */}
             <button
               onClick={() => onAddTask(group.id)}
@@ -837,7 +885,7 @@ const GroupBlock = ({ group, onUpdate, onAddTask, onOpenDetail, onOpenSubtask }:
           </div>
         </>
       )}
-    </div>
+    </DroppableListGroup>
   );
 };
 
@@ -1630,6 +1678,67 @@ export default function ChecklistSaida() {
 
   useEffect(() => { fetchTasks(); }, []);
 
+  // ── Drag & Drop reorder ──
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
+
+  const handleDndStart = (event: DragStartEvent) => {
+    setActiveDragId(event.active.id as string);
+  };
+
+  const handleDndOver = (event: DragOverEvent) => {
+    const { active, over } = event;
+    if (!over) return;
+    
+    const activeId = active.id as string;
+    const overId = over.id as string;
+    
+    if (activeId.startsWith('task-')) {
+      const activeTaskNumId = parseInt(activeId.replace('task-', ''));
+      const activeTask = tasks.find(t => t.id === activeTaskNumId);
+      if (!activeTask) return;
+      
+      let newStatus: string | null = null;
+      if (overId.startsWith('group-')) {
+        newStatus = overId.replace('group-', '');
+      } else if (overId.startsWith('task-')) {
+        const overTaskNumId = parseInt(overId.replace('task-', ''));
+        const overTask = tasks.find(t => t.id === overTaskNumId);
+        if (overTask) newStatus = overTask.status_group;
+      }
+      
+      if (newStatus && activeTask.status_group !== newStatus) {
+        setTasks(prev => prev.map(t => t.id === activeTaskNumId ? { ...t, status_group: newStatus! } : t));
+      }
+    }
+  };
+
+  const handleDndEnd = async (event: DragEndEvent) => {
+    setActiveDragId(null);
+    const { active, over } = event;
+    if (!over) return;
+    
+    const activeId = active.id as string;
+    
+    if (activeId.startsWith('task-')) {
+      const activeTaskNumId = parseInt(activeId.replace('task-', ''));
+      const activeTask = tasks.find(t => t.id === activeTaskNumId);
+      if (activeTask) {
+        try {
+          await fetch(`/api/onboarding-tasks/${activeTaskNumId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status_group: activeTask.status_group }),
+          });
+        } catch { /* silent */ }
+      }
+    }
+  };
+
   const activeGroups = showCompleted 
     ? [{ id: 'arquivado', label: 'CONCLUÍDO', color: '#10b981', emoji: '🏆' }, ...STATUS_GROUPS]
     : STATUS_GROUPS;
@@ -1678,6 +1787,8 @@ export default function ChecklistSaida() {
         </div>
       ) : (
         <div className="px-8 pb-12">
+          <DndContext sensors={dndSensors} collisionDetection={closestCorners} onDragStart={handleDndStart} onDragOver={handleDndOver} onDragEnd={handleDndEnd}>
+          <div className="flex flex-col">
           {groups.map(group => (
             <GroupBlock
               key={group.id}
@@ -1688,6 +1799,15 @@ export default function ChecklistSaida() {
               onOpenDetail={setDetailTask}
             />
           ))}
+          </div>
+          <DragOverlay dropAnimation={null}>
+            {activeDragId && activeDragId.startsWith('task-') ? (
+               <div className="bg-white/5 border border-violet-500/50 rounded-xl p-4 shadow-2xl backdrop-blur-md">
+                 <p className="text-white text-sm font-bold opacity-80 flex items-center gap-2"><GripVertical size={16}/> Movendo tarefa...</p>
+               </div>
+            ) : null}
+          </DragOverlay>
+          </DndContext>
 
           {/* New status button */}
           <button className="flex items-center gap-2 text-xs text-slate-600 hover:text-slate-400 transition-colors mt-4 px-4 py-2">

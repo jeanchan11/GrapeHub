@@ -324,11 +324,11 @@ const IconSelector = ({ value, onChange }: { value: string, onChange: (icon: str
     if (isOpen && buttonRef.current) {
       const rect = buttonRef.current.getBoundingClientRect();
       const spaceBelow = window.innerHeight - rect.bottom;
-      const openUp = spaceBelow < 280;
+      const openUp = spaceBelow < 500;
       setDropdownPos({
         top: openUp ? rect.top - 4 : rect.bottom + 4,
         left: rect.left,
-        width: Math.max(rect.width, 220),
+        width: Math.max(rect.width, 320),
         openUp,
       });
     }
@@ -364,7 +364,7 @@ const IconSelector = ({ value, onChange }: { value: string, onChange: (icon: str
             zIndex: 9999,
             left: dropdownPos.left,
             width: dropdownPos.width,
-            maxHeight: 260,
+            maxHeight: 480,
             ...(dropdownPos.openUp
               ? { bottom: window.innerHeight - dropdownPos.top }
               : { top: dropdownPos.top }),
@@ -433,8 +433,10 @@ const templates = (() => {
     { id: 'gestor-dashboard', label: 'Dashboard Gestor' },
     { id: 'marketing-dashboard', label: 'Dashboard Marketing' },
     { id: 'dashboard-operacional', label: 'Dashboard Operacional' },
+    { id: 'diferenciais', label: 'Diferenciais' },
     { id: 'implementacao-ia', label: 'Implementação IA' },
     { id: 'kpis-squad', label: 'KPIs Squad' },
+    { id: 'lista', label: 'Lista' },
     { id: 'task-templates', label: 'Modelos de Tarefas' },
     { id: 'meeting-notes', label: 'Notas de Reunião' },
     { id: 'onboarding-operacional', label: 'Onboarding Operacional' },
@@ -448,7 +450,7 @@ const templates = (() => {
     { id: 'todo-staff', label: 'To Do (Staff)' },
     { id: 'visual-hub', label: 'VisualHub' },
   ];
-  return [{ id: 'blank', label: 'Em Branco' }, ...list];
+  return [{ id: 'blank', label: 'Em Branco' }, ...list.sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'))];
 })();
 
 const SortablePage = ({ page, parentId, parentType, editingPage, editPageData, setEditPageData, setEditingPage, handleSaveEditPage, handleDeletePage, handleEditPage, menu }: any) => {
@@ -467,14 +469,14 @@ const SortablePage = ({ page, parentId, parentType, editingPage, editPageData, s
       </div>
       {editingPage === page.id ? (
         <div className="flex-1 flex flex-wrap items-center gap-3 pr-4 py-2">
-          <input type="text" value={editPageData.label} onChange={e => setEditPageData({...editPageData, label: e.target.value})} className="bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded px-2 py-1 text-sm flex-1 min-w-[150px]" placeholder="Nome" />
+          <input type="text" value={editPageData.label} onChange={e => setEditPageData({...editPageData, label: e.target.value})} className="bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded px-2 py-1 text-sm text-light-text dark:text-white flex-1 min-w-[150px]" placeholder="Nome" />
           <div className="w-40 shrink-0">
             <IconSelector value={editPageData.icon} onChange={(icon) => setEditPageData({ ...editPageData, icon })} />
           </div>
           <div className="shrink-0">
             <ColorSelector value={editPageData.icon_color} onChange={(icon_color) => setEditPageData({ ...editPageData, icon_color })} />
           </div>
-          <select value={editPageData.template} onChange={e => setEditPageData({...editPageData, template: e.target.value})} className="bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded px-2 py-1 text-sm shrink-0">
+          <select value={editPageData.template} onChange={e => setEditPageData({...editPageData, template: e.target.value})} className="bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded px-2 py-1 text-sm text-light-text dark:text-white shrink-0">
             {templates.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
           </select>
           <select 
@@ -492,7 +494,7 @@ const SortablePage = ({ page, parentId, parentType, editingPage, editPageData, s
                     setEditPageData({...editPageData, section_id: null, subsubsession_id: null, subsession_id: null});
                 }
             }} 
-            className="bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded px-2 py-1 text-sm flex-1 min-w-[150px]"
+            className="bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded px-2 py-1 text-sm text-light-text dark:text-white flex-1 min-w-[150px]"
           >
             <option value="">Selecione o destino...</option>
             {Array.isArray(menu) && menu.map((s: any) => (
@@ -548,7 +550,7 @@ const SortableSection = ({ section, editingSection, editSectionData, setEditSect
       <div className="bg-dark-card/40 p-3 font-bold text-sm text-slate-700 dark:text-slate-300 flex items-center justify-between">
         {editingSection === section.id ? (
           <div className="flex-1 flex flex-wrap items-center gap-3 pr-4 py-2">
-            <input type="text" value={editSectionData.title} onChange={e => setEditSectionData({...editSectionData, title: e.target.value})} className="bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded px-2 py-1 text-sm flex-1 min-w-[150px]" placeholder="Título da Seção" />
+            <input type="text" value={editSectionData.title} onChange={e => setEditSectionData({...editSectionData, title: e.target.value})} className="bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded px-2 py-1 text-sm text-light-text dark:text-white flex-1 min-w-[150px]" placeholder="Título da Seção" />
             <div className="w-40 shrink-0">
               <IconSelector value={editSectionData.icon} onChange={(icon) => setEditSectionData({ ...editSectionData, icon })} />
             </div>
@@ -598,14 +600,14 @@ const SortableSubSession = ({ sub, sectionId, editingSub, editSubData, setEditSu
       <div ref={setNodeRef} style={style} className="bg-dark-card/40 p-2 pl-6 text-sm font-medium text-slate-600 dark:text-slate-400 flex items-center justify-between w-full">
         {editingSub === sub.id ? (
           <div className="flex-1 flex flex-wrap items-center gap-3 pr-4 py-2">
-            <input type="text" value={editSubData.label} onChange={e => setEditSubData({...editSubData, label: e.target.value})} className="bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded px-2 py-1 text-sm flex-1 min-w-[150px]" placeholder="Nome da Sub-seção" />
+            <input type="text" value={editSubData.label} onChange={e => setEditSubData({...editSubData, label: e.target.value})} className="bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded px-2 py-1 text-sm text-light-text dark:text-white flex-1 min-w-[150px]" placeholder="Nome da Sub-seção" />
             <div className="w-40 shrink-0">
               <IconSelector value={editSubData.icon} onChange={(icon) => setEditSubData({ ...editSubData, icon })} />
             </div>
             <div className="shrink-0">
               <ColorSelector value={editSubData.icon_color} onChange={(icon_color) => setEditSubData({ ...editSubData, icon_color })} />
             </div>
-            <select value={editSubData.section_id} onChange={e => setEditSubData({...editSubData, section_id: e.target.value})} className="bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded px-2 py-1 text-sm flex-1 min-w-[150px]">
+            <select value={editSubData.section_id} onChange={e => setEditSubData({...editSubData, section_id: e.target.value})} className="bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded px-2 py-1 text-sm text-light-text dark:text-white flex-1 min-w-[150px]">
               {Array.isArray(menu) && menu.map((s: any) => <option key={s.id} value={s.id}>{s.title}</option>)}
             </select>
             <div className="flex items-center gap-2 shrink-0">
@@ -652,7 +654,7 @@ const SortableSubSubSession = ({ subsub, subId, editingSubsub, editSubsubData, s
       <div ref={setNodeRef} style={style} className="p-2 pl-10 text-xs font-medium text-slate-700 dark:text-slate-400 flex items-center justify-between border-t border-slate-100 dark:border-white/5 w-full">
         {editingSubsub === subsub.id ? (
           <div className="flex-1 flex flex-wrap items-center gap-3 pr-4 py-2">
-            <input type="text" value={editSubsubData.label} onChange={e => setEditSubsubData({...editSubsubData, label: e.target.value})} className="bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded px-2 py-1 text-sm flex-1 min-w-[150px]" placeholder="Nome da Sub-sub-seção" />
+            <input type="text" value={editSubsubData.label} onChange={e => setEditSubsubData({...editSubsubData, label: e.target.value})} className="bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded px-2 py-1 text-sm text-light-text dark:text-white flex-1 min-w-[150px]" placeholder="Nome da Sub-sub-seção" />
             <div className="w-40 shrink-0">
               <IconSelector value={editSubsubData.icon} onChange={(icon) => setEditSubsubData({ ...editSubsubData, icon })} />
             </div>
@@ -666,7 +668,7 @@ const SortableSubSubSession = ({ subsub, subId, editingSubsub, editSubsubData, s
               } else if (val.startsWith('sub_')) {
                 setEditSubsubData({...editSubsubData, subsession_id: val.replace('sub_', ''), section_id: ''});
               }
-            }} className="bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded px-2 py-1 text-sm flex-1 min-w-[150px]">
+            }} className="bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded px-2 py-1 text-sm text-light-text dark:text-white flex-1 min-w-[150px]">
               <option value="">Selecione o pai...</option>
               {Array.isArray(menu) && menu.map((s: any) => (
                 <optgroup key={s.id} label={s.title}>

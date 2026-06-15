@@ -1,9 +1,33 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import SplitHeadline from '../components/SplitHeadline';
 import { createPortal } from 'react-dom';
-import { Plus, ChevronDown, ChevronRight, Calendar, Users, Tag, MoreHorizontal, Circle, CheckCircle2, Loader2, X, Trash2, GripVertical, Settings, FileText, Link as LinkIcon, Save, Heading1, Heading2, Heading3, Type, List, ListOrdered, CheckSquare, Check } from 'lucide-react';
+import { Plus, ChevronDown, ChevronRight, Calendar, Users, Tag, MoreHorizontal, Circle, CheckCircle2, Loader2, X, Trash2, GripVertical, Settings, FileText, Link as LinkIcon, Save, Heading1, Heading2, Heading3, Type, List, ListOrdered, CheckSquare, Check, Edit2, Palette, Layers, FileVideo, Globe, MessageCircle, PlaySquare, FileSignature, MonitorPlay, ShoppingBag } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
+import {
+  DndContext,
+  closestCorners,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragOverlay,
+  defaultDropAnimationSideEffects,
+  DragStartEvent,
+  DragOverEvent,
+  DragEndEvent
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  useSortable,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { SortableListRow } from '../components/kanban/SortableListRow';
+import { DroppableListGroup } from '../components/kanban/DroppableListGroup';
 
 // ── Types ─────────────────────────────────────────────────
 interface OnboardingTask {
@@ -318,11 +342,106 @@ const fetchUsersOnce = () => {
 };
 
 // ── Task Row ──────────────────────────────────────────────
-const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: { 
+// ── Sortable Subtask Row ─────────────────────────────────────────────────────────────
+const SortableSubtaskRow = ({
+  sub, task, cachedUsers,
+  toggleSubtask, onOpenSubtask,
+  subtaskRespPicker, setSubtaskRespPicker,
+  subtaskRespPos, setSubtaskRespPos,
+  handleSubtaskResponsible, handleSubtaskDate
+}: any) => {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: `subtask-${sub.id}` });
+  const style = { transform: CSS.Transform.toString(transform), transition };
+
+  return (
+    <div ref={setNodeRef} style={style}
+      className="w-full flex items-center gap-2 px-8 py-2.5 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors border-b border-black/[0.06] dark:border-white/[0.06] last:border-none z-10 bg-dark-card">
+      <div {...attributes} {...listeners} className="w-[14px] shrink-0 flex justify-center cursor-grab active:cursor-grabbing text-slate-700 hover:text-slate-500">
+        <GripVertical size={12} />
+      </div>
+      <div className="w-4 shrink-0 flex items-center justify-center">
+        <button onClick={() => toggleSubtask(sub)}
+          className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${sub.completed ? 'bg-emerald-500 border-emerald-500' : 'border-slate-600'}`}>
+          {sub.completed && <CheckCircle2 size={10} className="text-white" />}
+        </button>
+      </div>
+      <div className="flex-1 min-w-0 flex items-center pl-1">
+        <button onClick={() => onOpenSubtask(sub, task)}
+          className={`text-left text-xs hover:text-violet-500 transition-colors truncate ${sub.completed ? 'text-slate-600 line-through' : 'text-dark-text'}`}>
+          {sub.title}
+        </button>
+      </div>
+      <div className="shrink-0 w-36" />
+      
+      {/* Responsável da Subtarefa */}
+      <div className="shrink-0 w-20 flex items-center justify-center gap-1">
+        {sub.responsible_name ? (
+          <button
+            data-sub-resp-btn
+            onClick={(e) => {
+              e.stopPropagation();
+              if (subtaskRespPicker !== sub.id) {
+                const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
+                setSubtaskRespPos({ top: rect.bottom + 4, left: rect.left - 140 });
+              }
+              setSubtaskRespPicker(subtaskRespPicker === sub.id ? null : sub.id);
+            }}
+            className="focus:outline-none hover:scale-110 transition-transform"
+          >
+            <Avatar name={sub.responsible_name} url={sub.responsible_avatar} size={5} />
+          </button>
+        ) : (
+          <button
+            data-sub-resp-btn
+            onClick={(e) => {
+              e.stopPropagation();
+              if (subtaskRespPicker !== sub.id) {
+                const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
+                setSubtaskRespPos({ top: rect.bottom + 4, left: rect.left - 140 });
+              }
+              setSubtaskRespPicker(subtaskRespPicker === sub.id ? null : sub.id);
+            }}
+            className="w-5 h-5 rounded-full border border-dashed border-slate-600 flex items-center justify-center hover:border-violet-500 hover:text-violet-500 transition-colors"
+          >
+            <Plus size={8} className="text-slate-600 hover:text-violet-500" />
+          </button>
+        )}
+        {subtaskRespPicker === sub.id && createPortal(
+          <div
+            data-sub-resp-portal
+            onClick={e => e.stopPropagation()}
+            style={{ position: 'fixed', top: subtaskRespPos.top, left: subtaskRespPos.left, zIndex: 9999, width: 192 }}
+            className="bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl p-1 max-h-48 overflow-y-auto"
+          >
+            <div className="px-2 py-1.5 border-b border-white/5 mb-1">
+              <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Selecionar Responsável</span>
+            </div>
+            {cachedUsers.map((u: any) => (
+              <button key={u.id} onClick={() => handleSubtaskResponsible(sub.id, u.id, u.name, u.picture)} className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-white/5 rounded-lg text-left transition-colors">
+                <Avatar name={u.name} url={u.picture} size={5} />
+                <span className="text-xs text-dark-text truncate">{u.name}</span>
+              </button>
+            ))}
+          </div>,
+          document.body
+        )}
+      </div>
+      
+      <div className="shrink-0 w-24" />
+      <div className="shrink-0 w-28 text-xs text-slate-500 text-left pl-2 font-medium">
+        <SingleDatePicker value={sub.due_date || undefined} onChange={(v: any) => handleSubtaskDate(sub.id, 'due_date', v)} align="right" checkOverdue />
+      </div>
+      <div className="shrink-0 w-[22px]" />
+    </div>
+  );
+};
+
+const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask, dragHandleProps }: { 
   task: OnboardingTask; 
   onUpdate: () => void; 
   onOpenDetail: (t: OnboardingTask) => void;
   onOpenSubtask: (s: Subtask, t: OnboardingTask) => void;
+  dragHandleProps?: { attributes: any; listeners: any };
 }) => {
   const [squad, setSquad] = useState(task.squad || '');
   const [showStatusPicker, setShowStatusPicker] = useState(false);
@@ -332,6 +451,7 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
   const [loadingSubs, setLoadingSubs] = useState(false);
   const [subtaskRespPicker, setSubtaskRespPicker] = useState<number | null>(null);
+  const subtaskSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const [taskRespPicker, setTaskRespPicker] = useState(false);
   const [taskRespPos, setTaskRespPos] = useState({ top: 0, left: 0 });
   const [subtaskRespPos, setSubtaskRespPos] = useState({ top: 0, left: 0 });
@@ -523,6 +643,17 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
   return (
     <div>
       <div className="flex items-center gap-2 px-8 py-3 border-b border-black/5 dark:border-white/5 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors group">
+        {dragHandleProps && (
+          <button
+            {...dragHandleProps.attributes}
+            {...dragHandleProps.listeners}
+            className="cursor-grab active:cursor-grabbing text-slate-400 dark:text-dark-text/20 hover:text-violet-500 dark:hover:text-violet-400 transition-colors touch-none flex-shrink-0"
+            title="Arrastar para reordenar"
+            onClick={e => e.stopPropagation()}
+          >
+            <GripVertical size={12} />
+          </button>
+        )}
         {/* Expand toggle */}
         <button onClick={toggleExpand} className="shrink-0 text-slate-600 hover:text-slate-400 transition-all">
           <ChevronRight size={14} className={`transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`} />
@@ -740,85 +871,42 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask }: {
                     style={{ width: `${subtasks.length > 0 ? (completedCount / subtasks.length) * 100 : 0}%` }} />
                 </div>
               </div>
-              {subtasks.map(sub => (
-                <div key={sub.id}
-                  className="w-full flex items-center gap-2 px-8 py-2.5 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors border-b border-black/[0.06] dark:border-white/[0.06] last:border-none">
-                  <div className="w-[14px] shrink-0" />
-                  <div className="w-4 shrink-0 flex items-center justify-center">
-                    <button onClick={() => toggleSubtask(sub)}
-                      className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${sub.completed ? 'bg-emerald-500 border-emerald-500' : 'border-slate-600'}`}>
-                      {sub.completed && <CheckCircle2 size={10} className="text-white" />}
-                    </button>
-                  </div>
-                  <div className="flex-1 min-w-0 flex items-center pl-1">
-                    <button onClick={() => onOpenSubtask(sub, task)}
-                      className={`text-left text-xs hover:text-violet-500 transition-colors truncate ${sub.completed ? 'text-slate-600 line-through' : 'text-dark-text'}`}>
-                      {sub.title}
-                    </button>
-                  </div>
-                  <div className="shrink-0 w-36" />
-                  
-                  {/* Responsável da Subtarefa */}
-                  <div className="shrink-0 w-20 flex items-center justify-center gap-1">
-                    {sub.responsible_name ? (
-                      <button
-                        data-sub-resp-btn
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (subtaskRespPicker !== sub.id) {
-                            const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
-                            setSubtaskRespPos({ top: rect.bottom + 4, left: rect.left - 140 });
-                          }
-                          setSubtaskRespPicker(subtaskRespPicker === sub.id ? null : sub.id);
-                        }}
-                        className="focus:outline-none hover:scale-110 transition-transform"
-                      >
-                        <Avatar name={sub.responsible_name} url={sub.responsible_avatar} size={5} />
-                      </button>
-                    ) : (
-                      <button
-                        data-sub-resp-btn
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (subtaskRespPicker !== sub.id) {
-                            const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
-                            setSubtaskRespPos({ top: rect.bottom + 4, left: rect.left - 140 });
-                          }
-                          setSubtaskRespPicker(subtaskRespPicker === sub.id ? null : sub.id);
-                        }}
-                        className="w-5 h-5 rounded-full border border-dashed border-slate-600 flex items-center justify-center hover:border-violet-500 hover:text-violet-500 transition-colors"
-                      >
-                        <Plus size={8} className="text-slate-600 hover:text-violet-500" />
-                      </button>
-                    )}
-                    {subtaskRespPicker === sub.id && createPortal(
-                      <div
-                        data-sub-resp-portal
-                        onClick={e => e.stopPropagation()}
-                        style={{ position: 'fixed', top: subtaskRespPos.top, left: subtaskRespPos.left, zIndex: 9999, width: 192 }}
-                        className="bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl p-1 max-h-48 overflow-y-auto"
-                      >
-                        <div className="px-2 py-1.5 border-b border-white/5 mb-1">
-                          <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Selecionar Responsável</span>
-                        </div>
-                        {cachedUsers.map(u => (
-                          <button key={u.id} onClick={() => handleSubtaskResponsible(sub.id, u.id, u.name, u.picture)} className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-white/5 rounded-lg text-left transition-colors">
-                            <Avatar name={u.name} url={u.picture} size={5} />
-                            <span className="text-xs text-dark-text truncate">{u.name}</span>
-                          </button>
-                        ))}
-                      </div>,
-                      document.body
-                    )}
-                  </div>
-                  
-                  <div className="shrink-0 w-24" />
-                  <div className="shrink-0 w-28 text-xs text-slate-500 text-left pl-2 font-medium">
-                    <SingleDatePicker value={sub.due_date || undefined} onChange={(v) => handleSubtaskDate(sub.id, 'due_date', v)} align="right" checkOverdue />
-                  </div>
-                  <div className="shrink-0 w-[22px]" />
-                </div>
-              ))}
+              <DndContext sensors={subtaskSensors} collisionDetection={closestCenter} onDragEnd={(event) => {
+                const { active, over } = event;
+                if (!over || active.id === over.id) return;
+                
+                const oldIndex = subtasks.findIndex(s => `subtask-${s.id}` === active.id);
+                const newIndex = subtasks.findIndex(s => `subtask-${s.id}` === over.id);
+                
+                if (oldIndex !== -1 && newIndex !== -1) {
+                  const reordered = arrayMove(subtasks, oldIndex, newIndex);
+                  setSubtasks(reordered);
+                  fetch(`/api/onboarding-tasks/${task.id}/subtasks/reorder`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ subtasks: reordered.map((s, i) => ({ id: s.id, order_index: i })) })
+                  });
+                }
+              }}>
+                <SortableContext items={subtasks.map(s => `subtask-${s.id}`)} strategy={verticalListSortingStrategy}>
+                  {subtasks.map(sub => (
+                    <SortableSubtaskRow 
+                      key={sub.id} 
+                      sub={sub} 
+                      task={task} 
+                      cachedUsers={cachedUsers} 
+                      toggleSubtask={toggleSubtask} 
+                      onOpenSubtask={onOpenSubtask} 
+                      subtaskRespPicker={subtaskRespPicker} 
+                      setSubtaskRespPicker={setSubtaskRespPicker} 
+                      subtaskRespPos={subtaskRespPos} 
+                      setSubtaskRespPos={setSubtaskRespPos} 
+                      handleSubtaskResponsible={handleSubtaskResponsible} 
+                      handleSubtaskDate={handleSubtaskDate} 
+                    />
+                  ))}
+                </SortableContext>
+              </DndContext>
             </div>
           )}
         </div>
@@ -870,7 +958,7 @@ const GroupBlock = ({ group, onUpdate, onAddTask, onOpenDetail, onOpenSubtask }:
   }
 
   return (
-    <div className="mb-6">
+    <DroppableListGroup id={`group-${group.id}`} className="mb-6">
       {/* Group header */}
       <div className="flex items-center gap-3 px-2 py-2 sticky top-0 z-10">
         <button onClick={() => setExpanded(v => !v)} className="flex items-center gap-2 group flex-1">
@@ -904,25 +992,30 @@ const GroupBlock = ({ group, onUpdate, onAddTask, onOpenDetail, onOpenSubtask }:
             <div className="shrink-0 w-[22px]" />
           </div>
 
-          <div className="flex flex-col">
+          <div className="flex flex-col min-h-[40px]">
+            <SortableContext items={group.tasks.map(t => `task-${t.id}`)} strategy={verticalListSortingStrategy}>
             {group.tasks.length === 0 ? (
               <div className="py-12 text-center text-slate-500 text-xs font-medium">Nenhum cliente neste grupo.</div>
             ) : (
               group.tasks.map((task, idx) => (
-                <motion.div
-                  key={task.id}
-                  initial={{ opacity: 0, y: -18, scale: 0.98 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  transition={{
-                    duration: 0.35,
-                    delay: idx * 0.06,
-                    ease: [0.32, 0.72, 0, 1],
-                  }}
-                >
-                  <TaskRow task={task} onUpdate={onUpdate} onOpenDetail={onOpenDetail} onOpenSubtask={onOpenSubtask} />
-                </motion.div>
+                <SortableListRow key={task.id} id={`task-${task.id}`}>
+                  {(dragHandleProps) => (
+                    <motion.div
+                      initial={{ opacity: 0, y: -18, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      transition={{
+                        duration: 0.35,
+                        delay: idx * 0.06,
+                        ease: [0.32, 0.72, 0, 1],
+                      }}
+                    >
+                      <TaskRow task={task} onUpdate={onUpdate} onOpenDetail={onOpenDetail} onOpenSubtask={onOpenSubtask} dragHandleProps={dragHandleProps} />
+                    </motion.div>
+                  )}
+                </SortableListRow>
               ))
             )}
+            </SortableContext>
             {/* Add task row */}
             <button
               onClick={() => onAddTask(group.id)}
@@ -934,7 +1027,7 @@ const GroupBlock = ({ group, onUpdate, onAddTask, onOpenDetail, onOpenSubtask }:
           </div>
         </>
       )}
-    </div>
+    </DroppableListGroup>
   );
 };
 
@@ -1999,6 +2092,102 @@ export default function OnboardingOperacional() {
 
   useEffect(() => { fetchTasks(); }, []);
 
+  // ── Drag & Drop reorder ──
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
+
+  const handleDndStart = (event: DragStartEvent) => {
+    setActiveDragId(event.active.id as string);
+  };
+
+  const handleDndOver = (event: DragOverEvent) => {
+    const { active, over } = event;
+    if (!over) return;
+    
+    const activeId = active.id as string;
+    const overId = over.id as string;
+    
+    if (activeId.startsWith('task-')) {
+      const activeTaskNumId = parseInt(activeId.replace('task-', ''));
+      const activeTask = tasks.find(t => t.id === activeTaskNumId);
+      if (!activeTask) return;
+      
+      // Moving to a different group
+      let newStatus: string | null = null;
+      if (overId.startsWith('group-')) {
+        newStatus = overId.replace('group-', '');
+      } else if (overId.startsWith('task-')) {
+        const overTaskNumId = parseInt(overId.replace('task-', ''));
+        const overTask = tasks.find(t => t.id === overTaskNumId);
+        if (overTask) newStatus = overTask.status_group;
+      }
+      
+      if (newStatus && activeTask.status_group !== newStatus) {
+        setTasks(prev => prev.map(t => t.id === activeTaskNumId ? { ...t, status_group: newStatus! } : t));
+      }
+      
+      // Reorder within the same group
+      if (overId.startsWith('task-')) {
+        const overTaskNumId = parseInt(overId.replace('task-', ''));
+        if (activeTaskNumId !== overTaskNumId) {
+          setTasks(prev => {
+            const activeT = prev.find(t => t.id === activeTaskNumId);
+            const overT = prev.find(t => t.id === overTaskNumId);
+            if (!activeT || !overT || activeT.status_group !== overT.status_group) return prev;
+            
+            const groupTasks = prev.filter(t => t.status_group === activeT.status_group);
+            const otherTasks = prev.filter(t => t.status_group !== activeT.status_group);
+            const oldIdx = groupTasks.findIndex(t => t.id === activeTaskNumId);
+            const newIdx = groupTasks.findIndex(t => t.id === overTaskNumId);
+            if (oldIdx === -1 || newIdx === -1) return prev;
+            
+            const reordered = [...groupTasks];
+            const [moved] = reordered.splice(oldIdx, 1);
+            reordered.splice(newIdx, 0, moved);
+            return [...otherTasks, ...reordered];
+          });
+        }
+      }
+    }
+  };
+
+  const handleDndEnd = async (event: DragEndEvent) => {
+    setActiveDragId(null);
+    const { active, over } = event;
+    if (!over) return;
+    
+    const activeId = active.id as string;
+    
+    if (activeId.startsWith('task-')) {
+      const activeTaskNumId = parseInt(activeId.replace('task-', ''));
+      const activeTask = tasks.find(t => t.id === activeTaskNumId);
+      if (!activeTask) return;
+
+      // Persist status_group change
+      try {
+        await fetch(`/api/onboarding-tasks/${activeTaskNumId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status_group: activeTask.status_group }),
+        });
+      } catch { /* silent */ }
+
+      // Persist order within the group
+      const groupTasks = tasks.filter(t => t.status_group === activeTask.status_group);
+      try {
+        await fetch('/api/onboarding-tasks/reorder', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tasks: groupTasks.map((t, i) => ({ id: t.id, order_index: i })) }),
+        });
+      } catch { /* silent */ }
+    }
+  };
+
   const activeGroups = showCompleted 
     ? [{ id: 'arquivado', label: 'CONCLUÍDO', color: '#10b981', emoji: '🏆' }, ...STATUS_GROUPS]
     : STATUS_GROUPS;
@@ -2047,6 +2236,8 @@ export default function OnboardingOperacional() {
         </div>
       ) : (
         <div className="px-8 pb-12">
+          <DndContext sensors={dndSensors} collisionDetection={closestCorners} onDragStart={handleDndStart} onDragOver={handleDndOver} onDragEnd={handleDndEnd}>
+          <div className="flex flex-col">
           {groups.map((group, gIdx) => (
             <motion.div
               key={group.id}
@@ -2067,6 +2258,15 @@ export default function OnboardingOperacional() {
               />
             </motion.div>
           ))}
+          </div>
+          <DragOverlay dropAnimation={null}>
+            {activeDragId && activeDragId.startsWith('task-') ? (
+               <div className="bg-white/5 border border-violet-500/50 rounded-xl p-4 shadow-2xl backdrop-blur-md">
+                 <p className="text-white text-sm font-bold opacity-80 flex items-center gap-2"><GripVertical size={16}/> Movendo tarefa...</p>
+               </div>
+            ) : null}
+          </DragOverlay>
+          </DndContext>
 
           {/* New status button */}
           <button className="flex items-center gap-2 text-xs text-slate-600 hover:text-slate-400 transition-colors mt-4 px-4 py-2">

@@ -50,10 +50,20 @@ const config = {
 // Validate that we have at least the critical keys
 const critical = ['FIREBASE_API_KEY', 'FIREBASE_PROJECT_ID', 'FIREBASE_APP_ID'];
 const missing = critical.filter(k => !config[k]);
+
+// Check if the dist/index.html already has the config hardcoded from the source file
+const distIndexPath = path.join(rootDir, 'dist', 'index.html');
+if (fs.existsSync(distIndexPath)) {
+  const distHtml = fs.readFileSync(distIndexPath, 'utf8');
+  if (distHtml.includes('window.FIREBASE_API_KEY')) {
+    console.log('[inject-firebase-config] ✅ Firebase config já presente no index.html (hardcoded no source). Nada a fazer.');
+    process.exit(0);
+  }
+}
+
 if (missing.length > 0) {
   console.warn(`[inject-firebase-config] ⚠️  Variáveis ausentes no .env: ${missing.join(', ')}`);
-  console.warn(`[inject-firebase-config] ℹ️  Isso é OK — o servidor injeta essas variáveis em runtime via setupStaticServing.`);
-  console.warn(`[inject-firebase-config] ℹ️  Pulando injeção no build. O dist/index.html será injetado pelo servidor ao servir.`);
+  console.warn(`[inject-firebase-config] ℹ️  Isso é OK se o config estiver hardcoded no index.html do repositório.`);
   process.exit(0); // Exit successfully — not a fatal error
 }
 

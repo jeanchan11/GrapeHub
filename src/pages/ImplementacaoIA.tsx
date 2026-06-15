@@ -5,6 +5,30 @@ import { createPortal } from 'react-dom';
 import { Plus, ChevronDown, ChevronRight, Calendar, Users, Tag, MoreHorizontal, Circle, CheckCircle2, Loader2, X, Trash2, GripVertical, Settings, FileText, Link as LinkIcon, Save, Heading1, Heading2, Heading3, Type, List, ListOrdered, CheckSquare, Check, Edit2, Palette, Layers } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
 import { useAuth } from '../contexts/AuthContext';
+import {
+  DndContext,
+  closestCorners,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragOverlay,
+  defaultDropAnimationSideEffects,
+  DragStartEvent,
+  DragOverEvent,
+  DragEndEvent
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  useSortable,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { SortableListRow } from '../components/kanban/SortableListRow';
+import { DroppableListGroup } from '../components/kanban/DroppableListGroup';
 
 // ── Types ─────────────────────────────────────────────────
 interface OnboardingTask {
@@ -774,13 +798,108 @@ const DraggableColHeaders = () => {
   );
 };
 
+// ── Sortable Subtask Row ──────────────────────────────────
+const SortableSubtaskRow = ({
+  sub, task, cachedUsers,
+  toggleSubtask, onOpenSubtask,
+  subtaskRespPicker, setSubtaskRespPicker,
+  subtaskRespPos, setSubtaskRespPos,
+  handleSubtaskResponsible, handleSubtaskDate
+}: any) => {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: `subtask-${sub.id}` });
+  const style = { transform: CSS.Transform.toString(transform), transition };
+
+  return (
+    <div ref={setNodeRef} style={style}
+      className="w-full flex items-center gap-2 px-8 py-2.5 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors border-b border-black/[0.06] dark:border-white/[0.06] last:border-none z-10 bg-dark-card">
+      <div {...attributes} {...listeners} className="w-[14px] shrink-0 flex justify-center cursor-grab active:cursor-grabbing text-slate-700 hover:text-slate-500">
+        <GripVertical size={12} />
+      </div>
+      <div className="w-4 shrink-0 flex items-center justify-center">
+        <button onClick={() => toggleSubtask(sub)}
+          className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${sub.completed ? 'bg-emerald-500 border-emerald-500' : 'border-slate-600'}`}>
+          {sub.completed && <CheckCircle2 size={10} className="text-white" />}
+        </button>
+      </div>
+      <div className="flex-1 min-w-0 flex items-center pl-1">
+        <button onClick={() => onOpenSubtask(sub, task)}
+          className={`text-left text-xs hover:text-violet-500 transition-colors truncate ${sub.completed ? 'text-slate-600 line-through' : 'text-dark-text'}`}>
+          {sub.title}
+        </button>
+      </div>
+      <div className="shrink-0 w-36" />
+      
+      {/* Responsável da Subtarefa */}
+      <div className="shrink-0 w-20 flex items-center justify-center gap-1">
+        {sub.responsible_name ? (
+          <button
+            data-sub-resp-btn
+            onClick={(e) => {
+              e.stopPropagation();
+              if (subtaskRespPicker !== sub.id) {
+                const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
+                setSubtaskRespPos({ top: rect.bottom + 4, left: rect.left - 140 });
+              }
+              setSubtaskRespPicker(subtaskRespPicker === sub.id ? null : sub.id);
+            }}
+            className="focus:outline-none hover:scale-110 transition-transform"
+          >
+            <Avatar name={sub.responsible_name} url={sub.responsible_avatar} size={5} />
+          </button>
+        ) : (
+          <button
+            data-sub-resp-btn
+            onClick={(e) => {
+              e.stopPropagation();
+              if (subtaskRespPicker !== sub.id) {
+                const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
+                setSubtaskRespPos({ top: rect.bottom + 4, left: rect.left - 140 });
+              }
+              setSubtaskRespPicker(subtaskRespPicker === sub.id ? null : sub.id);
+            }}
+            className="w-5 h-5 rounded-full border border-dashed border-slate-600 flex items-center justify-center hover:border-violet-500 hover:text-violet-500 transition-colors"
+          >
+            <Plus size={8} className="text-slate-600 hover:text-violet-500" />
+          </button>
+        )}
+        {subtaskRespPicker === sub.id && createPortal(
+          <div
+            data-sub-resp-portal
+            onClick={e => e.stopPropagation()}
+            style={{ position: 'fixed', top: subtaskRespPos.top, left: subtaskRespPos.left, zIndex: 9999, width: 192 }}
+            className="bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl p-1 max-h-48 overflow-y-auto"
+          >
+            <div className="px-2 py-1.5 border-b border-white/5 mb-1">
+              <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Selecionar Responsável</span>
+            </div>
+            {cachedUsers.map((u: any) => (
+              <button key={u.id} onClick={() => handleSubtaskResponsible(sub.id, u.id, u.name, u.picture)} className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-white/5 rounded-lg text-left transition-colors">
+                <Avatar name={u.name} url={u.picture} size={5} />
+                <span className="text-xs text-dark-text truncate">{u.name}</span>
+              </button>
+            ))}
+          </div>,
+          document.body
+        )}
+      </div>
+      
+      <div className="shrink-0 w-24" />
+      <div className="shrink-0 w-28 text-xs text-slate-500 text-left pl-2 font-medium">
+        <SingleDatePicker value={sub.due_date || undefined} onChange={(v: any) => handleSubtaskDate(sub.id, 'due_date', v)} align="right" checkOverdue />
+      </div>
+      <div className="shrink-0 w-[22px]" />
+    </div>
+  );
+};
+
 // ── Task Row ──────────────────────────────────────────────
-const TaskRow = ({ task, coloredTagDefs, onUpdate, onOpenDetail, onOpenSubtask }: { 
+const TaskRow = ({ task, coloredTagDefs, onUpdate, onOpenDetail, onOpenSubtask, dragHandleProps }: { 
   task: OnboardingTask;
   coloredTagDefs: ColoredTag[];
   onUpdate: () => void; 
   onOpenDetail: (t: OnboardingTask) => void;
   onOpenSubtask: (s: Subtask, t: OnboardingTask) => void;
+  dragHandleProps?: { attributes: any; listeners: any };
 }) => {
   const [squad, setSquad] = useState(task.squad || '');
   const [showStatusPicker, setShowStatusPicker] = useState(false);
@@ -789,6 +908,7 @@ const TaskRow = ({ task, coloredTagDefs, onUpdate, onOpenDetail, onOpenSubtask }
   const [tagMenuOpen, setTagMenuOpen] = useState(false);
   const tagMenuRef = React.useRef<HTMLDivElement>(null);
   const statusGroups = React.useContext(StatusGroupsContext);
+  const subtaskSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const [editingName, setEditingName] = useState(false);
   const [editNameValue, setEditNameValue] = useState(task.client_name);
@@ -1141,7 +1261,16 @@ const TaskRow = ({ task, coloredTagDefs, onUpdate, onOpenDetail, onOpenSubtask }
 
   return (
     <div>
-      <div className="flex items-center gap-2 px-8 py-3 border-b border-black/5 dark:border-white/5 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors group">
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-black/5 dark:border-white/5 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors group">
+        {/* Drag handle */}
+        <div 
+          className="cursor-grab active:cursor-grabbing text-slate-700 hover:text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+          {...dragHandleProps?.attributes}
+          {...dragHandleProps?.listeners}
+        >
+          <GripVertical size={14} />
+        </div>
+
         {/* Expand toggle */}
         <button onClick={toggleExpand} className="shrink-0 text-slate-600 hover:text-slate-400 transition-all">
           <ChevronRight size={14} className={`transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`} />
@@ -1282,85 +1411,30 @@ const TaskRow = ({ task, coloredTagDefs, onUpdate, onOpenDetail, onOpenSubtask }
                       style={{ width: `${subtasks.length > 0 ? (completedCount / subtasks.length) * 100 : 0}%` }} />
                   </div>
                 </div>
-              {subtasks.map(sub => (
-                <div key={sub.id}
-                  className="w-full flex items-center gap-2 px-8 py-2.5 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors border-b border-black/[0.06] dark:border-white/[0.06] last:border-none">
-                  <div className="w-[14px] shrink-0" />
-                  <div className="w-4 shrink-0 flex items-center justify-center">
-                    <button onClick={() => toggleSubtask(sub)}
-                      className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${sub.completed ? 'bg-emerald-500 border-emerald-500' : 'border-slate-600'}`}>
-                      {sub.completed && <CheckCircle2 size={10} className="text-white" />}
-                    </button>
-                  </div>
-                  <div className="flex-1 min-w-0 flex items-center pl-1">
-                    <button onClick={() => onOpenSubtask(sub, task)}
-                      className={`text-left text-xs hover:text-violet-500 transition-colors truncate ${sub.completed ? 'text-slate-600 line-through' : 'text-dark-text'}`}>
-                      {sub.title}
-                    </button>
-                  </div>
-                  <div className="shrink-0 w-36" />
+              <DndContext sensors={subtaskSensors} collisionDetection={closestCenter} onDragEnd={(event) => {
+                const { active, over } = event;
+                if (!over || active.id === over.id) return;
+                
+                setSubtasks(prev => {
+                  const oldIndex = prev.findIndex(s => `subtask-${s.id}` === active.id);
+                  const newIndex = prev.findIndex(s => `subtask-${s.id}` === over.id);
+                  if (oldIndex < 0 || newIndex < 0) return prev;
                   
-                  {/* Responsável da Subtarefa */}
-                  <div className="shrink-0 w-20 flex items-center justify-center gap-1">
-                    {sub.responsible_name ? (
-                      <button
-                        data-sub-resp-btn
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (subtaskRespPicker !== sub.id) {
-                            const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
-                            setSubtaskRespPos({ top: rect.bottom + 4, left: rect.left - 140 });
-                          }
-                          setSubtaskRespPicker(subtaskRespPicker === sub.id ? null : sub.id);
-                        }}
-                        className="focus:outline-none hover:scale-110 transition-transform"
-                      >
-                        <Avatar name={sub.responsible_name} url={sub.responsible_avatar} size={5} />
-                      </button>
-                    ) : (
-                      <button
-                        data-sub-resp-btn
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (subtaskRespPicker !== sub.id) {
-                            const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
-                            setSubtaskRespPos({ top: rect.bottom + 4, left: rect.left - 140 });
-                          }
-                          setSubtaskRespPicker(subtaskRespPicker === sub.id ? null : sub.id);
-                        }}
-                        className="w-5 h-5 rounded-full border border-dashed border-slate-600 flex items-center justify-center hover:border-violet-500 hover:text-violet-500 transition-colors"
-                      >
-                        <Plus size={8} className="text-slate-600 hover:text-violet-500" />
-                      </button>
-                    )}
-                    {subtaskRespPicker === sub.id && createPortal(
-                      <div
-                        data-sub-resp-portal
-                        onClick={e => e.stopPropagation()}
-                        style={{ position: 'fixed', top: subtaskRespPos.top, left: subtaskRespPos.left, zIndex: 9999, width: 192 }}
-                        className="bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl p-1 max-h-48 overflow-y-auto"
-                      >
-                        <div className="px-2 py-1.5 border-b border-white/5 mb-1">
-                          <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Selecionar Responsável</span>
-                        </div>
-                        {cachedUsers.map(u => (
-                          <button key={u.id} onClick={() => handleSubtaskResponsible(sub.id, u.id, u.name, u.picture)} className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-white/5 rounded-lg text-left transition-colors">
-                            <Avatar name={u.name} url={u.picture} size={5} />
-                            <span className="text-xs text-dark-text truncate">{u.name}</span>
-                          </button>
-                        ))}
-                      </div>,
-                      document.body
-                    )}
-                  </div>
-                  
-                  <div className="shrink-0 w-24" />
-                  <div className="shrink-0 w-28 text-xs text-slate-500 text-left pl-2 font-medium">
-                    <SingleDatePicker value={sub.due_date || undefined} onChange={(v) => handleSubtaskDate(sub.id, 'due_date', v)} align="right" checkOverdue />
-                  </div>
-                  <div className="shrink-0 w-[22px]" />
-                </div>
-              ))}
+                  const newOrder = arrayMove(prev, oldIndex, newIndex);
+                  fetch(`/api/onboarding-tasks/${task.id}/subtasks/reorder`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ subtasks: newOrder.map((s, i) => ({ id: s.id, order_index: i })) }),
+                  }).catch(() => {});
+                  return newOrder;
+                });
+              }}>
+                <SortableContext items={subtasks.map(s => `subtask-${s.id}`)} strategy={verticalListSortingStrategy}>
+                  {subtasks.map(sub => (
+                    <SortableSubtaskRow key={sub.id} sub={sub} task={task} cachedUsers={cachedUsers} toggleSubtask={toggleSubtask} onOpenSubtask={onOpenSubtask} subtaskRespPicker={subtaskRespPicker} setSubtaskRespPicker={setSubtaskRespPicker} subtaskRespPos={subtaskRespPos} setSubtaskRespPos={setSubtaskRespPos} handleSubtaskResponsible={handleSubtaskResponsible} handleSubtaskDate={handleSubtaskDate} />
+                  ))}
+                </SortableContext>
+              </DndContext>
               </div>
             )}
           </motion.div>
@@ -1372,7 +1446,7 @@ const TaskRow = ({ task, coloredTagDefs, onUpdate, onOpenDetail, onOpenSubtask }
 
 // ── Group Block ───────────────────────────────────────────
 
-const GroupBlock = ({ group, coloredTagDefs, onUpdate, onAddTask, onOpenDetail, onOpenSubtask, onRenameGroup, onUpdateGroup, onDeleteGroup, onDragStart, onDragOver, onDrop, isDragOver }: {
+const GroupBlock = ({ group, coloredTagDefs, onUpdate, onAddTask, onOpenDetail, onOpenSubtask, onRenameGroup, onUpdateGroup, onDeleteGroup, dragHandleProps }: {
   group: StatusGroup;
   coloredTagDefs: ColoredTag[];
   onUpdate: () => void;
@@ -1382,10 +1456,7 @@ const GroupBlock = ({ group, coloredTagDefs, onUpdate, onAddTask, onOpenDetail, 
   onRenameGroup?: (id: string, label: string) => void;
   onUpdateGroup?: (id: string, fields: { color?: string; emoji?: string }) => void;
   onDeleteGroup?: (id: string) => void;
-  onDragStart?: (id: string) => void;
-  onDragOver?: (e: React.DragEvent, id: string) => void;
-  onDrop?: (id: string) => void;
-  isDragOver?: boolean;
+  dragHandleProps?: { attributes: any; listeners: any };
 }) => {
   const statusGroups = React.useContext(StatusGroupsContext);
   const [expanded, setExpanded] = useState(group.tasks.length > 0);
@@ -1496,41 +1567,47 @@ const GroupBlock = ({ group, coloredTagDefs, onUpdate, onAddTask, onOpenDetail, 
   // Empty group — compact single-line
   if (group.tasks.length === 0 && !expanded) {
     return (
-      <div 
-        className={`mb-1 group/header transition-all duration-300 ${isDragOver ? 'scale-[1.02]' : ''}`}
-        draggable
-        onDragStart={() => onDragStart?.(group.id)}
-        onDragOver={(e) => onDragOver?.(e, group.id)}
-        onDrop={() => onDrop?.(group.id)}
-      >
-        <div className={`w-full flex items-center justify-between gap-2 px-4 py-2 rounded-xl transition-colors ${isDragOver ? 'bg-white/5 ring-1 ring-white/10' : 'hover:bg-white/[0.03]'}`}>
-          <button onClick={() => setExpanded(true)} className="flex items-center gap-2.5 group">
-            <ChevronRight size={12} className="text-slate-700 group-hover:text-slate-500 transition-colors shrink-0" />
-            {renderBadge(true)}
-          </button>
+      <DroppableListGroup id={`group-${group.id}`} className="mb-1 group/header">
+        <div className={`w-full flex items-center justify-between gap-2 px-4 py-2 rounded-xl transition-colors hover:bg-white/[0.03]`}>
+          <div className="flex items-center gap-2">
+            <div 
+              className="cursor-grab active:cursor-grabbing text-slate-700 hover:text-slate-500 opacity-0 group-hover/header:opacity-100 transition-opacity"
+              {...dragHandleProps?.attributes}
+              {...dragHandleProps?.listeners}
+            >
+              <GripVertical size={14} />
+            </div>
+            <button onClick={() => setExpanded(true)} className="flex items-center gap-2.5 group">
+              <ChevronRight size={12} className="text-slate-700 group-hover:text-slate-500 transition-colors shrink-0" />
+              {renderBadge(true)}
+            </button>
+          </div>
           {renderGroupMenu()}
         </div>
-      </div>
+      </DroppableListGroup>
     );
   }
 
   return (
-    <div 
-      className={`mb-6 group/header transition-all duration-300 ${isDragOver ? 'scale-[1.02]' : ''}`}
-      draggable
-      onDragStart={(e) => { if (e.target === e.currentTarget) onDragStart?.(group.id); }}
-      onDragOver={(e) => onDragOver?.(e, group.id)}
-      onDrop={() => onDrop?.(group.id)}
-    >
+    <DroppableListGroup id={`group-${group.id}`} className="mb-6 group/header">
       {/* Group header */}
-      <div className={`flex items-center justify-between gap-3 px-2 py-2 sticky top-0 z-10 transition-colors rounded-xl ${isDragOver ? 'bg-white/5 ring-1 ring-white/10 backdrop-blur-md' : 'bg-dark-bg/80 backdrop-blur-sm'}`}>
-        <button onClick={() => setExpanded(v => !v)} className="flex items-center gap-2 flex-1 group/btn">
-          {renderBadge(false)}
-          {expanded
-            ? <ChevronDown size={14} className="text-slate-500 ml-2" />
-            : <ChevronRight size={14} className="text-slate-500 ml-2" />
-          }
-        </button>
+      <div className={`flex items-center justify-between gap-3 px-2 py-2 sticky top-0 z-10 transition-colors rounded-xl bg-dark-bg/80 backdrop-blur-sm`}>
+        <div className="flex items-center gap-2 flex-1">
+          <div 
+            className="cursor-grab active:cursor-grabbing text-slate-700 hover:text-slate-500 opacity-0 group-hover/header:opacity-100 transition-opacity"
+            {...dragHandleProps?.attributes}
+            {...dragHandleProps?.listeners}
+          >
+            <GripVertical size={16} />
+          </div>
+          <button onClick={() => setExpanded(v => !v)} className="flex items-center gap-2 flex-1 group/btn">
+            {renderBadge(false)}
+            {expanded
+              ? <ChevronDown size={14} className="text-slate-500 ml-2" />
+              : <ChevronRight size={14} className="text-slate-500 ml-2" />
+            }
+          </button>
+        </div>
         {renderGroupMenu()}
       </div>
 
@@ -1541,24 +1618,32 @@ const GroupBlock = ({ group, coloredTagDefs, onUpdate, onAddTask, onOpenDetail, 
           <DraggableColHeaders />
 
           <div className="flex flex-col">
+            <SortableContext items={group.tasks.map(t => `task-${t.id}`)} strategy={verticalListSortingStrategy}>
             {group.tasks.length === 0 ? (
               <div className="py-12 text-center text-slate-500 text-xs font-medium">Nenhum cliente neste grupo.</div>
             ) : (
               group.tasks.map((task, idx) => (
-                <motion.div
-                  key={task.id}
-                  initial={{ opacity: 0, y: -18, scale: 0.98 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  transition={{
-                    duration: 0.35,
-                    delay: idx * 0.06,
-                    ease: [0.32, 0.72, 0, 1],
-                  }}
-                >
-                  <TaskRow task={task} coloredTagDefs={coloredTagDefs} onUpdate={onUpdate} onOpenDetail={onOpenDetail} onOpenSubtask={onOpenSubtask} />
-                </motion.div>
+                <SortableListRow key={`task-${task.id}`} id={`task-${task.id}`}>
+                  {({ attributes, listeners }) => (
+                    <motion.div
+                      initial={{ opacity: 0, y: -18, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      transition={{ duration: 0.35, delay: idx * 0.06, ease: [0.32, 0.72, 0, 1] }}
+                    >
+                      <TaskRow 
+                        task={task} 
+                        coloredTagDefs={coloredTagDefs} 
+                        onUpdate={onUpdate} 
+                        onOpenDetail={onOpenDetail} 
+                        onOpenSubtask={onOpenSubtask} 
+                        dragHandleProps={{ attributes, listeners }}
+                      />
+                    </motion.div>
+                  )}
+                </SortableListRow>
               ))
             )}
+            </SortableContext>
             {/* Add task row */}
             <button
               onClick={() => onAddTask(group.id)}
@@ -1570,7 +1655,7 @@ const GroupBlock = ({ group, coloredTagDefs, onUpdate, onAddTask, onOpenDetail, 
           </div>
         </>
       )}
-    </div>
+    </DroppableListGroup>
   );
 };
 
@@ -2603,31 +2688,110 @@ export default function ImplementacaoIA() {
   const [detailSubtask, setDetailSubtask] = useState<{subtask: Subtask, task: OnboardingTask} | null>(null);
   const [addingNewGroup, setAddingNewGroup] = useState(false);
   const [newGroupLabel, setNewGroupLabel] = useState('');
+  const [colOrder, setColOrder] = useState<ColId[]>(loadColOrder());
   const [draggingGroupId, setDraggingGroupId] = useState<string | null>(null);
   const [dragOverGroupId, setDragOverGroupId] = useState<string | null>(null);
+
   const newGroupRef = React.useRef<HTMLInputElement>(null);
-  const [colOrder, setColOrder] = useState<ColId[]>(loadColOrder);
-
-  useEffect(() => {
-    if (addingNewGroup && newGroupRef.current) newGroupRef.current.focus();
-  }, [addingNewGroup]);
-
   const handleAddGroup = async () => {
-    const val = newGroupLabel.trim();
-    if (!val) { setAddingNewGroup(false); return; }
-    const id = val.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-    try {
-      await fetch('/api/ia-status-groups', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id, label: val.toUpperCase(), color: '#8b5cf6', emoji: '📌', order_index: statusGroups.length
-        }),
-      });
-      fetchTasks(true);
-    } catch { /* silent */ }
-    setAddingNewGroup(false);
-    setNewGroupLabel('');
+    if (!newGroupLabel.trim()) { setAddingNewGroup(false); return; }
+    await handleAddGroupFromModal(newGroupLabel.trim(), '#10b981', '📝');
+    setAddingNewGroup(false); setNewGroupLabel('');
+  };
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
+
+  const handleDndStart = (event: DragStartEvent) => {
+    setActiveDragId(event.active.id as string);
+  };
+
+  const handleDndOver = (event: DragOverEvent) => {
+    const { active, over } = event;
+    if (!over) return;
+    
+    const activeId = active.id as string;
+    const overId = over.id as string;
+    
+    if (activeId.startsWith('task-')) {
+      const activeTaskNumId = parseInt(activeId.replace('task-', ''));
+      const activeTask = tasks.find(t => t.id === activeTaskNumId);
+      if (!activeTask) return;
+      
+      let newStatus: string | null = null;
+      if (overId.startsWith('group-')) {
+        newStatus = overId.replace('group-', '');
+      } else if (overId.startsWith('task-')) {
+        const overTaskNumId = parseInt(overId.replace('task-', ''));
+        const overTask = tasks.find(t => t.id === overTaskNumId);
+        if (overTask) newStatus = overTask.status_group;
+      }
+      
+      if (newStatus && activeTask.status_group !== newStatus) {
+        setTasks(prev => prev.map(t => t.id === activeTaskNumId ? { ...t, status_group: newStatus! } : t));
+      }
+    }
+  };
+
+  const handleDndEnd = async (event: DragEndEvent) => {
+    setActiveDragId(null);
+    const { active, over } = event;
+    if (!over) return;
+    
+    const activeId = active.id as string;
+    const overId = over.id as string;
+    
+    if (activeId.startsWith('group-') && overId.startsWith('group-')) {
+      const activeGroupId = activeId.replace('group-', '');
+      const overGroupId = overId.replace('group-', '');
+      
+      if (activeGroupId !== overGroupId) {
+        const fromIdx = statusGroups.findIndex(g => g.id === activeGroupId);
+        const toIdx = statusGroups.findIndex(g => g.id === overGroupId);
+        if (fromIdx !== -1 && toIdx !== -1) {
+          const reordered = [...statusGroups];
+          const [moved] = reordered.splice(fromIdx, 1);
+          reordered.splice(toIdx, 0, moved);
+          setStatusGroups(reordered);
+          try {
+            await fetch('/api/ia-status-groups/reorder', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ groups: reordered.map((g, i) => ({ id: g.id, order_index: i })) }),
+            });
+          } catch { /* silent */ }
+        }
+      }
+    } else if (activeId.startsWith('task-')) {
+      const activeTaskNumId = parseInt(activeId.replace('task-', ''));
+      const activeTask = tasks.find(t => t.id === activeTaskNumId);
+      if (activeTask) {
+        if (activeId !== overId && overId.startsWith('task-')) {
+          setTasks(prev => {
+            const oldIndex = prev.findIndex(t => t.id === activeTaskNumId);
+            const overTaskNumId = parseInt(overId.replace('task-', ''));
+            const newIndex = prev.findIndex(t => t.id === overTaskNumId);
+            if (oldIndex < 0 || newIndex < 0) return prev;
+            
+            const arr = [...prev];
+            const [moved] = arr.splice(oldIndex, 1);
+            arr.splice(newIndex, 0, moved);
+            return arr;
+          });
+        }
+
+        try {
+          await fetch(`/api/onboarding-tasks/${activeTaskNumId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status_group: activeTask.status_group }),
+          });
+        } catch { /* silent */ }
+      }
+    }
   };
 
   const handleRenameGroup = async (id: string, label: string) => {
@@ -2795,32 +2959,47 @@ export default function ImplementacaoIA() {
         </div>
       ) : (
         <div className="px-8 pb-12">
-          <div onDragEnd={() => { setDraggingGroupId(null); setDragOverGroupId(null); }}>
+          <DndContext sensors={dndSensors} collisionDetection={closestCorners} onDragStart={handleDndStart} onDragOver={handleDndOver} onDragEnd={handleDndEnd}>
+          <SortableContext items={groups.map(g => `group-${g.id}`)} strategy={verticalListSortingStrategy}>
+          <div className="flex flex-col">
           {groups.map((group, gIdx) => (
-            <motion.div
-              key={group.id}
-              initial={{ opacity: 0, y: -24, scale: 0.985 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              transition={{ duration: 0.4, delay: gIdx * 0.08, ease: [0.32, 0.72, 0, 1] }}
-            >
-              <GroupBlock
-                group={group}
-                coloredTagDefs={coloredTagDefs}
-                onUpdate={() => fetchTasks(true)}
-                onAddTask={setAddingToGroup}
-                onOpenSubtask={(s, t) => setDetailSubtask({subtask: s, task: t})}
-                onOpenDetail={setDetailTask}
-                onRenameGroup={handleRenameGroup}
-                onUpdateGroup={handleUpdateGroup}
-                onDeleteGroup={handleDeleteGroup}
-                onDragStart={handleGroupDragStart}
-                onDragOver={handleGroupDragOver}
-                onDrop={handleGroupDrop}
-                isDragOver={dragOverGroupId === group.id}
-              />
-            </motion.div>
+            <SortableListRow key={`group-${group.id}`} id={`group-${group.id}`}>
+              {({ attributes, listeners }) => (
+                <motion.div
+                  initial={{ opacity: 0, y: -24, scale: 0.985 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={{ duration: 0.4, delay: gIdx * 0.08, ease: [0.32, 0.72, 0, 1] }}
+                >
+                  <GroupBlock
+                    group={group}
+                    coloredTagDefs={coloredTagDefs}
+                    onUpdate={() => fetchTasks(true)}
+                    onAddTask={setAddingToGroup}
+                    onOpenSubtask={(s, t) => setDetailSubtask({subtask: s, task: t})}
+                    onOpenDetail={setDetailTask}
+                    onRenameGroup={handleRenameGroup}
+                    onUpdateGroup={handleUpdateGroup}
+                    onDeleteGroup={handleDeleteGroup}
+                    dragHandleProps={{ attributes, listeners }}
+                  />
+                </motion.div>
+              )}
+            </SortableListRow>
           ))}
           </div>
+          </SortableContext>
+          <DragOverlay dropAnimation={null}>
+            {activeDragId && activeDragId.startsWith('group-') ? (
+               <div className="bg-dark-bg/80 border-t-2 border-violet-500 rounded-xl p-4 shadow-2xl">
+                 <p className="text-white text-sm font-bold opacity-80 flex items-center gap-2"><GripVertical size={16}/> Movendo grupo...</p>
+               </div>
+            ) : activeDragId && activeDragId.startsWith('task-') ? (
+               <div className="bg-white/5 border border-violet-500/50 rounded-xl p-4 shadow-2xl backdrop-blur-md">
+                 <p className="text-white text-sm font-bold opacity-80 flex items-center gap-2"><GripVertical size={16}/> Movendo tarefa...</p>
+               </div>
+            ) : null}
+          </DragOverlay>
+          </DndContext>
 
           {/* New status button / inline form */}
           {addingNewGroup ? (

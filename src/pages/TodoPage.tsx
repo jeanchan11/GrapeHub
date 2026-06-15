@@ -1686,7 +1686,7 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
           )}
         </div>
         
-          <DragOverlay dropAnimation={{ sideEffects: defaultDropAnimationSideEffects({ styles: { active: { opacity: "0.4" } } }) }}>
+          <DragOverlay dropAnimation={null}>
             {activeTask ? (
               <div className="opacity-90 shadow-2xl scale-105 rounded-xl bg-[#1E1E2D] border border-white/10 p-2 min-w-[250px]">
                 <div className="flex items-center gap-2">

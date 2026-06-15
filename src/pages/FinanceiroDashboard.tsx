@@ -367,10 +367,10 @@ export default function FinanceiroDashboard() {
     }
   }
 
-  // Saldo projetado = último ponto do gráfico (linha tracejada), em sincronia visual
+  // Saldo projetado = caixa + a_receber - a_pagar (backend), com fallback para último ponto do gráfico
   const lastPrevisto = [...saldoPrevistoData].reverse().find(v => v !== null) ?? null;
   const lastRealizado = [...saldoRealizadoData].reverse().find(v => v !== null) ?? null;
-  const saldoAcumulado = lastPrevisto ?? lastRealizado ?? resumo?.previsto_fim_mes ?? 0;
+  const saldoAcumulado = resumo?.previsto_fim_mes ?? lastPrevisto ?? lastRealizado ?? 0;
 
 
   // Dados para Recharts (Saúde do Caixa)

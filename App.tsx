@@ -38,6 +38,8 @@ import IdeaisCriativos from './src/pages/IdeaisCriativos';
 import OnboardingOperacional from './src/pages/OnboardingOperacional';
 import ImplementacaoIA from './src/pages/ImplementacaoIA';
 import VisualHub from './src/pages/VisualHub';
+import ListaPage from './src/pages/ListaPage';
+import DiferenciaisPage from './src/pages/DiferenciaisPage';
 import ChecklistIntegracao from './src/pages/ChecklistIntegracao';
 import ChecklistSaida from './src/pages/ChecklistSaida';
 import ContratacaoPage from './src/pages/ContratacaoPage';
@@ -326,6 +328,8 @@ const AppContent: React.FC = () => {
         return <DashboardOperacional key={activePage} activePage={activePage} subsessionId={activeSubsessionId} />;
       case 'parceiros-squad':
         return <ParceirosSquad activePage={activePage} onPageChange={navigateTo} />;
+      case 'lista':
+        return <ListaPage key={activePage} activePage={activePage} />;
       case 'blank':
         return <div className="p-8 text-center text-slate-500">Esta é uma página em branco.</div>;
       case 'task-templates':
@@ -385,6 +389,21 @@ const AppContent: React.FC = () => {
       case 'planos-de-carreira':
         return <PlanosDeCarreira key={activePage} activePage={activePage} />;
 
+      case 'diferenciais': {
+        let pageLabel = '';
+        if (Array.isArray(menu)) {
+          outer: for (const sec of menu) {
+            for (const ss of sec.subSessions || []) {
+              for (const p of ss.pages || []) { if (p.id === activePage) { pageLabel = p.label; break outer; } }
+              for (const sss of ss.subSubSessions || []) {
+                for (const p of sss.pages || []) { if (p.id === activePage) { pageLabel = p.label; break outer; } }
+              }
+            }
+            for (const p of sec.pages || []) { if (p.id === activePage) { pageLabel = p.label; break outer; } }
+          }
+        }
+        return <DiferenciaisPage key={activePage} activePage={activePage} pageLabel={pageLabel} />;
+      }
       case 'meeting-notes': {
         // Find the page label from menu for the title
         let pageLabel = '';

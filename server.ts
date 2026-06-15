@@ -210,6 +210,7 @@ const PUBLIC_ROUTES: Array<{ method?: string; pattern: RegExp }> = [
   { pattern: /^\/api\/crm-comercial\/checklist/ },
   { pattern: /^\/api\/crm-comercial\/checklist-template/ },
   { pattern: /^\/api\/crm-comercial\/migrate-tasks-responsible$/, method: 'POST' }, // TEMP MIGRATION
+  { pattern: /^\/api\/lista-/ },
 ];
 
 function isPublicRoute(method: string, path: string): boolean {
@@ -5210,10 +5211,12 @@ app.get("/api/todos", async (req, res) => {
           COALESCE(SUM(CASE WHEN type = -1 THEN value ELSE 0 END), 0) AS net
         FROM fin_movements_asaas
         WHERE account = 'asaas' AND transaction_date >= $1
+          AND is_anticipation_pair = false
+          AND LOWER(COALESCE(custom_category, '')) NOT IN ('transferencia entre contas', 'transferência entre contas')
       `, [fim]);
       const netAposMes = parseFloat(netAposRes.rows[0].net);
 
-      // 3) Net do mês de referência (todas as movimentações Asaas)
+      // 3) Net do mês de referência (mesmos filtros do fluxo diário realizado)
       const netMesRes = await pool.query(`
         SELECT
           COALESCE(SUM(CASE WHEN type = 1 THEN value ELSE 0 END), 0) -
@@ -5221,6 +5224,8 @@ app.get("/api/todos", async (req, res) => {
         FROM fin_movements_asaas
         WHERE account = 'asaas'
           AND transaction_date >= $1 AND transaction_date < $2
+          AND is_anticipation_pair = false
+          AND LOWER(COALESCE(custom_category, '')) NOT IN ('transferencia entre contas', 'transferência entre contas')
       `, [inicio, fim]);
       const netMes = parseFloat(netMesRes.rows[0].net);
 
@@ -11293,6 +11298,9 @@ app.get("/api/todos", async (req, res) => {
     await pool.query(`ALTER TABLE onboarding_tasks ADD COLUMN IF NOT EXISTS ${col} TEXT`).catch(e => console.error(e));
   }
 
+  // Add order_index for drag-and-drop reordering
+  await pool.query(`ALTER TABLE onboarding_tasks ADD COLUMN IF NOT EXISTS order_index INTEGER DEFAULT 0`).catch(e => console.error(e));
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS onboarding_template_items (
       id SERIAL PRIMARY KEY,
@@ -11446,6 +11454,32 @@ app.get("/api/todos", async (req, res) => {
       );
     }
   }
+
+  // ── Lista Page Settings & Status Groups tables ──
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS lista_page_settings (
+        page_id TEXT PRIMARY KEY,
+        headline TEXT NOT NULL DEFAULT 'Minha Lista',
+        subtitle TEXT DEFAULT 'GESTÃO DE TAREFAS',
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+  } catch (e: any) { console.log('lista_page_settings table already exists or migration skipped:', e.code); }
+
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS lista_status_groups (
+        id TEXT NOT NULL,
+        page_id TEXT NOT NULL,
+        label TEXT NOT NULL,
+        color TEXT DEFAULT '#7c3aed',
+        emoji TEXT DEFAULT '🔵',
+        order_index INTEGER DEFAULT 0,
+        PRIMARY KEY (id, page_id)
+      )
+    `);
+  } catch (e: any) { console.log('lista_status_groups table already exists or migration skipped:', e.code); }
 
   // ── Visual Hub Status Groups API ──
   app.get('/api/visual-hub-status-groups', async (req, res) => {
@@ -11653,18 +11687,168 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
+  // ── Lista Page Settings ──
+  app.get('/api/lista-page-settings/:pageId', async (req, res) => {
+    try {
+      const { pageId } = req.params;
+      const result = await pool.query('SELECT * FROM lista_page_settings WHERE page_id = $1', [pageId]);
+      if (result.rows.length > 0) {
+        res.json(result.rows[0]);
+      } else {
+        // Return defaults if no settings saved yet
+        res.json({ page_id: pageId, headline: 'Minha Lista', subtitle: 'GESTÃO DE TAREFAS' });
+      }
+    } catch (err) {
+      console.error('GET /api/lista-page-settings error:', err);
+      res.status(500).json({ error: 'Failed' });
+    }
+  });
+
+  app.put('/api/lista-page-settings/:pageId', async (req, res) => {
+    try {
+      const { pageId } = req.params;
+      const { headline, subtitle } = req.body;
+      const result = await pool.query(
+        `INSERT INTO lista_page_settings (page_id, headline, subtitle) VALUES ($1, $2, $3)
+         ON CONFLICT (page_id) DO UPDATE SET headline = $2, subtitle = $3, updated_at = NOW()
+         RETURNING *`,
+        [pageId, headline || 'Minha Lista', subtitle || 'GESTÃO DE TAREFAS']
+      );
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error('PUT /api/lista-page-settings error:', err);
+      res.status(500).json({ error: 'Failed' });
+    }
+  });
+
+  // ── Lista Status Groups ──
+  app.get('/api/lista-status-groups', async (req, res) => {
+    try {
+      const pageId = req.query.page_id as string;
+      if (!pageId) return res.status(400).json({ error: 'page_id required' });
+      const result = await pool.query(
+        'SELECT * FROM lista_status_groups WHERE page_id = $1 ORDER BY order_index ASC',
+        [pageId]
+      );
+      res.json(result.rows);
+    } catch (err) {
+      console.error('GET /api/lista-status-groups error:', err);
+      res.status(500).json({ error: 'Failed' });
+    }
+  });
+
+  app.post('/api/lista-status-groups', async (req, res) => {
+    try {
+      const { id, page_id, label, color, emoji, order_index } = req.body;
+      if (!id || !page_id || !label) return res.status(400).json({ error: 'id, page_id, label required' });
+      const result = await pool.query(
+        `INSERT INTO lista_status_groups (id, page_id, label, color, emoji, order_index)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+        [id, page_id, label, color || '#7c3aed', emoji || '🔵', order_index || 0]
+      );
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error('POST /api/lista-status-groups error:', err);
+      res.status(500).json({ error: 'Failed' });
+    }
+  });
+
+  app.patch('/api/lista-status-groups/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { page_id, label, color, emoji } = req.body;
+      if (!page_id) return res.status(400).json({ error: 'page_id required' });
+      const sets: string[] = [];
+      const vals: any[] = [];
+      let idx = 1;
+      if (label !== undefined) { sets.push(`label = $${idx++}`); vals.push(label); }
+      if (color !== undefined) { sets.push(`color = $${idx++}`); vals.push(color); }
+      if (emoji !== undefined) { sets.push(`emoji = $${idx++}`); vals.push(emoji); }
+      if (sets.length === 0) return res.json({ ok: true });
+      vals.push(id, page_id);
+      const result = await pool.query(
+        `UPDATE lista_status_groups SET ${sets.join(', ')} WHERE id = $${idx++} AND page_id = $${idx} RETURNING *`,
+        vals
+      );
+      res.json(result.rows[0] || { ok: true });
+    } catch (err) {
+      console.error('PATCH /api/lista-status-groups error:', err);
+      res.status(500).json({ error: 'Failed' });
+    }
+  });
+
+  app.delete('/api/lista-status-groups/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const page_id = req.query.page_id as string;
+      if (!page_id) return res.status(400).json({ error: 'page_id required' });
+      // Move tasks in this group to the first available group
+      const firstGroup = await pool.query(
+        'SELECT id FROM lista_status_groups WHERE page_id = $1 AND id != $2 ORDER BY order_index ASC LIMIT 1',
+        [page_id, id]
+      );
+      if (firstGroup.rows.length > 0) {
+        await pool.query(
+          `UPDATE onboarding_tasks SET status_group = $1 WHERE status_group = $2 AND type = $3`,
+          [firstGroup.rows[0].id, id, `lista-${page_id}`]
+        );
+      }
+      await pool.query('DELETE FROM lista_status_groups WHERE id = $1 AND page_id = $2', [id, page_id]);
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('DELETE /api/lista-status-groups error:', err);
+      res.status(500).json({ error: 'Failed' });
+    }
+  });
+
+  app.put('/api/lista-status-groups/reorder', async (req, res) => {
+    try {
+      const { groups, page_id } = req.body;
+      if (!Array.isArray(groups) || !page_id) return res.status(400).json({ error: 'groups array and page_id required' });
+      for (const g of groups) {
+        await pool.query(
+          'UPDATE lista_status_groups SET order_index = $1 WHERE id = $2 AND page_id = $3',
+          [g.order_index, g.id, page_id]
+        );
+      }
+      const result = await pool.query(
+        'SELECT * FROM lista_status_groups WHERE page_id = $1 ORDER BY order_index ASC',
+        [page_id]
+      );
+      res.json(result.rows);
+    } catch (err) {
+      console.error('PUT /api/lista-status-groups/reorder error:', err);
+      res.status(500).json({ error: 'Failed' });
+    }
+  });
+
   // ── GET tasks ──
   app.get('/api/onboarding-tasks', async (req, res) => {
     try {
       const type = req.query.type || 'operacional';
       const result = await pool.query(
-        'SELECT * FROM onboarding_tasks WHERE type = $1 ORDER BY status_group, created_at DESC',
+        'SELECT * FROM onboarding_tasks WHERE type = $1 ORDER BY status_group, order_index ASC, created_at DESC',
         [type]
       );
       res.json(result.rows);
     } catch (err) {
       console.error('GET /api/onboarding-tasks error:', err);
       res.status(500).json({ error: 'Erro ao buscar tarefas.' });
+    }
+  });
+
+  // ── PUT reorder tasks ──
+  app.put('/api/onboarding-tasks/reorder', async (req, res) => {
+    try {
+      const { tasks } = req.body;
+      if (!Array.isArray(tasks)) return res.status(400).json({ error: 'tasks array required' });
+      for (const t of tasks) {
+        await pool.query('UPDATE onboarding_tasks SET order_index = $1 WHERE id = $2', [t.order_index, t.id]);
+      }
+      res.json({ success: true });
+    } catch (err) {
+      console.error('PUT /api/onboarding-tasks/reorder error:', err);
+      res.status(500).json({ error: 'Failed to reorder' });
     }
   });
 

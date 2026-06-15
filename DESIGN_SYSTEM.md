@@ -218,9 +218,9 @@ Para dashboards com filtro de data por mês/ano, use o componente `MonthPicker` 
 
 ---
 
-## 5. Drag and Drop (Listas Ordenáveis)
+## 5. Drag and Drop (Listas Ordenáveis - Padrão Todo Staff)
 
-Sempre que precisar de uma lista ordenável (arrastar e soltar), utilize a biblioteca **`@dnd-kit`** para garantir transições suaves e um comportamento nativo consistente (nada de HTML5 nativo "seco").
+Sempre que precisar de uma lista ordenável verticalmente (arrastar e soltar), utilize a biblioteca **`@dnd-kit`** seguindo estritamente o layout e comportamento implementados na página **`TodoStaff.tsx`** e seus componentes (`SortableListRow`, `DroppableListGroup`). Esse é o padrão absoluto para listas ordenáveis e arrastáveis no sistema.
 
 ### 5.1 Bibliotecas Base
 Importe sempre do pacote `@dnd-kit`:
@@ -231,7 +231,7 @@ import { CSS } from '@dnd-kit/utilities';
 ```
 
 ### 5.2 Wrapper do Item (SortableItem)
-Crie um wrapper padronizado que injeta o comportamento e a animação correta no card:
+Crie um wrapper padronizado que injeta o comportamento e a animação correta no card (ou reutilize o `SortableListRow` padrão do `TodoStaff.tsx`):
 ```tsx
 const SortableItemWrapper: React.FC<{
   id: string;
@@ -254,16 +254,16 @@ const SortableItemWrapper: React.FC<{
 ```
 
 ### 5.3 O Grip (Ícone de Arrasto)
-O ícone de arrasto (GripVertical) deve sempre seguir este padrão visual, preferencialmente usando `lucide-react`:
+O ícone de arrasto (GripVertical) deve sempre seguir este padrão visual encontrado no `TodoStaff`:
 ```tsx
-<button
+<div
   {...dragHandleProps.attributes}
   {...dragHandleProps.listeners}
-  className="cursor-grab active:cursor-grabbing text-slate-400 dark:text-dark-text/20 hover:text-violet-500 dark:hover:text-violet-400 transition-colors touch-none flex-shrink-0"
+  className="cursor-grab active:cursor-grabbing text-slate-400 dark:text-dark-text/20 hover:text-violet-500 dark:hover:text-violet-400 transition-colors touch-none flex-shrink-0 flex items-center justify-center w-6 h-full"
   title="Arrastar para reordenar"
 >
-  <GripVertical size={12} />
-</button>
+  <GripVertical size={14} />
+</div>
 ```
 
 ### 5.4 Drag Overlay (O Fantasma)
@@ -273,7 +273,7 @@ Sempre implemente um `DragOverlay` para renderizar o card que fica grudado no cu
   {activeDragItem && (
     <div className="bg-white dark:bg-dark-card/95 backdrop-blur-sm border border-violet-500/30 rounded-xl px-4 py-2 shadow-2xl shadow-violet-500/10 cursor-grabbing flex items-center gap-2 max-w-md">
       {/* O mesmo grip, mas sem listeners/atributos */}
-      <GripVertical size={12} className="text-violet-500 dark:text-violet-400 flex-shrink-0" />
+      <GripVertical size={14} className="text-violet-500 dark:text-violet-400 flex-shrink-0" />
       <span className="text-sm font-medium text-slate-700 dark:text-white truncate">
         {activeDragItem.title}
       </span>
@@ -283,7 +283,7 @@ Sempre implemente um `DragOverlay` para renderizar o card que fica grudado no cu
 ```
 
 ### 5.5 Estrutura Principal
-Englobe a lista no `DndContext` e `SortableContext`:
+Englobe a lista no `DndContext` e `SortableContext` conforme feito no `TodoStaff.tsx`:
 ```tsx
 const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
@@ -299,4 +299,123 @@ const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { di
   </SortableContext>
   <DragOverlay>... (veja acima)</DragOverlay>
 </DndContext>
+```
+
+### 5.6 Drag and Drop Aninhado (Ex: Subtarefas)
+Quando houver necessidade de ter itens ordenáveis dentro de um item que já é ordenável ou dentro de um painel isolado (como **Subtarefas**), utilize um `DndContext` aninhado exclusivo. O fundamental é garantir que os sensores sejam definidos **fora** da renderização condicional (evitando o erro do React: *Rendered more hooks than during the previous render*).
+
+```tsx
+// 1. Defina o componente para a subtarefa ordenável
+const SortableSubtaskRow = ({ sub }: any) => {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: `subtask-${sub.id}` });
+  const style = { transform: CSS.Transform.toString(transform), transition };
+
+  return (
+    <div ref={setNodeRef} style={style} className="z-10 bg-dark-card flex items-center">
+      <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing">
+        <GripVertical size={12} />
+      </div>
+      <span>{sub.title}</span>
+    </div>
+  );
+};
+
+// 2. No componente pai, inicialize os sensores incondicionalmente no topo
+const TaskRow = ({ task }) => {
+  // Inicialização do hook fora de blocos if/condicionais
+  const subtaskSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  
+  return (
+    <div>
+      {/* 3. Utilize o contexto de Dnd isolado para as subtarefas */}
+      <DndContext sensors={subtaskSensors} collisionDetection={closestCenter} onDragEnd={handleSubtaskDragEnd}>
+        <SortableContext items={subtasks.map(s => `subtask-${s.id}`)} strategy={verticalListSortingStrategy}>
+          {subtasks.map(sub => <SortableSubtaskRow key={sub.id} sub={sub} />)}
+        </SortableContext>
+      </DndContext>
+    </div>
+  );
+};
+```
+
+---
+
+## 6. Kanban e Quadros (Padrão CRM Comercial - PRINCIPAL REFERÊNCIA)
+
+Para construir interfaces de Kanban (quadros de cartões/tickets arrastáveis entre colunas horizontais), **o layout e a estrutura do `CrmComercial.tsx` é a referência principal e definitiva**. Qualquer novo sistema de Kanban deve derivar dessa implementação. Ele deve sempre incluir rolagem horizontal snap e colunas estruturadas para suportar Drag & Drop.
+
+### 6.1 Container Principal do Kanban
+Deve ocupar a largura total e permitir rolagem horizontal suave (snap):
+```tsx
+<div className="flex-1 w-full overflow-x-auto pb-6 scrollbar-hide snap-x snap-mandatory">
+  <div className="flex gap-4 min-w-max h-full px-6 md:px-8">
+    {/* Colunas entram aqui */}
+  </div>
+</div>
+```
+
+### 6.2 Estrutura da Coluna (SortableColumn)
+Cada coluna deve ter largura mínima, fundo translúcido sutil (modo escuro e claro), e bordas refinadas. O Header da coluna deve exibir o valor monetário e a contagem de tickets.
+```tsx
+<div className="flex flex-col flex-1 min-h-[500px] min-w-[200px] snap-start bg-slate-50/50 dark:bg-white/[0.02] rounded-3xl border border-gray-200 dark:border-white/5 p-2 relative">
+  {/* Header da Coluna */}
+  <div className="p-3 flex items-start justify-between mb-2">
+    <div className="flex items-start gap-2 pt-1 pl-1 w-full overflow-hidden">
+      {/* Ícone da Coluna */}
+      <div className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 mt-0.5 bg-orange-500">
+        <LayoutGrid size={14} className="text-white" />
+      </div>
+      {/* Textos da Coluna */}
+      <div className="flex-1 min-w-0">
+        <h3 className="font-bold text-gray-900 dark:text-white text-[14px] leading-tight truncate pr-2">
+          Nome da Coluna
+        </h3>
+        <p className="text-gray-500 dark:text-slate-400 text-[11px] mt-1 font-medium flex items-center gap-1.5">
+          <span className="text-gray-600 dark:text-slate-300 font-semibold truncate">R$ 1.000,00</span>
+          <span className="flex-shrink-0">•</span>
+          <span className="flex-shrink-0">3 tickets</span>
+        </p>
+      </div>
+    </div>
+  </div>
+  
+  {/* Aqui vai o DroppableColumn e os Cards (ver seção 5. Drag and Drop) */}
+</div>
+```
+
+### 6.3 Estrutura do Card (SortableCard)
+O card de ticket deve exibir o responsável, tags e valores em um layout enxuto. O destaque para itens em atraso ou urgentes deve usar a prop `ring-2` ou sombreamento (shadow).
+
+```tsx
+<div className="rounded-xl p-3 border shadow-sm cursor-grab bg-white dark:bg-dark-card border-gray-200 dark:border-white/5 hover:border-violet-500/30 hover:shadow-md transition-all duration-200">
+  <div className="flex flex-col gap-2 mb-1.5 w-full">
+    <h4 className="font-bold text-[13px] leading-tight text-gray-900 dark:text-white line-clamp-2 min-w-0">
+      Título do Ticket
+    </h4>
+    <div className="flex items-center gap-1 flex-wrap">
+      {/* Badges/Tags */}
+      <span className="flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-md border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 text-gray-600 dark:text-slate-300 shrink-0">
+        <span className="w-1.5 h-1.5 rounded-full bg-orange-500"></span>
+        Origem
+      </span>
+    </div>
+  </div>
+
+  <div className="flex items-center justify-between mt-2 mb-2">
+    {/* Responsável (Avatar) */}
+    <div className="flex items-center gap-1.5 min-w-0">
+      <div className="w-4 h-4 rounded-full bg-gray-200 dark:bg-slate-700 flex items-center justify-center text-[8px] font-bold text-gray-600 dark:text-white overflow-hidden shrink-0">
+        JO
+      </div>
+      <span className="text-[10px] text-gray-500 dark:text-slate-400 font-medium line-clamp-1">
+        João Silva
+      </span>
+    </div>
+    
+    {/* Valor financeiro (se houver) */}
+    <div className="text-[11px] font-black text-emerald-500 shrink-0 ml-2">
+      R$ 5.000,00
+    </div>
+  </div>
+</div>
 ```
