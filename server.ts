@@ -12,6 +12,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import admin from "firebase-admin";
 import { setupCollectionRoutes } from "./src/routes/collection";
 import { setupDispatchRoutes } from "./src/routes/dispatch";
+import { normalizePhoneBR } from './src/utils/phoneNormalize';
 import rateLimit from 'express-rate-limit';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -803,6 +804,108 @@ async function startServer() {
         END IF;
       END $$;
 
+      CREATE TABLE IF NOT EXISTS collaborator_evaluations (
+        id SERIAL PRIMARY KEY,
+        collaborator_id INTEGER REFERENCES collaborators(id) ON DELETE CASCADE,
+        cycle_name VARCHAR(255) NOT NULL,
+        dimensions JSONB DEFAULT '{}',
+        average_score NUMERIC(3,2),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS collaborator_goals (
+        id SERIAL PRIMARY KEY,
+        collaborator_id INTEGER REFERENCES collaborators(id) ON DELETE CASCADE,
+        title VARCHAR(255) NOT NULL,
+        description TEXT,
+        progress INTEGER DEFAULT 0,
+        deadline DATE,
+        status VARCHAR(50) DEFAULT 'Em andamento',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS collaborator_pdi (
+        id SERIAL PRIMARY KEY,
+        collaborator_id INTEGER NOT NULL REFERENCES collaborators(id) ON DELETE CASCADE,
+        titulo TEXT NOT NULL,
+        descricao TEXT,
+        tipo TEXT CHECK (tipo IN ('Curso','Prática','Técnico','Comportamental')),
+        prazo DATE,
+        status TEXT DEFAULT 'Em andamento' CHECK (status IN ('Em andamento','Concluído','Pausado')),
+        criado_em TIMESTAMPTZ DEFAULT NOW(),
+        atualizado_em TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS collaborator_pdi_etapas (
+        id SERIAL PRIMARY KEY,
+        pdi_id INTEGER NOT NULL REFERENCES collaborator_pdi(id) ON DELETE CASCADE,
+        titulo TEXT NOT NULL,
+        concluida BOOLEAN DEFAULT FALSE,
+        concluida_em TIMESTAMPTZ,
+        criado_em TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS collaborator_feedbacks (
+        id SERIAL PRIMARY KEY,
+        de_collaborator_id INTEGER NOT NULL REFERENCES collaborators(id),
+        para_collaborator_id INTEGER NOT NULL REFERENCES collaborators(id),
+        nota INTEGER CHECK (nota BETWEEN 1 AND 5),
+        texto TEXT,
+        solicitado BOOLEAN DEFAULT FALSE,
+        criado_em TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS collaborator_feedback_requests (
+        id SERIAL PRIMARY KEY,
+        solicitante_id INTEGER NOT NULL REFERENCES collaborators(id),
+        solicitado_id INTEGER NOT NULL REFERENCES collaborators(id),
+        mensagem TEXT,
+        status TEXT DEFAULT 'Pendente' CHECK (status IN ('Pendente','Respondido','Recusado')),
+        criado_em TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS collaborator_one_on_ones (
+        id SERIAL PRIMARY KEY,
+        collaborator_id INTEGER NOT NULL REFERENCES collaborators(id) ON DELETE CASCADE,
+        participante_id INTEGER NOT NULL REFERENCES collaborators(id),
+        data_reuniao DATE NOT NULL,
+        anotacoes TEXT,
+        proximos_passos TEXT,
+        criado_em TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS collaborator_clients (
+        id SERIAL PRIMARY KEY,
+        collaborator_id INTEGER REFERENCES collaborators(id) ON DELETE CASCADE,
+        client_id TEXT,
+        status VARCHAR(50) DEFAULT 'ok',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(collaborator_id, client_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS collaborator_performance_cycles (
+        id SERIAL PRIMARY KEY,
+        collaborator_id INTEGER NOT NULL REFERENCES collaborators(id) ON DELETE CASCADE,
+        avaliador_id INTEGER NOT NULL REFERENCES collaborators(id),
+        periodo_inicio DATE NOT NULL,
+        periodo_fim DATE NOT NULL,
+        nota_campanhas INTEGER NOT NULL CHECK (nota_campanhas BETWEEN 1 AND 5),
+        nota_grapehub INTEGER NOT NULL CHECK (nota_grapehub BETWEEN 1 AND 5),
+        nota_reunioes INTEGER NOT NULL CHECK (nota_reunioes BETWEEN 1 AND 5),
+        nota_tmr INTEGER NOT NULL CHECK (nota_tmr BETWEEN 1 AND 5),
+        comentario TEXT,
+        criado_em TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS collaborator_daily_pulse (
+        id SERIAL PRIMARY KEY,
+        collaborator_id INTEGER NOT NULL REFERENCES collaborators(id) ON DELETE CASCADE,
+        data DATE NOT NULL DEFAULT CURRENT_DATE,
+        humor TEXT NOT NULL CHECK (humor IN ('otimo','bem','ok','dificil','pesado')),
+        criado_em TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(collaborator_id, data)
+      );
+
       CREATE TABLE IF NOT EXISTS crm_comercial_loss_reasons (
         id SERIAL PRIMARY KEY,
         name TEXT NOT NULL,
@@ -1172,6 +1275,7 @@ async function startServer() {
 
     // Ensure missing columns in crm_comercial_leads
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS previsao DATE`);
+    await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS prob_fechamento INTEGER`);
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS etapa_updated_at TIMESTAMPTZ DEFAULT NOW()`);
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS tags JSONB DEFAULT '[]'::jsonb`);
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS instagram TEXT`);
@@ -4513,7 +4617,7 @@ app.get("/api/todos", async (req, res) => {
              billing_email = EXCLUDED.billing_email,
              billing_phone = EXCLUDED.billing_phone,
              billing_method = EXCLUDED.billing_method`,
-          [c.id, c.name, c.email, c.phone, c.status, c.startDate, c.location, c.squad, c.tags, c.contracts, c.crmStatus, c.product, c.finSubscriptionId, c.billingName, c.billingEmail, c.billingPhone, c.billingMethod]
+          [c.id, c.name, c.email, c.phone, c.status, c.startDate, c.location, c.squad, c.tags, c.contracts, c.crmStatus, c.product, c.finSubscriptionId, c.billingName, c.billingEmail, (c.billingPhone ? normalizePhoneBR(c.billingPhone) || c.billingPhone : c.billingPhone), c.billingMethod]
         );
       }
       await pool.query("COMMIT");
@@ -4670,7 +4774,9 @@ app.get("/api/todos", async (req, res) => {
       }
       if (billing_phone !== undefined) {
         updates.push(`billing_phone = $${i++}`);
-        values.push(billing_phone);
+        // Normaliza billing_phone (WhatsApp de cobrança) para formato canônico
+        const normalizedBillingPhone = billing_phone ? normalizePhoneBR(billing_phone) : billing_phone;
+        values.push(normalizedBillingPhone !== null ? normalizedBillingPhone : billing_phone);
       }
       if (billing_method !== undefined) {
         updates.push(`billing_method = $${i++}`);
@@ -8376,7 +8482,7 @@ app.get("/api/todos", async (req, res) => {
     try {
       const { id } = req.params;
       const { 
-        coluna, valor, responsavel_id, moved_by, kanban_id, previsao, tags, origem, instagram, nicho, tempo_oab, faturamento,
+        coluna, valor, responsavel_id, moved_by, kanban_id, previsao, prob_fechamento, tags, origem, instagram, nicho, tempo_oab, faturamento,
         reunion_date, office_location, monthly_closings, closing_goal, reunion_link,
         utm_platform, utm_campaign, utm_set, utm_creative, utm_position,
         nome, telefone, observacoes,
@@ -8437,6 +8543,10 @@ app.get("/api/todos", async (req, res) => {
       if (previsao !== undefined) {
         updates.push(`previsao = $${paramIdx++}`);
         params.push(previsao || null);
+      }
+      if (prob_fechamento !== undefined) {
+        updates.push(`prob_fechamento = $${paramIdx++}`);
+        params.push(prob_fechamento);
       }
       if (tags !== undefined) {
         updates.push(`tags = $${paramIdx++}`);
@@ -13727,6 +13837,24 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
     }
   });
 
+  // Returns the collaborator row linked to a given user email
+  app.get("/api/collaborators/by-email/:email", async (req, res) => {
+    try {
+      const email = decodeURIComponent(req.params.email);
+      const { rows } = await pool.query(`
+        SELECT c.id, c.name
+        FROM collaborators c
+        JOIN users u ON u.id = c.linked_user_id
+        WHERE u.email = $1
+        LIMIT 1
+      `, [email]);
+      if (rows.length === 0) return res.status(404).json({ error: 'Collaborator not found for this email' });
+      res.json(rows[0]);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.get("/api/collaborators", async (_req, res) => {
     try {
       const { rows } = await pool.query(`
@@ -13831,6 +13959,511 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
     }
   });
 
+  app.get("/api/collaborators/:id", async (req, res) => {
+    try {
+      const { rows } = await pool.query(`
+        SELECT c.*,
+               u.picture  AS linked_picture,
+               u.name     AS linked_user_name,
+               u.email    AS linked_user_email
+        FROM collaborators c
+        LEFT JOIN users u ON u.id = c.linked_user_id
+        WHERE c.id = $1
+      `, [req.params.id]);
+      if (rows.length === 0) return res.status(404).json({ error: "Colaborador não encontrado." });
+      res.json(rows[0]);
+    } catch (e: any) {
+      console.error(e);
+      res.status(500).json({ error: "Erro ao buscar colaborador." });
+    }
+  });
+
+  // Endpoints for collaborator sub-entities
+  app.get("/api/collaborators/:id/evaluations", async (req, res) => {
+    try {
+      const { rows } = await pool.query("SELECT * FROM collaborator_evaluations WHERE collaborator_id = $1 ORDER BY created_at DESC", [req.params.id]);
+      res.json(rows);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/collaborators/:id/evaluations", async (req, res) => {
+    const { cycle_name, dimensions, average_score } = req.body;
+    try {
+      const { rows } = await pool.query(
+        "INSERT INTO collaborator_evaluations (collaborator_id, cycle_name, dimensions, average_score) VALUES ($1, $2, $3, $4) RETURNING *",
+        [req.params.id, cycle_name, dimensions, average_score]
+      );
+      res.status(201).json(rows[0]);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/collaborators/:id/goals", async (req, res) => {
+    try {
+      const { rows } = await pool.query("SELECT * FROM collaborator_goals WHERE collaborator_id = $1 ORDER BY created_at DESC", [req.params.id]);
+      res.json(rows);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/collaborators/:id/goals", async (req, res) => {
+    const { title, description, progress, deadline, status } = req.body;
+    try {
+      const { rows } = await pool.query(
+        "INSERT INTO collaborator_goals (collaborator_id, title, description, progress, deadline, status) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
+        [req.params.id, title, description, progress || 0, deadline, status || 'Em andamento']
+      );
+      res.status(201).json(rows[0]);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── PDI ──
+  app.get("/api/collaborators/:id/pdi", async (req, res) => {
+    try {
+      const { rows } = await pool.query(`
+        SELECT p.*,
+               COALESCE(
+                 (SELECT json_agg(json_build_object('id', e.id, 'titulo', e.titulo, 'concluida', e.concluida) ORDER BY e.id ASC)
+                  FROM collaborator_pdi_etapas e WHERE e.pdi_id = p.id), '[]'::json
+               ) AS etapas
+        FROM collaborator_pdi p
+        WHERE p.collaborator_id = $1
+        ORDER BY p.criado_em DESC
+      `, [req.params.id]);
+      
+      const items = rows.map(item => {
+        const total = item.etapas.length;
+        const concluida = item.etapas.filter((e: any) => e.concluida).length;
+        const progresso = total > 0 ? Math.round((concluida / total) * 100) : 0;
+        return { ...item, progresso };
+      });
+      res.json(items);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/collaborators/:id/pdi", async (req, res) => {
+    const { titulo, descricao, tipo, prazo, status, etapas } = req.body;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows } = await client.query(
+        "INSERT INTO collaborator_pdi (collaborator_id, titulo, descricao, tipo, prazo, status) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
+        [req.params.id, titulo, descricao, tipo, prazo, status || 'Em andamento']
+      );
+      const pdiId = rows[0].id;
+      
+      if (Array.isArray(etapas) && etapas.length > 0) {
+        for (const etapa of etapas) {
+          const tituloEtapa = typeof etapa === 'string' ? etapa : etapa.titulo;
+          if (tituloEtapa) {
+             await client.query("INSERT INTO collaborator_pdi_etapas (pdi_id, titulo, concluida) VALUES ($1, $2, $3)", [pdiId, tituloEtapa, etapa.concluida || false]);
+          }
+        }
+      }
+      await client.query('COMMIT');
+      res.status(201).json(rows[0]);
+    } catch (e: any) {
+      await client.query('ROLLBACK');
+      res.status(500).json({ error: e.message });
+    } finally {
+      client.release();
+    }
+  });
+
+  app.put("/api/collaborators/:id/pdi/:pdiId", async (req, res) => {
+    const { titulo, descricao, tipo, prazo, status, etapas } = req.body;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows } = await client.query(
+        "UPDATE collaborator_pdi SET titulo = $1, descricao = $2, tipo = $3, prazo = $4, status = $5, atualizado_em = NOW() WHERE id = $6 AND collaborator_id = $7 RETURNING *",
+        [titulo, descricao, tipo, prazo, status, req.params.pdiId, req.params.id]
+      );
+      
+      if (Array.isArray(etapas)) {
+        const existingEtapasIds = etapas.map(e => e.id).filter(id => id != null);
+        if (existingEtapasIds.length > 0) {
+           await client.query(`DELETE FROM collaborator_pdi_etapas WHERE pdi_id = $1 AND id != ALL($2::int[])`, [req.params.pdiId, existingEtapasIds]);
+        } else {
+           await client.query(`DELETE FROM collaborator_pdi_etapas WHERE pdi_id = $1`, [req.params.pdiId]);
+        }
+        
+        for (const etapa of etapas) {
+           const tituloEtapa = typeof etapa === 'string' ? etapa : etapa.titulo;
+           if (!tituloEtapa) continue;
+           
+           if (etapa.id) {
+              await client.query(`UPDATE collaborator_pdi_etapas SET titulo = $1 WHERE id = $2`, [tituloEtapa, etapa.id]);
+           } else {
+              await client.query(`INSERT INTO collaborator_pdi_etapas (pdi_id, titulo, concluida) VALUES ($1, $2, false)`, [req.params.pdiId, tituloEtapa]);
+           }
+        }
+        
+        const { rows: etapasRows } = await client.query(`SELECT concluida FROM collaborator_pdi_etapas WHERE pdi_id = $1`, [req.params.pdiId]);
+        const total = etapasRows.length;
+        const concluidas = etapasRows.filter(e => e.concluida).length;
+        let novoStatus = status;
+        if (total > 0 && total === concluidas) {
+           novoStatus = 'Concluído';
+        } else if (total > 0 && status === 'Concluído' && concluidas < total) {
+           novoStatus = 'Em andamento';
+        }
+        if (novoStatus !== status && rows.length > 0) {
+           await client.query(`UPDATE collaborator_pdi SET status = $1 WHERE id = $2`, [novoStatus, req.params.pdiId]);
+           rows[0].status = novoStatus;
+        }
+      }
+      
+      await client.query('COMMIT');
+      res.json(rows[0] || {});
+    } catch (e: any) {
+      await client.query('ROLLBACK');
+      res.status(500).json({ error: e.message });
+    } finally {
+      client.release();
+    }
+  });
+
+  app.patch("/api/pdi/etapas/:etapaId/toggle", async (req, res) => {
+    const { concluida } = req.body;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows } = await client.query(
+        "UPDATE collaborator_pdi_etapas SET concluida = $1, concluida_em = CASE WHEN $1 THEN NOW() ELSE NULL END WHERE id = $2 RETURNING *",
+        [concluida, req.params.etapaId]
+      );
+      
+      if (rows.length > 0) {
+         const pdiId = rows[0].pdi_id;
+         const { rows: pdiRows } = await client.query("SELECT * FROM collaborator_pdi WHERE id = $1", [pdiId]);
+         const { rows: etapasRows } = await client.query("SELECT concluida FROM collaborator_pdi_etapas WHERE pdi_id = $1", [pdiId]);
+         
+         const total = etapasRows.length;
+         const concluidas = etapasRows.filter(e => e.concluida).length;
+         const currentStatus = pdiRows[0]?.status;
+         
+         let newStatus = currentStatus;
+         if (total > 0 && concluidas === total && currentStatus !== 'Concluído') {
+            newStatus = 'Concluído';
+         } else if (total > 0 && concluidas < total && currentStatus === 'Concluído') {
+            newStatus = 'Em andamento';
+         }
+         
+         if (newStatus !== currentStatus) {
+            await client.query("UPDATE collaborator_pdi SET status = $1, atualizado_em = NOW() WHERE id = $2", [newStatus, pdiId]);
+         }
+         
+         const progresso = total > 0 ? Math.round((concluidas / total) * 100) : 0;
+         await client.query('COMMIT');
+         res.json({ success: true, progresso, status: newStatus, etapa: rows[0] });
+      } else {
+         await client.query('COMMIT');
+         res.status(404).json({ error: 'Etapa não encontrada' });
+      }
+    } catch (e: any) {
+      await client.query('ROLLBACK');
+      res.status(500).json({ error: e.message });
+    } finally {
+      client.release();
+    }
+  });
+
+  app.delete("/api/collaborators/:id/pdi/:pdiId", async (req, res) => {
+    try {
+      await pool.query("DELETE FROM collaborator_pdi WHERE id = $1 AND collaborator_id = $2", [req.params.pdiId, req.params.id]);
+      res.status(204).send();
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── Feedbacks ──
+  app.get("/api/collaborators/:id/feedbacks", async (req, res) => {
+    try {
+      const { rows } = await pool.query(`
+        SELECT f.*, 
+               remetente.name as de_nome,
+               u_rem.picture as de_avatar,
+               destinatario.name as para_nome,
+               u_dest.picture as para_avatar
+        FROM collaborator_feedbacks f
+        JOIN collaborators remetente ON remetente.id = f.de_collaborator_id
+        LEFT JOIN users u_rem ON u_rem.id = remetente.linked_user_id
+        JOIN collaborators destinatario ON destinatario.id = f.para_collaborator_id
+        LEFT JOIN users u_dest ON u_dest.id = destinatario.linked_user_id
+        WHERE f.de_collaborator_id = $1 OR f.para_collaborator_id = $1 
+        ORDER BY f.criado_em DESC
+      `, [req.params.id]);
+      res.json(rows);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+
+  app.post("/api/collaborators/:id/feedbacks", async (req, res) => {
+    const { para_collaborator_id, nota, texto, solicitado, tipo } = req.body;
+    try {
+      const { rows } = await pool.query(
+        "INSERT INTO collaborator_feedbacks (de_collaborator_id, para_collaborator_id, nota, texto, solicitado, tipo) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
+        [req.params.id, para_collaborator_id, nota, texto, solicitado || false, tipo || 'Construtivo']
+      );
+      res.status(201).json(rows[0]);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+
+  app.post("/api/collaborators/:id/feedbacks/solicitar", async (req, res) => {
+    const { solicitado_id, mensagem } = req.body;
+    try {
+      const { rows } = await pool.query(
+        "INSERT INTO collaborator_feedback_requests (solicitante_id, solicitado_id, mensagem) VALUES ($1, $2, $3) RETURNING *",
+        [req.params.id, solicitado_id, mensagem]
+      );
+      res.status(201).json(rows[0]);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/collaborators/:id/feedbacks/solicitacoes", async (req, res) => {
+    try {
+      const { rows } = await pool.query(`
+        SELECT r.*, 
+               solicitante.name as solicitante_nome, solicitante.linked_picture as solicitante_avatar
+        FROM collaborator_feedback_requests r
+        JOIN collaborators solicitante ON solicitante.id = r.solicitante_id
+        WHERE r.solicitado_id = $1 AND r.status = 'Pendente'
+        ORDER BY r.criado_em DESC
+      `, [req.params.id]);
+      res.json(rows);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.put("/api/feedbacks/solicitacoes/:requestId/responder", async (req, res) => {
+    const { status } = req.body;
+    try {
+      const { rows } = await pool.query(
+        "UPDATE collaborator_feedback_requests SET status = $1 WHERE id = $2 RETURNING *",
+        [status, req.params.requestId]
+      );
+      res.json(rows[0]);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── 1:1s ──
+  app.get("/api/collaborators/:id/one-on-ones", async (req, res) => {
+    try {
+      const { rows } = await pool.query(`
+        SELECT o.*,
+               p.name as participante_nome,
+               u.picture as participante_avatar
+        FROM collaborator_one_on_ones o
+        JOIN collaborators p ON p.id = o.participante_id
+        LEFT JOIN users u ON u.id = p.linked_user_id
+        WHERE o.collaborator_id = $1 OR o.participante_id = $1
+        ORDER BY o.data_reuniao DESC
+      `, [req.params.id]);
+      res.json(rows);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+
+  app.post("/api/collaborators/:id/one-on-ones", async (req, res) => {
+    const { participante_id, data_reuniao, anotacoes, proximos_passos } = req.body;
+    try {
+      const { rows } = await pool.query(
+        "INSERT INTO collaborator_one_on_ones (collaborator_id, participante_id, data_reuniao, anotacoes, proximos_passos) VALUES ($1, $2, $3, $4, $5) RETURNING *",
+        [req.params.id, participante_id, data_reuniao, anotacoes, proximos_passos]
+      );
+      res.status(201).json(rows[0]);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.put("/api/collaborators/:id/one-on-ones/:oId", async (req, res) => {
+    const { data_reuniao, anotacoes, proximos_passos } = req.body;
+    try {
+      const { rows } = await pool.query(
+        "UPDATE collaborator_one_on_ones SET data_reuniao = $1, anotacoes = $2, proximos_passos = $3 WHERE id = $4 AND collaborator_id = $5 RETURNING *",
+        [data_reuniao, anotacoes, proximos_passos, req.params.oId, req.params.id]
+      );
+      res.json(rows[0]);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/collaborators/:id/one-on-ones/:oId", async (req, res) => {
+    try {
+      await pool.query("DELETE FROM collaborator_one_on_ones WHERE id = $1 AND collaborator_id = $2", [req.params.oId, req.params.id]);
+      res.status(204).send();
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── Desempenho Quinzenal ───────────────────────────────────────────────────
+
+  // GET todos os ciclos do colaborador
+  app.get("/api/colaboradores/:id/desempenho", async (req, res) => {
+    try {
+      const { rows } = await pool.query(`
+        SELECT
+          c.*,
+          av.name AS avaliador_nome,
+          ROUND((c.nota_campanhas + c.nota_grapehub + c.nota_reunioes + c.nota_tmr) / 4.0, 2) AS media_geral
+        FROM collaborator_performance_cycles c
+        LEFT JOIN collaborators av ON av.id = c.avaliador_id
+        WHERE c.collaborator_id = $1
+        ORDER BY c.periodo_inicio DESC
+      `, [req.params.id]);
+      res.json(rows);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // GET resumo — médias históricas + tendência
+  app.get("/api/colaboradores/:id/desempenho/resumo", async (req, res) => {
+    try {
+      const { rows: all } = await pool.query(`
+        SELECT
+          nota_campanhas, nota_grapehub, nota_reunioes, nota_tmr,
+          ROUND((nota_campanhas + nota_grapehub + nota_reunioes + nota_tmr) / 4.0, 2) AS media_geral
+        FROM collaborator_performance_cycles
+        WHERE collaborator_id = $1
+        ORDER BY periodo_inicio DESC
+      `, [req.params.id]);
+
+      if (all.length === 0) return res.json(null);
+
+      const avg = (field: string) => {
+        const sum = all.reduce((a: number, r: any) => a + Number(r[field]), 0);
+        return parseFloat((sum / all.length).toFixed(2));
+      };
+
+      const trend = (field: string): { t: string; d: number } => {
+        if (all.length < 2) return { t: 'estavel', d: 0 };
+        const last = Number(all[0][field]);
+        const prev = Number(all[1][field]);
+        const diff = parseFloat((last - prev).toFixed(2));
+        return { t: diff > 0 ? 'subiu' : diff < 0 ? 'caiu' : 'estavel', d: Math.abs(diff) };
+      };
+
+      const tc = trend('nota_campanhas');
+      const tg = trend('nota_grapehub');
+      const tr = trend('nota_reunioes');
+      const tt = trend('nota_tmr');
+
+      res.json({
+        media_campanhas: avg('nota_campanhas'),
+        media_grapehub: avg('nota_grapehub'),
+        media_reunioes: avg('nota_reunioes'),
+        media_tmr: avg('nota_tmr'),
+        media_geral: avg('media_geral'),
+        tendencia_campanhas: tc.t, diff_campanhas: tc.d,
+        tendencia_grapehub: tg.t, diff_grapehub: tg.d,
+        tendencia_reunioes: tr.t, diff_reunioes: tr.d,
+        tendencia_tmr: tt.t, diff_tmr: tt.d,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST criar novo ciclo (somente admin)
+  app.post("/api/colaboradores/:id/desempenho", async (req, res) => {
+    const { periodo_inicio, periodo_fim, nota_campanhas, nota_grapehub, nota_reunioes, nota_tmr, comentario } = req.body;
+    try {
+      // Resolve avaliador pelo email enviado no header x-user-email
+      const emailHeader = req.headers['x-user-email'] as string | undefined;
+      let avaliadorId: number = parseInt(req.params.id); // fallback
+
+      if (emailHeader) {
+        // Busca collaborator cujo linked_user_id pertence a um user com esse email
+        const avRes = await pool.query(`
+          SELECT c.id FROM collaborators c
+          JOIN users u ON u.id = c.linked_user_id
+          WHERE u.email = $1
+          LIMIT 1
+        `, [emailHeader]);
+        if (avRes.rows.length > 0) {
+          avaliadorId = avRes.rows[0].id;
+        }
+      }
+
+      const { rows } = await pool.query(
+        `INSERT INTO collaborator_performance_cycles
+          (collaborator_id, avaliador_id, periodo_inicio, periodo_fim, nota_campanhas, nota_grapehub, nota_reunioes, nota_tmr, comentario)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+        [req.params.id, avaliadorId, periodo_inicio, periodo_fim, nota_campanhas, nota_grapehub, nota_reunioes, nota_tmr, comentario || null]
+      );
+      res.status(201).json(rows[0]);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+
+  // DELETE ciclo (somente admin)
+  app.delete("/api/desempenho/:cicloId", async (req, res) => {
+    try {
+      await pool.query("DELETE FROM collaborator_performance_cycles WHERE id = $1", [req.params.cicloId]);
+      res.status(204).send();
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+
+
+  app.get("/api/collaborators/:id/clients", async (req, res) => {
+    try {
+      const { rows } = await pool.query(`
+        SELECT cc.*, c.name, c.logo_url
+        FROM collaborator_clients cc
+        JOIN clients c ON c.id = cc.client_id
+        WHERE cc.collaborator_id = $1
+        ORDER BY c.name ASC
+      `, [req.params.id]);
+      res.json(rows);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/collaborators/:id/clients", async (req, res) => {
+    const { client_id, status } = req.body;
+    try {
+      const { rows } = await pool.query(
+        "INSERT INTO collaborator_clients (collaborator_id, client_id, status) VALUES ($1, $2, $3) RETURNING *",
+        [req.params.id, client_id, status || 'ok']
+      );
+      res.status(201).json(rows[0]);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.post("/api/public/collaborators", async (req, res) => {
     const { name, form_data } = req.body;
     try {
@@ -13842,6 +14475,393 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
     } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: "Erro ao enviar formulário." });
+    }
+  });
+
+  // ── Pulso Diário ───────────────────────────────────────────────────────────
+  
+  // POST - Registrar pulso do dia
+  app.post("/api/colaboradores/:id/pulso-diario", async (req, res) => {
+    try {
+      const { humor } = req.body;
+      if (!['otimo','bem','ok','dificil','pesado'].includes(humor)) {
+        return res.status(400).json({ error: 'Humor inválido. Use: otimo, bem, ok, dificil, pesado' });
+      }
+      const { rows } = await pool.query(
+        `INSERT INTO collaborator_daily_pulse (collaborator_id, data, humor)
+         VALUES ($1, CURRENT_DATE, $2)
+         ON CONFLICT (collaborator_id, data) DO UPDATE SET humor = $2, criado_em = NOW()
+         RETURNING *`,
+        [req.params.id, humor]
+      );
+      res.status(201).json(rows[0]);
+    } catch (e: any) {
+      console.error('POST pulso-diario error:', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // GET - Histórico de pulso dos últimos N dias
+  app.get("/api/colaboradores/:id/pulso-diario/historico", async (req, res) => {
+    try {
+      const dias = parseInt(req.query.dias as string) || 30;
+      const { rows } = await pool.query(
+        `SELECT * FROM collaborator_daily_pulse
+         WHERE collaborator_id = $1 AND data >= CURRENT_DATE - $2::integer
+         ORDER BY data DESC`,
+        [req.params.id, dias]
+      );
+      res.json(rows);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── Minha Equipe ──────────────────────────────────────────────────────────
+
+  // Helper: resolve email to collaborator_id
+  async function resolveCollaboratorId(pool: any, email: string): Promise<number | null> {
+    const { rows } = await pool.query(
+      `SELECT c.id FROM collaborators c JOIN users u ON c.linked_user_id = u.id WHERE u.email = $1 LIMIT 1`,
+      [email]
+    );
+    return rows.length > 0 ? rows[0].id : null;
+  }
+
+  // Helper: get subordinate tree from org chart edges
+  async function getSubordinateTree(pool: any, gestorCollabId: number): Promise<{ id: number, tipo: string, profundidade: number }[]> {
+    // Load org chart edges
+    const chartRes = await pool.query(`SELECT data FROM org_chart_state WHERE id = 1`);
+    if (chartRes.rows.length === 0) return [];
+    const chartData = typeof chartRes.rows[0].data === 'string' ? JSON.parse(chartRes.rows[0].data) : chartRes.rows[0].data;
+    const edges = chartData.edges || [];
+    
+    // Build parent->children map from edges
+    // In ReactFlow: source = gestor (parent), target = liderado (child)
+    // Node IDs are like "node-35" where 35 is the collaborator ID
+    const childrenMap: Record<number, number[]> = {};
+    for (const edge of edges) {
+      const sourceId = parseInt(String(edge.source).replace('node-', ''));
+      const targetId = parseInt(String(edge.target).replace('node-', ''));
+      if (isNaN(sourceId) || isNaN(targetId)) continue;
+      if (!childrenMap[sourceId]) childrenMap[sourceId] = [];
+      childrenMap[sourceId].push(targetId);
+    }
+    
+    // BFS to find all subordinates
+    const result: { id: number, tipo: string, profundidade: number }[] = [];
+    const queue: { id: number, depth: number }[] = [];
+    const visited = new Set<number>();
+    
+    // Start with direct reports
+    const directReports = childrenMap[gestorCollabId] || [];
+    for (const childId of directReports) {
+      queue.push({ id: childId, depth: 1 });
+    }
+    
+    while (queue.length > 0) {
+      const { id, depth } = queue.shift()!;
+      if (visited.has(id)) continue;
+      visited.add(id);
+      result.push({ id, tipo: depth === 1 ? 'direto' : 'indireto', profundidade: depth });
+      const children = childrenMap[id] || [];
+      for (const childId of children) {
+        if (!visited.has(childId)) {
+          queue.push({ id: childId, depth: depth + 1 });
+        }
+      }
+    }
+    
+    return result;
+  }
+
+  // GET - Check if user has subordinates
+  app.get("/api/colaboradores/minha-equipe/tem-liderados", async (req, res) => {
+    try {
+      const email = req.headers['x-user-email'] as string;
+      if (!email) return res.status(400).json({ error: 'x-user-email header required' });
+      const collabId = await resolveCollaboratorId(pool, email);
+      if (!collabId) return res.json({ temLiderados: false });
+      const tree = await getSubordinateTree(pool, collabId);
+      res.json({ temLiderados: tree.length > 0, total: tree.length });
+    } catch (e: any) {
+      console.error('tem-liderados error:', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // GET - Full team dashboard data
+  app.get("/api/colaboradores/minha-equipe", async (req, res) => {
+    try {
+      const email = req.headers['x-user-email'] as string;
+      if (!email) return res.status(400).json({ error: 'x-user-email header required' });
+      const collabId = await resolveCollaboratorId(pool, email);
+      if (!collabId) return res.json({ liderados: [] });
+      
+      const tree = await getSubordinateTree(pool, collabId);
+      if (tree.length === 0) return res.json({ liderados: [] });
+      
+      const ids = tree.map(t => t.id);
+      const treeMap = new Map(tree.map(t => [t.id, t]));
+      
+      // Fetch collaborator details
+      const { rows: collabs } = await pool.query(
+        `SELECT c.*, u.picture as linked_picture, u.name as linked_user_name, u.email as linked_user_email
+         FROM collaborators c
+         LEFT JOIN users u ON c.linked_user_id = u.id
+         WHERE c.id = ANY($1)`,
+        [ids]
+      );
+      
+      // Fetch today's pulse for all
+      const { rows: pulsos } = await pool.query(
+        `SELECT collaborator_id, humor, criado_em FROM collaborator_daily_pulse
+         WHERE collaborator_id = ANY($1) AND data = CURRENT_DATE`,
+        [ids]
+      );
+      const pulsoMap = new Map(pulsos.map((p: any) => [p.collaborator_id, p]));
+      
+      // Fetch latest performance cycle for each
+      const { rows: perfs } = await pool.query(
+        `SELECT DISTINCT ON (collaborator_id)
+           collaborator_id,
+           ROUND((nota_campanhas + nota_grapehub + nota_reunioes + nota_tmr) / 4.0, 2) as media_geral
+         FROM collaborator_performance_cycles
+         WHERE collaborator_id = ANY($1)
+         ORDER BY collaborator_id, criado_em DESC`,
+        [ids]
+      );
+      const perfMap = new Map(perfs.map((p: any) => [p.collaborator_id, parseFloat(p.media_geral)]));
+      
+      const liderados = collabs.map((c: any) => {
+        const treeInfo = treeMap.get(c.id);
+        const pulso = pulsoMap.get(c.id);
+        return {
+          id: c.id,
+          name: c.name,
+          role: c.role,
+          group_name: c.group_name,
+          status: c.status,
+          linked_picture: c.linked_picture,
+          linked_user_name: c.linked_user_name,
+          tipo: treeInfo?.tipo || 'indireto',
+          profundidade: treeInfo?.profundidade || 0,
+          pulso_hoje: pulso ? { humor: pulso.humor, criado_em: pulso.criado_em } : null,
+          desempenho: perfMap.get(c.id) || null,
+        };
+      });
+      
+      // Summary stats
+      const totalPulsoRespondido = pulsos.length;
+      const mediaDesempenho = perfs.length > 0
+        ? parseFloat((perfs.reduce((sum: number, p: any) => sum + parseFloat(p.media_geral), 0) / perfs.length).toFixed(2))
+        : null;
+      
+      res.json({
+        liderados,
+        resumo: {
+          total: liderados.length,
+          pulso_respondido: totalPulsoRespondido,
+          pulso_total: liderados.filter((l: any) => l.status === 'Efetivado').length,
+          media_desempenho: mediaDesempenho,
+        }
+      });
+    } catch (e: any) {
+      console.error('minha-equipe error:', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // GET - Today's pulse distribution
+  app.get("/api/colaboradores/minha-equipe/pulso-hoje", async (req, res) => {
+    try {
+      const email = req.headers['x-user-email'] as string;
+      if (!email) return res.status(400).json({ error: 'x-user-email header required' });
+      const collabId = await resolveCollaboratorId(pool, email);
+      if (!collabId) return res.json({ distribuicao: {}, respostas: [] });
+      
+      const tree = await getSubordinateTree(pool, collabId);
+      const ids = tree.map(t => t.id);
+      if (ids.length === 0) return res.json({ distribuicao: {}, respostas: [] });
+      
+      // Get collaborator names
+      const { rows: collabs } = await pool.query(
+        `SELECT c.id, c.name, c.status, u.picture as linked_picture
+         FROM collaborators c LEFT JOIN users u ON c.linked_user_id = u.id
+         WHERE c.id = ANY($1)`,
+        [ids]
+      );
+      
+      // Get today's pulses
+      const { rows: pulsos } = await pool.query(
+        `SELECT collaborator_id, humor, criado_em FROM collaborator_daily_pulse
+         WHERE collaborator_id = ANY($1) AND data = CURRENT_DATE`,
+        [ids]
+      );
+      const pulsoMap = new Map(pulsos.map((p: any) => [p.collaborator_id, p]));
+      
+      // Build distribution
+      const distribuicao: Record<string, number> = { otimo: 0, bem: 0, ok: 0, dificil: 0, pesado: 0 };
+      for (const p of pulsos) {
+        if (distribuicao[p.humor] !== undefined) distribuicao[p.humor]++;
+      }
+      
+      // Build response list (who answered what, who didn't answer)
+      const respostas = collabs
+        .filter((c: any) => c.status === 'Efetivado')
+        .map((c: any) => {
+          const pulso = pulsoMap.get(c.id);
+          return {
+            id: c.id,
+            name: c.name,
+            linked_picture: c.linked_picture,
+            respondeu: !!pulso,
+            humor: pulso?.humor || null,
+            criado_em: pulso?.criado_em || null,
+          };
+        });
+      
+      res.json({ distribuicao, respostas });
+    } catch (e: any) {
+      console.error('pulso-hoje error:', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // GET - Alerts (people who need attention)
+  app.get("/api/colaboradores/minha-equipe/alertas", async (req, res) => {
+    try {
+      const email = req.headers['x-user-email'] as string;
+      if (!email) return res.status(400).json({ error: 'x-user-email header required' });
+      const collabId = await resolveCollaboratorId(pool, email);
+      if (!collabId) return res.json({ alertas: [] });
+      
+      const tree = await getSubordinateTree(pool, collabId);
+      const ids = tree.map(t => t.id);
+      if (ids.length === 0) return res.json({ alertas: [] });
+      
+      const alertas: any[] = [];
+      
+      // Get collaborator names
+      const { rows: collabs } = await pool.query(
+        `SELECT c.id, c.name, c.status, u.picture as linked_picture
+         FROM collaborators c LEFT JOIN users u ON c.linked_user_id = u.id
+         WHERE c.id = ANY($1) AND c.status = 'Efetivado'`,
+        [ids]
+      );
+      const collabMap = new Map(collabs.map((c: any) => [c.id, c]));
+      
+      // Rule 1: Pulse "Difícil" or "Pesado" for 3+ consecutive days
+      const { rows: recentPulsos } = await pool.query(
+        `SELECT collaborator_id, data, humor FROM collaborator_daily_pulse
+         WHERE collaborator_id = ANY($1) AND data >= CURRENT_DATE - 7
+         ORDER BY collaborator_id, data DESC`,
+        [ids]
+      );
+      
+      // Group by collaborator
+      const pulsoByCollab: Record<number, { data: string, humor: string }[]> = {};
+      for (const p of recentPulsos) {
+        if (!pulsoByCollab[p.collaborator_id]) pulsoByCollab[p.collaborator_id] = [];
+        pulsoByCollab[p.collaborator_id].push({ data: p.data, humor: p.humor });
+      }
+      
+      for (const [collabIdStr, entries] of Object.entries(pulsoByCollab)) {
+        const cid = parseInt(collabIdStr);
+        // Check consecutive bad days
+        let consecutive = 0;
+        for (const entry of entries) {
+          if (entry.humor === 'dificil' || entry.humor === 'pesado') {
+            consecutive++;
+          } else {
+            break;
+          }
+        }
+        if (consecutive >= 3) {
+          const collab = collabMap.get(cid);
+          if (collab) {
+            alertas.push({
+              collaborator_id: cid,
+              name: collab.name,
+              linked_picture: collab.linked_picture,
+              motivo: 'pulso_negativo',
+              descricao: `Pulso negativo por ${consecutive} dias consecutivos`,
+              dias: consecutive,
+            });
+          }
+        }
+      }
+      
+      // Rule 2: Performance drop > 0.5 in last cycle
+      const { rows: perfDrops } = await pool.query(
+        `WITH ranked AS (
+           SELECT collaborator_id,
+                  ROUND((nota_campanhas + nota_grapehub + nota_reunioes + nota_tmr) / 4.0, 2) as media,
+                  ROW_NUMBER() OVER (PARTITION BY collaborator_id ORDER BY criado_em DESC) as rn
+           FROM collaborator_performance_cycles
+           WHERE collaborator_id = ANY($1)
+         )
+         SELECT a.collaborator_id, a.media as media_atual, b.media as media_anterior
+         FROM ranked a
+         JOIN ranked b ON a.collaborator_id = b.collaborator_id AND b.rn = 2
+         WHERE a.rn = 1 AND (b.media - a.media) > 0.5`,
+        [ids]
+      );
+      
+      for (const drop of perfDrops) {
+        const collab = collabMap.get(drop.collaborator_id);
+        if (collab) {
+          alertas.push({
+            collaborator_id: drop.collaborator_id,
+            name: collab.name,
+            linked_picture: collab.linked_picture,
+            motivo: 'queda_desempenho',
+            descricao: `Desempenho caiu de ${drop.media_anterior} para ${drop.media_atual}`,
+            media_atual: parseFloat(drop.media_atual),
+            media_anterior: parseFloat(drop.media_anterior),
+          });
+        }
+      }
+      
+      // Rule 3: PDI with overdue deadline and progress < 50%
+      const { rows: pdiAlerts } = await pool.query(
+        `SELECT p.collaborator_id, p.titulo, p.prazo,
+                COALESCE(
+                  ROUND(100.0 * COUNT(CASE WHEN e.concluida THEN 1 END) / NULLIF(COUNT(e.id), 0)),
+                  0
+                ) as progresso
+         FROM collaborator_pdi p
+         LEFT JOIN collaborator_pdi_etapas e ON e.pdi_id = p.id
+         WHERE p.collaborator_id = ANY($1)
+           AND p.status = 'Em andamento'
+           AND p.prazo < CURRENT_DATE
+         GROUP BY p.id, p.collaborator_id, p.titulo, p.prazo
+         HAVING COALESCE(
+           ROUND(100.0 * COUNT(CASE WHEN e.concluida THEN 1 END) / NULLIF(COUNT(e.id), 0)),
+           0
+         ) < 50`,
+        [ids]
+      );
+      
+      for (const pdi of pdiAlerts) {
+        const collab = collabMap.get(pdi.collaborator_id);
+        if (collab) {
+          alertas.push({
+            collaborator_id: pdi.collaborator_id,
+            name: collab.name,
+            linked_picture: collab.linked_picture,
+            motivo: 'pdi_vencido',
+            descricao: `PDI "${pdi.titulo}" vencido com ${pdi.progresso}% de progresso`,
+            pdi_titulo: pdi.titulo,
+            progresso: parseInt(pdi.progresso),
+          });
+        }
+      }
+      
+      res.json({ alertas });
+    } catch (e: any) {
+      console.error('alertas error:', e);
+      res.status(500).json({ error: e.message });
     }
   });
 

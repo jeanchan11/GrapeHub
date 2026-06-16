@@ -1,5 +1,6 @@
 import { Express } from 'express';
 import { Pool } from 'pg';
+import { normalizePhoneBR } from '../utils/phoneNormalize';
 
 // ── Scheduler state ──────────────────────────────────────────
 let schedulerTimer: ReturnType<typeof setTimeout> | null = null;
@@ -280,7 +281,17 @@ async function runDailyBatchIfNeeded(pool: Pool) {
           WHERE dq.id = $1
         `, [item.id]);
         const row = freshData.rows[0];
-        const resolvedPhone = row?.phone || item.customer_phone || '';
+        const rawPhone = row?.phone || item.customer_phone || '';
+        const resolvedPhone = normalizePhoneBR(rawPhone) || rawPhone;
+        // Safety: if normalization returns null AND raw is non-empty, skip dispatch
+        if (rawPhone && !normalizePhoneBR(rawPhone)) {
+          await pool.query(
+            `UPDATE fin_dispatch_queue SET status = 'ERRO', error_message = $2, updated_at = NOW() WHERE id = $1`,
+            [item.id, `Telefone inválido para normalização: ${rawPhone}`]
+          );
+          console.warn(`[dispatch-scheduler] ⚠️ Telefone inválido: ${item.customer_name} — raw: ${rawPhone}`);
+          continue;
+        }
         const resolvedCanal = row?.canal || 'Whatsapp';
         const resolvedEmail = row?.email || '';
         // Atualiza o customer_phone na fila com o valor correto
@@ -446,7 +457,16 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
           WHERE dq.id = $1
         `, [id]);
         const row = freshData.rows[0];
-        const resolvedPhone = row?.phone || item.customer_phone || '';
+        const rawPhone = row?.phone || item.customer_phone || '';
+        const resolvedPhone = normalizePhoneBR(rawPhone) || rawPhone;
+        if (rawPhone && !normalizePhoneBR(rawPhone)) {
+          await pool.query(
+            `UPDATE fin_dispatch_queue SET status = 'ERRO', error_message = $2, updated_at = NOW() WHERE id = $1`,
+            [id, `Telefone inválido para normalização: ${rawPhone}`]
+          );
+          console.warn(`[dispatch] ⚠️ Telefone inválido (manual): ${item.customer_name} — raw: ${rawPhone}`);
+          return;
+        }
         const resolvedCanal = row?.canal || 'Whatsapp';
         const resolvedEmail = row?.email || '';
         if (resolvedPhone !== item.customer_phone) {
@@ -579,7 +599,16 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
             WHERE dq.id = $1
           `, [item.id]);
           const row = freshData.rows[0];
-          const resolvedPhone = row?.phone || item.customer_phone || '';
+          const rawPhone = row?.phone || item.customer_phone || '';
+          const resolvedPhone = normalizePhoneBR(rawPhone) || rawPhone;
+          if (rawPhone && !normalizePhoneBR(rawPhone)) {
+            await pool.query(
+              `UPDATE fin_dispatch_queue SET status = 'ERRO', error_message = $2, updated_at = NOW() WHERE id = $1`,
+              [item.id, `Telefone inválido para normalização: ${rawPhone}`]
+            );
+            console.warn(`[dispatch] ⚠️ Telefone inválido (send-all): ${item.customer_name} — raw: ${rawPhone}`);
+            continue;
+          }
           const resolvedCanal = row?.canal || 'Whatsapp';
           const resolvedEmail = row?.email || '';
           if (resolvedPhone !== item.customer_phone) {

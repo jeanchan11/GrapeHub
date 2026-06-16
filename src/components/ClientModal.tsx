@@ -12,6 +12,7 @@ import {
 import { Modal } from './ui/Modal';
 import { designSystem } from '../design-system';
 import CrmCommentHistory from './CrmCommentHistory';
+import { normalizePhoneBR, formatPhoneBR } from '../utils/phoneNormalize';
 
 interface Client {
   id: string;
@@ -89,6 +90,7 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
   const [editChurnType, setEditChurnType] = useState('');
   const [editChurnReasons, setEditChurnReasons] = useState<string[]>([]);
   const [editChurnComment, setEditChurnComment] = useState('');
+  const [billingPhoneError, setBillingPhoneError] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     startDate: '',
@@ -280,6 +282,19 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Validação do WhatsApp de Cobrança
+    if (formData.billingPhone && formData.billingPhone.trim()) {
+      const normalized = normalizePhoneBR(formData.billingPhone);
+      if (!normalized) {
+        setBillingPhoneError('WhatsApp inválido — confira DDD e número');
+        return;
+      }
+      setBillingPhoneError('');
+    } else {
+      setBillingPhoneError('');
+    }
+
     setIsSaving(true);
 
     try {
@@ -640,10 +655,32 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
                     <input 
                       type="text"
                       value={formData.billingPhone}
-                      onChange={(e) => setFormData({ ...formData, billingPhone: e.target.value })}
+                      onChange={(e) => {
+                        setFormData({ ...formData, billingPhone: e.target.value });
+                        if (billingPhoneError) setBillingPhoneError('');
+                      }}
+                      onBlur={() => {
+                        if (formData.billingPhone && formData.billingPhone.trim()) {
+                          const normalized = normalizePhoneBR(formData.billingPhone);
+                          if (normalized) {
+                            setFormData(prev => ({ ...prev, billingPhone: formatPhoneBR(normalized) }));
+                            setBillingPhoneError('');
+                          } else {
+                            setBillingPhoneError('WhatsApp inválido — confira DDD e número');
+                          }
+                        } else {
+                          setBillingPhoneError('');
+                        }
+                      }}
                       placeholder="(00) 00000-0000"
-                      className={designSystem.input.field}
+                      className={`${designSystem.input.field} ${billingPhoneError ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-500/20' : ''}`}
                     />
+                    {billingPhoneError && (
+                      <p className="text-xs text-rose-500 flex items-center gap-1 mt-1">
+                        <AlertCircle size={12} />
+                        {billingPhoneError}
+                      </p>
+                    )}
                   </div>
                 </div>
                 <div className="space-y-2 mt-4">
@@ -734,7 +771,7 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
                   </div>
                   <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Whatsapp</p>
-                    <p className="text-sm text-light-text dark:text-white">{formData.billingPhone || '-'}</p>
+                    <p className="text-sm text-light-text dark:text-white">{formData.billingPhone ? formatPhoneBR(formData.billingPhone) : '-'}</p>
                   </div>
                 </div>
                 {formData.billingNotes && (

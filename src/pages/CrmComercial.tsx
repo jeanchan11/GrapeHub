@@ -476,8 +476,22 @@ const SortableCard = (props: SortableCardProps) => {
             <X size={10} />
           </div>
         )}
+        {!isWon && !isLost && (lead as any).prob_fechamento != null && (() => {
+          const prob = (lead as any).prob_fechamento as number;
+          const color = prob <= 30 ? '#f43f5e' : prob <= 70 ? '#f59e0b' : '#10b981';
+          const r = 9; const c = 2 * Math.PI * r; const offset = c * (1 - prob / 100);
+          return (
+            <div className="absolute top-2.5 right-2.5 z-10 w-7 h-7 shrink-0" title={`${prob}% de probabilidade`}>
+              <svg viewBox="0 0 24 24" className="w-full h-full -rotate-90">
+                <circle cx="12" cy="12" r={r} fill="none" stroke="currentColor" strokeWidth="2.5" className="text-gray-200 dark:text-white/10" />
+                <circle cx="12" cy="12" r={r} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeDasharray={c} strokeDashoffset={offset} style={{ transition: 'stroke-dashoffset 0.5s ease' }} />
+              </svg>
+              <span className="absolute inset-0 flex items-center justify-center text-[7px] font-black" style={{ color }}>{prob}</span>
+            </div>
+          );
+        })()}
         <div className="flex flex-col gap-2 mb-1.5 w-full">
-          <h4 className="font-bold text-[13px] leading-tight text-gray-900 dark:text-white line-clamp-2 min-w-0">{lead.nome}</h4>
+          <h4 className="font-bold text-[13px] leading-tight text-gray-900 dark:text-white line-clamp-2 min-w-0 pr-8">{lead.nome}</h4>
           <div className="flex items-center gap-1 flex-wrap">
             <span className="flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-md border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 text-gray-600 dark:text-slate-300 shrink-0">
               <span className={`w-1.5 h-1.5 rounded-full ${lead.origem === 'Indicação' ? 'bg-orange-500' :
@@ -3046,27 +3060,28 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                     </div>
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
-                        <Calendar size={13} /> Previsão
+                        <Target size={13} /> Prob. fechamento
                       </span>
-                      <div
-                        className="flex items-center gap-1 cursor-pointer group"
-                        onClick={(e) => {
-                          const inp = (e.currentTarget as HTMLElement).querySelector('input[type="date"]') as HTMLInputElement | null;
-                          try { inp?.showPicker?.(); } catch { inp?.click(); }
-                        }}
-                      >
-                        <span className="text-sm text-gray-700 dark:text-slate-300 group-hover:text-violet-500 transition-colors">
-                          {(lead as any).previsao
-                            ? new Date(((lead as any).previsao as string).split('T')[0] + 'T12:00:00').toLocaleDateString('pt-BR')
-                            : <span className="text-slate-500 text-xs italic">Adicionar...</span>}
-                        </span>
+                      <div className="flex items-center gap-1.5">
                         <input
-                          type="date"
-                          value={((lead as any).previsao || '').split('T')[0]}
-                          onChange={(e) => onUpdateLeadField(lead.id, 'previsao', e.target.value || null)}
-                          style={{ colorScheme: 'dark' }}
-                          className="sr-only"
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={(lead as any).prob_fechamento ?? ''}
+                          onChange={(e) => {
+                            const val = e.target.value === '' ? null : Math.min(100, Math.max(0, parseInt(e.target.value)));
+                            onUpdateLeadField(lead.id, 'prob_fechamento', val);
+                          }}
+                          placeholder="—"
+                          className={`text-right text-sm font-bold bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 w-14 ${
+                            (lead as any).prob_fechamento != null
+                              ? (lead as any).prob_fechamento <= 30 ? 'text-rose-500' : (lead as any).prob_fechamento <= 70 ? 'text-amber-500' : 'text-emerald-500'
+                              : 'text-gray-400'
+                          }`}
                         />
+                        {(lead as any).prob_fechamento != null && <span className={`text-xs font-bold ${
+                          (lead as any).prob_fechamento <= 30 ? 'text-rose-500' : (lead as any).prob_fechamento <= 70 ? 'text-amber-500' : 'text-emerald-500'
+                        }`}>%</span>}
                       </div>
                     </div>
                     <div className="flex items-center justify-between">

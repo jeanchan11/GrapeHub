@@ -46,6 +46,7 @@ import ContratacaoPage from './src/pages/ContratacaoPage';
 import ContasAPagar from './src/pages/ContasAPagar';
 import ContasAReceber from './src/pages/ContasAReceber';
 import ColaboradoresPage from './src/pages/ColaboradoresPage';
+import CollaboratorProfile from './src/pages/CollaboratorProfile';
 
 import MeetingNotes from './src/pages/MeetingNotes';
 import PlanejamentoCrescimento from './src/pages/PlanejamentoCrescimento';
@@ -74,6 +75,7 @@ import {
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { MenuProvider, useMenu } from './src/context/MenuContext';
 import ActivityToastStack from './src/components/ActivityToastStack';
+import { MoodPopup } from './src/components/MoodPopup';
 
 const AppContent: React.FC = () => {
   const { user, userData, loading, refreshUserData } = useAuth();
@@ -126,6 +128,7 @@ const AppContent: React.FC = () => {
 
   // Resolve o template da página ativa (necessário para detectar páginas financeiras no AIChat)
   const pageTemplate = useMemo(() => {
+    if (activePage.startsWith('colaboradores/')) return 'colaborador-perfil';
     if (!Array.isArray(menu)) return activePage;
     let resolved = activePage;
     let found = false;
@@ -222,6 +225,11 @@ const AppContent: React.FC = () => {
   };
 
   const renderPage = () => {
+    let resolvedPage = pageTemplate;
+    if (activePage.startsWith('colaboradores/')) {
+      resolvedPage = 'colaborador-perfil';
+    }
+
     // Guard: if user is logged in but userData hasn't loaded yet
     if (user && !userData) {
       // If still in initial loading phase, show spinner
@@ -395,6 +403,8 @@ const AppContent: React.FC = () => {
         return <ContasAReceber />;
       case 'colaboradores':
         return <ColaboradoresPage />;
+      case 'colaborador-perfil':
+        return <CollaboratorProfile id={activePage.split('/')[1]} />;
       case 'planejamento-crescimento':
         return <PlanejamentoCrescimento />;
       case 'senhas':
@@ -498,6 +508,7 @@ const AppContent: React.FC = () => {
         </PageTransition>
       </main>
       <ActivityToastStack />
+      <MoodPopup />
     </div>
   );
 };

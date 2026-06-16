@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Search, ChevronDown, Edit, Trash2, CheckCircle2, Copy, Check, Settings, X, Link } from 'lucide-react';
+import { Plus, Search, ChevronDown, Edit, Trash2, CheckCircle2, Copy, Check, Settings, X, Link, Users } from 'lucide-react';
 import LoadingSpinner from '../components/LoadingSpinner';
 import SplitHeadline from '../components/SplitHeadline';
 import Organograma from '../components/Organograma';
+import MinhaEquipeTab from './collaborator_tabs/MinhaEquipeTab';
+import { useAuth } from '../contexts/AuthContext';
 
 interface Collaborator {
   id: number;
@@ -52,9 +54,13 @@ export default function ColaboradoresPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
-    'Efetivado': true
+    'Efetivado': true,
+    'Desligamento': false,
+    'Turnover': false,
   });
-  const [mainTab, setMainTab] = useState<'dados' | 'organograma'>('dados');
+  const [mainTab, setMainTab] = useState<'dados' | 'organograma' | 'minha-equipe'>('organograma');
+  const [hasSubordinates, setHasSubordinates] = useState(false);
+  const { userData } = useAuth();
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -146,6 +152,17 @@ export default function ColaboradoresPage() {
     fetchSettings();
     fetchSystemUsers();
   }, []);
+
+  // Check if current user has subordinates (for showing Minha Equipe tab)
+  useEffect(() => {
+    if (!userData?.email) return;
+    fetch('/api/colaboradores/minha-equipe/tem-liderados', {
+      headers: { 'x-user-email': userData.email }
+    })
+      .then(r => r.json())
+      .then(data => setHasSubordinates(data.temLiderados || false))
+      .catch(() => {});
+  }, [userData?.email]);
 
   const toggleGroup = (status: string) => {
     setExpandedGroups(prev => ({ ...prev, [status]: !prev[status] }));
@@ -239,7 +256,7 @@ export default function ColaboradoresPage() {
     }
   };
 
-  if (loading) return <div className="flex justify-center items-center h-full"><LoadingSpinner size="lg" /></div>;
+  if (loading) return <div className="flex justify-center items-center min-h-[60vh] w-full"><LoadingSpinner size="lg" /></div>;
 
   return (
     <div className="min-h-full bg-light-bg dark:bg-dark-bg text-slate-900 dark:text-slate-100 font-sans p-8 overflow-y-auto w-full">
@@ -275,16 +292,19 @@ export default function ColaboradoresPage() {
       </div>
 
       <div className="flex gap-4 mb-6 border-b border-slate-200 dark:border-white/10 pb-px">
-        <button
-          onClick={() => setMainTab('dados')}
-          className={`pb-4 px-2 text-sm font-bold transition-all border-b-2 ${
-            mainTab === 'dados' 
-              ? 'border-violet-500 text-violet-600 dark:text-violet-400' 
-              : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-          }`}
-        >
-          Dados
-        </button>
+        {hasSubordinates && (
+          <button
+            onClick={() => setMainTab('minha-equipe')}
+            className={`pb-4 px-2 text-sm font-bold transition-all border-b-2 flex items-center gap-1.5 ${
+              mainTab === 'minha-equipe' 
+                ? 'border-violet-500 text-violet-600 dark:text-violet-400' 
+                : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+            }`}
+          >
+            <Users size={14} />
+            Minha Equipe
+          </button>
+        )}
         <button
           onClick={() => setMainTab('organograma')}
           className={`pb-4 px-2 text-sm font-bold transition-all border-b-2 ${
@@ -295,162 +315,146 @@ export default function ColaboradoresPage() {
         >
           Organograma
         </button>
+        {userData?.role === 'superadmin' && (
+          <button
+            onClick={() => setMainTab('dados')}
+            className={`pb-4 px-2 text-sm font-bold transition-all border-b-2 ${
+              mainTab === 'dados' 
+                ? 'border-violet-500 text-violet-600 dark:text-violet-400' 
+                : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+            }`}
+          >
+            Dados
+          </button>
+        )}
       </div>
 
       {mainTab === 'dados' ? (
-        <>
-        <style>{`
-          @keyframes collabRowFadeIn {
-            from { opacity: 0; transform: translateY(-8px); }
-            to   { opacity: 1; transform: translateY(0); }
-          }
-        `}</style>
-        <div className="bg-white dark:bg-[#151221] rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm overflow-hidden min-h-[500px]">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm whitespace-nowrap">
-              <thead>
-                <tr className="border-b border-slate-100 dark:border-white/[0.06] bg-slate-50/50 dark:bg-white/[0.03]">
-                  <th className="px-6 py-4 font-semibold text-slate-600 dark:text-slate-400">Nome</th>
-                  <th className="px-4 py-4 font-semibold text-slate-600 dark:text-slate-400">Status</th>
-                  <th className="px-4 py-4 font-semibold text-slate-600 dark:text-slate-400">Grupo</th>
-                  <th className="px-4 py-4 font-semibold text-slate-600 dark:text-slate-400">Cargo</th>
-                  <th className="px-4 py-4 font-semibold text-slate-600 dark:text-slate-400">Senioridade</th>
-                  <th className="px-4 py-4 font-semibold text-slate-600 dark:text-slate-400">Data Aniversário</th>
-                  <th className="px-4 py-4 w-[60px]"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {statuses.map(status => {
-                  const list = filtered(grouped[status]);
-                  const isExpanded = expandedGroups[status] !== false;
-                  
-                  if (list.length === 0 && search) return null;
+        <div className="space-y-4">
+          <style>{`
+            @keyframes collabCardIn {
+              from { opacity: 0; transform: translateY(-6px); }
+              to   { opacity: 1; transform: translateY(0); }
+            }
+          `}</style>
 
-                  return (
-                    <React.Fragment key={status}>
-                      {/* Group separator row */}
-                      <tr 
-                        className="cursor-pointer select-none"
-                        onClick={() => toggleGroup(status)}
-                      >
-                        <td colSpan={7} className="px-6 py-3 bg-slate-100/60 dark:bg-white/[0.02] border-y border-slate-100 dark:border-white/[0.06]">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2.5">
-                              <motion.div animate={{ rotate: isExpanded ? 0 : -90 }} transition={{ duration: 0.2, ease: 'easeInOut' }}>
-                                <ChevronDown size={14} className="text-slate-400" />
-                              </motion.div>
-                              <div className={`w-2 h-2 rounded-full ${getStatusColor(status)}`} />
-                              <span className="text-xs font-bold text-slate-700 dark:text-white uppercase tracking-widest">{status}</span>
-                              <span className="text-xs bg-violet-500/10 text-violet-400 border border-violet-500/20 px-2 py-0.5 rounded-full font-semibold">
-                                {list.length}
-                              </span>
-                            </div>
-                            <button 
-                              onClick={(e) => { e.stopPropagation(); openAddModal(status); }}
-                              className="p-1 hover:bg-white/10 rounded-lg text-slate-500 dark:text-slate-400 transition-colors"
+          {statuses.map(status => {
+            const list = filtered(grouped[status]);
+            const isExpanded = expandedGroups[status] !== false;
+            const statusColor =
+              status === 'Efetivado' ? { dot: 'bg-emerald-500', badge: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20', border: 'border-emerald-500/30' } :
+              status === 'Desligamento' ? { dot: 'bg-rose-500', badge: 'bg-rose-500/10 text-rose-400 border-rose-500/20', border: 'border-rose-500/30' } :
+              status === 'Turnover' ? { dot: 'bg-amber-500', badge: 'bg-amber-500/10 text-amber-400 border-amber-500/20', border: 'border-amber-500/30' } :
+              { dot: 'bg-slate-500', badge: 'bg-slate-500/10 text-slate-400 border-slate-500/20', border: 'border-slate-500/30' };
+
+            if (list.length === 0 && search) return null;
+
+            return (
+              <div key={status} className="bg-white dark:bg-[#151221] rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm overflow-hidden">
+                {/* Group header */}
+                <button
+                  className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors select-none"
+                  onClick={() => toggleGroup(status)}
+                >
+                  <div className="flex items-center gap-3">
+                    <motion.div animate={{ rotate: isExpanded ? 0 : -90 }} transition={{ duration: 0.2, ease: 'easeInOut' }}>
+                      <ChevronDown size={15} className="text-slate-400" />
+                    </motion.div>
+                    <div className={`w-2.5 h-2.5 rounded-full ${statusColor.dot}`} />
+                    <span className="text-xs font-black text-slate-700 dark:text-white uppercase tracking-widest">{status}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-bold border ${statusColor.badge}`}>
+                      {list.length}
+                    </span>
+                  </div>
+                  <button
+                    onClick={e => { e.stopPropagation(); openAddModal(status); }}
+                    className="p-1.5 hover:bg-violet-500/10 rounded-lg text-slate-400 hover:text-violet-500 transition-colors"
+                    title="Adicionar colaborador"
+                  >
+                    <Plus size={14} />
+                  </button>
+                </button>
+
+                {/* Cards grid */}
+                {isExpanded && (
+                  <div className={`border-t ${statusColor.border} border-opacity-40 dark:border-opacity-20 border-slate-200 dark:border-white/5`}>
+                    {list.length === 0 ? (
+                      <div className="py-10 text-center text-slate-400 text-sm">
+                        Nenhum colaborador nesta lista.
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 p-4">
+                        {list.map((c, idx) => {
+                          const groupSetting = settings.find(s => s.type === 'group' && s.name === c.group_name);
+                          const roleSetting = settings.find(s => s.type === 'role' && s.name === c.role);
+                          const senSetting = settings.find(s => s.type === 'seniority' && s.name === c.seniority_level);
+
+                          return (
+                            <div
+                              key={c.id}
+                              onClick={() => window.location.hash = '#/colaboradores/' + c.id}
+                              className="group relative bg-slate-50 dark:bg-white/[0.03] hover:bg-white dark:hover:bg-white/[0.06] border border-slate-200 dark:border-white/[0.07] hover:border-violet-500/40 rounded-2xl p-4 cursor-pointer transition-all duration-200 hover:shadow-lg hover:shadow-violet-500/5"
+                              style={{ animation: 'collabCardIn 0.25s ease both', animationDelay: `${idx * 0.03}s` }}
                             >
-                              <Plus size={14} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-
-                      {/* Rows with staggered animation */}
-                      {isExpanded && (
-                        list.length === 0 ? (
-                          <tr>
-                            <td colSpan={7} className="text-center py-8 text-slate-400">
-                              <div className="flex flex-col items-center gap-2">
-                                <p className="text-sm">Nenhum colaborador nesta lista.</p>
+                              {/* Avatar + nome */}
+                              <div className="flex items-center gap-3 mb-3">
+                                <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm shrink-0 overflow-hidden bg-violet-500/20 text-violet-400 ring-2 ring-white dark:ring-white/10">
+                                  {c.linked_picture
+                                    ? <img src={c.linked_picture} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                    : c.name.charAt(0).toUpperCase()
+                                  }
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="font-bold text-slate-800 dark:text-white text-sm truncate">{c.name}</p>
+                                  {c.role && (
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{c.role}</p>
+                                  )}
+                                </div>
                               </div>
-                            </td>
-                          </tr>
-                        ) : (
-                          list.map((c, idx) => (
-                            <tr 
-                              key={c.id} 
-                              onClick={() => openEditModal(c)} 
-                              className="border-b border-slate-50 dark:border-white/[0.04] hover:bg-slate-50 dark:hover:bg-white/[0.04] transition-colors cursor-pointer group"
-                              style={{ animation: 'collabRowFadeIn 0.3s ease both', animationDelay: `${idx * 0.04}s` }}
-                            >
-                              {/* Nome */}
-                              <td className="px-6 py-3">
-                                <div className="flex items-center gap-3">
-                                  <div className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs shrink-0 overflow-hidden bg-violet-500/20 text-violet-400">
-                                    {c.linked_picture
-                                      ? <img src={c.linked_picture} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                                      : c.name.charAt(0).toUpperCase()
-                                    }
-                                  </div>
-                                  <span className="font-semibold text-slate-800 dark:text-white">{c.name}</span>
-                                </div>
-                              </td>
 
-                              {/* Status */}
-                              <td className="px-4 py-3">
-                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${
-                                  status === 'Efetivado' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
-                                  status === 'Desligamento' ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' :
-                                  status === 'Turnover' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
-                                  'bg-slate-500/10 text-slate-400 border-slate-500/20'
-                                }`}>
-                                  {status}
-                                </span>
-                              </td>
+                              {/* Badges */}
+                              <div className="flex flex-wrap gap-1.5">
+                                {groupSetting && (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border" style={{ backgroundColor: `${groupSetting.color}15`, color: groupSetting.color, borderColor: `${groupSetting.color}30` }}>
+                                    {c.group_name}
+                                  </span>
+                                )}
+                                {senSetting && (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border" style={{ backgroundColor: `${senSetting.color}15`, color: senSetting.color, borderColor: `${senSetting.color}30` }}>
+                                    {c.seniority_level}
+                                  </span>
+                                )}
+                                {!groupSetting && c.group_name && (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400">
+                                    {c.group_name}
+                                  </span>
+                                )}
+                              </div>
 
-                              {/* Grupo */}
-                              <td className="px-4 py-3">
-                                {(() => {
-                                  const s = settings.find(set => set.type === 'group' && set.name === c.group_name);
-                                  if (s) return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border" style={{ backgroundColor: `${s.color}15`, color: s.color, borderColor: `${s.color}30` }}>{c.group_name}</span>;
-                                  return <span className="text-slate-500 dark:text-slate-400">{c.group_name || '-'}</span>;
-                                })()}
-                              </td>
-
-                              {/* Cargo */}
-                              <td className="px-4 py-3">
-                                {(() => {
-                                  const s = settings.find(set => set.type === 'role' && set.name === c.role);
-                                  if (s) return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border" style={{ backgroundColor: `${s.color}15`, color: s.color, borderColor: `${s.color}30` }}>{c.role}</span>;
-                                  return <span className="text-slate-500 dark:text-slate-400">{c.role || '-'}</span>;
-                                })()}
-                              </td>
-
-                              {/* Senioridade */}
-                              <td className="px-4 py-3">
-                                {(() => {
-                                  const s = settings.find(set => set.type === 'seniority' && set.name === c.seniority_level);
-                                  if (s) return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border" style={{ backgroundColor: `${s.color}15`, color: s.color, borderColor: `${s.color}30` }}>{c.seniority_level}</span>;
-                                  return <span className="text-slate-500 dark:text-slate-400">{c.seniority_level || '-'}</span>;
-                                })()}
-                              </td>
-
-                              {/* Data Aniversário */}
-                              <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs">
-                                {c.birth_date || '-'}
-                              </td>
-
-                              {/* Actions */}
-                              <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                                <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <button onClick={() => openEditModal(c)} className="w-7 h-7 rounded-lg hover:bg-white/10 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-white transition-colors"><Edit size={13} /></button>
-                                  <button onClick={() => handleDelete(c.id)} className="w-7 h-7 rounded-lg hover:bg-rose-500/10 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-rose-400 transition-colors"><Trash2 size={13} /></button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))
-                        )
-                      )}
-                    </React.Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                              {/* Action buttons on hover */}
+                              <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+                                <button onClick={() => openEditModal(c)} className="w-6 h-6 rounded-lg bg-white dark:bg-white/10 hover:bg-violet-500/10 flex items-center justify-center text-slate-400 hover:text-violet-500 transition-colors shadow-sm">
+                                  <Edit size={12} />
+                                </button>
+                                <button onClick={() => handleDelete(c.id)} className="w-6 h-6 rounded-lg bg-white dark:bg-white/10 hover:bg-rose-500/10 flex items-center justify-center text-slate-400 hover:text-rose-500 transition-colors shadow-sm">
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
-        </>
-      ) : (
+      ) : mainTab === 'organograma' ? (
         <Organograma collaborators={collaborators.filter(c => c.status === 'Efetivado')} settings={settings} />
+      ) : (
+        <MinhaEquipeTab />
       )}
 
       {isModalOpen && (
