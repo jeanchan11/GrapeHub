@@ -160,7 +160,13 @@ export default function ColaboradoresPage() {
       headers: { 'x-user-email': userData.email }
     })
       .then(r => r.json())
-      .then(data => setHasSubordinates(data.temLiderados || false))
+      .then(data => {
+        const hasSub = data.temLiderados || false;
+        setHasSubordinates(hasSub);
+        if (!hasSub) {
+          setMainTab('organograma');
+        }
+      })
       .catch(() => {});
   }, [userData?.email]);
 

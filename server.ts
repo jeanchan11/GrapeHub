@@ -13917,7 +13917,7 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
         SELECT c.id, c.name
         FROM collaborators c
         JOIN users u ON u.id = c.linked_user_id
-        WHERE u.email = $1
+        WHERE LOWER(u.email) = LOWER($1)
         LIMIT 1
       `, [email]);
       if (rows.length === 0) return res.status(404).json({ error: 'Collaborator not found for this email' });
@@ -14435,7 +14435,7 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
       let criadorNome: string | null = null;
       if (emailHeader) {
         const avRes = await pool.query(
-          `SELECT c.id, c.name FROM collaborators c JOIN users u ON u.id = c.linked_user_id WHERE u.email = $1 LIMIT 1`,
+          `SELECT c.id, c.name FROM collaborators c JOIN users u ON u.id = c.linked_user_id WHERE LOWER(u.email) = LOWER($1) LIMIT 1`,
           [emailHeader]
         );
         if (avRes.rows.length > 0) {
@@ -14548,7 +14548,7 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
         const avRes = await pool.query(`
           SELECT c.id FROM collaborators c
           JOIN users u ON u.id = c.linked_user_id
-          WHERE u.email = $1
+          WHERE LOWER(u.email) = LOWER($1)
           LIMIT 1
         `, [emailHeader]);
         if (avRes.rows.length > 0) {
@@ -14622,7 +14622,7 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
       let criadorNome: string | null = null;
       if (emailHeader) {
         const avRes = await pool.query(
-          `SELECT c.id, c.name FROM collaborators c JOIN users u ON u.id = c.linked_user_id WHERE u.email = $1 LIMIT 1`,
+          `SELECT c.id, c.name FROM collaborators c JOIN users u ON u.id = c.linked_user_id WHERE LOWER(u.email) = LOWER($1) LIMIT 1`,
           [emailHeader]
         );
         if (avRes.rows.length > 0) {
@@ -14740,7 +14740,7 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
   // Helper: resolve email to collaborator_id
   async function resolveCollaboratorId(pool: any, email: string): Promise<number | null> {
     const { rows } = await pool.query(
-      `SELECT c.id FROM collaborators c JOIN users u ON c.linked_user_id = u.id WHERE u.email = $1 LIMIT 1`,
+      `SELECT c.id FROM collaborators c JOIN users u ON c.linked_user_id = u.id WHERE LOWER(u.email) = LOWER($1) LIMIT 1`,
       [email]
     );
     return rows.length > 0 ? rows[0].id : null;
