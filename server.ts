@@ -2308,34 +2308,58 @@ async function startServer() {
               const tags = Array.isArray(lead.tags) ? lead.tags : [];
               const produtoTag = tags.length > 0 ? tags[0] : null;
 
-              const result = await pool.query(
-                `INSERT INTO onboarding_tasks (client_name, nome_completo, telefone_whatsapp, cidade, produto, status_group, type)
-                 VALUES ($1, $2, $3, $4, $5, 'briefing-realizado', 'operacional') RETURNING *`,
-                [clientName, nomeCompleto, telefone, cidade, produtoTag]
+              // Verifica se já existe tarefa de onboarding para este lead (evita duplicatas)
+              const existingOnboarding = await pool.query(
+                `SELECT id, produto FROM onboarding_tasks 
+                 WHERE LOWER(TRIM(client_name)) = LOWER(TRIM($1)) 
+                   AND type = 'operacional'
+                   AND created_at > NOW() - INTERVAL '1 hour'
+                 LIMIT 1`,
+                [clientName]
               );
-              const newTask = result.rows[0];
 
-              const template = await pool.query(
-                "SELECT title, order_index, description, internal_doc FROM onboarding_template_items WHERE type = 'operacional' ORDER BY order_index ASC"
-              );
-              if (template.rows.length > 0) {
-                const values = [];
-                const params = [];
-                let idx = 1;
-                for (const item of template.rows) {
-                  values.push(`($${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++})`);
-                  params.push(newTask.id, item.title, item.order_index, item.description || null, item.internal_doc || null);
+              if (existingOnboarding.rows.length > 0) {
+                // Já existe — apenas atualiza o produto se estiver faltando
+                const existing = existingOnboarding.rows[0];
+                if (produtoTag && !existing.produto) {
+                  await pool.query(
+                    `UPDATE onboarding_tasks SET produto = $1 WHERE id = $2`,
+                    [produtoTag, existing.id]
+                  );
+                  console.log(`[Automação] create_onboarding: tarefa já existia para "${clientName}", produto atualizado para "${produtoTag}"`);
+                } else {
+                  console.log(`[Automação] create_onboarding: tarefa já existia para "${clientName}", pulando criação duplicada`);
                 }
-                await pool.query(
-                  `INSERT INTO onboarding_subtasks (task_id, title, order_index, description, internal_doc) VALUES ${values.join(', ')}`,
-                  params
+              } else {
+                const result = await pool.query(
+                  `INSERT INTO onboarding_tasks (client_name, nome_completo, telefone_whatsapp, cidade, produto, status_group, type)
+                   VALUES ($1, $2, $3, $4, $5, 'briefing-realizado', 'operacional') RETURNING *`,
+                  [clientName, nomeCompleto, telefone, cidade, produtoTag]
                 );
-                await pool.query(
-                  `UPDATE onboarding_tasks SET subtask_count = $1 WHERE id = $2`,
-                  [template.rows.length, newTask.id]
+                const newTask = result.rows[0];
+
+                const template = await pool.query(
+                  "SELECT title, order_index, description, internal_doc FROM onboarding_template_items WHERE type = 'operacional' ORDER BY order_index ASC"
                 );
+                if (template.rows.length > 0) {
+                  const values = [];
+                  const params = [];
+                  let idx = 1;
+                  for (const item of template.rows) {
+                    values.push(`($${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++})`);
+                    params.push(newTask.id, item.title, item.order_index, item.description || null, item.internal_doc || null);
+                  }
+                  await pool.query(
+                    `INSERT INTO onboarding_subtasks (task_id, title, order_index, description, internal_doc) VALUES ${values.join(', ')}`,
+                    params
+                  );
+                  await pool.query(
+                    `UPDATE onboarding_tasks SET subtask_count = $1 WHERE id = $2`,
+                    [template.rows.length, newTask.id]
+                  );
+                }
+                console.log(`[Automação] create_onboarding: tarefa operacional criada para lead ${leadId}`);
               }
-              console.log(`[Automação] create_onboarding: tarefa operacional criada para lead ${leadId}`);
             }
 
             console.log(`[Automação] "${automation.name}" → ação "${actionType}" executada para lead ${leadId}`);
@@ -2506,6 +2530,30 @@ async function startServer() {
     } catch (e) {
       console.error('Error in /api/projects/by-subsession:', e);
       res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  // Squad members — returns the distinct responsibles from gestor pages within a subsession
+  app.get("/api/squad-members/:subsessionId", async (req: any, res: any) => {
+    try {
+      const { subsessionId } = req.params;
+      // Gestor pages are pages inside subsubsessions that belong to this subsession
+      // and have template = 'projects'
+      const result = await pool.query(`
+        SELECT DISTINCT p.responsible
+        FROM projects p
+        JOIN menu_pages mp ON mp.id = p.page_id
+        JOIN menu_subsubsessions mss ON mss.id = mp.subsubsession_id
+        WHERE mss.subsession_id = $1
+          AND mp.template = 'projects'
+          AND p.responsible IS NOT NULL
+          AND p.responsible != ''
+        ORDER BY p.responsible
+      `, [subsessionId]);
+      res.json(result.rows.map((r: any) => r.responsible));
+    } catch (e: any) {
+      console.error('Error in /api/squad-members:', e.message);
+      res.status(500).json({ error: e.message });
     }
   });
 
@@ -3027,6 +3075,30 @@ async function startServer() {
   });
 
   // Menu API
+
+  // Returns the subsession_id for a given page (resolves through subsubsessions if needed)
+  app.get("/api/menu/page-subsession/:pageId", async (req: any, res: any) => {
+    try {
+      const { pageId } = req.params;
+      const result = await pool.query(`
+        SELECT 
+          mp.subsession_id,
+          mss.subsession_id as indirect_subsession_id
+        FROM menu_pages mp
+        LEFT JOIN menu_subsubsessions mss ON mss.id = mp.subsubsession_id
+        WHERE mp.id = $1
+      `, [pageId]);
+      if (result.rows.length === 0) {
+        return res.json({ subsession_id: null });
+      }
+      const row = result.rows[0];
+      const subsessionId = row.subsession_id || row.indirect_subsession_id || null;
+      res.json({ subsession_id: subsessionId });
+    } catch (e: any) {
+      console.error('Error in page-subsession:', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
 
   app.get("/api/menu", async (req, res) => {
 
@@ -14321,6 +14393,79 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
     }
   });
 
+  // ── Agendamento de Próximo 1:1 ────────────────────────────────────────────
+
+  // Migration: cria tabela se não existir
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS collaborator_one_on_one_schedule (
+      id SERIAL PRIMARY KEY,
+      collaborator_id INTEGER NOT NULL REFERENCES collaborators(id) ON DELETE CASCADE,
+      data DATE NOT NULL,
+      horario TIME DEFAULT '09:00',
+      observacao TEXT,
+      criado_por INTEGER REFERENCES collaborators(id),
+      criado_por_nome TEXT,
+      criado_em TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  // GET - busca o próximo 1:1 agendado do colaborador
+  app.get("/api/collaborators/:id/proximo-1on1", async (req, res) => {
+    try {
+      const { rows } = await pool.query(
+        `SELECT * FROM collaborator_one_on_one_schedule
+         WHERE collaborator_id = $1
+         ORDER BY data ASC, criado_em DESC
+         LIMIT 1`,
+        [req.params.id]
+      );
+      res.json(rows[0] || null);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST - cria agendamento (substitui o existente)
+  app.post("/api/collaborators/:id/proximo-1on1", async (req, res) => {
+    const { data, horario, observacao } = req.body;
+    if (!data) return res.status(400).json({ error: 'Data é obrigatória' });
+    try {
+      const emailHeader = req.headers['x-user-email'] as string | undefined;
+      let criadorId: number | null = null;
+      let criadorNome: string | null = null;
+      if (emailHeader) {
+        const avRes = await pool.query(
+          `SELECT c.id, c.name FROM collaborators c JOIN users u ON u.id = c.linked_user_id WHERE u.email = $1 LIMIT 1`,
+          [emailHeader]
+        );
+        if (avRes.rows.length > 0) {
+          criadorId = avRes.rows[0].id;
+          criadorNome = avRes.rows[0].name;
+        }
+      }
+      // Remove anterior e insere novo
+      await pool.query(`DELETE FROM collaborator_one_on_one_schedule WHERE collaborator_id = $1`, [req.params.id]);
+      const { rows } = await pool.query(
+        `INSERT INTO collaborator_one_on_one_schedule (collaborator_id, data, horario, observacao, criado_por, criado_por_nome)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+        [req.params.id, data, horario || '09:00', observacao || null, criadorId, criadorNome]
+      );
+      res.status(201).json(rows[0]);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // DELETE - remove agendamento
+  app.delete("/api/collaborators/:id/proximo-1on1", async (req, res) => {
+    try {
+      await pool.query(`DELETE FROM collaborator_one_on_one_schedule WHERE collaborator_id = $1`, [req.params.id]);
+      res.status(204).send();
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // ── Desempenho Quinzenal ───────────────────────────────────────────────────
 
   // GET todos os ciclos do colaborador
@@ -14434,6 +14579,79 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
     }
   });
 
+  // ── Agendamento de Próxima Avaliação ─────────────────────────────────────────
+
+  // Migration: create table if not exists
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS collaborator_performance_schedule (
+      id SERIAL PRIMARY KEY,
+      collaborator_id INTEGER NOT NULL REFERENCES collaborators(id) ON DELETE CASCADE,
+      data DATE NOT NULL,
+      horario TIME DEFAULT '09:00',
+      observacao TEXT,
+      criado_por INTEGER REFERENCES collaborators(id),
+      criado_por_nome TEXT,
+      criado_em TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  // GET - busca o próximo agendamento do colaborador
+  app.get("/api/colaboradores/:id/proxima-avaliacao", async (req, res) => {
+    try {
+      const { rows } = await pool.query(
+        `SELECT * FROM collaborator_performance_schedule
+         WHERE collaborator_id = $1
+         ORDER BY data ASC, criado_em DESC
+         LIMIT 1`,
+        [req.params.id]
+      );
+      res.json(rows[0] || null);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST - cria agendamento (substitui o existente)
+  app.post("/api/colaboradores/:id/proxima-avaliacao", async (req, res) => {
+    const { data, horario, observacao } = req.body;
+    if (!data) return res.status(400).json({ error: 'Data é obrigatória' });
+    try {
+      // Resolve quem está agendando pelo email
+      const emailHeader = req.headers['x-user-email'] as string | undefined;
+      let criadorId: number | null = null;
+      let criadorNome: string | null = null;
+      if (emailHeader) {
+        const avRes = await pool.query(
+          `SELECT c.id, c.name FROM collaborators c JOIN users u ON u.id = c.linked_user_id WHERE u.email = $1 LIMIT 1`,
+          [emailHeader]
+        );
+        if (avRes.rows.length > 0) {
+          criadorId = avRes.rows[0].id;
+          criadorNome = avRes.rows[0].name;
+        }
+      }
+      // Remove agendamentos anteriores e insere novo
+      await pool.query(`DELETE FROM collaborator_performance_schedule WHERE collaborator_id = $1`, [req.params.id]);
+      const { rows } = await pool.query(
+        `INSERT INTO collaborator_performance_schedule (collaborator_id, data, horario, observacao, criado_por, criado_por_nome)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+        [req.params.id, data, horario || '09:00', observacao || null, criadorId, criadorNome]
+      );
+      res.status(201).json(rows[0]);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // DELETE - remove agendamento
+  app.delete("/api/colaboradores/:id/proxima-avaliacao", async (req, res) => {
+    try {
+      await pool.query(`DELETE FROM collaborator_performance_schedule WHERE collaborator_id = $1`, [req.params.id]);
+      res.status(204).send();
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
 
 
   app.get("/api/collaborators/:id/clients", async (req, res) => {
@@ -15191,7 +15409,7 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
 
 function setupStaticServing(app: any) {
   // Since server.js is now inside the dist folder, the static files are in the same folder
-  const distPath = __dirname;
+  const distPath = __dirname.endsWith('dist') ? __dirname : path.join(__dirname, 'dist');
   
   console.log(`[STATIC] Serving from: ${distPath}`);
   

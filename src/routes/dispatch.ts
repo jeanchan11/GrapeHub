@@ -162,7 +162,7 @@ async function runDailyBatchIfNeeded(pool: Pool) {
             AND c.crm_status IS NOT NULL AND c.crm_status != ''
         )
     `);
-    // 3) Cancela itens de faturas já pagas (RECEIVED / CONFIRMED / RECEIVED_IN_CASH)
+    // 3) Cancela itens de faturas já pagas ou canceladas
     await pool.query(`
       UPDATE fin_dispatch_queue dq
       SET status = 'CANCELADO', updated_at = NOW()
@@ -170,7 +170,18 @@ async function runDailyBatchIfNeeded(pool: Pool) {
         AND EXISTS (
           SELECT 1 FROM fin_receivables fr
           WHERE fr.asaas_id = dq.receivable_asaas_id
-            AND fr.status IN ('RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH')
+            AND fr.status IN ('RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH', 'REFUNDED', 'DELETED', 'CANCELLED')
+        )
+    `);
+    // 3b) Cancela itens órfãos (fatura não existe mais no fin_receivables)
+    await pool.query(`
+      UPDATE fin_dispatch_queue dq
+      SET status = 'CANCELADO', updated_at = NOW()
+      WHERE dq.status = 'AGENDADO'
+        AND dq.receivable_asaas_id IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM fin_receivables fr
+          WHERE fr.asaas_id = dq.receivable_asaas_id
         )
     `);
     // 4) Remove itens AGENDADOS além da janela de 15 dias
@@ -210,6 +221,7 @@ async function runDailyBatchIfNeeded(pool: Pool) {
       LEFT JOIN fin_people fp ON fp.asaas_id = fr.customer_id
       LEFT JOIN clients c ON c.id = fp.grapehub_client_id
       WHERE fr.status IN ('PENDING','OVERDUE')
+        AND fr.status NOT IN ('REFUNDED','DELETED','CANCELLED')
         AND fr.due_date IS NOT NULL
         -- Só insere dentro da janela de 15 dias
         AND fr.due_date::date + fcr.day_offset >= CURRENT_DATE
@@ -696,11 +708,33 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
     if (!webhook_url) return res.status(400).json({ success: false, error: 'webhook_url é obrigatório' });
 
     const isEmail = canal === 'Email' || canal === 'E-mail' || canal === 'EMAIL';
+
+    // Fetch the D-2 rule template from the database for a realistic test
+    let testMessage = isEmail
+      ? '🔔 Teste GrapeHub — Esta é uma mensagem de teste de E-MAIL para validar a conectividade do webhook.'
+      : '🔔 Teste GrapeHub — Esta é uma mensagem de teste de WHATSAPP para validar a conectividade do webhook.';
+    
+    try {
+      const ruleRes = await pool.query(
+        `SELECT message_template FROM fin_collection_rules WHERE day_offset = -2 AND is_active = true LIMIT 1`
+      );
+      if (ruleRes.rows.length > 0 && ruleRes.rows[0].message_template) {
+        const sampleItem = {
+          customer_name: 'Teste GrapeHub',
+          amount: 1500,
+          due_date: new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10),
+          invoice_url: 'https://pagamento.asaas.com/exemplo',
+          customer_phone: isEmail ? '' : '5541996168921',
+        };
+        testMessage = renderMessage(ruleRes.rows[0].message_template, sampleItem);
+      }
+    } catch (e) {
+      console.warn('[test-webhook] Falha ao buscar template D-2, usando mensagem padrão');
+    }
+
     const testPayload = {
       telefone: isEmail ? '' : '5541996168921',
-      mensagem: isEmail
-        ? '🔔 Teste GrapeHub — Esta é uma mensagem de teste de E-MAIL para validar a conectividade do webhook.'
-        : '🔔 Teste GrapeHub — Esta é uma mensagem de teste de WHATSAPP para validar a conectividade do webhook.',
+      mensagem: testMessage,
       nome: 'Teste GrapeHub',
       email: isEmail ? 'jeanchan@grapemidia.com' : '',
       metodo: isEmail ? 'E-mail' : 'Whatsapp',
@@ -811,7 +845,7 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
           )
       `);
 
-      // Cancela itens AGENDADOS de faturas já pagas (RECEIVED / CONFIRMED / RECEIVED_IN_CASH)
+      // Cancela itens AGENDADOS de faturas já pagas ou canceladas
       const cancelPaid = await pool.query(`
         UPDATE fin_dispatch_queue dq
         SET status = 'CANCELADO', updated_at = NOW()
@@ -819,7 +853,19 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
           AND EXISTS (
             SELECT 1 FROM fin_receivables fr
             WHERE fr.asaas_id = dq.receivable_asaas_id
-              AND fr.status IN ('RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH')
+              AND fr.status IN ('RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH', 'REFUNDED', 'DELETED', 'CANCELLED')
+          )
+      `);
+
+      // Cancela itens órfãos (fatura não existe mais no fin_receivables)
+      await pool.query(`
+        UPDATE fin_dispatch_queue dq
+        SET status = 'CANCELADO', updated_at = NOW()
+        WHERE dq.status = 'AGENDADO'
+          AND dq.receivable_asaas_id IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM fin_receivables fr
+            WHERE fr.asaas_id = dq.receivable_asaas_id
           )
       `);
 
@@ -872,6 +918,7 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
         LEFT JOIN fin_people fp ON fp.asaas_id = fr.customer_id
         LEFT JOIN clients c ON c.id = fp.grapehub_client_id
         WHERE fr.status IN ('PENDING','OVERDUE')
+          AND fr.status NOT IN ('REFUNDED','DELETED','CANCELLED')
           AND fr.due_date IS NOT NULL
           -- Só popula regras cuja data de envio é hoje ou nos próximos 15 dias
           AND fr.due_date::date + fcr.day_offset >= CURRENT_DATE

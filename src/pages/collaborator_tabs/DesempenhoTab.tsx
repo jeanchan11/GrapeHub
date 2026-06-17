@@ -3,12 +3,35 @@ import { useAuth } from '../../contexts/AuthContext';
 import {
   Plus, X, Star, TrendingUp, TrendingDown, Minus,
   Megaphone, LayoutGrid, Users, MessageCircle, ChevronDown,
-  Trash2, Award, BarChart3
+  Trash2, Award, BarChart3, CalendarClock, Clock, Trash
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import SplitHeadline from '../../components/SplitHeadline';
+import { auth } from '../../firebase';
+
+// Helper: fetch autenticado com token Firebase
+async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
+  const token = await auth.currentUser?.getIdToken();
+  return fetch(url, {
+    ...options,
+    headers: {
+      ...(options.headers as Record<string, string> || {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+interface ProximaAvaliacao {
+  id: number;
+  collaborator_id: number;
+  data: string;
+  horario: string;
+  observacao: string | null;
+  criado_por_nome: string | null;
+  criado_em: string;
+}
+
 interface Cycle {
   id: number;
   collaborator_id: number;
@@ -159,7 +182,138 @@ function StarPicker({ value, onChange }: { value: number; onChange: (v: number) 
   );
 }
 
-// ── Modal ─────────────────────────────────────────────────────────────────────
+// ── AgendarProxima Modal ──────────────────────────────────────────────────────
+interface AgendarProps {
+  collaboratorId: string;
+  userEmail: string | undefined;
+  onClose: () => void;
+  onSaved: () => void;
+}
+
+function AgendarProximaModal({ collaboratorId, userEmail, onClose, onSaved }: AgendarProps) {
+  const [data, setData] = useState('');
+  const [horario, setHorario] = useState('09:00');
+  const [observacao, setObservacao] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  const handleSave = async () => {
+    if (!data) { setError('Selecione a data da próxima avaliação.'); return; }
+    setError('');
+    setSaving(true);
+    try {
+      const res = await authFetch(`/api/colaboradores/${collaboratorId}/proxima-avaliacao`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(userEmail ? { 'x-user-email': userEmail } : {}),
+        },
+        body: JSON.stringify({ data, horario, observacao }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Erro ao agendar');
+      }
+      onSaved();
+      onClose();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(0,0,0,0.72)' }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="relative w-full max-w-md bg-white dark:bg-dark-bg/95 border border-slate-200 dark:border-white/10 rounded-3xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 dark:border-white/[0.07]">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-violet-500/20 flex items-center justify-center">
+              <CalendarClock size={18} className="text-violet-400" />
+            </div>
+            <div>
+              <h2 className="font-black text-slate-800 dark:text-white text-base">Agendar Próxima Avaliação</h2>
+              <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-0.5">Defina a data do próximo ciclo</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-xl hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-colors">
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="overflow-y-auto flex-1 px-6 py-5 space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Data</label>
+              <input
+                type="date"
+                value={data}
+                onChange={e => setData(e.target.value)}
+                className="w-full bg-slate-50 dark:bg-white/[0.05] border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500 transition-colors"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Horário</label>
+              <input
+                type="time"
+                value={horario}
+                onChange={e => setHorario(e.target.value)}
+                className="w-full bg-slate-50 dark:bg-white/[0.05] border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500 transition-colors"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Observação (opcional)</label>
+            <textarea
+              value={observacao}
+              onChange={e => setObservacao(e.target.value)}
+              rows={3}
+              placeholder="Algum ponto a preparar antes da avaliação..."
+              className="w-full bg-slate-50 dark:bg-white/[0.05] border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-slate-800 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors resize-none"
+            />
+          </div>
+
+          {error && (
+            <div className="bg-rose-500/10 border border-rose-500/20 rounded-xl px-4 py-2.5 text-sm text-rose-400">{error}</div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-slate-100 dark:border-white/[0.07] flex items-center justify-end gap-3">
+          <button
+            onClick={onClose}
+            className="px-5 py-2 rounded-xl text-sm font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="px-5 py-2 rounded-xl text-sm font-bold bg-violet-600 hover:bg-violet-700 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {saving && <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+            Confirmar agendamento
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Modal Nova Avaliação ───────────────────────────────────────────────────────
 interface ModalProps {
   collaboratorId: string;
   userEmail: string | undefined;
@@ -190,7 +344,7 @@ function NovaAvaliacaoModal({ collaboratorId, userEmail, onClose, onSaved }: Mod
     setError('');
     setSaving(true);
     try {
-      const res = await fetch(`/api/colaboradores/${collaboratorId}/desempenho`, {
+      const res = await authFetch(`/api/colaboradores/${collaboratorId}/desempenho`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -327,16 +481,19 @@ export default function DesempenhoTab({ collaboratorId, isAdmin }: { collaborato
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [showAgendarModal, setShowAgendarModal] = useState(false);
   const [expandedCycle, setExpandedCycle] = useState<number | null>(null);
+  const [proximaAvaliacao, setProximaAvaliacao] = useState<ProximaAvaliacao | null>(null);
 
   const { userData } = useAuth();
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [cRes, sRes] = await Promise.all([
-        fetch(`/api/colaboradores/${collaboratorId}/desempenho`),
-        fetch(`/api/colaboradores/${collaboratorId}/desempenho/resumo`),
+      const [cRes, sRes, aRes] = await Promise.all([
+        authFetch(`/api/colaboradores/${collaboratorId}/desempenho`),
+        authFetch(`/api/colaboradores/${collaboratorId}/desempenho/resumo`),
+        authFetch(`/api/colaboradores/${collaboratorId}/proxima-avaliacao`),
       ]);
       if (cRes.ok) {
         const data = await cRes.json();
@@ -362,6 +519,10 @@ export default function DesempenhoTab({ collaboratorId, isAdmin }: { collaborato
           setSummary(null);
         }
       }
+      if (aRes.ok) {
+        const a = await aRes.json();
+        setProximaAvaliacao(a);
+      }
     } catch (e) {
       console.error(e);
     } finally {
@@ -369,11 +530,17 @@ export default function DesempenhoTab({ collaboratorId, isAdmin }: { collaborato
     }
   }, [collaboratorId]);
 
+  const handleRemoverAgendamento = async () => {
+    if (!confirm('Remover agendamento da próxima avaliação?')) return;
+    await authFetch(`/api/colaboradores/${collaboratorId}/proxima-avaliacao`, { method: 'DELETE' });
+    setProximaAvaliacao(null);
+  };
+
   useEffect(() => { load(); }, [load]);
 
   const handleDelete = async (cycleId: number) => {
     if (!confirm('Excluir esta avaliação?')) return;
-    await fetch(`/api/desempenho/${cycleId}`, { method: 'DELETE' });
+    await authFetch(`/api/desempenho/${cycleId}`, { method: 'DELETE' });
     load();
   };
 
@@ -399,14 +566,100 @@ export default function DesempenhoTab({ collaboratorId, isAdmin }: { collaborato
           </p>
         </div>
         {isAdmin && (
-          <button
-            onClick={() => setShowModal(true)}
-            className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-xl text-sm font-bold transition-colors"
-          >
-            <Plus size={15} /> Nova avaliação
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowAgendarModal(true)}
+              className="flex items-center gap-2 bg-white dark:bg-white/5 hover:bg-violet-50 dark:hover:bg-violet-500/10 border border-slate-200 dark:border-white/10 hover:border-violet-300 dark:hover:border-violet-500/30 text-slate-700 dark:text-slate-300 hover:text-violet-600 dark:hover:text-violet-400 px-4 py-2 rounded-xl text-sm font-bold transition-all"
+            >
+              <CalendarClock size={15} /> Agendar próxima
+            </button>
+            <button
+              onClick={() => setShowModal(true)}
+              className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-xl text-sm font-bold transition-colors"
+            >
+              <Plus size={15} /> Nova avaliação
+            </button>
+          </div>
         )}
       </div>
+
+      {/* ── Card Próxima Avaliação ── */}
+      {proximaAvaliacao && (() => {
+        const dataStr = proximaAvaliacao.data.includes('T')
+          ? proximaAvaliacao.data
+          : proximaAvaliacao.data + 'T12:00:00';
+        const dataObj = new Date(dataStr);
+        const hoje = new Date();
+        hoje.setHours(0, 0, 0, 0);
+        const diasRestantes = Math.ceil((dataObj.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24));
+        const isPast = diasRestantes < 0;
+        const isToday = diasRestantes === 0;
+        const badgeColor = isPast
+          ? 'bg-rose-500/15 text-rose-400 border-rose-500/20'
+          : isToday
+            ? 'bg-amber-500/15 text-amber-400 border-amber-500/20'
+            : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20';
+        const badgeLabel = isPast
+          ? `${Math.abs(diasRestantes)}d atrás`
+          : isToday
+            ? 'Hoje!'
+            : `em ${diasRestantes}d`;
+        const horarioFmt = proximaAvaliacao.horario ? proximaAvaliacao.horario.slice(0, 5) : '';
+        return (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="relative overflow-hidden bg-gradient-to-r from-violet-600/10 via-violet-500/5 to-transparent border border-violet-500/20 rounded-2xl p-5 flex items-center gap-4"
+          >
+            {/* Glow */}
+            <div className="absolute inset-0 bg-gradient-to-r from-violet-500/5 to-transparent pointer-events-none" />
+            {/* Icon */}
+            <div className="w-12 h-12 rounded-2xl bg-violet-500/20 flex items-center justify-center shrink-0">
+              <CalendarClock size={22} className="text-violet-400" />
+            </div>
+            {/* Content */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-0.5">
+                <p className="text-[10px] font-bold text-violet-400 uppercase tracking-widest">Próxima Avaliação Agendada</p>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${badgeColor}`}>{badgeLabel}</span>
+              </div>
+              <p className="text-base font-black text-slate-800 dark:text-white">
+                {dataObj.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}
+              </p>
+              <div className="flex items-center gap-4 mt-1">
+                {horarioFmt && (
+                  <span className="flex items-center gap-1.5 text-xs text-slate-500">
+                    <Clock size={11} /> {horarioFmt}
+                  </span>
+                )}
+                {proximaAvaliacao.observacao && (
+                  <span className="text-xs text-slate-500 truncate max-w-xs">{proximaAvaliacao.observacao}</span>
+                )}
+                {proximaAvaliacao.criado_por_nome && (
+                  <span className="text-xs text-slate-400">Agendado por {proximaAvaliacao.criado_por_nome}</span>
+                )}
+              </div>
+            </div>
+            {/* Actions */}
+            {isAdmin && (
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => setShowAgendarModal(true)}
+                  className="text-xs text-violet-400 hover:text-violet-300 font-bold px-3 py-1.5 rounded-lg hover:bg-violet-500/10 transition-colors"
+                >
+                  Editar
+                </button>
+                <button
+                  onClick={handleRemoverAgendamento}
+                  className="text-xs text-slate-500 hover:text-rose-400 transition-colors px-2 py-1.5 rounded-lg hover:bg-rose-500/10"
+                >
+                  <Trash size={13} />
+                </button>
+              </div>
+            )}
+          </motion.div>
+        );
+      })()}
 
       {cycles.length === 0 ? (
         /* Empty state */
@@ -616,12 +869,22 @@ export default function DesempenhoTab({ collaboratorId, isAdmin }: { collaborato
         </>
       )}
 
-      {/* Modal */}
+      {/* Modal Nova Avaliação */}
       {showModal && (
         <NovaAvaliacaoModal
           collaboratorId={collaboratorId}
           userEmail={userData?.email}
           onClose={() => setShowModal(false)}
+          onSaved={load}
+        />
+      )}
+
+      {/* Modal Agendar Próxima */}
+      {showAgendarModal && (
+        <AgendarProximaModal
+          collaboratorId={collaboratorId}
+          userEmail={userData?.email}
+          onClose={() => setShowAgendarModal(false)}
           onSaved={load}
         />
       )}

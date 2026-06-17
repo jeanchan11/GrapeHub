@@ -294,7 +294,7 @@ const AppContent: React.FC = () => {
       );
     }
 
-    console.log('AppContent renderPage - activePage:', activePage, 'pageTemplate:', pageTemplate);
+    console.log('AppContent renderPage - activePage:', activePage, 'pageTemplate:', pageTemplate, 'activeSubsessionId:', activeSubsessionId);
 
     switch (pageTemplate) {
       case 'admin':
@@ -378,7 +378,7 @@ const AppContent: React.FC = () => {
       case 'playbook-acoes':
         return <PlaybookAcoes />;
       case 'dashboard-operacional':
-        return <DashboardOperacional activePage={activePage} />;
+        return <DashboardOperacional key={activePage} activePage={activePage} subsessionId={activeSubsessionId} />;
       case 'todo-staff':
         return <TodoStaff key={activePage} activePage={activePage} />;
       case 'chamados-grapehub':

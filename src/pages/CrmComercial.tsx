@@ -4872,48 +4872,9 @@ const CrmComercial = () => {
       setCelebrationDetails(null);
     }, duration);
 
-    // 3. Cria automaticamente o cliente no Onboarding Operacional com os dados
-    try {
-      const meetingsRes = await fetch(`/api/crm-comercial/meetings?lead_id=${leadId}`);
-      let meetingData = null;
-      if (meetingsRes.ok) {
-        const meetingsArray = await meetingsRes.json();
-        if (meetingsArray.length > 0) {
-          const m = meetingsArray[0]; // get latest meeting
-          meetingData = JSON.stringify({
-            title: m.title,
-            date: m.meeting_date,
-            responsible: m.responsible_name,
-            responsible_avatar: m.responsible_avatar,
-            local: m.office_location,
-            link: m.reunion_link,
-            niche: m.reunion_niche,
-            closings: m.monthly_closings,
-            goal: m.closing_goal,
-            notes: m.notes
-          });
-        }
-      }
-
-      await fetch('/api/onboarding-tasks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          client_name: lead?.form_nome_fantasia || lead?.nome || 'Cliente sem nome',
-          nome_completo: lead?.form_nome_completo || lead?.nome || '',
-          nome_fantasia: lead?.form_nome_fantasia || '',
-          telefone_whatsapp: lead?.form_telefone_whatsapp || lead?.telefone || '',
-          cnpj_cpf: lead?.form_cnpj || lead?.cnpj || '',
-          cep: lead?.form_cep || lead?.cep || '',
-          cidade: lead?.form_cidade || '',
-          uf: lead?.form_estado || lead?.uf || '',
-          meeting_info: meetingData,
-          status_group: 'briefing-realizado' // column for new clients
-        }),
-      });
-    } catch (e) {
-      console.error('Erro ao transferir para onboarding:', e);
-    }
+    // Nota: A criação da tarefa no Onboarding Operacional é feita pela automação
+    // server-side "Lead ganho → Onboarding Operacional + Cliente Ativo" ao processar
+    // o evento 'lead_won', evitando duplicatas.
   };
 
   const handleWinLead = async (leadId: string) => {

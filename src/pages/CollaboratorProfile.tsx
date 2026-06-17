@@ -9,6 +9,7 @@ import PdiTab from './collaborator_tabs/PdiTab';
 import FeedbacksTab from './collaborator_tabs/FeedbacksTab';
 import OneOnOnesTab from './collaborator_tabs/OneOnOnesTab';
 import DesempenhoTab from './collaborator_tabs/DesempenhoTab';
+import GeralTab from './collaborator_tabs/GeralTab';
 
 interface Collaborator {
   id: number;
@@ -114,12 +115,12 @@ export default function CollaboratorProfile({ id }: { id: string }) {
 
   const tabs = [
     { id: 'geral', label: 'Visão Geral', icon: Info },
-    ...(isAdmin ? [{ id: 'informacoes', label: 'Informações', icon: ClipboardList }] : []),
     { id: 'desempenho', label: 'Desempenho', icon: TrendingUp },
-    { id: 'metas', label: 'Metas', icon: Target },
-    { id: 'pdi', label: 'PDI', icon: BrainCircuit },
-    { id: 'feedbacks', label: 'Feedbacks', icon: MessageSquare },
     { id: '1-1s', label: '1:1s', icon: Users },
+    { id: 'metas', label: 'Metas', icon: Target },
+    { id: 'feedbacks', label: 'Feedbacks', icon: MessageSquare },
+    { id: 'pdi', label: 'PDI', icon: BrainCircuit },
+    ...(isAdmin ? [{ id: 'informacoes', label: 'Informações', icon: ClipboardList }] : []),
   ];
 
   return (
@@ -207,22 +208,23 @@ export default function CollaboratorProfile({ id }: { id: string }) {
             transition={{ duration: 0.18 }}
             className="flex-1 flex flex-col"
           >
-            {/* Visão Geral - vazia por enquanto */}
-        {activeTab === 'geral' && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-            <div>
-              <SplitHeadline text="Visão " highlight="Geral" className="text-xl font-black text-slate-800 dark:text-white" />
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">
-                Resumo e Gráficos do Colaborador
-              </p>
-            </div>
-            <div className="flex flex-col justify-center items-center h-64 text-slate-400 dark:text-slate-500">
-              <Info size={48} className="mb-4 opacity-30" />
-              <h3 className="text-lg font-bold mb-1">Aba em Desenvolvimento</h3>
-              <p className="text-sm opacity-70">Em breve, aqui aparecerão gráficos e resumos do colaborador.</p>
-            </div>
-          </div>
-        )}
+            {/* Visão Geral */}
+            {activeTab === 'geral' && (
+              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <div>
+                  <SplitHeadline text="Visão " highlight="Geral" className="text-xl font-black text-slate-800 dark:text-white" />
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">
+                    Resumo e Gráficos do Colaborador
+                  </p>
+                </div>
+                <GeralTab 
+                  collaboratorId={id} 
+                  isAdmin={isAdmin} 
+                  isSelf={isSelf} 
+                  collaboratorEmail={collab.linked_user_email} 
+                />
+              </div>
+            )}
 
         {/* Informações */}
         {activeTab === 'informacoes' && isAdmin && (

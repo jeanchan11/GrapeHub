@@ -58,7 +58,7 @@ export default function ColaboradoresPage() {
     'Desligamento': false,
     'Turnover': false,
   });
-  const [mainTab, setMainTab] = useState<'dados' | 'organograma' | 'minha-equipe'>('organograma');
+  const [mainTab, setMainTab] = useState<'dados' | 'organograma' | 'minha-equipe'>('minha-equipe');
   const [hasSubordinates, setHasSubordinates] = useState(false);
   const { userData } = useAuth();
   

@@ -52,6 +52,13 @@ interface Alerta {
   descricao: string;
 }
 
+interface CollaboratorSetting {
+  id: number;
+  type: 'group' | 'role' | 'seniority';
+  name: string;
+  color: string;
+}
+
 // ── Config ────────────────────────────────────────────────────────────────────
 const MOOD_CONFIG: Record<string, { emoji: string; label: string; color: string; bg: string }> = {
   otimo:   { emoji: '😁', label: 'Ótimo',   color: '#22c55e', bg: 'rgba(34,197,94,0.12)' },
@@ -78,22 +85,28 @@ export default function MinhaEquipeTab() {
   const [pulsoDistribuicao, setPulsoDistribuicao] = useState<PulsoDistribuicao>({ otimo: 0, bem: 0, ok: 0, dificil: 0, pesado: 0 });
   const [pulsoRespostas, setPulsoRespostas] = useState<PulsoResposta[]>([]);
   const [alertas, setAlertas] = useState<Alerta[]>([]);
+  const [settings, setSettings] = useState<CollaboratorSetting[]>([]);
 
   const fetchData = useCallback(async () => {
     if (!email) return;
     setLoading(true);
     try {
       const headers = { 'x-user-email': email };
-      const [teamRes, pulsoRes, alertaRes] = await Promise.all([
+      const [teamRes, pulsoRes, alertaRes, settingsRes] = await Promise.all([
         fetch('/api/colaboradores/minha-equipe', { headers }),
         fetch('/api/colaboradores/minha-equipe/pulso-hoje', { headers }),
         fetch('/api/colaboradores/minha-equipe/alertas', { headers }),
+        fetch('/api/collaborator-settings'),
       ]);
 
       if (teamRes.ok) {
         const data = await teamRes.json();
         setLiderados(data.liderados || []);
         setResumo(data.resumo || { total: 0, pulso_respondido: 0, pulso_total: 0, media_desempenho: null });
+      }
+      if (settingsRes.ok) {
+        const data = await settingsRes.json();
+        setSettings(data);
       }
       if (pulsoRes.ok) {
         const data = await pulsoRes.json();
@@ -412,11 +425,25 @@ export default function MinhaEquipeTab() {
                 }`}>
                   {l.tipo === 'direto' ? 'Direto' : `Indireto`}
                 </span>
-                {l.group_name && (
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#1e1a3a] text-[#AFA9EC] border border-[#2a2540]">
-                    {l.group_name}
-                  </span>
-                )}
+                {l.group_name && (() => {
+                  const groupSetting = settings.find(s => s.type === 'group' && s.name === l.group_name);
+                  return groupSetting ? (
+                    <span
+                      className="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full border"
+                      style={{
+                        backgroundColor: `${groupSetting.color}15`,
+                        color: groupSetting.color,
+                        borderColor: `${groupSetting.color}30`,
+                      }}
+                    >
+                      {l.group_name}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400">
+                      {l.group_name}
+                    </span>
+                  );
+                })()}
                 {l.desempenho != null && (
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 ml-auto">
                     ★ {l.desempenho.toFixed(1)}

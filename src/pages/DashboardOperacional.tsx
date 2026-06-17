@@ -570,14 +570,49 @@ const formatDateShort = (dateStr: string) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // Main Component
 // ─────────────────────────────────────────────────────────────────────────────
-export default function DashboardOperacional({ activePage = '', subsessionId }: { activePage?: string; subsessionId?: string | null }) {
+export default function DashboardOperacional({ activePage = '', subsessionId: subsessionIdProp }: { activePage?: string; subsessionId?: string | null }) {
   const parts = activePage.split('-');
   const squadNameRaw = parts[parts.length - 1] || 'able';
   const squadName = squadNameRaw.charAt(0).toUpperCase() + squadNameRaw.slice(1).toLowerCase();
   const [projects, setProjects] = useState<ProjectRow[]>([]);
   const [users, setUsers]       = useState<{name: string, picture: string, email: string}[]>([]);
+  const [squadMembers, setSquadMembers] = useState<string[]>([]);
+  const [resolvedSubsessionId, setResolvedSubsessionId] = useState<string | null>(subsessionIdProp ?? null);
   const [loading, setLoading]   = useState(true);
   const [spinning, setSpinning] = useState(false);
+
+  const findUser = (responsibleName: string | undefined | null) => {
+    if (!responsibleName) return undefined;
+    const normalize = (n: string) => n.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+    const normName = normalize(responsibleName);
+    return users.find(u => {
+      if (u.name && normalize(u.name) === normName) return true;
+      if (u.email) {
+        const prefix = u.email.toLowerCase().split('@')[0];
+        if (normalize(prefix) === normName) return true;
+      }
+      return false;
+    });
+  };
+
+  // Auto-resolve subsessionId from activePage when not provided as prop
+  useEffect(() => {
+    if (subsessionIdProp) {
+      setResolvedSubsessionId(subsessionIdProp);
+      return;
+    }
+    // Fetch subsession_id from DB for this page
+    if (activePage) {
+      fetch(`/api/menu/page-subsession/${encodeURIComponent(activePage)}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (data?.subsession_id) {
+            setResolvedSubsessionId(data.subsession_id);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [activePage, subsessionIdProp]);
   const [error, setError]       = useState<string | null>(null);
   const [selectedGestor, setSelectedGestor] = useState<string | null>(null);
   const [selectedResultCategory, setSelectedResultCategory] = useState<string | null>(null);
@@ -733,13 +768,19 @@ export default function DashboardOperacional({ activePage = '', subsessionId }: 
     setSpinning(true);
     setError(null);
     try {
-      const [resProjects, resUsers] = await Promise.all([
+      const fetches: Promise<Response>[] = [
         // Use subsession-aware endpoint when available, fallback to squad filter
-        subsessionId
-          ? fetch(`/api/projects/by-subsession/${encodeURIComponent(subsessionId)}`)
+        resolvedSubsessionId
+          ? fetch(`/api/projects/by-subsession/${encodeURIComponent(resolvedSubsessionId)}`)
           : fetch('/api/projects'),
-        fetch('/api/users')
-      ]);
+        fetch('/api/users'),
+      ];
+      // Fetch squad members when we have a resolvedSubsessionId
+      if (resolvedSubsessionId) {
+        fetches.push(fetch(`/api/squad-members/${encodeURIComponent(resolvedSubsessionId)}`));
+      }
+
+      const [resProjects, resUsers, resMembers] = await Promise.all(fetches);
       
       if (!resProjects.ok) throw new Error('Falha ao buscar projetos');
       const all: ProjectRow[] = await resProjects.json();
@@ -749,9 +790,14 @@ export default function DashboardOperacional({ activePage = '', subsessionId }: 
         setUsers(usersData);
       }
 
+      if (resMembers && resMembers.ok) {
+        const membersData: string[] = await resMembers.json();
+        setSquadMembers(membersData);
+      }
+
       // When using by-subsession API, all projects are already filtered.
       // When using the fallback, filter by squad name.
-      const relevant = subsessionId ? all : all.filter(p => p.squad === squadName);
+      const relevant = resolvedSubsessionId ? all : all.filter(p => p.squad === squadName);
 
       setProjects(relevant);
     } catch (e) {
@@ -763,7 +809,7 @@ export default function DashboardOperacional({ activePage = '', subsessionId }: 
     }
   };
 
-  useEffect(() => { fetchData(); }, [squadName, subsessionId]);
+  useEffect(() => { fetchData(); }, [squadName, resolvedSubsessionId]);
 
   if (loading) return <Spinner />;
 
@@ -773,7 +819,11 @@ export default function DashboardOperacional({ activePage = '', subsessionId }: 
 
   const kpis     = calcKPIs(filteredProjects);
   const distrib  = groupByResult(filteredProjects);
-  const gestoresList = groupByResponsible(projects); // Always from all projects so we show everyone in the filter
+  const gestoresListAll = groupByResponsible(projects);
+  // Filter to only show actual squad members (from gestor pages) when available
+  const gestoresList = squadMembers.length > 0
+    ? gestoresListAll.filter(g => squadMembers.some(m => m.toLowerCase() === g.name.toLowerCase()))
+    : gestoresListAll;
   const gestores = groupByResponsible(filteredProjects);
   const atencao  = getAtencaoList(filteredProjects);
   const criticas = getCriticas(filteredProjects);
@@ -837,11 +887,7 @@ export default function DashboardOperacional({ activePage = '', subsessionId }: 
         </button>
 
         {gestoresList.map(g => {
-          // Busca o user correspondente case-insensitive pelo nome ou tenta split
-          const dbUser = users.find(u => 
-            (u.name && u.name.toLowerCase() === g.name.toLowerCase()) || 
-            (u.email && u.email.toLowerCase().includes(g.name.toLowerCase().split(' ')[0]))
-          );
+          const dbUser = findUser(g.name);
           
           return (
             <button
@@ -931,7 +977,7 @@ export default function DashboardOperacional({ activePage = '', subsessionId }: 
             ) : (
               <div className="space-y-3 flex-1 overflow-y-auto pr-1 min-h-0">
                 {recentComments.slice(0, 40).map((c, idx) => {
-                  const dbUser = users.find(u => (u.name && u.name.toLowerCase() === c.opt.author?.toLowerCase()) || (u.email && u.email.toLowerCase().includes(c.opt.author?.toLowerCase()?.split(' ')[0] || '')));
+                  const dbUser = findUser(c.opt.author);
                   return (
                     <div 
                       key={c.id} 
@@ -959,7 +1005,7 @@ export default function DashboardOperacional({ activePage = '', subsessionId }: 
                             <p className="text-[10px] font-bold text-slate-400">{formatDateShort(c.opt.date)}</p>
                             {c.opt.time && <p className="text-[9px] text-slate-500">{c.opt.time}</p>}
                           </div>
-                          {(auth.currentUser?.email === c.opt.authorEmail || (userData?.name && c.opt.author?.toLowerCase() === userData?.name?.toLowerCase()) || (c.opt.author && auth.currentUser?.displayName && c.opt.author.toLowerCase() === auth.currentUser.displayName.toLowerCase()) || userData?.role === 'Admin') && (
+                          {(auth.currentUser?.email === c.opt.authorEmail || (userData?.name && c.opt.author?.toLowerCase() === userData?.name?.toLowerCase()) || (c.opt.author && auth.currentUser?.displayName && c.opt.author.toLowerCase() === auth.currentUser.displayName.toLowerCase()) || (userData?.role as string) === 'Admin') && (
                             <div className="flex items-center gap-2">
                               <button 
                                 onClick={(e) => { e.stopPropagation(); setEditingNoteId(c.opt.id); setEditingNoteMessage(c.opt.message.replace(/\n\n\(Editado em.*?\)/g, '')); }}
@@ -1118,7 +1164,7 @@ export default function DashboardOperacional({ activePage = '', subsessionId }: 
                   </thead>
                   <tbody>
                     {atencao.map((a, idx) => {
-                      const dbUser = users.find(u => (u.name && u.name.toLowerCase() === a.responsible?.toLowerCase()) || (u.email && u.email.toLowerCase().includes(a.responsible?.toLowerCase()?.split(' ')[0] || '')));
+                      const dbUser = findUser(a.responsible);
                       return (
                       <tr 
                         key={a.id} 
@@ -1201,7 +1247,7 @@ export default function DashboardOperacional({ activePage = '', subsessionId }: 
             ) : (
               <div className="space-y-2">
                 {criticas.map((c, idx) => {
-                  const dbUser = users.find(u => (u.name && u.name.toLowerCase() === c.responsible?.toLowerCase()) || (u.email && u.email.toLowerCase().includes(c.responsible?.toLowerCase()?.split(' ')[0] || '')));
+                  const dbUser = findUser(c.responsible);
                   return (
                   <div 
                     key={c.id} 
@@ -1288,7 +1334,7 @@ export default function DashboardOperacional({ activePage = '', subsessionId }: 
                   <div className="text-center text-slate-500 py-10 text-sm font-medium">Nenhum projeto encontrado.</div>
                 ) : (
                   matchingProjects.map(p => {
-                    const gest = users.find(u => (u.name && u.name.toLowerCase() === p.responsible?.toLowerCase()) || (u.email && u.email.toLowerCase().includes(p.responsible?.toLowerCase()?.split(' ')[0] || '')));
+                    const gest = findUser(p.responsible);
                     return (
                       <div key={p.id} className="bg-dark-card border border-white/5 hover:border-white/10 p-4 rounded-2xl flex items-center justify-between transition-all group">
                         <div className="flex flex-col gap-1 min-w-0">

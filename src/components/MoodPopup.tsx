@@ -44,22 +44,20 @@ export function MoodPopup() {
         if (!collabData?.id) return;
         setCollaboratorId(collabData.id);
 
-        // Superadmin: always show popup on load
-        if (userData.role === 'superadmin') {
-          setTimeout(() => setIsOpen(true), 1500);
-          return;
-        }
-
         // Check if already answered today
         const histRes = await fetch(`/api/colaboradores/${collabData.id}/pulso-diario/historico?dias=1`);
         if (!histRes.ok) { setIsOpen(true); return; }
         const history = await histRes.json();
         
-        // If no pulse for today, show popup
-        const today = new Date().toISOString().split('T')[0];
+        // Timezone-safe local date string comparison
+        const localToday = new Date();
+        const todayStr = `${localToday.getFullYear()}-${String(localToday.getMonth() + 1).padStart(2, '0')}-${String(localToday.getDate()).padStart(2, '0')}`;
+        
         const answeredToday = history.some((p: any) => {
-          const pulseDate = new Date(p.data).toISOString().split('T')[0];
-          return pulseDate === today;
+          const cleanDate = p.data.includes('T') ? p.data : p.data + 'T12:00:00';
+          const pulseDate = new Date(cleanDate);
+          const pulseStr = `${pulseDate.getFullYear()}-${String(pulseDate.getMonth() + 1).padStart(2, '0')}-${String(pulseDate.getDate()).padStart(2, '0')}`;
+          return pulseStr === todayStr;
         });
 
         if (!answeredToday) {
@@ -169,7 +167,7 @@ export function MoodPopup() {
                     fontSize: 13, fontWeight: 600, margin: 0, lineHeight: 1.3,
                     color: isDark ? 'rgba(255,255,255,0.95)' : 'rgba(0,0,0,0.88)',
                   }}>
-                    Como você se sentiu hoje?
+                    🍇 Como você está se sentindo hoje? 🍇
                   </p>
                 </div>
               </div>

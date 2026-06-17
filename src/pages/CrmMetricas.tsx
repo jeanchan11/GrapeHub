@@ -313,7 +313,7 @@ export default function CrmMetricas() {
   const [loading, setLoading] = useState(true);
   const [spinning, setSpinning] = useState(false);
   const [error, setError]   = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'pre-vendas' | 'vendas'>('pre-vendas');
+  const [activeTab, setActiveTab] = useState<'pre-vendas' | 'vendas'>('vendas');
 
   const fetchData = useCallback(async (r: DateRange, silent = false) => {
     if (!silent) setLoading(true);
@@ -399,8 +399,8 @@ export default function CrmMetricas() {
   }
 
   const TABS = [
-    { id: 'pre-vendas' as const, label: 'Pré vendas' },
     { id: 'vendas' as const, label: 'Vendas' },
+    { id: 'pre-vendas' as const, label: 'Pré vendas' },
   ];
 
   return (

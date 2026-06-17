@@ -550,13 +550,21 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
 
   const renderPreview = (text: string) => {
     if (!text) return "Nenhuma mensagem configurada para esta etapa.";
-    return text
+    const resolved = text
       .replace(/\\n/g, '\n')
       .replace(/\{\{saudacao\}\}/g, 'Boa tarde')
       .replace(/\{\{nome\}\}/g, 'Maria Silva')
       .replace(/\{\{valor\}\}/g, 'R$ 1.500,00')
       .replace(/\{\{vencimento\}\}/g, '15/05/2026')
       .replace(/\{\{link\}\}/g, 'https://pagamento.asaas.com/exemplo');
+    // Parse WhatsApp-style *bold* into React elements
+    const parts = resolved.split(/(\*[^*]+\*)/g);
+    return parts.map((part, i) => {
+      if (part.startsWith('*') && part.endsWith('*') && part.length > 2) {
+        return <strong key={i} className="font-bold text-white">{part.slice(1, -1)}</strong>;
+      }
+      return <span key={i}>{part}</span>;
+    });
   };
 
   const timelineStyles: Record<string, { bg: string, border: string, text: string, pillBg: string, iconColor: string }> = {
