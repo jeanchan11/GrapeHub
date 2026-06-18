@@ -11618,6 +11618,15 @@ app.get("/api/todos", async (req, res) => {
     )
   `);
 
+  // ── Visual Hub Settings table ──
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS visual_hub_settings (
+      key TEXT PRIMARY KEY,
+      value JSONB NOT NULL,
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
   // Seed defaults if table is empty
   const existingGroups = await pool.query('SELECT COUNT(*) FROM visual_hub_status_groups');
   if (parseInt(existingGroups.rows[0].count) === 0) {
@@ -11868,6 +11877,39 @@ app.get("/api/todos", async (req, res) => {
     } catch (err) {
       console.error('DELETE /api/visual-hub-files error:', err);
       res.status(500).json({ error: 'Erro ao deletar arquivo.' });
+    }
+  });
+
+  // ── Visual Hub Settings ──
+  app.get('/api/visual-hub/settings/:key', async (req, res) => {
+    try {
+      const { key } = req.params;
+      const result = await pool.query('SELECT * FROM visual_hub_settings WHERE key = $1', [key]);
+      if (result.rows.length > 0) {
+        res.json(result.rows[0].value);
+      } else {
+        res.json(null);
+      }
+    } catch (err) {
+      console.error('GET /api/visual-hub/settings error:', err);
+      res.status(500).json({ error: 'Erro ao carregar configurações.' });
+    }
+  });
+
+  app.put('/api/visual-hub/settings/:key', async (req, res) => {
+    try {
+      const { key } = req.params;
+      const { value } = req.body;
+      const result = await pool.query(
+        `INSERT INTO visual_hub_settings (key, value, updated_at) VALUES ($1, $2, NOW())
+         ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()
+         RETURNING *`,
+        [key, JSON.stringify(value)]
+      );
+      res.json(result.rows[0].value);
+    } catch (err) {
+      console.error('PUT /api/visual-hub/settings error:', err);
+      res.status(500).json({ error: 'Erro ao salvar configurações.' });
     }
   });
 
@@ -14942,6 +14984,157 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
       res.json({ distribuicao, respostas });
     } catch (e: any) {
       console.error('pulso-hoje error:', e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // GET - Agenda (1:1s e avaliações de desempenho da liderança)
+  app.get("/api/colaboradores/minha-equipe/agenda", async (req: any, res: any) => {
+    try {
+      const email = req.headers['x-user-email'] as string;
+      if (!email) return res.status(400).json({ error: 'x-user-email header required' });
+      const collabId = await resolveCollaboratorId(pool, email);
+      if (!collabId) return res.json([]);
+
+      // 1. Get leader and direct report IDs from org chart
+      const chartRes = await pool.query(`SELECT data FROM org_chart_state WHERE id = 1`);
+      let leaderId: number | null = null;
+      const directReportIds: number[] = [];
+
+      if (chartRes.rows.length > 0) {
+        const chartData = typeof chartRes.rows[0].data === 'string' ? JSON.parse(chartRes.rows[0].data) : chartRes.rows[0].data;
+        const edges = chartData.edges || [];
+        for (const edge of edges) {
+          const sourceId = parseInt(String(edge.source).replace('node-', ''));
+          const targetId = parseInt(String(edge.target).replace('node-', ''));
+          if (isNaN(sourceId) || isNaN(targetId)) continue;
+          
+          if (targetId === collabId) {
+            leaderId = sourceId;
+          }
+          if (sourceId === collabId) {
+            directReportIds.push(targetId);
+          }
+        }
+      }
+
+      // 2. Fetch names and pictures
+      const allTargetIds = [...directReportIds];
+      if (leaderId) allTargetIds.push(leaderId);
+      
+      const collabMap: Record<number, { name: string, picture: string | null }> = {};
+      if (allTargetIds.length > 0) {
+        const collabsRes = await pool.query(
+          `SELECT c.id, c.name, u.picture as linked_picture
+           FROM collaborators c
+           LEFT JOIN users u ON c.linked_user_id = u.id
+           WHERE c.id = ANY($1)`,
+          [allTargetIds]
+        );
+        for (const c of collabsRes.rows) {
+          collabMap[c.id] = { name: c.name, picture: c.linked_picture };
+        }
+      }
+
+      // 3. Fetch 1:1 and performance schedules
+      const targetSubAndUserIds = [...directReportIds, collabId];
+      
+      const { rows: oneOnOnes } = await pool.query(
+        `SELECT * FROM collaborator_one_on_one_schedule
+         WHERE collaborator_id = ANY($1)
+         ORDER BY data ASC, horario ASC`,
+        [targetSubAndUserIds]
+      );
+
+      const { rows: perfs } = await pool.query(
+        `SELECT * FROM collaborator_performance_schedule
+         WHERE collaborator_id = ANY($1)
+         ORDER BY data ASC, horario ASC`,
+        [targetSubAndUserIds]
+      );
+
+      // 4. Build output list
+      const schedules = [];
+
+      // Add 1:1s
+      for (const o of oneOnOnes) {
+        if (o.collaborator_id === collabId) {
+          if (leaderId && collabMap[leaderId]) {
+            schedules.push({
+              id: `1on1-leader-${o.id}`,
+              type: '1on1',
+              relation: 'leader',
+              collabId: leaderId,
+              name: collabMap[leaderId].name,
+              picture: collabMap[leaderId].picture,
+              data: o.data,
+              horario: o.horario,
+              observacao: o.observacao
+            });
+          }
+        } else {
+          const sub = collabMap[o.collaborator_id];
+          if (sub) {
+            schedules.push({
+              id: `1on1-sub-${o.id}`,
+              type: '1on1',
+              relation: 'subordinate',
+              collabId: o.collaborator_id,
+              name: sub.name,
+              picture: sub.picture,
+              data: o.data,
+              horario: o.horario,
+              observacao: o.observacao
+            });
+          }
+        }
+      }
+
+      // Add Performance Reviews
+      for (const p of perfs) {
+        if (p.collaborator_id === collabId) {
+          if (leaderId && collabMap[leaderId]) {
+            schedules.push({
+              id: `perf-leader-${p.id}`,
+              type: 'performance',
+              relation: 'leader',
+              collabId: leaderId,
+              name: collabMap[leaderId].name,
+              picture: collabMap[leaderId].picture,
+              data: p.data,
+              horario: p.horario,
+              observacao: p.observacao
+            });
+          }
+        } else {
+          const sub = collabMap[p.collaborator_id];
+          if (sub) {
+            schedules.push({
+              id: `perf-sub-${p.id}`,
+              type: 'performance',
+              relation: 'subordinate',
+              collabId: p.collaborator_id,
+              name: sub.name,
+              picture: sub.picture,
+              data: p.data,
+              horario: p.horario,
+              observacao: p.observacao
+            });
+          }
+        }
+      }
+
+      // Sort by date and time
+      schedules.sort((a, b) => {
+        const dateA = new Date(a.data).getTime();
+        const dateB = new Date(b.data).getTime();
+        if (dateA !== dateB) return dateA - dateB;
+        return (a.horario || '').localeCompare(b.horario || '');
+      });
+
+      res.json(schedules);
+    } catch (e: any) {
+      console.error('agenda error:', e);
       res.status(500).json({ error: e.message });
     }
   });

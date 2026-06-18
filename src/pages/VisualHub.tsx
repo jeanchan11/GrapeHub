@@ -60,6 +60,12 @@ interface OnboardingTask {
   prioridade?: string | null;
 }
 
+interface CommentFile {
+  name: string;
+  url: string;
+  type: 'image' | 'doc' | 'file';
+}
+
 interface Comment {
   id: number;
   task_id: number;
@@ -67,6 +73,7 @@ interface Comment {
   author_email: string | null;
   author_avatar: string | null;
   text: string;
+  files?: CommentFile[] | null;
   created_at: string;
 }
 
@@ -122,12 +129,15 @@ interface StatusGroup {
 // ── Helpers ───────────────────────────────────────────────
 const fmtDate = (iso: string | null) => {
   if (!iso) return '—';
-  const d = new Date(iso);
+  const d = new Date(iso + 'T12:00:00');
   const today = new Date();
-  const diff = Math.floor((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  today.setHours(12, 0, 0, 0);
+  const diff = Math.round((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
   const formatted = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' });
-  if (diff < 0) return { text: `${Math.abs(diff)} dias atrás`, color: 'text-rose-400', formatted };
+  if (diff < -1) return { text: `${Math.abs(diff)} dias atrás`, color: 'text-rose-400', formatted };
+  if (diff === -1) return { text: 'Ontem', color: 'text-rose-400', formatted };
   if (diff === 0) return { text: 'Hoje', color: 'text-amber-400', formatted };
+  if (diff === 1) return { text: 'Amanhã', color: 'text-blue-400', formatted };
   return { text: formatted, color: 'text-slate-400', formatted };
 };
 
@@ -143,6 +153,30 @@ const formatDate = (iso: string | null) => {
     );
   }
   return <span className="text-xs text-slate-400">{result}</span>;
+};
+
+const renderCommentText = (text: string): React.ReactNode => {
+  if (!text) return null;
+  // Split on URLs — the capturing group keeps URLs in the parts array
+  const parts = text.split(/(https?:\/\/[^\s]+)/gi);
+  return parts.map((part, i) =>
+    /^https?:\/\//i.test(part) ? (
+      <a
+        key={i}
+        href={part}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{ color: '#3b82f6', textDecoration: 'underline', wordBreak: 'break-all' }}
+        onMouseEnter={e => (e.currentTarget.style.color = '#2563eb')}
+        onMouseLeave={e => (e.currentTarget.style.color = '#3b82f6')}
+        onClick={e => e.stopPropagation()}
+      >
+        {part}
+      </a>
+    ) : (
+      <span key={i}>{part}</span>
+    )
+  );
 };
 
 // ── Column Config Context ─────────────────────────────────
@@ -232,6 +266,31 @@ const loadColumnConfig = (): ColumnConfig => {
 
 const ColumnConfigContext = React.createContext<ColumnConfig>(DEFAULT_COLUMN_CONFIG);
 
+export type ColId = 'entregavel' | 'prioridade' | 'hospedagem' | 'squad' | 'resp' | 'start_date' | 'due_date' | 'arquivos';
+
+export interface ColDef {
+  id: ColId;
+  label: string;
+  width: string;
+}
+
+export const DEFAULT_COL_ORDER: ColId[] = ['entregavel', 'prioridade', 'hospedagem', 'squad', 'resp', 'start_date', 'due_date', 'arquivos'];
+
+export const COL_DEFS: Record<ColId, ColDef> = {
+  entregavel: { id: 'entregavel', label: 'Entregável', width: 'w-28' },
+  prioridade: { id: 'prioridade', label: 'Prioridade', width: 'w-20' },
+  hospedagem: { id: 'hospedagem', label: 'Hospedagem', width: 'w-28' },
+  squad:      { id: 'squad',      label: 'Squad',       width: 'w-32' },
+  resp:       { id: 'resp',       label: 'Resp.',       width: 'w-16' },
+  start_date: { id: 'start_date', label: 'Data Iníc.',  width: 'w-24' },
+  due_date:   { id: 'due_date',   label: 'Data Fim',    width: 'w-24' },
+
+  arquivos:   { id: 'arquivos',   label: 'Arquivos',    width: 'w-24' },
+};
+
+export const ColOrderContext = React.createContext<ColId[]>(DEFAULT_COL_ORDER);
+export const SetColOrderContext = React.createContext<(o: ColId[]) => void>(() => {});
+
 // ── Status Groups Context ─────────────────────────────────
 type StatusGroupDef = Omit<StatusGroup, 'tasks'>;
 const StatusGroupsContext = React.createContext<StatusGroupDef[]>([]);
@@ -301,9 +360,19 @@ const ColumnConfigModal = ({ config, onSave, onClose }: { config: ColumnConfig; 
     setEditingColorIdx(null);
   };
 
-  const handleSave = () => {
-    localStorage.setItem('visualhub-column-config', JSON.stringify(draft));
-    onSave(draft);
+  const handleSave = async () => {
+    try {
+      const res = await fetch('/api/visual-hub/settings/column-config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: draft })
+      });
+      if (res.ok) {
+        onSave(draft);
+      }
+    } catch (err) {
+      console.error('Error saving column config:', err);
+    }
     onClose();
   };
 
@@ -570,9 +639,17 @@ function SingleDatePicker({ value, onChange, placeholder = '—', align = 'right
   ];
   while (cells.length % 7 !== 0) cells.push(null);
 
-  const displayVal = safeValue
-    ? new Date(safeValue + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })
-    : placeholder;
+  const displayVal = useMemo(() => {
+    if (!safeValue) return placeholder;
+    const d = new Date(safeValue + 'T12:00:00');
+    const now = new Date();
+    now.setHours(12, 0, 0, 0);
+    const diff = Math.round((d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    if (diff === -1) return 'Ontem';
+    if (diff === 0) return 'Hoje';
+    if (diff === 1) return 'Amanhã';
+    return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' });
+  }, [safeValue, placeholder]);
 
   const isOverdue = checkOverdue && safeValue ? safeValue < todayIso : false;
 
@@ -1016,6 +1093,82 @@ const SortableSubtaskRow = ({
   );
 };
 
+const DraggableColHeaders = () => {
+  const colOrder = React.useContext(ColOrderContext);
+  const setColOrder = React.useContext(SetColOrderContext);
+  const dragColRef = React.useRef<ColId | null>(null);
+  const [draggingCol, setDraggingCol] = useState<ColId | null>(null);
+  const [overCol, setOverCol] = useState<ColId | null>(null);
+
+  const handleDragStart = (id: ColId, e: React.DragEvent) => {
+    dragColRef.current = id;
+    setDraggingCol(id);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (id: ColId, e: React.DragEvent) => {
+    e.preventDefault();
+    if (dragColRef.current && dragColRef.current !== id) setOverCol(id);
+  };
+
+  const handleDrop = async (targetId: ColId) => {
+    const dragId = dragColRef.current;
+    if (!dragId || dragId === targetId) { reset(); return; }
+    const newOrder = [...colOrder];
+    const from = newOrder.indexOf(dragId);
+    const to = newOrder.indexOf(targetId);
+    newOrder.splice(from, 1);
+    newOrder.splice(to, 0, dragId);
+    setColOrder(newOrder);
+    
+    // Save to database
+    try {
+      await fetch('/api/visual-hub/settings/column-order', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: newOrder })
+      });
+    } catch (err) {
+      console.error('Error saving column order:', err);
+    }
+    reset();
+  };
+
+  const reset = () => { dragColRef.current = null; setDraggingCol(null); setOverCol(null); };
+
+  return (
+    <div className="flex items-center gap-2 px-8 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-black/[0.07] dark:border-white/5">
+      <div className="w-[14px] shrink-0" />
+      <div className="w-4 shrink-0" />
+      <div className="flex-1 min-w-[200px]">Nome</div>
+      {colOrder.map(colId => {
+        const def = COL_DEFS[colId];
+        const isDragging = draggingCol === colId;
+        const isOver = overCol === colId;
+        return (
+          <div
+            key={colId}
+            draggable
+            onDragStart={e => handleDragStart(colId, e)}
+            onDragOver={e => handleDragOver(colId, e)}
+            onDrop={() => handleDrop(colId)}
+            onDragEnd={reset}
+            className={`shrink-0 ${def.width} flex items-center gap-1 group/col cursor-grab select-none transition-all ${
+              isDragging ? 'opacity-30' : isOver ? 'text-violet-400' : ''
+            } ${colId === 'resp' ? 'justify-center' : ''}`}
+          >
+            <GripVertical
+              size={10}
+              className="opacity-0 group-hover/col:opacity-60 transition-opacity shrink-0 text-slate-600"
+            />
+            <span className={`transition-colors ${isOver ? 'text-violet-400' : ''}`}>{def.label}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask, dragHandleProps }: { 
   task: OnboardingTask; 
   onUpdate: () => void; 
@@ -1024,6 +1177,7 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask, dragHandleProps 
   dragHandleProps?: { attributes: any; listeners: any };
 }) => {
   const columnConfig = React.useContext(ColumnConfigContext);
+  const colOrder = React.useContext(ColOrderContext);
   const [squad, setSquad] = useState(task.squad || '');
   const [showStatusPicker, setShowStatusPicker] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
@@ -1239,6 +1393,218 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask, dragHandleProps 
   const circleColor = currentGroup?.color || '#64748b';
   const completedCount = subtasks.filter(s => s.completed).length;
 
+  const renderCell = (colId: ColId) => {
+    switch (colId) {
+      case 'entregavel':
+        return (
+          <div key="entregavel" className="shrink-0 w-28">
+            {(() => {
+              const cs = findOptionColor(columnConfig.entregavel, task.entregavel);
+              return (
+                <select
+                  value={task.entregavel || ''}
+                  onChange={async (e) => {
+                    const val = e.target.value;
+                    try {
+                      await fetch(`/api/onboarding-tasks/${task.id}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ entregavel: val }),
+                      });
+                      onUpdate();
+                    } catch { /* silent */ }
+                  }}
+                  className="w-full border rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer focus:outline-none"
+                  style={cs ? {
+                    background: cs.bg,
+                    color: cs.text,
+                    borderColor: cs.border,
+                  } : {
+                    background: 'transparent',
+                    borderColor: 'transparent',
+                    color: '#94a3b8',
+                  }}
+                >
+                  <option value="" className="bg-dark-bg text-slate-400">Adicionar...</option>
+                  {columnConfig.entregavel.map(opt => (
+                    <option key={opt.label} value={opt.label} className="bg-dark-bg text-dark-text">{opt.label}</option>
+                  ))}
+                </select>
+              );
+            })()}
+          </div>
+        );
+
+      case 'prioridade':
+        return (
+          <div key="prioridade" className="shrink-0 w-20">
+            <PriorityPicker
+              value={task.prioridade}
+              compact
+              onChange={async (val) => {
+                try {
+                  await fetch(`/api/onboarding-tasks/${task.id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prioridade: val }),
+                  });
+                  onUpdate();
+                } catch { /* silent */ }
+              }}
+            />
+          </div>
+        );
+
+      case 'hospedagem':
+        return (
+          <div key="hospedagem" className="shrink-0 w-28">
+            {(() => {
+              const cs = findOptionColor(columnConfig.hospedagem, task.hospedagem);
+              return (
+                <select
+                  value={task.hospedagem || ''}
+                  onChange={async (e) => {
+                    const val = e.target.value;
+                    try {
+                      await fetch(`/api/onboarding-tasks/${task.id}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ hospedagem: val }),
+                      });
+                      onUpdate();
+                    } catch { /* silent */ }
+                  }}
+                  className="w-full border rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer focus:outline-none"
+                  style={cs ? {
+                    background: cs.bg,
+                    color: cs.text,
+                    borderColor: cs.border,
+                  } : {
+                    background: 'transparent',
+                    borderColor: 'transparent',
+                    color: '#94a3b8',
+                  }}
+                >
+                  <option value="" className="bg-dark-bg text-slate-400">Adicionar...</option>
+                  {columnConfig.hospedagem.map(opt => (
+                    <option key={opt.label} value={opt.label} className="bg-dark-bg text-dark-text">{opt.label}</option>
+                  ))}
+                </select>
+              );
+            })()}
+          </div>
+        );
+
+      case 'squad':
+        return (
+          <div key="squad" className="shrink-0 w-32">
+            {(() => {
+              const cs = findOptionColor(columnConfig.squad, squad);
+              return (
+                <select value={squad} onChange={e => handleSquadChange(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer focus:outline-none"
+                  style={cs ? {
+                    background: cs.bg,
+                    color: cs.text,
+                    borderColor: cs.border,
+                  } : {
+                    background: 'transparent',
+                    borderColor: 'transparent',
+                    color: '#94a3b8',
+                  }}
+                >
+                  <option value="" className="bg-dark-bg text-slate-400">SQUAD</option>
+                  {columnConfig.squad.map(s => <option key={s.label} value={s.label} className="bg-dark-bg text-dark-text">{s.label}</option>)}
+                </select>
+              );
+            })()}
+          </div>
+        );
+
+      case 'resp':
+        return (
+          <div key="resp" className="shrink-0 w-16 flex items-center justify-center gap-1">
+            {task.responsible_name ? (
+              <button
+                ref={taskRespRef}
+                data-task-resp-btn
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!taskRespPicker && taskRespRef.current) {
+                    const rect = taskRespRef.current.getBoundingClientRect();
+                    setTaskRespPos({ top: rect.bottom + 4, left: rect.left - 140 });
+                  }
+                  setTaskRespPicker(v => !v);
+                }}
+                className="focus:outline-none hover:scale-110 transition-transform shrink-0"
+              >
+                <Avatar name={task.responsible_name} url={task.responsible_avatar} size={6} />
+              </button>
+            ) : (
+              <button
+                ref={taskRespRef}
+                data-task-resp-btn
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!taskRespPicker && taskRespRef.current) {
+                    const rect = taskRespRef.current.getBoundingClientRect();
+                    setTaskRespPos({ top: rect.bottom + 4, left: rect.left - 140 });
+                  }
+                  setTaskRespPicker(v => !v);
+                }}
+                className="w-6 h-6 rounded-full border border-dashed border-slate-600 flex items-center justify-center hover:border-violet-500 hover:text-violet-500 transition-colors shrink-0"
+              >
+                <Plus size={10} className="text-slate-600 hover:text-violet-500" />
+              </button>
+            )}
+            {taskRespPicker && createPortal(
+              <div
+                data-task-resp-portal
+                onClick={e => e.stopPropagation()}
+                style={{ position: 'fixed', top: taskRespPos.top, left: taskRespPos.left, zIndex: 9999, width: 192 }}
+                className="bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl p-1 max-h-48 overflow-y-auto"
+              >
+                <div className="px-2 py-1.5 border-b border-white/5 mb-1">
+                  <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Selecionar Responsável</span>
+                </div>
+                {cachedUsers.map(u => (
+                  <button key={u.id} onClick={(e) => { e.stopPropagation(); handleTaskResponsible(u.id, u.name, u.picture); }} className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-white/5 rounded-lg text-left transition-colors">
+                    <Avatar name={u.name} url={u.picture} size={5} />
+                    <span className="text-xs text-dark-text truncate">{u.name}</span>
+                  </button>
+                ))}
+              </div>,
+              document.body
+            )}
+          </div>
+        );
+
+      case 'start_date':
+        return (
+          <div key="start_date" className="shrink-0 w-24 text-xs text-slate-400 font-medium">
+            <SingleDatePicker value={task.start_date || undefined} onChange={(v) => handleTaskDate('start_date', v)} align="left" />
+          </div>
+        );
+
+      case 'due_date':
+        return (
+          <div key="due_date" className="shrink-0 w-28 text-xs text-slate-400 font-medium">
+            <SingleDatePicker value={task.due_date || undefined} onChange={(v) => handleTaskDate('due_date', v)} align="right" checkOverdue />
+          </div>
+        );
+
+
+
+      case 'arquivos':
+        return (
+          <TaskFilesCell key="arquivos" taskId={task.id} />
+        );
+
+      default:
+        return null;
+    }
+  };
+
   return (
     <div>
       <div className="flex items-center gap-2 px-4 py-3 border-b border-black/5 dark:border-white/5 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors group">
@@ -1332,186 +1698,8 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask, dragHandleProps 
           {task.tags.map(t => <TagBadge key={t} label={t} />)}
         </div>
 
-        {/* Entregável */}
-        <div className="shrink-0 w-28">
-          {(() => {
-            const cs = findOptionColor(columnConfig.entregavel, task.entregavel);
-            return (
-              <select
-                value={task.entregavel || ''}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  fetch(`/api/onboarding-tasks/${task.id}`, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ entregavel: val }),
-                  });
-                  onUpdate();
-                }}
-                className="w-full border rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer focus:outline-none"
-                style={cs ? {
-                  background: cs.bg,
-                  color: cs.text,
-                  borderColor: cs.border,
-                } : {
-                  background: 'transparent',
-                  borderColor: 'transparent',
-                  color: '#94a3b8',
-                }}
-              >
-                <option value="" className="bg-dark-bg text-slate-400">Adicionar...</option>
-                {columnConfig.entregavel.map(opt => (
-                  <option key={opt.label} value={opt.label} className="bg-dark-bg text-dark-text">{opt.label}</option>
-                ))}
-              </select>
-            );
-          })()}
-        </div>
-
-        {/* Prioridade */}
-        <div className="shrink-0 w-20">
-          <PriorityPicker
-            value={task.prioridade}
-            compact
-            onChange={(val) => {
-              fetch(`/api/onboarding-tasks/${task.id}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prioridade: val }),
-              });
-              onUpdate();
-            }}
-          />
-        </div>
-
-        {/* Hospedagem */}
-        <div className="shrink-0 w-28">
-          {(() => {
-            const cs = findOptionColor(columnConfig.hospedagem, task.hospedagem);
-            return (
-              <select
-                value={task.hospedagem || ''}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  fetch(`/api/onboarding-tasks/${task.id}`, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ hospedagem: val }),
-                  });
-                  onUpdate();
-                }}
-                className="w-full border rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer focus:outline-none"
-                style={cs ? {
-                  background: cs.bg,
-                  color: cs.text,
-                  borderColor: cs.border,
-                } : {
-                  background: 'transparent',
-                  borderColor: 'transparent',
-                  color: '#94a3b8',
-                }}
-              >
-                <option value="" className="bg-dark-bg text-slate-400">Adicionar...</option>
-                {columnConfig.hospedagem.map(opt => (
-                  <option key={opt.label} value={opt.label} className="bg-dark-bg text-dark-text">{opt.label}</option>
-                ))}
-              </select>
-            );
-          })()}
-        </div>
-
-        {/* Squad */}
-        <div className="shrink-0 w-32">
-          {(() => {
-            const cs = findOptionColor(columnConfig.squad, squad);
-            return (
-              <select value={squad} onChange={e => handleSquadChange(e.target.value)}
-                className="w-full border rounded-lg px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer focus:outline-none"
-                style={cs ? {
-                  background: cs.bg,
-                  color: cs.text,
-                  borderColor: cs.border,
-                } : {
-                  background: 'transparent',
-                  borderColor: 'transparent',
-                  color: '#94a3b8',
-                }}
-              >
-                <option value="" className="bg-dark-bg text-slate-400">SQUAD</option>
-                {columnConfig.squad.map(s => <option key={s.label} value={s.label} className="bg-dark-bg text-dark-text">{s.label}</option>)}
-              </select>
-            );
-          })()}
-        </div>
-
-        {/* Responsável */}
-        <div className="shrink-0 w-16 flex items-center justify-center gap-1">
-          {task.responsible_name ? (
-            <button
-              ref={taskRespRef}
-              data-task-resp-btn
-              onClick={(e) => {
-                e.stopPropagation();
-                if (!taskRespPicker && taskRespRef.current) {
-                  const rect = taskRespRef.current.getBoundingClientRect();
-                  setTaskRespPos({ top: rect.bottom + 4, left: rect.left - 140 });
-                }
-                setTaskRespPicker(v => !v);
-              }}
-              className="focus:outline-none hover:scale-110 transition-transform"
-            >
-              <Avatar name={task.responsible_name} url={task.responsible_avatar} size={6} />
-            </button>
-          ) : (
-            <button
-              ref={taskRespRef}
-              data-task-resp-btn
-              onClick={(e) => {
-                e.stopPropagation();
-                if (!taskRespPicker && taskRespRef.current) {
-                  const rect = taskRespRef.current.getBoundingClientRect();
-                  setTaskRespPos({ top: rect.bottom + 4, left: rect.left - 140 });
-                }
-                setTaskRespPicker(v => !v);
-              }}
-              className="w-6 h-6 rounded-full border border-dashed border-slate-600 flex items-center justify-center hover:border-violet-500 hover:text-violet-500 transition-colors"
-            >
-              <Plus size={10} className="text-slate-600 hover:text-violet-500" />
-            </button>
-          )}
-          {taskRespPicker && createPortal(
-            <div
-              data-task-resp-portal
-              onClick={e => e.stopPropagation()}
-              style={{ position: 'fixed', top: taskRespPos.top, left: taskRespPos.left, zIndex: 9999, width: 192 }}
-              className="bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl p-1 max-h-48 overflow-y-auto"
-            >
-              <div className="px-2 py-1.5 border-b border-white/5 mb-1">
-                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Selecionar Responsável</span>
-              </div>
-              {cachedUsers.map(u => (
-                <button key={u.id} onClick={(e) => { e.stopPropagation(); handleTaskResponsible(u.id, u.name, u.picture); }} className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-white/5 rounded-lg text-left transition-colors">
-                  <Avatar name={u.name} url={u.picture} size={5} />
-                  <span className="text-xs text-dark-text truncate">{u.name}</span>
-                </button>
-              ))}
-            </div>,
-            document.body
-          )}
-        </div>
-
-        {/* Data Inicial */}
-        <div className="shrink-0 w-24 text-xs text-slate-400 font-medium">
-          <SingleDatePicker value={task.start_date || undefined} onChange={(v) => handleTaskDate('start_date', v)} align="left" />
-        </div>
-
-        {/* Data de vencimento */}
-        <div className="shrink-0 w-28 text-xs text-slate-400 font-medium">
-          <SingleDatePicker value={task.due_date || undefined} onChange={(v) => handleTaskDate('due_date', v)} align="right" checkOverdue />
-        </div>
-
-        {/* Docs column */}
-        <TaskFilesCell taskId={task.id} />
+        {/* Dynamic columns */}
+        {colOrder.map(colId => renderCell(colId))}
 
         {/* More — dropdown com Arquivar e Excluir */}
         <div className="relative shrink-0" ref={menuRef}>
@@ -1864,20 +2052,7 @@ const GroupBlock = ({ group, onUpdate, onAddTask, onOpenDetail, onOpenSubtask, o
       {/* Column headers */}
       {expanded && (
         <>
-          <div className="flex items-center gap-2 px-8 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-black/[0.07] dark:border-white/5">
-            <div className="w-[14px] shrink-0" />
-            <div className="w-4 shrink-0" />
-            <div className="flex-1 min-w-[200px]">Nome</div>
-            <div className="shrink-0 w-28">Entregável</div>
-            <div className="shrink-0 w-20">Prioridade</div>
-            <div className="shrink-0 w-28">Hospedagem</div>
-            <div className="shrink-0 w-32">Squad</div>
-            <div className="shrink-0 w-16 text-center">Resp.</div>
-            <div className="shrink-0 w-24">Data Iníc.</div>
-            <div className="shrink-0 w-28">Vencimento</div>
-            <div className="shrink-0 w-24">Docs</div>
-            <div className="shrink-0 w-[22px]" />
-          </div>
+          <DraggableColHeaders />
 
           <div className="flex flex-col">
             <SortableContext items={group.tasks.map(t => `task-${t.id}`)} strategy={verticalListSortingStrategy}>
@@ -2219,6 +2394,11 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const commentEndRef = React.useRef<HTMLDivElement>(null);
 
+  // Comment file attachments
+  const [pendingCommentFiles, setPendingCommentFiles] = useState<CommentFile[]>([]);
+  const commentFileInputRef = React.useRef<HTMLInputElement>(null);
+  const [commentPreviewImg, setCommentPreviewImg] = useState<string | null>(null);
+
   // Editable name
   const [editingName, setEditingName] = useState(false);
   const [editNameValue, setEditNameValue] = useState(task.client_name);
@@ -2257,7 +2437,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
   }, [comments.length, loadingComments]);
 
   const addComment = async () => {
-    if (!newComment.trim()) return;
+    if (!newComment.trim() && pendingCommentFiles.length === 0) return;
     const authorName = userData?.name || user?.displayName || null;
     const authorEmail = userData?.email || user?.email || null;
     const authorAvatar = userData?.picture || user?.photoURL || null;
@@ -2270,14 +2450,54 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
           author_name: authorName,
           author_email: authorEmail,
           author_avatar: authorAvatar,
+          files: pendingCommentFiles.length > 0 ? pendingCommentFiles : undefined,
         }),
       });
       if (res.ok) {
         const c = await res.json();
+        // Parse files back if it comes as string
+        if (c.files && typeof c.files === 'string') c.files = JSON.parse(c.files);
         setComments(prev => [c, ...prev]);
         setNewComment('');
+        setPendingCommentFiles([]);
       }
     } catch { /* silent */ }
+  };
+
+  const handleCommentPaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (!file) continue;
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64 = reader.result as string;
+          const name = `screenshot-${Date.now()}.png`;
+          setPendingCommentFiles(prev => [...prev, { name, url: base64, type: 'image' }]);
+        };
+        reader.readAsDataURL(file);
+        break;
+      }
+    }
+  };
+
+  const handleCommentFileSelect = (fileList: FileList | null) => {
+    if (!fileList) return;
+    Array.from(fileList).forEach(file => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64 = reader.result as string;
+        const isImg = file.type.startsWith('image/');
+        const isPdf = file.type === 'application/pdf';
+        const type: CommentFile['type'] = isImg ? 'image' : isPdf ? 'doc' : 'file';
+        setPendingCommentFiles(prev => [...prev, { name: file.name, url: base64, type }]);
+      };
+      reader.readAsDataURL(file);
+    });
   };
 
   const saveDescription = async () => {
@@ -2858,7 +3078,11 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                   <p className="text-xs mt-1 opacity-60">Seja o primeiro a comentar!</p>
                 </div>
               ) : (
-                [...comments].reverse().map(c => (
+                [...comments].reverse().map(c => {
+                  const commentFiles: CommentFile[] = c.files
+                    ? (typeof c.files === 'string' ? JSON.parse(c.files) : c.files)
+                    : [];
+                  return (
                   <div key={c.id} className="flex gap-2.5">
                     {c.author_avatar ? (
                       <img src={c.author_avatar} alt="" className="w-7 h-7 rounded-full object-cover shrink-0 mt-0.5" />
@@ -2876,11 +3100,39 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                         </span>
                       </div>
                       <div className="bg-dark-card border border-white/5 rounded-2xl rounded-tl-sm px-3.5 py-2.5">
-                        <p className="text-[13px] text-slate-300 whitespace-pre-wrap leading-relaxed break-words">{c.text}</p>
+                        {c.text && <p className="text-[13px] text-slate-300 whitespace-pre-wrap leading-relaxed break-words">{renderCommentText(c.text)}</p>}
+                        {commentFiles.length > 0 && (
+                          <div className={`flex flex-wrap gap-2 ${c.text ? 'mt-2' : ''}`}>
+                            {commentFiles.map((cf, fi) => (
+                              cf.type === 'image' ? (
+                                <img
+                                  key={fi}
+                                  src={cf.url}
+                                  alt={cf.name}
+                                  className="max-w-full rounded-lg border border-white/10 cursor-pointer hover:opacity-90 transition-opacity"
+                                  style={{ maxHeight: 200 }}
+                                  onClick={() => setCommentPreviewImg(cf.url)}
+                                />
+                              ) : (
+                                <a
+                                  key={fi}
+                                  href={cf.url}
+                                  download={cf.name}
+                                  className="flex items-center gap-2 px-3 py-2 bg-white/5 border border-white/10 rounded-lg hover:border-violet-500/30 transition-colors text-xs text-slate-300"
+                                  onClick={e => e.stopPropagation()}
+                                >
+                                  <FileText size={14} className="text-violet-400 shrink-0" />
+                                  <span className="truncate max-w-[180px]">{cf.name}</span>
+                                </a>
+                              )
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
-                ))
+                  );
+                })
               )}
               <div ref={commentEndRef} />
             </div>
@@ -2892,27 +3144,59 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                   value={newComment}
                   onChange={e => setNewComment(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addComment(); } }}
+                  onPaste={handleCommentPaste}
                   placeholder="Escreva um comentário..."
                   rows={3}
                   className="w-full px-4 py-3 text-sm text-dark-text placeholder-slate-600 focus:outline-none resize-none bg-transparent"
                   style={{ minHeight: '72px', maxHeight: '140px' }}
                   onInput={e => { const el = e.currentTarget; el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 140) + 'px'; }}
                 />
+                {/* Pending file previews */}
+                {pendingCommentFiles.length > 0 && (
+                  <div className="flex flex-wrap gap-2 px-3 py-2 border-t border-white/5">
+                    {pendingCommentFiles.map((pf, i) => (
+                      <div key={i} className="relative group">
+                        {pf.type === 'image' ? (
+                          <img src={pf.url} alt={pf.name} className="h-16 rounded-lg border border-white/10 object-cover" />
+                        ) : (
+                          <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white/5 border border-white/10 rounded-lg text-[10px] text-slate-400">
+                            <FileText size={12} className="text-violet-400" />
+                            <span className="truncate max-w-[100px]">{pf.name}</span>
+                          </div>
+                        )}
+                        <button
+                          onClick={() => setPendingCommentFiles(prev => prev.filter((_, idx) => idx !== i))}
+                          className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <X size={8} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className="flex items-center justify-between px-3 py-2 border-t border-white/5">
                   <div className="flex items-center gap-1">
                     <button
-                      onClick={() => fileInputRef.current?.click()}
+                      onClick={() => commentFileInputRef.current?.click()}
                       className="p-1.5 text-slate-500 hover:text-violet-400 hover:bg-white/5 rounded-lg transition-colors"
-                      title="Anexar arquivo"
+                      title="Anexar arquivo ao comentário"
                     >
                       <Paperclip size={14} />
                     </button>
+                    <input
+                      ref={commentFileInputRef}
+                      type="file"
+                      multiple
+                      accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"
+                      className="hidden"
+                      onChange={e => { handleCommentFileSelect(e.target.files); e.target.value = ''; }}
+                    />
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-[9px] text-slate-600">Enter enviar · Shift+Enter nova linha</span>
+                    <span className="text-[9px] text-slate-600">Ctrl+V colar imagem · Enter enviar</span>
                     <button
                       onClick={addComment}
-                      disabled={!newComment.trim()}
+                      disabled={!newComment.trim() && pendingCommentFiles.length === 0}
                       className="px-3 py-1 bg-violet-600 hover:bg-violet-500 disabled:opacity-30 disabled:cursor-not-allowed text-white text-[11px] font-bold rounded-lg transition-all flex items-center gap-1"
                     >
                       Enviar
@@ -3398,7 +3682,7 @@ const SubtaskDetailModal = ({ subtask, task, onClose, onUpdate }: { subtask: any
                         <span className="text-[10px] font-bold text-dark-text">{c.author_name || 'Usuário'}</span>
                         <span className="text-[10px] text-slate-600">{new Date(c.created_at).toLocaleDateString('pt-BR', { hour: '2-digit', minute:'2-digit', day: '2-digit', month: '2-digit' })}</span>
                       </div>
-                      <p className="text-xs text-dark-text whitespace-pre-wrap">{c.text}</p>
+                      <p className="text-xs text-dark-text whitespace-pre-wrap">{renderCommentText(c.text)}</p>
                     </div>
                   ))}
                 </div>
@@ -3443,20 +3727,27 @@ export default function VisualHub() {
   const [showCompleted, setShowCompleted] = useState(false);
   const [columnConfig, setColumnConfig] = useState<ColumnConfig>(loadColumnConfig);
   const [showColumnConfig, setShowColumnConfig] = useState(false);
+  const [colOrder, setColOrder] = useState<ColId[]>(DEFAULT_COL_ORDER);
   const [formDropdownOpen, setFormDropdownOpen] = useState(false);
   const [briefingLinkCopied, setBriefingLinkCopied] = useState(false);
   const formDropdownRef = React.useRef<HTMLDivElement>(null);
 
-  // Close form dropdown on outside click
+  const [colMenuOpen, setColMenuOpen] = useState(false);
+  const colMenuRef = React.useRef<HTMLDivElement>(null);
+
+  // Close dropdowns on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (formDropdownRef.current && !formDropdownRef.current.contains(e.target as Node)) {
         setFormDropdownOpen(false);
       }
+      if (colMenuRef.current && !colMenuRef.current.contains(e.target as Node)) {
+        setColMenuOpen(false);
+      }
     };
-    if (formDropdownOpen) document.addEventListener('mousedown', handler);
+    if (formDropdownOpen || colMenuOpen) document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [formDropdownOpen]);
+  }, [formDropdownOpen, colMenuOpen]);
 
   // Dynamic status groups
   const [statusGroups, setStatusGroups] = useState<StatusGroupDef[]>(DEFAULT_STATUS_GROUPS);
@@ -3489,7 +3780,60 @@ export default function VisualHub() {
     } catch { /* silent */ } finally { if (showSpinner) setLoading(false); }
   };
 
-  useEffect(() => { fetchStatusGroups().then(() => fetchTasks()); }, []);
+  const fetchColumnConfig = async () => {
+    try {
+      const res = await fetch('/api/visual-hub/settings/column-config');
+      if (res.ok) {
+        const data = await res.json();
+        if (data) {
+          setColumnConfig({
+            entregavel: migrateOptions(data.entregavel, DEFAULT_COLUMN_CONFIG.entregavel),
+            hospedagem: migrateOptions(data.hospedagem, DEFAULT_COLUMN_CONFIG.hospedagem),
+            squad: migrateOptions(data.squad, DEFAULT_COLUMN_CONFIG.squad),
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching column config:', err);
+    }
+  };
+
+  const fetchColOrder = async () => {
+    try {
+      const res = await fetch('/api/visual-hub/settings/column-order');
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          // Ensure only valid ColIds that still exist in COL_DEFS are included
+          const valid = data.filter((id: string) => id in COL_DEFS) as ColId[];
+          // Append any new columns not present in saved order
+          const missing = DEFAULT_COL_ORDER.filter(id => !valid.includes(id));
+          setColOrder([...valid, ...missing]);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching column order:', err);
+    }
+  };
+
+  useEffect(() => {
+    const init = async () => {
+      setLoading(true);
+      try {
+        await Promise.all([
+          fetchStatusGroups(),
+          fetchColumnConfig(),
+          fetchColOrder(),
+          fetchTasks(true)
+        ]);
+      } catch (err) {
+        console.error('Init error:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    init();
+  }, []);
 
   // Focus new group input
   React.useEffect(() => {
@@ -3675,6 +4019,8 @@ export default function VisualHub() {
   }));
 
   return (
+    <ColOrderContext.Provider value={colOrder}>
+    <SetColOrderContext.Provider value={setColOrder}>
     <ColumnConfigContext.Provider value={columnConfig}>
     <StatusGroupsContext.Provider value={statusGroups}>
     <div className="min-h-screen bg-dark-bg">
@@ -3942,6 +4288,8 @@ export default function VisualHub() {
     </div>
     </StatusGroupsContext.Provider>
     </ColumnConfigContext.Provider>
+    </SetColOrderContext.Provider>
+    </ColOrderContext.Provider>
   );
 }
 

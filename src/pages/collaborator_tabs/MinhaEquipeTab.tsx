@@ -86,17 +86,19 @@ export default function MinhaEquipeTab() {
   const [pulsoRespostas, setPulsoRespostas] = useState<PulsoResposta[]>([]);
   const [alertas, setAlertas] = useState<Alerta[]>([]);
   const [settings, setSettings] = useState<CollaboratorSetting[]>([]);
+  const [agenda, setAgenda] = useState<any[]>([]);
 
   const fetchData = useCallback(async () => {
     if (!email) return;
     setLoading(true);
     try {
       const headers = { 'x-user-email': email };
-      const [teamRes, pulsoRes, alertaRes, settingsRes] = await Promise.all([
+      const [teamRes, pulsoRes, alertaRes, settingsRes, agendaRes] = await Promise.all([
         fetch('/api/colaboradores/minha-equipe', { headers }),
         fetch('/api/colaboradores/minha-equipe/pulso-hoje', { headers }),
         fetch('/api/colaboradores/minha-equipe/alertas', { headers }),
         fetch('/api/collaborator-settings'),
+        fetch('/api/colaboradores/minha-equipe/agenda', { headers }),
       ]);
 
       if (teamRes.ok) {
@@ -116,6 +118,10 @@ export default function MinhaEquipeTab() {
       if (alertaRes.ok) {
         const data = await alertaRes.json();
         setAlertas(data.alertas || []);
+      }
+      if (agendaRes.ok) {
+        const data = await agendaRes.json();
+        setAgenda(data || []);
       }
     } catch (e) {
       console.error('MinhaEquipe fetch error:', e);
@@ -325,50 +331,88 @@ export default function MinhaEquipeTab() {
           </div>
         </motion.div>
 
-        {/* Precisam de Atenção */}
+        {/* Próximos 1:1 e Análise de Desempenho */}
         <motion.div
           initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}
           className="bg-white dark:bg-dark-bg border border-slate-200 dark:border-white/10 rounded-2xl p-6"
         >
           <h3 className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest mb-5">
-            Precisam de Atenção
+            Próximos 1:1 e Análise de Desempenho
           </h3>
 
-          {alertas.length === 0 ? (
+          {agenda.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10 text-slate-500">
-              <span className="text-4xl mb-3">✅</span>
-              <p className="text-sm font-medium">Nenhum alerta ativo</p>
-              <p className="text-xs text-slate-400 mt-1">Todos os liderados estão dentro dos parâmetros</p>
+              <span className="text-4xl mb-3">📅</span>
+              <p className="text-sm font-medium">Nenhum compromisso agendado</p>
+              <p className="text-xs text-slate-400 mt-1">Não há 1:1s ou avaliações agendadas no momento</p>
             </div>
           ) : (
             <div className="space-y-3 max-h-80 overflow-y-auto scrollbar-hide">
-              {alertas.map((alerta, idx) => {
-                const cfg = ALERT_CONFIG[alerta.motivo] || ALERT_CONFIG.pulso_negativo;
+              {agenda.map((item, idx) => {
+                const isLeader = item.relation === 'leader';
+                
+                // Color configuration:
+                // - Leader: Violet/indigo theme
+                // - Subordinate: Emerald/teal theme
+                const borderStyles = isLeader 
+                  ? 'border-violet-500/20 bg-violet-500/5 hover:bg-violet-500/10'
+                  : 'border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10';
+                
+                const badgeStyles = isLeader
+                  ? 'bg-violet-500/15 text-violet-400 border-violet-500/20'
+                  : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20';
+
+                const typeBadgeLabel = item.type === '1on1' ? '1:1' : 'Avaliação';
+
+                const relationLabel = isLeader ? 'Líder' : 'Liderado';
+
+                const formattedDate = new Date(item.data).toLocaleDateString('pt-BR', {
+                  day: '2-digit',
+                  month: '2-digit',
+                  year: 'numeric'
+                });
+                
+                const formattedTime = item.horario ? item.horario.substring(0, 5) : '';
+
                 return (
                   <motion.div
-                    key={`${alerta.collaborator_id}-${alerta.motivo}-${idx}`}
+                    key={item.id}
                     initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: idx * 0.05 }}
-                    className="flex items-center gap-3 p-3 rounded-xl border transition-all"
-                    style={{ background: cfg.bg, borderColor: cfg.border }}
+                    className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${borderStyles}`}
                   >
+                    {/* User Avatar */}
                     <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 bg-violet-500/20 flex items-center justify-center text-xs font-bold text-violet-400">
-                      {alerta.linked_picture
-                        ? <img src={alerta.linked_picture} className="w-full h-full object-cover" referrerPolicy="no-referrer" alt="" />
-                        : alerta.name.charAt(0).toUpperCase()
+                      {item.picture
+                        ? <img src={item.picture} className="w-full h-full object-cover" referrerPolicy="no-referrer" alt="" />
+                        : item.name.charAt(0).toUpperCase()
                       }
                     </div>
+                    
+                    {/* Main Info */}
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-slate-800 dark:text-white truncate">{alerta.name}</p>
-                      <p className="text-xs mt-0.5 truncate" style={{ color: cfg.color }}>{alerta.descricao}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-bold text-slate-800 dark:text-white truncate">{item.name}</p>
+                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${badgeStyles}`}>
+                          {relationLabel}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1 truncate">
+                        {typeBadgeLabel} · {formattedDate} às {formattedTime}
+                        {item.observacao && ` · "${item.observacao}"`}
+                      </p>
                     </div>
-                    <button
-                      onClick={() => navigateToProfile(alerta.collaborator_id)}
-                      className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold text-violet-400 bg-violet-500/10 hover:bg-violet-500/20 border border-violet-500/20 transition-all flex items-center gap-1"
-                    >
-                      <Eye size={12} /> Ver perfil
-                    </button>
+
+                    {/* View Profile Button (only for subordinates/liderados) */}
+                    {!isLeader && (
+                      <button
+                        onClick={() => navigateToProfile(item.collabId)}
+                        className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold text-violet-400 bg-violet-500/10 hover:bg-violet-500/20 border border-violet-500/20 transition-all flex items-center gap-1"
+                      >
+                        <Eye size={12} /> Ver perfil
+                      </button>
+                    )}
                   </motion.div>
                 );
               })}

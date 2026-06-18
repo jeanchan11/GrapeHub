@@ -44,6 +44,12 @@ export function MoodPopup() {
         if (!collabData?.id) return;
         setCollaboratorId(collabData.id);
 
+        // Show immediately (or after 1.5s delay) for superadmin every screen load
+        if (userData?.role === 'superadmin') {
+          setTimeout(() => setIsOpen(true), 1500);
+          return;
+        }
+
         // Check if already answered today
         const histRes = await fetch(`/api/colaboradores/${collabData.id}/pulso-diario/historico?dias=1`);
         if (!histRes.ok) { setIsOpen(true); return; }
@@ -69,7 +75,7 @@ export function MoodPopup() {
     };
 
     checkPulse();
-  }, [userData?.email]);
+  }, [userData?.email, userData?.role]);
 
   const handleSelect = async (moodId: string) => {
     setSelectedMood(moodId);
