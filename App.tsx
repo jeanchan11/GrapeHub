@@ -323,7 +323,7 @@ const AppContent: React.FC = () => {
       case 'gerente-operacional':
         return <GerenteOperacionalCalculator />;
       case 'squad-able':
-        return <SquadAblePage />;
+        return <DashboardOperacional key={activePage} activePage={activePage} subsessionId="squad-able" />;
       case 'notifications':
         return <NotificationsPage />;
       case 'settings':
