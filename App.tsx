@@ -38,6 +38,7 @@ import IdeaisCriativos from './src/pages/IdeaisCriativos';
 import OnboardingOperacional from './src/pages/OnboardingOperacional';
 import ImplementacaoIA from './src/pages/ImplementacaoIA';
 import VisualHub from './src/pages/VisualHub';
+import Bolao from './src/pages/Bolao';
 import ListaPage from './src/pages/ListaPage';
 import DiferenciaisPage from './src/pages/DiferenciaisPage';
 import ChecklistIntegracao from './src/pages/ChecklistIntegracao';
@@ -391,6 +392,9 @@ const AppContent: React.FC = () => {
         return <ImplementacaoIA />;
       case 'visual-hub':
         return <VisualHub />;
+      case 'bolao':
+        return <Bolao />;
+
       case 'checklist-integracao':
         return <ChecklistIntegracao />;
       case 'checklist-saida':

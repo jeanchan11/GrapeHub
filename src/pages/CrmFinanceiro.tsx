@@ -10,6 +10,7 @@ import {
   Calendar, Activity, ShieldCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import OptionPicker from '../components/ui/OptionPicker';
 import { 
   DndContext, 
   closestCorners, 
@@ -898,16 +899,17 @@ const CrmFinanceiro = () => {
                 </div>
                 <div className="flex flex-col">
                   <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold mb-0.5">Status CRM</span>
-                  <select 
-                    value={selectedClient.crmStatus || ''}
-                    onChange={(e) => handleMoveClient(selectedClient.id, e.target.value)}
-                    className="text-xs font-bold bg-transparent border-none p-0 outline-none focus:ring-0 text-gray-800 dark:text-white cursor-pointer"
-                  >
-                    <option value="" className="dark:bg-slate-900">Nenhum</option>
-                    {COLUMNS.map(c => (
-                      <option key={c.id} value={c.id} className="dark:bg-slate-900">{c.title}</option>
-                    ))}
-                  </select>
+                  <OptionPicker
+                    value={selectedClient.crmStatus ? COLUMNS.find(c => c.id === selectedClient.crmStatus)?.title || null : null}
+                    onChange={(val) => {
+                      const col = COLUMNS.find(c => c.title === val);
+                      handleMoveClient(selectedClient.id, col ? col.id : '');
+                    }}
+                    options={COLUMNS.map(c => ({ label: c.title, color: c.color }))}
+                    emptyLabel="Nenhum"
+                    placeholder="Nenhum"
+                    compact
+                  />
                 </div>
               </div>
 
@@ -1174,16 +1176,17 @@ const CrmFinanceiro = () => {
           
           <div>
             <label className={designSystem.input.label}>Cliente</label>
-            <select
-              value={newTaskData.projectId}
-              onChange={e => setNewTaskData(prev => ({ ...prev, projectId: e.target.value }))}
-              className={designSystem.input.field}
-            >
-              <option value="">Selecione um cliente</option>
-              {clients.filter(c => c.crmStatus).map(c => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
+            <OptionPicker
+              value={newTaskData.projectId ? clients.find(c => c.id === newTaskData.projectId)?.name || null : null}
+              onChange={(val) => {
+                const client = clients.find(c => c.name === val);
+                setNewTaskData(prev => ({ ...prev, projectId: client ? client.id : '' }));
+              }}
+              options={clients.filter(c => c.crmStatus).map(c => ({ label: c.name }))}
+              emptyLabel="Selecione um cliente"
+              placeholder="Selecione um cliente"
+              className="w-full"
+            />
           </div>
           
           <div>

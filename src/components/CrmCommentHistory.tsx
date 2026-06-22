@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, CheckCircle2, Image as ImageIcon, X, RefreshCw, Send } from 'lucide-react';
+import { Plus, CheckCircle2, Image as ImageIcon, X, RefreshCw, Send, Bot } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -8,6 +8,7 @@ export const COMMENT_TYPES = [
   { id: 'Contato realizado', label: 'Contato realizado', color: 'bg-blue-500' },
   { id: 'Acordo fechado', label: 'Acordo fechado', color: 'bg-emerald-500' },
   { id: 'Promessa de pagamento', label: 'Promessa de pagamento', color: 'bg-amber-500' },
+  { id: 'COBRANÇA', label: 'Cobrança Automática', color: 'bg-red-500' },
   { id: 'Mudança de Status', label: 'Mudança de Status', color: 'bg-violet-500' }
 ];
 
@@ -275,8 +276,10 @@ const CrmCommentHistory: React.FC<CrmCommentHistoryProps> = ({ clientId }) => {
           
           return (
             <div key={comment.id} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
-              <div className={`flex items-center justify-center w-10 h-10 rounded-full border-4 border-white dark:border-slate-900 ${typeConfig.color} text-white shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10 overflow-hidden`}>
-                {comment.user_picture ? (
+              <div className={`flex items-center justify-center w-10 h-10 rounded-full border-4 border-white dark:border-slate-900 ${comment.user_id === 'sistema' ? 'bg-emerald-500' : typeConfig.color} text-white shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10 overflow-hidden`}>
+                {comment.user_id === 'sistema' ? (
+                  <Bot size={20} className="text-white" />
+                ) : comment.user_picture ? (
                   <img src={comment.user_picture} alt={authorName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                 ) : (
                   <span className="text-xs font-bold">{getInitials(authorName)}</span>

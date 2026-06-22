@@ -43,6 +43,7 @@ import { useSoftphone, formatCallTime } from '../hooks/useSoftphone';
 import { AIChat } from '../components/AIChat/AIChat';
 import fredImg from '../assets/fred.png';
 import MetasPopup from '../components/MetasPopup';
+import OptionPicker from '../components/ui/OptionPicker';
 
 interface Lead {
   id: string;
@@ -3040,17 +3041,16 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                       <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
                         <Users size={13} /> Responsável
                       </span>
-                      <select
-                        value={lead.responsavel_id || ''}
-                        onChange={(e) => onUpdateLeadField(lead.id, 'responsavel_id', e.target.value)}
-                        style={{ textAlignLast: 'right', border: 'none', background: 'transparent' }}
-                        className="text-sm font-semibold text-gray-900 dark:text-white outline-none focus:ring-0 rounded px-0 -mr-1 min-w-0 flex-1 appearance-none cursor-pointer"
-                      >
-                        <option value="" className="bg-white dark:bg-slate-800">— Sem responsável</option>
-                        {users.map(u => (
-                          <option key={u.id} value={u.id} className="bg-white dark:bg-slate-800">{u.name}</option>
-                        ))}
-                      </select>
+                      <OptionPicker
+                        value={(() => { const u = users.find(u => u.id === lead.responsavel_id); return u ? u.name : null; })()}
+                        options={users.map(u => ({ label: u.name }))}
+                        placeholder="— Sem responsável"
+                        emptyLabel="— Sem responsável"
+                        onChange={(val) => {
+                          const u = users.find(u => u.name === val);
+                          onUpdateLeadField(lead.id, 'responsavel_id', u ? u.id : '');
+                        }}
+                      />
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5">
@@ -3279,25 +3279,19 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                       <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
                         <Flame size={13} /> Origem
                       </span>
-                      <select
+                      <OptionPicker
                         value={lead.origem || 'Outro'}
-                        onChange={(e) => onUpdateLeadField(lead.id, 'origem', e.target.value)}
-                        style={{ textAlignLast: 'right', border: 'none', background: 'transparent' }}
-                        className={`text-sm font-semibold outline-none focus:ring-0 rounded px-0 -mr-1 min-w-0 flex-1 appearance-none cursor-pointer ${lead.origem === 'Indicação' ? 'text-orange-500' :
-                            lead.origem === 'Meta ads' ? 'text-blue-500' :
-                              lead.origem === 'Google ads' ? 'text-amber-500' :
-                                lead.origem === 'Youtube ads' ? 'text-red-500' :
-                                  lead.origem === 'Linkedin' ? 'text-sky-500' :
-                                    'text-gray-900 dark:text-white'
-                          }`}
-                      >
-                        <option value="Indicação" className="font-semibold text-orange-500 bg-white dark:bg-slate-800">Indicação</option>
-                        <option value="Meta ads" className="font-semibold text-blue-500 bg-white dark:bg-slate-800">Meta ads</option>
-                        <option value="Google ads" className="font-semibold text-amber-500 bg-white dark:bg-slate-800">Google ads</option>
-                        <option value="Youtube ads" className="font-semibold text-red-500 bg-white dark:bg-slate-800">Youtube ads</option>
-                        <option value="Linkedin" className="font-semibold text-sky-500 bg-white dark:bg-slate-800">Linkedin</option>
-                        <option value="Outro" className="font-semibold text-gray-900 dark:text-white bg-white dark:bg-slate-800">Outro</option>
-                      </select>
+                        options={[
+                          { label: 'Indicação', color: '#f97316' },
+                          { label: 'Meta ads', color: '#3b82f6' },
+                          { label: 'Google ads', color: '#f59e0b' },
+                          { label: 'Youtube ads', color: '#ef4444' },
+                          { label: 'Linkedin', color: '#0ea5e9' },
+                          { label: 'Outro' },
+                        ]}
+                        placeholder="Origem"
+                        onChange={(val) => onUpdateLeadField(lead.id, 'origem', val || 'Outro')}
+                      />
                     </div>
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
@@ -5760,31 +5754,29 @@ const CrmComercial = () => {
                             <div className="grid grid-cols-3 gap-2">
                               <div>
                                 <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Tipo</label>
-                                <select
-                                  value={item.type}
-                                  onChange={e => {
+                                <OptionPicker
+                                  value={item.type || null}
+                                  options={['Tarefa', 'Ligação', 'WhatsApp', 'Email', 'Reunião', 'Lembrete'].map(t => ({ label: t }))}
+                                  placeholder="Tipo"
+                                  onChange={(val) => {
                                     const items = [...templateEditor.form.items];
-                                    items[idx] = { ...items[idx], type: e.target.value };
+                                    items[idx] = { ...items[idx], type: val || '' };
                                     setTemplateEditor(p => ({ ...p, form: { ...p.form, items } }));
                                   }}
-                                  className="w-full border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 rounded-lg px-2 py-1.5 text-xs"
-                                >
-                                  {['Tarefa', 'Ligação', 'WhatsApp', 'Email', 'Reunião', 'Lembrete'].map(t => <option key={t}>{t}</option>)}
-                                </select>
+                                />
                               </div>
                               <div>
                                 <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Prioridade</label>
-                                <select
-                                  value={item.priority}
-                                  onChange={e => {
+                                <OptionPicker
+                                  value={item.priority || null}
+                                  options={['Baixa', 'Normal', 'Alta', 'Urgente'].map(p => ({ label: p }))}
+                                  placeholder="Prioridade"
+                                  onChange={(val) => {
                                     const items = [...templateEditor.form.items];
-                                    items[idx] = { ...items[idx], priority: e.target.value };
+                                    items[idx] = { ...items[idx], priority: val || '' };
                                     setTemplateEditor(p => ({ ...p, form: { ...p.form, items } }));
                                   }}
-                                  className="w-full border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 rounded-lg px-2 py-1.5 text-xs"
-                                >
-                                  {['Baixa', 'Normal', 'Alta', 'Urgente'].map(p => <option key={p}>{p}</option>)}
-                                </select>
+                                />
                               </div>
                               <div>
                                 <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Prazo (D+)</label>
@@ -5878,32 +5870,33 @@ const CrmComercial = () => {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className={designSystem.input.label}>Origem</label>
-              <select
-                value={newLeadData.origem}
-                onChange={e => setNewLeadData(prev => ({ ...prev, origem: e.target.value }))}
-                className={designSystem.input.field}
-              >
-                <option value="Indicação" className="text-orange-500 bg-light-sidebar dark:bg-dark-sidebar font-semibold">Indicação</option>
-                <option value="Meta ads" className="text-blue-500 bg-light-sidebar dark:bg-dark-sidebar font-semibold">Meta ads</option>
-                <option value="Google ads" className="text-amber-500 bg-light-sidebar dark:bg-dark-sidebar font-semibold">Google ads</option>
-                <option value="Youtube ads" className="text-red-500 bg-light-sidebar dark:bg-dark-sidebar font-semibold">Youtube ads</option>
-                <option value="Linkedin" className="text-sky-500 bg-light-sidebar dark:bg-dark-sidebar font-semibold">Linkedin</option>
-                <option value="Outro" className="text-gray-900 dark:text-white bg-light-sidebar dark:bg-dark-sidebar font-semibold">Outro</option>
-              </select>
+              <OptionPicker
+                value={newLeadData.origem || null}
+                options={[
+                  { label: 'Indicação', color: '#f97316' },
+                  { label: 'Meta ads', color: '#3b82f6' },
+                  { label: 'Google ads', color: '#f59e0b' },
+                  { label: 'Youtube ads', color: '#ef4444' },
+                  { label: 'Linkedin', color: '#0ea5e9' },
+                  { label: 'Outro' },
+                ]}
+                placeholder="Origem"
+                onChange={(val) => setNewLeadData(prev => ({ ...prev, origem: val || '' }))}
+              />
             </div>
 
             <div>
               <label className={designSystem.input.label}>Responsável</label>
-              <select
-                value={newLeadData.responsavel_id}
-                onChange={e => setNewLeadData(prev => ({ ...prev, responsavel_id: e.target.value }))}
-                className={designSystem.input.field}
-              >
-                <option value="" className="bg-light-sidebar dark:bg-dark-sidebar">Selecione...</option>
-                {availableUsers.map(u => (
-                  <option key={u.id} value={u.id} className="bg-light-sidebar dark:bg-dark-sidebar">{u.name}</option>
-                ))}
-              </select>
+              <OptionPicker
+                value={(() => { const u = availableUsers.find(u => u.id === newLeadData.responsavel_id); return u ? u.name : null; })()}
+                options={availableUsers.map(u => ({ label: u.name }))}
+                placeholder="Selecione..."
+                emptyLabel="Selecione..."
+                onChange={(val) => {
+                  const u = availableUsers.find(u => u.name === val);
+                  setNewLeadData(prev => ({ ...prev, responsavel_id: u ? u.id : '' }));
+                }}
+              />
             </div>
           </div>
 
@@ -6800,45 +6793,41 @@ const CrmComercial = () => {
                             <div className="grid grid-cols-2 gap-3">
                               <div>
                                 <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 block mb-1.5">Kanban de Destino</label>
-                                <select
-                                  value={crmWebhookSettings.inbound_kanban_id || ''}
-                                  onChange={e => setCrmWebhookSettings({ ...crmWebhookSettings, inbound_kanban_id: e.target.value, inbound_coluna: '' })}
-                                  className="w-full bg-white dark:bg-black/40 border border-gray-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:border-violet-500 outline-none"
-                                >
-                                  <option value="">Selecione...</option>
-                                  {kanbans.map((k: any) => (
-                                    <option key={k.id} value={k.id}>{k.nome}</option>
-                                  ))}
-                                </select>
+                                <OptionPicker
+                                  value={(() => { const k = kanbans.find((k: any) => k.id === crmWebhookSettings.inbound_kanban_id); return k ? k.nome : null; })()}
+                                  options={kanbans.map((k: any) => ({ label: k.nome }))}
+                                  placeholder="Selecione..."
+                                  emptyLabel="Selecione..."
+                                  onChange={(val) => {
+                                    const k = kanbans.find((k: any) => k.nome === val);
+                                    setCrmWebhookSettings({ ...crmWebhookSettings, inbound_kanban_id: k ? k.id : '', inbound_coluna: '' });
+                                  }}
+                                />
                               </div>
 
                               <div>
                                 <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 block mb-1.5">Coluna de Destino</label>
-                                <select
-                                  value={crmWebhookSettings.inbound_coluna || ''}
-                                  onChange={e => setCrmWebhookSettings({ ...crmWebhookSettings, inbound_coluna: e.target.value })}
-                                  disabled={!crmWebhookSettings.inbound_kanban_id}
-                                  className="w-full bg-white dark:bg-black/40 border border-gray-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:border-violet-500 outline-none disabled:opacity-50"
-                                >
-                                  <option value="">Selecione...</option>
-                                  {inboundColumns.sort((a, b) => Number(a.order_index) - Number(b.order_index)).map((c: any) => (
-                                    <option key={c.id} value={c.title}>{c.title}</option>
-                                  ))}
-                                </select>
+                                <OptionPicker
+                                  value={crmWebhookSettings.inbound_coluna || null}
+                                  options={inboundColumns.sort((a, b) => Number(a.order_index) - Number(b.order_index)).map((c: any) => ({ label: c.title }))}
+                                  placeholder="Selecione..."
+                                  emptyLabel="Selecione..."
+                                  onChange={(val) => setCrmWebhookSettings({ ...crmWebhookSettings, inbound_coluna: val || '' })}
+                                />
                               </div>
 
                               <div className="col-span-2">
                                 <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 block mb-1.5">Responsável Automático (Opcional)</label>
-                                <select
-                                  value={crmWebhookSettings.inbound_responsavel_id || ''}
-                                  onChange={e => setCrmWebhookSettings({ ...crmWebhookSettings, inbound_responsavel_id: e.target.value })}
-                                  className="w-full bg-white dark:bg-black/40 border border-gray-300 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white focus:border-violet-500 outline-none"
-                                >
-                                  <option value="">Padrão (Dono do Webhook)</option>
-                                  {users.map((u: any) => (
-                                    <option key={u.id} value={u.id}>{u.name}</option>
-                                  ))}
-                                </select>
+                                <OptionPicker
+                                  value={(() => { const u = users.find((u: any) => u.id === crmWebhookSettings.inbound_responsavel_id); return u ? u.name : null; })()}
+                                  options={users.map((u: any) => ({ label: u.name }))}
+                                  placeholder="Padrão (Dono do Webhook)"
+                                  emptyLabel="Padrão (Dono do Webhook)"
+                                  onChange={(val) => {
+                                    const u = users.find((u: any) => u.name === val);
+                                    setCrmWebhookSettings({ ...crmWebhookSettings, inbound_responsavel_id: u ? u.id : '' });
+                                  }}
+                                />
                               </div>
                             </div>
 

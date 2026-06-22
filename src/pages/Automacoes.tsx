@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
+import OptionPicker from '../components/ui/OptionPicker';
 import SplitHeadline from '../components/SplitHeadline';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -247,26 +248,35 @@ const RightPanel: React.FC<RightPanelProps> = ({ mode, step, onUpdateStep, onClo
               <div className="bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-3 space-y-2">
                 {/* Linha campo + operador + X */}
                 <div className="flex items-center gap-2">
-                  <select value={r.field} onChange={e => updateRules(rules.map((x,j)=>j===i?{...x,field:e.target.value,value:'',_kanban:''}:x))}
-                    className="flex-1 min-w-0 px-2 py-1.5 rounded-lg bg-white dark:bg-dark-bg border border-gray-200 dark:border-white/10 text-xs text-gray-900 dark:text-white focus:outline-none focus:border-violet-500/60">
-                    <option value="">Campo...</option>
-                    {CONDITION_FIELDS.map(f => <option key={f}>{f}</option>)}
-                  </select>
-                  <select value={r.op} onChange={e => updateRules(rules.map((x,j)=>j===i?{...x,op:e.target.value}:x))}
-                    className="w-24 px-2 py-1.5 rounded-lg bg-white dark:bg-dark-bg border border-gray-200 dark:border-white/10 text-xs text-gray-900 dark:text-white focus:outline-none focus:border-violet-500/60">
-                    {(r.field === 'Kanban' ? KANBAN_OPS : r.field === 'Etapa do funil' ? STAGE_OPS : CONDITION_OPS).map(o => <option key={o}>{o}</option>)}
-                  </select>
+                  <OptionPicker
+                    value={r.field || null}
+                    options={CONDITION_FIELDS.map(f => ({ label: f }))}
+                    placeholder="Campo..."
+                    emptyLabel="Campo..."
+                    onChange={(val) => updateRules(rules.map((x,j)=>j===i?{...x,field:val||'',value:'',_kanban:''}:x))}
+                  />
+                  <OptionPicker
+                    value={r.op || null}
+                    options={(r.field === 'Kanban' ? KANBAN_OPS : r.field === 'Etapa do funil' ? STAGE_OPS : CONDITION_OPS).map(o => ({ label: o }))}
+                    placeholder="Operador"
+                    onChange={(val) => updateRules(rules.map((x,j)=>j===i?{...x,op:val||'é'}:x))}
+                  />
                   <button onClick={() => updateRules(rules.filter((_,j)=>j!==i))} className="text-gray-400 hover:text-red-500 transition-colors shrink-0"><X size={13} /></button>
                 </div>
 
                 {/* ── KANBAN: seletor ── */}
                 {!['está preenchido','está vazio'].includes(r.op) && r.field === 'Kanban' && (
                   <>
-                    <select value={r.value} onChange={e => updateRules(rules.map((x,j)=>j===i?{...x,value:e.target.value}:x))}
-                      className="w-full px-2.5 py-1.5 rounded-lg bg-white dark:bg-dark-bg border border-gray-200 dark:border-white/10 text-xs text-gray-900 dark:text-white focus:outline-none focus:border-violet-500/60">
-                      <option value="">Selecionar kanban...</option>
-                      {kanbans.map(k => <option key={k.id} value={k.id}>{k.name}</option>)}
-                    </select>
+                    <OptionPicker
+                      value={kanbans.find(k => k.id === r.value)?.name || null}
+                      options={kanbans.map(k => ({ label: k.name }))}
+                      placeholder="Selecionar kanban..."
+                      emptyLabel="Selecionar kanban..."
+                      onChange={(val) => {
+                        const kid = kanbans.find(k => k.name === val)?.id || '';
+                        updateRules(rules.map((x,j)=>j===i?{...x,value:kid}:x));
+                      }}
+                    />
                     {r.value && (
                       <p className="text-[10px] text-violet-600 dark:text-violet-400 font-medium">
                         ✓ {kanbans.find(k => k.id === r.value)?.name || r.value}
@@ -280,30 +290,31 @@ const RightPanel: React.FC<RightPanelProps> = ({ mode, step, onUpdateStep, onClo
                   <div className="space-y-2">
                     <div>
                       <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-slate-500 mb-1">Pipeline</p>
-                      <select
-                        value={r._kanban || ''}
-                        onChange={e => {
-                          const kId = e.target.value;
+                      <OptionPicker
+                        value={kanbans.find(k => k.id === r._kanban)?.name || null}
+                        options={kanbans.map(k => ({ label: k.name }))}
+                        placeholder="Selecionar pipeline..."
+                        emptyLabel="Selecionar pipeline..."
+                        onChange={(val) => {
+                          const kId = kanbans.find(k => k.name === val)?.id || '';
                           loadColumns(kId);
                           updateRules(rules.map((x,j)=>j===i?{...x,_kanban:kId,value:''}:x));
                         }}
-                        className="w-full px-2.5 py-1.5 rounded-lg bg-white dark:bg-dark-bg border border-gray-200 dark:border-white/10 text-xs text-gray-900 dark:text-white focus:outline-none focus:border-violet-500/60">
-                        <option value="">Selecionar pipeline...</option>
-                        {kanbans.map(k => <option key={k.id} value={k.id}>{k.name}</option>)}
-                      </select>
+                      />
                     </div>
                     {r._kanban && (
                       <div>
                         <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-slate-500 mb-1">Etapa</p>
-                        <select
-                          value={r.value || ''}
-                          onChange={e => updateRules(rules.map((x,j)=>j===i?{...x,value:e.target.value}:x))}
-                          className="w-full px-2.5 py-1.5 rounded-lg bg-white dark:bg-dark-bg border border-gray-200 dark:border-white/10 text-xs text-gray-900 dark:text-white focus:outline-none focus:border-violet-500/60">
-                          <option value="">Selecionar etapa...</option>
-                          {(columnsByKanban[r._kanban] || []).map(c => (
-                            <option key={c.id} value={c.id}>{c.name}</option>
-                          ))}
-                        </select>
+                        <OptionPicker
+                          value={(columnsByKanban[r._kanban] || []).find(c => c.id === r.value)?.name || null}
+                          options={(columnsByKanban[r._kanban] || []).map(c => ({ label: c.name }))}
+                          placeholder="Selecionar etapa..."
+                          emptyLabel="Selecionar etapa..."
+                          onChange={(val) => {
+                            const cId = (columnsByKanban[r._kanban] || []).find(c => c.name === val)?.id || '';
+                            updateRules(rules.map((x,j)=>j===i?{...x,value:cId}:x));
+                          }}
+                        />
                       </div>
                     )}
                     {r.value && r._kanban && (
@@ -369,21 +380,28 @@ const ActionForm: React.FC<{ step: FlowStep; idx: number; onUpdate: (id: string,
       <div className="px-4 py-3 space-y-3" onClick={e=>e.stopPropagation()}>
         <div>
           <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-slate-500 block mb-1">Tipo de Ação</label>
-          <select value={cfg.action_type||''} onChange={e=>onUpdate(step.id,{...cfg,action_type:e.target.value})}
-            className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-violet-500/60">
-            <option value="">Selecionar...</option>
-            {ACTIONS.map(a=><option key={a.id} value={a.id}>{a.label}</option>)}
-          </select>
+          <OptionPicker
+            value={ACTIONS.find(a => a.id === cfg.action_type)?.label || null}
+            options={ACTIONS.map(a => ({ label: a.label }))}
+            placeholder="Selecionar..."
+            emptyLabel="Selecionar..."
+            onChange={(val) => {
+              const aId = ACTIONS.find(a => a.label === val)?.id || '';
+              onUpdate(step.id, { ...cfg, action_type: aId });
+            }}
+          />
         </div>
         {(cfg.action_type === 'create_task' || !cfg.action_type) && (
           <>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-slate-500 block mb-1">Tipo</label>
-                <select value={cfg.task_type||'Ligação'} onChange={e=>onUpdate(step.id,{...cfg,task_type:e.target.value})}
-                  className="w-full px-2 py-2 rounded-lg bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-violet-500/60">
-                  {TASK_TYPES.map(t=><option key={t}>{t}</option>)}
-                </select>
+                <OptionPicker
+                  value={cfg.task_type || 'Ligação'}
+                  options={TASK_TYPES.map(t => ({ label: t }))}
+                  placeholder="Tipo"
+                  onChange={(val) => onUpdate(step.id, { ...cfg, task_type: val || 'Ligação' })}
+                />
               </div>
               <div>
                 <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-slate-500 block mb-1">Prazo (dias)</label>
@@ -435,15 +453,16 @@ const ActionForm: React.FC<{ step: FlowStep; idx: number; onUpdate: (id: string,
             {sequences.length === 0 ? (
               <p className="text-xs text-gray-400 dark:text-slate-500 italic">Carregando sequências...</p>
             ) : (
-              <select
-                value={cfg.sequence_id || ''}
-                onChange={e => onUpdate(step.id, { ...cfg, sequence_id: Number(e.target.value) })}
-                className="w-full px-3 py-2 rounded-lg bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-violet-500/60">
-                <option value="">Selecionar sequência...</option>
-                {sequences.map(s => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
+              <OptionPicker
+                value={sequences.find(s => s.id === cfg.sequence_id)?.name || null}
+                options={sequences.map(s => ({ label: s.name }))}
+                placeholder="Selecionar sequência..."
+                emptyLabel="Selecionar sequência..."
+                onChange={(val) => {
+                  const sId = sequences.find(s => s.name === val)?.id;
+                  onUpdate(step.id, { ...cfg, sequence_id: sId ? Number(sId) : undefined });
+                }}
+              />
             )}
             {cfg.sequence_id && (
               <p className="text-[10px] text-violet-600 dark:text-violet-400 font-medium">

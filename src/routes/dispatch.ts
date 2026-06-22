@@ -43,15 +43,44 @@ function renderMessage(template: string, item: Record<string, any>): string {
     .replace(/{{telefone}}/gi, item.customer_phone || '');
 }
 
-/** Salva o envio como comentário COBRANÇA no histórico do cliente (crm_comments) */
-async function saveDispatchComment(pool: Pool, item: Record<string, any>, mensagem: string): Promise<void> {
+/** Salva o envio como comentário COBRANÇA no histórico financeiro do cliente (crm_comments) */
+async function saveDispatchComment(
+  pool: Pool,
+  item: Record<string, any>,
+  mensagem: string,
+  canal?: string,
+  contato?: string
+): Promise<void> {
   try {
-    if (!item.grapehub_client_id) return;
+    // Busca o grapehub_client_id via asaas_id do cliente
+    let clientId: string | null = item.grapehub_client_id ?? null;
+
+    if (!clientId && item.customer_asaas_id) {
+      const lookup = await pool.query(
+        `SELECT fp.grapehub_client_id FROM fin_people fp WHERE fp.asaas_id = $1 LIMIT 1`,
+        [item.customer_asaas_id]
+      );
+      clientId = lookup.rows[0]?.grapehub_client_id ?? null;
+    }
+
+    if (!clientId) {
+      console.warn(`[dispatch] saveDispatchComment: não encontrou client_id para asaas_id=${item.customer_asaas_id}`);
+      return;
+    }
+
+    const now = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+    const metodo = (canal || item.channel || 'WHATSAPP').toUpperCase();
+    const isEmail = metodo === 'EMAIL';
+    const canalLabel = isEmail ? '📧 E-mail' : '📱 WhatsApp';
+    const contatoInfo = contato || (isEmail ? (item.customer_email || '') : (item.customer_phone || ''));
+    const contatoLabel = contatoInfo ? ` · ${contatoInfo}` : '';
+
     await pool.query(
       `INSERT INTO crm_comments (client_id, user_id, type, content, images)
        VALUES ($1, 'sistema', 'COBRANÇA', $2, '{}')`,
-      [item.grapehub_client_id, `Mensagem de cobrança enviada:\n${mensagem}`]
+      [clientId, `🤖 Disparo automático de cobrança — ${item.rule_triggered || 'D' + (item.day_offset >= 0 ? '+' : '') + item.day_offset}\n\n${canalLabel}${contatoLabel}\n\n${mensagem}\n\nEnviado em ${now}`]
     );
+    console.log(`[dispatch] ✅ Comentário de cobrança salvo para client_id=${clientId}`);
   } catch (e) {
     console.warn('[dispatch] Falha ao salvar comentário no histórico:', e);
   }
@@ -150,6 +179,18 @@ async function runDailyBatchIfNeeded(pool: Pool) {
           OR dq.customer_phone != COALESCE(NULLIF(c.billing_phone,''), NULLIF(c.phone,''), NULLIF(fp.phone,''), dq.customer_phone)
         )
     `);
+    // 1b) Sincroniza message_template: se a régua foi editada, atualiza todos os itens AGENDADOS
+    await pool.query(`
+      UPDATE fin_dispatch_queue dq
+      SET message_template = fcr.message_template,
+          message_rendered  = fcr.message_template,
+          updated_at = NOW()
+      FROM fin_collection_rules fcr
+      WHERE dq.status = 'AGENDADO'
+        AND dq.day_offset = fcr.day_offset
+        AND fcr.is_active = true
+        AND dq.message_template IS DISTINCT FROM fcr.message_template
+    `);
     // 2) Cancela itens de clientes no CRM Financeiro
     await pool.query(`
       UPDATE fin_dispatch_queue dq
@@ -229,10 +270,10 @@ async function runDailyBatchIfNeeded(pool: Pool) {
         -- Cartão de crédito só entra a partir do Contato Humano
         AND NOT (fr.billing_type = 'CREDIT_CARD' AND fcr.day_offset < 10)
         AND NOT (c.crm_status IS NOT NULL AND c.crm_status != '')
-        -- Evita duplicar: 1 disparo por CLIENTE por regra (não por fatura)
+        -- Evita duplicar: 1 disparo por FATURA por regra (não apenas por cliente)
         AND NOT EXISTS (
           SELECT 1 FROM fin_dispatch_queue dq
-          WHERE dq.customer_asaas_id = fr.customer_id
+          WHERE dq.receivable_asaas_id = fr.asaas_id
             AND dq.day_offset = fcr.day_offset
             AND dq.status NOT IN ('CANCELADO','ERRO')
         )
@@ -329,7 +370,7 @@ async function runDailyBatchIfNeeded(pool: Pool) {
            WHERE id = $1`,
           [item.id, resp?.ticket_id || null, resp?.contato_id || null, resp?.contato_novo ?? null, resp?.ticket_novo ?? null]
         );
-        await saveDispatchComment(pool, item, mensagem);
+        await saveDispatchComment(pool, item, mensagem, resolvedCanal || item.channel, (resolvedCanal || item.channel || '').toUpperCase() === 'EMAIL' ? (resolvedEmail || '') : (resolvedPhone || item.customer_phone));
         console.log(`[dispatch-scheduler] ✅ Enviado: ${item.customer_name} (${item.id})`);
       } catch (err: any) {
         await pool.query(
@@ -490,7 +531,7 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
         const resp = await sendViaN8n(cfg.n8n_webhook_url, payload);
         await pool.query(`UPDATE fin_dispatch_queue SET status = 'ENVIADO', sent_at = NOW(), updated_at = NOW(), n8n_ticket_id = $2, n8n_contato_id = $3, n8n_contato_novo = $4, n8n_ticket_novo = $5 WHERE id = $1`,
           [id, resp?.ticket_id || null, resp?.contato_id || null, resp?.contato_novo ?? null, resp?.ticket_novo ?? null]);
-        await saveDispatchComment(pool, item, mensagem);
+        await saveDispatchComment(pool, item, mensagem, resolvedCanal || item.channel, (resolvedCanal || item.channel || '').toUpperCase() === 'EMAIL' ? (resolvedEmail || '') : (resolvedPhone || item.customer_phone));
       } catch (err: any) {
         await pool.query(`UPDATE fin_dispatch_queue SET status = 'ERRO', error_message = $2, updated_at = NOW() WHERE id = $1`, [id, err?.message]);
       }
@@ -518,7 +559,7 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
          WHERE id = $1`,
         [id, mensagem]
       );
-      await saveDispatchComment(pool, item, mensagem);
+      await saveDispatchComment(pool, item, mensagem, item.channel, (item.channel || '').toUpperCase() === 'EMAIL' ? '' : item.customer_phone);
 
       res.json({ ok: true, status: 'ENVIADO' });
     } catch (e) {
@@ -632,7 +673,7 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
           const resp = await sendViaN8n(cfg.n8n_webhook_url, payload);
           await pool.query(`UPDATE fin_dispatch_queue SET status = 'ENVIADO', sent_at = NOW(), updated_at = NOW(), n8n_ticket_id = $2, n8n_contato_id = $3, n8n_contato_novo = $4, n8n_ticket_novo = $5 WHERE id = $1`,
             [item.id, resp?.ticket_id || null, resp?.contato_id || null, resp?.contato_novo ?? null, resp?.ticket_novo ?? null]);
-          await saveDispatchComment(pool, item, mensagem);
+          await saveDispatchComment(pool, item, mensagem, resolvedCanal, resolvedCanal?.toUpperCase() === 'EMAIL' ? resolvedEmail : resolvedPhone);
         } catch (err: any) {
           await pool.query(`UPDATE fin_dispatch_queue SET status = 'ERRO', error_message = $2, updated_at = NOW() WHERE id = $1`, [item.id, err?.message]);
         }
@@ -800,6 +841,19 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
             OR dq.customer_phone != COALESCE(NULLIF(c.billing_phone,''), NULLIF(c.phone,''), NULLIF(fp.phone,''), dq.customer_phone)
           )
       `);
+      // 1b) Sincroniza message_template: se a régua foi editada, atualiza todos os itens AGENDADOS
+      const fixTemplate = await pool.query(`
+        UPDATE fin_dispatch_queue dq
+        SET message_template = fcr.message_template,
+            message_rendered  = fcr.message_template,
+            updated_at = NOW()
+        FROM fin_collection_rules fcr
+        WHERE dq.status = 'AGENDADO'
+          AND dq.day_offset = fcr.day_offset
+          AND fcr.is_active = true
+          AND dq.message_template IS DISTINCT FROM fcr.message_template
+      `);
+      console.log(`[populate] Templates sincronizados: ${fixTemplate.rowCount}`);
       console.log(`[dispatch populate] Canal/telefone corrigido: ${fixChannel.rowCount} item(s)`);
 
       // 1b) Sync rápido: verifica status atual no Asaas para faturas AGENDADAS
@@ -931,10 +985,10 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
           AND NOT (
             fr.billing_type = 'CREDIT_CARD' AND fcr.day_offset < 10
           )
-          -- Evita duplicar: 1 disparo por CLIENTE por regra (não por fatura)
+          -- Evita duplicar: 1 disparo por FATURA por regra (não apenas por cliente)
           AND NOT EXISTS (
             SELECT 1 FROM fin_dispatch_queue dq
-            WHERE dq.customer_asaas_id = fr.customer_id
+            WHERE dq.receivable_asaas_id = fr.asaas_id
               AND dq.day_offset = fcr.day_offset
               AND dq.status NOT IN ('CANCELADO','ERRO')
           )

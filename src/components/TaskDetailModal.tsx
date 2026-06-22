@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { DatePicker } from './ui/DatePicker';
+import OptionPicker from './ui/OptionPicker';
 import { useAuth } from '../contexts/AuthContext';
 
 // ─── Types ─────────────────────────────────────────────────────────
@@ -289,28 +290,33 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
             <h2 className="text-lg font-bold modal-title truncate flex-1 leading-none self-center">{task.title}</h2>
             
             <div className="flex items-center gap-2 flex-shrink-0 flex-nowrap overflow-x-auto scrollbar-hide self-center">
-              <select
-                value={task.status}
-                onChange={(e) => onTaskUpdate(task.id, 'status', e.target.value)}
-                className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider cursor-pointer outline-none opacity-80 hover:opacity-100 transition-opacity appearance-none text-center ${status.color}`}
-                title="Alterar status"
-              >
-                <option value="pending" className="text-slate-800 dark:text-white bg-white dark:bg-[#1A1A24]">Pendente</option>
-                <option value="completed" className="text-slate-800 dark:text-white bg-white dark:bg-[#1A1A24]">Concluída</option>
-                <option value="gargalo" className="text-slate-800 dark:text-white bg-white dark:bg-[#1A1A24]">Gargalo</option>
-              </select>
+              <OptionPicker
+                value={({ pending: 'Pendente', completed: 'Concluída', gargalo: 'Gargalo' } as Record<string, string>)[task.status] || 'Pendente'}
+                onChange={(val) => {
+                  const map: Record<string, string> = { 'Pendente': 'pending', 'Concluída': 'completed', 'Gargalo': 'gargalo' };
+                  onTaskUpdate(task.id, 'status', map[val || 'Pendente'] || 'pending');
+                }}
+                options={[
+                  { label: 'Pendente', color: '#94a3b8' },
+                  { label: 'Concluída', color: '#22c55e' },
+                  { label: 'Gargalo', color: '#ef4444' },
+                ]}
+                placeholder="Status"
+                compact
+              />
 
-              <select
+              <OptionPicker
                 value={task.priority || 'Média'}
-                onChange={(e) => onTaskUpdate(task.id, 'priority', e.target.value)}
-                className={`px-2 py-1 rounded-md border text-[10px] font-bold uppercase tracking-wider cursor-pointer outline-none opacity-80 hover:opacity-100 transition-opacity appearance-none text-center ${priorityStyle}`}
-                title="Alterar prioridade"
-              >
-                <option value="Baixa" className="text-slate-800 dark:text-white bg-white dark:bg-[#1A1A24]">Baixa</option>
-                <option value="Média" className="text-slate-800 dark:text-white bg-white dark:bg-[#1A1A24]">Média</option>
-                <option value="Alta" className="text-slate-800 dark:text-white bg-white dark:bg-[#1A1A24]">Alta</option>
-                <option value="Urgente" className="text-slate-800 dark:text-white bg-white dark:bg-[#1A1A24]">Urgente</option>
-              </select>
+                onChange={(val) => onTaskUpdate(task.id, 'priority', val || 'Média')}
+                options={[
+                  { label: 'Baixa', color: '#94a3b8' },
+                  { label: 'Média', color: '#3b82f6' },
+                  { label: 'Alta', color: '#f97316' },
+                  { label: 'Urgente', color: '#ef4444' },
+                ]}
+                placeholder="Prioridade"
+                compact
+              />
 
               <div className="flex items-center opacity-80 hover:opacity-100 transition-opacity ml-1">
                 <DatePicker value={task.dueDate || null} onChange={(val) => onTaskUpdate(task.id, 'dueDate', val)} />

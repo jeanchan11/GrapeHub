@@ -3,6 +3,7 @@ import { Plus, Edit2, Trash2, Save, X, ListTodo, ChevronDown, ChevronRight } fro
 import { useAuth } from '../contexts/AuthContext';
 import { Modal } from '../components/ui/Modal';
 import { designSystem } from '../design-system';
+import OptionPicker from '../components/ui/OptionPicker';
 import SplitHeadline from '../components/SplitHeadline';
 
 interface TemplateItem {
@@ -310,16 +311,20 @@ const TaskTemplates = () => {
                           <div className="flex gap-3">
                             <div className="flex-1">
                               <span className="text-[10px] text-slate-500 uppercase tracking-widest mb-1 block">Responsável Padrão</span>
-                              <select
-                                value={task.assignee || 'all'}
-                                onChange={(e) => handleUpdateItem(task.id, 'assignee', e.target.value)}
-                                className={designSystem.input.field}
-                              >
-                                <option value="all" className="bg-light-sidebar dark:bg-dark-sidebar">Qualquer um</option>
-                                <option value="gestor" className="bg-light-sidebar dark:bg-dark-sidebar">Gestor de Tráfego</option>
-                                <option value="closer" className="bg-light-sidebar dark:bg-dark-sidebar">Closer</option>
-                                <option value="sdr" className="bg-light-sidebar dark:bg-dark-sidebar">SDR</option>
-                              </select>
+                              <OptionPicker
+                                value={({ all: 'Qualquer um', gestor: 'Gestor de Tráfego', closer: 'Closer', sdr: 'SDR' } as Record<string, string>)[task.assignee || 'all'] || null}
+                                options={[
+                                  { label: 'Qualquer um' },
+                                  { label: 'Gestor de Tráfego' },
+                                  { label: 'Closer' },
+                                  { label: 'SDR' },
+                                ]}
+                                placeholder="Qualquer um"
+                                onChange={(val) => {
+                                  const map: Record<string, string> = { 'Qualquer um': 'all', 'Gestor de Tráfego': 'gestor', 'Closer': 'closer', 'SDR': 'sdr' };
+                                  handleUpdateItem(task.id, 'assignee', map[val || ''] || 'all');
+                                }}
+                              />
                             </div>
                             <div className="flex-1">
                               <span className="text-[10px] text-slate-500 uppercase tracking-widest mb-1 block">Prazo (Dias após criação)</span>

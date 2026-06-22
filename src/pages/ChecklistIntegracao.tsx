@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import SplitHeadline from '../components/SplitHeadline';
+import OptionPicker from '../components/ui/OptionPicker';
 import { createPortal } from 'react-dom';
 import { Plus, ChevronDown, ChevronRight, Calendar, Users, Tag, MoreHorizontal, Circle, CheckCircle2, Loader2, X, Trash2, GripVertical, Settings, FileText, Link as LinkIcon, Save, Heading1, Heading2, Heading3, Type, List, ListOrdered, CheckSquare, Check, Edit2, Palette, Layers, FileVideo, Globe, MessageCircle, PlaySquare, FileSignature, MonitorPlay, ShoppingBag } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
@@ -578,16 +579,17 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask, dragHandleProps 
 
         {/* Squad */}
         <div className="shrink-0 w-36">
-          <select value={squad} onChange={e => handleSquadChange(e.target.value)}
-            className={`w-[calc(100%+0.75rem)] -ml-3 border rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer focus:outline-none ${
-              squad === 'Squad Able' ? 'bg-blue-500/15 text-blue-400 border-blue-500/30 focus:border-blue-500/50' :
-              squad === 'Squad Baker' ? 'bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/30 focus:border-fuchsia-500/50' :
-              'bg-white/5 text-slate-400 border-white/10 focus:border-white/20'
-            }`}
-          >
-            <option value="" className="bg-dark-bg text-slate-400">— SQUAD —</option>
-            {SQUAD_OPTIONS.map(s => <option key={s} value={s} className="bg-dark-bg text-dark-text">{s}</option>)}
-          </select>
+          <OptionPicker
+            value={squad || null}
+            onChange={(val) => handleSquadChange(val || '')}
+            options={SQUAD_OPTIONS.map(s => ({
+              label: s,
+              color: s === 'Squad Able' ? '#3b82f6' : s === 'Squad Baker' ? '#d946ef' : undefined,
+            }))}
+            emptyLabel="— SQUAD —"
+            placeholder="— SQUAD —"
+            compact
+          />
         </div>
 
         {/* Responsável */}
@@ -928,11 +930,17 @@ const AddTaskModal = ({ groupId, onClose, onSaved }: { groupId: string; onClose:
             placeholder="Nome do colaborador *"
             className="w-full bg-dark-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500/50"
           />
-          <select value={squad} onChange={e => setSquad(e.target.value)}
-            className="w-full bg-dark-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-dark-text focus:outline-none focus:border-violet-500/50">
-            <option value="">— Squad —</option>
-            {SQUAD_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
+          <OptionPicker
+            value={squad || null}
+            onChange={(val) => setSquad(val || '')}
+            options={SQUAD_OPTIONS.map(s => ({
+              label: s,
+              color: s === 'Squad Able' ? '#3b82f6' : s === 'Squad Baker' ? '#d946ef' : undefined,
+            }))}
+            emptyLabel="— Squad —"
+            placeholder="— Squad —"
+            className="w-full"
+          />
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1 block">Data Inicial</label>

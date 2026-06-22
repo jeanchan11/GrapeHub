@@ -5,6 +5,7 @@ import { UserData, UserRole } from '../../types';
 import { Modal } from './ui/Modal';
 import { designSystem } from '../design-system';
 import LoadingSpinner from './LoadingSpinner';
+import OptionPicker from './ui/OptionPicker';
 
 interface Props {
   isOpen: boolean;
@@ -109,43 +110,28 @@ export const UserPermissionsModal: React.FC<Props> = ({
 
               <div>
                 <label className={designSystem.input.label}>Nível de Acesso</label>
-                <div className="relative">
-                  <select 
-                    value={currentData.role}
-                    onChange={(e) => changeRole(user.id, e.target.value as UserRole)}
-                    className={`${designSystem.input.field} appearance-none`}
-                  >
-                    {roles.map(role => (
-                      <option key={role.id} value={role.id} className="bg-white dark:bg-neutral-900 darker:bg-black">{role.label}</option>
-                    ))}
-                  </select>
-                  <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M2 4L6 8L10 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                  </div>
-                </div>
+                <OptionPicker
+                  value={roles.find(r => r.id === currentData.role)?.label || null}
+                  onChange={(val) => {
+                    const role = roles.find(r => r.label === val);
+                    if (role) changeRole(user.id, role.id);
+                  }}
+                  options={roles.map(role => ({ label: role.label }))}
+                  placeholder="Selecione"
+                  className="w-full"
+                />
               </div>
 
               <div>
                 <label className={designSystem.input.label}>Squad</label>
-                <div className="relative">
-                  <select 
-                    value={currentData.squad || ''}
-                    onChange={(e) => changeSquad(user.id, e.target.value)}
-                    className={`${designSystem.input.field} appearance-none`}
-                  >
-                    <option value="" className="bg-white dark:bg-neutral-900 darker:bg-black">Selecione um squad</option>
-                    {Array.isArray(menu) && menu.length > 0 && menu[0].subSessions && menu[0].subSessions.map(ss => (
-                      <option key={ss.id} value={ss.label} className="bg-white dark:bg-neutral-900 darker:bg-black">{ss.label}</option>
-                    ))}
-                  </select>
-                  <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M2 4L6 8L10 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                  </div>
-                </div>
+                <OptionPicker
+                  value={currentData.squad || null}
+                  onChange={(val) => changeSquad(user.id, val || '')}
+                  options={(Array.isArray(menu) && menu.length > 0 && menu[0].subSessions ? menu[0].subSessions.map((ss: any) => ({ label: ss.label })) : [])}
+                  emptyLabel="Selecione um squad"
+                  placeholder="Selecione um squad"
+                  className="w-full"
+                />
               </div>
 
               <div className="grid grid-cols-1 gap-4">

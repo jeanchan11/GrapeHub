@@ -330,11 +330,28 @@ export default function FinanceiroDashboard() {
 
   const saldoCaixa = resumo?.saldo_caixa ?? 0;
   
+  const hoje = new Date();
+  const hojeAno = hoje.getFullYear();
+  const hojeMes = hoje.getMonth() + 1;
+  const hojeDia = hoje.getDate();
+  
   let ultimoIndiceRealizado = -1;
-  for (let i = todosOsDias.length - 1; i >= 0; i--) {
-    if (todosOsDias[i].tem_realizado) {
-      ultimoIndiceRealizado = i;
-      break;
+  
+  if (anoSel < hojeAno || (anoSel === hojeAno && mesSel < hojeMes)) {
+    // Mês passado: tudo é realizado
+    ultimoIndiceRealizado = diasNoMes - 1;
+  } else if (anoSel > hojeAno || (anoSel === hojeAno && mesSel > hojeMes)) {
+    // Mês futuro: tudo é previsto
+    ultimoIndiceRealizado = -1;
+  } else {
+    // Mês atual: realizado vai até o dia de hoje
+    ultimoIndiceRealizado = hojeDia - 1;
+    // (Opcional: garantir que se houver um "realizado" lançado no futuro por engano, não corte o gráfico)
+    for (let i = todosOsDias.length - 1; i > ultimoIndiceRealizado; i--) {
+      if (todosOsDias[i].tem_realizado) {
+        ultimoIndiceRealizado = i;
+        break;
+      }
     }
   }
 

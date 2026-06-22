@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { auth } from '../firebase';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { createPortal } from 'react-dom';
+import OptionPicker from '../components/ui/OptionPicker';
 
 // ── DateRangePicker (same as CrmMetricas) ─────────────────
 const MESES_FULL = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
@@ -750,21 +751,13 @@ export default function CrmLeads() {
           </div>
 
           {/* Kanban filter */}
-          <div className="relative">
-            <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-            <select
-              value={kanbanFilter}
-              onChange={(e) => setKanbanFilter(e.target.value)}
-              className="pl-8 pr-4 py-2 text-sm bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-lg outline-none focus:border-violet-500/50 transition-colors shadow-sm appearance-none cursor-pointer"
-            >
-              <option value="">Todos Kanbans</option>
-              {kanbans.map((k) => (
-                <option key={k.id} value={k.nome}>
-                  {k.nome}
-                </option>
-              ))}
-            </select>
-          </div>
+          <OptionPicker
+            value={kanbanFilter || null}
+            options={kanbans.map((k) => ({ label: k.nome }))}
+            placeholder="Todos Kanbans"
+            emptyLabel="Todos Kanbans"
+            onChange={(val) => setKanbanFilter(val || '')}
+          />
 
           {/* Status filter */}
           <div className="flex items-center rounded-lg border border-slate-200 dark:border-white/10 overflow-hidden text-sm">

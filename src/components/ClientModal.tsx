@@ -13,6 +13,7 @@ import { Modal } from './ui/Modal';
 import { designSystem } from '../design-system';
 import CrmCommentHistory from './CrmCommentHistory';
 import { normalizePhoneBR, formatPhoneBR } from '../utils/phoneNormalize';
+import OptionPicker from './ui/OptionPicker';
 
 interface Client {
   id: string;
@@ -383,11 +384,41 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
     if (!editingClient) return;
     setFormData({ ...formData, finSubscriptionId: subId || '' });
     try {
+      // Save subscription link
       await fetch(`/api/clients/${editingClient.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fin_subscription_id: subId })
       });
+
+      // Auto-link cadastro (fin_people) using the subscription's customer_id
+      if (subId) {
+        const sub = allSubscriptions.find(s => String(s.id) === String(subId));
+        if (sub?.customer_id) {
+          const matchedPerson = finPeople.find(p => p.asaas_id === sub.customer_id);
+          if (matchedPerson && String(matchedPerson.id) !== selectedFinPersonId) {
+            // Auto-link the fin_people behind the scenes
+            const guidToSave = matchedPerson.guid || null;
+            setLocalFinPeopleGuid(guidToSave);
+            await fetch(`/api/clients/${editingClient.id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ fin_people_guid: guidToSave })
+            });
+            setSelectedFinPersonId(String(matchedPerson.id));
+          }
+        }
+      } else {
+        // Desvincular cadastro junto
+        setLocalFinPeopleGuid(null);
+        await fetch(`/api/clients/${editingClient.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fin_people_guid: null })
+        });
+        setSelectedFinPersonId(null);
+      }
+
       onSaveSuccess();
     } catch (err) {
       console.error("Failed to save subscription link:", err);
@@ -556,25 +587,25 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <label className={designSystem.input.label}>Squad</label>
-                  <select 
+                  <OptionPicker
                     value={formData.squad}
-                    onChange={(e) => setFormData({ ...formData, squad: e.target.value })}
-                    className={designSystem.input.field}
-                  >
-                    {squads.map(s => <option key={s} value={s} className="bg-light-sidebar dark:bg-dark-sidebar">{s}</option>)}
-                  </select>
+                    options={squads.map(s => ({ label: s }))}
+                    placeholder="Squad"
+                    onChange={(val) => setFormData({ ...formData, squad: val || 'Able' })}
+                  />
                 </div>
                 <div className="space-y-2">
                   <label className={designSystem.input.label}>Produto</label>
-                  <select 
-                    value={formData.product}
-                    onChange={(e) => setFormData({ ...formData, product: e.target.value })}
-                    className={designSystem.input.field}
-                  >
-                    <option value="" className="bg-light-sidebar dark:bg-dark-sidebar">Selecionar...</option>
-                    <option value="TCV" className="bg-light-sidebar dark:bg-dark-sidebar">TCV</option>
-                    <option value="Recorrência Mensal" className="bg-light-sidebar dark:bg-dark-sidebar">Recorrência Mensal</option>
-                  </select>
+                  <OptionPicker
+                    value={formData.product || null}
+                    options={[
+                      { label: 'TCV' },
+                      { label: 'Recorrência Mensal' },
+                    ]}
+                    placeholder="Selecionar..."
+                    emptyLabel="Selecionar..."
+                    onChange={(val) => setFormData({ ...formData, product: val || '' })}
+                  />
                 </div>
                 <div className="space-y-2">
                   <label className={designSystem.input.label}>Tags (separadas por vírgula)</label>
@@ -628,15 +659,16 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
                   </div>
                   <div className="space-y-2">
                     <label className={designSystem.input.label}>Meio de Cobrança</label>
-                    <select 
-                      value={formData.billingMethod}
-                      onChange={(e) => setFormData({ ...formData, billingMethod: e.target.value })}
-                      className={designSystem.input.field}
-                    >
-                      <option value="" className="bg-light-sidebar dark:bg-dark-sidebar">Selecionar...</option>
-                      <option value="Whatsapp" className="bg-light-sidebar dark:bg-dark-sidebar">Whatsapp</option>
-                      <option value="E-mail" className="bg-light-sidebar dark:bg-dark-sidebar">E-mail</option>
-                    </select>
+                    <OptionPicker
+                      value={formData.billingMethod || null}
+                      options={[
+                        { label: 'Whatsapp' },
+                        { label: 'E-mail' },
+                      ]}
+                      placeholder="Selecionar..."
+                      emptyLabel="Selecionar..."
+                      onChange={(val) => setFormData({ ...formData, billingMethod: val || '' })}
+                    />
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -791,138 +823,7 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
             )
           )}
           {activeTab === 'finance' && (
-            <div className="space-y-4">
-              {/* Sub-tabs */}
-              <div className="flex gap-1 p-1 bg-slate-100 dark:bg-white/5 rounded-xl">
-                <button
-                  onClick={() => setFinSubTab('cadastro')}
-                  className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
-                    finSubTab === 'cadastro'
-                      ? 'bg-white dark:bg-white/10 text-violet-600 dark:text-violet-400 shadow-sm'
-                      : 'text-slate-500 hover:text-gray-900 dark:hover:text-white'
-                  }`}
-                >
-                  Cadastro
-                </button>
-                <button
-                  onClick={() => setFinSubTab('assinatura')}
-                  className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
-                    finSubTab === 'assinatura'
-                      ? 'bg-white dark:bg-white/10 text-violet-600 dark:text-violet-400 shadow-sm'
-                      : 'text-slate-500 hover:text-gray-900 dark:hover:text-white'
-                  }`}
-                >
-                  Assinatura
-                </button>
-              </div>
-
-              {/* ── CADASTRO sub-tab ── */}
-              {finSubTab === 'cadastro' && (
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2">
-                    <LinkIcon size={16} className="text-violet-500" />
-                    <h3 className="text-sm font-bold text-light-text dark:text-white uppercase tracking-widest">Cadastro Financeiro</h3>
-                  </div>
-                  <p className="text-[11px] text-slate-500">Vincule o cadastro do cliente no sistema financeiro (Asaas).</p>
-
-                  {/* Current linked person */}
-                  {selectedFinPersonId ? (() => {
-                    const person = finPeople.find(p => String(p.id) === String(selectedFinPersonId));
-                    return (
-                      <div className="flex items-center gap-3 p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-2xl">
-                        <CheckCircle2 size={20} className="text-emerald-500 shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-bold text-light-text dark:text-white truncate">{person?.name || 'Cadastro vinculado'}</p>
-                          <p className="text-[10px] text-slate-500">{person?.cnpjcpf || person?.asaas_id || ''}</p>
-                        </div>
-                        <button
-                          onClick={() => saveFinPerson(null)}
-                          className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-lg text-xs font-bold flex items-center gap-1.5 border border-rose-500/20 transition-all"
-                        >
-                          <Unlink size={13} /> Desvincular
-                        </button>
-                      </div>
-                    );
-                  })() : (
-                    <div className="p-4 bg-amber-500/5 border border-amber-500/20 rounded-2xl flex items-center gap-3">
-                      <AlertCircle size={18} className="text-amber-500 shrink-0" />
-                      <p className="text-xs text-amber-600 dark:text-amber-400">Nenhum cadastro financeiro vinculado.</p>
-                    </div>
-                  )}
-
-                  {/* Search & link */}
-                  <div className="relative">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Buscar e vincular cadastro</label>
-                    <div className="relative" ref={finSearchRef}>
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                      <input
-                        type="text"
-                        value={finPeopleSearch}
-                        onChange={e => { setFinPeopleSearch(e.target.value); setIsFinPeopleDropOpen(true); }}
-                        onFocus={() => setIsFinPeopleDropOpen(true)}
-                        placeholder="Buscar por nome ou CNPJ/CPF..."
-                        className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl pl-10 pr-4 py-3 text-sm text-light-text dark:text-white placeholder:text-slate-400 outline-none focus:border-violet-500/50 transition-all"
-                      />
-                    </div>
-                    {isFinPeopleDropOpen && finPeopleSearch.length > 0 && (() => {
-                      const rect = finSearchRef.current?.getBoundingClientRect();
-                      return (
-                        <>
-                          <div className="fixed inset-0 z-[200]" onClick={() => setIsFinPeopleDropOpen(false)} />
-                          <div
-                            className="fixed z-[201] bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl max-h-[260px] overflow-y-auto"
-                            style={rect ? { top: rect.bottom + 4, left: rect.left, width: rect.width } : {}}
-                          >
-                            {finPeople
-                              .filter(p =>
-                                (p.name || '').toLowerCase().includes(finPeopleSearch.toLowerCase()) ||
-                                (p.cnpjcpf || '').includes(finPeopleSearch)
-                              )
-                              .slice(0, 20)
-                              .map(person => (
-                                <button
-                                  key={person.id}
-                                  type="button"
-                                  onClick={() => { saveFinPerson(person.id); setIsFinPeopleDropOpen(false); }}
-                                  disabled={isSavingFinPerson}
-                                  className={`w-full text-left px-4 py-3 hover:bg-violet-500/5 transition-colors flex items-center justify-between gap-2 ${
-                                    selectedFinPersonId === person.id ? 'bg-violet-500/10' : ''
-                                  }`}
-                                >
-                                  <div>
-                                    <p className="text-sm font-bold text-light-text dark:text-white">{person.name}</p>
-                                    <p className="text-[10px] text-slate-500">{person.cnpjcpf || person.asaas_id || '-'}</p>
-                                  </div>
-                                  {selectedFinPersonId === person.id && <Check size={14} className="text-violet-500 shrink-0" />}
-                                  {person.grapehub_client_id && person.grapehub_client_id !== editingClient?.id && (
-                                    <span
-                                      title={person.linked_client_name || 'Outro cliente'}
-                                      className="text-[9px] bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded font-bold max-w-[120px] truncate cursor-help"
-                                    >
-                                      📎 {person.linked_client_name
-                                        ? person.linked_client_name.split(' ').slice(0, 3).join(' ')
-                                        : 'Compartilhado'}
-                                    </span>
-                                  )}
-                                </button>
-                              ))}
-                            {finPeople.filter(p =>
-                              (p.name || '').toLowerCase().includes(finPeopleSearch.toLowerCase()) ||
-                              (p.cnpjcpf || '').includes(finPeopleSearch)
-                            ).length === 0 && (
-                              <p className="text-sm text-slate-500 text-center py-4">Nenhum cadastro encontrado</p>
-                            )}
-                          </div>
-                        </>
-                      );
-                    })()}
-                  </div>
-                </div>
-              )}
-
-              {/* ── ASSINATURA sub-tab ── */}
-              {finSubTab === 'assinatura' && (
-                    <div className="space-y-6">
+            <div className="space-y-6">
 
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block ml-1">Vincular a uma assinatura do Asaas</label>
                         <div className="flex gap-2">
@@ -1073,8 +974,6 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
                         </div>
                       </>
                     )}
-                  </div>
-              )}
             </div>
           )}
           {activeTab === 'churn' && (

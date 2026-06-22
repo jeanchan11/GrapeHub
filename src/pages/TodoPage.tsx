@@ -12,6 +12,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useMenu } from '../context/MenuContext';
 import { Modal } from '../components/ui/Modal';
 import { designSystem } from '../design-system';
+import OptionPicker from '../components/ui/OptionPicker';
 import TaskDetailModal from '../components/TaskDetailModal';
 
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent, DragOverEvent, DragOverlay, useDroppable, defaultDropAnimationSideEffects, DragStartEvent } from '@dnd-kit/core';
@@ -1729,16 +1730,17 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
           <div>
             <label className={designSystem.input.label}>Modelo de Tarefas</label>
             <div className="flex gap-2">
-              <select 
-                value={batchTemplateId}
-                onChange={(e) => setBatchTemplateId(e.target.value)}
-                className={`flex-1 ${designSystem.input.field}`}
-              >
-                <option value="">Selecione um modelo...</option>
-                {templates.map(t => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
-                ))}
-              </select>
+              <OptionPicker
+                value={templates.find((t: any) => t.id === batchTemplateId)?.name || null}
+                options={templates.map((t: any) => ({ label: t.name }))}
+                placeholder="Selecione um modelo..."
+                emptyLabel="Selecione um modelo..."
+                onChange={(val) => {
+                  const found = templates.find((t: any) => t.name === val);
+                  setBatchTemplateId(found ? found.id : '');
+                }}
+                className="flex-1"
+              />
               <button
                 type="button"
                 onClick={() => {

@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import SplitHeadline from '../components/SplitHeadline';
+import OptionPicker from '../components/ui/OptionPicker';
 import { createPortal } from 'react-dom';
-import { Plus, ChevronDown, ChevronRight, Calendar, Users, Tag, MoreHorizontal, Circle, CheckCircle2, Loader2, X, Trash2, GripVertical, Settings, FileText, Link as LinkIcon, Save, Heading1, Heading2, Heading3, Type, List, ListOrdered, CheckSquare, Check, Edit2, Palette, Layers } from 'lucide-react';
+import { Plus, ChevronDown, ChevronRight, Calendar, Users, Tag, MoreHorizontal, Circle, CheckCircle2, Loader2, X, Trash2, GripVertical, Settings, FileText, Link as LinkIcon, Save, Heading1, Heading2, Heading3, Type, List, ListOrdered, CheckSquare, Check, Edit2, Palette, Layers, MessageCircle } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -52,6 +53,7 @@ interface OnboardingTask {
   cidade: string | null;
   uf: string | null;
   meeting_info: string | null;
+  co_responsibles?: { id: string; name: string; avatar: string | null }[];
 }
 
 interface Comment {
@@ -164,7 +166,7 @@ const uid = () => Math.random().toString(36).substr(2, 9);
 export const StatusGroupsContext = React.createContext<Omit<StatusGroup, 'tasks'>[]>([]);
 
 // ── Column order system ────────────────────────────────────
-type ColId = 'tags' | 'squad' | 'resp' | 'start_date' | 'due_date';
+type ColId = 'tags' | 'squad' | 'resp' | 'due_date';
 
 interface ColDef {
   id: ColId;
@@ -172,13 +174,12 @@ interface ColDef {
   width: string; // tailwind class e.g. 'w-40'
 }
 
-const DEFAULT_COL_ORDER: ColId[] = ['tags', 'squad', 'resp', 'start_date', 'due_date'];
+const DEFAULT_COL_ORDER: ColId[] = ['tags', 'squad', 'resp', 'due_date'];
 
 const COL_DEFS: Record<ColId, ColDef> = {
   tags:       { id: 'tags',       label: 'Tags',        width: 'w-40' },
   squad:      { id: 'squad',      label: 'Squad',       width: 'w-36' },
   resp:       { id: 'resp',       label: 'Resp.',       width: 'w-20' },
-  start_date: { id: 'start_date', label: 'Data Inicial', width: 'w-24' },
   due_date:   { id: 'due_date',   label: 'Vencimento',  width: 'w-28' },
 };
 
@@ -644,11 +645,22 @@ function SingleDatePicker({ value, onChange, placeholder = '—', align = 'right
   ];
   while (cells.length % 7 !== 0) cells.push(null);
 
-  const displayVal = safeValue
-    ? new Date(safeValue + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })
-    : placeholder;
+  // Smart date label logic
+  const smartLabel = (() => {
+    if (!safeValue) return placeholder;
+    const d = new Date(safeValue + 'T12:00:00');
+    const now = new Date();
+    now.setHours(12, 0, 0, 0);
+    const diff = Math.round((d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    const formatted = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' });
+    if (diff <= -2) return { text: formatted, color: 'rose', isOverdue: true };
+    if (diff === -1) return { text: 'Ontem', color: 'rose', isOverdue: true };
+    if (diff === 0) return { text: 'Hoje', color: 'amber', isOverdue: false };
+    if (diff === 1) return { text: 'Amanhã', color: 'blue', isOverdue: false };
+    return { text: formatted, color: 'slate', isOverdue: false };
+  })();
 
-  const isOverdue = checkOverdue && safeValue ? safeValue < todayIso : false;
+  const isOverdue = checkOverdue && typeof smartLabel === 'object' && smartLabel.isOverdue;
 
   const popup = open ? (
     <div
@@ -707,12 +719,25 @@ function SingleDatePicker({ value, onChange, placeholder = '—', align = 'right
             : 'text-slate-400 hover:text-violet-400 font-normal'
           }`}
       >
-        {isOverdue && safeValue ? (
-          <span className="inline-flex items-center gap-1">
-            <span className="inline-block w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
-            {displayVal}
+      {(() => {
+        if (!safeValue) return <span className="text-slate-600">{placeholder}</span>;
+        if (typeof smartLabel === 'string') return <span>{smartLabel}</span>;
+        const colorMap: Record<string, string> = {
+          rose:  'text-rose-400',
+          amber: 'text-amber-400',
+          blue:  'text-blue-400',
+          slate: 'text-slate-400',
+        };
+        const cls = colorMap[smartLabel.color] || 'text-slate-400';
+        return (
+          <span className={`inline-flex items-center gap-1.5 font-semibold ${cls}`}>
+            {smartLabel.isOverdue && (
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse shrink-0" />
+            )}
+            {smartLabel.text}
           </span>
-        ) : displayVal}
+        );
+      })()}
       </button>
       {typeof document !== 'undefined' && createPortal(popup, document.body)}
     </>
@@ -944,14 +969,10 @@ const TaskRow = ({ task, coloredTagDefs, onUpdate, onOpenDetail, onOpenSubtask, 
   }, [tagMenuOpen]);
 
   const handleToggleTag = async (tagName: string) => {
-    let newTags = [...task.tags];
-    if (newTags.includes(tagName)) {
-      newTags = newTags.filter(t => t !== tagName);
-    } else {
-      newTags.push(tagName);
-    }
-    
-    task.tags = newTags; // Optimistic update
+    const newTags = task.tags.includes(tagName)
+      ? task.tags.filter(t => t !== tagName)
+      : [...task.tags, tagName];
+
     try {
       await fetch(`/api/onboarding-tasks/${task.id}`, {
         method: 'PATCH',
@@ -1059,11 +1080,38 @@ const TaskRow = ({ task, coloredTagDefs, onUpdate, onOpenDetail, onOpenSubtask, 
 
   const handleTaskResponsible = async (userId: string, userName: string, userAvatar: string) => {
     setTaskRespPicker(false);
+
+    // Build current list of all responsibles (main + co)
+    const coResponsibles: { id: string; name: string; avatar: string | null }[] = task.co_responsibles || [];
+    const mainResp = task.responsible_id
+      ? { id: task.responsible_id, name: task.responsible_name || '', avatar: task.responsible_avatar || null }
+      : null;
+    const allSelected = [
+      ...(mainResp ? [mainResp] : []),
+      ...coResponsibles.filter(r => r.id !== (mainResp?.id || '')),
+    ];
+
+    const alreadySelected = allSelected.findIndex(r => r.id === userId);
+    let newAll: { id: string; name: string; avatar: string | null }[];
+    if (alreadySelected >= 0) {
+      newAll = allSelected.filter(r => r.id !== userId);
+    } else {
+      newAll = [...allSelected, { id: userId, name: userName, avatar: userAvatar }];
+    }
+
+    const newMain = newAll[0] || null;
+    const newCo = newAll.slice(1);
+
     try {
       await fetch(`/api/onboarding-tasks/${task.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ responsible_id: userId, responsible_name: userName, responsible_avatar: userAvatar }),
+        body: JSON.stringify({
+          responsible_id: newMain?.id || null,
+          responsible_name: newMain?.name || null,
+          responsible_avatar: newMain?.avatar || null,
+          co_responsibles: JSON.stringify(newCo),
+        }),
       });
       onUpdate();
     } catch { /* silent */ }
@@ -1149,105 +1197,175 @@ const TaskRow = ({ task, coloredTagDefs, onUpdate, onOpenDetail, onOpenSubtask, 
       case 'tags':
         return (
           <div key="tags" className={`shrink-0 ${def.width} flex items-center gap-1 flex-wrap relative`} ref={tagMenuRef}>
+            {/* Each tag badge: hover shows × to remove */}
             {task.tags.slice(0, 2).map(tg => {
               const td = coloredTagDefs.find(c => c.name === tg);
+              const color = td?.color || '#8b5cf6';
               return (
-                <span key={tg} className="px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap"
-                  style={{ backgroundColor: `${td?.color || '#7c3aed'}22`, color: td?.color || '#8b5cf6', border: `1px solid ${td?.color || '#7c3aed'}44` }}>
+                <button
+                  key={tg}
+                  onClick={e => { e.stopPropagation(); handleToggleTag(tg); }}
+                  title={`Remover "${tg}"`}
+                  className="group/tag flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap transition-all hover:pr-1"
+                  style={{ backgroundColor: `${color}22`, color, border: `1px solid ${color}44` }}
+                >
                   {tg}
-                </span>
+                  <X size={9} className="opacity-0 group-hover/tag:opacity-100 transition-opacity shrink-0 -mr-0.5" />
+                </button>
               );
             })}
             {task.tags.length > 2 && (
-              <span className="text-[10px] text-slate-500 font-medium">+{task.tags.length - 2}</span>
+              <button
+                onClick={e => { e.stopPropagation(); setTagMenuOpen(v => !v); }}
+                className="text-[10px] text-slate-500 hover:text-slate-300 font-medium transition-colors"
+              >
+                +{task.tags.length - 2}
+              </button>
             )}
+
+            {/* + button to add tags — always visible on row hover */}
             <button
               onClick={e => { e.stopPropagation(); setTagMenuOpen(v => !v); }}
-              className="opacity-0 group-hover:opacity-100 transition-opacity w-4 h-4 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-slate-400"
+              className="opacity-0 group-hover:opacity-100 transition-opacity w-4 h-4 rounded-full border border-dashed border-slate-600 hover:border-violet-500 flex items-center justify-center text-slate-500 hover:text-violet-400"
             >
-              <Plus size={12} />
+              <Plus size={9} />
             </button>
+
+            {/* Dropdown menu */}
             {tagMenuOpen && (
-              <div className="absolute top-7 left-0 z-50 w-48 bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl p-2" onClick={e => e.stopPropagation()}>
+              <div
+                className="absolute top-7 left-0 z-50 w-52 bg-dark-card border border-white/10 rounded-xl shadow-2xl p-2"
+                onClick={e => e.stopPropagation()}
+              >
                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-2 mb-2">Adicionar / Remover</p>
-                <div className="max-h-40 overflow-y-auto space-y-1">
-                  {coloredTagDefs.map(c => {
-                    const hasTag = task.tags.includes(c.name);
-                    return (
-                      <button key={c.id} onClick={() => handleToggleTag(c.name)}
-                        className="w-full flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-white/5 transition-colors text-left">
-                        <div className="flex items-center gap-2">
-                          <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: c.color }} />
-                          <span className="text-xs text-dark-text truncate">{c.name}</span>
-                        </div>
-                        {hasTag && <Check size={12} className="text-emerald-400 shrink-0" />}
-                      </button>
-                    );
-                  })}
-                  {coloredTagDefs.length === 0 && (
-                    <p className="text-xs text-slate-500 px-2 py-1">Nenhuma tag cadastrada.</p>
-                  )}
+                <div className="max-h-48 overflow-y-auto space-y-0.5">
+                  {(() => {
+                    const defNames = new Set(coloredTagDefs.map(c => c.name));
+                    const orphanTags = task.tags
+                      .filter(t => !defNames.has(t))
+                      .map(t => ({ id: t, name: t, color: '#8b5cf6' }));
+                    const allItems = [...orphanTags, ...coloredTagDefs];
+                    if (allItems.length === 0) {
+                      return <p className="text-xs text-slate-500 px-2 py-2 text-center">Nenhuma tag. Configure em "Tags".</p>;
+                    }
+                    return allItems.map(c => {
+                      const hasTag = task.tags.includes(c.name);
+                      return (
+                        <button key={c.id} onClick={() => handleToggleTag(c.name)}
+                          className={`w-full flex items-center justify-between px-2 py-1.5 rounded-lg transition-colors text-left ${hasTag ? 'bg-violet-500/10' : 'hover:bg-white/5'}`}>
+                          <div className="flex items-center gap-2">
+                            <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
+                            <span className="text-xs text-dark-text truncate">{c.name}</span>
+                          </div>
+                          {hasTag
+                            ? <X size={11} className="text-rose-400 shrink-0" />
+                            : <Plus size={11} className="text-slate-600 shrink-0" />
+                          }
+                        </button>
+                      );
+                    });
+                  })()}
                 </div>
               </div>
             )}
           </div>
         );
+
       case 'squad':
         return (
           <div key="squad" className={`shrink-0 ${def.width}`}>
-            <select value={squad} onChange={e => handleSquadChange(e.target.value)}
-              className={`w-[calc(100%+0.75rem)] -ml-3 border rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer focus:outline-none ${
-                squad === 'Squad Able' ? 'bg-blue-500/15 text-blue-400 border-blue-500/30 focus:border-blue-500/50' :
-                squad === 'Squad Baker' ? 'bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/30 focus:border-fuchsia-500/50' :
-                'bg-white/5 text-slate-400 border-white/10 focus:border-white/20'
-              }`}
-            >
-              <option value="" className="bg-dark-bg text-slate-400">— SQUAD —</option>
-              {SQUAD_OPTIONS.map(s => <option key={s} value={s} className="bg-dark-bg text-dark-text">{s}</option>)}
-            </select>
+            <OptionPicker
+              value={squad || null}
+              onChange={(val) => handleSquadChange(val || '')}
+              options={SQUAD_OPTIONS.map(s => ({
+                label: s,
+                color: s === 'Squad Able' ? '#3b82f6' : s === 'Squad Baker' ? '#d946ef' : undefined,
+              }))}
+              emptyLabel="— SQUAD —"
+              placeholder="— SQUAD —"
+              compact
+            />
           </div>
         );
-      case 'resp':
+      case 'resp': {
+        const coList: { id: string; name: string; avatar: string | null }[] = task.co_responsibles || [];
+        const allResps = [
+          ...(task.responsible_id ? [{ id: task.responsible_id, name: task.responsible_name || '', avatar: task.responsible_avatar || null }] : []),
+          ...coList.filter(r => r.id !== task.responsible_id),
+        ];
+        const MAX_VISIBLE = 3;
+        const visible = allResps.slice(0, MAX_VISIBLE);
+        const overflow = allResps.length - MAX_VISIBLE;
+        const allIds = new Set(allResps.map(r => r.id));
+
         return (
-          <div key="resp" className={`shrink-0 ${def.width} flex items-center justify-center gap-1`}>
-            {task.responsible_name ? (
-              <button ref={taskRespRef} data-task-resp-btn
-                onClick={e => { e.stopPropagation(); if (!taskRespPicker && taskRespRef.current) { const r = taskRespRef.current.getBoundingClientRect(); setTaskRespPos({ top: r.bottom + 4, left: r.left - 140 }); } setTaskRespPicker(v => !v); }}
-                className="focus:outline-none hover:scale-110 transition-transform">
-                <Avatar name={task.responsible_name} url={task.responsible_avatar} size={6} />
+          <div key="resp" className="shrink-0 w-24 flex items-center justify-center">
+            <div className="flex items-center group/resp" style={{ gap: 0 }}>
+              {/* Stacked avatars */}
+              {visible.map((r, i) => (
+                <div key={r.id} title={r.name} style={{ marginLeft: i > 0 ? -6 : 0, zIndex: visible.length - i }} className="relative">
+                  <Avatar name={r.name} url={r.avatar} size={6} />
+                </div>
+              ))}
+
+              {/* +N overflow */}
+              {overflow > 0 && (
+                <div style={{ marginLeft: -6, zIndex: 0 }}
+                  className="w-6 h-6 rounded-full bg-slate-700 border border-dark-bg flex items-center justify-center text-[9px] font-bold text-slate-300">
+                  +{overflow}
+                </div>
+              )}
+
+              {/* Add button — visible on hover */}
+              <button
+                ref={taskRespRef}
+                data-task-resp-btn
+                onClick={e => {
+                  e.stopPropagation();
+                  if (!taskRespPicker && taskRespRef.current) {
+                    const r = taskRespRef.current.getBoundingClientRect();
+                    setTaskRespPos({ top: r.bottom + 4, left: r.left - 148 });
+                  }
+                  setTaskRespPicker(v => !v);
+                }}
+                style={{ marginLeft: allResps.length > 0 ? 3 : 0 }}
+                className="w-5 h-5 rounded-full border border-dashed border-slate-600 flex items-center justify-center hover:border-violet-500 hover:text-violet-500 transition-all shrink-0 opacity-0 group-hover/resp:opacity-100"
+              >
+                <Plus size={9} className="text-slate-500" />
               </button>
-            ) : (
-              <button ref={taskRespRef} data-task-resp-btn
-                onClick={e => { e.stopPropagation(); if (!taskRespPicker && taskRespRef.current) { const r = taskRespRef.current.getBoundingClientRect(); setTaskRespPos({ top: r.bottom + 4, left: r.left - 140 }); } setTaskRespPicker(v => !v); }}
-                className="w-6 h-6 rounded-full border border-dashed border-slate-600 flex items-center justify-center hover:border-violet-500 hover:text-violet-500 transition-colors">
-                <Plus size={10} className="text-slate-600 hover:text-violet-500" />
-              </button>
-            )}
+            </div>
+
+            {/* Picker */}
             {taskRespPicker && createPortal(
               <div data-task-resp-portal onClick={e => e.stopPropagation()}
-                style={{ position: 'fixed', top: taskRespPos.top, left: taskRespPos.left, zIndex: 9999, width: 192 }}
-                className="bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl p-1 max-h-48 overflow-y-auto">
+                style={{ position: 'fixed', top: taskRespPos.top, left: taskRespPos.left, zIndex: 9999, width: 210 }}
+                className="bg-dark-card border border-white/10 rounded-xl shadow-2xl p-1 max-h-56 overflow-y-auto">
                 <div className="px-2 py-1.5 border-b border-white/5 mb-1">
-                  <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Selecionar Responsável</span>
+                  <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Responsáveis</span>
                 </div>
-                {cachedUsers.map(u => (
-                  <button key={u.id} onClick={e => { e.stopPropagation(); handleTaskResponsible(u.id, u.name, u.picture); }}
-                    className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-white/5 rounded-lg text-left transition-colors">
-                    <Avatar name={u.name} url={u.picture} size={5} />
-                    <span className="text-xs text-dark-text truncate">{u.name}</span>
-                  </button>
-                ))}
+                {cachedUsers.map(u => {
+                  const isSelected = allIds.has(u.id);
+                  return (
+                    <button key={u.id}
+                      onClick={e => { e.stopPropagation(); handleTaskResponsible(u.id, u.name, u.picture); }}
+                      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left transition-colors ${isSelected ? 'bg-violet-500/10' : 'hover:bg-white/5'}`}>
+                      <Avatar name={u.name} url={u.picture} size={5} />
+                      <span className="text-xs text-dark-text truncate flex-1">{u.name}</span>
+                      {isSelected && (
+                        <div className="w-4 h-4 rounded-full bg-violet-500 flex items-center justify-center shrink-0">
+                          <Check size={9} className="text-white" />
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
               </div>,
               document.body
             )}
           </div>
         );
-      case 'start_date':
-        return (
-          <div key="start_date" className={`shrink-0 ${def.width} text-xs text-slate-400 font-medium`}>
-            <SingleDatePicker value={task.start_date || undefined} onChange={v => handleTaskDate('start_date', v)} align="left" />
-          </div>
-        );
+      }
+
       case 'due_date':
         return (
           <div key="due_date" className={`shrink-0 ${def.width} text-xs text-slate-400 font-medium`}>
@@ -1691,11 +1809,17 @@ const AddTaskModal = ({ groupId, onClose, onSaved }: { groupId: string; onClose:
             placeholder="Nome do cliente *"
             className="w-full bg-dark-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500/50"
           />
-          <select value={squad} onChange={e => setSquad(e.target.value)}
-            className="w-full bg-dark-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-dark-text focus:outline-none focus:border-violet-500/50">
-            <option value="">— Squad —</option>
-            {SQUAD_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
+          <OptionPicker
+            value={squad || null}
+            onChange={(val) => setSquad(val || '')}
+            options={SQUAD_OPTIONS.map(s => ({
+              label: s,
+              color: s === 'Squad Able' ? '#3b82f6' : s === 'Squad Baker' ? '#d946ef' : undefined,
+            }))}
+            emptyLabel="— Squad —"
+            placeholder="— Squad —"
+            className="w-full"
+          />
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1 block">Data Inicial</label>
@@ -1936,6 +2060,8 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
   const [loadingComments, setLoadingComments] = useState(true);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitleStr, setEditTitleStr] = useState(task.client_name);
+  const commentsEndRef = React.useRef<HTMLDivElement>(null);
+  const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
   const saveTitle = async () => {
     const val = editTitleStr.trim();
@@ -1946,11 +2072,9 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ client_name: val }),
         });
-        task.client_name = val; // update local object
+        task.client_name = val;
         onUpdate();
-      } catch (e) {
-        console.error(e);
-      }
+      } catch (e) { console.error(e); }
     } else {
       setEditTitleStr(task.client_name);
     }
@@ -1973,152 +2097,233 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
       const res = await fetch(`/api/onboarding-tasks/${task.id}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: newComment,
-          author_name: authorName,
-          author_email: authorEmail,
-          author_avatar: authorAvatar,
-        }),
+        body: JSON.stringify({ text: newComment, author_name: authorName, author_email: authorEmail, author_avatar: authorAvatar }),
       });
       if (res.ok) {
         const c = await res.json();
-        setComments(prev => [c, ...prev]);
+        setComments(prev => [...prev, c]);
         setNewComment('');
+        if (textareaRef.current) { textareaRef.current.style.height = 'auto'; }
+        setTimeout(() => commentsEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
       }
     } catch { /* silent */ }
   };
 
+  const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
+    'a-implementar':           { bg: 'bg-slate-500/15', text: 'text-slate-400' },
+    'em-implementacao':        { bg: 'bg-blue-500/15',  text: 'text-blue-400'  },
+    'aguardando-conexao-whatsapp-crm': { bg: 'bg-amber-500/15', text: 'text-amber-400' },
+    'implementacao-realizada-testes':  { bg: 'bg-violet-500/15', text: 'text-violet-400' },
+    'alteracoes':              { bg: 'bg-orange-500/15', text: 'text-orange-400' },
+    'concluido':               { bg: 'bg-emerald-500/15', text: 'text-emerald-400' },
+  };
+  const statusColor = STATUS_COLORS[task.status_group] || { bg: 'bg-slate-500/15', text: 'text-slate-400' };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-black/5 dark:border-white/5">
-          <div className="flex-1 mr-4">
-            {isEditingTitle ? (
-              <input
-                type="text"
-                autoFocus
-                className="w-full bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-lg px-2 py-1 text-base font-bold text-dark-text outline-none focus:border-violet-500"
-                value={editTitleStr}
-                onChange={e => setEditTitleStr(e.target.value)}
-                onBlur={saveTitle}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') saveTitle();
-                  if (e.key === 'Escape') {
-                    setEditTitleStr(task.client_name);
-                    setIsEditingTitle(false);
-                  }
-                }}
-              />
-            ) : (
-              <h2
-                className="text-base font-bold text-dark-text cursor-pointer hover:text-violet-500 transition-colors"
-                onClick={() => setIsEditingTitle(true)}
-                title="Clique para editar"
+      <div
+        className="bg-dark-card border border-white/10 rounded-2xl shadow-2xl flex overflow-hidden"
+        style={{ width: '860px', maxWidth: '95vw', height: '560px', maxHeight: '90vh' }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* LEFT PANEL */}
+        <div className="flex flex-col" style={{ width: '520px', minWidth: 0 }}>
+          <div className="flex items-start justify-between px-6 pt-5 pb-4 border-b border-white/5 shrink-0">
+            <div className="flex-1 mr-4 min-w-0">
+              {isEditingTitle ? (
+                <input autoFocus
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-base font-bold text-dark-text outline-none focus:border-violet-500"
+                  value={editTitleStr}
+                  onChange={e => setEditTitleStr(e.target.value)}
+                  onBlur={saveTitle}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') saveTitle();
+                    if (e.key === 'Escape') { setEditTitleStr(task.client_name); setIsEditingTitle(false); }
+                  }}
+                />
+              ) : (
+                <h2 className="text-base font-bold text-dark-text cursor-pointer hover:text-violet-400 transition-colors truncate"
+                  onClick={() => setIsEditingTitle(true)} title="Clique para editar">
+                  {task.client_name}
+                </h2>
+              )}
+              <span className={`inline-flex mt-1.5 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${statusColor.bg} ${statusColor.text}`}>
+                {task.status_group.replace(/-/g, ' ')}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => { fetch(`/api/onboarding-tasks/${task.id}/archive`, { method: 'POST' }).then(() => { onUpdate(); onClose(); }); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-[11px] font-bold rounded-lg transition-colors border border-emerald-500/20"
               >
-                {task.client_name}
-              </h2>
-            )}
-            <p className="text-[10px] text-slate-500 mt-0.5 uppercase tracking-widest">Detalhes do cliente</p>
+                <Check size={13} />Concluir
+              </button>
+              <button onClick={onClose} className="p-1.5 text-slate-500 hover:text-dark-text hover:bg-white/8 rounded-lg transition-colors">
+                <X size={16} />
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => {
-                fetch(`/api/onboarding-tasks/${task.id}/archive`, { method: 'POST' })
-                  .then(() => { onUpdate(); onClose(); });
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 text-xs font-bold rounded-lg transition-colors border border-emerald-500/20"
-            >
-              <Check size={14} />
-              Concluir Implementação
-            </button>
-            <button onClick={onClose} className="p-1.5 text-slate-500 hover:text-dark-text hover:bg-black/10 dark:hover:bg-white/10 rounded-lg transition-colors">
-              <X size={16} />
-            </button>
+
+          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+            {task.squad && (
+              <div className="flex items-center gap-3">
+                <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider w-24 shrink-0">Squad</span>
+                <span className="text-xs font-bold text-violet-400 bg-violet-500/10 border border-violet-500/20 px-2.5 py-1 rounded-lg uppercase tracking-wider">{task.squad}</span>
+              </div>
+            )}
+            {task.responsible_name && (
+              <div className="flex items-center gap-3">
+                <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider w-24 shrink-0">Responsável</span>
+                <div className="flex items-center gap-2">
+                  <Avatar name={task.responsible_name} url={task.responsible_avatar} size={5} />
+                  <span className="text-xs text-dark-text">{task.responsible_name}</span>
+                </div>
+              </div>
+            )}
+            {(task.co_responsibles || []).length > 0 && (
+              <div className="flex items-center gap-3">
+                <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider w-24 shrink-0">Co-resp.</span>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {(task.co_responsibles || []).map(r => (
+                    <div key={r.id} className="flex items-center gap-1.5">
+                      <Avatar name={r.name} url={r.avatar} size={5} />
+                      <span className="text-xs text-dark-text">{r.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {task.due_date && (
+              <div className="flex items-center gap-3">
+                <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider w-24 shrink-0">Vencimento</span>
+                <span className="text-xs text-slate-300">
+                  {new Date(task.due_date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}
+                </span>
+              </div>
+            )}
+            {(task.tags || []).length > 0 && (
+              <div className="flex items-start gap-3">
+                <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider w-24 shrink-0 pt-0.5">Tags</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {(task.tags || []).map(t => (
+                    <span key={t} className="px-2 py-0.5 bg-white/5 border border-white/10 rounded-full text-[10px] text-slate-400 font-medium">{t}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="border-t border-white/5 pt-4">
+              <p className="text-[10px] text-slate-600 font-semibold uppercase tracking-widest mb-3">Dados do cliente</p>
+              <div className="space-y-2.5">
+                {task.nome_fantasia && (
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider w-24 shrink-0">Nome fantasia</span>
+                    <span className="text-xs text-slate-300">{task.nome_fantasia}</span>
+                  </div>
+                )}
+                {task.telefone_whatsapp && (
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider w-24 shrink-0">WhatsApp</span>
+                    <span className="text-xs text-slate-300">{task.telefone_whatsapp}</span>
+                  </div>
+                )}
+                {task.cidade && (
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider w-24 shrink-0">Cidade</span>
+                    <span className="text-xs text-slate-300">{task.cidade}{task.uf ? ` / ${task.uf}` : ''}</span>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Content - Comments Feed */}
-        <div className="flex flex-1 overflow-hidden flex-col">
-          
-          {/* Comments list - scrollable */}
-          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+        {/* RIGHT PANEL: Comments */}
+        <div className="flex flex-col border-l border-white/5 bg-dark-bg/40" style={{ width: '340px', minWidth: 0 }}>
+          <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-white/5 shrink-0">
+            <div className="flex items-center gap-2">
+              <MessageCircle size={14} className="text-violet-400" />
+              <span className="text-xs font-bold text-dark-text">Atividade</span>
+            </div>
+            {comments.length > 0 && (
+              <span className="w-5 h-5 rounded-full bg-violet-500/20 text-violet-400 text-[9px] font-black flex items-center justify-center">{comments.length}</span>
+            )}
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
             {loadingComments ? (
-              <div className="flex justify-center py-12">
-                <div className="w-6 h-6 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
+              <div className="flex justify-center py-10">
+                <div className="w-5 h-5 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
               </div>
             ) : comments.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-slate-600">
-                <CheckSquare size={40} className="mb-3 opacity-20" />
-                <p className="text-sm font-medium">Nenhum comentário ainda.</p>
-                <p className="text-xs mt-1 opacity-60">Seja o primeiro a comentar!</p>
+              <div className="flex flex-col items-center justify-center py-14 text-center">
+                <div className="w-10 h-10 rounded-2xl bg-white/[0.03] border border-white/8 flex items-center justify-center mb-3">
+                  <MessageCircle size={18} className="text-slate-600" />
+                </div>
+                <p className="text-xs font-semibold text-slate-500">Nenhum comentário</p>
+                <p className="text-[10px] text-slate-600 mt-1">Seja o primeiro a comentar!</p>
               </div>
             ) : (
-              [...comments].reverse().map(c => (
-                <div key={c.id} className="flex gap-3">
-                  {/* Avatar */}
+              comments.map(c => (
+                <div key={c.id} className="flex gap-2.5">
                   {c.author_avatar ? (
-                    <img src={c.author_avatar} alt="" className="w-8 h-8 rounded-full object-cover shrink-0 mt-0.5" />
+                    <img src={c.author_avatar} alt="" className="w-7 h-7 rounded-full object-cover shrink-0 mt-0.5 ring-1 ring-white/10" />
                   ) : (
-                    <div className="w-8 h-8 rounded-full bg-violet-500/20 flex items-center justify-center text-violet-400 font-bold text-xs shrink-0 mt-0.5 uppercase">
+                    <div className="w-7 h-7 rounded-full bg-violet-500/20 flex items-center justify-center text-violet-400 font-bold text-[10px] shrink-0 mt-0.5 uppercase">
                       {(c.author_name || 'U').charAt(0)}
                     </div>
                   )}
-                  {/* Bubble */}
-                  <div className="flex-1">
-                    <div className="flex items-baseline gap-2 mb-1">
-                      <span className="text-xs font-bold text-dark-text">{c.author_name || 'Usuário'}</span>
-                      <span className="text-[10px] text-slate-500">
-                        {new Date(c.created_at).toLocaleString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline gap-1.5 mb-1">
+                      <span className="text-[11px] font-bold text-dark-text truncate">{c.author_name || 'Usuário'}</span>
+                      <span className="text-[9px] text-slate-600 shrink-0">
+                        {new Date(c.created_at).toLocaleString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </div>
-                    <div className="bg-dark-bg border border-white/5 rounded-2xl rounded-tl-sm px-4 py-3">
-                      <p className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">{c.text}</p>
+                    <div className="bg-dark-card border border-white/[0.06] rounded-2xl rounded-tl-sm px-3 py-2.5">
+                      <p className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed">{c.text}</p>
                     </div>
                   </div>
                 </div>
               ))
             )}
+            <div ref={commentsEndRef} />
           </div>
 
-          {/* Input bar pinned to bottom */}
-          <div className="border-t border-white/5 px-6 py-4 bg-dark-card">
-            <div className="flex gap-3 items-end">
-              {/* Current user avatar in input area */}
+          <div className="border-t border-white/5 px-4 py-3 bg-dark-card shrink-0">
+            <div className="flex gap-2 items-end">
               {(userData?.picture || user?.photoURL) ? (
-                <img src={userData?.picture || user?.photoURL || ''} alt="" className="w-8 h-8 rounded-full object-cover shrink-0" />
+                <img src={userData?.picture || user?.photoURL || ''} alt="" className="w-7 h-7 rounded-full object-cover shrink-0 ring-1 ring-white/10" />
               ) : (
-                <div className="w-8 h-8 rounded-full bg-violet-500/20 flex items-center justify-center text-violet-400 font-bold text-xs shrink-0 uppercase">
+                <div className="w-7 h-7 rounded-full bg-violet-500/20 flex items-center justify-center text-violet-400 font-bold text-[10px] shrink-0 uppercase">
                   {(userData?.name || user?.displayName || 'U').charAt(0)}
                 </div>
               )}
-              <div className="flex-1 relative">
-                <textarea
-                  value={newComment}
-                  onChange={e => setNewComment(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addComment(); } }}
-                  placeholder="Escreva um comentário..."
-                  rows={1}
-                  className="w-full bg-dark-bg border border-white/10 rounded-2xl px-4 py-3 text-sm text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500/50 transition-colors resize-none leading-relaxed"
-                  style={{ minHeight: '44px', maxHeight: '120px' }}
-                  onInput={e => {
-                    const el = e.currentTarget;
-                    el.style.height = 'auto';
-                    el.style.height = Math.min(el.scrollHeight, 120) + 'px';
-                  }}
-                />
-              </div>
+              <textarea
+                ref={textareaRef}
+                value={newComment}
+                onChange={e => setNewComment(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addComment(); } }}
+                placeholder="Escreva um comentário..."
+                rows={1}
+                className="flex-1 bg-dark-bg border border-white/10 rounded-2xl px-3 py-2.5 text-xs text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500/50 transition-colors resize-none leading-relaxed"
+                style={{ minHeight: '38px', maxHeight: '100px' }}
+                onInput={e => {
+                  const el = e.currentTarget;
+                  el.style.height = 'auto';
+                  el.style.height = Math.min(el.scrollHeight, 100) + 'px';
+                }}
+              />
               <button
                 onClick={addComment}
                 disabled={!newComment.trim()}
-                className="h-10 w-10 rounded-full bg-violet-600 hover:bg-violet-500 disabled:opacity-30 disabled:cursor-not-allowed text-white flex items-center justify-center transition-all shrink-0"
+                className="w-8 h-8 rounded-full bg-violet-600 hover:bg-violet-500 disabled:opacity-30 disabled:cursor-not-allowed text-white flex items-center justify-center transition-all shrink-0"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
                 </svg>
               </button>
             </div>
-            <p className="text-[10px] text-slate-600 mt-2 ml-11">Enter para enviar · Shift+Enter para nova linha</p>
+            <p className="text-[9px] text-slate-700 mt-1.5 ml-9">Enter para enviar · Shift+Enter para nova linha</p>
           </div>
         </div>
       </div>
@@ -2855,10 +3060,10 @@ export default function ImplementacaoIA() {
 
 
   const [tagsModal, setTagsModal] = useState(false);
-  const [coloredTagDefs, setColoredTagDefs] = useState<ColoredTag[]>(() => loadColoredTags('onboarding'));
+  const [coloredTagDefs, setColoredTagDefs] = useState<ColoredTag[]>(() => loadColoredTags('implementacao-ia'));
 
   useEffect(() => {
-    saveColoredTags('onboarding', coloredTagDefs);
+    saveColoredTags('implementacao-ia', coloredTagDefs);
   }, [coloredTagDefs]);
 
   const [showCompleted, setShowCompleted] = useState(false);

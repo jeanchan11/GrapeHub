@@ -3,6 +3,7 @@ import { Archive } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { Modal } from './ui/Modal';
 import { designSystem } from '../design-system';
+import OptionPicker from './ui/OptionPicker';
 
 interface ArchiveClientModalProps {
   clientId: string;
@@ -104,17 +105,17 @@ const ArchiveClientModal: React.FC<ArchiveClientModalProps> = ({ clientId, onClo
               <label className={designSystem.input.label}>
                 Como foi? *
               </label>
-              <select
-                value={formData.how_it_went}
-                onChange={(e) => setFormData(prev => ({ ...prev, how_it_went: e.target.value }))}
-                className={designSystem.input.field}
-                required
-              >
-                <option value="" className="bg-light-sidebar dark:bg-dark-sidebar">Selecione...</option>
-                <option value="Inevitável" className="bg-light-sidebar dark:bg-dark-sidebar">Inevitável</option>
-                <option value="Podia ser evitado" className="bg-light-sidebar dark:bg-dark-sidebar">Podia ser evitado</option>
-                <option value="Não esperado" className="bg-light-sidebar dark:bg-dark-sidebar">Não esperado</option>
-              </select>
+              <OptionPicker
+                value={formData.how_it_went || null}
+                options={[
+                  { label: 'Inevitável' },
+                  { label: 'Podia ser evitado' },
+                  { label: 'Não esperado' },
+                ]}
+                placeholder="Selecione..."
+                emptyLabel="Selecione..."
+                onChange={(val) => setFormData(prev => ({ ...prev, how_it_went: val || '' }))}
+              />
             </div>
 
             {/* Motivo de Saída */}
@@ -148,18 +149,18 @@ const ArchiveClientModal: React.FC<ArchiveClientModalProps> = ({ clientId, onClo
               <label className={designSystem.input.label}>
                 Resultado do Projeto *
               </label>
-              <select
-                value={formData.project_result}
-                onChange={(e) => setFormData(prev => ({ ...prev, project_result: e.target.value }))}
-                className={designSystem.input.field}
-                required
-              >
-                <option value="" className="bg-light-sidebar dark:bg-dark-sidebar">Selecione...</option>
-                <option value="Ótimo" className="bg-light-sidebar dark:bg-dark-sidebar">Ótimo</option>
-                <option value="Bom" className="bg-light-sidebar dark:bg-dark-sidebar">Bom</option>
-                <option value="Ok" className="bg-light-sidebar dark:bg-dark-sidebar">Ok</option>
-                <option value="Ruim" className="bg-light-sidebar dark:bg-dark-sidebar">Ruim</option>
-              </select>
+              <OptionPicker
+                value={formData.project_result || null}
+                options={[
+                  { label: 'Ótimo' },
+                  { label: 'Bom' },
+                  { label: 'Ok' },
+                  { label: 'Ruim' },
+                ]}
+                placeholder="Selecione..."
+                emptyLabel="Selecione..."
+                onChange={(val) => setFormData(prev => ({ ...prev, project_result: val || '' }))}
+              />
             </div>
 
             {/* Relacionamento com Cliente */}
@@ -167,18 +168,18 @@ const ArchiveClientModal: React.FC<ArchiveClientModalProps> = ({ clientId, onClo
               <label className={designSystem.input.label}>
                 Relacionamento com Cliente *
               </label>
-              <select
-                value={formData.client_relationship}
-                onChange={(e) => setFormData(prev => ({ ...prev, client_relationship: e.target.value }))}
-                className={designSystem.input.field}
-                required
-              >
-                <option value="" className="bg-light-sidebar dark:bg-dark-sidebar">Selecione...</option>
-                <option value="Ótimo" className="bg-light-sidebar dark:bg-dark-sidebar">Ótimo</option>
-                <option value="Bom" className="bg-light-sidebar dark:bg-dark-sidebar">Bom</option>
-                <option value="Ok" className="bg-light-sidebar dark:bg-dark-sidebar">Ok</option>
-                <option value="Ruim" className="bg-light-sidebar dark:bg-dark-sidebar">Ruim</option>
-              </select>
+              <OptionPicker
+                value={formData.client_relationship || null}
+                options={[
+                  { label: 'Ótimo' },
+                  { label: 'Bom' },
+                  { label: 'Ok' },
+                  { label: 'Ruim' },
+                ]}
+                placeholder="Selecione..."
+                emptyLabel="Selecione..."
+                onChange={(val) => setFormData(prev => ({ ...prev, client_relationship: val || '' }))}
+              />
             </div>
 
             {/* Observações finais */}

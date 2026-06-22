@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
+import OptionPicker from '../components/ui/OptionPicker';
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragOverlay, useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -655,17 +656,27 @@ const TodoModal: React.FC<TodoModalProps> = ({ initial, allColumns, globalTags, 
         <div className="grid grid-cols-3 gap-3">
           <div>
             <label className="text-[10px] font-bold text-dark-text/40 uppercase tracking-widest mb-1 block">Prioridade</label>
-            <select value={priority} onChange={e => setPriority(e.target.value as Priority)}
-              className="w-full bg-dark-card border border-dark-text/10 rounded-xl px-3 py-2.5 text-sm text-dark-text focus:outline-none focus:border-violet-500/50 transition-all appearance-none cursor-pointer">
-              {(Object.keys(PRIORITY_CONFIG) as Priority[]).map(p => <option key={p} value={p} className="bg-dark-bg">{PRIORITY_CONFIG[p].label}</option>)}
-            </select>
+            <OptionPicker
+              value={PRIORITY_CONFIG[priority].label}
+              options={(Object.keys(PRIORITY_CONFIG) as Priority[]).map(p => ({ label: PRIORITY_CONFIG[p].label }))}
+              placeholder="Prioridade"
+              onChange={(val) => {
+                const key = (Object.keys(PRIORITY_CONFIG) as Priority[]).find(p => PRIORITY_CONFIG[p].label === val);
+                if (key) setPriority(key);
+              }}
+            />
           </div>
           <div>
             <label className="text-[10px] font-bold text-dark-text/40 uppercase tracking-widest mb-1 block">Status</label>
-            <select value={status} onChange={e => setStatus(e.target.value as Status)}
-              className="w-full bg-dark-card border border-dark-text/10 rounded-xl px-3 py-2.5 text-sm text-dark-text focus:outline-none focus:border-violet-500/50 transition-all appearance-none cursor-pointer">
-              {allColumns.map(c => <option key={c.id} value={c.id} className="bg-dark-bg">{c.label}</option>)}
-            </select>
+            <OptionPicker
+              value={allColumns.find(c => c.id === status)?.label || null}
+              options={allColumns.map(c => ({ label: c.label }))}
+              placeholder="Status"
+              onChange={(val) => {
+                const col = allColumns.find(c => c.label === val);
+                if (col) setStatus(col.id);
+              }}
+            />
           </div>
           <div>
             <label className="text-[10px] font-bold text-dark-text/40 uppercase tracking-widest mb-1 block">Prazo</label>
@@ -1189,10 +1200,15 @@ const RecModal: React.FC<RecModalProps> = ({ initial, onSave, onClose }) => {
 
         <div>
           <label className="text-[10px] font-bold text-dark-text/40 uppercase tracking-widest mb-1 block">Frequência</label>
-          <select value={frequency} onChange={e => setFrequency(e.target.value as RecurringItem['frequency'])}
-            className="w-full bg-dark-card border border-dark-text/10 rounded-xl px-3 py-2.5 text-sm text-dark-text focus:outline-none focus:border-blue-400/50 transition-all appearance-none cursor-pointer">
-            {(Object.keys(FREQ_CONFIG) as RecurringItem['frequency'][]).map(f => <option key={f} value={f} className="bg-dark-bg">{FREQ_CONFIG[f].label}</option>)}
-          </select>
+          <OptionPicker
+            value={FREQ_CONFIG[frequency].label}
+            options={(Object.keys(FREQ_CONFIG) as RecurringItem['frequency'][]).map(f => ({ label: FREQ_CONFIG[f].label }))}
+            placeholder="Frequência"
+            onChange={(val) => {
+              const key = (Object.keys(FREQ_CONFIG) as RecurringItem['frequency'][]).find(f => FREQ_CONFIG[f].label === val);
+              if (key) setFrequency(key);
+            }}
+          />
         </div>
 
         {/* Dia da semana — só para frequência Semanal */}
@@ -1301,10 +1317,15 @@ const IdeaModal: React.FC<IdeaModalProps> = ({ initial, globalTags, onTagCreated
 
         <div>
           <label className="text-[10px] font-bold text-dark-text/40 uppercase tracking-widest mb-1 block">Status</label>
-          <select value={status} onChange={e => setStatus(e.target.value as IdeaStatus)}
-            className="w-full bg-dark-card border border-dark-text/10 rounded-xl px-3 py-2.5 text-sm text-dark-text focus:outline-none focus:border-violet-500/50 transition-all appearance-none cursor-pointer">
-            {IDEA_COLUMNS.map(c => <option key={c.id} value={c.id} className="bg-dark-bg">{c.label}</option>)}
-          </select>
+          <OptionPicker
+            value={IDEA_COLUMNS.find(c => c.id === status)?.label || null}
+            options={IDEA_COLUMNS.map(c => ({ label: c.label }))}
+            placeholder="Status"
+            onChange={(val) => {
+              const col = IDEA_COLUMNS.find(c => c.label === val);
+              if (col) setStatus(col.id);
+            }}
+          />
         </div>
 
         {/* Tags */}

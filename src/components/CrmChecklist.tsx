@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { CheckCircle2, Circle, Plus, Trash2, Check, GripVertical, X, Settings, Save, ChevronDown, MessageSquare, FileText } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import OptionPicker from './ui/OptionPicker';
 
 interface ChecklistItem {
   id: number;
@@ -193,15 +194,16 @@ const TemplateModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                     >
                       <MessageSquare size={13} />
                     </button>
-                    <select
-                      value={item.block}
-                      onChange={e => handleChangeBlock(item, e.target.value as any)}
-                      onClick={e => e.stopPropagation()}
-                      className="text-[10px] bg-transparent border border-white/10 rounded-lg px-1 py-0.5 text-slate-400 outline-none cursor-pointer"
-                    >
-                      <option value="diretoria">Diretoria</option>
-                      <option value="gerente">Gerente</option>
-                    </select>
+                    <OptionPicker
+                      value={item.block === 'diretoria' ? 'Diretoria' : 'Gerente'}
+                      onChange={(val) => handleChangeBlock(item, (val === 'Gerente' ? 'gerente' : 'diretoria') as any)}
+                      options={[
+                        { label: 'Diretoria', color: '#8b5cf6' },
+                        { label: 'Gerente', color: '#3b82f6' },
+                      ]}
+                      placeholder="Bloco"
+                      compact
+                    />
                     <button onClick={() => handleDelete(item.id)} className="text-slate-400 hover:text-rose-500 transition-colors shrink-0">
                       <Trash2 size={14} />
                     </button>
@@ -218,14 +220,16 @@ const TemplateModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         {/* Add new */}
         <div className="px-4 pb-4 pt-2 border-t border-gray-100 dark:border-white/10">
           <div className="flex gap-2">
-            <select
-              value={newBlock}
-              onChange={e => setNewBlock(e.target.value as any)}
-              className="text-xs bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-3 py-2 text-gray-700 dark:text-white outline-none"
-            >
-              <option value="diretoria">Diretoria</option>
-              <option value="gerente">Gerente</option>
-            </select>
+            <OptionPicker
+              value={newBlock === 'diretoria' ? 'Diretoria' : 'Gerente'}
+              onChange={(val) => setNewBlock((val === 'Gerente' ? 'gerente' : 'diretoria') as any)}
+              options={[
+                { label: 'Diretoria', color: '#8b5cf6' },
+                { label: 'Gerente', color: '#3b82f6' },
+              ]}
+              placeholder="Bloco"
+              compact
+            />
             <input
               type="text"
               value={newText}

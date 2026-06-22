@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import SplitHeadline from '../components/SplitHeadline';
+import OptionPicker from '../components/ui/OptionPicker';
 import { createPortal } from 'react-dom';
 import { Search, ArrowUp, ArrowDown, FileText, Calendar, ChevronDown, ChevronUp, Check, Tag, AlertTriangle, ShieldAlert, Users, TrendingUp, TrendingDown, X, MessageSquare, Copy, ExternalLink, Pencil, Zap, ToggleLeft, ToggleRight, Trash2, Plus, Loader2, Wand2, Link2, EyeOff, Eye, Upload } from 'lucide-react';
 
@@ -917,12 +918,20 @@ function ReconciliationModal({ open, onClose, onApplied }: { open: boolean; onCl
               <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="text-[10px] font-bold text-dark-text/50 uppercase tracking-widest">Se a descrição</label>
-                  <select value={formData.match_type} onChange={e => setFormData(f => ({ ...f, match_type: e.target.value }))}
-                    className="w-full mt-1 px-3 py-2.5 bg-dark-bg border border-white/5 rounded-xl text-sm text-dark-text focus:outline-none focus:border-violet-500/30 appearance-none">
-                    <option value="contains">Contém</option>
-                    <option value="starts_with">Começa com</option>
-                    <option value="exact">É exatamente</option>
-                  </select>
+                  <OptionPicker
+                    value={({ contains: 'Contém', starts_with: 'Começa com', exact: 'É exatamente' } as Record<string, string>)[formData.match_type] || 'Contém'}
+                    onChange={(val) => {
+                      const map: Record<string, string> = { 'Contém': 'contains', 'Começa com': 'starts_with', 'É exatamente': 'exact' };
+                      setFormData(f => ({ ...f, match_type: map[val || 'Contém'] || 'contains' }));
+                    }}
+                    options={[
+                      { label: 'Contém' },
+                      { label: 'Começa com' },
+                      { label: 'É exatamente' },
+                    ]}
+                    placeholder="Tipo"
+                    className="w-full mt-1"
+                  />
                 </div>
                 <div className="col-span-2">
                   <label className="text-[10px] font-bold text-dark-text/50 uppercase tracking-widest">Texto</label>
@@ -1418,22 +1427,20 @@ export default function Extrato() {
                 </button>
               ))}
               {/* Category filter dropdown */}
-              <select
-                value={categoryFilter}
-                onChange={e => setCategoryFilter(e.target.value)}
-                style={{ colorScheme: 'dark', backgroundColor: categoryFilter ? undefined : 'rgb(var(--dark-card))' }}
-                className={`px-3 py-2 text-xs font-bold rounded-xl border transition-all outline-none cursor-pointer ${
-                  categoryFilter
-                    ? 'bg-violet-500/10 border-violet-500/40 text-violet-400'
-                    : 'bg-dark-card border-white/10 text-slate-400'
-                }`}
-              >
-                <option value="">Todas categorias</option>
-                <option value="__sem_categoria__">⚠️ Sem categoria</option>
-                {availableCategories.map(cat => (
-                  <option key={cat} value={cat}>{cat}</option>
-                ))}
-              </select>
+              <OptionPicker
+                value={categoryFilter === '__sem_categoria__' ? '⚠️ Sem categoria' : categoryFilter || null}
+                onChange={(val) => {
+                  if (val === '⚠️ Sem categoria') setCategoryFilter('__sem_categoria__');
+                  else setCategoryFilter(val || '');
+                }}
+                options={[
+                  { label: '⚠️ Sem categoria', color: '#f59e0b' },
+                  ...availableCategories.map(cat => ({ label: cat })),
+                ]}
+                emptyLabel="Todas categorias"
+                placeholder="Todas categorias"
+                compact
+              />
               {/* Account filter */}
               <div className="flex items-center gap-1 ml-1 bg-dark-card border border-white/10 rounded-xl p-0.5">
                 {([['all', 'Todas'], ['asaas', 'Asaas'], ['sicredi', 'Sicredi']] as const).map(([val, label]) => (

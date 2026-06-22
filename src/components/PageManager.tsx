@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import OptionPicker from './ui/OptionPicker';
 import ReactDOM from 'react-dom';
 import { Layers, Plus, Save, Loader2, FolderPlus, Edit, Trash2, Folder, FileText, ChevronUp, ChevronDown, GripVertical, Users, Settings, Bell, Check, X, Search, Lock, Unlock, Database, FolderOpen, Home, Briefcase, BarChart2, PieChart, Activity, Calendar, MessageSquare, Mail, Image, Video, Music, Map, ShoppingCart, CreditCard, DollarSign, Percent, Tag, Bookmark, Star, Heart, Shield, Zap, TrendingUp, TrendingDown, Target, Award, Compass, Navigation, MapPin, Phone, Smartphone, Monitor, Laptop, Server, HardDrive, Cpu, Wifi, Bluetooth, Battery, Cloud, Sun, Moon, Umbrella, Wind, Droplet, Flame, PersonStanding, Swords, UsersRound,
   // New icons
@@ -449,6 +450,8 @@ const templates = (() => {
     { id: 'todo', label: 'Tarefas (Todo)' },
     { id: 'todo-staff', label: 'To Do (Staff)' },
     { id: 'visual-hub', label: 'VisualHub' },
+    { id: 'bolao', label: 'Bolão da Copa' },
+
   ];
   return [{ id: 'blank', label: 'Em Branco' }, ...list.sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'))];
 })();
@@ -476,41 +479,88 @@ const SortablePage = ({ page, parentId, parentType, editingPage, editPageData, s
           <div className="shrink-0">
             <ColorSelector value={editPageData.icon_color} onChange={(icon_color) => setEditPageData({ ...editPageData, icon_color })} />
           </div>
-          <select value={editPageData.template} onChange={e => setEditPageData({...editPageData, template: e.target.value})} className="bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded px-2 py-1 text-sm text-light-text dark:text-white shrink-0">
-            {templates.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
-          </select>
-          <select 
-            value={editPageData.section_id ? `sec_${editPageData.section_id}` : (editPageData.subsubsession_id ? `subsub_${editPageData.subsubsession_id}` : (editPageData.subsession_id ? `sub_${editPageData.subsession_id}` : ''))} 
-            onChange={e => {
-                const val = e.target.value;
-                console.log('Selected value:', val);
-                if (val.startsWith('sec_')) {
-                    setEditPageData({...editPageData, section_id: val.replace('sec_', ''), subsubsession_id: null, subsession_id: null});
-                } else if (val.startsWith('subsub_')) {
-                    setEditPageData({...editPageData, section_id: null, subsubsession_id: val.replace('subsub_', ''), subsession_id: null});
-                } else if (val.startsWith('sub_')) {
-                    setEditPageData({...editPageData, section_id: null, subsubsession_id: null, subsession_id: val.replace('sub_', '')});
-                } else {
-                    setEditPageData({...editPageData, section_id: null, subsubsession_id: null, subsession_id: null});
+          <OptionPicker
+            value={templates.find(t => t.id === editPageData.template)?.label || null}
+            options={templates.map(t => ({ label: t.label }))}
+            placeholder="Template"
+            onChange={(val) => {
+              const tId = templates.find(t => t.label === val)?.id || '';
+              setEditPageData({...editPageData, template: tId});
+            }}
+          />
+          <OptionPicker
+            value={(() => {
+              if (editPageData.section_id) {
+                const sec = Array.isArray(menu) && menu.find((s: any) => s.id === editPageData.section_id);
+                return sec ? `📁 ${sec.title} (direto na seção)` : null;
+              }
+              if (editPageData.subsubsession_id) {
+                for (const s of (Array.isArray(menu) ? menu : [])) {
+                  for (const ss of s.subSessions) {
+                    const sss = ss.subSubSessions?.find((x: any) => x.id === editPageData.subsubsession_id);
+                    if (sss) return `  ${s.title} > ${ss.label} > ${sss.label}`;
+                  }
                 }
-            }} 
-            className="bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded px-2 py-1 text-sm text-light-text dark:text-white flex-1 min-w-[150px]"
-          >
-            <option value="">Selecione o destino...</option>
-            {Array.isArray(menu) && menu.map((s: any) => (
-                <optgroup key={s.id} label={s.title}>
-                    <option value={`sec_${s.id}`}>📁 {s.title} (direto na seção)</option>
-                    {s.subSessions.map((ss: any) => (
-                        <React.Fragment key={ss.id}>
-                            <option value={`sub_${ss.id}`}>{s.title} &gt; {ss.label}</option>
-                            {ss.subSubSessions && ss.subSubSessions.map((sss: any) => (
-                                <option key={sss.id} value={`subsub_${sss.id}`}>&nbsp;&nbsp;{s.title} &gt; {ss.label} &gt; {sss.label}</option>
-                            ))}
-                        </React.Fragment>
-                    ))}
-                </optgroup>
-            ))}
-          </select>
+                return null;
+              }
+              if (editPageData.subsession_id) {
+                for (const s of (Array.isArray(menu) ? menu : [])) {
+                  const ss = s.subSessions.find((x: any) => x.id === editPageData.subsession_id);
+                  if (ss) return `${s.title} > ${ss.label}`;
+                }
+                return null;
+              }
+              return null;
+            })()}
+            options={(() => {
+              const opts: { label: string }[] = [];
+              if (Array.isArray(menu)) {
+                menu.forEach((s: any) => {
+                  opts.push({ label: `📁 ${s.title} (direto na seção)` });
+                  s.subSessions.forEach((ss: any) => {
+                    opts.push({ label: `${s.title} > ${ss.label}` });
+                    if (ss.subSubSessions) {
+                      ss.subSubSessions.forEach((sss: any) => {
+                        opts.push({ label: `  ${s.title} > ${ss.label} > ${sss.label}` });
+                      });
+                    }
+                  });
+                });
+              }
+              return opts;
+            })()}
+            placeholder="Selecione o destino..."
+            emptyLabel="Selecione o destino..."
+            onChange={(val) => {
+              if (!val) {
+                setEditPageData({...editPageData, section_id: null, subsubsession_id: null, subsession_id: null});
+                return;
+              }
+              if (Array.isArray(menu)) {
+                for (const s of menu) {
+                  if (val === `📁 ${s.title} (direto na seção)`) {
+                    setEditPageData({...editPageData, section_id: s.id, subsubsession_id: null, subsession_id: null});
+                    return;
+                  }
+                  for (const ss of s.subSessions) {
+                    if (val === `${s.title} > ${ss.label}`) {
+                      setEditPageData({...editPageData, section_id: null, subsubsession_id: null, subsession_id: ss.id});
+                      return;
+                    }
+                    if (ss.subSubSessions) {
+                      for (const sss of ss.subSubSessions) {
+                        if (val === `  ${s.title} > ${ss.label} > ${sss.label}`) {
+                          setEditPageData({...editPageData, section_id: null, subsubsession_id: sss.id, subsession_id: null});
+                          return;
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+              setEditPageData({...editPageData, section_id: null, subsubsession_id: null, subsession_id: null});
+            }}
+          />
           <div className="flex items-center gap-2 shrink-0">
             <button onClick={handleSaveEditPage} className="p-1.5 bg-emerald-500 text-white rounded hover:bg-emerald-600 flex items-center gap-1"><Save size={16} /> Salvar</button>
             <button onClick={() => setEditingPage(null)} className="p-1.5 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded hover:bg-slate-300 dark:hover:bg-slate-600">Cancelar</button>
@@ -607,9 +657,21 @@ const SortableSubSession = ({ sub, sectionId, editingSub, editSubData, setEditSu
             <div className="shrink-0">
               <ColorSelector value={editSubData.icon_color} onChange={(icon_color) => setEditSubData({ ...editSubData, icon_color })} />
             </div>
-            <select value={editSubData.section_id} onChange={e => setEditSubData({...editSubData, section_id: e.target.value})} className="bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded px-2 py-1 text-sm text-light-text dark:text-white flex-1 min-w-[150px]">
-              {Array.isArray(menu) && menu.map((s: any) => <option key={s.id} value={s.id}>{s.title}</option>)}
-            </select>
+            <OptionPicker
+              value={(() => {
+                if (Array.isArray(menu)) {
+                  const sec = menu.find((s: any) => s.id === editSubData.section_id);
+                  if (sec) return sec.title;
+                }
+                return null;
+              })()}
+              options={Array.isArray(menu) ? menu.map((s: any) => ({ label: s.title })) : []}
+              placeholder="Seção pai"
+              onChange={(val) => {
+                const sec = Array.isArray(menu) && menu.find((s: any) => s.title === val);
+                setEditSubData({...editSubData, section_id: sec ? sec.id : ''});
+              }}
+            />
             <div className="flex items-center gap-2 shrink-0">
               <button onClick={handleSaveEditSub} className="p-1.5 bg-emerald-500 text-white rounded hover:bg-emerald-600 flex items-center gap-1"><Save size={16} /> Salvar</button>
               <button onClick={() => setEditingSub(null)} className="p-1.5 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded hover:bg-slate-300 dark:hover:bg-slate-600">Cancelar</button>
@@ -661,24 +723,57 @@ const SortableSubSubSession = ({ subsub, subId, editingSubsub, editSubsubData, s
             <div className="shrink-0">
               <ColorSelector value={editSubsubData.icon_color} onChange={(icon_color) => setEditSubsubData({ ...editSubsubData, icon_color })} />
             </div>
-            <select value={editSubsubData.subsession_id ? `sub_${editSubsubData.subsession_id}` : (editSubsubData.section_id ? `sec_${editSubsubData.section_id}` : '')} onChange={e => {
-              const val = e.target.value;
-              if (val.startsWith('sec_')) {
-                setEditSubsubData({...editSubsubData, section_id: val.replace('sec_', ''), subsession_id: ''});
-              } else if (val.startsWith('sub_')) {
-                setEditSubsubData({...editSubsubData, subsession_id: val.replace('sub_', ''), section_id: ''});
-              }
-            }} className="bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded px-2 py-1 text-sm text-light-text dark:text-white flex-1 min-w-[150px]">
-              <option value="">Selecione o pai...</option>
-              {Array.isArray(menu) && menu.map((s: any) => (
-                <optgroup key={s.id} label={s.title}>
-                  <option value={`sec_${s.id}`}>📁 {s.title} (direto na seção)</option>
-                  {s.subSessions.map((ss: any) => (
-                    <option key={ss.id} value={`sub_${ss.id}`}>{s.title} &gt; {ss.label}</option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
+            <OptionPicker
+              value={(() => {
+                if (editSubsubData.subsession_id) {
+                  for (const s of (Array.isArray(menu) ? menu : [])) {
+                    const ss = s.subSessions.find((x: any) => x.id === editSubsubData.subsession_id);
+                    if (ss) return `${s.title} > ${ss.label}`;
+                  }
+                  return null;
+                }
+                if (editSubsubData.section_id) {
+                  const sec = Array.isArray(menu) && menu.find((s: any) => s.id === editSubsubData.section_id);
+                  return sec ? `📁 ${sec.title} (direto na seção)` : null;
+                }
+                return null;
+              })()}
+              options={(() => {
+                const opts: { label: string }[] = [];
+                if (Array.isArray(menu)) {
+                  menu.forEach((s: any) => {
+                    opts.push({ label: `📁 ${s.title} (direto na seção)` });
+                    s.subSessions.forEach((ss: any) => {
+                      opts.push({ label: `${s.title} > ${ss.label}` });
+                    });
+                  });
+                }
+                return opts;
+              })()}
+              placeholder="Selecione o pai..."
+              emptyLabel="Selecione o pai..."
+              onChange={(val) => {
+                if (!val) {
+                  setEditSubsubData({...editSubsubData, section_id: '', subsession_id: ''});
+                  return;
+                }
+                if (Array.isArray(menu)) {
+                  for (const s of menu) {
+                    if (val === `📁 ${s.title} (direto na seção)`) {
+                      setEditSubsubData({...editSubsubData, section_id: s.id, subsession_id: ''});
+                      return;
+                    }
+                    for (const ss of s.subSessions) {
+                      if (val === `${s.title} > ${ss.label}`) {
+                        setEditSubsubData({...editSubsubData, subsession_id: ss.id, section_id: ''});
+                        return;
+                      }
+                    }
+                  }
+                }
+                setEditSubsubData({...editSubsubData, section_id: '', subsession_id: ''});
+              }}
+            />
             <div className="flex items-center gap-2 shrink-0">
               <button onClick={handleSaveEditSubsub} className="p-1.5 bg-emerald-500 text-white rounded hover:bg-emerald-600 flex items-center gap-1"><Save size={16} /> Salvar</button>
               <button onClick={() => setEditingSubsub(null)} className="p-1.5 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded hover:bg-slate-300 dark:hover:bg-slate-600">Cancelar</button>
@@ -1368,9 +1463,15 @@ export const PageManager: React.FC = () => {
             </div>
             <div>
               <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Modelo (Template)</label>
-              <select value={pageData.template} onChange={(e) => setPageData({ ...pageData, template: e.target.value })} className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/5 rounded-xl py-2.5 px-4 text-sm text-light-text dark:text-white outline-none focus:ring-2 focus:ring-violet-500/20">
-                {templates.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
-              </select>
+              <OptionPicker
+                value={templates.find(t => t.id === pageData.template)?.label || null}
+                options={templates.map(t => ({ label: t.label }))}
+                placeholder="Template"
+                onChange={(val) => {
+                  const tId = templates.find(t => t.label === val)?.id || '';
+                  setPageData({ ...pageData, template: tId });
+                }}
+              />
             </div>
             <div>
               <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Ícone (Lucide React)</label>
@@ -1382,33 +1483,79 @@ export const PageManager: React.FC = () => {
             </div>
             <div className="md:col-span-2">
               <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Localização (Seção, Sub-seção ou Sub-sub-seção)</label>
-              <select required value={pageData.section_id ? `sec_${pageData.section_id}` : (pageData.subsubsession_id ? `subsub_${pageData.subsubsession_id}` : (pageData.subsession_id ? `sub_${pageData.subsession_id}` : ''))} onChange={(e) => {
-                  const val = e.target.value;
-                  if (val.startsWith('sec_')) {
-                      setPageData({...pageData, section_id: val.replace('sec_', ''), subsubsession_id: '', subsession_id: ''});
-                  } else if (val.startsWith('subsub_')) {
-                      setPageData({...pageData, section_id: '', subsubsession_id: val.replace('subsub_', ''), subsession_id: ''});
-                  } else if (val.startsWith('sub_')) {
-                      setPageData({...pageData, section_id: '', subsubsession_id: '', subsession_id: val.replace('sub_', '')});
-                  } else {
-                      setPageData({...pageData, section_id: '', subsubsession_id: '', subsession_id: ''});
+              <OptionPicker
+                value={(() => {
+                  if (pageData.section_id) {
+                    const sec = Array.isArray(menu) && menu.find((s: any) => s.id === pageData.section_id);
+                    return sec ? `📁 ${sec.title} (direto na seção)` : null;
                   }
-              }} className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/5 rounded-xl py-2.5 px-4 text-sm text-light-text dark:text-white outline-none focus:ring-2 focus:ring-violet-500/20">
-                <option value="">Selecione...</option>
-                {Array.isArray(menu) && menu.map(section => (
-                  <optgroup key={section.id} label={section.title}>
-                    <option value={`sec_${section.id}`}>📁 {section.title} (direto na seção)</option>
-                    {section.subSessions.map((sub: any) => (
-                      <React.Fragment key={sub.id}>
-                        <option value={`sub_${sub.id}`}>{section.title} &gt; {sub.label}</option>
-                        {sub.subSubSessions.map((subsub: any) => (
-                          <option key={subsub.id} value={`subsub_${subsub.id}`}>&nbsp;&nbsp;{section.title} &gt; {sub.label} &gt; {subsub.label}</option>
-                        ))}
-                      </React.Fragment>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
+                  if (pageData.subsubsession_id) {
+                    for (const s of (Array.isArray(menu) ? menu : [])) {
+                      for (const sub of s.subSessions) {
+                        const sss = sub.subSubSessions?.find((x: any) => x.id === pageData.subsubsession_id);
+                        if (sss) return `  ${s.title} > ${sub.label} > ${sss.label}`;
+                      }
+                    }
+                    return null;
+                  }
+                  if (pageData.subsession_id) {
+                    for (const s of (Array.isArray(menu) ? menu : [])) {
+                      const sub = s.subSessions.find((x: any) => x.id === pageData.subsession_id);
+                      if (sub) return `${s.title} > ${sub.label}`;
+                    }
+                    return null;
+                  }
+                  return null;
+                })()}
+                options={(() => {
+                  const opts: { label: string }[] = [];
+                  if (Array.isArray(menu)) {
+                    menu.forEach((section: any) => {
+                      opts.push({ label: `📁 ${section.title} (direto na seção)` });
+                      section.subSessions.forEach((sub: any) => {
+                        opts.push({ label: `${section.title} > ${sub.label}` });
+                        if (sub.subSubSessions) {
+                          sub.subSubSessions.forEach((subsub: any) => {
+                            opts.push({ label: `  ${section.title} > ${sub.label} > ${subsub.label}` });
+                          });
+                        }
+                      });
+                    });
+                  }
+                  return opts;
+                })()}
+                placeholder="Selecione..."
+                emptyLabel="Selecione..."
+                onChange={(val) => {
+                  if (!val) {
+                    setPageData({...pageData, section_id: '', subsubsession_id: '', subsession_id: ''});
+                    return;
+                  }
+                  if (Array.isArray(menu)) {
+                    for (const section of menu) {
+                      if (val === `📁 ${section.title} (direto na seção)`) {
+                        setPageData({...pageData, section_id: section.id, subsubsession_id: '', subsession_id: ''});
+                        return;
+                      }
+                      for (const sub of section.subSessions) {
+                        if (val === `${section.title} > ${sub.label}`) {
+                          setPageData({...pageData, section_id: '', subsubsession_id: '', subsession_id: sub.id});
+                          return;
+                        }
+                        if (sub.subSubSessions) {
+                          for (const subsub of sub.subSubSessions) {
+                            if (val === `  ${section.title} > ${sub.label} > ${subsub.label}`) {
+                              setPageData({...pageData, section_id: '', subsubsession_id: subsub.id, subsession_id: ''});
+                              return;
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                  setPageData({...pageData, section_id: '', subsubsession_id: '', subsession_id: ''});
+                }}
+              />
             </div>
           </div>
           <div className="pt-4 flex justify-end">
@@ -1476,12 +1623,22 @@ export const PageManager: React.FC = () => {
             </div>
             <div>
               <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Seção Pai</label>
-              <select required value={subData.section_id} onChange={(e) => setSubData({ ...subData, section_id: e.target.value })} className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/5 rounded-xl py-2.5 px-4 text-sm text-light-text dark:text-white outline-none focus:ring-2 focus:ring-violet-500/20">
-                <option value="">Selecione...</option>
-                {Array.isArray(menu) && menu.map(section => (
-                  <option key={section.id} value={section.id}>{section.title}</option>
-                ))}
-              </select>
+              <OptionPicker
+                value={(() => {
+                  if (Array.isArray(menu)) {
+                    const sec = menu.find((s: any) => s.id === subData.section_id);
+                    if (sec) return sec.title;
+                  }
+                  return null;
+                })()}
+                options={Array.isArray(menu) ? menu.map((section: any) => ({ label: section.title })) : []}
+                placeholder="Selecione..."
+                emptyLabel="Selecione..."
+                onChange={(val) => {
+                  const sec = Array.isArray(menu) && menu.find((s: any) => s.title === val);
+                  setSubData({ ...subData, section_id: sec ? sec.id : '' });
+                }}
+              />
             </div>
           </div>
           <div className="pt-4 flex justify-end">
@@ -1517,26 +1674,57 @@ export const PageManager: React.FC = () => {
             </div>
             <div>
               <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Pai (Seção ou Sub-seção)</label>
-              <select required value={subsubData.subsession_id ? `sub_${subsubData.subsession_id}` : (subsubData.section_id ? `sec_${subsubData.section_id}` : '')} onChange={(e) => {
-                const val = e.target.value;
-                if (val.startsWith('sec_')) {
-                  setSubsubData({ ...subsubData, section_id: val.replace('sec_', ''), subsession_id: '' });
-                } else if (val.startsWith('sub_')) {
-                  setSubsubData({ ...subsubData, subsession_id: val.replace('sub_', ''), section_id: '' });
-                } else {
+              <OptionPicker
+                value={(() => {
+                  if (subsubData.subsession_id) {
+                    for (const s of (Array.isArray(menu) ? menu : [])) {
+                      const sub = s.subSessions.find((x: any) => x.id === subsubData.subsession_id);
+                      if (sub) return `${s.title} > ${sub.label}`;
+                    }
+                    return null;
+                  }
+                  if (subsubData.section_id) {
+                    const sec = Array.isArray(menu) && menu.find((s: any) => s.id === subsubData.section_id);
+                    return sec ? `📁 ${sec.title} (direto na seção)` : null;
+                  }
+                  return null;
+                })()}
+                options={(() => {
+                  const opts: { label: string }[] = [];
+                  if (Array.isArray(menu)) {
+                    menu.forEach((section: any) => {
+                      opts.push({ label: `📁 ${section.title} (direto na seção)` });
+                      section.subSessions.forEach((sub: any) => {
+                        opts.push({ label: `${section.title} > ${sub.label}` });
+                      });
+                    });
+                  }
+                  return opts;
+                })()}
+                placeholder="Selecione..."
+                emptyLabel="Selecione..."
+                onChange={(val) => {
+                  if (!val) {
+                    setSubsubData({ ...subsubData, subsession_id: '', section_id: '' });
+                    return;
+                  }
+                  if (Array.isArray(menu)) {
+                    for (const section of menu) {
+                      if (val === `📁 ${section.title} (direto na seção)`) {
+                        setSubsubData({ ...subsubData, section_id: section.id, subsession_id: '' });
+                        return;
+                      }
+                      for (const sub of section.subSessions) {
+                        if (val === `${section.title} > ${sub.label}`) {
+                          setSubsubData({ ...subsubData, subsession_id: sub.id, section_id: '' });
+                          return;
+                        }
+                      }
+                    }
+                  }
                   setSubsubData({ ...subsubData, subsession_id: '', section_id: '' });
-                }
-              }} className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/5 rounded-xl py-2.5 px-4 text-sm text-light-text dark:text-white outline-none focus:ring-2 focus:ring-violet-500/20">
-                <option value="">Selecione...</option>
-                {Array.isArray(menu) && menu.map(section => (
-                  <optgroup key={section.id} label={section.title}>
-                    <option value={`sec_${section.id}`}>📁 {section.title} (direto na seção)</option>
-                    {section.subSessions.map((sub: any) => (
-                      <option key={sub.id} value={`sub_${sub.id}`}>{section.title} &gt; {sub.label}</option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
+                }}
+              />
             </div>
           </div>
           <div className="pt-4 flex justify-end">

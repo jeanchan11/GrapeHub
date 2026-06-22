@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import OptionPicker from '../components/ui/OptionPicker';
 import SplitHeadline from '../components/SplitHeadline';
 import { 
   Phone, PhoneIncoming, PhoneMissed, Clock, 
@@ -563,10 +564,13 @@ export default function CrmLigacoes() {
                          {/* Filter: Ramais */}
                          <div>
                             <label className="block text-xs font-medium text-slate-500 mb-1.5">Ramais</label>
-                            <select value={filterRamal} onChange={e => setFilterRamal(e.target.value)} className="w-full text-sm bg-white dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 outline-none focus:border-blue-400">
-                               <option value="">Selecione os ramais</option>
-                               {uniqueExtensions.map(ext => <option key={ext} value={ext}>Ramal {ext}</option>)}
-                            </select>
+                            <OptionPicker
+                              value={filterRamal || null}
+                              options={uniqueExtensions.map(ext => ({ label: `Ramal ${ext}` }))}
+                              placeholder="Selecione os ramais"
+                              emptyLabel="Selecione os ramais"
+                              onChange={(val) => setFilterRamal(val ? val.replace('Ramal ', '') : '')}
+                            />
                          </div>
 
                          {/* Filter: Número */}
@@ -578,32 +582,47 @@ export default function CrmLigacoes() {
                          {/* Filter: Tipo */}
                          <div>
                             <label className="block text-xs font-medium text-slate-500 mb-1.5">Tipo de Chamada</label>
-                            <select value={filterTipo} onChange={e => setFilterTipo(e.target.value)} className="w-full text-sm bg-white dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 outline-none focus:border-blue-400">
-                               <option value="ambas">Ambas</option>
-                               <option value="recebida">Recebidas (Inbound)</option>
-                               <option value="efetuada">Efetuadas (Outbound)</option>
-                            </select>
+                            <OptionPicker
+                              value={filterTipo === 'ambas' ? 'Ambas' : filterTipo === 'recebida' ? 'Recebidas (Inbound)' : filterTipo === 'efetuada' ? 'Efetuadas (Outbound)' : null}
+                              options={[
+                                { label: 'Ambas' },
+                                { label: 'Recebidas (Inbound)' },
+                                { label: 'Efetuadas (Outbound)' },
+                              ]}
+                              placeholder="Tipo"
+                              onChange={(val) => setFilterTipo(val === 'Ambas' ? 'ambas' : val === 'Recebidas (Inbound)' ? 'recebida' : val === 'Efetuadas (Outbound)' ? 'efetuada' : 'ambas')}
+                            />
                          </div>
 
                          {/* Filter: Causa */}
                          <div>
                             <label className="block text-xs font-medium text-slate-500 mb-1.5">Causas do Desligamento</label>
-                            <select value={filterCausa} onChange={e => setFilterCausa(e.target.value)} className="w-full text-sm bg-white dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 outline-none focus:border-blue-400">
-                               <option value="">Selecione as causas</option>
-                               <option value="atendida">Normais (Atendidas)</option>
-                               <option value="nao_atendida">Não Atendidas / Canceladas</option>
-                            </select>
+                            <OptionPicker
+                              value={filterCausa === 'atendida' ? 'Normais (Atendidas)' : filterCausa === 'nao_atendida' ? 'Não Atendidas / Canceladas' : null}
+                              options={[
+                                { label: 'Normais (Atendidas)' },
+                                { label: 'Não Atendidas / Canceladas' },
+                              ]}
+                              placeholder="Selecione as causas"
+                              emptyLabel="Selecione as causas"
+                              onChange={(val) => setFilterCausa(val === 'Normais (Atendidas)' ? 'atendida' : val === 'Não Atendidas / Canceladas' ? 'nao_atendida' : '')}
+                            />
                          </div>
 
                          {/* Filter: Duração */}
                          <div>
                             <label className="block text-xs font-medium text-slate-500 mb-1.5">Duração da Chamada</label>
-                            <select value={filterDuracao} onChange={e => setFilterDuracao(e.target.value)} className="w-full text-sm bg-white dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 outline-none focus:border-blue-400">
-                               <option value="todas">Todas</option>
-                               <option value="curta">Curta (&lt; 1 min)</option>
-                               <option value="media">Média (1 - 5 min)</option>
-                               <option value="longa">Longa (&gt; 5 min)</option>
-                            </select>
+                            <OptionPicker
+                              value={filterDuracao === 'todas' ? 'Todas' : filterDuracao === 'curta' ? 'Curta (< 1 min)' : filterDuracao === 'media' ? 'Média (1 - 5 min)' : filterDuracao === 'longa' ? 'Longa (> 5 min)' : null}
+                              options={[
+                                { label: 'Todas' },
+                                { label: 'Curta (< 1 min)' },
+                                { label: 'Média (1 - 5 min)' },
+                                { label: 'Longa (> 5 min)' },
+                              ]}
+                              placeholder="Duração"
+                              onChange={(val) => setFilterDuracao(val === 'Todas' ? 'todas' : val === 'Curta (< 1 min)' ? 'curta' : val === 'Média (1 - 5 min)' ? 'media' : val === 'Longa (> 5 min)' ? 'longa' : 'todas')}
+                            />
                          </div>
 
                        </div>

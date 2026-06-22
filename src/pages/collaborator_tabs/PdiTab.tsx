@@ -3,6 +3,7 @@ import { motion, animate, AnimatePresence } from 'framer-motion';
 import { Plus, Edit2, Trash2, Book, Activity, Wrench, Brain, Target, X, Check, Calendar, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import SplitHeadline from '../../components/SplitHeadline';
+import OptionPicker from '../../components/ui/OptionPicker';
 
 interface PdiEtapa {
   id?: number;
@@ -461,17 +462,18 @@ export default function PdiTab({ collaboratorId, isAdmin }: PdiTabProps) {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5 uppercase">Tipo *</label>
-                  <select 
-                    required
-                    value={editingItem.tipo || 'Técnico'} 
-                    onChange={e => setEditingItem({...editingItem, tipo: e.target.value as any})}
-                    className="w-full bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-white dark:text-dark-text focus:outline-none focus:border-[#7F77DD]"
-                  >
-                    <option value="Curso">Curso</option>
-                    <option value="Prática">Prática</option>
-                    <option value="Técnico">Técnico</option>
-                    <option value="Comportamental">Comportamental</option>
-                  </select>
+                  <OptionPicker
+                    value={editingItem.tipo || 'Técnico'}
+                    onChange={(val) => setEditingItem({...editingItem, tipo: (val || 'Técnico') as any})}
+                    options={[
+                      { label: 'Curso' },
+                      { label: 'Prática' },
+                      { label: 'Técnico' },
+                      { label: 'Comportamental' },
+                    ]}
+                    placeholder="Tipo"
+                    className="w-full"
+                  />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5 uppercase">Prazo</label>
@@ -552,15 +554,17 @@ export default function PdiTab({ collaboratorId, isAdmin }: PdiTabProps) {
               {editingItem.id && (
                 <div>
                   <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5 uppercase">Status</label>
-                  <select 
-                    value={editingItem.status || 'Em andamento'} 
-                    onChange={e => setEditingItem({...editingItem, status: e.target.value as any})}
-                    className="w-full bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-white dark:text-dark-text focus:outline-none focus:border-[#7F77DD]"
-                  >
-                    <option value="Em andamento">Em andamento</option>
-                    <option value="Concluído">Concluído</option>
-                    <option value="Pausado">Pausado</option>
-                  </select>
+                  <OptionPicker
+                    value={editingItem.status || 'Em andamento'}
+                    onChange={(val) => setEditingItem({...editingItem, status: (val || 'Em andamento') as any})}
+                    options={[
+                      { label: 'Em andamento', color: '#f59e0b' },
+                      { label: 'Concluído', color: '#22c55e' },
+                      { label: 'Pausado', color: '#94a3b8' },
+                    ]}
+                    placeholder="Status"
+                    className="w-full"
+                  />
                   <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">* O status pode ser atualizado automaticamente caso todas as etapas sejam concluídas.</p>
                 </div>
               )}

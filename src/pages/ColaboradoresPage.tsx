@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import OptionPicker from '../components/ui/OptionPicker';
 import { motion } from 'framer-motion';
 import { Plus, Search, ChevronDown, Edit, Trash2, CheckCircle2, Copy, Check, Settings, X, Link, Users } from 'lucide-react';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -507,11 +508,16 @@ export default function ColaboradoresPage() {
                   <div className="col-span-2 sm:col-span-1">
                     <label className="text-xs font-bold text-slate-400 uppercase mb-1.5 block">Status</label>
                     {isEditMode ? (
-                      <select value={formData.status || 'Efetivado'} onChange={e => setFormData({...formData, status: e.target.value})} className="w-full bg-slate-50 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500 appearance-none">
-                        <option value="Efetivado" className="text-slate-800 dark:text-white bg-white dark:bg-dark-card">Efetivado</option>
-                        <option value="Desligamento" className="text-slate-800 dark:text-white bg-white dark:bg-dark-card">Desligamento</option>
-                        <option value="Turnover" className="text-slate-800 dark:text-white bg-white dark:bg-dark-card">Turnover</option>
-                      </select>
+                      <OptionPicker
+                        value={formData.status || 'Efetivado'}
+                        options={[
+                          { label: 'Efetivado' },
+                          { label: 'Desligamento' },
+                          { label: 'Turnover' },
+                        ]}
+                        placeholder="Status"
+                        onChange={(val) => setFormData({...formData, status: val || 'Efetivado'})}
+                      />
                     ) : (
                       <div className="text-sm font-medium text-slate-800 dark:text-white">{formData.status || '-'}</div>
                     )}
@@ -520,12 +526,13 @@ export default function ColaboradoresPage() {
                   <div className="col-span-2 sm:col-span-1">
                     <label className="text-xs font-bold text-slate-400 uppercase mb-1.5 block">Grupo</label>
                     {isEditMode ? (
-                      <select value={formData.group_name || ''} onChange={e => setFormData({...formData, group_name: e.target.value})} className="w-full bg-slate-50 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500 appearance-none">
-                        <option value="" className="text-slate-800 dark:text-white bg-white dark:bg-dark-card">Selecione...</option>
-                        {settings.filter(s => s.type === 'group').map(s => (
-                          <option key={s.id} value={s.name} className="text-slate-800 dark:text-white bg-white dark:bg-dark-card">{s.name}</option>
-                        ))}
-                      </select>
+                      <OptionPicker
+                        value={formData.group_name || null}
+                        options={settings.filter(s => s.type === 'group').map(s => ({ label: s.name }))}
+                        placeholder="Selecione..."
+                        emptyLabel="Selecione..."
+                        onChange={(val) => setFormData({...formData, group_name: val || ''})}
+                      />
                     ) : (
                       <div className="text-sm font-medium text-slate-800 dark:text-white">{formData.group_name || '-'}</div>
                     )}
@@ -534,12 +541,13 @@ export default function ColaboradoresPage() {
                   <div className="col-span-2 sm:col-span-1">
                     <label className="text-xs font-bold text-slate-400 uppercase mb-1.5 block">Cargo</label>
                     {isEditMode ? (
-                      <select value={formData.role || ''} onChange={e => setFormData({...formData, role: e.target.value})} className="w-full bg-slate-50 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500 appearance-none">
-                        <option value="" className="text-slate-800 dark:text-white bg-white dark:bg-dark-card">Selecione...</option>
-                        {settings.filter(s => s.type === 'role').map(s => (
-                          <option key={s.id} value={s.name} className="text-slate-800 dark:text-white bg-white dark:bg-dark-card">{s.name}</option>
-                        ))}
-                      </select>
+                      <OptionPicker
+                        value={formData.role || null}
+                        options={settings.filter(s => s.type === 'role').map(s => ({ label: s.name }))}
+                        placeholder="Selecione..."
+                        emptyLabel="Selecione..."
+                        onChange={(val) => setFormData({...formData, role: val || ''})}
+                      />
                     ) : (
                       <div className="text-sm font-medium text-slate-800 dark:text-white">{formData.role || '-'}</div>
                     )}
@@ -638,12 +646,13 @@ export default function ColaboradoresPage() {
                   <div className="col-span-2">
                     <label className="text-xs font-bold text-slate-400 uppercase mb-3 block">Senioridade</label>
                     {isEditMode ? (
-                      <select value={formData.seniority_level || ''} onChange={e => setFormData({...formData, seniority_level: e.target.value})} className="w-full bg-slate-50 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500 appearance-none">
-                        <option value="" className="text-slate-800 dark:text-white bg-white dark:bg-dark-card">Selecione a senioridade...</option>
-                        {settings.filter(s => s.type === 'seniority').map(s => (
-                          <option key={s.id} value={s.name} className="text-slate-800 dark:text-white bg-white dark:bg-dark-card">{s.name}</option>
-                        ))}
-                      </select>
+                      <OptionPicker
+                        value={formData.seniority_level || null}
+                        options={settings.filter(s => s.type === 'seniority').map(s => ({ label: s.name }))}
+                        placeholder="Selecione a senioridade..."
+                        emptyLabel="Selecione a senioridade..."
+                        onChange={(val) => setFormData({...formData, seniority_level: val || ''})}
+                      />
                     ) : (
                       <div className="text-sm font-medium text-slate-800 dark:text-white">{formData.seniority_level || '-'}</div>
                     )}
@@ -905,11 +914,18 @@ export default function ColaboradoresPage() {
 
             <div className="p-6 overflow-y-auto flex-1">
               <div className="flex gap-2 mb-6 items-center">
-                <select value={newSettingType} onChange={e => setNewSettingType(e.target.value as any)} className="bg-slate-50 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500 appearance-none w-32">
-                  <option value="group">Grupo</option>
-                  <option value="role">Cargo</option>
-                  <option value="seniority">Senioridade</option>
-                </select>
+                <OptionPicker
+                  value={newSettingType === 'group' ? 'Grupo' : newSettingType === 'role' ? 'Cargo' : 'Senioridade'}
+                  options={[
+                    { label: 'Grupo' },
+                    { label: 'Cargo' },
+                    { label: 'Senioridade' },
+                  ]}
+                  placeholder="Tipo"
+                  onChange={(val) => setNewSettingType((val === 'Grupo' ? 'group' : val === 'Cargo' ? 'role' : 'seniority') as any)}
+                  className="w-32"
+                />
+
                 <input value={newSettingName} onChange={e => setNewSettingName(e.target.value)} onKeyDown={e => e.key === 'Enter' && addSetting()} placeholder="Novo item..." className="flex-1 bg-slate-50 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500" />
                 <label className="relative w-10 h-10 flex-shrink-0 cursor-pointer" title="Selecionar cor">
                   <span className="block w-10 h-10 rounded-lg border-2 border-white/20 shadow-lg" style={{ backgroundColor: newSettingColor }} />

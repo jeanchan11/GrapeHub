@@ -1160,7 +1160,12 @@ export default function CrmMetricas() {
                               <div className="w-7 h-7 rounded-lg bg-violet-500/20 flex items-center justify-center text-violet-500 text-xs font-bold shrink-0">
                                 {initials}
                               </div>
-                              <span className="text-dark-text font-medium text-sm line-clamp-1">{f.Nome || '—'}</span>
+                              <div className="flex flex-col">
+                                <span className="text-dark-text font-medium text-sm line-clamp-1">{f.Nome || '—'}</span>
+                                {f.lead_nome && f.lead_nome !== f.Nome && (
+                                  <span className="text-[11px] text-slate-500 line-clamp-1">{f.lead_nome}</span>
+                                )}
+                              </div>
                             </div>
                           </td>
                           <td className="py-3 pr-4 text-slate-500 dark:text-slate-400 text-sm whitespace-nowrap">{day}</td>

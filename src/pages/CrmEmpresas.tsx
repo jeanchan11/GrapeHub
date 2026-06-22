@@ -8,6 +8,7 @@ import { useAuth } from '../contexts/AuthContext';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { Modal } from '../components/ui/Modal';
 import { designSystem } from '../design-system';
+import OptionPicker from '../components/ui/OptionPicker';
 
 interface Empresa {
   id: string;
@@ -359,14 +360,13 @@ export default function CrmEmpresas() {
 
           <div>
             <label className={designSystem.input.label}>Setor</label>
-            <select
-              value={formData.setor}
-              onChange={e => setFormData({...formData, setor: e.target.value})}
-              className={designSystem.input.field}
-            >
-              <option value="">Selecione...</option>
-              {SETORES.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
+            <OptionPicker
+              value={formData.setor || null}
+              options={SETORES.map(s => ({ label: s }))}
+              placeholder="Selecione..."
+              emptyLabel="Selecione..."
+              onChange={(val) => setFormData({...formData, setor: val || ''})}
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-4">

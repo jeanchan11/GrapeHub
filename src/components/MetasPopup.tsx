@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import OptionPicker from './ui/OptionPicker';
 import {
   Plus, Trash2, Trophy, TrendingUp, DollarSign,
   Activity, Target, CheckCircle2, Clock, AlertCircle, X,
@@ -680,25 +681,28 @@ const MetasPopup: React.FC<MetasPopupProps> = ({ isOpen, onClose }) => {
                       {form.tipo !== 'atividades' && form.tipo !== 'receita' && form.tipo !== 'reunioes_marcadas' && form.tipo !== 'reunioes_realizadas' && form.tipo !== 'taxa_conversao' && (
                         <div>
                           <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5 uppercase tracking-wide">Métrica</label>
-                          <select
-                            value={form.metrica}
-                            onChange={e => setForm(f => ({ ...f, metrica: e.target.value }))}
-                            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-violet-500/40"
-                          >
-                            <option value="quantidade">Quantidade</option>
-                            {form.tipo !== 'negocios_andamento' && <option value="valor">Valor (R$)</option>}
-                          </select>
+                          <OptionPicker
+                            value={form.metrica === 'valor' ? 'Valor (R$)' : 'Quantidade'}
+                            options={[
+                              { label: 'Quantidade' },
+                              ...(form.tipo !== 'negocios_andamento' ? [{ label: 'Valor (R$)' }] : []),
+                            ]}
+                            placeholder="Métrica"
+                            onChange={(val) => setForm(f => ({ ...f, metrica: val === 'Valor (R$)' ? 'valor' : 'quantidade' }))}
+                          />
                         </div>
                       )}
                       <div className={form.tipo === 'atividades' || form.tipo === 'receita' || form.tipo === 'reunioes_marcadas' || form.tipo === 'reunioes_realizadas' || form.tipo === 'taxa_conversao' ? 'col-span-2' : ''}>
                         <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5 uppercase tracking-wide">Período</label>
-                        <select
-                          value={form.periodo}
-                          onChange={e => setForm(f => ({ ...f, periodo: e.target.value }))}
-                          className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-violet-500/40"
-                        >
-                          {PERIODOS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
-                        </select>
+                        <OptionPicker
+                          value={PERIODOS.find(p => p.id === form.periodo)?.label || null}
+                          options={PERIODOS.map(p => ({ label: p.label }))}
+                          placeholder="Período"
+                          onChange={(val) => {
+                            const pId = PERIODOS.find(p => p.label === val)?.id || 'mensal';
+                            setForm(f => ({ ...f, periodo: pId }));
+                          }}
+                        />
                       </div>
                     </div>
 
@@ -718,29 +722,32 @@ const MetasPopup: React.FC<MetasPopupProps> = ({ isOpen, onClose }) => {
                     {kanbans.length > 0 && (
                       <div>
                         <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5 uppercase tracking-wide">Pipeline (opcional)</label>
-                        <select
-                          value={form.kanban_id}
-                          onChange={e => setForm(f => ({ ...f, kanban_id: e.target.value }))}
-                          className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-violet-500/40"
-                        >
-                          <option value="">Todos os pipelines</option>
-                          {kanbans.map(k => <option key={k.id} value={k.id}>{k.nome}</option>)}
-                        </select>
+                        <OptionPicker
+                          value={kanbans.find(k => k.id === form.kanban_id)?.nome || null}
+                          options={kanbans.map(k => ({ label: k.nome }))}
+                          placeholder="Todos os pipelines"
+                          emptyLabel="Todos os pipelines"
+                          onChange={(val) => {
+                            const kId = kanbans.find(k => k.nome === val)?.id || '';
+                            setForm(f => ({ ...f, kanban_id: kId }));
+                          }}
+                        />
                       </div>
                     )}
 
                     {form.tipo === 'negocios_andamento' && (
                       <div>
                         <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5 uppercase tracking-wide">Etapa alvo</label>
-                        <select
-                          value={form.coluna_id}
-                          onChange={e => setForm(f => ({ ...f, coluna_id: e.target.value }))}
-                          className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-violet-500/40"
-                          disabled={!form.kanban_id}
-                        >
-                          <option value="">Qualquer etapa</option>
-                          {columns.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
-                        </select>
+                        <OptionPicker
+                          value={columns.find(c => c.id === form.coluna_id)?.title || null}
+                          options={columns.map(c => ({ label: c.title }))}
+                          placeholder="Qualquer etapa"
+                          emptyLabel="Qualquer etapa"
+                          onChange={(val) => {
+                            const cId = columns.find(c => c.title === val)?.id || '';
+                            setForm(f => ({ ...f, coluna_id: cId }));
+                          }}
+                        />
                         {!form.kanban_id && (
                           <p className="text-xs text-slate-400 mt-1">Selecione um pipeline para filtrar por etapa</p>
                         )}
@@ -750,28 +757,32 @@ const MetasPopup: React.FC<MetasPopupProps> = ({ isOpen, onClose }) => {
                     {form.tipo === 'atividades' && (
                       <div>
                         <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5 uppercase tracking-wide">Tipo de atividade (opcional)</label>
-                        <select
-                          value={form.activity_type}
-                          onChange={e => setForm(f => ({ ...f, activity_type: e.target.value }))}
-                          className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-violet-500/40"
-                        >
-                          <option value="">Todos os tipos</option>
-                          {ACTIVITY_TYPES.map(a => <option key={a.id} value={a.id}>{a.label}</option>)}
-                        </select>
+                        <OptionPicker
+                          value={ACTIVITY_TYPES.find(a => a.id === form.activity_type)?.label || null}
+                          options={ACTIVITY_TYPES.map(a => ({ label: a.label }))}
+                          placeholder="Todos os tipos"
+                          emptyLabel="Todos os tipos"
+                          onChange={(val) => {
+                            const aId = ACTIVITY_TYPES.find(a => a.label === val)?.id || '';
+                            setForm(f => ({ ...f, activity_type: aId }));
+                          }}
+                        />
                       </div>
                     )}
 
                     {users.length > 0 && (
                       <div>
                         <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5 uppercase tracking-wide">Responsável (opcional)</label>
-                        <select
-                          value={form.responsavel_id}
-                          onChange={e => setForm(f => ({ ...f, responsavel_id: e.target.value }))}
-                          className="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-violet-500/40"
-                        >
-                          <option value="">Todos os usuários</option>
-                          {users.map(u => <option key={u.id} value={u.email}>{u.name}</option>)}
-                        </select>
+                        <OptionPicker
+                          value={users.find(u => u.email === form.responsavel_id)?.name || null}
+                          options={users.map(u => ({ label: u.name }))}
+                          placeholder="Todos os usuários"
+                          emptyLabel="Todos os usuários"
+                          onChange={(val) => {
+                            const email = users.find(u => u.name === val)?.email || '';
+                            setForm(f => ({ ...f, responsavel_id: email }));
+                          }}
+                        />
                       </div>
                     )}
 

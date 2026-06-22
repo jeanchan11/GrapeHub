@@ -12,6 +12,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import admin from "firebase-admin";
 import { setupCollectionRoutes } from "./src/routes/collection";
 import { setupDispatchRoutes } from "./src/routes/dispatch";
+import { setupBolaoRoutes } from "./src/routes/bolao";
 import { normalizePhoneBR } from './src/utils/phoneNormalize';
 import rateLimit from 'express-rate-limit';
 import cors from 'cors';
@@ -409,6 +410,38 @@ async function startServer() {
   pool.on('error', (err, client) => {
     console.error('Unexpected error on idle client', err);
   });
+
+  // ── Token Encryption Utilities ───────────────────────────────────────────
+  const TOKEN_ENCRYPTION_KEY = process.env.TOKEN_ENCRYPTION_KEY; // 64 hex chars = 32 bytes
+
+  function encryptToken(plainText: string): string {
+    if (!TOKEN_ENCRYPTION_KEY) throw new Error('TOKEN_ENCRYPTION_KEY not configured');
+    const key = Buffer.from(TOKEN_ENCRYPTION_KEY, 'hex');
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+    const encrypted = Buffer.concat([cipher.update(plainText, 'utf8'), cipher.final()]);
+    const authTag = cipher.getAuthTag();
+    return `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted.toString('hex')}`;
+  }
+
+  function decryptToken(encryptedStr: string): string {
+    if (!TOKEN_ENCRYPTION_KEY) throw new Error('TOKEN_ENCRYPTION_KEY not configured');
+    const [ivHex, authTagHex, ciphertextHex] = encryptedStr.split(':');
+    const key = Buffer.from(TOKEN_ENCRYPTION_KEY, 'hex');
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(ivHex, 'hex'));
+    decipher.setAuthTag(Buffer.from(authTagHex, 'hex'));
+    return decipher.update(ciphertextHex, 'hex', 'utf8') + decipher.final('utf8');
+  }
+
+  function maskToken(encryptedStr: string): string {
+    try {
+      const plain = decryptToken(encryptedStr);
+      const last4 = plain.slice(-4);
+      return `\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022${last4}`;
+    } catch {
+      return '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022';
+    }
+  }
 
   // Initialize Tables
   try {
@@ -1722,6 +1755,40 @@ async function startServer() {
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
+
+    // Project Tokens — new columns for structured platform support + encryption
+    await pool.query(`ALTER TABLE project_tokens ADD COLUMN IF NOT EXISTS platform TEXT NOT NULL DEFAULT 'outro'`).catch(e => console.error('migrate platform:', e.message));
+    await pool.query(`ALTER TABLE project_tokens ADD COLUMN IF NOT EXISTS account_id TEXT`).catch(e => console.error('migrate account_id:', e.message));
+    await pool.query(`ALTER TABLE project_tokens ADD COLUMN IF NOT EXISTS token_encrypted TEXT`).catch(e => console.error('migrate token_encrypted:', e.message));
+    await pool.query(`ALTER TABLE project_tokens ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'`).catch(e => console.error('migrate status:', e.message));
+    await pool.query(`ALTER TABLE project_tokens ADD COLUMN IF NOT EXISTS last_synced_at TIMESTAMPTZ`).catch(e => console.error('migrate last_synced_at:', e.message));
+    await pool.query(`ALTER TABLE project_tokens ADD COLUMN IF NOT EXISTS last_error TEXT`).catch(e => console.error('migrate last_error:', e.message));
+
+    // Migrate legacy plain-text tokens to encrypted
+    if (TOKEN_ENCRYPTION_KEY) {
+      try {
+        const legacyTokens = await pool.query(
+          `SELECT id, token_value, service_name FROM project_tokens WHERE token_value IS NOT NULL AND token_value != '' AND (token_encrypted IS NULL OR token_encrypted = '')`
+        );
+        for (const row of legacyTokens.rows) {
+          if (row.token_value?.trim()) {
+            const encrypted = encryptToken(row.token_value.trim());
+            await pool.query(
+              `UPDATE project_tokens SET token_encrypted = $1, platform = 'outro', status = 'pending_reauth', token_value = NULL WHERE id = $2`,
+              [encrypted, row.id]
+            );
+            console.log(`[DB] Migrated legacy token id=${row.id} (${row.service_name}) to encrypted`);
+          }
+        }
+        if (legacyTokens.rows.length > 0) {
+          console.log(`[DB] Migrated ${legacyTokens.rows.length} legacy token(s) to encrypted storage.`);
+        }
+      } catch (e: any) {
+        console.error('[DB] Error migrating legacy tokens:', e.message);
+      }
+    } else {
+      console.warn('[WARN] TOKEN_ENCRYPTION_KEY not set — token encryption disabled. Legacy tokens NOT migrated.');
+    }
 
     // ── Hiring / Contratação tables ──────────────────────────────────────────
     await pool.query(`
@@ -4388,6 +4455,7 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
+
   // Clients API
   app.get("/api/clients", async (req, res) => {
     try {
@@ -4446,9 +4514,7 @@ app.get("/api/todos", async (req, res) => {
              OR (c.fin_people_guid IS NOT NULL AND fp.guid = c.fin_people_guid)
           LIMIT 1
         ) fp_link ON true
-        LEFT JOIN fin_subscriptions fs ON 
-          (c.fin_subscription_id IS NOT NULL AND fs.id::text = c.fin_subscription_id) OR
-          (c.fin_subscription_id IS NULL AND fs.customer_id = fp_link.asaas_id AND fs.status = 'ACTIVE')
+        LEFT JOIN fin_subscriptions fs ON c.fin_subscription_id IS NOT NULL AND c.fin_subscription_id != '' AND fs.id::text = c.fin_subscription_id
         LEFT JOIN receivable_agg ra ON ra.customer_id = fp_link.asaas_id
         ${whereClause}
         ORDER BY c.sort_order ASC, c.name ASC
@@ -8686,6 +8752,8 @@ app.get("/api/todos", async (req, res) => {
           );
 
           // ── Auto-insert em fechamentos quando lead vai para coluna terminal ──
+          // Garante coluna lead_nome
+          await pool.query(`ALTER TABLE fechamentos ADD COLUMN IF NOT EXISTS lead_nome TEXT`).catch(() => {});
           try {
             // Verifica se a coluna destino é terminal (ganho/fechado)
             const destColResult = await pool.query(
@@ -8722,10 +8790,11 @@ app.get("/api/todos", async (req, res) => {
                 const cFat     = fcols.find((c: string) => c.toLowerCase().includes('fatura')) || fcols[5] || 'id';
                 const cCidade  = fcols.find((c: string) => c.toLowerCase().includes('cidade')) || fcols[6] || 'id';
 
+                const leadNome = lf.nome || '';
                 await pool.query(
-                  `INSERT INTO fechamentos (day, "${cNome}", "${cValor}", "${cOrigem}", "${cFat}", "${cCidade}")
-                   VALUES ($1, $2, $3, $4, $5, $6)`,
-                  [dayInsert, nomeInsert, valorInsert, origemInsert, faturInsert, cidadeInsert]
+                  `INSERT INTO fechamentos (day, "${cNome}", "${cValor}", "${cOrigem}", "${cFat}", "${cCidade}", lead_nome)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+                  [dayInsert, nomeInsert, valorInsert, origemInsert, faturInsert, cidadeInsert, leadNome]
                 );
                 console.log(`[FECHAMENTO] Auto-inserted fechamento for lead ${id} → coluna "${destTitle}"`);
               }
@@ -10998,9 +11067,24 @@ app.get("/api/todos", async (req, res) => {
       // Encontrar coluna cidade
       const cidadeCol = colNames.find((c: string) => c.toLowerCase().includes('cidade')) || 'id';
 
+      // Garante coluna lead_nome na tabela fechamentos
+      await pool.query(`ALTER TABLE fechamentos ADD COLUMN IF NOT EXISTS lead_nome TEXT`).catch(() => {});
+
+      // Backfill: preenche lead_nome nos fechamentos antigos que ainda não têm
+      await pool.query(`
+        UPDATE fechamentos f
+        SET lead_nome = l.nome
+        FROM crm_comercial_leads l
+        WHERE f.lead_nome IS NULL
+          AND l.form_nome_fantasia IS NOT NULL
+          AND l.form_nome_fantasia != ''
+          AND f."${nomeCol}" = l.form_nome_fantasia
+      `).catch(() => {});
+
       // Fechamentos do mês selecionado
       const fechamentosMonth = await pool.query(`
-        SELECT id, day, "${nomeCol}" as "Nome", "${valorCol}" as "Valor", "${origemCol}" as origem, "${cidadeCol}" as "Cidade"
+        SELECT id, day, "${nomeCol}" as "Nome", "${valorCol}" as "Valor", "${origemCol}" as origem, "${cidadeCol}" as "Cidade",
+               COALESCE(lead_nome, '') as lead_nome
         FROM fechamentos
         WHERE day >= $1 AND day <= $2
         ORDER BY day DESC
@@ -11398,7 +11482,7 @@ app.get("/api/todos", async (req, res) => {
     try {
       const { id } = req.params;
       const fields = req.body;
-      const allowed = ['client_name','squad','responsible_id','responsible_name','responsible_avatar','start_date','due_date','status_group','tags','subtask_count','nome_completo','nome_fantasia','telefone_whatsapp','cnpj_cpf','cep','cidade','uf','produto','responsavel_projeto_id','responsavel_projeto_name','responsavel_projeto_avatar','hospedagem','entregavel','prioridade','description'];
+      const allowed = ['client_name','squad','responsible_id','responsible_name','responsible_avatar','start_date','due_date','status_group','tags','subtask_count','nome_completo','nome_fantasia','telefone_whatsapp','cnpj_cpf','cep','cidade','uf','produto','responsavel_projeto_id','responsavel_projeto_name','responsavel_projeto_avatar','hospedagem','entregavel','prioridade','description','co_responsibles'];
       const DATE_FIELDS = ['start_date', 'due_date'];
       const sets: string[] = [];
       const vals: any[] = [];
@@ -11581,6 +11665,7 @@ app.get("/api/todos", async (req, res) => {
 
   // Add type column to onboarding_tasks if missing (shared with operacional)
   await pool.query(`ALTER TABLE onboarding_tasks ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'operacional'`);
+  await pool.query(`ALTER TABLE onboarding_tasks ADD COLUMN IF NOT EXISTS co_responsibles TEXT DEFAULT '[]'`);
 
   // ── Briefing Forms ──
   await pool.query(`
@@ -12049,14 +12134,18 @@ app.get("/api/todos", async (req, res) => {
   });
 
   // ── GET tasks ──
-  app.get('/api/onboarding-tasks', async (req, res) => {
+   app.get('/api/onboarding-tasks', async (req, res) => {
     try {
       const type = req.query.type || 'operacional';
       const result = await pool.query(
         'SELECT * FROM onboarding_tasks WHERE type = $1 ORDER BY status_group, order_index ASC, created_at DESC',
         [type]
       );
-      res.json(result.rows);
+      const rows = result.rows.map((r: any) => ({
+        ...r,
+        co_responsibles: (() => { try { return JSON.parse(r.co_responsibles || '[]'); } catch { return []; } })()
+      }));
+      res.json(rows);
     } catch (err) {
       console.error('GET /api/onboarding-tasks error:', err);
       res.status(500).json({ error: 'Erro ao buscar tarefas.' });
@@ -12505,15 +12594,47 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
-  // Get briefing by task_id (internal)
+  // Get briefing by task_id (internal) — with fallback matching by client name
   app.get('/api/briefings/by-task/:taskId', async (req, res) => {
     try {
+      // Primary lookup: by task_id
       const result = await pool.query(
-        'SELECT * FROM briefings WHERE task_id = $1 ORDER BY created_at DESC LIMIT 1',
+        'SELECT * FROM briefings WHERE task_id = $1 ORDER BY submitted_at DESC NULLS LAST LIMIT 1',
         [req.params.taskId]
       );
-      if (result.rows.length === 0) return res.status(404).json({ error: 'Briefing não encontrado.' });
-      res.json(result.rows[0]);
+      if (result.rows.length > 0) return res.json(result.rows[0]);
+
+      // Fallback: find submitted briefing matching the task's client_name
+      const taskRes = await pool.query(
+        'SELECT client_name, nome_fantasia FROM onboarding_tasks WHERE id = $1',
+        [req.params.taskId]
+      );
+      if (taskRes.rows.length === 0) return res.status(404).json({ error: 'Task não encontrada.' });
+
+      const { client_name, nome_fantasia } = taskRes.rows[0];
+      const names = [client_name, nome_fantasia].filter(Boolean);
+
+      if (names.length === 0) return res.status(404).json({ error: 'Briefing não encontrado.' });
+
+      // Try to find a submitted briefing whose task_name or form_data matches
+      const fallback = await pool.query(
+        `SELECT * FROM briefings
+         WHERE submitted_at IS NOT NULL
+           AND task_id IS NULL
+           AND (task_name ILIKE ANY($1) OR
+                form_data->>'nome_fantasia' ILIKE ANY($1) OR
+                form_data->>'razao_social' ILIKE ANY($1))
+         ORDER BY submitted_at DESC LIMIT 1`,
+        [names.map((n: string) => n.trim())]
+      );
+
+      if (fallback.rows.length === 0) return res.status(404).json({ error: 'Briefing não encontrado.' });
+
+      const briefing = fallback.rows[0];
+      // Auto-link for future lookups
+      await pool.query('UPDATE briefings SET task_id = $1 WHERE id = $2', [req.params.taskId, briefing.id]);
+      briefing.task_id = parseInt(req.params.taskId);
+      return res.json(briefing);
     } catch (err) {
       console.error('GET /api/briefings/by-task error:', err);
       res.status(500).json({ error: 'Erro ao buscar briefing.' });
@@ -12544,12 +12665,62 @@ app.get("/api/todos", async (req, res) => {
         [JSON.stringify(form_data), req.params.id]
       );
       if (result.rows.length === 0) return res.status(404).json({ error: 'Briefing não encontrado.' });
-      res.json(result.rows[0]);
+      const briefing = result.rows[0];
+
+      // ── Auto-create VisualHub task in "A DESENVOLVER" ──────────────────────
+      try {
+        const fd = form_data || {};
+
+        // Build client_name: prefer nome_fantasia, fallback to razao_social or briefing title
+        const clientName = (fd.nome_fantasia || fd.razao_social || briefing.task_name || briefing.title || 'Novo cliente').trim();
+
+        // Build cidade/UF
+        const cidadeUf = fd.cidade_uf || '';
+        const cidadeParts = cidadeUf.split(',').map((s: string) => s.trim());
+        const cidade = cidadeParts[0] || null;
+        const uf = cidadeParts[1] || null;
+
+        // nome_escritorio: se não definido ainda, usar nome_fantasia
+        const nomeEscritorio = fd.nome_escritorio || fd.nome_fantasia || null;
+
+        const taskResult = await pool.query(
+          `INSERT INTO onboarding_tasks
+            (client_name, nome_fantasia, telefone_whatsapp, cidade, uf, status_group, type, tags, start_date)
+           VALUES ($1, $2, $3, $4, $5, 'a-desenvolver', 'visual-hub', $6, NOW())
+           RETURNING id`,
+          [
+            clientName,
+            nomeEscritorio,
+            fd.telefone || null,
+            cidade,
+            uf,
+            [],
+          ]
+        );
+
+        // Link the new task to the briefing so the modal can find the form responses
+        if (taskResult.rows.length > 0) {
+          const newTaskId = taskResult.rows[0].id;
+          await pool.query(
+            `UPDATE briefings SET task_id = $1 WHERE id = $2`,
+            [newTaskId, req.params.id]
+          );
+          console.log(`[briefing submit] Created visual-hub task #${newTaskId} for "${clientName}" and linked to briefing #${req.params.id}`);
+        }
+
+      } catch (taskErr) {
+        // Task creation failure should NOT block the briefing submission response
+        console.error('[briefing submit] Failed to auto-create task:', taskErr);
+      }
+      // ───────────────────────────────────────────────────────────────────────
+
+      res.json(briefing);
     } catch (err) {
       console.error('POST /api/briefings/public/submit error:', err);
       res.status(500).json({ error: 'Erro ao salvar briefing.' });
     }
   });
+
 
   // Get all briefings (internal)
   app.get('/api/briefings', async (req, res) => {
@@ -15282,6 +15453,9 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
   // ── Dispatch Queue Routes ──────────────────────────────────────────────────
   setupDispatchRoutes(app, pool);
 
+  // ── Bolão da Copa Routes ───────────────────────────────────────────────────
+  await setupBolaoRoutes(app, pool);
+
   // ── Meeting Notes Routes ───────────────────────────────────────────────────
   await pool.query(`
     CREATE TABLE IF NOT EXISTS meeting_notes (
@@ -15428,44 +15602,148 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
-  // Project Tokens endpoints
+  // ── Project Tokens endpoints (structured + encrypted) ────────────────────
+  const PLATFORM_LABELS: Record<string, string> = {
+    meta_ads: 'Meta Ads',
+    google_ads: 'Google Ads',
+    tiktok_ads: 'TikTok Ads',
+    outro: 'Outro',
+  };
+  const VALID_PLATFORMS = Object.keys(PLATFORM_LABELS);
+  const PLATFORMS_REQUIRING_ACCOUNT = ['meta_ads', 'google_ads'];
+
+  // GET — list tokens (masked)
   app.get('/api/project-tokens', async (req, res) => {
     try {
       const { project_id } = req.query;
+      if (!project_id) return res.status(400).json({ error: 'project_id required' });
       const r = await pool.query(
-        `SELECT * FROM project_tokens WHERE project_id = $1 ORDER BY created_at DESC`,
+        `SELECT id, project_id, platform, service_name, account_id, token_encrypted, notes, status, created_at, last_synced_at, last_error
+         FROM project_tokens WHERE project_id = $1 ORDER BY created_at DESC`,
         [project_id]
       );
-      res.json(r.rows);
+      const rows = r.rows.map((row: any) => ({
+        ...row,
+        token_masked: row.token_encrypted ? maskToken(row.token_encrypted) : null,
+        token_encrypted: undefined, // never expose
+        token_value: undefined,     // never expose legacy
+      }));
+      res.json(rows);
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
+  // POST — create token (encrypted)
   app.post('/api/project-tokens', async (req, res) => {
     try {
-      const { project_id, service_name, token_value, notes } = req.body;
+      const { project_id, platform, account_id, token, notes } = req.body;
+      if (!project_id || !platform || !token?.trim()) {
+        return res.status(400).json({ error: 'project_id, platform, and token are required' });
+      }
+      if (!VALID_PLATFORMS.includes(platform)) {
+        return res.status(400).json({ error: `Invalid platform. Must be one of: ${VALID_PLATFORMS.join(', ')}` });
+      }
+      if (PLATFORMS_REQUIRING_ACCOUNT.includes(platform) && !account_id?.trim()) {
+        return res.status(400).json({ error: 'account_id is required for ' + platform });
+      }
+      if (!TOKEN_ENCRYPTION_KEY) {
+        return res.status(500).json({ error: 'Server encryption key not configured' });
+      }
+      const encrypted = encryptToken(token.trim());
+      const serviceName = PLATFORM_LABELS[platform] || platform;
       const r = await pool.query(
-        `INSERT INTO project_tokens (project_id, service_name, token_value, notes) VALUES ($1,$2,$3,$4) RETURNING *`,
-        [project_id, service_name, token_value, notes]
+        `INSERT INTO project_tokens (project_id, platform, service_name, account_id, token_encrypted, notes, status)
+         VALUES ($1,$2,$3,$4,$5,$6,'active') RETURNING id, project_id, platform, service_name, account_id, notes, status, created_at`,
+        [project_id, platform, serviceName, account_id?.trim() || null, encrypted, notes || null]
       );
-      res.json(r.rows[0]);
+      const row = r.rows[0];
+      res.json({ ...row, token_masked: maskToken(encrypted) });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
+  // PATCH — update token
   app.patch('/api/project-tokens/:id', async (req, res) => {
     try {
-      const { service_name, token_value, notes } = req.body;
+      const { platform, account_id, token, notes } = req.body;
+      if (platform && !VALID_PLATFORMS.includes(platform)) {
+        return res.status(400).json({ error: `Invalid platform. Must be one of: ${VALID_PLATFORMS.join(', ')}` });
+      }
+      const effectivePlatform = platform;
+      if (effectivePlatform && PLATFORMS_REQUIRING_ACCOUNT.includes(effectivePlatform) && !account_id?.trim()) {
+        // If changing to a platform that requires account_id, check it
+        const existing = await pool.query(`SELECT account_id FROM project_tokens WHERE id = $1`, [req.params.id]);
+        if (!existing.rows[0]?.account_id && !account_id?.trim()) {
+          return res.status(400).json({ error: 'account_id is required for ' + effectivePlatform });
+        }
+      }
+
+      const updates: string[] = [];
+      const values: any[] = [];
+      let paramIdx = 1;
+
+      if (platform) {
+        updates.push(`platform = $${paramIdx}`);
+        values.push(platform);
+        paramIdx++;
+        updates.push(`service_name = $${paramIdx}`);
+        values.push(PLATFORM_LABELS[platform] || platform);
+        paramIdx++;
+      }
+      if (account_id !== undefined) {
+        updates.push(`account_id = $${paramIdx}`);
+        values.push(account_id?.trim() || null);
+        paramIdx++;
+      }
+      if (token?.trim()) {
+        if (!TOKEN_ENCRYPTION_KEY) return res.status(500).json({ error: 'Server encryption key not configured' });
+        const encrypted = encryptToken(token.trim());
+        updates.push(`token_encrypted = $${paramIdx}`);
+        values.push(encrypted);
+        paramIdx++;
+        updates.push(`token_value = NULL`); // clear legacy
+      }
+      if (notes !== undefined) {
+        updates.push(`notes = $${paramIdx}`);
+        values.push(notes);
+        paramIdx++;
+      }
+
+      if (updates.length === 0) return res.status(400).json({ error: 'No fields to update' });
+
+      values.push(req.params.id);
       const r = await pool.query(
-        `UPDATE project_tokens SET service_name = COALESCE($1, service_name), token_value = COALESCE($2, token_value), notes = COALESCE($3, notes) WHERE id = $4 RETURNING *`,
-        [service_name, token_value, notes, req.params.id]
+        `UPDATE project_tokens SET ${updates.join(', ')} WHERE id = $${paramIdx}
+         RETURNING id, project_id, platform, service_name, account_id, token_encrypted, notes, status, created_at, last_synced_at, last_error`,
+        values
       );
-      res.json(r.rows[0]);
+      if (r.rows.length === 0) return res.status(404).json({ error: 'Token not found' });
+      const row = r.rows[0];
+      res.json({
+        ...row,
+        token_masked: row.token_encrypted ? maskToken(row.token_encrypted) : null,
+        token_encrypted: undefined,
+        token_value: undefined,
+      });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
+  // DELETE — remove token
   app.delete('/api/project-tokens/:id', async (req, res) => {
     try {
       await pool.query(`DELETE FROM project_tokens WHERE id = $1`, [req.params.id]);
       res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // GET — reveal decrypted token (for n8n / copy button)
+  app.get('/api/project-tokens/:id/reveal', async (req, res) => {
+    try {
+      if (!TOKEN_ENCRYPTION_KEY) return res.status(500).json({ error: 'Server encryption key not configured' });
+      const r = await pool.query(`SELECT token_encrypted FROM project_tokens WHERE id = $1`, [req.params.id]);
+      if (r.rows.length === 0) return res.status(404).json({ error: 'Token not found' });
+      const { token_encrypted } = r.rows[0];
+      if (!token_encrypted) return res.status(404).json({ error: 'No encrypted token stored' });
+      const plain = decryptToken(token_encrypted);
+      res.json({ token: plain });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 

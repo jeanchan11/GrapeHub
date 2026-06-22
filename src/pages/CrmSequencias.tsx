@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import OptionPicker from '../components/ui/OptionPicker';
 import SplitHeadline from '../components/SplitHeadline';
 import { 
   ChevronLeft, Plus, Edit2, Trash2, 
@@ -381,22 +382,18 @@ const CrmSequencias = () => {
 
                     <div>
                       <label className="text-[10px] font-bold uppercase tracking-widest text-gray-600 dark:text-slate-400 block mb-1.5">Tipo de Atividade</label>
-                      <div className="relative">
-                        <select 
-                          value={seqForm.steps[selectedStepIndex].type} 
-                          onChange={e => handleSeqAction(selectedStepIndex, 'type', e.target.value)}
-                          className={`w-full bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-white/10 rounded-xl px-9 py-2.5 text-sm font-bold appearance-none focus:outline-none focus:border-violet-500 transition-colors cursor-pointer ${SEQ_TYPE_COLOR[seqForm.steps[selectedStepIndex].type] || 'text-gray-900 dark:text-white'}`}
-                        >
-                          <option value="WhatsApp">WhatsApp</option>
-                          <option value="Ligação">Ligação</option>
-                          <option value="Email">Email</option>
-                          <option value="Reunião">Reunião</option>
-                          <option value="Tarefa">Tarefa genérica</option>
-                        </select>
-                        <div className={`absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none ${SEQ_TYPE_COLOR[seqForm.steps[selectedStepIndex].type] || 'text-gray-500'}`}>
-                          {SEQ_TYPE_ICON[seqForm.steps[selectedStepIndex].type] || <CheckSquare size={16} />}
-                        </div>
-                      </div>
+                      <OptionPicker
+                        value={seqForm.steps[selectedStepIndex].type}
+                        options={[
+                          { label: 'WhatsApp' },
+                          { label: 'Ligação' },
+                          { label: 'Email' },
+                          { label: 'Reunião' },
+                          { label: 'Tarefa' },
+                        ]}
+                        placeholder="Tipo de atividade"
+                        onChange={(val) => handleSeqAction(selectedStepIndex, 'type', val || 'WhatsApp')}
+                      />
                     </div>
 
                     <div>

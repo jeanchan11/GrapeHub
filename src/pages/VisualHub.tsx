@@ -58,6 +58,7 @@ interface OnboardingTask {
   hospedagem?: string | null;
   entregavel?: string | null;
   prioridade?: string | null;
+  co_responsibles?: { id: string; name: string; avatar: string | null }[];
 }
 
 interface CommentFile {
@@ -281,7 +282,7 @@ export const COL_DEFS: Record<ColId, ColDef> = {
   prioridade: { id: 'prioridade', label: 'Prioridade', width: 'w-20' },
   hospedagem: { id: 'hospedagem', label: 'Hospedagem', width: 'w-28' },
   squad:      { id: 'squad',      label: 'Squad',       width: 'w-32' },
-  resp:       { id: 'resp',       label: 'Resp.',       width: 'w-16' },
+  resp:       { id: 'resp',       label: 'Resp.',       width: 'w-24' },
   start_date: { id: 'start_date', label: 'Data Iníc.',  width: 'w-24' },
   due_date:   { id: 'due_date',   label: 'Data Fim',    width: 'w-24' },
 
@@ -914,6 +915,87 @@ const TaskFilesCell = ({ taskId }: { taskId: number }) => {
   );
 };
 
+// ── Generic Option Picker (custom dropdown, no native <select>) ──────────────
+const OptionPicker = ({ value, options, placeholder, onChange, emptyLabel, compact = false }: {
+  value: string | null | undefined;
+  options: { label: string; color?: string; bg?: string; border?: string }[];
+  placeholder?: string;
+  onChange: (val: string | null) => void;
+  emptyLabel?: string;
+  compact?: boolean;
+}) => {
+  const [open, setOpen] = useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  const selected = options.find(o => o.label === value);
+  const cs = selected ? {
+    bg: selected.bg || (selected.color ? selected.color + '26' : undefined),
+    text: selected.color || '#94a3b8',
+    border: selected.border || (selected.color ? selected.color + '4D' : undefined),
+  } : null;
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className={`flex items-center gap-1.5 rounded-lg transition-all cursor-pointer ${
+          compact
+            ? 'px-2 py-1 text-[10px] font-bold uppercase tracking-wider border hover:bg-white/5'
+            : 'px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider border hover:bg-white/5'
+        }`}
+        style={cs ? {
+          background: cs.bg,
+          color: cs.text,
+          borderColor: cs.border,
+        } : {
+          background: 'transparent',
+          borderColor: compact ? 'transparent' : 'rgba(255,255,255,0.1)',
+          color: '#94a3b8',
+        }}
+      >
+        {value || placeholder || '—'}
+        <ChevronDown size={12} className="opacity-50" />
+      </button>
+
+      {open && (
+        <div className="absolute top-full left-0 mt-1 z-50 bg-dark-card border border-white/10 rounded-xl shadow-2xl py-1.5 min-w-[160px] animate-in fade-in slide-in-from-top-1 duration-150">
+          {emptyLabel !== undefined && (
+            <button
+              onClick={() => { onChange(null); setOpen(false); }}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-500 hover:bg-white/5 transition-colors"
+            >
+              <span className="flex-1 text-left font-medium">{emptyLabel || '—'}</span>
+              {!value && <Check size={14} className="text-slate-400 shrink-0" />}
+            </button>
+          )}
+          {options.map(opt => (
+            <button
+              key={opt.label}
+              onClick={() => { onChange(opt.label); setOpen(false); }}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-dark-text hover:bg-white/5 transition-colors"
+            >
+              {opt.color && (
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: opt.color }} />
+              )}
+              <span className="flex-1 text-left font-medium">{opt.label}</span>
+              {value === opt.label && <Check size={14} className="text-violet-400 shrink-0" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ── Priority Config & Picker ──────────────────────────────
 const PRIORITY_OPTIONS = [
   { value: 'Urgente', label: 'Urgente', color: '#ef4444', bg: 'rgba(239,68,68,0.15)', border: 'rgba(239,68,68,0.3)' },
@@ -1085,7 +1167,7 @@ const SortableSubtaskRow = ({
       </div>
       
       <div className="shrink-0 w-24" />
-      <div className="shrink-0 w-28 text-xs text-slate-500 text-left pl-2 font-medium">
+      <div className="shrink-0 w-24 text-xs text-slate-500 text-left pl-2 font-medium">
         <SingleDatePicker value={sub.due_date || undefined} onChange={(v: any) => handleSubtaskDate(sub.id, 'due_date', v)} align="right" checkOverdue />
       </div>
       <div className="shrink-0 w-[22px]" />
@@ -1137,8 +1219,12 @@ const DraggableColHeaders = () => {
   const reset = () => { dragColRef.current = null; setDraggingCol(null); setOverCol(null); };
 
   return (
-    <div className="flex items-center gap-2 px-8 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-black/[0.07] dark:border-white/5">
+    <div className="flex items-center gap-2 px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-black/[0.07] dark:border-white/5">
+      {/* Spacer: drag handle (GripVertical 14px) */}
       <div className="w-[14px] shrink-0" />
+      {/* Spacer: expand chevron (ChevronRight 14px) */}
+      <div className="w-[14px] shrink-0" />
+      {/* Spacer: status circle (w-4 = 16px) */}
       <div className="w-4 shrink-0" />
       <div className="flex-1 min-w-[200px]">Nome</div>
       {colOrder.map(colId => {
@@ -1165,6 +1251,8 @@ const DraggableColHeaders = () => {
           </div>
         );
       })}
+      {/* Spacer: More menu button at end of row (w-22px roughly) */}
+      <div className="w-[22px] shrink-0" />
     </div>
   );
 };
@@ -1299,11 +1387,44 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask, dragHandleProps 
 
   const handleTaskResponsible = async (userId: string, userName: string, userAvatar: string) => {
     setTaskRespPicker(false);
+
+    // Build current list of all responsibles
+    const coResponsibles: { id: string; name: string; avatar: string | null }[] = task.co_responsibles || [];
+    const mainResp = task.responsible_id ? { id: task.responsible_id, name: task.responsible_name || '', avatar: task.responsible_avatar || null } : null;
+
+    // All selected (main + co)
+    const allSelected = [
+      ...(mainResp ? [mainResp] : []),
+      ...coResponsibles.filter(r => r.id !== (mainResp?.id || ''))
+    ];
+
+    const alreadySelected = allSelected.findIndex(r => r.id === userId);
+
+    let newAll: { id: string; name: string; avatar: string | null }[];
+    if (alreadySelected >= 0) {
+      // Toggle off — remove this user
+      newAll = allSelected.filter(r => r.id !== userId);
+    } else {
+      // Toggle on — add this user
+      newAll = [...allSelected, { id: userId, name: userName, avatar: userAvatar }];
+    }
+
+    // First in array = main responsible, rest = co_responsibles
+    const newMain = newAll[0] || null;
+    const newCo = newAll.slice(1);
+
+    const payload: Record<string, any> = {
+      responsible_id: newMain?.id || null,
+      responsible_name: newMain?.name || null,
+      responsible_avatar: newMain?.avatar || null,
+      co_responsibles: JSON.stringify(newCo),
+    };
+
     try {
       await fetch(`/api/onboarding-tasks/${task.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ responsible_id: userId, responsible_name: userName, responsible_avatar: userAvatar }),
+        body: JSON.stringify(payload),
       });
       onUpdate();
     } catch { /* silent */ }
@@ -1398,40 +1519,23 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask, dragHandleProps 
       case 'entregavel':
         return (
           <div key="entregavel" className="shrink-0 w-28">
-            {(() => {
-              const cs = findOptionColor(columnConfig.entregavel, task.entregavel);
-              return (
-                <select
-                  value={task.entregavel || ''}
-                  onChange={async (e) => {
-                    const val = e.target.value;
-                    try {
-                      await fetch(`/api/onboarding-tasks/${task.id}`, {
-                        method: 'PATCH',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ entregavel: val }),
-                      });
-                      onUpdate();
-                    } catch { /* silent */ }
-                  }}
-                  className="w-full border rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer focus:outline-none"
-                  style={cs ? {
-                    background: cs.bg,
-                    color: cs.text,
-                    borderColor: cs.border,
-                  } : {
-                    background: 'transparent',
-                    borderColor: 'transparent',
-                    color: '#94a3b8',
-                  }}
-                >
-                  <option value="" className="bg-dark-bg text-slate-400">Adicionar...</option>
-                  {columnConfig.entregavel.map(opt => (
-                    <option key={opt.label} value={opt.label} className="bg-dark-bg text-dark-text">{opt.label}</option>
-                  ))}
-                </select>
-              );
-            })()}
+            <OptionPicker
+              value={task.entregavel}
+              options={columnConfig.entregavel}
+              placeholder="Adicionar..."
+              emptyLabel="Adicionar..."
+              compact
+              onChange={async (val) => {
+                try {
+                  await fetch(`/api/onboarding-tasks/${task.id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ entregavel: val }),
+                  });
+                  onUpdate();
+                } catch { /* silent */ }
+              }}
+            />
           </div>
         );
 
@@ -1458,73 +1562,78 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask, dragHandleProps 
       case 'hospedagem':
         return (
           <div key="hospedagem" className="shrink-0 w-28">
-            {(() => {
-              const cs = findOptionColor(columnConfig.hospedagem, task.hospedagem);
-              return (
-                <select
-                  value={task.hospedagem || ''}
-                  onChange={async (e) => {
-                    const val = e.target.value;
-                    try {
-                      await fetch(`/api/onboarding-tasks/${task.id}`, {
-                        method: 'PATCH',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ hospedagem: val }),
-                      });
-                      onUpdate();
-                    } catch { /* silent */ }
-                  }}
-                  className="w-full border rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer focus:outline-none"
-                  style={cs ? {
-                    background: cs.bg,
-                    color: cs.text,
-                    borderColor: cs.border,
-                  } : {
-                    background: 'transparent',
-                    borderColor: 'transparent',
-                    color: '#94a3b8',
-                  }}
-                >
-                  <option value="" className="bg-dark-bg text-slate-400">Adicionar...</option>
-                  {columnConfig.hospedagem.map(opt => (
-                    <option key={opt.label} value={opt.label} className="bg-dark-bg text-dark-text">{opt.label}</option>
-                  ))}
-                </select>
-              );
-            })()}
+            <OptionPicker
+              value={task.hospedagem}
+              options={columnConfig.hospedagem}
+              placeholder="Adicionar..."
+              emptyLabel="Adicionar..."
+              compact
+              onChange={async (val) => {
+                try {
+                  await fetch(`/api/onboarding-tasks/${task.id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ hospedagem: val }),
+                  });
+                  onUpdate();
+                } catch { /* silent */ }
+              }}
+            />
           </div>
         );
 
       case 'squad':
         return (
           <div key="squad" className="shrink-0 w-32">
-            {(() => {
-              const cs = findOptionColor(columnConfig.squad, squad);
-              return (
-                <select value={squad} onChange={e => handleSquadChange(e.target.value)}
-                  className="w-full border rounded-lg px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer focus:outline-none"
-                  style={cs ? {
-                    background: cs.bg,
-                    color: cs.text,
-                    borderColor: cs.border,
-                  } : {
-                    background: 'transparent',
-                    borderColor: 'transparent',
-                    color: '#94a3b8',
-                  }}
-                >
-                  <option value="" className="bg-dark-bg text-slate-400">SQUAD</option>
-                  {columnConfig.squad.map(s => <option key={s.label} value={s.label} className="bg-dark-bg text-dark-text">{s.label}</option>)}
-                </select>
-              );
-            })()}
+            <OptionPicker
+              value={squad}
+              options={columnConfig.squad}
+              placeholder="SQUAD"
+              emptyLabel="SQUAD"
+              compact
+              onChange={(val) => handleSquadChange(val || '')}
+            />
           </div>
         );
 
-      case 'resp':
+      case 'resp': {
+        // Build merged list: main + co_responsibles
+        const coList: { id: string; name: string; avatar: string | null }[] = task.co_responsibles || [];
+        const allResps = [
+          ...(task.responsible_id ? [{ id: task.responsible_id, name: task.responsible_name || '', avatar: task.responsible_avatar || null }] : []),
+          ...coList.filter(r => r.id !== task.responsible_id)
+        ];
+        const MAX_VISIBLE = 3;
+        const visible = allResps.slice(0, MAX_VISIBLE);
+        const overflow = allResps.length - MAX_VISIBLE;
+        const allIds = new Set(allResps.map(r => r.id));
+
         return (
-          <div key="resp" className="shrink-0 w-16 flex items-center justify-center gap-1">
-            {task.responsible_name ? (
+          <div key="resp" className="shrink-0 w-24 flex items-center justify-center">
+            <div className="flex items-center group/resp" style={{ gap: 0 }}>
+              {/* Stacked avatars */}
+              {visible.map((r, i) => (
+                <div
+                  key={r.id}
+                  title={r.name}
+                  style={{ marginLeft: i > 0 ? -6 : 0, zIndex: visible.length - i }}
+                  className="relative"
+                >
+                  <Avatar name={r.name} url={r.avatar} size={6} />
+                </div>
+              ))}
+
+              {/* +N overflow badge */}
+              {overflow > 0 && (
+                <div
+                  style={{ marginLeft: -6, zIndex: 0 }}
+                  className="w-6 h-6 rounded-full bg-slate-700 border border-dark-bg flex items-center justify-center text-[9px] font-bold text-slate-300"
+                >
+                  +{overflow}
+                </div>
+              )}
+
+              {/* Add / manage button — visible on row hover */}
               <button
                 ref={taskRespRef}
                 data-task-resp-btn
@@ -1532,52 +1641,52 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask, dragHandleProps 
                   e.stopPropagation();
                   if (!taskRespPicker && taskRespRef.current) {
                     const rect = taskRespRef.current.getBoundingClientRect();
-                    setTaskRespPos({ top: rect.bottom + 4, left: rect.left - 140 });
+                    setTaskRespPos({ top: rect.bottom + 4, left: rect.left - 148 });
                   }
                   setTaskRespPicker(v => !v);
                 }}
-                className="focus:outline-none hover:scale-110 transition-transform shrink-0"
+                style={{ marginLeft: allResps.length > 0 ? 3 : 0 }}
+                className="w-5 h-5 rounded-full border border-dashed border-slate-600 flex items-center justify-center hover:border-violet-500 hover:text-violet-500 transition-all shrink-0 opacity-0 group-hover/resp:opacity-100"
               >
-                <Avatar name={task.responsible_name} url={task.responsible_avatar} size={6} />
+                <Plus size={9} className="text-slate-500" />
               </button>
-            ) : (
-              <button
-                ref={taskRespRef}
-                data-task-resp-btn
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (!taskRespPicker && taskRespRef.current) {
-                    const rect = taskRespRef.current.getBoundingClientRect();
-                    setTaskRespPos({ top: rect.bottom + 4, left: rect.left - 140 });
-                  }
-                  setTaskRespPicker(v => !v);
-                }}
-                className="w-6 h-6 rounded-full border border-dashed border-slate-600 flex items-center justify-center hover:border-violet-500 hover:text-violet-500 transition-colors shrink-0"
-              >
-                <Plus size={10} className="text-slate-600 hover:text-violet-500" />
-              </button>
-            )}
+            </div>
+
+            {/* Picker */}
             {taskRespPicker && createPortal(
               <div
                 data-task-resp-portal
                 onClick={e => e.stopPropagation()}
-                style={{ position: 'fixed', top: taskRespPos.top, left: taskRespPos.left, zIndex: 9999, width: 192 }}
-                className="bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl p-1 max-h-48 overflow-y-auto"
+                style={{ position: 'fixed', top: taskRespPos.top, left: taskRespPos.left, zIndex: 9999, width: 210 }}
+                className="bg-dark-card border border-white/10 rounded-xl shadow-2xl p-1 max-h-56 overflow-y-auto"
               >
                 <div className="px-2 py-1.5 border-b border-white/5 mb-1">
-                  <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Selecionar Responsável</span>
+                  <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Responsáveis</span>
                 </div>
-                {cachedUsers.map(u => (
-                  <button key={u.id} onClick={(e) => { e.stopPropagation(); handleTaskResponsible(u.id, u.name, u.picture); }} className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-white/5 rounded-lg text-left transition-colors">
-                    <Avatar name={u.name} url={u.picture} size={5} />
-                    <span className="text-xs text-dark-text truncate">{u.name}</span>
-                  </button>
-                ))}
+                {cachedUsers.map(u => {
+                  const isSelected = allIds.has(u.id);
+                  return (
+                    <button
+                      key={u.id}
+                      onClick={(e) => { e.stopPropagation(); handleTaskResponsible(u.id, u.name, u.picture); }}
+                      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left transition-colors ${isSelected ? 'bg-violet-500/10' : 'hover:bg-white/5'}`}
+                    >
+                      <Avatar name={u.name} url={u.picture} size={5} />
+                      <span className="text-xs text-dark-text truncate flex-1">{u.name}</span>
+                      {isSelected && (
+                        <div className="w-4 h-4 rounded-full bg-violet-500 flex items-center justify-center shrink-0">
+                          <Check size={9} className="text-white" />
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
               </div>,
               document.body
             )}
           </div>
         );
+      }
 
       case 'start_date':
         return (
@@ -1588,7 +1697,7 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask, dragHandleProps 
 
       case 'due_date':
         return (
-          <div key="due_date" className="shrink-0 w-28 text-xs text-slate-400 font-medium">
+          <div key="due_date" className="shrink-0 w-24 text-xs text-slate-400 font-medium">
             <SingleDatePicker value={task.due_date || undefined} onChange={(v) => handleTaskDate('due_date', v)} align="right" checkOverdue />
           </div>
         );
@@ -1618,7 +1727,7 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask, dragHandleProps 
         </div>
 
         {/* Expand toggle */}
-        <button onClick={toggleExpand} className="shrink-0 text-slate-600 hover:text-slate-400 transition-all">
+        <button onClick={toggleExpand} className="shrink-0 w-[14px] h-[14px] p-0 flex items-center justify-center text-slate-600 hover:text-slate-400 transition-all">
           <ChevronRight size={14} className={`transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`} />
         </button>
 
@@ -2128,11 +2237,13 @@ const AddTaskModal = ({ groupId, onClose, onSaved }: { groupId: string; onClose:
             placeholder="Nome do cliente *"
             className="w-full bg-dark-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500/50"
           />
-          <select value={squad} onChange={e => setSquad(e.target.value)}
-            className="w-full bg-dark-bg border border-white/10 rounded-xl px-4 py-2.5 text-sm text-dark-text focus:outline-none focus:border-violet-500/50">
-            <option value="">— Squad —</option>
-            {columnConfig.squad.map(s => <option key={s.label} value={s.label}>{s.label}</option>)}
-          </select>
+          <OptionPicker
+            value={squad || null}
+            options={columnConfig.squad}
+            placeholder="— Squad —"
+            emptyLabel="— Squad —"
+            onChange={(val) => setSquad(val || '')}
+          />
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1 block">Data Inicial</label>
@@ -2385,6 +2496,13 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
   const [editingDesc, setEditingDesc] = useState(false);
   const [savingDesc, setSavingDesc] = useState(false);
 
+  // Tabs
+  const [leftTab, setLeftTab] = useState<'geral' | 'formulario'>('geral');
+
+  // Briefing form data
+  const [briefingData, setBriefingData] = useState<any | null>(null);
+  const [loadingBriefing, setLoadingBriefing] = useState(false);
+
   // Files state
   const [files, setFiles] = useState<TaskFile[]>([]);
   const [loadingFiles, setLoadingFiles] = useState(true);
@@ -2428,6 +2546,14 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
       .then(r => r.ok ? r.json() : [])
       .then(data => { setFiles(data); setLoadingFiles(false); })
       .catch(() => setLoadingFiles(false));
+
+    // Fetch linked briefing
+    setLoadingBriefing(true);
+    fetch(`/api/briefings/by-task/${task.id}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { setBriefingData(data); })
+      .catch(() => {})
+      .finally(() => setLoadingBriefing(false));
   }, [task.id]);
 
   useEffect(() => {
@@ -2641,8 +2767,41 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
         {/* ─── Two-Column Body ─── */}
         <div className="flex flex-1 min-h-0">
 
-          {/* ─── LEFT PANEL: Metadata + Description + Files ─── */}
-          <div className="flex-1 border-r border-white/5 overflow-y-auto">
+          {/* ─── LEFT PANEL: Tabs ─── */}
+          <div className="flex-1 border-r border-white/5 flex flex-col min-h-0">
+
+            {/* Tab bar */}
+            <div className="flex items-center gap-1 px-5 pt-4 pb-0 border-b border-white/5 shrink-0">
+              <button
+                onClick={() => setLeftTab('geral')}
+                className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-t-lg transition-all border-b-2 -mb-px ${
+                  leftTab === 'geral'
+                    ? 'text-violet-400 border-violet-500 bg-violet-500/5'
+                    : 'text-slate-500 border-transparent hover:text-slate-300'
+                }`}
+              >
+                <Settings size={12} />
+                Informações Gerais
+              </button>
+              <button
+                onClick={() => setLeftTab('formulario')}
+                className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-t-lg transition-all border-b-2 -mb-px ${
+                  leftTab === 'formulario'
+                    ? 'text-violet-400 border-violet-500 bg-violet-500/5'
+                    : 'text-slate-500 border-transparent hover:text-slate-300'
+                }`}
+              >
+                <FileText size={12} />
+                Respostas do Formulário
+                {briefingData?.submitted_at && (
+                  <span className="ml-1 w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
+                )}
+              </button>
+            </div>
+
+            {/* Tab: Informações Gerais */}
+            {leftTab === 'geral' && (
+            <div className="flex-1 overflow-y-auto">
             <div className="p-6 space-y-6">
 
               {/* ── Campos / Metadata Grid ── */}
@@ -2655,110 +2814,53 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                   {/* Squad */}
                   <div className="flex items-center gap-3">
                     <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider w-20 shrink-0">Squad</span>
-                    {(() => {
-                      const cs = findOptionColor(columnConfig.squad, task.squad);
-                      return (
-                        <select
-                          value={task.squad || ''}
-                          onChange={async (e) => {
-                            const val = e.target.value;
-                            await fetch(`/api/onboarding-tasks/${task.id}`, {
-                              method: 'PATCH',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ squad: val || null }),
-                            });
-                            onUpdate();
-                          }}
-                          className="border rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer focus:outline-none focus:ring-1 focus:ring-violet-500/30"
-                          style={cs ? {
-                            background: cs.bg,
-                            color: cs.text,
-                            borderColor: cs.border,
-                          } : {
-                            background: 'transparent',
-                            borderColor: 'rgba(255,255,255,0.1)',
-                            color: '#94a3b8',
-                          }}
-                        >
-                          <option value="" className="bg-dark-bg text-slate-400">—</option>
-                          {columnConfig.squad.map(opt => (
-                            <option key={opt.label} value={opt.label} className="bg-dark-bg text-dark-text">{opt.label}</option>
-                          ))}
-                        </select>
-                      );
-                    })()}
+                    <OptionPicker
+                      value={task.squad}
+                      options={columnConfig.squad}
+                      emptyLabel="—"
+                      onChange={async (val) => {
+                        await fetch(`/api/onboarding-tasks/${task.id}`, {
+                          method: 'PATCH',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ squad: val || null }),
+                        });
+                        onUpdate();
+                      }}
+                    />
                   </div>
                   {/* Entregável */}
                   <div className="flex items-center gap-3">
                     <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider w-20 shrink-0">Entregável</span>
-                    {(() => {
-                      const cs = findOptionColor(columnConfig.entregavel, task.entregavel);
-                      return (
-                        <select
-                          value={task.entregavel || ''}
-                          onChange={async (e) => {
-                            const val = e.target.value;
-                            await fetch(`/api/onboarding-tasks/${task.id}`, {
-                              method: 'PATCH',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ entregavel: val || null }),
-                            });
-                            onUpdate();
-                          }}
-                          className="border rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer focus:outline-none focus:ring-1 focus:ring-violet-500/30"
-                          style={cs ? {
-                            background: cs.bg,
-                            color: cs.text,
-                            borderColor: cs.border,
-                          } : {
-                            background: 'transparent',
-                            borderColor: 'rgba(255,255,255,0.1)',
-                            color: '#94a3b8',
-                          }}
-                        >
-                          <option value="" className="bg-dark-bg text-slate-400">—</option>
-                          {columnConfig.entregavel.map(opt => (
-                            <option key={opt.label} value={opt.label} className="bg-dark-bg text-dark-text">{opt.label}</option>
-                          ))}
-                        </select>
-                      );
-                    })()}
+                    <OptionPicker
+                      value={task.entregavel}
+                      options={columnConfig.entregavel}
+                      emptyLabel="—"
+                      onChange={async (val) => {
+                        await fetch(`/api/onboarding-tasks/${task.id}`, {
+                          method: 'PATCH',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ entregavel: val || null }),
+                        });
+                        onUpdate();
+                      }}
+                    />
                   </div>
                   {/* Hospedagem */}
                   <div className="flex items-center gap-3">
                     <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider w-20 shrink-0">Hospedagem</span>
-                    {(() => {
-                      const cs = findOptionColor(columnConfig.hospedagem, task.hospedagem);
-                      return (
-                        <select
-                          value={task.hospedagem || ''}
-                          onChange={async (e) => {
-                            const val = e.target.value;
-                            await fetch(`/api/onboarding-tasks/${task.id}`, {
-                              method: 'PATCH',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ hospedagem: val || null }),
-                            });
-                            onUpdate();
-                          }}
-                          className="border rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer focus:outline-none focus:ring-1 focus:ring-violet-500/30"
-                          style={cs ? {
-                            background: cs.bg,
-                            color: cs.text,
-                            borderColor: cs.border,
-                          } : {
-                            background: 'transparent',
-                            borderColor: 'rgba(255,255,255,0.1)',
-                            color: '#94a3b8',
-                          }}
-                        >
-                          <option value="" className="bg-dark-bg text-slate-400">—</option>
-                          {columnConfig.hospedagem.map(opt => (
-                            <option key={opt.label} value={opt.label} className="bg-dark-bg text-dark-text">{opt.label}</option>
-                          ))}
-                        </select>
-                      );
-                    })()}
+                    <OptionPicker
+                      value={task.hospedagem}
+                      options={columnConfig.hospedagem}
+                      emptyLabel="—"
+                      onChange={async (val) => {
+                        await fetch(`/api/onboarding-tasks/${task.id}`, {
+                          method: 'PATCH',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ hospedagem: val || null }),
+                        });
+                        onUpdate();
+                      }}
+                    />
                   </div>
                   {/* Responsável */}
                   <div className="flex items-center gap-3">
@@ -2794,28 +2896,21 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                   {/* Status */}
                   <div className="flex items-center gap-3">
                     <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider w-20 shrink-0">Status</span>
-                    <select
-                      value={task.status_group || ''}
-                      onChange={async (e) => {
-                        const val = e.target.value;
-                        await fetch(`/api/onboarding-tasks/${task.id}`, {
-                          method: 'PATCH',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ status_group: val }),
-                        });
-                        onUpdate();
+                    <OptionPicker
+                      value={statusGroups.find(sg => sg.id === task.status_group)?.label || ''}
+                      options={statusGroups.map(sg => ({ label: sg.label, color: sg.color }))}
+                      onChange={async (val) => {
+                        const sg = statusGroups.find(s => s.label === val);
+                        if (sg) {
+                          await fetch(`/api/onboarding-tasks/${task.id}`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ status_group: sg.id }),
+                          });
+                          onUpdate();
+                        }
                       }}
-                      className="border rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer focus:outline-none focus:ring-1 focus:ring-violet-500/30"
-                      style={{
-                        background: (currentGroup?.color || '#64748b') + '26',
-                        color: currentGroup?.color || '#64748b',
-                        borderColor: (currentGroup?.color || '#64748b') + '4D',
-                      }}
-                    >
-                      {statusGroups.map(sg => (
-                        <option key={sg.id} value={sg.id} className="bg-dark-bg text-dark-text">{sg.label}</option>
-                      ))}
-                    </select>
+                    />
                   </div>
                   {/* Data Início */}
                   <div className="flex items-center gap-3">
@@ -3050,6 +3145,218 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                 </div>
               </div>
             </div>
+            </div>
+            )}
+
+            {/* Tab: Respostas do Formulário */}
+            {leftTab === 'formulario' && (
+              <div className="flex-1 overflow-y-auto">
+                {loadingBriefing ? (
+                  <div className="flex flex-col items-center justify-center py-20 gap-3">
+                    <div className="w-8 h-8 rounded-full border-2 border-violet-500/30 border-t-violet-500 animate-spin" />
+                    <span className="text-xs text-slate-500">Buscando respostas...</span>
+                  </div>
+                ) : !briefingData ? (
+                  <div className="flex flex-col items-center justify-center py-20 text-center px-8">
+                    <div className="relative mb-5">
+                      <div className="absolute inset-0 bg-slate-500/10 rounded-3xl blur-xl" />
+                      <div className="relative w-16 h-16 rounded-2xl bg-white/[0.03] border border-white/8 flex items-center justify-center">
+                        <FileText size={26} className="text-slate-500" />
+                      </div>
+                    </div>
+                    <p className="text-slate-300 text-sm font-bold mb-1">Sem formulário vinculado</p>
+                    <p className="text-slate-600 text-xs leading-relaxed">Nenhum briefing foi associado a esta tarefa. O formulário é criado automaticamente ao criar uma task do tipo Visual Hub.</p>
+                  </div>
+                ) : !briefingData.submitted_at ? (
+                  <div className="flex flex-col items-center justify-center py-20 text-center px-8">
+                    <div className="relative mb-5">
+                      <div className="absolute inset-0 bg-amber-500/15 rounded-3xl blur-xl" />
+                      <div className="relative w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
+                        <Clock size={26} className="text-amber-400" />
+                      </div>
+                    </div>
+                    <p className="text-slate-300 text-sm font-bold mb-1">Aguardando resposta do cliente</p>
+                    <p className="text-slate-600 text-xs leading-relaxed">O cliente ainda não preencheu o formulário de briefing. Quando ele preencher, as respostas aparecerão aqui.</p>
+                    <div className="mt-4 flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 border border-amber-500/20 rounded-full">
+                      <div className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                      <span className="text-[10px] text-amber-400 font-bold uppercase tracking-widest">Pendente</span>
+                    </div>
+                  </div>
+                ) : (() => {
+                  const fd: any = briefingData.form_data || {};
+
+                  const SECTIONS = [
+                    {
+                      title: 'Cliente', icon: 'building',
+                      color: 'violet',
+                      fields: [
+                        { key: 'razao_social', label: 'Razão social' },
+                        { key: 'nome_fantasia', label: 'Nome fantasia' },
+                        { key: 'cidade_uf', label: 'Cidade / UF' },
+                        { key: 'telefone', label: 'Telefone' },
+                        { key: 'email', label: 'E-mail' },
+                      ]
+                    },
+                    {
+                      title: 'Projeto', icon: 'sparkles',
+                      color: 'purple',
+                      fields: [
+                        { key: 'tipo_projeto', label: 'Tipo de projeto' },
+                        { key: 'possui_nome', label: 'Possui nome?' },
+                        { key: 'nome_escritorio', label: 'Nome do escritório' },
+                      ]
+                    },
+                    {
+                      title: 'Itens do projeto', icon: 'layers',
+                      color: 'blue',
+                      fields: [
+                        { key: 'itens_projeto', label: 'Itens selecionados', isArray: true },
+                      ]
+                    },
+                    {
+                      title: 'Características', icon: 'tag',
+                      color: 'indigo',
+                      fields: [
+                        { key: 'areas_atuacao', label: 'Áreas de atuação', isArray: true },
+                        { key: 'area_outra', label: 'Outra área' },
+                        { key: 'publico_alvo', label: 'Público-alvo' },
+                      ]
+                    },
+                    {
+                      title: 'Estilo do logotipo', icon: 'palette',
+                      color: 'fuchsia',
+                      fields: [
+                        { key: 'formato_logo', label: 'Formato preferido' },
+                        { key: 'tipografia', label: 'Tipografia' },
+                        { key: 'composicao_visual', label: 'Composição visual' },
+                        { key: 'elemento_juridico', label: 'Elemento jurídico' },
+                      ]
+                    },
+                    {
+                      title: 'Paleta de cores', icon: 'palette',
+                      color: 'pink',
+                      fields: [
+                        { key: 'tom_marca', label: 'Tom da marca' },
+                        { key: 'cor_primaria', label: 'Cor primária', isColor: true },
+                        { key: 'cor_secundaria', label: 'Cor secundária', isColor: true },
+                      ]
+                    },
+                    {
+                      title: 'Referências', icon: 'link',
+                      color: 'emerald',
+                      fields: [
+                        { key: 'referencia_1', label: 'Referência 1' },
+                        { key: 'referencia_2', label: 'Referência 2' },
+                        { key: 'referencia_3', label: 'Referência 3' },
+                        { key: 'o_que_evitar', label: 'O que evitar' },
+                      ]
+                    },
+                    {
+                      title: 'Concorrentes', icon: 'globe',
+                      color: 'cyan',
+                      fields: [
+                        { key: 'concorrente_1_nome', label: 'Concorrente 1' },
+                        { key: 'concorrente_1_site', label: 'Site' },
+                        { key: 'concorrente_2_nome', label: 'Concorrente 2' },
+                        { key: 'concorrente_2_site', label: 'Site' },
+                      ]
+                    },
+                    {
+                      title: 'Observações do cliente', icon: 'message',
+                      color: 'amber',
+                      fields: [
+                        { key: 'observacoes', label: 'Observações', isNote: true },
+                      ]
+                    },
+                  ];
+
+                  const ACCENT: {[k: string]: string} = {
+                    violet: '#7c3aed', purple: '#9333ea', blue: '#3b82f6',
+                    indigo: '#6366f1', fuchsia: '#a21caf', pink: '#ec4899',
+                    emerald: '#10b981', cyan: '#06b6d4', amber: '#f59e0b',
+                  };
+
+                  const hasField = (fields: any[]) => fields.some(f => {
+                    const v = fd[f.key];
+                    return v && !(Array.isArray(v) && v.length === 0) && v !== '';
+                  });
+
+                  return (
+                    <div>
+                      {/* Header banner */}
+                      <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between bg-emerald-500/5">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-2 h-2 rounded-full bg-emerald-400" />
+                          <span className="text-xs font-bold text-emerald-400">Formulário respondido</span>
+                        </div>
+                        <span className="text-[10px] text-slate-500 font-mono">
+                          {new Date(briefingData.submitted_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}
+                        </span>
+                      </div>
+
+                      <div className="p-6 space-y-5">
+                        {SECTIONS.filter(s => hasField(s.fields)).map(section => {
+                          const accent = ACCENT[section.color] || '#7c3aed';
+                          return (
+                            <div key={section.title} className="rounded-xl overflow-hidden border border-white/[0.06]">
+                              {/* Section header */}
+                              <div className="flex items-center gap-2.5 px-4 py-2.5" style={{ background: accent + '18', borderBottom: '1px solid ' + accent + '30' }}>
+                                <div className="w-1 h-4 rounded-full" style={{ background: accent }} />
+                                <span className="text-[11px] font-black uppercase tracking-widest" style={{ color: accent }}>{section.title}</span>
+                              </div>
+                              {/* Fields */}
+                              <div className="bg-white/[0.015] divide-y divide-white/[0.04]">
+                                {section.fields.map((field: any) => {
+                                  const val = fd[field.key];
+                                  const isEmpty = !val || (Array.isArray(val) && val.length === 0) || val === '';
+                                  if (isEmpty) return null;
+
+                                  return (
+                                    <div key={field.key} className="flex items-start gap-3 px-4 py-3">
+                                      <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider w-28 shrink-0 pt-0.5 leading-tight">
+                                        {field.label}
+                                      </span>
+                                      <div className="flex-1 min-w-0">
+                                        {field.isColor ? (
+                                          <div className="flex items-center gap-2">
+                                            {/^#[0-9A-Fa-f]{6}$/.test(String(val)) && (
+                                              <div className="w-5 h-5 rounded-md shrink-0 border border-white/15 shadow-sm" style={{ backgroundColor: String(val) }} />
+                                            )}
+                                            <span className="text-xs text-dark-text font-mono">{String(val)}</span>
+                                          </div>
+                                        ) : field.isArray ? (
+                                          <div className="flex flex-wrap gap-1.5">
+                                            {(Array.isArray(val) ? val : [val]).map((item: string, idx: number) => (
+                                              <span key={idx}
+                                                className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-semibold"
+                                                style={{ background: accent + '20', color: accent, border: '1px solid ' + accent + '40' }}
+                                              >
+                                                {item}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        ) : field.isNote ? (
+                                          <div className="rounded-xl px-3 py-2.5" style={{ background: accent + '12', borderLeft: '2px solid ' + accent + '60' }}>
+                                            <p className="text-xs text-slate-200 leading-relaxed whitespace-pre-wrap italic">{String(val)}</p>
+                                          </div>
+                                        ) : (
+                                          <span className="text-xs text-slate-200 leading-relaxed break-words">{String(val)}</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
           </div>
 
           {/* ─── RIGHT PANEL: Activity / Comments ─── */}
@@ -3277,6 +3584,47 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                 </div>
               )}
             </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ─── Comment image lightbox ─── */}
+      {commentPreviewImg && createPortal(
+        <div
+          className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/95 backdrop-blur-xl"
+          onClick={() => setCommentPreviewImg(null)}
+        >
+          {/* Close button */}
+          <button
+            onClick={() => setCommentPreviewImg(null)}
+            className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-xl transition-colors"
+          >
+            <X size={22} />
+          </button>
+
+          {/* Download button */}
+          <a
+            href={commentPreviewImg}
+            download="imagem"
+            className="absolute top-4 left-4 flex items-center gap-1.5 px-3 py-2 bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold rounded-xl transition-colors"
+            onClick={e => e.stopPropagation()}
+          >
+            <Download size={14} />
+            Baixar
+          </a>
+
+          {/* Image */}
+          <div
+            className="flex items-center justify-center p-10 max-w-[95vw] max-h-[95vh]"
+            onClick={e => e.stopPropagation()}
+          >
+            <img
+              src={commentPreviewImg}
+              alt="Imagem do comentário"
+              className="max-w-full max-h-[88vh] object-contain rounded-2xl shadow-2xl ring-1 ring-white/10"
+              style={{ transition: 'transform 0.2s' }}
+            />
           </div>
         </div>,
         document.body
@@ -4033,103 +4381,47 @@ export default function VisualHub() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {/* Formulário dropdown */}
-          <div className="relative" ref={formDropdownRef}>
-            <button
-              onClick={() => setFormDropdownOpen(!formDropdownOpen)}
-              className={`flex items-center gap-2 px-4 py-2 bg-dark-card border text-[11px] font-bold rounded-xl transition-colors ${
-                formDropdownOpen
-                  ? 'border-fuchsia-500/30 text-fuchsia-400'
-                  : 'border-black/10 dark:border-white/10 hover:border-fuchsia-500/30 text-dark-text'
-              }`}
-            >
-              <FileText size={14} className="text-fuchsia-400" />
-              Formulário
-              <ChevronDown size={12} className={`transition-transform ${formDropdownOpen ? 'rotate-180' : ''}`} />
-            </button>
-            {formDropdownOpen && (
-              <div className="absolute right-0 top-full mt-2 w-52 bg-dark-card border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden">
-                <button
-                  onClick={async () => {
-                    try {
-                      let briefingId: number | null = null;
-                      const resExisting = await fetch('/api/briefings');
-                      if (resExisting.ok) {
-                        const all = await resExisting.json();
-                        // Find an unsubmitted briefing to reuse
-                        const emptyBriefing = all.find((b: any) => !b.submitted_at);
-                        if (emptyBriefing) briefingId = emptyBriefing.id;
-                      }
-                      if (!briefingId) {
-                        const resCreate = await fetch('/api/briefings', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ title: 'Briefing Identidade Visual' }),
-                        });
-                        if (resCreate.ok) {
-                          const data = await resCreate.json();
-                          briefingId = data.id;
-                        }
-                      }
-                      if (briefingId) {
-                        const baseUrl = window.location.origin;
-                        // For clipboard, writeText works in most modern browsers even after await if the site has focus,
-                        // but to be safe we can use the Clipboard API correctly.
-                        await navigator.clipboard.writeText(`${baseUrl}/?briefing=${briefingId}`);
-                        setBriefingLinkCopied(true);
-                        setTimeout(() => setBriefingLinkCopied(false), 2000);
-                      }
-                    } catch { /* silent */ }
-                    setFormDropdownOpen(false);
-                  }}
-                  className="w-full flex items-center gap-3 px-4 py-3 text-xs text-slate-300 hover:bg-white/5 hover:text-white transition-colors"
-                >
-                  <LinkIcon size={13} className="text-fuchsia-400" />
-                  {briefingLinkCopied ? '✓ Link copiado!' : 'Link do formulário'}
-                </button>
-                <button
-                  onClick={async () => {
-                    // Open window synchronously to avoid popup blockers
-                    const newWindow = window.open('about:blank', '_blank');
-                    try {
-                      let briefingId: number | null = null;
-                      const resExisting = await fetch('/api/briefings');
-                      if (resExisting.ok) {
-                        const all = await resExisting.json();
-                        // Find an unsubmitted briefing to reuse
-                        const emptyBriefing = all.find((b: any) => !b.submitted_at);
-                        if (emptyBriefing) briefingId = emptyBriefing.id;
-                      }
-                      if (!briefingId) {
-                        const resCreate = await fetch('/api/briefings', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ title: 'Briefing Identidade Visual' }),
-                        });
-                        if (resCreate.ok) {
-                          const data = await resCreate.json();
-                          briefingId = data.id;
-                        }
-                      }
-                      if (briefingId && newWindow) {
-                        const baseUrl = window.location.origin;
-                        newWindow.location.href = `${baseUrl}/?briefing=${briefingId}`;
-                      } else if (newWindow) {
-                        newWindow.close();
-                      }
-                    } catch {
-                      if (newWindow) newWindow.close();
-                    }
-                    setFormDropdownOpen(false);
-                  }}
-                  className="w-full flex items-center gap-3 px-4 py-3 text-xs text-slate-300 hover:bg-white/5 hover:text-white transition-colors border-t border-white/5"
-                >
-                  <Edit2 size={13} className="text-fuchsia-400" />
-                  Editar formulário
-                </button>
-              </div>
-            )}
-          </div>
+          {/* Copiar formulário */}
+          <button
+            onClick={async () => {
+              try {
+                let briefingId: number | null = null;
+                const resExisting = await fetch('/api/briefings');
+                if (resExisting.ok) {
+                  const all = await resExisting.json();
+                  const emptyBriefing = all.find((b: any) => !b.submitted_at);
+                  if (emptyBriefing) briefingId = emptyBriefing.id;
+                }
+                if (!briefingId) {
+                  const resCreate = await fetch('/api/briefings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title: 'Briefing Identidade Visual' }),
+                  });
+                  if (resCreate.ok) {
+                    const data = await resCreate.json();
+                    briefingId = data.id;
+                  }
+                }
+                if (briefingId) {
+                  await navigator.clipboard.writeText(`${window.location.origin}/?briefing=${briefingId}`);
+                  setBriefingLinkCopied(true);
+                  setTimeout(() => setBriefingLinkCopied(false), 2500);
+                }
+              } catch { /* silent */ }
+            }}
+            className={`flex items-center gap-2 px-4 py-2 text-[11px] font-bold rounded-xl border transition-all duration-200 ${
+              briefingLinkCopied
+                ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400'
+                : 'bg-dark-card border-white/10 text-dark-text hover:border-fuchsia-500/40 hover:text-fuchsia-400'
+            }`}
+          >
+            {briefingLinkCopied
+              ? <><Check size={13} className="text-emerald-400" />Copiado!</>
+              : <><LinkIcon size={13} className="text-fuchsia-400" />Copiar formulário</>
+            }
+          </button>
+
           <button
             onClick={() => setShowCompleted(!showCompleted)}
             className={`px-4 py-2 text-[11px] font-bold rounded-xl transition-colors border flex items-center gap-2 ${

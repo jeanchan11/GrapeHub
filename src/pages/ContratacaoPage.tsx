@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { CandidateDetailModal } from '../components/CandidateDetailModal';
+import OptionPicker from '../components/ui/OptionPicker';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1352,9 +1353,13 @@ export default function ContratacaoPage() {
               </div>
               <div>
                 <label className={labelCls}>Coluna</label>
-                <select className={inputCls} value={candidateForm.col} onChange={e => setCandidateForm(p => ({ ...p, col: e.target.value }))}>
-                  {cols.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
+                <OptionPicker
+                  value={candidateForm.col}
+                  onChange={(val) => setCandidateForm(p => ({ ...p, col: val || cols[0] }))}
+                  options={cols.map(c => ({ label: c }))}
+                  placeholder="Coluna"
+                  className="w-full"
+                />
               </div>
             </div>
             <div className="flex gap-3 mt-6">
@@ -1692,17 +1697,22 @@ export default function ContratacaoPage() {
                       />
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
-                      <select
-                        value={field.type}
-                        onChange={e => { const arr = [...formEditorFields]; arr[idx] = { ...arr[idx], type: e.target.value as any }; setFormEditorFields(arr); }}
-                        className="text-[11px] font-bold bg-white dark:bg-white/10 border border-slate-200 dark:border-white/10 rounded-lg px-2 py-1 text-slate-600 dark:text-slate-300 outline-none"
-                      >
-                        <option value="text">Texto</option>
-                        <option value="textarea">Texto longo</option>
-                        <option value="number">Número</option>
-                        <option value="tel">Telefone</option>
-                        <option value="select">Seleção</option>
-                      </select>
+                      <OptionPicker
+                        value={({ text: 'Texto', textarea: 'Texto longo', number: 'Número', tel: 'Telefone', select: 'Seleção' } as Record<string, string>)[field.type] || 'Texto'}
+                        onChange={(val) => {
+                          const map: Record<string, string> = { 'Texto': 'text', 'Texto longo': 'textarea', 'Número': 'number', 'Telefone': 'tel', 'Seleção': 'select' };
+                          const arr = [...formEditorFields]; arr[idx] = { ...arr[idx], type: (map[val || 'Texto'] || 'text') as any }; setFormEditorFields(arr);
+                        }}
+                        options={[
+                          { label: 'Texto' },
+                          { label: 'Texto longo' },
+                          { label: 'Número' },
+                          { label: 'Telefone' },
+                          { label: 'Seleção' },
+                        ]}
+                        placeholder="Tipo"
+                        compact
+                      />
                       <input
                         value={field.placeholder || ''}
                         onChange={e => { const arr = [...formEditorFields]; arr[idx] = { ...arr[idx], placeholder: e.target.value }; setFormEditorFields(arr); }}

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 
 import { PageHeader } from '../components/ui/PageHeader';
+import OptionPicker from '../components/ui/OptionPicker';
 import ClientModal from '../components/ClientModal';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -820,15 +821,6 @@ const ActiveClients: React.FC = () => {
                     <td className="px-4 py-3 text-center">
                       <div className="flex flex-col items-center gap-1">
                         <div className="flex items-center justify-center gap-1.5">
-                          {/* Financeiro icon */}
-                          <div title={client.hasFinancialLink ? "Vinculado ao financeiro" : "Sem vínculo financeiro"}>
-                            {client.hasFinancialLink ? (
-                              <CheckCircle2 size={15} className="text-emerald-500" />
-                            ) : (
-                              <AlertCircle size={15} className="text-slate-300 dark:text-slate-600" />
-                            )}
-                          </div>
-                          <span className="text-slate-400 dark:text-slate-600 text-[10px] font-bold select-none">/</span>
                           {/* Assinatura icon */}
                           <div className="relative group/sub">
                             {client.hasActiveSubscription ? (
@@ -860,19 +852,20 @@ const ActiveClients: React.FC = () => {
                     {isSuperAdmin && (
                     <td className="px-4 py-3 whitespace-nowrap">
                       {(() => {
-                        // Only show value for the first client using this subscription
-                        const isFirstWithSub = client.hasActiveSubscription && client.subscriptionValue && 
-                          (!client.finSubscriptionId || 
-                           filteredClients.findIndex(c => c.finSubscriptionId === client.finSubscriptionId) === filteredClients.indexOf(client));
-                        return isFirstWithSub ? (
+                        const showSubValue = client.hasActiveSubscription && client.subscriptionValue;
+                        if (!showSubValue) return <span className="text-xs text-slate-400">-</span>;
+                        // Count how many active clients share this subscription
+                        const shareCount = client.finSubscriptionId
+                          ? filteredClients.filter(c => c.finSubscriptionId === client.finSubscriptionId && c.hasActiveSubscription).length
+                          : 1;
+                        const displayValue = client.subscriptionValue! / shareCount;
+                        return (
                           <span className="text-xs font-bold text-emerald-500">
                             {showValues 
-                              ? `R$ ${client.subscriptionValue!.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+                              ? `R$ ${displayValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
                               : 'R$ •••••'
                             }
                           </span>
-                        ) : (
-                          <span className="text-xs text-slate-400">-</span>
                         );
                       })()}
                     </td>
@@ -1342,18 +1335,16 @@ const ActiveClients: React.FC = () => {
                     <UserPlus size={12} />
                     Gestor Responsável
                   </label>
-                  <select
-                    value={churnManagerId}
-                    onChange={(e) => setChurnManagerId(e.target.value)}
-                    className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-light-text dark:text-white outline-none focus:ring-2 focus:ring-rose-500/20 transition-all"
-                  >
-                    <option value="">Selecionar gestor...</option>
-                    {managers.map(m => (
-                      <option key={m.id} value={String(m.id)}>
-                        {m.name} {m.status !== 'Efetivado' ? `(${m.status})` : ''}
-                      </option>
-                    ))}
-                  </select>
+                  <OptionPicker
+                    value={managers.find((m: any) => String(m.id) === churnManagerId) ? `${managers.find((m: any) => String(m.id) === churnManagerId).name}${managers.find((m: any) => String(m.id) === churnManagerId).status !== 'Efetivado' ? ` (${managers.find((m: any) => String(m.id) === churnManagerId).status})` : ''}` : null}
+                    options={managers.map((m: any) => ({ label: `${m.name}${m.status !== 'Efetivado' ? ` (${m.status})` : ''}` }))}
+                    placeholder="Selecionar gestor..."
+                    emptyLabel="Selecionar gestor..."
+                    onChange={(val) => {
+                      const found = managers.find((m: any) => `${m.name}${m.status !== 'Efetivado' ? ` (${m.status})` : ''}` === val);
+                      setChurnManagerId(found ? String(found.id) : '');
+                    }}
+                  />
                 </div>
               </div>
 

@@ -3,6 +3,7 @@ import {
   TrendingUp, Users, Target, DollarSign, CalendarDays, Edit2, RefreshCw, AlertTriangle, CheckCircle2 
 } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
+import OptionPicker from '../components/ui/OptionPicker';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend as RechartsLegend, ResponsiveContainer 
 } from 'recharts';
@@ -299,19 +300,20 @@ export default function PlanejamentoCrescimento() {
         >
           <div className="flex items-center gap-3">
             {/* Month select dropdown */}
-            <div className="flex items-center gap-2 rounded-xl px-3 py-1.5 bg-dark-card border border-white/10">
+            <div className="flex items-center gap-2">
               <CalendarDays size={14} className="text-violet-400" />
-              <select
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(Number(e.target.value))}
-                className="bg-transparent border-none text-xs font-bold text-dark-text focus:outline-none cursor-pointer pr-1"
-              >
-                {MESES.map((m, idx) => (
-                  <option key={idx} value={idx + 1} className="bg-[#11111b] text-dark-text">
-                    {m} {year}
-                  </option>
-                ))}
-              </select>
+              <OptionPicker
+                value={`${MESES[selectedMonth - 1]} ${year}`}
+                options={MESES.map((m) => ({ label: `${m} ${year}` }))}
+                placeholder="Selecione o mês"
+                onChange={(val) => {
+                  if (val) {
+                    const idx = MESES.findIndex(m => val.startsWith(m));
+                    if (idx !== -1) setSelectedMonth(idx + 1);
+                  }
+                }}
+                compact
+              />
             </div>
             
             {/* Refresh button */}

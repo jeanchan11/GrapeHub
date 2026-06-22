@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import { auth, storage } from '../firebase';
 import { Modal } from '../components/ui/Modal';
+import OptionPicker from '../components/ui/OptionPicker';
 import SplitHeadline from '../components/SplitHeadline';
 import { useAuth } from '../contexts/AuthContext';
 import { useMenu } from '../context/MenuContext';
@@ -19,7 +20,7 @@ import {
   Gavel, Scale, HeartPulse, ShieldCheck, 
   Hammer, Landmark, Banknote, ShoppingCart, 
   Home, Stethoscope, Building2, Image as ImageIcon,
-  Folder, File, Eye, Download, Trash2, Upload, FileText, GripVertical, Copy, Loader2, Star, Lock, LockOpen, Bot, Edit2, ThumbsUp, SmilePlus, KeyRound
+  Folder, File, Eye, EyeOff, Download, Trash2, Upload, FileText, GripVertical, Copy, Loader2, Star, Lock, LockOpen, Bot, Edit2, ThumbsUp, SmilePlus, KeyRound
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
@@ -582,11 +583,12 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
   const [isMeetingModalOpen, setIsMeetingModalOpen] = useState(false);
   const [meetings, setMeetings] = useState<any[]>([]);
   const [meetingData, setMeetingData] = useState({ id: '', title: '', date: '', attendees: '', actions: '' });
-  const [projectTokens, setProjectTokens] = useState<{id: string; project_id: string; service_name: string; token_value?: string; notes?: string; created_at: string}[]>([]);
+  const [projectTokens, setProjectTokens] = useState<{id: string; project_id: string; platform: string; service_name?: string; account_id?: string; token_masked?: string; notes?: string; status: string; created_at: string; last_synced_at?: string; last_error?: string}[]>([]);
   const [isTokenModalOpen, setIsTokenModalOpen] = useState(false);
   const [editingToken, setEditingToken] = useState<any>(null);
   const [isTokenEditing, setIsTokenEditing] = useState(false);
-  const [tokenForm, setTokenForm] = useState({ service_name: '', token_value: '', notes: '' });
+  const [tokenForm, setTokenForm] = useState({ platform: '', account_id: '', token: '', notes: '' });
+  const [revealedToken, setRevealedToken] = useState<string | null>(null);
   const [isTokenSubmitting, setIsTokenSubmitting] = useState(false);
   const [tokensLoading, setTokensLoading] = useState(false);
   const [tempGoals, setTempGoals] = useState({ cpa: '', leads: '', cac: '', fechamentos: '' });
@@ -1270,29 +1272,55 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
   };
 
   // Token handlers
+  const PLATFORM_OPTIONS = [
+    { value: 'meta_ads', label: 'Meta Ads' },
+    { value: 'google_ads', label: 'Google Ads' },
+    { value: 'tiktok_ads', label: 'TikTok Ads' },
+    { value: 'outro', label: 'Outro' },
+  ];
+  const PLATFORMS_REQUIRING_ACCOUNT = ['meta_ads', 'google_ads'];
+
   const openNewToken = () => {
     setEditingToken(null);
-    setTokenForm({ service_name: '', token_value: '', notes: '' });
+    setTokenForm({ platform: '', account_id: '', token: '', notes: '' });
+    setRevealedToken(null);
     setIsTokenEditing(true);
     setIsTokenModalOpen(true);
   };
 
   const openViewToken = (token: any) => {
     setEditingToken(token);
-    setTokenForm({ service_name: token.service_name, token_value: token.token_value || '', notes: token.notes || '' });
+    setTokenForm({ platform: token.platform || 'outro', account_id: token.account_id || '', token: '', notes: token.notes || '' });
+    setRevealedToken(null);
     setIsTokenEditing(false);
     setIsTokenModalOpen(true);
   };
 
+  const handleRevealToken = async (tokenId: string) => {
+    try {
+      const res = await fetch(`/api/project-tokens/${tokenId}/reveal`);
+      if (res.ok) {
+        const data = await res.json();
+        setRevealedToken(data.token);
+      }
+    } catch (err) {
+      console.error('Error revealing token:', err);
+    }
+  };
+
   const handleSaveToken = async () => {
-    if (!selectedProject || !tokenForm.service_name.trim()) return;
+    if (!selectedProject || !tokenForm.platform) return;
+    if (PLATFORMS_REQUIRING_ACCOUNT.includes(tokenForm.platform) && !tokenForm.account_id.trim()) return;
+    if (!editingToken && !tokenForm.token.trim()) return; // new token requires token value
     setIsTokenSubmitting(true);
     try {
       if (editingToken) {
+        const body: any = { platform: tokenForm.platform, account_id: tokenForm.account_id, notes: tokenForm.notes };
+        if (tokenForm.token.trim()) body.token = tokenForm.token; // only send if changed
         const res = await fetch(`/api/project-tokens/${editingToken.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(tokenForm)
+          body: JSON.stringify(body)
         });
         if (res.ok) {
           const updated = await res.json();
@@ -1303,7 +1331,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
         const res = await fetch('/api/project-tokens', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ project_id: selectedProject.id, ...tokenForm })
+          body: JSON.stringify({ project_id: selectedProject.id, platform: tokenForm.platform, account_id: tokenForm.account_id, token: tokenForm.token, notes: tokenForm.notes })
         });
         if (res.ok) {
           const created = await res.json();
@@ -2326,31 +2354,16 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                             <span className="text-[10px] font-bold uppercase tracking-wider">{metric.label}</span>
                           </div>
                           {metric.type === 'select' ? (
-                            <div className="relative group/select">
-                              <select
-                                value={(tempProduct as any)[metric.value] ?? (selectedProduct as any)[metric.value] ?? ''}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  setTempProduct({ ...tempProduct!, [metric.value]: val });
-                                  handleUpdateResultField(metric.value as keyof Product, val, metric.label);
-                                }}
-                                className={`w-full bg-transparent appearance-none outline-none cursor-pointer hover:underline ${
-                                  metric.color === 'dynamic' ? getCampaignStatusColor((selectedProduct as any)[metric.value]) 
-                                  : metric.color === 'platformColor' ? (
-                                    ((tempProduct as any)[metric.value] ?? (selectedProduct as any)[metric.value]) === 'Meta Ads' ? 'text-blue-500' 
-                                    : ((tempProduct as any)[metric.value] ?? (selectedProduct as any)[metric.value]) === 'Google Ads' ? 'text-amber-500' 
-                                    : ((tempProduct as any)[metric.value] ?? (selectedProduct as any)[metric.value]) === 'Tiktok Ads' ? 'text-purple-500' 
-                                    : ((tempProduct as any)[metric.value] ?? (selectedProduct as any)[metric.value]) === 'Linkedin Ads' ? 'text-sky-400' 
-                                    : 'text-slate-400'
-                                  ) : metric.color
-                                } text-sm font-bold`}
-                              >
-                                {metric.options?.map((opt: string) => (
-                                  <option key={opt} value={opt} className="bg-light-sidebar dark:bg-dark-input text-slate-900 dark:text-white">{opt}</option>
-                                ))}
-                              </select>
-                              <ChevronDown size={14} className="absolute right-0 top-1/2 -translate-y-1/2 text-slate-400 opacity-0 group-hover/select:opacity-100 transition-opacity pointer-events-none" />
-                            </div>
+                            <OptionPicker
+                              value={(tempProduct as any)[metric.value] ?? ((selectedProduct as any)[metric.value] || null)}
+                              options={(metric.options || []).map((opt: string) => ({ label: opt }))}
+                              onChange={(val) => {
+                                const v = val || '';
+                                setTempProduct({ ...tempProduct!, [metric.value]: v });
+                                handleUpdateResultField(metric.value as keyof Product, v, metric.label);
+                              }}
+                              compact
+                            />
                           ) : (
                             <input 
                               type="text" 
@@ -2447,25 +2460,25 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     <h3 className="text-lg font-bold text-light-text dark:text-white">Histórico de Otimizações</h3>
                   </div>
                   <div className="flex items-center gap-2">
-                    <select 
-                      value={filterPerson}
-                      onChange={(e) => setFilterPerson(e.target.value)}
-                      className="bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-1.5 text-xs text-slate-600 dark:text-slate-400"
-                    >
-                      <option>Pessoa</option>
-                      {Array.from(new Set(selectedProduct.optimizations?.map(o => o.author))).map(author => <option key={author} value={author}>{author}</option>)}
-                    </select>
-                    <select 
-                      value={filterType}
-                      onChange={(e) => setFilterType(e.target.value)}
-                      className="bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-1.5 text-xs text-slate-600 dark:text-slate-400"
-                    >
-                      <option value="Todos">Todos</option>
-                      <option value="Reuniões">Reuniões</option>
-                      <option value="Otimizações">Otimizações</option>
-                      <option value="Saldos">Saldos</option>
-                      <option value="Resultado">Resultado</option>
-                    </select>
+                    <OptionPicker
+                      value={filterPerson === 'Pessoa' ? null : filterPerson}
+                      options={Array.from(new Set(selectedProduct.optimizations?.map(o => o.author))).filter(Boolean).map(author => ({ label: author }))}
+                      placeholder="Pessoa"
+                      emptyLabel="Pessoa"
+                      onChange={(val) => setFilterPerson(val || 'Pessoa')}
+                    />
+                    <OptionPicker
+                      value={filterType === 'Todos' ? null : filterType}
+                      options={[
+                        { label: 'Reuniões' },
+                        { label: 'Otimizações' },
+                        { label: 'Saldos' },
+                        { label: 'Resultado' },
+                      ]}
+                      placeholder="Todos"
+                      emptyLabel="Todos"
+                      onChange={(val) => setFilterType(val || 'Todos')}
+                    />
                     <button 
                       onClick={() => setIsAddingNote(!isAddingNote)}
                       className="flex items-center gap-2 text-violet-400 hover:text-violet-300 text-sm font-bold transition-colors ml-4"
@@ -3000,28 +3013,22 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
 
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Plataforma</label>
-                    <select
-                      value={newProductData.platform || ''}
-                      onChange={(e) => setNewProductData({ ...newProductData, platform: e.target.value })}
-                      className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:border-violet-500 outline-none transition-all appearance-none"
-                    >
-                      {platformOptions.map(opt => (
-                        <option key={opt} value={opt} className="bg-light-sidebar dark:bg-dark-input">{opt}</option>
-                      ))}
-                    </select>
+                    <OptionPicker
+                      value={newProductData.platform || null}
+                      options={platformOptions.map(opt => ({ label: opt }))}
+                      placeholder="Selecione..."
+                      onChange={(val) => setNewProductData({ ...newProductData, platform: val || '' })}
+                    />
                   </div>
 
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Status Inicial</label>
-                    <select
-                      value={newProductData.status || ''}
-                      onChange={(e) => setNewProductData({ ...newProductData, status: e.target.value })}
-                      className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:border-violet-500 outline-none transition-all appearance-none"
-                    >
-                      {campaignStatusOptions.map(opt => (
-                        <option key={opt.label} value={opt.label} className="bg-light-sidebar dark:bg-dark-input">{opt.label}</option>
-                      ))}
-                    </select>
+                    <OptionPicker
+                      value={newProductData.status || null}
+                      options={campaignStatusOptions.map(opt => ({ label: opt.label }))}
+                      placeholder="Selecione..."
+                      onChange={(val) => setNewProductData({ ...newProductData, status: val || '' })}
+                    />
                   </div>
 
                   <div>
@@ -3038,34 +3045,32 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
 
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Pagamento</label>
-                    <select
+                    <OptionPicker
                       value={newProductData.paymentMethod || 'Automático'}
-                      onChange={(e) => {
-                        const method = e.target.value as 'Automático' | 'Manual';
+                      options={[
+                        { label: 'Automático' },
+                        { label: 'Manual' },
+                      ]}
+                      placeholder="Selecione..."
+                      onChange={(val) => {
+                        const method = (val || 'Automático') as 'Automático' | 'Manual';
                         setNewProductData({ 
                           ...newProductData, 
                           paymentMethod: method,
                           balance: method === 'Automático' ? 'Limite Disponível' : 'R$ 0'
                         });
                       }}
-                      className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:border-violet-500 outline-none transition-all appearance-none"
-                    >
-                      <option value="Automático" className="bg-light-sidebar dark:bg-dark-input">Automático</option>
-                      <option value="Manual" className="bg-light-sidebar dark:bg-dark-input">Manual</option>
-                    </select>
+                    />
                   </div>
 
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Veiculação</label>
-                    <select
+                    <OptionPicker
                       value={newProductData.delivery || 'Full Time'}
-                      onChange={(e) => setNewProductData({ ...newProductData, delivery: e.target.value })}
-                      className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:border-violet-500 outline-none transition-all appearance-none"
-                    >
-                      {['Full Time', 'Seg a Sex', 'Somente Horário Comercial', 'Seg a Sex + Domingo', 'Seg a Sab', 'Seg a Sex - Ter'].map(opt => (
-                        <option key={opt} value={opt} className="bg-light-sidebar dark:bg-dark-input">{opt}</option>
-                      ))}
-                    </select>
+                      options={['Full Time', 'Seg a Sex', 'Somente Horário Comercial', 'Seg a Sex + Domingo', 'Seg a Sab', 'Seg a Sex - Ter'].map(opt => ({ label: opt }))}
+                      placeholder="Selecione..."
+                      onChange={(val) => setNewProductData({ ...newProductData, delivery: val || 'Full Time' })}
+                    />
                   </div>
 
                   {newProductData.paymentMethod === 'Manual' && (
@@ -3341,38 +3346,36 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                 <div className="space-y-6">
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Vincular a Cliente Ativo</label>
-                    <select 
-                      value={newPartnerData.activeClientId || ''}
-                      onChange={(e) => {
-                        const selectedClient = clients.find(c => c.id === e.target.value);
+                    <OptionPicker
+                      value={(() => { const c = clients.find(c => c.id === newPartnerData.activeClientId); return c ? c.name : null; })()}
+                      options={clients.filter(c => c.status !== 'Inativo' && c.status !== 'churn').map(client => ({ label: client.name }))}
+                      placeholder="Selecione um cliente..."
+                      emptyLabel="Selecione um cliente..."
+                      onChange={(val) => {
+                        const selectedClient = clients.find(c => c.name === val);
                         setNewPartnerData({ 
                           ...newPartnerData, 
-                          activeClientId: e.target.value,
-                          partner: selectedClient ? selectedClient.name : ''
+                          activeClientId: selectedClient ? selectedClient.id : '',
+                          partner: val || ''
                         });
                       }}
-                      className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-slate-900 dark:text-white outline-none focus:border-violet-500 transition-all appearance-none"
-                    >
-                      <option value="" className="bg-white dark:bg-dark-input text-slate-900 dark:text-white">Selecione um cliente...</option>
-                      {clients.filter(c => c.status !== 'Inativo' && c.status !== 'churn').map(client => (
-                        <option key={client.id} value={client.id} className="bg-white dark:bg-dark-input text-slate-900 dark:text-white">{client.name}</option>
-                      ))}
-                    </select>
+                    />
                     <p className="mt-2 text-[10px] text-slate-500 italic">* Vincule este parceiro a um registro da página de Clientes Ativos.</p>
                   </div>
 
                   <div>
                     <div>
                       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Status Inicial</label>
-                      <select 
-                        value={newPartnerData.status}
-                        onChange={(e) => setNewPartnerData({ ...newPartnerData, status: e.target.value as any })}
-                        className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-slate-900 dark:text-white outline-none focus:border-violet-500 transition-all appearance-none"
-                      >
-                        <option value="Rodando" className="bg-white dark:bg-dark-input text-slate-900 dark:text-white">Rodando</option>
-                        <option value="Gargalo" className="bg-white dark:bg-dark-input text-slate-900 dark:text-white">Gargalo</option>
-                        <option value="Pausado" className="bg-white dark:bg-dark-input text-slate-900 dark:text-white">Pausado</option>
-                      </select>
+                      <OptionPicker
+                        value={newPartnerData.status || null}
+                        options={[
+                          { label: 'Rodando' },
+                          { label: 'Gargalo' },
+                          { label: 'Pausado' },
+                        ]}
+                        placeholder="Selecione..."
+                        onChange={(val) => setNewPartnerData({ ...newPartnerData, status: (val || 'Rodando') as any })}
+                      />
                     </div>
                   </div>
                   
@@ -3579,34 +3582,30 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
         </div>
         
         <div className="flex items-center gap-3">
-          <div className="relative">
-            <select 
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="appearance-none bg-slate-100 dark:bg-white/5 backdrop-blur-md border border-slate-200 dark:border-white/10 rounded-2xl py-3 pl-4 pr-10 text-sm text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-violet-500/20 transition-all cursor-pointer"
-            >
-              <option className="bg-dark-input">Todos os Status</option>
-              <option className="bg-dark-input">Rodando</option>
-              <option className="bg-dark-input">Gargalo</option>
-              <option className="bg-dark-input">Pausado</option>
-            </select>
-            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" size={16} />
-          </div>
+          <OptionPicker
+            value={statusFilter === 'Todos os Status' ? null : statusFilter}
+            options={[
+              { label: 'Rodando' },
+              { label: 'Gargalo' },
+              { label: 'Pausado' },
+            ]}
+            placeholder="Todos os Status"
+            emptyLabel="Todos os Status"
+            onChange={(val) => setStatusFilter(val || 'Todos os Status')}
+          />
 
-          <div className="relative">
-            <select 
-              value={resultFilter}
-              onChange={(e) => setResultFilter(e.target.value)}
-              className="appearance-none bg-slate-100 dark:bg-white/5 backdrop-blur-md border border-slate-200 dark:border-white/10 rounded-2xl py-3 pl-4 pr-10 text-sm text-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-violet-500/20 transition-all cursor-pointer"
-            >
-              <option className="bg-dark-input">Todos os Resultados</option>
-              <option className="bg-dark-input">RESULTADO BOM</option>
-              <option className="bg-dark-input">RESULTADO OK</option>
-              <option className="bg-dark-input">RESULTADO RUIM</option>
-              <option className="bg-dark-input">Sem Resultado</option>
-            </select>
-            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" size={16} />
-          </div>
+          <OptionPicker
+            value={resultFilter === 'Todos os Resultados' ? null : resultFilter}
+            options={[
+              { label: 'RESULTADO BOM' },
+              { label: 'RESULTADO OK' },
+              { label: 'RESULTADO RUIM' },
+              { label: 'Sem Resultado' },
+            ]}
+            placeholder="Todos os Resultados"
+            emptyLabel="Todos os Resultados"
+            onChange={(val) => setResultFilter(val || 'Todos os Resultados')}
+          />
         </div>
       </div>
 
@@ -4362,17 +4361,18 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                   <div className="space-y-4 mt-8">
                     <div className="flex items-center justify-between mb-4">
                       <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Histórico Consolidado</h4>
-                      <select 
-                        value={timelineFilter}
-                        onChange={(e) => setTimelineFilter(e.target.value)}
-                        className="bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-2 text-sm text-slate-700 dark:text-white font-bold outline-none"
-                      >
-                        <option value="Todos">Todos</option>
-                        <option value="Reuniões">Reuniões</option>
-                        <option value="Otimizações">Otimizações</option>
-                        <option value="Saldos">Saldos</option>
-                        <option value="Resultado">Resultado</option>
-                      </select>
+                      <OptionPicker
+                        value={timelineFilter === 'Todos' ? null : timelineFilter}
+                        options={[
+                          { label: 'Reuniões' },
+                          { label: 'Otimizações' },
+                          { label: 'Saldos' },
+                          { label: 'Resultado' },
+                        ]}
+                        placeholder="Todos"
+                        emptyLabel="Todos"
+                        onChange={(val) => setTimelineFilter(val || 'Todos')}
+                      />
                     </div>
                     
                     {/* Timeline */}
@@ -5069,35 +5069,76 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     ) : (
                       <div className="bg-white dark:bg-[#11111b] border border-slate-200 dark:border-white/5 shadow-sm dark:shadow-none rounded-xl overflow-hidden">
                         <div className="p-2 space-y-1">
-                          {projectTokens.map((token, idx) => (
-                            <motion.div
-                              key={token.id}
-                              initial={{ opacity: 0, y: -18, scale: 0.98 }}
-                              animate={{ opacity: 1, y: 0, scale: 1 }}
-                              transition={{
-                                duration: 0.35,
-                                delay: idx * 0.06,
-                                ease: [0.32, 0.72, 0, 1],
-                              }}
-                            >
-                              <div
-                                className="flex items-center gap-3 p-3 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 cursor-pointer transition-colors"
-                                onClick={() => openViewToken(token)}
+                          {projectTokens.map((token, idx) => {
+                            const platformConfig: Record<string, { icon: string; color: string; bg: string }> = {
+                              meta_ads: { icon: '📘', color: 'text-blue-400', bg: 'bg-blue-500/10 border-blue-500/30' },
+                              google_ads: { icon: '🔴', color: 'text-red-400', bg: 'bg-red-500/10 border-red-500/30' },
+                              tiktok_ads: { icon: '🎵', color: 'text-pink-400', bg: 'bg-pink-500/10 border-pink-500/30' },
+                              outro: { icon: '🔑', color: 'text-violet-400', bg: 'bg-violet-500/10 border-violet-500/30' },
+                            };
+                            const statusConfig: Record<string, { label: string; color: string }> = {
+                              active: { label: 'Ativo', color: 'bg-emerald-500/20 text-emerald-400' },
+                              error: { label: 'Erro', color: 'bg-red-500/20 text-red-400' },
+                              paused: { label: 'Pausado', color: 'bg-yellow-500/20 text-yellow-400' },
+                              pending_reauth: { label: 'Reautenticar', color: 'bg-orange-500/20 text-orange-400' },
+                            };
+                            const pCfg = platformConfig[token.platform] || platformConfig.outro;
+                            const sCfg = statusConfig[token.status] || statusConfig.active;
+                            const platformLabel = PLATFORM_OPTIONS.find(p => p.value === token.platform)?.label || token.service_name || token.platform;
+
+                            return (
+                              <motion.div
+                                key={token.id}
+                                initial={{ opacity: 0, y: -18, scale: 0.98 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                transition={{
+                                  duration: 0.35,
+                                  delay: idx * 0.06,
+                                  ease: [0.32, 0.72, 0, 1],
+                                }}
                               >
-                                <div className="w-8 h-8 rounded-full border border-violet-500/50 flex items-center justify-center bg-violet-500/10 text-violet-500">
-                                  <KeyRound size={16} />
-                                </div>
-                                <div className="flex-1">
-                                  <span className="text-sm font-medium text-slate-800 dark:text-gray-200">
-                                    {token.service_name}
+                                <div
+                                  className="flex items-center gap-3 p-3 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 cursor-pointer transition-colors"
+                                  onClick={() => openViewToken(token)}
+                                >
+                                  {/* Platform badge */}
+                                  <div className={`w-8 h-8 rounded-full border flex items-center justify-center text-sm ${pCfg.bg}`}>
+                                    {pCfg.icon}
+                                  </div>
+
+                                  {/* Info */}
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-sm font-medium text-slate-800 dark:text-gray-200 truncate">
+                                        {platformLabel}
+                                      </span>
+                                      {token.account_id && (
+                                        <span className="text-xs text-slate-400 dark:text-gray-500 font-mono">
+                                          ID: {token.account_id}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                      {token.token_masked && (
+                                        <span className="text-xs text-slate-400 dark:text-gray-600 font-mono">
+                                          {token.token_masked}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* Status badge */}
+                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${sCfg.color}`}>
+                                    {sCfg.label}
                                   </span>
+
+                                  <button className="text-xs text-slate-400 dark:text-gray-500 hover:text-violet-500 transition-colors">
+                                    Ver dados
+                                  </button>
                                 </div>
-                                <button className="text-xs text-slate-400 dark:text-gray-500 hover:text-violet-500 transition-colors">
-                                  Ver dados
-                                </button>
-                              </div>
-                            </motion.div>
-                          ))}
+                              </motion.div>
+                            );
+                          })}
 
                           {projectTokens.length === 0 && (
                             <div className="p-8 text-center text-slate-500 text-sm">
@@ -5118,6 +5159,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     )}
                   </div>
                 )}
+
 
 
                 {activeProjectTab === 'comentarios' && (() => {
@@ -5377,55 +5419,100 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                 </div>
 
                 <div className="space-y-4">
+                  {/* Platform Select */}
                   <div>
-                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Serviço / Plataforma</label>
+                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Plataforma</label>
                     {isTokenEditing ? (
-                      <input
-                        type="text"
-                        value={tokenForm.service_name}
-                        onChange={(e) => setTokenForm(prev => ({ ...prev, service_name: e.target.value }))}
-                        placeholder="Ex: Google Ads, Meta Ads"
-                        className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-light-text dark:text-white placeholder:text-slate-400 focus:border-violet-500 outline-none transition-all"
-                      />
+                      <select
+                        value={tokenForm.platform}
+                        onChange={(e) => setTokenForm(prev => ({ ...prev, platform: e.target.value, account_id: PLATFORMS_REQUIRING_ACCOUNT.includes(e.target.value) ? prev.account_id : '' }))}
+                        className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-light-text dark:text-white focus:border-violet-500 outline-none transition-all appearance-none cursor-pointer"
+                      >
+                        <option value="" disabled>Selecione a plataforma</option>
+                        {PLATFORM_OPTIONS.map(opt => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </select>
                     ) : (
-                      <div className="py-2 text-light-text dark:text-white font-medium">{tokenForm.service_name}</div>
+                      <div className="py-2 text-light-text dark:text-white font-medium">
+                        {PLATFORM_OPTIONS.find(p => p.value === tokenForm.platform)?.label || tokenForm.platform}
+                      </div>
                     )}
                   </div>
 
+                  {/* Account ID (conditional) */}
+                  {PLATFORMS_REQUIRING_ACCOUNT.includes(tokenForm.platform) && (
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                        ID da Conta de Anúncio <span className="text-red-400">*</span>
+                      </label>
+                      {isTokenEditing ? (
+                        <input
+                          type="text"
+                          value={tokenForm.account_id}
+                          onChange={(e) => setTokenForm(prev => ({ ...prev, account_id: e.target.value.replace(/\D/g, '') }))}
+                          placeholder={tokenForm.platform === 'meta_ads' ? "Apenas os números, sem 'act_'" : "ID numérico da conta"}
+                          className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-light-text dark:text-white placeholder:text-slate-400 focus:border-violet-500 outline-none transition-all font-mono"
+                        />
+                      ) : (
+                        <div className="py-2 text-light-text dark:text-white font-mono text-sm">
+                          {tokenForm.account_id || <span className="text-slate-400 italic">Não informado</span>}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Token */}
                   <div>
                     <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Token de Acesso</label>
                     {isTokenEditing ? (
                       <div className="relative">
                         <textarea
-                          value={tokenForm.token_value}
-                          onChange={(e) => setTokenForm(prev => ({ ...prev, token_value: e.target.value }))}
-                          placeholder="Cole o token aqui"
+                          value={tokenForm.token}
+                          onChange={(e) => setTokenForm(prev => ({ ...prev, token: e.target.value }))}
+                          placeholder={editingToken ? "Deixe em branco para manter o atual" : "Cole o token aqui"}
                           className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 pr-10 text-light-text dark:text-white placeholder:text-slate-400 focus:border-violet-500 outline-none transition-all font-mono text-sm min-h-[80px] resize-y"
                         />
-                        <button
-                          onClick={() => copyToClipboard(tokenForm.token_value)}
-                          className="absolute right-2 top-3 p-1.5 text-slate-400 hover:text-violet-500 rounded-md transition-colors"
-                          title="Copiar token"
-                        >
-                          <Copy size={14} />
-                        </button>
                       </div>
                     ) : (
                       <div className="flex items-start justify-between py-2 group">
-                        <span className="text-light-text dark:text-white font-mono text-sm break-all mr-2">{tokenForm.token_value || <span className="text-slate-400 italic">Sem token cadastrado</span>}</span>
-                        {tokenForm.token_value && (
-                          <button
-                            onClick={() => copyToClipboard(tokenForm.token_value)}
-                            className="p-1.5 text-slate-400 hover:text-violet-500 rounded-md transition-colors opacity-100 md:opacity-0 group-hover:opacity-100 shrink-0"
-                            title="Copiar token"
-                          >
-                            <Copy size={14} />
-                          </button>
-                        )}
+                        <span className="text-light-text dark:text-white font-mono text-sm break-all mr-2">
+                          {revealedToken ? revealedToken : (editingToken?.token_masked || <span className="text-slate-400 italic">Token criptografado</span>)}
+                        </span>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {editingToken && !revealedToken && (
+                            <button
+                              onClick={() => handleRevealToken(editingToken.id)}
+                              className="p-1.5 text-slate-400 hover:text-violet-500 rounded-md transition-colors"
+                              title="Revelar token"
+                            >
+                              <Eye size={14} />
+                            </button>
+                          )}
+                          {revealedToken && (
+                            <>
+                              <button
+                                onClick={() => setRevealedToken(null)}
+                                className="p-1.5 text-violet-500 hover:text-violet-400 rounded-md transition-colors"
+                                title="Ocultar token"
+                              >
+                                <EyeOff size={14} />
+                              </button>
+                              <button
+                                onClick={() => copyToClipboard(revealedToken)}
+                                className="p-1.5 text-slate-400 hover:text-violet-500 rounded-md transition-colors"
+                                title="Copiar token"
+                              >
+                                <Copy size={14} />
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
 
+                  {/* Observações */}
                   <div>
                     <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Observações</label>
                     {isTokenEditing ? (
@@ -5456,7 +5543,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                   {isTokenEditing ? (
                     <button
                       onClick={handleSaveToken}
-                      disabled={isTokenSubmitting || !tokenForm.service_name.trim()}
+                      disabled={isTokenSubmitting || !tokenForm.platform || (PLATFORMS_REQUIRING_ACCOUNT.includes(tokenForm.platform) && !tokenForm.account_id.trim()) || (!editingToken && !tokenForm.token.trim())}
                       className="bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white px-6 py-2 rounded-lg font-medium transition-colors flex items-center gap-2"
                     >
                       {isTokenSubmitting ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}

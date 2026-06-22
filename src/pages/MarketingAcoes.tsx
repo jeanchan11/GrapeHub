@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import OptionPicker from '../components/ui/OptionPicker';
 import SplitHeadline from '../components/SplitHeadline';
 import {
   Search, MoreHorizontal,
@@ -581,15 +582,21 @@ function CampaignForm({ data, onChange }: { data: Partial<Campaign>; onChange: (
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5">Plataforma</label>
-          <select className={cls} value={data.platform || 'Meta Ads'} onChange={e => onChange({ ...data, platform: e.target.value as any })}>
-            {PLATFORMS.map(p => <option key={p}>{p}</option>)}
-          </select>
+          <OptionPicker
+            value={data.platform || 'Meta Ads'}
+            options={PLATFORMS.map(p => ({ label: p }))}
+            placeholder="Plataforma"
+            onChange={(val) => onChange({ ...data, platform: (val || 'Meta Ads') as any })}
+          />
         </div>
         <div>
           <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5">Status</label>
-          <select className={cls} value={data.status || 'Testando'} onChange={e => onChange({ ...data, status: e.target.value as CampaignStatus })}>
-            {['Ativa','Pausada','Testando','Gargalo'].map(s => <option key={s}>{s}</option>)}
-          </select>
+          <OptionPicker
+            value={data.status || 'Testando'}
+            options={['Ativa','Pausada','Testando','Gargalo'].map(s => ({ label: s }))}
+            placeholder="Status"
+            onChange={(val) => onChange({ ...data, status: (val || 'Testando') as CampaignStatus })}
+          />
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3">
@@ -599,9 +606,12 @@ function CampaignForm({ data, onChange }: { data: Partial<Campaign>; onChange: (
         </div>
         <div>
           <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5">Resultado</label>
-          <select className={cls} value={data.result || '-'} onChange={e => onChange({ ...data, result: e.target.value })}>
-            {campaignResults.map(r => <option key={r.label}>{r.label}</option>)}
-          </select>
+          <OptionPicker
+            value={data.result || '-'}
+            options={campaignResults.map(r => ({ label: r.label }))}
+            placeholder="Resultado"
+            onChange={(val) => onChange({ ...data, result: val || '-' })}
+          />
         </div>
       </div>
       <div>
@@ -659,9 +669,12 @@ function ActionForm({ data, onChange }: { data: Partial<CampaignAction>; onChang
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5">Tipo de Ação</label>
-          <select className={cls} value={data.type || 'Otimização'} onChange={e => onChange({ ...data, type: e.target.value as ActionType })}>
-            {ACTION_TYPES.map(t => <option key={t}>{t}</option>)}
-          </select>
+          <OptionPicker
+            value={data.type || 'Otimização'}
+            options={ACTION_TYPES.map(t => ({ label: t }))}
+            placeholder="Tipo de Ação"
+            onChange={(val) => onChange({ ...data, type: (val || 'Otimização') as ActionType })}
+          />
         </div>
         <div>
           <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5">Data</label>
@@ -717,9 +730,12 @@ function ActionForm({ data, onChange }: { data: Partial<CampaignAction>; onChang
         </div>
         <div>
           <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5">Resultado</label>
-          <select className={cls} value={data.result || 'Aguardando'} onChange={e => onChange({ ...data, result: e.target.value as ActionResult })}>
-            {ACTION_RESULTS.map(r => <option key={r}>{r}</option>)}
-          </select>
+          <OptionPicker
+            value={data.result || 'Aguardando'}
+            options={ACTION_RESULTS.map(r => ({ label: r }))}
+            placeholder="Resultado"
+            onChange={(val) => onChange({ ...data, result: (val || 'Aguardando') as ActionResult })}
+          />
         </div>
       </div>
     </div>
