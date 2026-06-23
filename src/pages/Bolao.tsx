@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import SplitHeadline from '../components/SplitHeadline';
 import { useAuth } from '../contexts/AuthContext';
-import { Trophy, Target, Settings, Check, Plus, X, Medal, Crown } from 'lucide-react';
+import { Trophy, Target, Settings, Check, Plus, X, Medal, Crown, Gift } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface Jogo {
@@ -14,6 +14,7 @@ interface Jogo {
 interface RankingEntry {
   bolao_id: number; user_id: string; user_name: string | null; user_picture: string | null;
   total_pontos: number; qtd_exatos: number; qtd_resultados: number; qtd_palpites: number;
+  bolao_avatar_url?: string | null;
 }
 interface Bolao { id: number; nome: string; status: string; }
 
@@ -61,21 +62,20 @@ const Avatar = ({ name, url, size = 8 }: { name?: string | null; url?: string | 
   return <div className={`w-${size} h-${size} rounded-full bg-violet-500/20 flex items-center justify-center text-violet-400 font-bold text-xs ring-2 ring-violet-500/20`}>{initials}</div>;
 };
 
-// ── GameNode — bracket card ────────────────────────────────────────────────────
+// ── GameNode — bracket card (clickable) ────────────────────────────────────────
 interface GameNodeProps {
   jogo: Jogo | null;
-  value?: { casa: string; fora: string };
-  onChange?: (v: { casa: string; fora: string }) => void;
-  onBlurSave?: () => void;
+  onClickBet?: (jogo: Jogo) => void;
   saved?: boolean;
   isHighlighted?: boolean;
 }
 
-const GameNode: React.FC<GameNodeProps> = ({ jogo, value, onChange, onBlurSave, saved, isHighlighted = false }) => {
+const GameNode: React.FC<GameNodeProps> = ({ jogo, onClickBet, saved, isHighlighted = false }) => {
   const isTravado = jogo?.travado ?? false;
   const isEncerrado = jogo?.status === 'encerrado';
   const acertouExato = jogo?.placar_exato;
   const acertouResult = jogo?.resultado_certo;
+  const hasBet = jogo?.palpite_casa !== null && jogo?.palpite_fora !== null;
 
   if (!jogo) {
     return (
@@ -86,17 +86,24 @@ const GameNode: React.FC<GameNodeProps> = ({ jogo, value, onChange, onBlurSave, 
     );
   }
 
+  const canBet = !isTravado && !isEncerrado && !hasBet;
+
   return (
     <div
+      onClick={() => canBet && onClickBet?.(jogo)}
       className={`relative rounded-xl border transition-all overflow-hidden ${
+        canBet ? 'cursor-pointer hover:border-violet-500/40 hover:shadow-lg hover:shadow-violet-500/10' : ''
+      } ${
         isHighlighted
           ? 'border-yellow-400/50 shadow-lg shadow-yellow-500/10'
-          : isEncerrado ? 'border-white/8' : isTravado ? 'border-amber-500/20' : 'border-white/10'
+          : isEncerrado ? 'border-white/8' : hasBet ? 'border-emerald-500/20' : isTravado ? 'border-amber-500/20' : 'border-white/10'
       }`}
       style={{
         width: CARD_W, height: CARD_H,
         background: isHighlighted
           ? 'linear-gradient(135deg, rgba(234,179,8,0.12) 0%, rgba(124,58,237,0.18) 100%)'
+          : hasBet
+          ? 'linear-gradient(135deg, rgba(16,185,129,0.06) 0%, rgba(16,185,129,0.02) 100%)'
           : 'rgba(255,255,255,0.025)',
       }}
     >
@@ -105,9 +112,9 @@ const GameNode: React.FC<GameNodeProps> = ({ jogo, value, onChange, onBlurSave, 
         {/* Top: status chip + date */}
         <div className="flex items-center justify-between">
           <span className={`text-[7px] font-black uppercase tracking-widest ${
-            isHighlighted ? 'text-yellow-400' : isEncerrado ? 'text-emerald-400' : isTravado ? 'text-amber-400/80' : 'text-violet-400'
+            isHighlighted ? 'text-yellow-400' : isEncerrado ? 'text-emerald-400' : hasBet ? 'text-emerald-400' : isTravado ? 'text-amber-400/80' : 'text-violet-400'
           }`}>
-            {isHighlighted ? '⚽ Final' : isEncerrado ? '✓ Encerrado' : isTravado ? '🔒 Bloqueado' : '✏️ Aberto'}
+            {isHighlighted ? '⚽ Final' : isEncerrado ? '✓ Encerrado' : hasBet ? '✓ Apostado' : isTravado ? '🔒 Bloqueado' : '✏️ Apostar'}
           </span>
           <span className="text-[7px] text-slate-600">{fmtDate(jogo.inicia_em)}</span>
         </div>
@@ -117,29 +124,21 @@ const GameNode: React.FC<GameNodeProps> = ({ jogo, value, onChange, onBlurSave, 
           <span className="text-[12px] font-black text-white truncate flex-1 leading-none">{jogo.time_casa}</span>
 
           <div className="flex items-center gap-0.5 shrink-0">
-            {isTravado || isEncerrado ? (
+            {hasBet || isTravado || isEncerrado ? (
               <>
                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black border ${
-                  jogo.palpite_casa !== null ? 'bg-white/8 border-white/15 text-white' : 'bg-transparent border-white/5 text-slate-700'
+                  hasBet ? 'bg-emerald-500/15 border-emerald-500/25 text-emerald-300' : jogo.palpite_casa !== null ? 'bg-white/8 border-white/15 text-white' : 'bg-transparent border-white/5 text-slate-700'
                 }`}>{jogo.palpite_casa ?? '–'}</div>
                 <span className="text-[8px] text-slate-600 font-bold">×</span>
                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black border ${
-                  jogo.palpite_fora !== null ? 'bg-white/8 border-white/15 text-white' : 'bg-transparent border-white/5 text-slate-700'
+                  hasBet ? 'bg-emerald-500/15 border-emerald-500/25 text-emerald-300' : jogo.palpite_fora !== null ? 'bg-white/8 border-white/15 text-white' : 'bg-transparent border-white/5 text-slate-700'
                 }`}>{jogo.palpite_fora ?? '–'}</div>
               </>
             ) : (
               <>
-                <input type="number" min={0} max={99} value={value?.casa ?? ''} placeholder="0"
-                  onChange={e => onChange?.({ casa: e.target.value, fora: value?.fora ?? '' })}
-                  onBlur={onBlurSave}
-                  className="w-7 h-7 rounded-lg bg-dark-bg border border-white/10 text-center text-xs font-black text-white focus:outline-none focus:border-violet-500 transition-colors"
-                />
+                <div className="w-7 h-7 rounded-lg bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-xs font-black text-violet-400">?</div>
                 <span className="text-[8px] text-slate-600 font-bold">×</span>
-                <input type="number" min={0} max={99} value={value?.fora ?? ''} placeholder="0"
-                  onChange={e => onChange?.({ casa: value?.casa ?? '', fora: e.target.value })}
-                  onBlur={onBlurSave}
-                  className="w-7 h-7 rounded-lg bg-dark-bg border border-white/10 text-center text-xs font-black text-white focus:outline-none focus:border-violet-500 transition-colors"
-                />
+                <div className="w-7 h-7 rounded-lg bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-xs font-black text-violet-400">?</div>
               </>
             )}
           </div>
@@ -147,10 +146,12 @@ const GameNode: React.FC<GameNodeProps> = ({ jogo, value, onChange, onBlurSave, 
           <span className="text-[12px] font-black text-white truncate flex-1 leading-none text-right">{jogo.time_fora}</span>
         </div>
 
-        {/* Bottom: placar real + badge */}
+        {/* Bottom */}
         <div className="flex items-center justify-between">
           {isEncerrado && jogo.gols_casa !== null
             ? <span className="text-[8px] text-slate-500">Real: {jogo.gols_casa}×{jogo.gols_fora}</span>
+            : canBet
+            ? <span className="text-[8px] text-violet-400/60 font-bold">Clique para apostar</span>
             : <span />
           }
           {isEncerrado && jogo.pontos !== null
@@ -159,8 +160,94 @@ const GameNode: React.FC<GameNodeProps> = ({ jogo, value, onChange, onBlurSave, 
               }`}>{acertouExato ? '🎯' : acertouResult ? '✅' : '❌'} +{jogo.pontos}pts</span>
             : saved
             ? <span className="text-[8px] text-emerald-400 font-bold flex items-center gap-0.5"><Check size={8} /> Salvo</span>
+            : hasBet
+            ? <span className="text-[7px] text-emerald-500/50 font-bold">🔒 Definitivo</span>
             : null
           }
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── BetModal — popup para escolher placar ──────────────────────────────────────
+const BetModal = ({
+  jogo, onClose, onConfirm,
+}: {
+  jogo: Jogo;
+  onClose: () => void;
+  onConfirm: (casa: number, fora: number) => Promise<void>;
+}) => {
+  const [casa, setCasa] = useState(0);
+  const [fora, setFora] = useState(0);
+  const [saving, setSaving] = useState(false);
+
+  const handleConfirm = async () => {
+    setSaving(true);
+    await onConfirm(casa, fora);
+    setSaving(false);
+  };
+
+  const ScoreSelector = ({ value, onChange, team }: { value: number; onChange: (v: number) => void; team: string }) => (
+    <div className="flex flex-col items-center gap-2">
+      <span className="text-sm font-black text-white text-center truncate w-28">{team}</span>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => onChange(Math.max(0, value - 1))}
+          className="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white font-black text-lg transition-all active:scale-90"
+        >−</button>
+        <div className="w-14 h-14 rounded-2xl bg-violet-600/20 border-2 border-violet-500/40 flex items-center justify-center">
+          <span className="text-2xl font-black text-white">{value}</span>
+        </div>
+        <button
+          onClick={() => onChange(Math.min(99, value + 1))}
+          className="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white font-black text-lg transition-all active:scale-90"
+        >+</button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      <div
+        className="relative bg-[#1a1a2e] rounded-2xl border border-white/10 shadow-2xl shadow-violet-500/10 p-6 w-[380px] max-w-[90vw]"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="text-center mb-6">
+          <span className="text-[9px] font-bold uppercase tracking-widest text-violet-400">Fazer Palpite</span>
+          <p className="text-xs text-slate-500 mt-1">⚠️ Após apostar, não pode alterar!</p>
+        </div>
+
+        {/* Score selectors */}
+        <div className="flex items-center justify-center gap-4 mb-6">
+          <ScoreSelector value={casa} onChange={setCasa} team={jogo.time_casa} />
+          <span className="text-xl font-black text-slate-600 mt-6">×</span>
+          <ScoreSelector value={fora} onChange={setFora} team={jogo.time_fora} />
+        </div>
+
+        {/* Preview */}
+        <div className="bg-white/5 rounded-xl p-3 mb-5 text-center border border-white/5">
+          <span className="text-xs text-slate-400">Seu palpite: </span>
+          <span className="text-sm font-black text-white">{jogo.time_casa} {casa} × {fora} {jogo.time_fora}</span>
+        </div>
+
+        {/* Buttons */}
+        <div className="flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 text-xs font-bold transition-all border border-white/5"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleConfirm}
+            disabled={saving}
+            className="flex-1 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-violet-500/20 active:scale-95 disabled:opacity-50"
+          >
+            {saving ? 'Salvando...' : '⚽ Apostar'}
+          </button>
         </div>
       </div>
     </div>
@@ -182,14 +269,13 @@ const DrawConnector = ({ y1, y2 }: { y1: number; y2: number }) => {
 
 // ── BracketView — chaveamento: Oitavas → Quartas → Semifinal → Final ──────────
 const BracketView = ({
-  jogos, inputs, setInputs, onSave,
+  jogos, onSave,
 }: {
   jogos: Jogo[];
-  inputs: Record<number, { casa: string; fora: string }>;
-  setInputs: React.Dispatch<React.SetStateAction<Record<number, { casa: string; fora: string }>>>;
   onSave: (jogoId: number, casa: number, fora: number) => Promise<void>;
 }) => {
   const [saved, setSaved] = useState<Record<number, boolean>>({});
+  const [betJogo, setBetJogo] = useState<Jogo | null>(null);
 
   const pad = <T,>(arr: T[], n: number): (T | null)[] => [...arr, ...Array(n).fill(null)].slice(0, n);
   const oitavas  = pad(jogos.filter(j => j.fase === 'Oitavas'),  8) as (Jogo | null)[];
@@ -198,26 +284,17 @@ const BracketView = ({
   const finalJogo    = jogos.find(j => j.fase === 'Final') ?? null;
   const terceiroJogo = jogos.find(j => j.fase === 'Terceiro Lugar') ?? null;
 
-  const handleChange = (id: number, v: { casa: string; fora: string }) =>
-    setInputs(prev => ({ ...prev, [id]: v }));
-
-  const handleSave = async (jogo: Jogo | null) => {
-    if (!jogo || jogo.travado || jogo.status === 'encerrado') return;
-    const val = inputs[jogo.id];
-    if (!val || val.casa === '' || val.fora === '') return;
-    const casa = parseInt(val.casa, 10);
-    const fora = parseInt(val.fora, 10);
-    if (isNaN(casa) || isNaN(fora)) return;
-    await onSave(jogo.id, casa, fora);
-    setSaved(prev => ({ ...prev, [jogo.id]: true }));
-    setTimeout(() => setSaved(prev => ({ ...prev, [jogo.id]: false })), 2000);
+  const handleConfirmBet = async (casa: number, fora: number) => {
+    if (!betJogo) return;
+    await onSave(betJogo.id, casa, fora);
+    setSaved(prev => ({ ...prev, [betJogo.id]: true }));
+    setBetJogo(null);
+    setTimeout(() => setSaved(prev => ({ ...prev, [betJogo.id]: false })), 2500);
   };
 
   const nodeProps = (jogo: Jogo | null, highlight = false): GameNodeProps => ({
     jogo,
-    value: jogo ? (inputs[jogo.id] ?? { casa: jogo.palpite_casa?.toString() ?? '', fora: jogo.palpite_fora?.toString() ?? '' }) : undefined,
-    onChange: jogo ? (v) => handleChange(jogo.id, v) : undefined,
-    onBlurSave: jogo ? () => handleSave(jogo) : undefined,
+    onClickBet: (j) => setBetJogo(j),
     saved: jogo ? (saved[jogo.id] ?? false) : false,
     isHighlighted: highlight,
   });
@@ -238,6 +315,7 @@ const BracketView = ({
 
   return (
     <div style={{ width: '100%' }}>
+      {betJogo && <BetModal jogo={betJogo} onClose={() => setBetJogo(null)} onConfirm={handleConfirmBet} />}
 
       {/* ── Column labels (flex layout mirrors the bracket row) ── */}
       <div className="flex items-center mb-3" style={{ minWidth: TOTAL_W }}>
@@ -357,7 +435,7 @@ const Podio = ({ ranking, myUid }: { ranking: RankingEntry[]; myUid: string }) =
           <div key={pos} className="flex flex-col items-center gap-0">
             <div className={`flex flex-col items-center gap-1.5 px-4 py-3 rounded-2xl bg-gradient-to-b ${m.bg} border ${isMe ? 'border-violet-500/50' : 'border-white/10'} w-28 shadow-lg`}>
               {m.icon}
-              <Avatar name={entry.user_name} url={entry.user_picture} size={10} />
+              <Avatar name={entry.user_name} url={entry.bolao_avatar_url || entry.user_picture} size={10} />
               <span className="text-xs font-black text-white text-center truncate w-full">{entry.user_name?.split(' ')[0] || 'Usuário'}</span>
               <span className="text-[11px] text-violet-300 font-black">{entry.total_pontos} pts</span>
               <span className="text-[9px] text-slate-500">{entry.qtd_exatos} exatos</span>
@@ -378,8 +456,8 @@ const TabLeaderboard = ({ ranking, myUid, loading }: { ranking: RankingEntry[]; 
   if (ranking.length === 0) return (
     <div className="text-center py-20 text-slate-600">
       <Trophy size={40} className="mx-auto mb-3 opacity-20" />
-      <p className="text-sm">Nenhum palpite computado ainda.</p>
-      <p className="text-xs mt-1 opacity-60">Os pontos aparecem após o lançamento de resultados.</p>
+      <p className="text-sm">Nenhum participante ainda.</p>
+      <p className="text-xs mt-1 opacity-60">Faça seus palpites no Chaveamento para aparecer aqui!</p>
     </div>
   );
   return (
@@ -395,7 +473,7 @@ const TabLeaderboard = ({ ranking, myUid, loading }: { ranking: RankingEntry[]; 
             <div key={entry.user_id} className={`grid grid-cols-[40px_1fr_80px_80px_80px] px-4 py-3 border-b border-white/5 last:border-0 ${isMe ? 'bg-violet-500/10 border-l-2 border-l-violet-500' : 'hover:bg-white/[0.02]'}`}>
               <span className={`text-sm font-black ${i===0?'text-yellow-400':i===1?'text-slate-300':i===2?'text-amber-600':'text-slate-600'}`}>{i+1}</span>
               <div className="flex items-center gap-2 min-w-0">
-                <Avatar name={entry.user_name} url={entry.user_picture} size={7} />
+                <Avatar name={entry.user_name} url={entry.bolao_avatar_url || entry.user_picture} size={7} />
                 <span className={`text-sm font-semibold truncate ${isMe ? 'text-violet-300' : 'text-dark-text'}`}>
                   {entry.user_name || 'Usuário'}
                   {isMe && <span className="ml-1.5 text-[9px] text-violet-400 font-bold uppercase">você</span>}
@@ -564,8 +642,7 @@ export default function Bolao() {
   const [ranking, setRanking] = useState<RankingEntry[]>([]);
   const [loadingJogos, setLoadingJogos] = useState(true);
   const [loadingRanking, setLoadingRanking] = useState(true);
-  const [activeTab, setActiveTab] = useState<'palpites' | 'leaderboard' | 'admin'>('palpites');
-  const [inputs, setInputs] = useState<Record<number, { casa: string; fora: string }>>({});
+  const [activeTab, setActiveTab] = useState<'palpites' | 'leaderboard' | 'premiacoes' | 'admin'>('palpites');
 
   useEffect(() => {
     apiFetch('/api/bolao').then(r => r.json())
@@ -588,27 +665,13 @@ export default function Bolao() {
     if (!bolaoId) return;
     setLoadingRanking(true);
     apiFetch(`/api/bolao/${bolaoId}/ranking`).then(r => r.json())
-      .then((data: RankingEntry[]) => { setRanking(data); setLoadingRanking(false); })
+      .then((data: any) => { setRanking(Array.isArray(data) ? data : []); setLoadingRanking(false); })
       .catch(() => setLoadingRanking(false));
   }, [bolaoId, apiFetch]);
 
   useEffect(() => { loadJogos(); loadRanking(); }, [bolaoId]);
 
-  // Init inputs from palpites (only if not already typed)
-  useEffect(() => {
-    setInputs(prev => {
-      const init: Record<number, { casa: string; fora: string }> = {};
-      for (const j of jogos) {
-        if (!(j.id in prev)) {
-          init[j.id] = {
-            casa: j.palpite_casa !== null ? String(j.palpite_casa) : '',
-            fora: j.palpite_fora !== null ? String(j.palpite_fora) : '',
-          };
-        }
-      }
-      return { ...init, ...prev };
-    });
-  }, [jogos]);
+
 
   const handleSavePalpite = async (jogoId: number, casa: number, fora: number) => {
     const r = await apiFetch(`/api/bolao/jogos/${jogoId}/palpite`, {
@@ -626,13 +689,25 @@ export default function Bolao() {
   const tabs = [
     { id: 'palpites' as const, label: 'Chaveamento', icon: Target },
     { id: 'leaderboard' as const, label: 'Ranking', icon: Trophy },
+    { id: 'premiacoes' as const, label: 'Premiações', icon: Gift },
     ...(isAdmin ? [{ id: 'admin' as const, label: 'Admin', icon: Settings }] : []),
   ];
 
   return (
     <div className="p-6 md:p-8 bg-dark-bg text-white min-h-screen">
-      <div className="mb-8">
-        <SplitHeadline text="Bolão da " highlight="Copa" subtitle="Mata-mata — faça seus palpites por fase!" />
+      <div className="mb-8 relative overflow-hidden rounded-2xl border border-white/10" style={{ maxHeight: 260 }}>
+        <img 
+          src="/bolao.png" 
+          alt="Bolão da Copa" 
+          className="w-full object-cover object-center"
+          style={{ height: 260 }}
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#0d0d1a]/80 via-transparent to-transparent" />
+        <div className="absolute bottom-4 left-6">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400/80">
+            Mata-mata — faça seus palpites por fase!
+          </span>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -654,10 +729,82 @@ export default function Bolao() {
       {activeTab === 'palpites' && (
         loadingJogos
           ? <div className="flex justify-center py-24"><div className="w-8 h-8 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" /></div>
-          : <BracketView jogos={jogos} inputs={inputs} setInputs={setInputs} onSave={handleSavePalpite} />
+          : <BracketView jogos={jogos} onSave={handleSavePalpite} />
       )}
       {activeTab === 'leaderboard' && (
         <TabLeaderboard ranking={ranking} myUid={user?.uid || ''} loading={loadingRanking} />
+      )}
+      {activeTab === 'premiacoes' && (
+        <div className="space-y-6">
+          <div className="text-center mb-2">
+            <h2 className="text-lg font-black text-white">🏆 Premiações do <span className="text-violet-400">Bolão</span></h2>
+            <p className="text-[11px] text-slate-500 uppercase tracking-widest mt-1">Confira o que está em jogo!</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* 1º Lugar */}
+            <div className="bg-dark-card rounded-2xl border border-yellow-500/30 p-6 text-center relative overflow-hidden">
+              <div className="absolute inset-0 bg-gradient-to-b from-yellow-500/10 to-transparent pointer-events-none" />
+              <div className="relative">
+                <span className="text-4xl mb-3 block">🥇</span>
+                <Crown size={20} className="text-yellow-400 mx-auto mb-2" />
+                <h3 className="text-sm font-black text-yellow-400 uppercase tracking-wider">1º Lugar</h3>
+                <div className="mt-4 bg-yellow-500/10 rounded-xl px-4 py-3 border border-yellow-500/20">
+                  <span className="text-2xl font-black text-yellow-300">R$ 300</span>
+                </div>
+                <p className="text-[10px] text-slate-500 mt-3">+ Troféu de campeão</p>
+              </div>
+            </div>
+
+            {/* 2º Lugar */}
+            <div className="bg-dark-card rounded-2xl border border-slate-400/20 p-6 text-center relative overflow-hidden">
+              <div className="absolute inset-0 bg-gradient-to-b from-slate-400/5 to-transparent pointer-events-none" />
+              <div className="relative">
+                <span className="text-4xl mb-3 block">🥈</span>
+                <Medal size={20} className="text-slate-300 mx-auto mb-2" />
+                <h3 className="text-sm font-black text-slate-300 uppercase tracking-wider">2º Lugar</h3>
+                <div className="mt-4 bg-slate-500/10 rounded-xl px-4 py-3 border border-slate-500/20">
+                  <span className="text-2xl font-black text-slate-200">R$ 150</span>
+                </div>
+                <p className="text-[10px] text-slate-500 mt-3">Vice-campeão</p>
+              </div>
+            </div>
+
+            {/* 3º Lugar */}
+            <div className="bg-dark-card rounded-2xl border border-amber-700/20 p-6 text-center relative overflow-hidden">
+              <div className="absolute inset-0 bg-gradient-to-b from-amber-700/5 to-transparent pointer-events-none" />
+              <div className="relative">
+                <span className="text-4xl mb-3 block">🥉</span>
+                <Medal size={20} className="text-amber-600 mx-auto mb-2" />
+                <h3 className="text-sm font-black text-amber-600 uppercase tracking-wider">3º Lugar</h3>
+                <div className="mt-4 bg-amber-700/10 rounded-xl px-4 py-3 border border-amber-700/20">
+                  <span className="text-2xl font-black text-amber-500">R$ 50</span>
+                </div>
+                <p className="text-[10px] text-slate-500 mt-3">Terceiro colocado</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-dark-card rounded-2xl border border-white/10 p-5 mt-4">
+            <h3 className="text-xs font-bold text-slate-400 uppercase mb-3">📋 Regras de Pontuação</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="flex items-center gap-3 bg-emerald-500/5 rounded-xl px-4 py-3 border border-emerald-500/10">
+                <span className="text-xl">🎯</span>
+                <div>
+                  <span className="text-sm font-bold text-emerald-400">Placar Exato</span>
+                  <span className="text-xs text-slate-500 block">+3 pontos</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 bg-violet-500/5 rounded-xl px-4 py-3 border border-violet-500/10">
+                <span className="text-xl">✅</span>
+                <div>
+                  <span className="text-sm font-bold text-violet-400">Resultado Certo</span>
+                  <span className="text-xs text-slate-500 block">+1 ponto (vitória/empate/derrota)</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
       {activeTab === 'admin' && isAdmin && bolaoId && (
         <TabAdmin bolaoId={bolaoId} jogos={jogos} onRefresh={() => { loadJogos(); loadRanking(); }} authFetch={apiFetch} />

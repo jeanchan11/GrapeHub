@@ -1764,6 +1764,25 @@ async function startServer() {
     await pool.query(`ALTER TABLE project_tokens ADD COLUMN IF NOT EXISTS last_synced_at TIMESTAMPTZ`).catch(e => console.error('migrate last_synced_at:', e.message));
     await pool.query(`ALTER TABLE project_tokens ADD COLUMN IF NOT EXISTS last_error TEXT`).catch(e => console.error('migrate last_error:', e.message));
 
+    // Marketing schema + meta_insights table
+    await pool.query(`CREATE SCHEMA IF NOT EXISTS marketing`).catch(e => console.error('create marketing schema:', e.message));
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS marketing.meta_insights (
+        id SERIAL PRIMARY KEY,
+        account_id TEXT NOT NULL,
+        campaign_id TEXT NOT NULL,
+        campaign_name TEXT NOT NULL,
+        date DATE NOT NULL,
+        spend NUMERIC NOT NULL DEFAULT 0,
+        impressions BIGINT NOT NULL DEFAULT 0,
+        clicks BIGINT NOT NULL DEFAULT 0,
+        ctr NUMERIC NOT NULL DEFAULT 0,
+        leads INT NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(account_id, campaign_id, date)
+      )
+    `).catch(e => console.error('create marketing.meta_insights:', e.message));
+
     // Migrate legacy plain-text tokens to encrypted
     if (TOKEN_ENCRYPTION_KEY) {
       try {
@@ -8005,6 +8024,187 @@ app.get("/api/todos", async (req, res) => {
   });
 
   // ==========================================
+  // META INSIGHTS PER PARTNER
+  // ==========================================
+  app.get('/api/partners/:projectId/meta-insights', async (req: any, res) => {
+    try {
+      const { projectId } = req.params;
+
+      // Accept start/end or fallback to last 30 days
+      const today = new Date();
+      const fallbackStart = new Date(today); fallbackStart.setDate(today.getDate() - 29);
+      const startStr = (req.query.start as string) || fallbackStart.toISOString().slice(0, 10);
+      const endStr = (req.query.end as string) || today.toISOString().slice(0, 10);
+
+      // 1. Find account_id for this project
+      const tokenResult = await pool.query(
+        `SELECT account_id FROM project_tokens WHERE project_id = $1 AND platform = 'meta_ads' AND account_id IS NOT NULL LIMIT 1`,
+        [projectId]
+      );
+
+      if (tokenResult.rows.length === 0) {
+        return res.json({ has_meta: false, kpis: null, daily: [], campaigns: [] });
+      }
+
+      const accountId = tokenResult.rows[0].account_id;
+
+      // 2. Aggregated KPIs
+      const kpiResult = await pool.query(`
+        SELECT
+          COALESCE(SUM(spend), 0)::float AS total_spend,
+          COALESCE(SUM(impressions), 0)::bigint AS total_impressions,
+          COALESCE(SUM(clicks), 0)::bigint AS total_clicks,
+          COALESCE(SUM(leads), 0)::int AS total_leads,
+          COALESCE(SUM(messages), 0)::int AS total_messages,
+          CASE WHEN SUM(impressions) > 0 THEN (SUM(clicks)::float / SUM(impressions) * 100) ELSE 0 END AS avg_ctr
+        FROM marketing.meta_insights
+        WHERE account_id = $1 AND date >= $2 AND date <= $3
+      `, [accountId, startStr, endStr]);
+
+      // 3. Daily series
+      const dailyResult = await pool.query(`
+        SELECT
+          TO_CHAR(date, 'YYYY-MM-DD') AS date,
+          SUM(spend)::float AS spend,
+          SUM(leads)::int AS leads,
+          SUM(messages)::int AS messages
+        FROM marketing.meta_insights
+        WHERE account_id = $1 AND date >= $2 AND date <= $3
+        GROUP BY date
+        ORDER BY date
+      `, [accountId, startStr, endStr]);
+
+      // 4. Campaigns breakdown
+      const campaignResult = await pool.query(`
+        SELECT
+          campaign_name,
+          COALESCE(SUM(spend), 0)::float AS spend,
+          COALESCE(SUM(impressions), 0)::bigint AS impressions,
+          COALESCE(SUM(clicks), 0)::bigint AS clicks,
+          CASE WHEN SUM(impressions) > 0 THEN (SUM(clicks)::float / SUM(impressions) * 100) ELSE 0 END AS ctr,
+          COALESCE(SUM(leads), 0)::int AS leads,
+          COALESCE(SUM(messages), 0)::int AS messages
+        FROM marketing.meta_insights
+        WHERE account_id = $1 AND date >= $2 AND date <= $3
+        GROUP BY campaign_name
+        ORDER BY spend DESC
+      `, [accountId, startStr, endStr]);
+
+      const kpi = kpiResult.rows[0];
+      const totalSpend = kpi.total_spend || 0;
+      const totalLeads = kpi.total_leads || 0;
+      const totalMessages = kpi.total_messages || 0;
+      const primaryMetric = totalMessages > 0 ? 'messages' : 'leads';
+      const resultDivisor = primaryMetric === 'messages' ? totalMessages : totalLeads;
+      const costPerResult = resultDivisor > 0 ? parseFloat((totalSpend / resultDivisor).toFixed(2)) : null;
+
+      res.json({
+        has_meta: true,
+        kpis: {
+          spend: totalSpend,
+          impressions: Number(kpi.total_impressions),
+          clicks: Number(kpi.total_clicks),
+          leads: totalLeads,
+          messages: totalMessages,
+          ctr: parseFloat(Number(kpi.avg_ctr).toFixed(2)),
+          primary_metric: primaryMetric,
+          cost_per_result: costPerResult,
+        },
+        daily: dailyResult.rows.map((r: any) => ({
+          date: r.date,
+          spend: r.spend,
+          leads: r.leads || 0,
+          messages: r.messages || 0,
+        })),
+        campaigns: campaignResult.rows.map((r: any) => {
+          const cSpend = r.spend || 0;
+          const cLeads = r.leads || 0;
+          const cMessages = r.messages || 0;
+          const cDiv = primaryMetric === 'messages' ? cMessages : cLeads;
+          return {
+            campaign_name: r.campaign_name,
+            spend: cSpend,
+            impressions: Number(r.impressions),
+            clicks: Number(r.clicks),
+            ctr: parseFloat(Number(r.ctr).toFixed(2)),
+            leads: cLeads,
+            messages: cMessages,
+            cost_per_result: cDiv > 0 ? parseFloat((cSpend / cDiv).toFixed(2)) : null,
+          };
+        }),
+      });
+    } catch (e: any) {
+      console.error('[partner-meta-insights]', e.message);
+      res.status(500).json({ error: 'Failed to load partner meta insights', details: e.message });
+    }
+  });
+
+  // ==========================================
+  // META CREATIVES PER PARTNER
+  // ==========================================
+  app.get('/api/partners/:projectId/meta-creatives', async (req: any, res) => {
+    try {
+      const { projectId } = req.params;
+
+      // Accept start/end or fallback to last 30 days
+      const today = new Date();
+      const fallbackStart = new Date(today); fallbackStart.setDate(today.getDate() - 29);
+      const startStr = (req.query.start as string) || fallbackStart.toISOString().slice(0, 10);
+      const endStr = (req.query.end as string) || today.toISOString().slice(0, 10);
+
+      // 1. Find account_id for this project
+      const tokenResult = await pool.query(
+        `SELECT account_id FROM project_tokens WHERE project_id = $1 AND platform = 'meta_ads' AND account_id IS NOT NULL LIMIT 1`,
+        [projectId]
+      );
+
+      if (tokenResult.rows.length === 0) {
+        return res.json({ has_meta: false, creatives: [] });
+      }
+
+      const accountId = tokenResult.rows[0].account_id;
+
+      // 2. Creatives grouped by ad_id
+      const result = await pool.query(`
+        SELECT
+          mc.ad_id,
+          mc.ad_name,
+          (SELECT mc2.thumbnail_url FROM marketing.meta_creatives mc2
+           WHERE mc2.ad_id = mc.ad_id AND mc2.account_id = mc.account_id AND mc2.thumbnail_url IS NOT NULL
+           ORDER BY mc2.date DESC LIMIT 1) AS thumbnail_url,
+          COALESCE(SUM(mc.spend), 0)::float AS spend,
+          COALESCE(SUM(mc.impressions), 0)::bigint AS impressions,
+          COALESCE(SUM(mc.clicks), 0)::bigint AS clicks,
+          CASE WHEN SUM(mc.impressions) > 0 THEN (SUM(mc.clicks)::float / SUM(mc.impressions) * 100) ELSE 0 END AS ctr,
+          COALESCE(SUM(mc.messages), 0)::int AS messages,
+          COALESCE(SUM(mc.leads), 0)::int AS leads
+        FROM marketing.meta_creatives mc
+        WHERE mc.account_id = $1 AND mc.date >= $2 AND mc.date <= $3
+        GROUP BY mc.ad_id, mc.ad_name, mc.account_id
+        ORDER BY SUM(mc.spend) DESC
+      `, [accountId, startStr, endStr]);
+
+      res.json({
+        has_meta: true,
+        creatives: result.rows.map(r => ({
+          ad_id: r.ad_id,
+          ad_name: r.ad_name,
+          thumbnail_url: r.thumbnail_url,
+          spend: r.spend,
+          impressions: Number(r.impressions),
+          clicks: Number(r.clicks),
+          ctr: parseFloat(Number(r.ctr).toFixed(2)),
+          messages: r.messages,
+          leads: r.leads,
+        })),
+      });
+    } catch (e: any) {
+      console.error('[partner-meta-creatives]', e.message);
+      res.status(500).json({ error: 'Failed to load partner meta creatives', details: e.message });
+    }
+  });
+
+  // ==========================================
   // MARKETING AÇÕES
   // ==========================================
   pool.query(`
@@ -12143,6 +12343,7 @@ app.get("/api/todos", async (req, res) => {
       );
       const rows = result.rows.map((r: any) => ({
         ...r,
+        tags: Array.isArray(r.tags) ? r.tags : [],
         co_responsibles: (() => { try { return JSON.parse(r.co_responsibles || '[]'); } catch { return []; } })()
       }));
       res.json(rows);
@@ -15484,6 +15685,7 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
   `);
   await pool.query(`ALTER TABLE meeting_notes_comments ADD COLUMN IF NOT EXISTS files JSONB DEFAULT '[]'`);
   await pool.query(`ALTER TABLE collaborators ADD COLUMN IF NOT EXISTS linked_user_id TEXT`);
+  await pool.query(`ALTER TABLE collaborators ADD COLUMN IF NOT EXISTS bolao_avatar_url TEXT`);
 
   app.get('/api/meeting-notes/:pageId', async (req, res) => {
     try {

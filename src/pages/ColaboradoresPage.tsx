@@ -32,6 +32,7 @@ interface Collaborator {
   linked_picture?: string | null;
   linked_user_name?: string | null;
   linked_user_email?: string | null;
+  bolao_avatar_url?: string | null;
 }
 
 interface SystemUser {
@@ -769,6 +770,58 @@ export default function ColaboradoresPage() {
                       )
                     )}
                   </div>
+
+                  {/* Bolão Avatar */}
+                  {editingItem?.id && (
+                    <div>
+                      <label className="block text-xs font-bold text-slate-400 uppercase mb-2">⚽ Avatar Bolão</label>
+                      <div className="flex items-center gap-4">
+                        {formData.bolao_avatar_url ? (
+                          <div className="relative group">
+                            <img src={formData.bolao_avatar_url} alt="Bolão Avatar" className="w-16 h-16 rounded-xl object-cover border border-white/10" />
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (!confirm('Remover avatar do bolão?')) return;
+                                try {
+                                  await fetch(`/api/bolao/avatar/${editingItem.id}`, { method: 'DELETE' });
+                                  setFormData({ ...formData, bolao_avatar_url: null });
+                                  await loadCollaborators();
+                                } catch (e) { console.error(e); }
+                              }}
+                              className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-rose-500 rounded-full flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity shadow"
+                            >
+                              <X size={10} />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="w-16 h-16 rounded-xl border-2 border-dashed border-white/10 flex items-center justify-center text-slate-600 text-xl">⚽</div>
+                        )}
+                        <label className="cursor-pointer bg-violet-600/20 hover:bg-violet-600/30 text-violet-400 text-xs font-bold px-3 py-2 rounded-lg transition-colors">
+                          {formData.bolao_avatar_url ? 'Trocar imagem' : 'Subir imagem'}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              const fd = new FormData();
+                              fd.append('file', file);
+                              try {
+                                const res = await fetch(`/api/bolao/avatar/${editingItem.id}`, { method: 'POST', body: fd });
+                                const data = await res.json();
+                                if (data.url) {
+                                  setFormData({ ...formData, bolao_avatar_url: data.url });
+                                  await loadCollaborators();
+                                }
+                              } catch (err) { console.error(err); }
+                            }}
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  )}
 
                 </div>
               )}

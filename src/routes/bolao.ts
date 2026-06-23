@@ -1,5 +1,7 @@
 import { Express } from 'express';
 import { Pool } from 'pg';
+import multer from 'multer';
+import admin from 'firebase-admin';
 
 export async function setupBolaoRoutes(app: Express, pool: Pool) {
 
@@ -327,8 +329,107 @@ export async function setupBolaoRoutes(app: Express, pool: Pool) {
   app.get('/api/bolao/:id/ranking', async (req: any, res: any) => {
     try {
       const { id } = req.params;
-      const r = await pool.query(`SELECT * FROM bolao.v_ranking WHERE bolao_id = $1`, [id]);
-      res.json(r.rows);
+      // Try real ranking first (from finished games)
+      const r = await pool.query(`
+        SELECT vr.*, c.bolao_avatar_url
+        FROM bolao.v_ranking vr
+        LEFT JOIN collaborators c ON c.linked_user_id = vr.user_id
+        WHERE vr.bolao_id = $1
+      `, [id]);
+
+      if (r.rows.length > 0) {
+        return res.json(r.rows);
+      }
+
+      // Fallback 1: show all participants who placed palpites, with 0 points
+      const participants = await pool.query(`
+        SELECT
+          j.bolao_id,
+          p.user_id,
+          u.name AS user_name,
+          u.picture AS user_picture,
+          c.bolao_avatar_url,
+          0 AS total_pontos,
+          0 AS qtd_exatos,
+          0 AS qtd_resultados,
+          COUNT(DISTINCT p.jogo_id)::int AS qtd_palpites
+        FROM bolao.palpites p
+        JOIN bolao.jogos j ON j.id = p.jogo_id AND j.bolao_id = $1
+        LEFT JOIN users u ON u.id = p.user_id
+        LEFT JOIN collaborators c ON c.linked_user_id = p.user_id
+        GROUP BY j.bolao_id, p.user_id, u.name, u.picture, c.bolao_avatar_url
+        ORDER BY u.name
+      `, [id]);
+
+      if (participants.rows.length > 0) {
+        return res.json(participants.rows);
+      }
+
+      // Fallback 2: show all linked collaborators (no one placed palpites yet)
+      const allUsers = await pool.query(`
+        SELECT
+          $1::int AS bolao_id,
+          c.linked_user_id AS user_id,
+          c.name AS user_name,
+          COALESCE(c.linked_picture, u.picture) AS user_picture,
+          c.bolao_avatar_url,
+          0 AS total_pontos,
+          0 AS qtd_exatos,
+          0 AS qtd_resultados,
+          0 AS qtd_palpites
+        FROM collaborators c
+        LEFT JOIN users u ON u.id = c.linked_user_id
+        WHERE c.linked_user_id IS NOT NULL
+          AND c.status = 'Efetivado'
+        ORDER BY
+          CASE
+            WHEN c.name ILIKE 'Jean%' THEN 1
+            WHEN c.name ILIKE 'Adriano%' THEN 2
+            WHEN c.name ILIKE 'Neri%' THEN 3
+            ELSE 4
+          END,
+          c.name
+      `, [id]);
+
+      res.json(allUsers.rows);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/bolao/avatar/:id — upload figurine image
+  const bolaoAvatarUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } }); // 20MB
+
+  app.post('/api/bolao/avatar/:id', bolaoAvatarUpload.single('file'), async (req: any, res: any) => {
+    try {
+      const { id } = req.params;
+      const file = req.file;
+      if (!file) return res.status(400).json({ error: 'No file provided' });
+
+      let fileUrl = '';
+      const fileName = `bolao-avatars/${id}-${Date.now()}.${file.originalname.split('.').pop()}`;
+
+      try {
+        const bucket = admin.storage().bucket();
+        const blob = bucket.file(fileName);
+        await blob.save(file.buffer, { metadata: { contentType: file.mimetype } });
+        await blob.makePublic();
+        fileUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+      } catch {
+        // Fallback: base64
+        const base64 = file.buffer.toString('base64');
+        fileUrl = `data:${file.mimetype};base64,${base64}`;
+      }
+
+      await pool.query(`UPDATE collaborators SET bolao_avatar_url = $1 WHERE id = $2`, [fileUrl, id]);
+      res.json({ success: true, url: fileUrl });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // DELETE /api/bolao/avatar/:id
+  app.delete('/api/bolao/avatar/:id', async (req: any, res: any) => {
+    try {
+      const { id } = req.params;
+      await pool.query(`UPDATE collaborators SET bolao_avatar_url = NULL WHERE id = $1`, [id]);
+      res.json({ success: true });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 

@@ -5,6 +5,7 @@ import { auth, storage } from '../firebase';
 import { Modal } from '../components/ui/Modal';
 import OptionPicker from '../components/ui/OptionPicker';
 import SplitHeadline from '../components/SplitHeadline';
+import MetaAdsModal from '../components/MetaAdsModal';
 import { useAuth } from '../contexts/AuthContext';
 import { useMenu } from '../context/MenuContext';
 import { designSystem } from '../design-system';
@@ -566,6 +567,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     }
   };
   const [openProjectMenuId, setOpenProjectMenuId] = useState<string | null>(null);
+  const [metaAdsProject, setMetaAdsProject] = useState<{ id: string; name: string } | null>(null);
   const [openProductMenuId, setOpenProductMenuId] = useState<string | null>(null);
   const [productToDelete, setProductToDelete] = useState<string | null>(null);
   const [projectSortColumn, setProjectSortColumn] = useState<'partner' | 'projectResult' | 'status' | 'investment' | null>(null);
@@ -1326,6 +1328,9 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
           const updated = await res.json();
           setProjectTokens(prev => prev.map(t => t.id === editingToken.id ? updated : t));
           setIsTokenModalOpen(false);
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          alert(`Erro ao atualizar token: ${errData.error || res.statusText}`);
         }
       } else {
         const res = await fetch('/api/project-tokens', {
@@ -1337,6 +1342,9 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
           const created = await res.json();
           setProjectTokens(prev => [created, ...prev]);
           setIsTokenModalOpen(false);
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          alert(`Erro ao salvar token: ${errData.error || res.statusText}`);
         }
       }
     } catch (err) {
@@ -3853,6 +3861,16 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     </td>
                     <td className="px-6 py-5 text-right overflow-visible">
                       <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setMetaAdsProject({ id: project.id, name: project.partner });
+                          }}
+                          className="p-2 rounded-lg hover:bg-slate-200 dark:hover:bg-white/10 text-slate-500 hover:text-violet-400 dark:hover:text-violet-400 transition-all"
+                          title="Campanhas Meta Ads"
+                        >
+                          <BarChart3 size={16} />
+                        </button>
                         <button 
                           onClick={(e) => {
                             e.stopPropagation();
@@ -5588,6 +5606,15 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
         </div>
       )}
     </AnimatePresence>
+
+    {/* Meta Ads Modal */}
+    {metaAdsProject && (
+      <MetaAdsModal
+        projectId={metaAdsProject.id}
+        partnerName={metaAdsProject.name}
+        onClose={() => setMetaAdsProject(null)}
+      />
+    )}
 
     </>
   );

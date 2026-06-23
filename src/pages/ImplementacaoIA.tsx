@@ -3091,8 +3091,14 @@ export default function ImplementacaoIA() {
         fetch('/api/onboarding-tasks?type=implementacao-ia'),
         fetch('/api/ia-status-groups')
       ]);
-      if (resTasks.ok) setTasks(await resTasks.json());
-      if (resGroups.ok) setStatusGroups(await resGroups.json());
+      if (resTasks.ok) {
+        const tasksData = await resTasks.json();
+        setTasks(Array.isArray(tasksData) ? tasksData : []);
+      }
+      if (resGroups.ok) {
+        const groupsData = await resGroups.json();
+        setStatusGroups(Array.isArray(groupsData) ? groupsData : []);
+      }
       isFirstLoad.current = false;
     } catch { /* silent */ } finally { if (showSpinner) setLoading(false); }
   };

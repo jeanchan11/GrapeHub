@@ -579,7 +579,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
               }).filter(Boolean);
             };
 
-            const allowedSections = filterMenuTree(menu.filter(s => hasAllowedPagesInSection(s)));
+            const allowedSections = filterMenuTree((Array.isArray(menu) ? menu : []).filter(s => hasAllowedPagesInSection(s)));
 
             /* ── COLLAPSED: one icon per section ──────────────── */
             if (isCollapsed) {
