@@ -1140,6 +1140,9 @@ export default function CrmMetricas() {
                       <th className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest pb-3 pr-4">Cliente</th>
                       <th className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest pb-3 pr-4">Data</th>
                       <th className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest pb-3 pr-4">Origem</th>
+                      <th className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest pb-3 pr-4">Faturamento</th>
+                      <th className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest pb-3 pr-4">Nicho</th>
+                      <th className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest pb-3 pr-4">Tempo de Advocacia</th>
                       <th className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest pb-3 text-right">Valor</th>
                     </tr>
                   </thead>
@@ -1180,6 +1183,9 @@ export default function CrmMetricas() {
                               </span>
                             )}
                           </td>
+                          <td className="py-3 pr-4 text-slate-400 text-sm whitespace-nowrap">{f.faturamento || '—'}</td>
+                          <td className="py-3 pr-4 text-slate-400 text-sm whitespace-nowrap">{f.nicho || '—'}</td>
+                          <td className="py-3 pr-4 text-slate-400 text-sm whitespace-nowrap">{f.tempo_oab || '—'}</td>
                           <td className="py-3 text-right font-bold text-emerald-500 text-sm whitespace-nowrap">
                             {fmtCurrency(valorNum || Number(f.Valor) || 0)}
                           </td>

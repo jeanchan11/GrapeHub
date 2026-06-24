@@ -15,6 +15,7 @@ import {
   DndContext,
   closestCorners,
   closestCenter,
+  pointerWithin,
   KeyboardSensor,
   PointerSensor,
   useSensor,
@@ -4643,6 +4644,17 @@ const CrmComercial = () => {
 
   const originalColumnRef = useRef<string | null>(null);
 
+  const collisionDetectionStrategy = (args: any) => {
+    if (activeId && columns.some(c => c.id === activeId)) {
+      return closestCenter(args);
+    }
+    const pointerCollisions = pointerWithin(args);
+    if (pointerCollisions.length > 0) {
+      return pointerCollisions;
+    }
+    return closestCorners(args);
+  };
+
   const handleDragStart = (event: any) => {
     setActiveId(event.active.id);
     if (event.active.data.current?.type === 'Lead') {
@@ -5433,7 +5445,7 @@ const CrmComercial = () => {
 
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCenter}
+        collisionDetection={collisionDetectionStrategy}
         onDragStart={handleDragStart}
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}

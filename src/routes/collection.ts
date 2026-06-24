@@ -243,7 +243,6 @@ export function setupCollectionRoutes(app: Express, pool: Pool) {
         LEFT JOIN clients c ON c.id = fp.grapehub_client_id
         WHERE r.status IN ('PENDING', 'OVERDUE')
           AND r.due_date IS NOT NULL
-          AND COALESCE(r.billing_type, '') != 'CREDIT_CARD'
           AND (CURRENT_DATE - r.due_date) >= 10
         ORDER BY r.due_date ASC
       `);

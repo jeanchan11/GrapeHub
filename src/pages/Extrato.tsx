@@ -1111,7 +1111,7 @@ export default function Extrato() {
   const [search, setSearch]     = useState('');
   const [typeFilter, setTypeFilter] = useState<'todos'|'entradas'|'saidas'|'realizados'|'previstos'>('todos');
   const [categoryFilter, setCategoryFilter] = useState<string>('');
-  const [hideAnticipation, setHideAnticipation] = useState(false);
+  const [hideAnticipation, setHideAnticipation] = useState(true);
   const [anticipationStats, setAnticipationStats] = useState<{ antecipado_bruto: number; taxas_antecipacao: number; liquido: number; count_pares: number } | null>(null);
 
   // ── Account filter state ──

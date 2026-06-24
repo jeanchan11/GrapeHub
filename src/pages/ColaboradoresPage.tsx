@@ -153,6 +153,12 @@ export default function ColaboradoresPage() {
     fetchSystemUsers();
   }, []);
 
+  useEffect(() => {
+    if (userData?.role === 'superadmin') {
+      setMainTab('dados');
+    }
+  }, [userData]);
+
   const toggleGroup = (status: string) => {
     setExpandedGroups(prev => ({ ...prev, [status]: !prev[status] }));
   };
@@ -281,16 +287,6 @@ export default function ColaboradoresPage() {
       </div>
 
       <div className="flex gap-4 mb-6 border-b border-slate-200 dark:border-white/10 pb-px">
-        <button
-          onClick={() => setMainTab('organograma')}
-          className={`pb-4 px-2 text-sm font-bold transition-all border-b-2 ${
-            mainTab === 'organograma' 
-              ? 'border-violet-500 text-violet-600 dark:text-violet-400' 
-              : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-          }`}
-        >
-          Organograma
-        </button>
         {userData?.role === 'superadmin' && (
           <button
             onClick={() => setMainTab('dados')}
@@ -303,6 +299,16 @@ export default function ColaboradoresPage() {
             Dados
           </button>
         )}
+        <button
+          onClick={() => setMainTab('organograma')}
+          className={`pb-4 px-2 text-sm font-bold transition-all border-b-2 ${
+            mainTab === 'organograma' 
+              ? 'border-violet-500 text-violet-600 dark:text-violet-400' 
+              : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+          }`}
+        >
+          Organograma
+        </button>
       </div>
 
       {mainTab === 'dados' ? (
@@ -368,10 +374,7 @@ export default function ColaboradoresPage() {
                           return (
                             <div
                               key={c.id}
-                              onClick={() => {
-                                sessionStorage.setItem('profileContext', 'colaboradores');
-                                window.location.hash = '#/colaboradores/' + c.id;
-                              }}
+                              onClick={() => openEditModal(c)}
                               className="group relative bg-slate-50 dark:bg-white/[0.03] hover:bg-white dark:hover:bg-white/[0.06] border border-slate-200 dark:border-white/[0.07] hover:border-violet-500/40 rounded-2xl p-4 cursor-pointer transition-all duration-200 hover:shadow-lg hover:shadow-violet-500/5"
                               style={{ animation: 'collabCardIn 0.25s ease both', animationDelay: `${idx * 0.03}s` }}
                             >
@@ -412,9 +415,6 @@ export default function ColaboradoresPage() {
 
                               {/* Action buttons on hover */}
                               <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
-                                <button onClick={() => openEditModal(c)} className="w-6 h-6 rounded-lg bg-white dark:bg-white/10 hover:bg-violet-500/10 flex items-center justify-center text-slate-400 hover:text-violet-500 transition-colors shadow-sm">
-                                  <Edit size={12} />
-                                </button>
                                 <button onClick={() => handleDelete(c.id)} className="w-6 h-6 rounded-lg bg-white dark:bg-white/10 hover:bg-rose-500/10 flex items-center justify-center text-slate-400 hover:text-rose-500 transition-colors shadow-sm">
                                   <Trash2 size={12} />
                                 </button>

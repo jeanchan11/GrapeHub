@@ -1,0 +1,515 @@
+import https from 'https';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Asaas Sync Engine
+// Sincroniza automaticamente fin_receivables, fin_subscriptions e fin_people
+// com os dados do Asaas API. Roda a cada 60 minutos via setInterval.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function getAsaasKey(): string | null {
+  const key = process.env.ASAAS_API_KEY;
+  if (!key) return null;
+  return key.replace(/\\\$/g, '$');
+}
+
+// Fetch paginado — percorre todas as páginas automaticamente
+async function asaasFetchAll(endpoint: string, params: Record<string, string> = {}): Promise<any[]> {
+  const key = getAsaasKey();
+  if (!key) return [];
+
+  const results: any[] = [];
+  let offset = 0;
+  const limit = 100;
+
+  while (true) {
+    const qs = new URLSearchParams({ ...params, limit: String(limit), offset: String(offset) }).toString();
+    const url = `https://api.asaas.com/v3${endpoint}?${qs}`;
+
+    const data = await new Promise<any | null>((resolve) => {
+      const req = https.request(url, {
+        method: 'GET',
+        headers: { 'access_token': key },
+      }, (res) => {
+        let body = '';
+        res.on('data', (chunk: string) => body += chunk);
+        res.on('end', () => {
+          try { resolve(JSON.parse(body)); }
+          catch { resolve(null); }
+        });
+      });
+      req.on('error', () => resolve(null));
+      req.setTimeout(15000, () => { req.destroy(); resolve(null); });
+      req.end();
+    });
+
+    if (!data || !Array.isArray(data.data)) break;
+
+    results.push(...data.data);
+
+    if (!data.hasMore) break;
+    offset += limit;
+
+    // Pequena pausa para não sobrecarregar a API
+    await new Promise(r => setTimeout(r, 200));
+  }
+
+  return results;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sync 1: Cobranças → fin_receivables  (completo — substitui n8n)
+// Busca por vencimento + pagamentos recentes + cancelados + remove excluídas
+// ─────────────────────────────────────────────────────────────────────────────
+async function syncPayments(pool: any): Promise<{ upserted: number; deleted: number }> {
+  const today = new Date();
+  const from = new Date(today); from.setDate(today.getDate() - 30);
+  const to   = new Date(today); to.setDate(today.getDate() + 60);
+  const recentFrom = new Date(today); recentFrom.setDate(today.getDate() - 7);
+
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+
+  // 1. Faturas por vencimento — janela principal (todos os status)
+  const byDueDate = await asaasFetchAll('/payments', {
+    'dueDate[ge]': fmt(from),
+    'dueDate[le]': fmt(to),
+  });
+
+  // 2. Pagamentos recebidos recentemente (últimos 7 dias)
+  const recentlyPaid = await asaasFetchAll('/payments', {
+    'paymentDate[ge]': fmt(recentFrom),
+    'paymentDate[le]': fmt(today),
+    status: 'RECEIVED',
+  });
+
+  // 3. Confirmados recentemente
+  const recentlyConfirmed = await asaasFetchAll('/payments', {
+    'paymentDate[ge]': fmt(recentFrom),
+    'paymentDate[le]': fmt(today),
+    status: 'CONFIRMED',
+  });
+
+  // 4. Cancelados recentemente
+  const recentlyCancelled = await asaasFetchAll('/payments', {
+    'dateCreated[ge]': fmt(recentFrom),
+    'dateCreated[le]': fmt(today),
+    status: 'CANCELLED',
+  });
+
+  // Junta tudo e deduplica por id
+  const allPayments = new Map<string, any>();
+  for (const p of [...byDueDate, ...recentlyPaid, ...recentlyConfirmed, ...recentlyCancelled]) {
+    allPayments.set(p.id, p);
+  }
+
+  if (allPayments.size === 0) return { upserted: 0, deleted: 0 };
+
+  // Busca mapa customer_id → nome via fin_people
+  const custIds = [...new Set([...allPayments.values()].map((p: any) => p.customer).filter(Boolean))];
+  const nameMap: Record<string, string> = {};
+  if (custIds.length > 0) {
+    try {
+      const r = await pool.query(
+        `SELECT asaas_id, name FROM fin_people WHERE asaas_id = ANY($1)`,
+        [custIds]
+      );
+      for (const row of r.rows) nameMap[row.asaas_id] = row.name;
+    } catch { /* ignora */ }
+  }
+
+  // 5. Upsert de todos os registros
+  let upserted = 0;
+  for (const p of allPayments.values()) {
+    try {
+      await pool.query(`
+        INSERT INTO fin_receivables (
+          asaas_id, customer_id, customer_name, billing_type, status,
+          value, net_value, due_date, payment_date, description,
+          invoice_url, bank_slip_url, subscription_id, raw_json, synced_at
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW())
+        ON CONFLICT (asaas_id) DO UPDATE SET
+          status        = EXCLUDED.status,
+          payment_date  = EXCLUDED.payment_date,
+          net_value     = EXCLUDED.net_value,
+          value         = EXCLUDED.value,
+          due_date      = EXCLUDED.due_date,
+          invoice_url   = EXCLUDED.invoice_url,
+          customer_name = COALESCE(EXCLUDED.customer_name, fin_receivables.customer_name),
+          raw_json      = EXCLUDED.raw_json,
+          synced_at     = NOW()
+      `, [
+        p.id,
+        p.customer,
+        nameMap[p.customer] || p.customerName || null,
+        p.billingType,
+        p.status,
+        p.value,
+        p.netValue,
+        p.dueDate,
+        p.paymentDate || null,
+        p.description || null,
+        p.invoiceUrl || null,
+        p.bankSlipUrl || null,
+        p.subscription || null,
+        JSON.stringify(p),
+      ]);
+      upserted++;
+    } catch { /* ignora erros individuais */ }
+  }
+
+  return { upserted, deleted: 0 };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sync 2: Extrato → fin_movements_asaas
+// Busca financialTransactions dos últimos 60 dias
+// ─────────────────────────────────────────────────────────────────────────────
+async function syncExtrato(pool: any): Promise<{ upserted: number }> {
+  const today = new Date();
+  const from = new Date(today); from.setDate(today.getDate() - 60);
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+
+  const transactions = await asaasFetchAll('/financialTransactions', {
+    startDate: fmt(from),
+    finishDate: fmt(today),
+  });
+
+  if (transactions.length === 0) return { upserted: 0 };
+
+  let upserted = 0;
+  for (const tx of transactions) {
+    try {
+      // ID único: prefixo asaas_ + id da transação
+      // ID único: extrai apenas os dígitos e remove zeros à esquerda para coincidir com n8n
+      // (ex: "ftn_001902465692" → "1902465692")
+      const asaasId = String(tx.id).replace(/\D/g, '').replace(/^0+/, '') || '0';
+      const type = (tx.value ?? 0) >= 0 ? 1 : -1;
+      const value = Math.abs(tx.value ?? 0);
+
+      await pool.query(`
+        INSERT INTO fin_movements_asaas (
+          asaas_id, type, transaction_type, value, transaction_date,
+          description, balance, payment_id, transfer_id,
+          account, sicredi_status, raw_json, synced_at
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'asaas','realizado',$10,NOW())
+        ON CONFLICT (asaas_id) DO UPDATE SET
+          value            = EXCLUDED.value,
+          balance          = EXCLUDED.balance,
+          transaction_type = EXCLUDED.transaction_type,
+          description      = EXCLUDED.description,
+          raw_json         = EXCLUDED.raw_json,
+          synced_at        = NOW()
+      `, [
+        asaasId,
+        type,
+        tx.type || (type === 1 ? 'CREDIT' : 'DEBIT'),
+        value,
+        tx.date,
+        tx.description || tx.type || null,
+        tx.balance ?? null,
+        tx.payment || null,
+        tx.transfer || null,
+        JSON.stringify(tx),
+      ]);
+      upserted++;
+    } catch { /* ignora erros individuais */ }
+  }
+
+  return { upserted };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sync 3: Assinaturas → fin_subscriptions
+// Busca todas as ACTIVE (volume pequeno)
+// ─────────────────────────────────────────────────────────────────────────────
+async function syncSubscriptions(pool: any): Promise<{ upserted: number }> {
+  const subscriptions = await asaasFetchAll('/subscriptions', { status: 'ACTIVE' });
+
+  if (subscriptions.length === 0) return { upserted: 0 };
+
+  let upserted = 0;
+  for (const s of subscriptions) {
+    try {
+      await pool.query(`
+        INSERT INTO fin_subscriptions (
+          asaas_id, customer_id, status, value, next_due_date,
+          billing_type, cycle, description, raw_json, synced_at
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())
+        ON CONFLICT (asaas_id) DO UPDATE SET
+          status        = EXCLUDED.status,
+          value         = EXCLUDED.value,
+          next_due_date = EXCLUDED.next_due_date,
+          billing_type  = EXCLUDED.billing_type,
+          cycle         = EXCLUDED.cycle,
+          raw_json      = EXCLUDED.raw_json,
+          synced_at     = NOW()
+      `, [
+        s.id,
+        s.customer,
+        s.status,
+        s.value,
+        s.nextDueDate || null,
+        s.billingType,
+        s.cycle,
+        s.description || null,
+        JSON.stringify(s),
+      ]);
+      upserted++;
+    } catch { /* ignora erros individuais */ }
+  }
+
+  return { upserted };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sync 3: Clientes → atualiza fin_people existentes
+// Só atualiza registros que já têm asaas_id no banco — não cria novos
+// ─────────────────────────────────────────────────────────────────────────────
+async function syncCustomers(pool: any): Promise<{ updated: number }> {
+  // Busca os asaas_ids que já existem no banco para saber quais atualizar
+  const existingRes = await pool.query(`SELECT asaas_id FROM fin_people WHERE asaas_id IS NOT NULL`);
+  const existingIds: Set<string> = new Set(existingRes.rows.map((r: any) => r.asaas_id));
+
+  if (existingIds.size === 0) return { updated: 0 };
+
+  const customers = await asaasFetchAll('/customers');
+
+  let updated = 0;
+  for (const c of customers) {
+    if (!existingIds.has(c.id)) continue; // só atualiza quem já está no banco
+    try {
+      await pool.query(`
+        UPDATE fin_people SET
+          name        = $1,
+          email       = COALESCE($2, email),
+          phone       = COALESCE($3, phone),
+          synced_at   = NOW()
+        WHERE asaas_id = $4
+      `, [
+        c.name,
+        c.email || null,
+        c.mobilePhone || c.phone || null,
+        c.id,
+      ]);
+      updated++;
+    } catch { /* ignora erros individuais */ }
+  }
+
+  return { updated };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reconciliação automática: vincula provisões (fin_bill_entries) aos
+// pagamentos reais do extrato (fin_movements_asaas).
+// Critérios: valor ±5%, data ±7 dias, ambos não vinculados ainda.
+// ─────────────────────────────────────────────────────────────────────────────
+export async function reconcileBills(pool: any): Promise<{ matched: number }> {
+  let matched = 0;
+  try {
+    // Busca provisões pendentes (não pagas, sem vínculo)
+    const pendingEntries = await pool.query(`
+      SELECT e.id, e.expected_value, e.due_date, b.name
+      FROM fin_bill_entries e
+      JOIN fin_bills b ON b.id = e.bill_id
+      WHERE e.status != 'paid'
+        AND e.status != 'cancelled'
+        AND e.linked_movement_id IS NULL
+        AND e.due_date IS NOT NULL
+        AND e.expected_value IS NOT NULL
+    `);
+
+    for (const entry of pendingEntries.rows) {
+      const val = parseFloat(entry.expected_value);
+      if (!val || val <= 0) continue;
+
+      // Procura pagamento no extrato com valor ±5% e data ±7 dias
+      const minVal = val * 0.95;
+      const maxVal = val * 1.05;
+      const match = await pool.query(`
+        SELECT id, value, transaction_date, description
+        FROM fin_movements_asaas
+        WHERE account = 'asaas'
+          AND type = -1
+          AND linked_bill_entry_id IS NULL
+          AND value BETWEEN $1 AND $2
+          AND transaction_date BETWEEN ($3::date - INTERVAL '7 days') AND ($3::date + INTERVAL '7 days')
+        ORDER BY ABS(value - $4) ASC, ABS(transaction_date::date - $3::date) ASC
+        LIMIT 1
+      `, [minVal, maxVal, entry.due_date, val]);
+
+      if (match.rows.length > 0) {
+        const m = match.rows[0];
+        // Vincula: marca a provisão como paga e linka ambos
+        await pool.query(`
+          UPDATE fin_bill_entries
+          SET status = 'paid',
+              actual_value = $1,
+              paid_at = $2::date,
+              linked_movement_id = $3,
+              updated_at = NOW()
+          WHERE id = $4
+        `, [m.value, m.transaction_date, m.id, entry.id]);
+
+        await pool.query(`
+          UPDATE fin_movements_asaas
+          SET linked_bill_entry_id = $1
+          WHERE id = $2
+        `, [entry.id, m.id]);
+
+        matched++;
+      }
+    }
+  } catch (err: any) {
+    console.error('[reconcile] Erro:', err.message);
+  }
+  return { matched };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Orquestrador principal
+// ─────────────────────────────────────────────────────────────────────────────
+export async function runAsaasSync(pool: any): Promise<void> {
+  const key = getAsaasKey();
+  if (!key) {
+    console.warn('[asaas-sync] ASAAS_API_KEY não configurada — sync ignorado.');
+    return;
+  }
+
+  // Registra início no log
+  let logId: number | null = null;
+  try {
+    const lr = await pool.query(
+      `INSERT INTO asaas_sync_log (status) VALUES ('running') RETURNING id`
+    );
+    logId = lr.rows[0]?.id;
+  } catch { /* tabela pode não existir ainda */ }
+
+  const startedAt = Date.now();
+  console.log('[asaas-sync] Iniciando sync...');
+
+  try {
+    const [paymentsResult, extratoResult, subscriptionsResult, customersResult] = await Promise.all([
+      syncPayments(pool),
+      syncExtrato(pool),
+      syncSubscriptions(pool),
+      syncCustomers(pool),
+    ]);
+
+    // Reconcilia provisões (contas a pagar) com pagamentos do extrato
+    const reconResult = await reconcileBills(pool);
+
+    const duration = ((Date.now() - startedAt) / 1000).toFixed(1);
+    console.log(`[asaas-sync] ✅ Concluído em ${duration}s — faturas: ${paymentsResult.upserted} (${paymentsResult.deleted} removidas), extrato: ${extratoResult.upserted}, assinaturas: ${subscriptionsResult.upserted}, clientes: ${customersResult.updated}, reconciliados: ${reconResult.matched}`);
+    console.log(`[reconcile] ${reconResult.matched} provisões vinculadas automaticamente ao extrato`);
+
+    if (logId) {
+      await pool.query(`
+        UPDATE asaas_sync_log SET
+          finished_at             = NOW(),
+          payments_upserted       = $1,
+          subscriptions_upserted  = $2,
+          customers_updated       = $3,
+          status                  = 'done',
+          error_message           = $5
+        WHERE id = $4
+      `, [
+        paymentsResult.upserted + extratoResult.upserted,
+        subscriptionsResult.upserted,
+        customersResult.updated,
+        logId,
+        paymentsResult.deleted > 0 ? `${paymentsResult.deleted} fatura(s) removida(s) do Asaas` : null,
+      ]);
+    }
+  } catch (err: any) {
+    console.error('[asaas-sync] ❌ Erro:', err.message);
+    if (logId) {
+      await pool.query(
+        `UPDATE asaas_sync_log SET finished_at = NOW(), status = 'error', error_message = $1 WHERE id = $2`,
+        [err.message, logId]
+      );
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Registro de rotas
+// ─────────────────────────────────────────────────────────────────────────────
+export function setupAsaasSyncRoutes(app: any, pool: any) {
+
+  // Cria tabela de log se não existir
+  pool.query(`
+    CREATE TABLE IF NOT EXISTS asaas_sync_log (
+      id                    SERIAL PRIMARY KEY,
+      started_at            TIMESTAMPTZ DEFAULT NOW(),
+      finished_at           TIMESTAMPTZ,
+      payments_upserted     INT DEFAULT 0,
+      subscriptions_upserted INT DEFAULT 0,
+      customers_updated     INT DEFAULT 0,
+      status                TEXT DEFAULT 'running',
+      error_message         TEXT
+    )
+  `).catch((e: any) => console.warn('[asaas-sync] migrate log table:', e.message));
+
+  // Cria tabelas de Contas a Pagar nativo
+  pool.query(`
+    CREATE TABLE IF NOT EXISTS fin_bills (
+      id          SERIAL PRIMARY KEY,
+      name        VARCHAR(200) NOT NULL,
+      category    VARCHAR(100),
+      value       NUMERIC(12,2),
+      recurrence  VARCHAR(20) DEFAULT 'monthly',
+      due_day     INT,
+      due_date    DATE,
+      is_active   BOOLEAN DEFAULT TRUE,
+      notes       TEXT,
+      created_at  TIMESTAMPTZ DEFAULT NOW(),
+      updated_at  TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS fin_bill_entries (
+      id              SERIAL PRIMARY KEY,
+      bill_id         INT REFERENCES fin_bills(id) ON DELETE CASCADE,
+      reference_month VARCHAR(7) NOT NULL,
+      due_date        DATE,
+      expected_value  NUMERIC(12,2),
+      actual_value    NUMERIC(12,2),
+      status          VARCHAR(20) DEFAULT 'pending',
+      paid_at         DATE,
+      notes           TEXT,
+      created_at      TIMESTAMPTZ DEFAULT NOW(),
+      updated_at      TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(bill_id, reference_month)
+    );
+    ALTER TABLE fin_movements_asaas ADD COLUMN IF NOT EXISTS custom_description TEXT;
+    ALTER TABLE fin_movements_asaas ADD COLUMN IF NOT EXISTS custom_category VARCHAR(100);
+    ALTER TABLE fin_movements_asaas ADD COLUMN IF NOT EXISTS user_comment TEXT;
+    ALTER TABLE fin_movements_asaas ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;
+    ALTER TABLE fin_bill_entries ADD COLUMN IF NOT EXISTS linked_movement_id INT;
+    ALTER TABLE fin_movements_asaas ADD COLUMN IF NOT EXISTS linked_bill_entry_id INT;
+  `).catch((e: any) => console.warn('[bills] migrate tables:', e.message));
+
+  // POST /api/fin/sync/run — executa sync manual imediato
+  app.post('/api/fin/sync/run', async (_req: any, res: any) => {
+    try {
+      res.json({ ok: true, message: 'Sync iniciado em background.' });
+      // Roda após responder para não bloquear o HTTP
+      setImmediate(() => runAsaasSync(pool));
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // GET /api/fin/sync/status — última execução
+  app.get('/api/fin/sync/status', async (_req: any, res: any) => {
+    try {
+      const r = await pool.query(`
+        SELECT id, started_at, finished_at, payments_upserted,
+               subscriptions_upserted, customers_updated, status, error_message
+        FROM asaas_sync_log
+        ORDER BY started_at DESC
+        LIMIT 5
+      `);
+      res.json({ logs: r.rows });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+}

@@ -329,69 +329,31 @@ export async function setupBolaoRoutes(app: Express, pool: Pool) {
   app.get('/api/bolao/:id/ranking', async (req: any, res: any) => {
     try {
       const { id } = req.params;
-      // Try real ranking first (from finished games)
       const r = await pool.query(`
-        SELECT vr.*, c.bolao_avatar_url
-        FROM bolao.v_ranking vr
-        LEFT JOIN collaborators c ON c.linked_user_id = vr.user_id
-        WHERE vr.bolao_id = $1
-      `, [id]);
-
-      if (r.rows.length > 0) {
-        return res.json(r.rows);
-      }
-
-      // Fallback 1: show all participants who placed palpites, with 0 points
-      const participants = await pool.query(`
-        SELECT
-          j.bolao_id,
-          p.user_id,
-          u.name AS user_name,
-          u.picture AS user_picture,
-          c.bolao_avatar_url,
-          0 AS total_pontos,
-          0 AS qtd_exatos,
-          0 AS qtd_resultados,
-          COUNT(DISTINCT p.jogo_id)::int AS qtd_palpites
-        FROM bolao.palpites p
-        JOIN bolao.jogos j ON j.id = p.jogo_id AND j.bolao_id = $1
-        LEFT JOIN users u ON u.id = p.user_id
-        LEFT JOIN collaborators c ON c.linked_user_id = p.user_id
-        GROUP BY j.bolao_id, p.user_id, u.name, u.picture, c.bolao_avatar_url
-        ORDER BY u.name
-      `, [id]);
-
-      if (participants.rows.length > 0) {
-        return res.json(participants.rows);
-      }
-
-      // Fallback 2: show all linked collaborators (no one placed palpites yet)
-      const allUsers = await pool.query(`
         SELECT
           $1::int AS bolao_id,
           c.linked_user_id AS user_id,
           c.name AS user_name,
-          COALESCE(c.linked_picture, u.picture) AS user_picture,
+          u.picture AS user_picture,
           c.bolao_avatar_url,
-          0 AS total_pontos,
-          0 AS qtd_exatos,
-          0 AS qtd_resultados,
-          0 AS qtd_palpites
+          COALESCE(SUM(vp.pontos), 0)::int AS total_pontos,
+          COUNT(vp.palpite_id) FILTER (WHERE vp.placar_exato)::int AS qtd_exatos,
+          COUNT(vp.palpite_id) FILTER (WHERE vp.resultado_certo)::int AS qtd_resultados,
+          (
+            SELECT COUNT(*)::int FROM bolao.palpites p
+            JOIN bolao.jogos j ON j.id = p.jogo_id
+            WHERE p.user_id = c.linked_user_id AND j.bolao_id = $1
+          ) AS qtd_palpites
         FROM collaborators c
         LEFT JOIN users u ON u.id = c.linked_user_id
+        LEFT JOIN bolao.v_pontos vp ON vp.user_id = c.linked_user_id AND vp.bolao_id = $1
         WHERE c.linked_user_id IS NOT NULL
           AND c.status = 'Efetivado'
-        ORDER BY
-          CASE
-            WHEN c.name ILIKE 'Jean%' THEN 1
-            WHEN c.name ILIKE 'Adriano%' THEN 2
-            WHEN c.name ILIKE 'Neri%' THEN 3
-            ELSE 4
-          END,
-          c.name
+        GROUP BY c.linked_user_id, c.name, u.picture, c.bolao_avatar_url
+        ORDER BY total_pontos DESC, qtd_exatos DESC, qtd_resultados DESC, c.name ASC
       `, [id]);
 
-      res.json(allUsers.rows);
+      res.json(r.rows);
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 

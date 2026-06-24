@@ -384,6 +384,22 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
     }
   };
 
+  const [isSyncing, setIsSyncing] = useState(false);
+  const handleSyncAsaas = async () => {
+    setIsSyncing(true);
+    try {
+      await fetch('/api/fin/sync/run', { method: 'POST' });
+      // Aguarda o sync processar (roda em background no servidor)
+      await new Promise(r => setTimeout(r, 4000));
+      // Popula a fila com os dados novos
+      await fetch('/api/finance/dispatch/queue/populate', { method: 'POST' });
+      await fetchDispatch();
+      setTimeout(fetchDispatch, 1000);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const handleSaveConfig = async () => {
     setSavingCfg(true);
     try {
@@ -462,10 +478,28 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
     setLoadingDetail(true);
     setPhaseDetail({ phase, label: phaseLabels[phase] || phase, items: [] });
     try {
-      const res = await fetch(`/api/fin/collection/summary/${phase}`);
-      if (res.ok) {
-        const items = await res.json();
+      // Humano e Suspensão usam overdueClients (já carregados) — mesma fonte dos cards e abas
+      if (phase === 'humano' || phase === 'suspensao') {
+        const byCustomer = new Map<string, any>();
+        for (const o of overdueClients) {
+          const key = o.customer_asaas_id || o.receivable_asaas_id;
+          const existing = byCustomer.get(key);
+          if (!existing || Number(o.days_past) > Number(existing.days_past)) {
+            byCustomer.set(key, o);
+          }
+        }
+        const deduped = Array.from(byCustomer.values());
+        const mapItem = (o: any) => ({ ...o, value: o.amount, days_offset: o.days_past }); // popup usa value e days_offset
+        const items = phase === 'humano'
+          ? deduped.filter(o => Number(o.days_past) >= 10 && Number(o.days_past) < 15).map(mapItem)
+          : deduped.filter(o => Number(o.days_past) >= 15).map(mapItem);
         setPhaseDetail({ phase, label: phaseLabels[phase] || phase, items });
+      } else {
+        const res = await fetch(`/api/fin/collection/summary/${phase}`);
+        if (res.ok) {
+          const items = await res.json();
+          setPhaseDetail({ phase, label: phaseLabels[phase] || phase, items });
+        }
       }
     } catch (err) {
       console.error('Error fetching phase detail:', err);
@@ -515,6 +549,19 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
   const filteredQueueAll = queueAll.filter(q => !searchTerm || q.client_name?.toLowerCase().includes(searchTerm.toLowerCase()));
   const queueHumano = filteredQueueAll.filter(q => (q.status === 'pending' || q.status === 'manual') && q.day_offset >= 10 && q.day_offset < 15);
   const queueSuspensao = filteredQueueAll.filter(q => (q.status === 'pending' || q.status === 'manual') && q.day_offset >= 15);
+
+  // Contagem dos cards Humano/Suspensão — mesma fonte e lógica da aba (overdueClients + dedup)
+  const _overdueByCustomer = new Map<string, any>();
+  for (const o of overdueClients) {
+    const key = o.customer_asaas_id || o.receivable_asaas_id;
+    const existing = _overdueByCustomer.get(key);
+    if (!existing || Number(o.days_past) > Number(existing.days_past)) {
+      _overdueByCustomer.set(key, o);
+    }
+  }
+  const _overdueDeduped = Array.from(_overdueByCustomer.values());
+  const dispatchHumanoCount = _overdueDeduped.filter(o => Number(o.days_past) >= 10 && Number(o.days_past) < 15).length;
+  const dispatchSuspensaoCount = _overdueDeduped.filter(o => Number(o.days_past) >= 15).length;
 
   const handleToggleRule = async (id: number) => {
     try {
@@ -612,6 +659,10 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar..." className="pl-9 pr-3 py-1.5 bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-white/10 rounded-lg text-xs text-gray-900 dark:text-white focus:outline-none focus:border-violet-500/50" />
         </div>
+        <button onClick={handleSyncAsaas} disabled={isSyncing} className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-lg text-xs font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 disabled:opacity-50 transition-colors" title="Sincroniza faturas, assinaturas e clientes do Asaas">
+          <RefreshCw size={13} className={isSyncing ? 'animate-spin' : ''} />
+          {isSyncing ? 'Sincronizando...' : 'Sincronizar Asaas'}
+        </button>
         <button onClick={handlePopulateQueue} disabled={isPopulating} className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-lg text-xs font-medium text-gray-600 dark:text-slate-300 hover:bg-gray-100 disabled:opacity-50 transition-colors">
           <RefreshCw size={13} className={isPopulating ? 'animate-spin' : ''} />
           {isPopulating ? 'Atualizando...' : 'Atualizar Fila'}
@@ -714,16 +765,16 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
               <div className="flex items-center justify-between mb-3">
                 <div className="p-2 rounded-xl bg-violet-600"><Phone size={16} className="text-white" /></div>
                 <div className="flex items-center gap-2">
-                  {summary.humano > 0 && <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shadow-[0_0_8px_rgba(244,63,94,0.8)]" />}
+                  {dispatchHumanoCount > 0 && <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shadow-[0_0_8px_rgba(244,63,94,0.8)]" />}
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Humano</p>
                 </div>
               </div>
               <div className="flex flex-col mt-auto">
-                <h3 className={`text-3xl font-black tracking-tight mb-2 ${summary.humano > 0 ? 'text-violet-400/80' : 'text-dark-text'}`}><CountUp value={summary.humano} /></h3>
+                <h3 className={`text-3xl font-black tracking-tight mb-2 ${dispatchHumanoCount > 0 ? 'text-violet-400/80' : 'text-dark-text'}`}><CountUp value={dispatchHumanoCount} /></h3>
                 <div className="pt-2 border-t border-white/10">
                   <div className="flex justify-between items-center text-xs">
                     <span className="text-slate-500">D+10</span>
-                    <span className={`font-semibold ${summary.humano > 0 ? 'text-violet-500' : 'text-slate-500'}`}>{summary.humano} clientes</span>
+                    <span className={`font-semibold ${dispatchHumanoCount > 0 ? 'text-violet-500' : 'text-slate-500'}`}>{dispatchHumanoCount} clientes</span>
                   </div>
                 </div>
               </div>
@@ -733,16 +784,16 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
               <div className="flex items-center justify-between mb-3">
                 <div className="p-2 rounded-xl bg-orange-600"><ShieldAlert size={16} className="text-white" /></div>
                 <div className="flex items-center gap-2">
-                  {summary.suspensao > 0 && <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse shadow-[0_0_8px_rgba(249,115,22,0.8)]" />}
+                  {dispatchSuspensaoCount > 0 && <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse shadow-[0_0_8px_rgba(249,115,22,0.8)]" />}
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Suspensão</p>
                 </div>
               </div>
               <div className="flex flex-col mt-auto">
-                <h3 className={`text-3xl font-black tracking-tight mb-2 ${summary.suspensao > 0 ? 'text-orange-400/80' : 'text-dark-text'}`}><CountUp value={summary.suspensao} /></h3>
+                <h3 className={`text-3xl font-black tracking-tight mb-2 ${dispatchSuspensaoCount > 0 ? 'text-orange-400/80' : 'text-dark-text'}`}><CountUp value={dispatchSuspensaoCount} /></h3>
                 <div className="pt-2 border-t border-white/10">
                   <div className="flex justify-between items-center text-xs">
                     <span className="text-slate-500">D+15</span>
-                    <span className={`font-semibold ${summary.suspensao > 0 ? 'text-orange-500' : 'text-slate-500'}`}>{summary.suspensao} clientes</span>
+                    <span className={`font-semibold ${dispatchSuspensaoCount > 0 ? 'text-orange-500' : 'text-slate-500'}`}>{dispatchSuspensaoCount} clientes</span>
                   </div>
                 </div>
               </div>
@@ -951,12 +1002,13 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
             const humanoFinal   = overdueDeduped.filter(o => Number(o.days_past) < 15).map(toTableItem);
             const suspensaoFinal = overdueDeduped.filter(o => Number(o.days_past) >= 15).map(toTableItem);
 
-            type SubTab = 'agendados' | 'humano' | 'suspensao' | 'enviados';
+            type SubTab = 'agendados' | 'humano' | 'suspensao' | 'enviados' | 'cancelados';
             const subTabCfg: { key: SubTab; label: string; color: string; items: any[] }[] = [
               { key: 'agendados',  label: 'Agendados',       color: 'amber',   items: agendados      },
               { key: 'enviados',   label: 'Enviados',         color: 'emerald', items: enviados       },
               { key: 'humano',     label: 'Contato Humano',   color: 'violet',  items: humanoFinal    },
               { key: 'suspensao',  label: 'Suspensão',        color: 'rose',    items: suspensaoFinal },
+              { key: 'cancelados', label: 'Suspensos/Erros',  color: 'slate',   items: cancelados     },
             ];
 
             const currentItems = subTabCfg.find(t => t.key === dispatchSubTab)?.items ?? [];

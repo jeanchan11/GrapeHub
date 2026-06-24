@@ -58,8 +58,9 @@ function useAuthFetch() {
 // ── Avatar ─────────────────────────────────────────────────────────────────────
 const Avatar = ({ name, url, size = 8 }: { name?: string | null; url?: string | null; size?: number }) => {
   const initials = (name || 'U').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
-  if (url) return <img src={url} alt={name || ''} className={`w-${size} h-${size} rounded-full object-cover ring-2 ring-violet-500/30`} />;
-  return <div className={`w-${size} h-${size} rounded-full bg-violet-500/20 flex items-center justify-center text-violet-400 font-bold text-xs ring-2 ring-violet-500/20`}>{initials}</div>;
+  const dimension = size * 4;
+  if (url) return <img src={url} alt={name || ''} style={{ width: `${dimension}px`, height: `${dimension}px` }} className="rounded-full object-cover ring-2 ring-violet-500/30 shrink-0" />;
+  return <div style={{ width: `${dimension}px`, height: `${dimension}px` }} className="rounded-full bg-violet-500/20 flex items-center justify-center text-violet-400 font-bold text-[11px] ring-2 ring-violet-500/20 shrink-0">{initials}</div>;
 };
 
 // ── GameNode — bracket card (clickable) ────────────────────────────────────────
@@ -418,30 +419,97 @@ const BracketView = ({
 // ── Pódio ──────────────────────────────────────────────────────────────────────
 const Podio = ({ ranking, myUid }: { ranking: RankingEntry[]; myUid: string }) => {
   const top3 = ranking.slice(0, 3);
-  const order = [1, 0, 2];
+  const order = [1, 0, 2]; // 2nd, 1st, 3rd
+
   const medals = [
-    { icon: <Crown size={20} className="text-yellow-300" />, ring: 'ring-yellow-400/60', bg: 'from-yellow-500/20 to-yellow-500/5', h: 'h-28', lbl: '🥇' },
-    { icon: <Medal size={18} className="text-slate-300" />,  ring: 'ring-slate-400/40',  bg: 'from-slate-500/20 to-slate-500/5', h: 'h-20',  lbl: '🥈' },
-    { icon: <Medal size={18} className="text-amber-600" />,  ring: 'ring-amber-700/40',  bg: 'from-amber-800/20 to-amber-800/5', h: 'h-16',  lbl: '🥉' },
+    {
+      icon: <Crown size={22} className="text-yellow-400 animate-bounce" />,
+      h: 'h-44',
+      step: '1',
+      colorClass: 'text-yellow-400',
+      numColor: 'text-yellow-400/10',
+      topBorder: 'border-yellow-400/30',
+      bgBlock: 'from-yellow-600/20 via-yellow-500/10 to-yellow-400/5'
+    },
+    {
+      icon: <Medal size={20} className="text-slate-300" />,
+      h: 'h-32',
+      step: '2',
+      colorClass: 'text-slate-300',
+      numColor: 'text-slate-300/10',
+      topBorder: 'border-slate-300/20',
+      bgBlock: 'from-slate-600/20 via-slate-500/10 to-slate-400/5'
+    },
+    {
+      icon: <Medal size={20} className="text-amber-600" />,
+      h: 'h-20',
+      step: '3',
+      colorClass: 'text-amber-600',
+      numColor: 'text-amber-600/10',
+      topBorder: 'border-amber-700/20',
+      bgBlock: 'from-amber-800/20 via-amber-700/10 to-amber-600/5'
+    },
   ];
+
   return (
-    <div className="flex items-end justify-center gap-4 mb-10 pt-4">
+    <div className="relative flex items-end justify-center gap-6 mb-12 pt-8 pb-4 bg-dark-bg/40 rounded-3xl border border-white/5 max-w-2xl mx-auto overflow-hidden px-12 shadow-inner">
+      {/* Spotlights/Beams */}
+      <div className="absolute inset-x-0 top-0 h-full pointer-events-none overflow-hidden flex justify-center gap-24 opacity-40">
+        <div className="w-20 h-80 bg-gradient-to-b from-white/10 via-white/2 to-transparent blur-xl transform rotate-12 -translate-x-16" />
+        <div className="w-32 h-80 bg-gradient-to-b from-white/20 via-white/5 to-transparent blur-2xl" />
+        <div className="w-20 h-80 bg-gradient-to-b from-white/10 via-white/2 to-transparent blur-xl transform -rotate-12 translate-x-16" />
+      </div>
+
       {order.map(pos => {
         const entry = top3[pos];
-        if (!entry) return <div key={pos} className="w-28" />;
         const m = medals[pos];
-        const isMe = entry.user_id === myUid;
+        
+        // Se não houver participante cadastrado nessa colocação ainda, mostramos pedestal vazio
+        const isMe = entry ? entry.user_id === myUid : false;
+        
         return (
-          <div key={pos} className="flex flex-col items-center gap-0">
-            <div className={`flex flex-col items-center gap-1.5 px-4 py-3 rounded-2xl bg-gradient-to-b ${m.bg} border ${isMe ? 'border-violet-500/50' : 'border-white/10'} w-28 shadow-lg`}>
-              {m.icon}
-              <Avatar name={entry.user_name} url={entry.bolao_avatar_url || entry.user_picture} size={10} />
-              <span className="text-xs font-black text-white text-center truncate w-full">{entry.user_name?.split(' ')[0] || 'Usuário'}</span>
-              <span className="text-[11px] text-violet-300 font-black">{entry.total_pontos} pts</span>
-              <span className="text-[9px] text-slate-500">{entry.qtd_exatos} exatos</span>
-            </div>
-            <div className={`${m.h} w-28 rounded-t-xl bg-gradient-to-t ${m.bg} border-t border-x ${isMe ? 'border-violet-500/40' : 'border-white/5'} flex items-start justify-center pt-2`}>
-              <span className="text-xl">{m.lbl}</span>
+          <div key={pos} className="flex flex-col items-center gap-0 relative z-10 w-40">
+            {/* Participant Card */}
+            {entry ? (
+              <div className={`flex flex-col items-center rounded-2xl bg-dark-card/90 border ${isMe ? 'border-violet-500/60 shadow-[0_0_15px_rgba(124,58,237,0.3)]' : 'border-white/10'} w-full shadow-xl transition-all duration-300 hover:scale-105 mb-2 relative`}>
+                <div className="absolute -top-3.5 flex justify-center w-full left-0 z-20">
+                  <div className="bg-dark-card/95 border border-white/15 p-1 rounded-full shadow-lg">
+                    {m.icon}
+                  </div>
+                </div>
+                {entry.bolao_avatar_url || entry.user_picture ? (
+                  <img
+                    src={entry.bolao_avatar_url || entry.user_picture}
+                    alt={entry.user_name || ''}
+                    className="w-full h-64 object-cover object-center rounded-t-2xl border-b border-white/5"
+                  />
+                ) : (
+                  <div className="w-full h-64 bg-violet-500/10 flex items-center justify-center text-violet-400 font-bold text-3xl rounded-t-2xl border-b border-white/5">
+                    {entry.user_name?.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase() || 'U'}
+                  </div>
+                )}
+                <div className="w-full px-2 py-2 flex flex-col items-center gap-0.5">
+                  <span className="text-xs font-black text-white text-center truncate w-full mt-0.5">
+                    {entry.user_name || 'Usuário'}
+                  </span>
+                  <span className="text-[11px] text-violet-300 font-black">{entry.total_pontos} pts</span>
+                  <span className="text-[9px] text-slate-500">{entry.qtd_exatos} exatos</span>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-[306px] w-full border border-dashed border-white/5 rounded-2xl mb-2 bg-black/10 text-[9px] text-slate-600 uppercase tracking-wider font-bold">
+                Vazio
+              </div>
+            )}
+
+            {/* Pedestal Block */}
+            <div className={`relative ${m.h} w-full rounded-t-xl bg-gradient-to-t ${m.bgBlock} border-t-2 border-x ${m.topBorder} ${isMe ? 'ring-2 ring-violet-500/40' : ''} flex flex-col items-center justify-between py-2 overflow-hidden shadow-2xl`}>
+              <span className={`absolute -bottom-4 text-8xl font-black ${m.numColor} select-none`}>
+                {m.step}
+              </span>
+              <span className={`text-[10px] font-black uppercase tracking-widest ${m.colorClass} z-10`}>
+                {m.step}º Lugar
+              </span>
             </div>
           </div>
         );

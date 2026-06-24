@@ -494,9 +494,6 @@ export default function MinhaEquipeTab() {
                         <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${typeBadgeStyles}`}>
                           {typeBadgeLabel}
                         </span>
-                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${relationBadgeStyles}`}>
-                          {relationLabel}
-                        </span>
                       </div>
                       <p className={`text-xs mt-1 truncate ${isOverdue ? 'text-red-400/80' : 'text-slate-500'}`}>
                         {formattedDate}{formattedTime ? ` às ${formattedTime}` : ''}

@@ -12,6 +12,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import admin from "firebase-admin";
 import { setupCollectionRoutes } from "./src/routes/collection";
 import { setupDispatchRoutes } from "./src/routes/dispatch";
+import { setupAsaasSyncRoutes, runAsaasSync } from "./src/routes/asaas-sync";
+import { setupBillsRoutes } from "./src/routes/bills";
 import { setupBolaoRoutes } from "./src/routes/bolao";
 import { normalizePhoneBR } from './src/utils/phoneNormalize';
 import rateLimit from 'express-rate-limit';
@@ -1221,24 +1223,15 @@ async function startServer() {
     `);
     console.log("Database tables initialized successfully.");
 
-    // ── Migration: dispatch dedup por CLIENTE (não por fatura) ──────────────
+    // ── Migration: dispatch dedup por fatura e dia de offset ──────────────
     try {
-      // Remove índice antigo (era por fatura — causava disparos duplicados por cliente)
+      // Remove índice antigo por cliente que causava bloqueio em cobranças de meses futuros
+      await pool.query(`DROP INDEX IF EXISTS idx_dispatch_queue_dedup_client`);
       await pool.query(`DROP INDEX IF EXISTS idx_dispatch_queue_dedup`);
-      // Cancela duplicatas existentes (mantém o mais antigo por cliente + day_offset)
+      // Cria novo índice único: 1 disparo por FATURA por regra (day_offset)
       await pool.query(`
-        UPDATE fin_dispatch_queue SET status = 'CANCELADO', updated_at = NOW()
-        WHERE id IN (
-          SELECT id FROM (
-            SELECT id, ROW_NUMBER() OVER(PARTITION BY customer_asaas_id, day_offset ORDER BY created_at ASC) as rn
-            FROM fin_dispatch_queue WHERE status NOT IN ('CANCELADO', 'ERRO')
-          ) sub WHERE sub.rn > 1
-        )
-      `);
-      // Cria novo índice: 1 disparo por CLIENTE por regra (day_offset)
-      await pool.query(`
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_dispatch_queue_dedup_client
-        ON fin_dispatch_queue (customer_asaas_id, day_offset)
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_dispatch_queue_dedup_receivable
+        ON fin_dispatch_queue (receivable_asaas_id, day_offset)
         WHERE status NOT IN ('CANCELADO', 'ERRO')
       `);
     } catch (e: any) {
@@ -7095,19 +7088,18 @@ app.get("/api/todos", async (req, res) => {
     const reset = resetResult.rowCount || 0;
 
     // Step 2: Match pairs by invoice number ("fatura nr. XXXXX") in description
-    // 'Cobranca recebida' + 'Baixa da antecipacao' with same invoice number → both marked as pair
-    // ONLY protect RECEIVABLE_ANTICIPATION itself (the real cash advance entry that should always show)
-    // RECEIVABLE_ANTICIPATION_DEBIT = "Baixa da antecipacao" → SHOULD be marked as pair
+    // 'Cobranca/Cobrança recebida' + 'Baixa da antecipacao/antecipação' with same invoice number → both marked as pair
+    // Must handle BOTH accented (ç/ã) and unaccented (c/a) variants from the Asaas API
     const pairsResult = await pool.query(`
       SELECT
         cr.id as cobranca_id,
         ba.id as baixa_id
       FROM fin_movements_asaas cr
       JOIN fin_movements_asaas ba
-        ON ba.description ILIKE 'Baixa da antecipacao%'
+        ON (ba.description ILIKE 'Baixa da antecipacao%' OR ba.description ILIKE 'Baixa da antecipação%')
         AND SUBSTRING(ba.description FROM 'fatura nr[.] ?([0-9]+)')
           = SUBSTRING(cr.description FROM 'fatura nr[.] ?([0-9]+)')
-      WHERE cr.description ILIKE 'Cobranca recebida%'
+      WHERE (cr.description ILIKE 'Cobranca recebida%' OR cr.description ILIKE 'Cobrança recebida%')
         AND SUBSTRING(cr.description FROM 'fatura nr[.] ?([0-9]+)') IS NOT NULL
         AND cr.transaction_type != 'RECEIVABLE_ANTICIPATION'
     `);
@@ -7131,7 +7123,7 @@ app.get("/api/todos", async (req, res) => {
       updated += result.rowCount || 0;
     }
 
-    // Step 3: Also mark any standalone 'Baixa da antecipacao' that didn't match a pair
+    // Step 3: Also mark any standalone 'Baixa da antecipacao/ção' that didn't match a pair
     // These are always anticipation-related and should be hidden
     const standaloneResult = await pool.query(`
       UPDATE fin_movements_asaas
@@ -7141,7 +7133,7 @@ app.get("/api/todos", async (req, res) => {
           grapehub_category = 'Baixa da antecipação Asaas',
           edited_at = NOW(),
           edited_by = 'conciliacao-auto'
-      WHERE description ILIKE 'Baixa da antecipacao%'
+      WHERE (description ILIKE 'Baixa da antecipacao%' OR description ILIKE 'Baixa da antecipação%')
         AND is_anticipation_pair = false
         AND transaction_type != 'RECEIVABLE_ANTICIPATION'
       RETURNING id
@@ -7177,7 +7169,7 @@ app.get("/api/todos", async (req, res) => {
       const brutoResult = await pool.query(`
         SELECT COALESCE(SUM(ABS(value::numeric)), 0) as total, COUNT(*) as count
         FROM fin_movements_asaas
-        WHERE description ILIKE 'Antecipacao%'
+        WHERE (description ILIKE 'Antecipacao%' OR description ILIKE 'Antecipação%')
           AND type = 1
           AND transaction_date >= $1 AND transaction_date < $2
       `, [start, fim]);
@@ -7186,7 +7178,7 @@ app.get("/api/todos", async (req, res) => {
       const taxasResult = await pool.query(`
         SELECT COALESCE(SUM(ABS(value::numeric)), 0) as total, COUNT(*) as count
         FROM fin_movements_asaas
-        WHERE description ILIKE 'Taxa de antecipacao%'
+        WHERE (description ILIKE 'Taxa de antecipacao%' OR description ILIKE 'Taxa de antecipação%')
           AND transaction_date >= $1 AND transaction_date < $2
       `, [start, fim]);
 
@@ -11290,11 +11282,33 @@ app.get("/api/todos", async (req, res) => {
 
       // Fechamentos do mês selecionado
       const fechamentosMonth = await pool.query(`
-        SELECT id, day, "${nomeCol}" as "Nome", "${valorCol}" as "Valor", "${origemCol}" as origem, "${cidadeCol}" as "Cidade",
-               COALESCE(lead_nome, '') as lead_nome
-        FROM fechamentos
-        WHERE day >= $1 AND day <= $2
-        ORDER BY day DESC
+        SELECT f.id, f.day, f."${nomeCol}" as "Nome", f."${valorCol}" as "Valor", f."${origemCol}" as origem, f."${cidadeCol}" as "Cidade",
+               COALESCE(f.lead_nome, '') as lead_nome,
+               (
+                 SELECT l.nicho FROM crm_comercial_leads l 
+                 WHERE (f.lead_nome <> '' AND l.nome = f.lead_nome)
+                    OR (f.lead_nome = '' AND (l.form_nome_fantasia = f."${nomeCol}" OR l.nome = f."${nomeCol}"))
+                 ORDER BY l.id DESC LIMIT 1
+               ) as nicho,
+               (
+                 SELECT l.tempo_oab FROM crm_comercial_leads l 
+                 WHERE (f.lead_nome <> '' AND l.nome = f.lead_nome)
+                    OR (f.lead_nome = '' AND (l.form_nome_fantasia = f."${nomeCol}" OR l.nome = f."${nomeCol}"))
+                 ORDER BY l.id DESC LIMIT 1
+               ) as tempo_oab,
+               COALESCE(
+                 (
+                   SELECT l.faturamento FROM crm_comercial_leads l 
+                   WHERE (f.lead_nome <> '' AND l.nome = f.lead_nome)
+                      OR (f.lead_nome = '' AND (l.form_nome_fantasia = f."${nomeCol}" OR l.nome = f."${nomeCol}"))
+                   ORDER BY l.id DESC LIMIT 1
+                 ),
+                 f."${fatCol}",
+                 ''
+               ) as faturamento
+        FROM fechamentos f
+        WHERE f.day >= $1 AND f.day <= $2
+        ORDER BY f.day DESC
       `, [startDate, endDate]);
 
       // Fechamentos por mês (ano corrente)
@@ -15754,6 +15768,8 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
 
   // ── Dispatch Queue Routes ──────────────────────────────────────────────────
   setupDispatchRoutes(app, pool);
+  setupAsaasSyncRoutes(app, pool);
+  setupBillsRoutes(app, pool);
 
   // ── Bolão da Copa Routes ───────────────────────────────────────────────────
   await setupBolaoRoutes(app, pool);
@@ -16179,6 +16195,10 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
 
     syncInadimplentes(); // executa imediatamente ao iniciar
     setInterval(syncInadimplentes, 60 * 60 * 1000); // repete a cada 1 hora
+
+    // Sync Asaas — aguarda 3 minutos após boot, depois a cada 10 minutos
+    setTimeout(() => runAsaasSync(pool), 3 * 60 * 1000);
+    setInterval(() => runAsaasSync(pool), 10 * 60 * 1000);
   });
 }
 
