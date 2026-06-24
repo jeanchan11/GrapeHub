@@ -800,7 +800,7 @@ export default function Bolao() {
           : <BracketView jogos={jogos} onSave={handleSavePalpite} />
       )}
       {activeTab === 'leaderboard' && (
-        <TabLeaderboard ranking={ranking} myUid={user?.uid || ''} loading={loadingRanking} />
+        <TabLeaderboard ranking={ranking} myUid={userData?.id || ''} loading={loadingRanking} />
       )}
       {activeTab === 'premiacoes' && (
         <div className="space-y-6">
