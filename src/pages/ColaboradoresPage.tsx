@@ -154,7 +154,7 @@ export default function ColaboradoresPage() {
   }, []);
 
   useEffect(() => {
-    if (userData?.role === 'superadmin') {
+    if (userData?.role === 'superadmin' || userData?.role === 'diretor-operacional' || userData?.role === 'gerente-operacional') {
       setMainTab('dados');
     }
   }, [userData]);
@@ -287,7 +287,7 @@ export default function ColaboradoresPage() {
       </div>
 
       <div className="flex gap-4 mb-6 border-b border-slate-200 dark:border-white/10 pb-px">
-        {userData?.role === 'superadmin' && (
+        {(userData?.role === 'superadmin' || userData?.role === 'diretor-operacional' || userData?.role === 'gerente-operacional') && (
           <button
             onClick={() => setMainTab('dados')}
             className={`pb-4 px-2 text-sm font-bold transition-all border-b-2 ${

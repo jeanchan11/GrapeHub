@@ -47,7 +47,7 @@ export default function CollaboratorProfile({ id, fromMinhaEquipe = false }: { i
   const [previewFile, setPreviewFile] = useState<{name: string, url: string} | null>(null);
 
   const { user, userData } = useAuth();
-  const isAdmin = userData?.role === 'superadmin';
+  const isAdmin = userData?.role === 'superadmin' || userData?.role === 'diretor-operacional' || userData?.role === 'gerente-operacional';
   const isSelf = user?.uid === collab?.linked_user_id || userData?.email === collab?.linked_user_email;
 
   useEffect(() => {
