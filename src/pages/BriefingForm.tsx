@@ -10,6 +10,7 @@ import {
   Shapes, Gavel, CircleDashed,
   Link, Ban, Globe, Phone, MapPin, AtSign, BookOpen, MessageSquare,
 } from 'lucide-react';
+import LoadingSpinner from '../components/LoadingSpinner';
 
 /* ─── Types ─────────────────────────────────── */
 interface BriefingData {
@@ -639,7 +640,7 @@ export default function BriefingForm() {
 
   if (loading) return (
     <div className={BG}><div className="flex-1 flex items-center justify-center">
-      <div className="w-8 h-8 rounded-full border-2 border-violet-500/30 border-t-violet-500 animate-spin" />
+      <LoadingSpinner size="lg" />
     </div></div>
   );
 

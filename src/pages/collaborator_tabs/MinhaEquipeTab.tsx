@@ -133,7 +133,8 @@ export default function MinhaEquipeTab() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const navigateToProfile = (id: number) => {
-    window.location.hash = `#/colaboradores/${id}`;
+    sessionStorage.setItem('profileContext', 'minha-equipe');
+    window.location.hash = `#/colaboradores/${id}?from=minha-equipe`;
   };
 
   const formatTimeAgo = (dateStr: string | null) => {
@@ -149,13 +150,89 @@ export default function MinhaEquipeTab() {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center min-h-[50vh]">
+      <div className="flex justify-center items-center min-h-[65vh]">
         <LoadingSpinner size="lg" />
       </div>
     );
   }
 
   const totalPulso = Object.values(pulsoDistribuicao).reduce((a, b) => a + b, 0);
+
+  const diretos = liderados
+    .filter(l => l.status === 'Efetivado' && l.tipo === 'direto')
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const indiretos = liderados
+    .filter(l => l.status === 'Efetivado' && l.tipo === 'indireto')
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const renderCollaboratorCard = (l: Liderado, idx: number) => {
+    return (
+      <motion.div
+        key={l.id}
+        initial={{ opacity: 0, y: 15 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.1 + idx * 0.03 }}
+        onClick={() => navigateToProfile(l.id)}
+        className="group bg-white dark:bg-dark-bg border border-slate-200 dark:border-white/10 hover:border-violet-500/30 rounded-2xl p-4 cursor-pointer transition-all hover:shadow-lg hover:shadow-violet-500/5 relative"
+      >
+        <div className="flex items-center gap-3 mb-3">
+          <div className="w-10 h-10 rounded-full overflow-hidden shrink-0 bg-violet-500/20 flex items-center justify-center text-sm font-bold text-violet-400 ring-2 ring-white dark:ring-white/10">
+            {l.linked_picture
+              ? <img src={l.linked_picture} className="w-full h-full object-cover" referrerPolicy="no-referrer" alt="" />
+              : l.name.charAt(0).toUpperCase()
+            }
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="font-bold text-slate-800 dark:text-white text-sm truncate">{l.name}</p>
+            <p className="text-xs text-slate-500 truncate">{l.role || '—'}</p>
+          </div>
+          {l.pulso_hoje && (
+            <span className="text-xl shrink-0" title={MOOD_CONFIG[l.pulso_hoje.humor]?.label}>
+              {MOOD_CONFIG[l.pulso_hoje.humor]?.emoji || '❓'}
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+            l.tipo === 'direto'
+              ? 'bg-violet-500/10 text-violet-400 border-violet-500/20'
+              : 'bg-slate-500/10 text-slate-400 border-slate-500/20'
+          }`}>
+            {l.tipo === 'direto' ? 'Direto' : `Indireto`}
+          </span>
+          {l.group_name && (() => {
+            const groupSetting = settings.find(s => s.type === 'group' && s.name === l.group_name);
+            return groupSetting ? (
+              <span
+                className="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full border"
+                style={{
+                  backgroundColor: `${groupSetting.color}15`,
+                  color: groupSetting.color,
+                  borderColor: `${groupSetting.color}30`,
+                }}
+              >
+                {l.group_name}
+              </span>
+            ) : (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400">
+                {l.group_name}
+              </span>
+            );
+          })()}
+          {l.desempenho != null && (
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 ml-auto">
+              ★ {l.desempenho.toFixed(1)}
+            </span>
+          )}
+        </div>
+
+        {/* Hover arrow */}
+        <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-slate-400">
+          <ChevronRight size={14} />
+        </div>
+      </motion.div>
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -264,11 +341,10 @@ export default function MinhaEquipeTab() {
 
       {/* Main Content — 2 columns */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
         {/* Pulso de Hoje */}
         <motion.div
           initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-          className="bg-white dark:bg-dark-bg border border-slate-200 dark:border-white/10 rounded-2xl p-6"
+          className="bg-white dark:bg-dark-bg border border-slate-200 dark:border-white/10 rounded-2xl p-6 flex flex-col h-full"
         >
           <h3 className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest mb-5">
             Pulso de Hoje
@@ -299,7 +375,7 @@ export default function MinhaEquipeTab() {
           </div>
 
           {/* Response List */}
-          <div className="space-y-2 max-h-64 overflow-y-auto scrollbar-hide">
+          <div className="space-y-2 flex-1 overflow-y-auto scrollbar-hide">
             {pulsoRespostas.map(r => (
               <div
                 key={r.id}
@@ -331,46 +407,67 @@ export default function MinhaEquipeTab() {
           </div>
         </motion.div>
 
-        {/* Próximos 1:1 e Análise de Desempenho */}
+        {/* Atualizações */}
         <motion.div
           initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}
-          className="bg-white dark:bg-dark-bg border border-slate-200 dark:border-white/10 rounded-2xl p-6"
+          className="bg-white dark:bg-dark-bg border border-slate-200 dark:border-white/10 rounded-2xl p-6 flex flex-col h-full"
         >
           <h3 className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest mb-5">
-            Próximos 1:1 e Análise de Desempenho
+            Atualizações
           </h3>
 
           {agenda.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-10 text-slate-500">
+            <div className="flex-1 flex flex-col items-center justify-center py-10 text-slate-500">
               <span className="text-4xl mb-3">📅</span>
-              <p className="text-sm font-medium">Nenhum compromisso agendado</p>
-              <p className="text-xs text-slate-400 mt-1">Não há 1:1s ou avaliações agendadas no momento</p>
+              <p className="text-sm font-medium">Nenhuma atualização agendada</p>
+              <p className="text-xs text-slate-400 mt-1">Não há 1:1s, avaliações ou feedbacks pendentes no momento</p>
             </div>
           ) : (
-            <div className="space-y-3 max-h-80 overflow-y-auto scrollbar-hide">
+            <div className="space-y-3 flex-1 overflow-y-auto scrollbar-hide">
               {agenda.map((item, idx) => {
                 const isLeader = item.relation === 'leader';
+                const isBirthday = item.type === 'birthday';
                 
-                // Color configuration:
-                // - Leader: Violet/indigo theme
-                // - Subordinate: Emerald/teal theme
-                const borderStyles = isLeader 
-                  ? 'border-violet-500/20 bg-violet-500/5 hover:bg-violet-500/10'
-                  : 'border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10';
+                // Overdue calculation for meetings
+                const isMeeting = item.type === '1on1' || item.type === 'performance';
+                const isOverdue = isMeeting && new Date(`${item.data.slice(0, 10)}T${item.horario || '23:59:59'}`) < new Date();
                 
-                const badgeStyles = isLeader
+                // Color configuration for the card wrapper
+                const borderStyles = isOverdue
+                  ? 'border-red-500/20 bg-red-500/5 hover:bg-red-500/10'
+                  : isBirthday
+                    ? 'border-pink-500/20 bg-pink-500/5 hover:bg-pink-500/10'
+                    : isLeader 
+                      ? 'border-violet-500/20 bg-violet-500/5 hover:bg-violet-500/10'
+                      : 'border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10';
+
+                const relationBadgeStyles = isLeader
                   ? 'bg-violet-500/15 text-violet-400 border-violet-500/20'
                   : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20';
 
-                const typeBadgeLabel = item.type === '1on1' ? '1:1' : 'Avaliação';
+                const typeBadgeStyles = isOverdue
+                  ? 'bg-red-500/15 text-red-400 border-red-500/20'
+                  : isBirthday
+                    ? 'bg-pink-500/15 text-pink-400 border-pink-500/20'
+                    : item.type === '1on1'
+                      ? 'bg-violet-500/15 text-violet-400 border-violet-500/20'
+                      : item.type === 'performance'
+                        ? 'bg-amber-500/15 text-amber-400 border-amber-500/20'
+                        : 'bg-cyan-500/15 text-cyan-400 border-cyan-500/20';
+
+                const typeBadgeLabel = item.type === '1on1' 
+                  ? '1:1' 
+                  : item.type === 'feedback'
+                    ? 'Feedback'
+                    : item.type === 'birthday'
+                      ? 'Aniversário'
+                      : 'Avaliação';
 
                 const relationLabel = isLeader ? 'Líder' : 'Liderado';
 
-                const formattedDate = new Date(item.data).toLocaleDateString('pt-BR', {
-                  day: '2-digit',
-                  month: '2-digit',
-                  year: 'numeric'
-                });
+                const cleanDate = item.data.slice(0, 10);
+                const [y, m, d] = cleanDate.split('-');
+                const formattedDate = `${d}/${m}/${y}`;
                 
                 const formattedTime = item.horario ? item.horario.substring(0, 5) : '';
 
@@ -392,14 +489,20 @@ export default function MinhaEquipeTab() {
                     
                     {/* Main Info */}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <p className="text-sm font-bold text-slate-800 dark:text-white truncate">{item.name}</p>
-                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${badgeStyles}`}>
+                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${typeBadgeStyles}`}>
+                          {typeBadgeLabel}
+                        </span>
+                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${relationBadgeStyles}`}>
                           {relationLabel}
                         </span>
                       </div>
-                      <p className="text-xs text-slate-500 mt-1 truncate">
-                        {typeBadgeLabel} · {formattedDate} às {formattedTime}
+                      <p className={`text-xs mt-1 truncate ${isOverdue ? 'text-red-400/80' : 'text-slate-500'}`}>
+                        {formattedDate}{formattedTime ? ` às ${formattedTime}` : ''}
+                        {isOverdue && (
+                          <span className="text-red-500 font-bold ml-1.5 dark:text-red-400">(Atrasado)</span>
+                        )}
                         {item.observacao && ` · "${item.observacao}"`}
                       </p>
                     </div>
@@ -422,87 +525,36 @@ export default function MinhaEquipeTab() {
       </div>
 
       {/* Grid de Liderados */}
-      <div>
-        <h3 className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest mb-4">
+      <div className="space-y-6">
+        <h3 className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest mb-2">
           Equipe Completa
         </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-          {liderados
-            .filter(l => l.status === 'Efetivado')
-            .sort((a, b) => {
-              // Diretos primeiro, depois por nome
-              if (a.tipo !== b.tipo) return a.tipo === 'direto' ? -1 : 1;
-              return a.name.localeCompare(b.name);
-            })
-            .map((l, idx) => (
-            <motion.div
-              key={l.id}
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3 + idx * 0.03 }}
-              onClick={() => navigateToProfile(l.id)}
-              className="group bg-white dark:bg-dark-bg border border-slate-200 dark:border-white/10 hover:border-violet-500/30 rounded-2xl p-4 cursor-pointer transition-all hover:shadow-lg hover:shadow-violet-500/5"
-            >
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-10 h-10 rounded-full overflow-hidden shrink-0 bg-violet-500/20 flex items-center justify-center text-sm font-bold text-violet-400 ring-2 ring-white dark:ring-white/10">
-                  {l.linked_picture
-                    ? <img src={l.linked_picture} className="w-full h-full object-cover" referrerPolicy="no-referrer" alt="" />
-                    : l.name.charAt(0).toUpperCase()
-                  }
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="font-bold text-slate-800 dark:text-white text-sm truncate">{l.name}</p>
-                  <p className="text-xs text-slate-500 truncate">{l.role || '—'}</p>
-                </div>
-                {l.pulso_hoje && (
-                  <span className="text-xl shrink-0" title={MOOD_CONFIG[l.pulso_hoje.humor]?.label}>
-                    {MOOD_CONFIG[l.pulso_hoje.humor]?.emoji || '❓'}
-                  </span>
-                )}
-              </div>
 
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                  l.tipo === 'direto'
-                    ? 'bg-violet-500/10 text-violet-400 border-violet-500/20'
-                    : 'bg-slate-500/10 text-slate-400 border-slate-500/20'
-                }`}>
-                  {l.tipo === 'direto' ? 'Direto' : `Indireto`}
-                </span>
-                {l.group_name && (() => {
-                  const groupSetting = settings.find(s => s.type === 'group' && s.name === l.group_name);
-                  return groupSetting ? (
-                    <span
-                      className="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full border"
-                      style={{
-                        backgroundColor: `${groupSetting.color}15`,
-                        color: groupSetting.color,
-                        borderColor: `${groupSetting.color}30`,
-                      }}
-                    >
-                      {l.group_name}
-                    </span>
-                  ) : (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400">
-                      {l.group_name}
-                    </span>
-                  );
-                })()}
-                {l.desempenho != null && (
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 ml-auto">
-                    ★ {l.desempenho.toFixed(1)}
-                  </span>
-                )}
-              </div>
+        {/* Liderados Diretos */}
+        {diretos.length > 0 && (
+          <div>
+            <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3">
+              Liderados Diretos
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+              {diretos.map((l, idx) => renderCollaboratorCard(l, idx))}
+            </div>
+          </div>
+        )}
 
-              {/* Hover arrow */}
-              <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-slate-400">
-                <ChevronRight size={14} />
-              </div>
-            </motion.div>
-          ))}
-        </div>
-        {liderados.filter(l => l.status === 'Efetivado').length === 0 && (
+        {/* Liderados Indiretos */}
+        {indiretos.length > 0 && (
+          <div>
+            <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3">
+              Liderados Indiretos
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+              {indiretos.map((l, idx) => renderCollaboratorCard(l, idx))}
+            </div>
+          </div>
+        )}
+
+        {diretos.length === 0 && indiretos.length === 0 && (
           <div className="text-center py-10 text-slate-500">
             <Users size={40} className="mx-auto mb-3 text-slate-400" />
             <p className="text-sm font-medium">Nenhum liderado encontrado</p>

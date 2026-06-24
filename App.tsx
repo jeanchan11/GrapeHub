@@ -48,6 +48,7 @@ import ContasAPagar from './src/pages/ContasAPagar';
 import ContasAReceber from './src/pages/ContasAReceber';
 import ColaboradoresPage from './src/pages/ColaboradoresPage';
 import CollaboratorProfile from './src/pages/CollaboratorProfile';
+import MinhaEquipePage from './src/pages/MinhaEquipePage';
 
 import MeetingNotes from './src/pages/MeetingNotes';
 import PlanejamentoCrescimento from './src/pages/PlanejamentoCrescimento';
@@ -236,14 +237,14 @@ const AppContent: React.FC = () => {
       // If still in initial loading phase, show spinner
       if (loading) {
         return (
-          <div className="flex items-center justify-center h-full">
+          <div className="flex items-center justify-center min-h-screen bg-light-bg dark:bg-dark-bg w-full">
             <LoadingSpinner size="lg" />
           </div>
         );
       }
       // Loading finished but userData is null — API failed. Show recovery UI.
       return (
-        <div className="flex items-center justify-center h-full">
+        <div className="flex items-center justify-center min-h-screen bg-light-bg dark:bg-dark-bg w-full">
           <div className="text-center space-y-6">
             <LoadingSpinner size="lg" />
             <div>
@@ -264,8 +265,8 @@ const AppContent: React.FC = () => {
       );
     }
 
-    const isAdmin = userData?.role === 'superadmin' || userData?.role === 'gerente-operacional';
-    const isAllowed = isAdmin || userData?.allowedPages?.includes(activePage);
+    const isAdmin = userData?.role === 'superadmin' || userData?.role === 'gerente-operacional' || userData?.role === 'diretor-operacional';
+    const isAllowed = isAdmin || userData?.allowedPages?.some((p: string) => activePage === p || activePage.startsWith(p + '/'));
     
     // Admin panel — superadmin only
     if (activePage === 'admin' && userData?.role === 'superadmin') {
@@ -407,8 +408,14 @@ const AppContent: React.FC = () => {
         return <ContasAReceber />;
       case 'colaboradores':
         return <ColaboradoresPage />;
-      case 'colaborador-perfil':
-        return <CollaboratorProfile id={activePage.split('/')[1]} />;
+      case 'minha-equipe':
+        return <MinhaEquipePage />;
+      case 'colaborador-perfil': {
+        const rawId = activePage.split('/')[1] || '';
+        const cleanId = rawId.split('?')[0];
+        const fromMinhaEquipe = window.location.hash.includes('from=minha-equipe') || sessionStorage.getItem('profileContext') === 'minha-equipe';
+        return <CollaboratorProfile id={cleanId} fromMinhaEquipe={fromMinhaEquipe} />;
+      }
       case 'planejamento-crescimento':
         return <PlanejamentoCrescimento />;
       case 'senhas':

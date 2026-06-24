@@ -9,6 +9,7 @@ import { designSystem } from '../design-system';
 import { AIChat } from '../components/AIChat/AIChat';
 import { useAuth } from '../contexts/AuthContext';
 import fredImg from '../assets/fred.png';
+import LoadingSpinner from '../components/LoadingSpinner';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend, Filler, LineController, BarController);
 
@@ -283,8 +284,8 @@ export default function FinanceiroDashboard() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="w-8 h-8 border-4 border-violet-600 border-t-transparent rounded-full animate-spin"></div>
+      <div className="flex items-center justify-center min-h-[75vh] w-full">
+        <LoadingSpinner size="lg" />
       </div>
     );
   }

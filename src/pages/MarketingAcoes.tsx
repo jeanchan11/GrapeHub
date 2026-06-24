@@ -13,6 +13,8 @@ import {
   PlayCircle, Clock, Zap,
   RefreshCw, Paperclip, Image as ImageIcon, FileText, Download
 } from 'lucide-react';
+import LoadingSpinner from '../components/LoadingSpinner';
+
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -415,7 +417,7 @@ export default function MarketingAcoes({ activePage }: Props) {
       {/* List */}
       {loading ? (
         <div className="flex justify-center items-center h-40">
-          <div className="w-10 h-10 border-4 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
+          <LoadingSpinner size="md" />
         </div>
       ) : (
         <div className="px-6 md:px-8 pb-8 space-y-3">

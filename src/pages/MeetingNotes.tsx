@@ -4,6 +4,7 @@ import { Plus, ChevronDown, ChevronUp, Trash2, Save, X, Edit2, Calendar, Clock, 
 import RichTextEditor from '../components/RichTextEditor';
 import SplitHeadline from '../components/SplitHeadline';
 import { useAuth } from '../contexts/AuthContext';
+import LoadingSpinner from '../components/LoadingSpinner';
 
 interface Session {
   id: string;
@@ -248,7 +249,7 @@ export default function MeetingNotes({ activePage, pageLabel }: { activePage: st
       {/* Sessions List */}
       {loading ? (
         <div className="flex items-center justify-center py-20">
-          <div className="w-8 h-8 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
+          <LoadingSpinner size="md" />
         </div>
       ) : sessions.length === 0 ? (
         <div className="text-center py-20">

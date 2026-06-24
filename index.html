@@ -662,10 +662,12 @@
         html.light .tiptap-wrapper .ProseMirror hr { border-color: rgba(0,0,0,0.1); }
     </style>
     <script>
-        window.onerror = function(msg) {
+        window.onerror = function(msg, source, lineno, colno, error) {
             const root = document.getElementById('root');
             if (root && root.innerHTML === "") {
-                root.innerHTML = '<div style="padding: 40px; text-align: center; font-family: sans-serif; background: white; min-height: 100vh; display: flex; flex-direction: column; justify-content: center;"><h1>Erro ao carregar</h1><p style="color: #64748b;">' + msg + '</p><p style="font-size: 12px; margin-top: 10px;">Verifique se as variáveis de ambiente VITE_FIREBASE_* estão configuradas na Hostinger.</p></div>';
+                const stack = error && error.stack ? error.stack.substring(0, 500) : 'no stack';
+                const details = 'Source: ' + (source || 'unknown') + ' Line: ' + lineno + ' Col: ' + colno;
+                root.innerHTML = '<div style="padding: 40px; text-align: center; font-family: sans-serif; background: white; min-height: 100vh; display: flex; flex-direction: column; justify-content: center;"><h1>Erro ao carregar</h1><p style="color: #64748b;">' + msg + '</p><p style="font-size: 11px; color: #94a3b8; margin-top: 8px; word-break: break-all;">' + details + '</p><pre style="font-size: 10px; color: #94a3b8; margin-top: 8px; text-align: left; max-width: 600px; margin-left: auto; margin-right: auto; overflow: auto; white-space: pre-wrap; word-break: break-all;">' + stack + '</pre><p style="font-size: 12px; margin-top: 10px;">Verifique se as variáveis de ambiente VITE_FIREBASE_* estão configuradas na Hostinger.</p></div>';
             }
         };
     </script>

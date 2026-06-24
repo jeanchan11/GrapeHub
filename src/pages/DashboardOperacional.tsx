@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { auth } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
+import LoadingSpinner from '../components/LoadingSpinner';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types  (matching real API response shape)
@@ -549,8 +550,8 @@ function GestorBar({ results, total }: { results: Record<string, number>; total:
 
 function Spinner() {
   return (
-    <div className="flex items-center justify-center min-h-screen bg-dark-bg">
-      <div className="w-10 h-10 border-4 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
+    <div className="flex items-center justify-center min-h-[75vh] w-full bg-dark-bg">
+      <LoadingSpinner size="lg" />
     </div>
   );
 }

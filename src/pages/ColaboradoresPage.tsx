@@ -5,7 +5,6 @@ import { Plus, Search, ChevronDown, Edit, Trash2, CheckCircle2, Copy, Check, Set
 import LoadingSpinner from '../components/LoadingSpinner';
 import SplitHeadline from '../components/SplitHeadline';
 import Organograma from '../components/Organograma';
-import MinhaEquipeTab from './collaborator_tabs/MinhaEquipeTab';
 import { useAuth } from '../contexts/AuthContext';
 
 interface Collaborator {
@@ -60,8 +59,7 @@ export default function ColaboradoresPage() {
     'Desligamento': false,
     'Turnover': false,
   });
-  const [mainTab, setMainTab] = useState<'dados' | 'organograma' | 'minha-equipe'>('minha-equipe');
-  const [hasSubordinates, setHasSubordinates] = useState(false);
+  const [mainTab, setMainTab] = useState<'dados' | 'organograma'>('organograma');
   const { userData } = useAuth();
   
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -155,23 +153,6 @@ export default function ColaboradoresPage() {
     fetchSystemUsers();
   }, []);
 
-  // Check if current user has subordinates (for showing Minha Equipe tab)
-  useEffect(() => {
-    if (!userData?.email) return;
-    fetch('/api/colaboradores/minha-equipe/tem-liderados', {
-      headers: { 'x-user-email': userData.email }
-    })
-      .then(r => r.json())
-      .then(data => {
-        const hasSub = data.temLiderados || false;
-        setHasSubordinates(hasSub);
-        if (!hasSub) {
-          setMainTab('organograma');
-        }
-      })
-      .catch(() => {});
-  }, [userData?.email]);
-
   const toggleGroup = (status: string) => {
     setExpandedGroups(prev => ({ ...prev, [status]: !prev[status] }));
   };
@@ -264,7 +245,7 @@ export default function ColaboradoresPage() {
     }
   };
 
-  if (loading) return <div className="flex justify-center items-center min-h-[60vh] w-full"><LoadingSpinner size="lg" /></div>;
+  if (loading) return <div className="flex justify-center items-center min-h-[75vh] w-full"><LoadingSpinner size="lg" /></div>;
 
   return (
     <div className="min-h-full bg-light-bg dark:bg-dark-bg text-slate-900 dark:text-slate-100 font-sans p-8 overflow-y-auto w-full">
@@ -300,19 +281,6 @@ export default function ColaboradoresPage() {
       </div>
 
       <div className="flex gap-4 mb-6 border-b border-slate-200 dark:border-white/10 pb-px">
-        {hasSubordinates && (
-          <button
-            onClick={() => setMainTab('minha-equipe')}
-            className={`pb-4 px-2 text-sm font-bold transition-all border-b-2 flex items-center gap-1.5 ${
-              mainTab === 'minha-equipe' 
-                ? 'border-violet-500 text-violet-600 dark:text-violet-400' 
-                : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-            }`}
-          >
-            <Users size={14} />
-            Minha Equipe
-          </button>
-        )}
         <button
           onClick={() => setMainTab('organograma')}
           className={`pb-4 px-2 text-sm font-bold transition-all border-b-2 ${
@@ -400,7 +368,10 @@ export default function ColaboradoresPage() {
                           return (
                             <div
                               key={c.id}
-                              onClick={() => window.location.hash = '#/colaboradores/' + c.id}
+                              onClick={() => {
+                                sessionStorage.setItem('profileContext', 'colaboradores');
+                                window.location.hash = '#/colaboradores/' + c.id;
+                              }}
                               className="group relative bg-slate-50 dark:bg-white/[0.03] hover:bg-white dark:hover:bg-white/[0.06] border border-slate-200 dark:border-white/[0.07] hover:border-violet-500/40 rounded-2xl p-4 cursor-pointer transition-all duration-200 hover:shadow-lg hover:shadow-violet-500/5"
                               style={{ animation: 'collabCardIn 0.25s ease both', animationDelay: `${idx * 0.03}s` }}
                             >
@@ -459,10 +430,8 @@ export default function ColaboradoresPage() {
             );
           })}
         </div>
-      ) : mainTab === 'organograma' ? (
-        <Organograma collaborators={collaborators.filter(c => c.status === 'Efetivado')} settings={settings} />
       ) : (
-        <MinhaEquipeTab />
+        <Organograma collaborators={collaborators.filter(c => c.status === 'Efetivado')} settings={settings} />
       )}
 
       {isModalOpen && (

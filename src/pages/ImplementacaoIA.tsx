@@ -54,6 +54,7 @@ interface OnboardingTask {
   uf: string | null;
   meeting_info: string | null;
   co_responsibles?: { id: string; name: string; avatar: string | null }[];
+  time_members?: { id: string; name: string; avatar: string | null }[];
 }
 
 interface Comment {
@@ -166,7 +167,7 @@ const uid = () => Math.random().toString(36).substr(2, 9);
 export const StatusGroupsContext = React.createContext<Omit<StatusGroup, 'tasks'>[]>([]);
 
 // ── Column order system ────────────────────────────────────
-type ColId = 'tags' | 'squad' | 'resp' | 'due_date';
+type ColId = 'tags' | 'squad' | 'resp' | 'time' | 'due_date';
 
 interface ColDef {
   id: ColId;
@@ -174,12 +175,13 @@ interface ColDef {
   width: string; // tailwind class e.g. 'w-40'
 }
 
-const DEFAULT_COL_ORDER: ColId[] = ['tags', 'squad', 'resp', 'due_date'];
+const DEFAULT_COL_ORDER: ColId[] = ['tags', 'squad', 'resp', 'time', 'due_date'];
 
 const COL_DEFS: Record<ColId, ColDef> = {
   tags:       { id: 'tags',       label: 'Tags',        width: 'w-40' },
   squad:      { id: 'squad',      label: 'Squad',       width: 'w-36' },
   resp:       { id: 'resp',       label: 'Resp.',       width: 'w-20' },
+  time:       { id: 'time',       label: 'Time',        width: 'w-20' },
   due_date:   { id: 'due_date',   label: 'Vencimento',  width: 'w-28' },
 };
 
@@ -926,6 +928,13 @@ const TaskRow = ({ task, coloredTagDefs, onUpdate, onOpenDetail, onOpenSubtask, 
   onOpenSubtask: (s: Subtask, t: OnboardingTask) => void;
   dragHandleProps?: { attributes: any; listeners: any };
 }) => {
+  // Normalize tags, co_responsibles & time_members to prevent null.filter() crashes in production
+  task = {
+    ...task,
+    tags: Array.isArray(task.tags) ? task.tags : [],
+    co_responsibles: Array.isArray(task.co_responsibles) ? task.co_responsibles : [],
+    time_members: Array.isArray(task.time_members) ? task.time_members : [],
+  };
   const [squad, setSquad] = useState(task.squad || '');
   const [showStatusPicker, setShowStatusPicker] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
@@ -989,10 +998,13 @@ const TaskRow = ({ task, coloredTagDefs, onUpdate, onOpenDetail, onOpenSubtask, 
   const [taskRespPicker, setTaskRespPicker] = useState(false);
   const [taskRespPos, setTaskRespPos] = useState({ top: 0, left: 0 });
   const [subtaskRespPos, setSubtaskRespPos] = useState({ top: 0, left: 0 });
+  const [timePicker, setTimePicker] = useState(false);
+  const [timePickerPos, setTimePickerPos] = useState({ top: 0, left: 0 });
   const statusRef = React.useRef<HTMLDivElement>(null);
   const menuRef = React.useRef<HTMLDivElement>(null);
   const respRef = React.useRef<HTMLDivElement>(null);
   const taskRespRef = React.useRef<HTMLButtonElement>(null);
+  const timeRef = React.useRef<HTMLButtonElement>(null);
 
   useEffect(() => { fetchUsersOnce(); }, []);
 
@@ -1007,6 +1019,18 @@ const TaskRow = ({ task, coloredTagDefs, onUpdate, onOpenDetail, onOpenSubtask, 
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, [taskRespPicker]);
+
+  useEffect(() => {
+    if (!timePicker) return;
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as Element;
+      if (!target.closest('[data-time-portal]') && !target.closest('[data-time-btn]')) {
+        setTimePicker(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [timePicker]);
 
   useEffect(() => {
     if (!subtaskRespPicker) return;
@@ -1112,6 +1136,26 @@ const TaskRow = ({ task, coloredTagDefs, onUpdate, onOpenDetail, onOpenSubtask, 
           responsible_avatar: newMain?.avatar || null,
           co_responsibles: JSON.stringify(newCo),
         }),
+      });
+      onUpdate();
+    } catch { /* silent */ }
+  };
+
+  const handleTimeResponsible = async (userId: string, userName: string, userAvatar: string) => {
+    setTimePicker(false);
+    const members = task.time_members || [];
+    const already = members.findIndex(m => m.id === userId);
+    let newMembers: { id: string; name: string; avatar: string | null }[];
+    if (already >= 0) {
+      newMembers = members.filter(m => m.id !== userId);
+    } else {
+      newMembers = [...members, { id: userId, name: userName, avatar: userAvatar }];
+    }
+    try {
+      await fetch(`/api/onboarding-tasks/${task.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ time_members: JSON.stringify(newMembers) }),
       });
       onUpdate();
     } catch { /* silent */ }
@@ -1348,6 +1392,74 @@ const TaskRow = ({ task, coloredTagDefs, onUpdate, onOpenDetail, onOpenSubtask, 
                   return (
                     <button key={u.id}
                       onClick={e => { e.stopPropagation(); handleTaskResponsible(u.id, u.name, u.picture); }}
+                      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left transition-colors ${isSelected ? 'bg-violet-500/10' : 'hover:bg-white/5'}`}>
+                      <Avatar name={u.name} url={u.picture} size={5} />
+                      <span className="text-xs text-dark-text truncate flex-1">{u.name}</span>
+                      {isSelected && (
+                        <div className="w-4 h-4 rounded-full bg-violet-500 flex items-center justify-center shrink-0">
+                          <Check size={9} className="text-white" />
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>,
+              document.body
+            )}
+          </div>
+        );
+      }
+
+      case 'time': {
+        const timeList = task.time_members || [];
+        const MAX_VIS = 3;
+        const visibleTime = timeList.slice(0, MAX_VIS);
+        const overflowTime = timeList.length - MAX_VIS;
+        const timeIds = new Set(timeList.map(m => m.id));
+        return (
+          <div key="time" className="shrink-0 w-24 flex items-center justify-center">
+            <div className="flex items-center group/time" style={{ gap: 0 }}>
+              {visibleTime.map((m, i) => (
+                <div key={m.id} title={m.name} style={{ marginLeft: i > 0 ? -6 : 0, zIndex: visibleTime.length - i }} className="relative">
+                  <Avatar name={m.name} url={m.avatar} size={6} />
+                </div>
+              ))}
+              {overflowTime > 0 && (
+                <div style={{ marginLeft: -6, zIndex: 0 }}
+                  className="w-6 h-6 rounded-full bg-slate-700 border border-dark-bg flex items-center justify-center text-[9px] font-bold text-slate-300">
+                  +{overflowTime}
+                </div>
+              )}
+              <button
+                ref={timeRef}
+                data-time-btn
+                onClick={e => {
+                  e.stopPropagation();
+                  if (!timePicker && timeRef.current) {
+                    const r = timeRef.current.getBoundingClientRect();
+                    setTimePickerPos({ top: r.bottom + 4, left: r.left - 148 });
+                  }
+                  setTimePicker(v => !v);
+                }}
+                style={{ marginLeft: timeList.length > 0 ? 3 : 0 }}
+                className="w-5 h-5 rounded-full border border-dashed border-slate-600 flex items-center justify-center hover:border-violet-500 hover:text-violet-500 transition-all shrink-0 opacity-0 group-hover/time:opacity-100"
+              >
+                <Plus size={9} className="text-slate-500" />
+              </button>
+            </div>
+
+            {timePicker && createPortal(
+              <div data-time-portal onClick={e => e.stopPropagation()}
+                style={{ position: 'fixed', top: timePickerPos.top, left: timePickerPos.left, zIndex: 9999, width: 210 }}
+                className="bg-dark-card border border-white/10 rounded-xl shadow-2xl p-1 max-h-56 overflow-y-auto">
+                <div className="px-2 py-1.5 border-b border-white/5 mb-1">
+                  <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Time</span>
+                </div>
+                {cachedUsers.map(u => {
+                  const isSelected = timeIds.has(u.id);
+                  return (
+                    <button key={u.id}
+                      onClick={e => { e.stopPropagation(); handleTimeResponsible(u.id, u.name, u.picture); }}
                       className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left transition-colors ${isSelected ? 'bg-violet-500/10' : 'hover:bg-white/5'}`}>
                       <Avatar name={u.name} url={u.picture} size={5} />
                       <span className="text-xs text-dark-text truncate flex-1">{u.name}</span>
@@ -2054,6 +2166,12 @@ const TemplateModal = ({ onClose }: { onClose: () => void }) => {
   );
 };// ── Task Detail Modal ─────────────────────────────────────
 const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; onClose: () => void; onUpdate: () => void }) => {
+  // Normalize tags & co_responsibles to prevent null.filter() crashes in production
+  task = {
+    ...task,
+    tags: Array.isArray(task.tags) ? task.tags : [],
+    co_responsibles: Array.isArray(task.co_responsibles) ? task.co_responsibles : [],
+  };
   const { user, userData } = useAuth();
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
@@ -3111,7 +3229,7 @@ export default function ImplementacaoIA() {
 
   const groups: StatusGroup[] = activeGroups.map(sg => ({
     ...sg,
-    tasks: tasks.filter(t => t.status_group === sg.id),
+    tasks: (Array.isArray(tasks) ? tasks : []).filter(t => t.status_group === sg.id),
   }));
 
   return (

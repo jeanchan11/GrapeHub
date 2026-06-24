@@ -280,8 +280,15 @@ function asaasFetch(endpoint: string): Promise<any | null> {
 }
 
 const { Pool } = pg;
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// Derive __dirname_ in both ESM and CJS contexts
+let __dirname_: string;
+try {
+  // @ts-ignore — ESM context
+  __dirname_ = path.dirname(fileURLToPath(import.meta.url));
+} catch {
+  // CJS context (esbuild bundle) — use process.cwd + dist
+  __dirname_ = process.cwd();
+}
 
 async function startServer() {
   const app = express();
@@ -11682,7 +11689,7 @@ app.get("/api/todos", async (req, res) => {
     try {
       const { id } = req.params;
       const fields = req.body;
-      const allowed = ['client_name','squad','responsible_id','responsible_name','responsible_avatar','start_date','due_date','status_group','tags','subtask_count','nome_completo','nome_fantasia','telefone_whatsapp','cnpj_cpf','cep','cidade','uf','produto','responsavel_projeto_id','responsavel_projeto_name','responsavel_projeto_avatar','hospedagem','entregavel','prioridade','description','co_responsibles'];
+      const allowed = ['client_name','squad','responsible_id','responsible_name','responsible_avatar','start_date','due_date','status_group','tags','subtask_count','nome_completo','nome_fantasia','telefone_whatsapp','cnpj_cpf','cep','cidade','uf','produto','responsavel_projeto_id','responsavel_projeto_name','responsavel_projeto_avatar','hospedagem','entregavel','prioridade','description','co_responsibles','time_members'];
       const DATE_FIELDS = ['start_date', 'due_date'];
       const sets: string[] = [];
       const vals: any[] = [];
@@ -11866,6 +11873,7 @@ app.get("/api/todos", async (req, res) => {
   // Add type column to onboarding_tasks if missing (shared with operacional)
   await pool.query(`ALTER TABLE onboarding_tasks ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'operacional'`);
   await pool.query(`ALTER TABLE onboarding_tasks ADD COLUMN IF NOT EXISTS co_responsibles TEXT DEFAULT '[]'`);
+  await pool.query(`ALTER TABLE onboarding_tasks ADD COLUMN IF NOT EXISTS time_members TEXT DEFAULT '[]'`);
 
   // ── Briefing Forms ──
   await pool.query(`
@@ -12344,7 +12352,8 @@ app.get("/api/todos", async (req, res) => {
       const rows = result.rows.map((r: any) => ({
         ...r,
         tags: Array.isArray(r.tags) ? r.tags : [],
-        co_responsibles: (() => { try { return JSON.parse(r.co_responsibles || '[]'); } catch { return []; } })()
+        co_responsibles: (() => { try { return JSON.parse(r.co_responsibles || '[]'); } catch { return []; } })(),
+        time_members: (() => { try { return JSON.parse(r.time_members || '[]'); } catch { return []; } })()
       }));
       res.json(rows);
     } catch (err) {
@@ -14697,11 +14706,11 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
 
 
   app.post("/api/collaborators/:id/feedbacks", async (req, res) => {
-    const { para_collaborator_id, nota, texto, solicitado, tipo } = req.body;
+    const { para_collaborator_id, nota, texto, solicitado, tipo, data_ajuste } = req.body;
     try {
       const { rows } = await pool.query(
-        "INSERT INTO collaborator_feedbacks (de_collaborator_id, para_collaborator_id, nota, texto, solicitado, tipo) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
-        [req.params.id, para_collaborator_id, nota, texto, solicitado || false, tipo || 'Construtivo']
+        "INSERT INTO collaborator_feedbacks (de_collaborator_id, para_collaborator_id, nota, texto, solicitado, tipo, data_ajuste) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *",
+        [req.params.id, para_collaborator_id, nota, texto, solicitado || false, tipo || 'Construtivo', data_ajuste || null]
       );
       res.status(201).json(rows[0]);
     } catch (e: any) {
@@ -15390,27 +15399,9 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
         }
       }
 
-      // 2. Fetch names and pictures
-      const allTargetIds = [...directReportIds];
-      if (leaderId) allTargetIds.push(leaderId);
-      
-      const collabMap: Record<number, { name: string, picture: string | null }> = {};
-      if (allTargetIds.length > 0) {
-        const collabsRes = await pool.query(
-          `SELECT c.id, c.name, u.picture as linked_picture
-           FROM collaborators c
-           LEFT JOIN users u ON c.linked_user_id = u.id
-           WHERE c.id = ANY($1)`,
-          [allTargetIds]
-        );
-        for (const c of collabsRes.rows) {
-          collabMap[c.id] = { name: c.name, picture: c.linked_picture };
-        }
-      }
-
-      // 3. Fetch 1:1 and performance schedules
       const targetSubAndUserIds = [...directReportIds, collabId];
-      
+
+      // 2. Fetch schedules and feedbacks
       const { rows: oneOnOnes } = await pool.query(
         `SELECT * FROM collaborator_one_on_one_schedule
          WHERE collaborator_id = ANY($1)
@@ -15424,6 +15415,46 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
          ORDER BY data ASC, horario ASC`,
         [targetSubAndUserIds]
       );
+
+      const { rows: feedbacks } = await pool.query(
+        `SELECT * FROM collaborator_feedbacks
+         WHERE para_collaborator_id = ANY($1) AND data_ajuste IS NOT NULL
+         ORDER BY data_ajuste ASC`,
+        [targetSubAndUserIds]
+      );
+
+      // 3. Collect all collaborator IDs to fetch names & pictures
+      const allTargetIds = new Set<number>();
+      for (const id of directReportIds) allTargetIds.add(id);
+      if (leaderId) allTargetIds.add(leaderId);
+      for (const f of feedbacks) {
+        allTargetIds.add(f.de_collaborator_id);
+        allTargetIds.add(f.para_collaborator_id);
+      }
+      allTargetIds.add(collabId);
+
+      const collabMap: Record<number, { name: string, picture: string | null }> = {};
+      const birthdatesList: { id: number, name: string, birth_date: any, picture: string | null }[] = [];
+      if (allTargetIds.size > 0) {
+        const collabsRes = await pool.query(
+          `SELECT c.id, c.name, c.birth_date, u.picture as linked_picture
+           FROM collaborators c
+           LEFT JOIN users u ON c.linked_user_id = u.id
+           WHERE c.id = ANY($1)`,
+          [[...allTargetIds]]
+        );
+        for (const c of collabsRes.rows) {
+          collabMap[c.id] = { name: c.name, picture: c.linked_picture };
+          if (c.birth_date) {
+            birthdatesList.push({
+              id: c.id,
+              name: c.name,
+              birth_date: c.birth_date,
+              picture: c.linked_picture
+            });
+          }
+        }
+      }
 
       // 4. Build output list
       const schedules = [];
@@ -15492,6 +15523,76 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
               horario: p.horario,
               observacao: p.observacao
             });
+          }
+        }
+      }
+
+      // Add Feedbacks
+      for (const f of feedbacks) {
+        if (f.para_collaborator_id === collabId) {
+          const sender = collabMap[f.de_collaborator_id];
+          if (sender) {
+            schedules.push({
+              id: `feedback-leader-${f.id}`,
+              type: 'feedback',
+              relation: 'leader',
+              collabId: f.de_collaborator_id,
+              name: sender.name,
+              picture: sender.picture,
+              data: f.data_ajuste,
+              horario: '',
+              observacao: f.texto
+            });
+          }
+        } else {
+          const recipient = collabMap[f.para_collaborator_id];
+          if (recipient) {
+            schedules.push({
+              id: `feedback-sub-${f.id}`,
+              type: 'feedback',
+              relation: 'subordinate',
+              collabId: f.para_collaborator_id,
+              name: recipient.name,
+              picture: recipient.picture,
+              data: f.data_ajuste,
+              horario: '',
+              observacao: f.texto
+            });
+          }
+        }
+      }
+
+      // Add Birthdays of the current month
+      const currentMonth = new Date().getMonth() + 1; // 1-indexed (1-12)
+      const currentYear = new Date().getFullYear();
+
+      for (const c of birthdatesList) {
+        const dateStr = typeof c.birth_date === 'string' 
+          ? c.birth_date 
+          : c.birth_date instanceof Date 
+            ? c.birth_date.toISOString() 
+            : '';
+        
+        if (dateStr) {
+          const clean = dateStr.slice(0, 10);
+          const parts = clean.split('-');
+          if (parts.length === 3) {
+            const [y, m, d] = parts;
+            if (parseInt(m) === currentMonth) {
+              const relation = (c.id === leaderId || c.id === collabId) ? 'leader' : 'subordinate';
+              
+              schedules.push({
+                id: `birthday-${c.id}`,
+                type: 'birthday',
+                relation,
+                collabId: c.id,
+                name: c.name,
+                picture: c.picture,
+                data: `${currentYear}-${m}-${d}`,
+                horario: '',
+                observacao: 'Dia de celebrar! 🎉'
+              });
+            }
           }
         }
       }
@@ -15686,6 +15787,7 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
   await pool.query(`ALTER TABLE meeting_notes_comments ADD COLUMN IF NOT EXISTS files JSONB DEFAULT '[]'`);
   await pool.query(`ALTER TABLE collaborators ADD COLUMN IF NOT EXISTS linked_user_id TEXT`);
   await pool.query(`ALTER TABLE collaborators ADD COLUMN IF NOT EXISTS bolao_avatar_url TEXT`);
+  await pool.query(`ALTER TABLE collaborator_feedbacks ADD COLUMN IF NOT EXISTS data_ajuste DATE`);
 
   app.get('/api/meeting-notes/:pageId', async (req, res) => {
     try {
@@ -16027,7 +16129,7 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
     console.log(`Listening on ${bind}`);
     console.log(`Env: ${process.env.NODE_ENV}`);
     console.log(`CWD: ${process.cwd()}`);
-    console.log(`__dirname: ${__dirname}`);
+    console.log(`__dirname: ${__dirname_}`);
 
     // Sync inadimplentes ao iniciar e a cada 1 hora
     const syncInadimplentes = async () => {
@@ -16082,7 +16184,7 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
 
 function setupStaticServing(app: any) {
   // Since server.js is now inside the dist folder, the static files are in the same folder
-  const distPath = __dirname.endsWith('dist') ? __dirname : path.join(__dirname, 'dist');
+  const distPath = __dirname_.endsWith('dist') ? __dirname_ : path.join(__dirname_, 'dist');
   
   console.log(`[STATIC] Serving from: ${distPath}`);
   

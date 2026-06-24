@@ -421,6 +421,7 @@ const templates = (() => {
     { id: 'checklist-integracao', label: 'Checklist Integração' },
     { id: 'checklist-saida', label: 'Checklist Saída' },
     { id: 'colaboradores', label: 'Colaboradores' },
+    { id: 'minha-equipe', label: 'Minha Equipe' },
     { id: 'contas-a-pagar', label: 'Contas a Pagar' },
     { id: 'contas-a-receber', label: 'Contas a Receber' },
     { id: 'contratacao', label: 'Contratação' },

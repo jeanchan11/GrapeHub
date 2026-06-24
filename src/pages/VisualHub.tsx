@@ -1264,6 +1264,12 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask, dragHandleProps 
   onOpenSubtask: (s: Subtask, t: OnboardingTask) => void;
   dragHandleProps?: { attributes: any; listeners: any };
 }) => {
+  // Normalize tags & co_responsibles to prevent null.filter() crashes in production
+  task = {
+    ...task,
+    tags: Array.isArray(task.tags) ? task.tags : [],
+    co_responsibles: Array.isArray(task.co_responsibles) ? task.co_responsibles : [],
+  };
   const columnConfig = React.useContext(ColumnConfigContext);
   const colOrder = React.useContext(ColOrderContext);
   const [squad, setSquad] = useState(task.squad || '');
@@ -2487,6 +2493,12 @@ interface TaskFile {
 }
 
 const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; onClose: () => void; onUpdate: () => void }) => {
+  // Normalize tags & co_responsibles to prevent null.filter() crashes
+  task = {
+    ...task,
+    tags: Array.isArray(task.tags) ? task.tags : [],
+    co_responsibles: Array.isArray(task.co_responsibles) ? task.co_responsibles : [],
+  };
   const columnConfig = React.useContext(ColumnConfigContext);
   const { user, userData } = useAuth();
   const [comments, setComments] = useState<Comment[]>([]);

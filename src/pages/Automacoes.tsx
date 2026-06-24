@@ -11,6 +11,7 @@ import {
   FlagTriangleRight, FileText, Send, RefreshCw, SkipForward, History,
   LayoutGrid, Layers, Eye, EyeOff, Circle, UserPlus
 } from 'lucide-react';
+import LoadingSpinner from '../components/LoadingSpinner';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -876,7 +877,7 @@ const Automacoes: React.FC = () => {
             </div>
             {loading ? (
               <div className="flex justify-center py-20">
-                <div className="w-8 h-8 rounded-full border-2 border-violet-500/30 border-t-violet-500 animate-spin" />
+                <LoadingSpinner size="md" />
               </div>
             ) : filteredAutomations.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-center">
@@ -914,7 +915,7 @@ const Automacoes: React.FC = () => {
 
             {logsLoading ? (
               <div className="flex items-center justify-center py-16">
-                <div className="w-8 h-8 rounded-full border-2 border-violet-500/30 border-t-violet-500 animate-spin" />
+                <LoadingSpinner size="md" />
               </div>
             ) : logs.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-center">

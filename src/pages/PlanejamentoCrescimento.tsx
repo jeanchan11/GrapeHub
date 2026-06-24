@@ -7,6 +7,7 @@ import OptionPicker from '../components/ui/OptionPicker';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend as RechartsLegend, ResponsiveContainer 
 } from 'recharts';
+import LoadingSpinner from '../components/LoadingSpinner';
 
 interface GrowthMonthData {
   id?: number;
@@ -282,8 +283,8 @@ export default function PlanejamentoCrescimento() {
   // Premium loading view
   if (loading && projections.length === 0) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-dark-bg">
-        <div className="w-10 h-10 border-4 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
+      <div className="flex items-center justify-center min-h-[75vh] w-full bg-dark-bg">
+        <LoadingSpinner size="lg" />
       </div>
     );
   }

@@ -15,6 +15,7 @@ import { PageHeader } from '../components/ui/PageHeader';
 import OptionPicker from '../components/ui/OptionPicker';
 import ClientModal from '../components/ClientModal';
 import { useAuth } from '../contexts/AuthContext';
+import LoadingSpinner from '../components/LoadingSpinner';
 
 interface Client {
   id: string;
@@ -751,7 +752,7 @@ const ActiveClients: React.FC = () => {
                 <tr>
                   <td colSpan={11} className="px-8 py-20 text-center">
                     <div className="flex flex-col items-center gap-3">
-                      <div className="w-10 h-10 border-4 border-violet-500/20 border-t-violet-500 rounded-full animate-spin"></div>
+                      <LoadingSpinner size="md" />
                       <p className="text-slate-500 font-medium">Carregando clientes...</p>
                     </div>
                   </td>

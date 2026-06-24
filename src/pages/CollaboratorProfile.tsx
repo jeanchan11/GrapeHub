@@ -37,7 +37,7 @@ interface Collaborator {
   linked_user_email?: string | null;
 }
 
-export default function CollaboratorProfile({ id }: { id: string }) {
+export default function CollaboratorProfile({ id, fromMinhaEquipe = false }: { id: string, fromMinhaEquipe?: boolean }) {
   const [collab, setCollab] = useState<Collaborator | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('geral');
@@ -60,11 +60,16 @@ export default function CollaboratorProfile({ id }: { id: string }) {
   }, [id]);
 
   useEffect(() => {
-    // If not admin and trying to view informacoes, fallback to geral
+    // If we came from minha-equipe and trying to view informacoes, fallback to geral immediately
+    if (fromMinhaEquipe && activeTab === 'informacoes') {
+      setActiveTab('geral');
+      return;
+    }
+    // If not admin and trying to view informacoes, fallback to geral (requires userData)
     if (!isAdmin && activeTab === 'informacoes' && userData) {
       setActiveTab('geral');
     }
-  }, [isAdmin, activeTab, userData]);
+  }, [isAdmin, activeTab, userData, fromMinhaEquipe]);
 
   const loadCollaborator = async () => {
     setLoading(true);
@@ -110,7 +115,7 @@ export default function CollaboratorProfile({ id }: { id: string }) {
     }
   };
 
-  if (loading) return <div className="flex justify-center items-center h-full"><LoadingSpinner size="lg" /></div>;
+  if (loading) return <div className="flex justify-center items-center min-h-[75vh] w-full"><LoadingSpinner size="lg" /></div>;
   if (!collab) return null;
 
   const tabs = [
@@ -120,7 +125,7 @@ export default function CollaboratorProfile({ id }: { id: string }) {
     { id: 'metas', label: 'Metas', icon: Target },
     { id: 'feedbacks', label: 'Feedbacks', icon: MessageSquare },
     { id: 'pdi', label: 'PDI', icon: BrainCircuit },
-    ...(isAdmin ? [{ id: 'informacoes', label: 'Informações', icon: ClipboardList }] : []),
+    ...(isAdmin && !fromMinhaEquipe ? [{ id: 'informacoes', label: 'Informações', icon: ClipboardList }] : []),
   ];
 
   return (
@@ -128,10 +133,10 @@ export default function CollaboratorProfile({ id }: { id: string }) {
       {/* Header / Breadcrumb */}
       <div className="mb-8">
         <button 
-          onClick={() => window.location.hash = '#/colaboradores'}
+          onClick={() => window.location.hash = fromMinhaEquipe ? '#/minha-equipe' : '#/colaboradores'}
           className="flex items-center gap-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition-colors text-sm font-semibold mb-4"
         >
-          <ChevronLeft size={16} /> Voltar para Colaboradores
+          <ChevronLeft size={16} /> {fromMinhaEquipe ? 'Voltar para Minha Equipe' : 'Voltar para Colaboradores'}
         </button>
 
         <div className="flex items-center justify-between">
@@ -162,17 +167,19 @@ export default function CollaboratorProfile({ id }: { id: string }) {
               </div>
             </div>
           </div>
-          <div>
-            {isEditMode ? (
-              <button onClick={handleSave} className="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors">
-                <Save size={16} /> Salvar Alterações
-              </button>
-            ) : (
-              <button onClick={() => setIsEditMode(true)} className="bg-slate-200 dark:bg-white/[0.05] hover:bg-slate-300 dark:hover:bg-white/10 text-slate-700 dark:text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors">
-                Editar Perfil
-              </button>
-            )}
-          </div>
+          {!fromMinhaEquipe && (
+            <div>
+              {isEditMode ? (
+                <button onClick={handleSave} className="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors">
+                  <Save size={16} /> Salvar Alterações
+                </button>
+              ) : (
+                <button onClick={() => setIsEditMode(true)} className="bg-slate-200 dark:bg-white/[0.05] hover:bg-slate-300 dark:hover:bg-white/10 text-slate-700 dark:text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors">
+                  Editar Perfil
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -227,7 +234,7 @@ export default function CollaboratorProfile({ id }: { id: string }) {
             )}
 
         {/* Informações */}
-        {activeTab === 'informacoes' && isAdmin && (
+        {activeTab === 'informacoes' && isAdmin && !fromMinhaEquipe && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
             <div>
               <SplitHeadline text="Informações " highlight="Básicas" className="text-xl font-black text-slate-800 dark:text-white" />

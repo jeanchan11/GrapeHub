@@ -670,7 +670,7 @@ const CrmFinanceiro = () => {
 
   if (isLoading) {
     return (
-      <div className="fixed inset-0 flex items-center justify-center z-10">
+      <div className="flex items-center justify-center min-h-[75vh] w-full">
         <LoadingSpinner size="lg" />
       </div>
     );

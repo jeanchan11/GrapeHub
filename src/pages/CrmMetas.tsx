@@ -286,7 +286,7 @@ export default function CrmMetas() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full min-h-[400px]">
+      <div className="flex items-center justify-center min-h-[75vh] w-full">
         <LoadingSpinner size="lg" />
       </div>
     );

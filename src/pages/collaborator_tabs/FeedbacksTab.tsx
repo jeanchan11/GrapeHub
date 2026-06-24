@@ -17,6 +17,7 @@ interface Feedback {
   solicitado: boolean;
   tipo: string;
   criado_em: string;
+  data_ajuste?: string | null;
 }
 
 interface FeedbackRequest {
@@ -36,6 +37,15 @@ interface FeedbacksTabProps {
   isSelf: boolean;
 }
 
+function formatDate(dateStr: string) {
+  if (!dateStr) return '';
+  const clean = dateStr.slice(0, 10);
+  const parts = clean.split('-');
+  if (parts.length !== 3) return dateStr;
+  const [y, m, d] = parts;
+  return `${d}/${m}/${y}`;
+}
+
 export default function FeedbacksTab({ collaboratorId, isAdmin, isSelf }: FeedbacksTabProps) {
   const [feedbacks, setFeedbacks] = useState<Feedback[]>([]);
   const [requests, setRequests] = useState<FeedbackRequest[]>([]);
@@ -47,7 +57,7 @@ export default function FeedbacksTab({ collaboratorId, isAdmin, isSelf }: Feedba
   const [activeSubTab, setActiveSubTab] = useState<'recebidos' | 'enviados'>('recebidos');
   const [modalType, setModalType] = useState<'dar' | 'pedir' | null>(null);
   
-  const [formData, setFormData] = useState({ target_id: '', texto: '', nota: 0, tipo: 'Construtivo' });
+  const [formData, setFormData] = useState({ target_id: '', texto: '', nota: 0, tipo: 'Construtivo', data_ajuste: '' });
 
   const canView = isAdmin || isSelf;
 
@@ -107,10 +117,29 @@ export default function FeedbacksTab({ collaboratorId, isAdmin, isSelf }: Feedba
     try {
       if (modalType === 'dar') {
         if (formData.nota === 0) return alert('Dê uma nota em estrelas.');
+
+        if (formData.tipo === 'Construtivo') {
+          if (!formData.data_ajuste) {
+            return alert('Por favor, informe a data para verificação do ajuste.');
+          }
+          const selectedDate = new Date(formData.data_ajuste + 'T00:00:00');
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          if (selectedDate < today) {
+            return alert('A data de verificação do ajuste não pode ser no passado.');
+          }
+        }
+
         const res = await fetch(`/api/collaborators/${senderId}/feedbacks`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ para_collaborator_id: Number(recipientId), nota: formData.nota, texto: formData.texto, tipo: formData.tipo })
+          body: JSON.stringify({ 
+            para_collaborator_id: Number(recipientId), 
+            nota: formData.nota, 
+            texto: formData.texto, 
+            tipo: formData.tipo,
+            data_ajuste: formData.tipo === 'Construtivo' ? formData.data_ajuste : null
+          })
         });
         if (!res.ok) {
           const err = await res.json();
@@ -148,7 +177,7 @@ export default function FeedbacksTab({ collaboratorId, isAdmin, isSelf }: Feedba
         // Find the request to pre-fill the "Dar feedback" modal
         const request = requests.find(r => r.id === reqId);
         if (request) {
-          setFormData({ target_id: String(request.solicitante_id), texto: '', nota: 0 });
+          setFormData({ target_id: String(request.solicitante_id), texto: '', nota: 0, tipo: 'Construtivo', data_ajuste: '' });
           setModalType('dar');
         }
       }
@@ -175,13 +204,13 @@ export default function FeedbacksTab({ collaboratorId, isAdmin, isSelf }: Feedba
         </div>
         <div className="flex gap-2">
           <button 
-            onClick={() => { setFormData({ target_id: '', texto: '', nota: 0, tipo: 'Construtivo' }); setModalType('pedir'); }}
+            onClick={() => { setFormData({ target_id: '', texto: '', nota: 0, tipo: 'Construtivo', data_ajuste: '' }); setModalType('pedir'); }}
             className="bg-slate-100 hover:bg-slate-200 dark:bg-white/[0.05] dark:hover:bg-white/10 text-slate-700 dark:text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors"
           >
             <Hand size={16} /> Pedir Feedback
           </button>
           <button 
-            onClick={() => { setFormData({ target_id: '', texto: '', nota: 0, tipo: 'Construtivo' }); setModalType('dar'); }}
+            onClick={() => { setFormData({ target_id: '', texto: '', nota: 0, tipo: 'Construtivo', data_ajuste: '' }); setModalType('dar'); }}
             className="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors shadow-sm"
           >
             <Send size={16} /> Dar Feedback
@@ -275,9 +304,16 @@ export default function FeedbacksTab({ collaboratorId, isAdmin, isSelf }: Feedba
                           <ThumbsUp size={10} /> Positivo
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
-                          <Wrench size={10} /> Construtivo
-                        </span>
+                        <>
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                            <Wrench size={10} /> Construtivo
+                          </span>
+                          {f.data_ajuste && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-500/20">
+                              <Clock size={10} /> Ajuste até: {formatDate(f.data_ajuste)}
+                            </span>
+                          )}
+                        </>
                       )}
                       {f.solicitado && (
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-200 dark:bg-white/10 text-slate-500 dark:text-slate-400">
@@ -362,6 +398,21 @@ export default function FeedbacksTab({ collaboratorId, isAdmin, isSelf }: Feedba
                       ))}
                     </div>
                   </div>
+
+                  {formData.tipo === 'Construtivo' && (
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 dark:text-[#888] mb-1.5 uppercase">
+                        Prazo de ajuste (Data para verificação) *
+                      </label>
+                      <input
+                        type="date"
+                        required
+                        value={formData.data_ajuste}
+                        onChange={e => setFormData({...formData, data_ajuste: e.target.value})}
+                        className="w-full bg-slate-50 dark:bg-[#1A1A1A] border border-slate-200 dark:border-[#2A2A2A] rounded-xl px-4 py-2.5 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500"
+                      />
+                    </div>
+                  )}
                 </>
               )}
 
