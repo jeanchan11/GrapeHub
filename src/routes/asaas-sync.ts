@@ -464,27 +464,41 @@ export function setupAsaasSyncRoutes(app: any, pool: any) {
       created_at  TIMESTAMPTZ DEFAULT NOW(),
       updated_at  TIMESTAMPTZ DEFAULT NOW()
     );
-    CREATE TABLE IF NOT EXISTS fin_bill_entries (
-      id              SERIAL PRIMARY KEY,
-      bill_id         INT REFERENCES fin_bills(id) ON DELETE CASCADE,
-      reference_month VARCHAR(7) NOT NULL,
-      due_date        DATE,
-      expected_value  NUMERIC(12,2),
-      actual_value    NUMERIC(12,2),
-      status          VARCHAR(20) DEFAULT 'pending',
-      paid_at         DATE,
-      notes           TEXT,
-      created_at      TIMESTAMPTZ DEFAULT NOW(),
-      updated_at      TIMESTAMPTZ DEFAULT NOW(),
-      UNIQUE(bill_id, reference_month)
-    );
+  `).then(() => {
+    return pool.query(`
+      CREATE TABLE IF NOT EXISTS fin_bill_entries (
+        id              SERIAL PRIMARY KEY,
+        bill_id         INT REFERENCES fin_bills(id) ON DELETE CASCADE,
+        reference_month VARCHAR(7) NOT NULL,
+        due_date        DATE,
+        expected_value  NUMERIC(12,2),
+        actual_value    NUMERIC(12,2),
+        status          VARCHAR(20) DEFAULT 'pending',
+        paid_at         DATE,
+        notes           TEXT,
+        created_at      TIMESTAMPTZ DEFAULT NOW(),
+        updated_at      TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(bill_id, reference_month)
+      );
+    `);
+  }).then(() => {
+    return pool.query(`
+      ALTER TABLE fin_bill_entries ADD COLUMN IF NOT EXISTS linked_movement_id INT;
+    `);
+  }).catch((e: any) => console.warn('[bills] migrate fin_bills/fin_bill_entries:', e.message));
+
+  // Alterações na tabela fin_movements_asaas (independentes)
+  pool.query(`
     ALTER TABLE fin_movements_asaas ADD COLUMN IF NOT EXISTS custom_description TEXT;
-    ALTER TABLE fin_movements_asaas ADD COLUMN IF NOT EXISTS custom_category VARCHAR(100);
-    ALTER TABLE fin_movements_asaas ADD COLUMN IF NOT EXISTS user_comment TEXT;
-    ALTER TABLE fin_movements_asaas ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;
-    ALTER TABLE fin_bill_entries ADD COLUMN IF NOT EXISTS linked_movement_id INT;
-    ALTER TABLE fin_movements_asaas ADD COLUMN IF NOT EXISTS linked_bill_entry_id INT;
-  `).catch((e: any) => console.warn('[bills] migrate tables:', e.message));
+  `).then(() => {
+    return pool.query(`ALTER TABLE fin_movements_asaas ADD COLUMN IF NOT EXISTS custom_category VARCHAR(100);`);
+  }).then(() => {
+    return pool.query(`ALTER TABLE fin_movements_asaas ADD COLUMN IF NOT EXISTS user_comment TEXT;`);
+  }).then(() => {
+    return pool.query(`ALTER TABLE fin_movements_asaas ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;`);
+  }).then(() => {
+    return pool.query(`ALTER TABLE fin_movements_asaas ADD COLUMN IF NOT EXISTS linked_bill_entry_id INT;`);
+  }).catch((e: any) => console.warn('[bills] migrate fin_movements_asaas:', e.message));
 
   // POST /api/fin/sync/run — executa sync manual imediato
   app.post('/api/fin/sync/run', async (_req: any, res: any) => {

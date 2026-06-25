@@ -223,13 +223,14 @@ export async function setupBolaoRoutes(app: Express, pool: Pool) {
   app.get('/api/bolao/:id/jogos', async (req: any, res: any) => {
     try {
       const { id } = req.params;
-      const uid = req.user?.uid || '';
+      const targetUid = (req.query.uid as string) || req.user?.uid || '';
+      const isMe = targetUid === (req.user?.uid || '');
       const r = await pool.query(`
         SELECT
           j.*,
           p.id AS palpite_id,
-          p.palpite_casa,
-          p.palpite_fora,
+          CASE WHEN (j.inicia_em <= now() OR $3 = true) THEN p.palpite_casa ELSE null END AS palpite_casa,
+          CASE WHEN (j.inicia_em <= now() OR $3 = true) THEN p.palpite_fora ELSE null END AS palpite_fora,
           (j.inicia_em <= now()) AS travado,
           vp.pontos,
           vp.placar_exato,
@@ -239,7 +240,7 @@ export async function setupBolaoRoutes(app: Express, pool: Pool) {
         LEFT JOIN bolao.v_pontos vp ON vp.jogo_id = j.id AND vp.user_id = $2
         WHERE j.bolao_id = $1
         ORDER BY j.inicia_em ASC
-      `, [id, uid]);
+      `, [id, targetUid, isMe]);
       res.json(r.rows);
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });

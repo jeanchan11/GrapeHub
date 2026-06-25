@@ -1745,13 +1745,14 @@ const getWhatsAppMessage = (client: InadimplentesClient) => {
   );
 };
 
-const InadimplentesBlock = ({ onCountChange }: { onCountChange?: (n: number) => void }) => {
+const InadimplentesBlock = ({ selectedMonth, onCountChange }: { selectedMonth: string; onCountChange?: (n: number) => void }) => {
   const [clients, setClients] = useState<InadimplentesClient[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'days' | 'value' | 'charges'>('days');
+  const [subTab, setSubTab] = useState<'mes' | 'todos'>('mes');
 
   const fetchData = async () => {
     setLoading(true);
@@ -1760,7 +1761,6 @@ const InadimplentesBlock = ({ onCountChange }: { onCountChange?: (n: number) => 
       if (res.ok) {
         const data = await res.json();
         setClients(data);
-        onCountChange?.(data.length);
       }
     } catch (err) {
       console.error('Error fetching inadimplentes:', err);
@@ -1771,7 +1771,52 @@ const InadimplentesBlock = ({ onCountChange }: { onCountChange?: (n: number) => 
 
   useEffect(() => { fetchData(); }, []);
 
-  const filtered = clients
+  // Compute active dataset based on subtab and selectedMonth
+  const activeClients = (() => {
+    if (subTab === 'todos') {
+      return clients;
+    }
+    return clients
+      .map(c => {
+        const filteredCharges = c.charges.filter(ch => ch.due_date.startsWith(selectedMonth));
+        if (filteredCharges.length === 0) return null;
+
+        // Recalculate based on filtered charges
+        const total_charges = filteredCharges.length;
+        const total_value = filteredCharges.reduce((sum, ch) => sum + parseFloat(ch.value || '0'), 0).toFixed(2);
+        
+        const oldest_due_date = filteredCharges.reduce((min, ch) => ch.due_date < min ? ch.due_date : min, filteredCharges[0].due_date);
+        const latest_due_date = filteredCharges.reduce((max, ch) => ch.due_date > max ? ch.due_date : max, filteredCharges[0].due_date);
+        
+        // Calculate max_days_overdue
+        const oldestDate = new Date(oldest_due_date + 'T12:00:00');
+        const today = new Date();
+        today.setHours(12, 0, 0, 0);
+        const diffTime = today.getTime() - oldestDate.getTime();
+        const max_days_overdue = Math.max(0, Math.floor(diffTime / (1000 * 60 * 60 * 24)));
+
+        return {
+          ...c,
+          total_charges,
+          total_value,
+          oldest_due_date,
+          latest_due_date,
+          max_days_overdue,
+          charges: filteredCharges
+        };
+      })
+      .filter((c): c is InadimplentesClient => c !== null);
+  })();
+
+  const lastCount = useRef<number | null>(null);
+  useEffect(() => {
+    if (lastCount.current !== activeClients.length) {
+      lastCount.current = activeClients.length;
+      onCountChange?.(activeClients.length);
+    }
+  }, [activeClients.length, onCountChange]);
+
+  const filtered = activeClients
     .filter(c => !search || c.customer_name?.toLowerCase().includes(search.toLowerCase()) || c.phone?.includes(search))
     .sort((a, b) => {
       if (sortBy === 'days') return (b.max_days_overdue || 0) - (a.max_days_overdue || 0);
@@ -1779,9 +1824,9 @@ const InadimplentesBlock = ({ onCountChange }: { onCountChange?: (n: number) => 
       return Number(b.total_charges) - Number(a.total_charges);
     });
 
-  const totalAmount = clients.reduce((s, c) => s + parseFloat(c.total_value || '0'), 0);
-  const avgDays = clients.length > 0 ? Math.round(clients.reduce((s, c) => s + (c.max_days_overdue || 0), 0) / clients.length) : 0;
-  const criticalCount = clients.filter(c => c.max_days_overdue >= 30).length;
+  const totalAmount = activeClients.reduce((s, c) => s + parseFloat(c.total_value || '0'), 0);
+  const avgDays = activeClients.length > 0 ? Math.round(activeClients.reduce((s, c) => s + (c.max_days_overdue || 0), 0) / activeClients.length) : 0;
+  const criticalCount = activeClients.filter(c => c.max_days_overdue >= 30).length;
 
   const copyWhatsAppMsg = (client: InadimplentesClient) => {
     const msg = decodeURIComponent(getWhatsAppMessage(client));
@@ -1798,6 +1843,25 @@ const InadimplentesBlock = ({ onCountChange }: { onCountChange?: (n: number) => 
 
   return (
     <div className="space-y-6">
+      {/* Subtabs for Inadimplentes */}
+      <div className="flex items-center gap-4 border-b border-white/5 pb-1">
+        <button
+          onClick={() => setSubTab('mes')}
+          className={`pb-2 text-sm font-bold border-b-2 transition-colors ${
+            subTab === 'mes' ? 'border-rose-500 text-rose-400' : 'border-transparent text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          Inadimplentes do Mês
+        </button>
+        <button
+          onClick={() => setSubTab('todos')}
+          className={`pb-2 text-sm font-bold border-b-2 transition-colors ${
+            subTab === 'todos' ? 'border-rose-500 text-rose-400' : 'border-transparent text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          Todos inadimplentes
+        </button>
+      </div>
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-dark-card border border-white/10 rounded-2xl p-6 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[160px]">
@@ -1807,7 +1871,7 @@ const InadimplentesBlock = ({ onCountChange }: { onCountChange?: (n: number) => 
           </div>
           <div className="flex flex-col mt-auto">
             <h3 className="text-3xl font-black tracking-tight mb-3 text-dark-text">
-              <CountUp value={clients.length} />
+              <CountUp value={activeClients.length} />
             </h3>
             <div className="pt-3 border-t border-white/10">
               <div className="flex justify-between items-center text-sm">
@@ -2493,7 +2557,7 @@ export default function ContasAReceber() {
 
              {/* Tab: Inadimplentes */}
              {mainTab === 'inadimplentes' && (
-               <InadimplentesBlock onCountChange={setInadimplenteCount} />
+                <InadimplentesBlock selectedMonth={selectedMonth} onCountChange={setInadimplenteCount} />
              )}
            </>
          )}

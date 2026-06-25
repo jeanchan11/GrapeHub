@@ -48,7 +48,9 @@ export function setupBillsRoutes(app: Express, pool: Pool) {
       const all = Array.from(new Set([...DEFAULT_CATEGORIES, ...custom])).sort();
       res.json(all);
     } catch (err) {
-      res.status(500).json({ error: 'Failed to fetch categories' });
+      console.error('[bills-categories-error]', err);
+      // Fallback: return default categories so the form doesn't break
+      res.json(DEFAULT_CATEGORIES);
     }
   });
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import SplitHeadline from '../components/SplitHeadline';
 import { useAuth } from '../contexts/AuthContext';
-import { Trophy, Target, Settings, Check, Plus, X, Medal, Crown, Gift } from 'lucide-react';
+import { Trophy, Target, Settings, Check, Plus, X, Medal, Crown, Gift, Lock } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface Jogo {
@@ -417,7 +417,7 @@ const BracketView = ({
 };
 
 // ── Pódio ──────────────────────────────────────────────────────────────────────
-const Podio = ({ ranking, myUid }: { ranking: RankingEntry[]; myUid: string }) => {
+const Podio = ({ ranking, myUid, onSelectCollab }: { ranking: RankingEntry[]; myUid: string; onSelectCollab: (entry: RankingEntry) => void }) => {
   const top3 = ranking.slice(0, 3);
   const order = [1, 0, 2]; // 2nd, 1st, 3rd
 
@@ -471,7 +471,10 @@ const Podio = ({ ranking, myUid }: { ranking: RankingEntry[]; myUid: string }) =
           <div key={pos} className="flex flex-col items-center gap-0 relative z-10 w-40">
             {/* Participant Card */}
             {entry ? (
-              <div className={`flex flex-col items-center rounded-2xl bg-dark-card/90 border ${isMe ? 'border-violet-500/60 shadow-[0_0_15px_rgba(124,58,237,0.3)]' : 'border-white/10'} w-full shadow-xl transition-all duration-300 hover:scale-105 mb-2 relative`}>
+              <div 
+                onClick={() => onSelectCollab(entry)}
+                className={`flex flex-col items-center rounded-2xl bg-dark-card/90 border ${isMe ? 'border-violet-500/60 shadow-[0_0_15px_rgba(124,58,237,0.3)]' : 'border-white/10'} w-full shadow-xl transition-all duration-300 hover:scale-105 mb-2 relative cursor-pointer`}
+              >
                 <div className="absolute -top-3.5 flex justify-center w-full left-0 z-20">
                   <div className="bg-dark-card/95 border border-white/15 p-1 rounded-full shadow-lg">
                     {m.icon}
@@ -519,7 +522,7 @@ const Podio = ({ ranking, myUid }: { ranking: RankingEntry[]; myUid: string }) =
 };
 
 // ── TabLeaderboard ─────────────────────────────────────────────────────────────
-const TabLeaderboard = ({ ranking, myUid, loading }: { ranking: RankingEntry[]; myUid: string; loading: boolean }) => {
+const TabLeaderboard = ({ ranking, myUid, loading, onSelectCollab }: { ranking: RankingEntry[]; myUid: string; loading: boolean; onSelectCollab: (entry: RankingEntry) => void }) => {
   if (loading) return <div className="flex justify-center py-24"><div className="w-8 h-8 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" /></div>;
   if (ranking.length === 0) return (
     <div className="text-center py-20 text-slate-600">
@@ -530,7 +533,7 @@ const TabLeaderboard = ({ ranking, myUid, loading }: { ranking: RankingEntry[]; 
   );
   return (
     <div>
-      <Podio ranking={ranking} myUid={myUid} />
+      <Podio ranking={ranking} myUid={myUid} onSelectCollab={onSelectCollab} />
       <div className="bg-dark-card rounded-2xl border border-white/10 overflow-hidden">
         <div className="grid grid-cols-[40px_1fr_80px_80px_80px] px-4 py-2 border-b border-white/5">
           {['#','Participante','Pts','Exatos','Palp.'].map(h => <span key={h} className="text-[9px] text-slate-600 font-bold uppercase text-center first:text-left">{h}</span>)}
@@ -538,7 +541,11 @@ const TabLeaderboard = ({ ranking, myUid, loading }: { ranking: RankingEntry[]; 
         {ranking.map((entry, i) => {
           const isMe = entry.user_id === myUid;
           return (
-            <div key={entry.user_id} className={`grid grid-cols-[40px_1fr_80px_80px_80px] px-4 py-3 border-b border-white/5 last:border-0 ${isMe ? 'bg-violet-500/10 border-l-2 border-l-violet-500' : 'hover:bg-white/[0.02]'}`}>
+            <div 
+              key={entry.user_id} 
+              onClick={() => onSelectCollab(entry)}
+              className={`grid grid-cols-[40px_1fr_80px_80px_80px] px-4 py-3 border-b border-white/5 last:border-0 cursor-pointer ${isMe ? 'bg-violet-500/10 border-l-2 border-l-violet-500' : 'hover:bg-white/[0.02]'}`}
+            >
               <span className={`text-sm font-black ${i===0?'text-yellow-400':i===1?'text-slate-300':i===2?'text-amber-600':'text-slate-600'}`}>{i+1}</span>
               <div className="flex items-center gap-2 min-w-0">
                 <Avatar name={entry.user_name} url={entry.bolao_avatar_url || entry.user_picture} size={7} />
@@ -699,6 +706,169 @@ const TabAdmin = ({
   );
 };
 
+interface ColaboradorDetalhesModalProps {
+  entry: RankingEntry;
+  myUid: string;
+  bolaoId: number;
+  onClose: () => void;
+  apiFetch: (url: string, opts?: RequestInit) => Promise<Response>;
+}
+
+function ColaboradorDetalhesModal({ entry, myUid, bolaoId, onClose, apiFetch }: ColaboradorDetalhesModalProps) {
+  const [jogos, setJogos] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    apiFetch(`/api/bolao/${bolaoId}/jogos?uid=${entry.user_id}`)
+      .then(r => r.json())
+      .then((data: any) => {
+        setJogos(Array.isArray(data) ? data : []);
+        setLoading(false);
+      })
+      .catch((e) => {
+        console.error(e);
+        setLoading(false);
+      });
+  }, [bolaoId, entry.user_id, apiFetch]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  const isMe = entry.user_id === myUid;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-[#0a0118]/80" onClick={onClose} />
+
+      <div className="relative w-full max-w-3xl bg-[#11111b]/95 border border-white/10 rounded-3xl shadow-2xl overflow-hidden flex flex-col md:flex-row z-10 animate-in fade-in zoom-in-95 duration-200">
+        <button onClick={onClose} className="absolute top-4 right-4 z-20 text-slate-400 hover:text-white transition-colors bg-white/5 hover:bg-white/10 p-1.5 rounded-full">
+          <X size={18} />
+        </button>
+
+        <div className="w-full md:w-72 bg-gradient-to-b from-violet-950/20 to-black/40 flex flex-col items-center justify-center p-8 border-b md:border-b-0 md:border-r border-white/5 relative shrink-0">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(124,58,237,0.1),transparent_70%)] pointer-events-none" />
+          
+          {entry.bolao_avatar_url || entry.user_picture ? (
+            <div className="relative w-56 h-80 rounded-2xl overflow-hidden border border-white/15 shadow-[0_0_30px_rgba(124,58,237,0.35)] mb-4 transition-all duration-300 hover:scale-[1.03] hover:shadow-[0_0_40px_rgba(124,58,237,0.5)] group">
+              <img
+                src={entry.bolao_avatar_url || entry.user_picture}
+                alt={entry.user_name || ''}
+                className="w-full h-full object-cover object-center transition-transform duration-500 group-hover:scale-110"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+            </div>
+          ) : (
+            <div className="w-56 h-80 rounded-2xl bg-violet-500/10 flex items-center justify-center text-violet-400 font-bold text-7xl border border-white/10 shadow-lg mb-4 transition-all duration-300 hover:scale-[1.03] hover:bg-violet-500/15">
+              {entry.user_name?.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase() || 'U'}
+            </div>
+          )}
+
+          <h3 className="text-lg font-black text-white text-center tracking-tight truncate max-w-full">
+            {entry.user_name || 'Usuário'}
+          </h3>
+          {isMe && (
+            <span className="text-[10px] bg-violet-500/10 text-violet-400 border border-violet-500/20 font-black uppercase tracking-widest px-2 py-0.5 rounded-full mt-1.5">
+              Você
+            </span>
+          )}
+        </div>
+
+        <div className="flex-1 p-6 md:p-8 flex flex-col min-w-0">
+          <div className="grid grid-cols-3 gap-3 mb-6">
+            <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-3 flex flex-col items-center">
+              <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">Pontos</span>
+              <span className="text-xl font-black text-violet-400">{entry.total_pontos}</span>
+            </div>
+            <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-3 flex flex-col items-center">
+              <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">Exatos</span>
+              <span className="text-xl font-black text-emerald-400">{entry.qtd_exatos}</span>
+            </div>
+            <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-3 flex flex-col items-center">
+              <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">Palpites</span>
+              <span className="text-xl font-black text-slate-300">{entry.qtd_palpites}</span>
+            </div>
+          </div>
+
+          <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-1.5 border-b border-white/5 pb-2">
+            <Trophy size={11} /> Palpites Detalhados
+          </h4>
+
+          {loading ? (
+            <div className="flex-1 flex items-center justify-center py-12">
+              <div className="w-6 h-6 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
+            </div>
+          ) : (
+            <div className="flex-1 overflow-y-auto pr-1 max-h-72 space-y-2.5">
+              {jogos.map((j: any) => {
+                const hasPalpite = j.palpite_id !== null;
+                const isLocked = j.travado;
+                const showPalpite = isMe || isLocked;
+
+                return (
+                  <div key={j.id} className="bg-white/[0.01] border border-white/5 rounded-xl p-3 flex items-center justify-between gap-4">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">{j.fase}</p>
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300 truncate">
+                        <span>{j.time_casa}</span>
+                        <span className="text-[10px] text-slate-600">vs</span>
+                        <span>{j.time_fora}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 shrink-0">
+                      <div className="flex flex-col items-center">
+                        <span className="text-[8px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Palpite</span>
+                        {hasPalpite ? (
+                          showPalpite ? (
+                            <span className="text-sm font-black text-violet-400">
+                              {j.palpite_casa} - {j.palpite_fora}
+                            </span>
+                          ) : (
+                            <span className="text-slate-500 flex items-center gap-1" title="Palpite oculto até o jogo iniciar">
+                              <Lock size={12} className="text-slate-500" />
+                            </span>
+                          )
+                        ) : (
+                          <span className="text-xs text-slate-600 font-medium">-</span>
+                        )}
+                      </div>
+
+                      {j.status === 'encerrado' && (
+                        <>
+                          <div className="h-6 w-px bg-white/5" />
+                          <div className="flex flex-col items-center">
+                            <span className="text-[8px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Resultado</span>
+                            <span className="text-sm font-black text-slate-300">
+                              {j.gols_casa} - {j.gols_fora}
+                            </span>
+                          </div>
+                        </>
+                      )}
+
+                      {j.status === 'encerrado' && hasPalpite && (
+                        <>
+                          <div className="h-6 w-px bg-white/5" />
+                          <div className={`px-2 py-1 rounded-lg text-xs font-black shrink-0 ${j.pontos === 10 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : j.pontos > 0 ? 'bg-violet-500/10 text-violet-400 border border-violet-500/20' : 'bg-slate-500/5 text-slate-600 border border-slate-500/10'}`}>
+                            +{j.pontos} pts
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Page ──────────────────────────────────────────────────────────────────
 export default function Bolao() {
   const { user, userData } = useAuth();
@@ -706,6 +876,7 @@ export default function Bolao() {
   const isAdmin = userData?.role === 'superadmin';
 
   const [bolaoId, setBolaoId] = useState<number | null>(null);
+  const [selectedCollab, setSelectedCollab] = useState<RankingEntry | null>(null);
   const [jogos, setJogos] = useState<Jogo[]>([]);
   const [ranking, setRanking] = useState<RankingEntry[]>([]);
   const [loadingJogos, setLoadingJogos] = useState(true);
@@ -800,7 +971,12 @@ export default function Bolao() {
           : <BracketView jogos={jogos} onSave={handleSavePalpite} />
       )}
       {activeTab === 'leaderboard' && (
-        <TabLeaderboard ranking={ranking} myUid={userData?.id || ''} loading={loadingRanking} />
+        <TabLeaderboard 
+          ranking={ranking} 
+          myUid={userData?.id || ''} 
+          loading={loadingRanking} 
+          onSelectCollab={setSelectedCollab}
+        />
       )}
       {activeTab === 'premiacoes' && (
         <div className="space-y-6">
@@ -876,6 +1052,15 @@ export default function Bolao() {
       )}
       {activeTab === 'admin' && isAdmin && bolaoId && (
         <TabAdmin bolaoId={bolaoId} jogos={jogos} onRefresh={() => { loadJogos(); loadRanking(); }} authFetch={apiFetch} />
+      )}
+      {selectedCollab && bolaoId && (
+        <ColaboradorDetalhesModal
+          entry={selectedCollab}
+          myUid={userData?.id || ''}
+          bolaoId={bolaoId}
+          onClose={() => setSelectedCollab(null)}
+          apiFetch={apiFetch}
+        />
       )}
     </div>
   );
