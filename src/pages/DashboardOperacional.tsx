@@ -5,7 +5,7 @@ import SplitHeadline from '../components/SplitHeadline';
 import {
   Users, TrendingUp, DollarSign, AlertTriangle,
   CheckCircle, Cpu, RefreshCw, Clock, MessageSquare, X,
-  ThumbsUp, Edit2, Trash2
+  ThumbsUp, Edit2, Trash2, Search
 } from 'lucide-react';
 import { auth } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
@@ -226,8 +226,7 @@ function getAtencaoList(projects: ProjectRow[]) {
       if (isTestando(p))   { priority = Math.min(priority, 2); alertas.push('Testando'); }
       return { ...p, diasSemUpdate: 0, alerta: alertas.join(' · '), _priority: priority };
     })
-    .sort((a, b) => (a as any)._priority - (b as any)._priority)
-    .slice(0, 20);
+    .sort((a, b) => (a as any)._priority - (b as any)._priority);
 }
 
 function getCriticas(projects: ProjectRow[]) {
@@ -617,12 +616,14 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
   const [error, setError]       = useState<string | null>(null);
   const [selectedGestor, setSelectedGestor] = useState<string | null>(null);
   const [selectedResultCategory, setSelectedResultCategory] = useState<string | null>(null);
+  const [selectedProject, setSelectedProject] = useState<ProjectRow | null>(null);
 
   const { userData } = useAuth();
   const [replyingNoteId, setReplyingNoteId] = useState<string | null>(null);
   const [replyMessage, setReplyMessage] = useState<string>('');
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [editingNoteMessage, setEditingNoteMessage] = useState<string>('');
+  const [commentSearch, setCommentSearch] = useState('');
 
   const handleUpdateProject = async (updatedProject: ProjectRow) => {
     try {
@@ -829,6 +830,14 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
   const atencao  = getAtencaoList(filteredProjects);
   const criticas = getCriticas(filteredProjects);
   const recentComments = getRecentComments(filteredProjects);
+  const commentQuery = commentSearch.trim().toLowerCase();
+  const filteredComments = commentQuery
+    ? recentComments.filter(c =>
+        `${c.project?.partner || ''} ${c.productName || ''} ${c.opt?.author || ''} ${c.opt?.message || ''}`
+          .toLowerCase()
+          .includes(commentQuery)
+      )
+    : recentComments;
 
   // Product summary
   const allProducts = filteredProjects.flatMap(p => p.products || []);
@@ -970,14 +979,29 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
           {/* Histórico de Comentários */}
           <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200 flex flex-col lg:row-span-2 lg:h-[780px] h-[380px]">
             <h2 className="text-sm font-bold text-dark-text mb-1">Últimos Comentários</h2>
-            <p className="text-xs text-slate-500 mb-4 shrink-0">
+            <p className="text-xs text-slate-500 mb-3 shrink-0">
               Histórico consolidado dos projetos
             </p>
-            {recentComments.length === 0 ? (
-              <div className="text-center text-slate-500 text-sm py-6">Nenhum comentário registrado 📝</div>
+            {/* Busca dentro do histórico de comentários */}
+            <div className="relative mb-4 shrink-0">
+              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+              <input
+                value={commentSearch}
+                onChange={e => setCommentSearch(e.target.value)}
+                placeholder="Buscar por parceiro, otimização, autor..."
+                className="w-full bg-dark-bg border border-white/10 rounded-xl pl-9 pr-8 py-2 text-xs text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500/50 transition-colors"
+              />
+              {commentSearch && (
+                <button onClick={() => setCommentSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-dark-text transition-colors" title="Limpar busca">
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+            {filteredComments.length === 0 ? (
+              <div className="text-center text-slate-500 text-sm py-6">{commentQuery ? 'Nenhum comentário encontrado 🔍' : 'Nenhum comentário registrado 📝'}</div>
             ) : (
               <div className="space-y-3 flex-1 overflow-y-auto pr-1 min-h-0">
-                {recentComments.slice(0, 40).map((c, idx) => {
+                {(commentQuery ? filteredComments : filteredComments.slice(0, 40)).map((c, idx) => {
                   const dbUser = findUser(c.opt.author);
                   return (
                     <div 
@@ -1337,7 +1361,12 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
                   matchingProjects.map(p => {
                     const gest = findUser(p.responsible);
                     return (
-                      <div key={p.id} className="bg-dark-card border border-white/5 hover:border-white/10 p-4 rounded-2xl flex items-center justify-between transition-all group">
+                      <div
+                        key={p.id}
+                        onClick={() => setSelectedProject(p)}
+                        className="bg-dark-card border border-white/5 hover:border-violet-500/30 p-4 rounded-2xl flex items-center justify-between transition-all group cursor-pointer"
+                        title="Ver detalhes do projeto"
+                      >
                         <div className="flex flex-col gap-1 min-w-0">
                           <span className="text-sm font-bold text-dark-text group-hover:text-violet-400 transition-colors truncate">{p.partner}</span>
                           <span className="text-xs text-slate-500 truncate">{p.product}</span>
@@ -1357,6 +1386,122 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
                     );
                   })
                 )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Popup de detalhe do projeto (análise de parceiro) ── */}
+      {selectedProject && (() => {
+        const p = selectedProject;
+        const gest = findUser(p.responsible);
+        const resColor = getResultColor(p.projectResult);
+        const prods = Array.isArray(p.products) ? p.products : [];
+        // Coleta as otimizações/comentários do projeto
+        const opts: any[] = [];
+        for (const prod of prods) {
+          const list = (prod as any).optimizations;
+          if (Array.isArray(list)) {
+            for (const o of list) {
+              if (o?.message) opts.push({ ...o, productName: prod.name });
+            }
+          }
+        }
+        opts.sort((a, b) => {
+          const da = (a.date || '').split('/').reverse().join('') + (a.time || '');
+          const db = (b.date || '').split('/').reverse().join('') + (b.time || '');
+          return db.localeCompare(da);
+        });
+        const recentOpts = opts.slice(0, 6);
+
+        return (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={() => setSelectedProject(null)}>
+            <div className="w-full max-w-2xl bg-dark-bg border border-dark-text/10 shadow-2xl rounded-3xl flex flex-col max-h-[88vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+              {/* Header */}
+              <div className="flex items-start justify-between px-6 pt-6 pb-4 border-b border-dark-text/5 shrink-0">
+                <div className="min-w-0 pr-4">
+                  <h2 className="text-xl font-black text-dark-text truncate">{p.partner}</h2>
+                  <div className="flex flex-wrap items-center gap-2 mt-2">
+                    {p.projectResult && p.projectResult !== '-' && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: `${resColor}22`, color: resColor }}>
+                        {p.projectResult}
+                      </span>
+                    )}
+                    {p.status && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/5 text-slate-300 border border-white/10 capitalize">{p.status}</span>
+                    )}
+                    {p.squad && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-400 border border-violet-500/20">{p.squad}</span>
+                    )}
+                  </div>
+                </div>
+                <button onClick={() => setSelectedProject(null)} className="w-10 h-10 rounded-2xl flex items-center justify-center text-dark-text/40 hover:text-dark-text hover:bg-dark-text/10 transition-colors shrink-0">
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-6 space-y-5">
+                {/* Stats */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    { label: 'Gestor', value: gest?.name || p.responsible || '—' },
+                    { label: 'Investimento', value: p.investment || '—' },
+                    { label: 'ROI', value: p.roi || '—' },
+                    { label: 'Última atualização', value: p.lastUpdate || '—' },
+                  ].map(s => (
+                    <div key={s.label} className="bg-dark-card border border-white/5 rounded-xl px-3 py-2.5">
+                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">{s.label}</p>
+                      <p className="text-xs font-bold text-dark-text truncate" title={s.value}>{s.value}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Produtos */}
+                {prods.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Produtos ({prods.length})</p>
+                    <div className="space-y-2">
+                      {prods.map((prod, i) => {
+                        const pr = (prod as any).projectResult || prod.status;
+                        const prColor = getResultColor(pr);
+                        return (
+                          <div key={prod.id || i} className="bg-dark-card border border-white/5 rounded-xl px-3 py-2.5 flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-dark-text truncate">{prod.name}</p>
+                              <p className="text-[10px] text-slate-500 truncate">
+                                {[prod.platform, prod.budget].filter(Boolean).join(' · ') || '—'}
+                              </p>
+                            </div>
+                            {pr && (
+                              <span className="text-[9px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap shrink-0" style={{ background: `${prColor}22`, color: prColor }}>{pr}</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Otimizações recentes */}
+                <div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Otimizações recentes</p>
+                  {recentOpts.length === 0 ? (
+                    <p className="text-xs text-slate-500 py-2">Nenhuma otimização registrada.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {recentOpts.map((o, i) => (
+                        <div key={o.id || i} className="bg-dark-card border border-white/5 rounded-xl px-3 py-2.5">
+                          <div className="flex items-center justify-between mb-1 gap-2">
+                            <span className="text-[10px] font-bold text-slate-400 truncate">{o.author || 'Sistema'} · {o.productName}</span>
+                            <span className="text-[9px] text-slate-500 shrink-0">{formatDateShort(o.date)}{o.time ? ` ${o.time}` : ''}</span>
+                          </div>
+                          <p className="text-xs text-slate-300 whitespace-pre-wrap break-words leading-relaxed">{o.message}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>

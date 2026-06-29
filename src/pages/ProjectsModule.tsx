@@ -137,14 +137,15 @@ const formatDateShort = (dateStr?: string) => {
 // This helper ensures the date stays on the correct calendar day.
 const parseLocalDate = (dateStr: string): Date => {
   if (!dateStr) return new Date();
-  // If it's a date-only string (YYYY-MM-DD, 10 chars), append noon to avoid timezone shift
-  if (dateStr.length === 10 && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-    return new Date(dateStr + 'T12:00:00');
+  // Extract the YYYY-MM-DD portion from a date-only string OR the start of a full
+  // ISO timestamp (e.g. "2026-06-12T00:00:00.000Z") and parse it at LOCAL noon.
+  // This avoids the timezone day-shift where a UTC-midnight timestamp renders as
+  // the previous day in BRT (UTC-3).
+  const m = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) {
+    return new Date(`${m[1]}-${m[2]}-${m[3]}T12:00:00`);
   }
-  // For full ISO timestamps, also normalize to avoid day shift
-  // Extract just the date part if it's a full timestamp with time at midnight
-  const d = new Date(dateStr);
-  return d;
+  return new Date(dateStr);
 };
 
 const DragHandle = () => {
@@ -539,10 +540,9 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
         }
         return p;
       });
-      
       setProjects(updatedProjects);
       saveProjects(updatedProjects);
-      
+
       console.log('File uploaded successfully:', downloadURL);
     } catch (error) {
       console.error('Error uploading file:', error);
@@ -1101,7 +1101,8 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
         derivedStatus = 'Gargalo';
       }
       
-      const totalInvestment = projectWithResolvedPartner.products.reduce((acc, p) => acc + parseCurrency(p.budget), 0);
+      // Soma apenas o investimento dos produtos ATIVOS (ignora os 'Inativo')
+      const totalInvestment = activeProducts.reduce((acc, p) => acc + parseCurrency(p.budget), 0);
       
       return {
         ...projectWithResolvedPartner,
@@ -1386,7 +1387,6 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       ...proj,
       products: proj.products?.map(p => p.id === selectedProduct.id ? updatedProduct : p)
     }));
-
     setProjects(updatedProjects);
     saveProjects(updatedProjects);
 
@@ -1572,7 +1572,6 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       ...proj,
       products: proj.products?.map(p => p.id === selectedProduct.id ? finalProduct : p)
     }));
-
     setProjects(updatedProjects);
     saveProjects(updatedProjects);
 
@@ -1713,7 +1712,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     };
     
     setSelectedProduct(updatedProduct);
-    
+
     const updatedProjects = projects.map(proj => {
       if (proj.products?.some(p => p.id === selectedProduct.id)) {
         return {
@@ -1723,7 +1722,6 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       }
       return proj;
     });
-    
     setProjects(updatedProjects);
     saveProjects(updatedProjects);
   };
@@ -1813,16 +1811,21 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     setSelectedProduct(updatedProduct);
     setTempProduct(updatedProduct);
 
-    setProjects(prev => prev.map(proj => ({
-      ...proj,
-      products: proj.products?.map(p => p.id === selectedProduct.id ? updatedProduct : p)
-    })));
-    
-    saveProjects(projects.map(proj => ({
-      ...proj,
-      products: proj.products?.map(p => p.id === selectedProduct.id ? updatedProduct : p)
-    })));
-    
+    // Atualiza o produto E sincroniza o resultado do PROJETO que o contém,
+    // pois a linha do parceiro exibe project.projectResult.
+    const applyResultChange = (proj: Project): Project => {
+      const hasProduct = proj.products?.some(p => p.id === selectedProduct.id);
+      return {
+        ...proj,
+        projectResult: hasProduct ? result : proj.projectResult,
+        products: proj.products?.map(p => p.id === selectedProduct.id ? updatedProduct : p)
+      };
+    };
+
+    const updatedProjects = projects.map(applyResultChange);
+    setProjects(updatedProjects);
+    saveProjects(updatedProjects);
+
     setIsResultDropdownOpen(false);
   };
 
@@ -1864,11 +1867,10 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
         products: updatedProducts,
         status: proj.products?.some(p => p.id === selectedProduct.id) ? newProjectStatus : proj.status
       };
-    });
-    
-    setProjects(updatedProjects as Project[]);
-    saveProjects(updatedProjects as Project[]);
-    
+    }) as Project[];
+    setProjects(updatedProjects);
+    saveProjects(updatedProjects);
+
     setIsStatusDropdownOpen(false);
   };
 
@@ -2921,7 +2923,6 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                               ...p,
                               products: p.products?.map(prod => prod.id === updatedProduct.id ? updatedProduct : prod)
                             }));
-                            
                             setProjects(updatedProjects);
                             saveProjects(updatedProjects);
                             setSelectedProduct(updatedProduct);
@@ -3150,12 +3151,10 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     key={group}
                     onClick={() => {
                       if (!groupModalProjectId) return;
-                      const proj = projects.find(p => p.id === groupModalProjectId);
-                      if (proj) {
-                        const updated = { ...proj, group };
-                        setProjects(prev => prev.map(p => p.id === proj.id ? updated : p));
-                        saveProjects([updated]);
-                      }
+                      const targetId = groupModalProjectId;
+                      const updatedList = projects.map(p => p.id === targetId ? { ...p, group } : p);
+                      setProjects(updatedList);
+                      saveProjects(updatedList);
                       setIsGroupModalOpen(false);
                       setGroupModalProjectId(null);
                     }}
@@ -3669,9 +3668,9 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                         { key: null, label: '' },
                         { key: 'projectResult' as const, label: 'Resultado' },
                         { key: 'status' as const, label: 'Status' },
-                        { key: null, label: 'Pagamento' },
-                        { key: 'investment' as const, label: 'Investimento' },
                         { key: 'lastMeetingDate' as const, label: 'Última Reunião' },
+                        { key: 'investment' as const, label: 'Investimento' },
+                        { key: null, label: 'Pagamento' },
                       ].map((col, idx) => (
                         <th
                           key={idx}
@@ -3831,6 +3830,22 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                       </div>
                     </td>
                     <td className="px-6 py-5" onClick={() => handleRowClick(project)}>
+                      {project.lastMeetingDate ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-violet-500/10 border border-violet-500/25 text-violet-600 dark:text-violet-300 text-xs font-bold cursor-pointer whitespace-nowrap">
+                          <Calendar size={12} className="shrink-0" />
+                          {new Date(project.lastMeetingDate).toLocaleDateString('pt-BR', { day: 'numeric', month: 'short', timeZone: 'UTC' }).replace('.', '').toLowerCase()}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 dark:text-slate-600 cursor-pointer whitespace-nowrap">
+                          <Calendar size={12} className="shrink-0 opacity-50" />
+                          sem reunião
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-5" onClick={() => handleRowClick(project)}>
+                      <p className="text-sm text-slate-600 dark:text-slate-300 cursor-pointer">{project.investment}</p>
+                    </td>
+                    <td className="px-6 py-5" onClick={() => handleRowClick(project)}>
                       <div className="cursor-pointer flex flex-col gap-1">
                         {(project.products && project.products.length > 0) ? (
                           [...new Set(project.products.map((prod: any) => normalizePaymentMethod(prod.paymentMethod)))].map((pm: string) => (
@@ -3850,14 +3865,6 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                           <span className="text-xs text-slate-400">—</span>
                         )}
                       </div>
-                    </td>
-                    <td className="px-6 py-5" onClick={() => handleRowClick(project)}>
-                      <p className="text-sm text-slate-600 dark:text-slate-300 cursor-pointer">{project.investment}</p>
-                    </td>
-                    <td className="px-6 py-5" onClick={() => handleRowClick(project)}>
-                      <p className="text-sm text-slate-600 dark:text-slate-300 cursor-pointer">
-                        {project.lastMeetingDate ? new Date(project.lastMeetingDate).toLocaleDateString('pt-BR', { day: 'numeric', month: 'short', timeZone: 'UTC' }).replace('.', '').toLowerCase() : ''}
-                      </p>
                     </td>
                     <td className="px-6 py-5 text-right overflow-visible">
                       <div className="flex items-center justify-end gap-2">
@@ -3993,7 +4000,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                   </div>
                                 </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                   {/* Product Cards */}
                                   <AnimatePresence mode="popLayout">
                                   {project.products
@@ -4072,14 +4079,14 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                       )}
                                     </div>
 
-                                    <div className="grid grid-cols-4 gap-1.5">
+                                    <div className="grid grid-cols-2 gap-2">
                                       <div className="p-2 rounded-xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm transition-all hover:border-violet-500/20 min-w-0">
-                                        <p className="text-[7px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-0.5">Investimento</p>
-                                        <p className="text-[11px] font-bold text-slate-900 dark:text-white truncate">{prod.budget?.includes('R$') ? prod.budget : (formatCurrency(prod.budget || '') || 'R$ 0,00')}</p>
+                                        <p className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Investimento</p>
+                                        <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{prod.budget?.includes('R$') ? prod.budget : (formatCurrency(prod.budget || '') || 'R$ 0,00')}</p>
                                       </div>
                                       <div className="p-2 rounded-xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm transition-all hover:border-violet-500/20 min-w-0">
-                                        <p className="text-[7px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-0.5">Plataforma</p>
-                                        <p className={`text-[11px] font-bold truncate ${
+                                        <p className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Plataforma</p>
+                                        <p className={`text-xs font-bold truncate ${
                                           prod.platform === 'Meta Ads' ? 'text-blue-500' 
                                           : prod.platform === 'Google Ads' ? 'text-amber-500' 
                                           : prod.platform === 'Tiktok Ads' ? 'text-purple-500' 
@@ -4088,14 +4095,14 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                         }`}>{prod.platform || '-'}</p>
                                       </div>
                                       <div className="p-2 rounded-xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm transition-all hover:border-violet-500/20 min-w-0">
-                                        <p className="text-[7px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-0.5">Pagamento</p>
-                                        <p className={`text-[11px] font-bold truncate ${normalizePaymentMethod(prod.paymentMethod) === 'Manual' ? 'text-orange-500' : 'text-blue-500'}`}>
+                                        <p className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Pagamento</p>
+                                        <p className={`text-xs font-bold truncate ${normalizePaymentMethod(prod.paymentMethod) === 'Manual' ? 'text-orange-500' : 'text-blue-500'}`}>
                                           {normalizePaymentMethod(prod.paymentMethod) === 'Manual' ? (prod.balance?.includes('R$') ? prod.balance : (formatCurrency(prod.balance || '') || 'R$ 0,00')) : 'Automático'}
                                         </p>
                                       </div>
                                       <div className="p-2 rounded-xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm transition-all hover:border-violet-500/20 min-w-0">
-                                        <p className="text-[7px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-0.5">Veiculação</p>
-                                        <p className="text-[11px] font-bold text-slate-900 dark:text-white truncate">{prod.delivery || 'Full Time'}</p>
+                                        <p className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Veiculação</p>
+                                        <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{prod.delivery || 'Full Time'}</p>
                                       </div>
                                     </div>
                                   </motion.div>
