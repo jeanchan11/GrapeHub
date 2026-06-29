@@ -1129,21 +1129,21 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       case 'Rodando':
       case 'Operacional':
         return (
-          <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-500 text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5 w-fit">
+          <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-500 text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5 w-fit whitespace-nowrap">
             <CheckCircle2 size={12} />
             Rodando
           </span>
         );
       case 'Gargalo':
         return (
-          <span className="px-3 py-1 rounded-full bg-rose-500/10 text-rose-500 text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5 w-fit">
+          <span className="px-3 py-1 rounded-full bg-rose-500/10 text-rose-500 text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5 w-fit whitespace-nowrap">
             <AlertTriangle size={12} />
             Gargalo
           </span>
         );
       case 'Pausado':
         return (
-          <span className="px-3 py-1 rounded-full bg-slate-500/10 text-slate-500 text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5 w-fit">
+          <span className="px-3 py-1 rounded-full bg-slate-500/10 text-slate-500 text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5 w-fit whitespace-nowrap">
             <PauseCircle size={12} />
             Pausado
           </span>
@@ -1155,7 +1155,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     const res = projectResults.find(r => r.label === result) || { label: result || 'Sem Resultado', color: 'bg-slate-500' };
     const textColor = res.color.replace('bg-', 'text-');
     return (
-      <span className={`px-3 py-1 rounded-full ${res.color}/10 ${textColor} text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5 w-fit`}>
+      <span className={`px-3 py-1 rounded-full ${res.color}/10 ${textColor} text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5 w-fit whitespace-nowrap`}>
         {res.label}
       </span>
     );
@@ -3662,7 +3662,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="border-b border-slate-200 dark:border-white/5 bg-transparent">
-                      <th className="px-6 py-5 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest w-10"></th>
+                      <th className="px-3 py-3.5 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest w-10"></th>
                       {[
                         { key: 'partner' as const, label: 'Parceiro' },
                         { key: null, label: '' },
@@ -3674,7 +3674,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                       ].map((col, idx) => (
                         <th
                           key={idx}
-                          className={`px-6 py-5 text-[10px] font-bold uppercase tracking-widest ${
+                          className={`px-3 py-3.5 text-[10px] font-bold uppercase tracking-widest ${
                             col.key && projectSortColumn === col.key ? 'text-violet-500' : 'text-slate-500 dark:text-slate-400'
                           } ${col.key ? 'cursor-pointer select-none hover:text-violet-400 transition-colors' : ''} ${col.key === 'projectResult' ? 'relative' : ''}`}
                           onClick={() => {
@@ -3730,7 +3730,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                           )}
                         </th>
                       ))}
-                      <th className="px-6 py-5 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest text-right">Ações</th>
+                      <th className="px-3 py-3.5 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest text-right">Ações</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -3780,7 +3780,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                   project.status === 'Gargalo' ? 'bg-rose-500/5' : ''
                                 } hover:bg-slate-50 dark:hover:bg-white/[0.02]`}
                               >
-                                <td className="px-6 py-5">
+                                <td className="px-3 py-3.5">
                                   <div className="flex items-center gap-2">
                                     <DragHandle />
                                     <button 
@@ -3793,7 +3793,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                       </button>
                       </div>
                     </td>
-                    <td className="px-6 py-5" onClick={(e) => toggleRow(project.id, e)}>
+                    <td className="px-3 py-3.5" onClick={(e) => toggleRow(project.id, e)}>
                       <div className="flex items-center gap-3 cursor-pointer">
                         {(() => {
                           const colorMap: Record<string, { bg: string; text: string }> = {
@@ -3807,29 +3807,29 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                           const resultBg = projectResults.find(r => r.label === project.projectResult)?.color || 'bg-slate-500';
                           const c = colorMap[resultBg] || colorMap['bg-slate-500'];
                           return (
-                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${c.bg} ${c.text}`}>
+                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${c.bg} ${c.text}`}>
                               <Scale size={20} />
                             </div>
                           );
                         })()}
-                        <div>
-                          <p className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-violet-400 transition-colors">{toTitleCase(project.partner || '')}</p>
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-violet-400 transition-colors leading-tight">{toTitleCase(project.partner || '')}</p>
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-5">
+                    <td className="px-3 py-3.5">
                     </td>
-                    <td className="px-6 py-5" onClick={() => handleRowClick(project)}>
+                    <td className="px-3 py-3.5" onClick={() => handleRowClick(project)}>
                       <div className="cursor-pointer">
                         {getResultBadge(project.projectResult)}
                       </div>
                     </td>
-                    <td className="px-6 py-5" onClick={() => handleRowClick(project)}>
+                    <td className="px-3 py-3.5" onClick={() => handleRowClick(project)}>
                       <div className="cursor-pointer">
                         {getStatusBadge(project.status)}
                       </div>
                     </td>
-                    <td className="px-6 py-5" onClick={() => handleRowClick(project)}>
+                    <td className="px-3 py-3.5" onClick={() => handleRowClick(project)}>
                       {project.lastMeetingDate ? (
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-violet-500/10 border border-violet-500/25 text-violet-600 dark:text-violet-300 text-xs font-bold cursor-pointer whitespace-nowrap">
                           <Calendar size={12} className="shrink-0" />
@@ -3842,10 +3842,10 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-5" onClick={() => handleRowClick(project)}>
+                    <td className="px-3 py-3.5" onClick={() => handleRowClick(project)}>
                       <p className="text-sm text-slate-600 dark:text-slate-300 cursor-pointer">{project.investment}</p>
                     </td>
-                    <td className="px-6 py-5" onClick={() => handleRowClick(project)}>
+                    <td className="px-3 py-3.5" onClick={() => handleRowClick(project)}>
                       <div className="cursor-pointer flex flex-col gap-1">
                         {(project.products && project.products.length > 0) ? (
                           [...new Set(project.products.map((prod: any) => normalizePaymentMethod(prod.paymentMethod)))].map((pm: string) => (
@@ -3866,7 +3866,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                         )}
                       </div>
                     </td>
-                    <td className="px-6 py-5 text-right overflow-visible">
+                    <td className="px-3 py-3.5 text-right overflow-visible">
                       <div className="flex items-center justify-end gap-2">
                         <button
                           onClick={(e) => {
@@ -4990,7 +4990,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                             return (
                               <div key={i} className={`bg-light-card dark:bg-dark-card border ${avgBorder} rounded-3xl overflow-hidden shadow-sm`}>
                                 {/* Header */}
-                                <div className={`bg-gradient-to-r ${avgBg} px-6 py-5 border-b border-slate-100 dark:border-white/5 flex items-center justify-between`}>
+                                <div className={`bg-gradient-to-r ${avgBg} px-3 py-3.5 border-b border-slate-100 dark:border-white/5 flex items-center justify-between`}>
                                   <div className="flex items-center gap-4">
                                     <div className="w-11 h-11 rounded-2xl bg-slate-200 dark:bg-white/10 flex items-center justify-center text-slate-700 dark:text-white font-black text-lg">
                                       {(res.office || '?')[0].toUpperCase()}
