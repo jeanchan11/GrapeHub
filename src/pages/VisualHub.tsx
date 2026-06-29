@@ -1245,7 +1245,7 @@ const DraggableColHeaders = () => {
           >
             <GripVertical
               size={10}
-              className="opacity-0 group-hover/col:opacity-60 transition-opacity shrink-0 text-slate-600"
+              className={`opacity-0 group-hover/col:opacity-60 transition-opacity shrink-0 text-slate-600 ${colId === 'resp' ? 'hidden' : ''}`}
             />
             <span className={`transition-colors ${isOver ? 'text-violet-400' : ''}`}>{def.label}</span>
           </div>
@@ -2504,6 +2504,8 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [loadingComments, setLoadingComments] = useState(true);
+  const [editingCommentId, setEditingCommentId] = useState<number | null>(null);
+  const [editText, setEditText] = useState('');
   const [description, setDescription] = useState(task.meeting_info || '');
   const [editingDesc, setEditingDesc] = useState(false);
   const [savingDesc, setSavingDesc] = useState(false);
@@ -2598,6 +2600,33 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
         setComments(prev => [c, ...prev]);
         setNewComment('');
         setPendingCommentFiles([]);
+      }
+    } catch { /* silent */ }
+  };
+
+  const deleteComment = async (commentId: number) => {
+    if (!window.confirm('Excluir este comentário?')) return;
+    try {
+      const res = await fetch(`/api/onboarding-tasks/${task.id}/comments/${commentId}`, { method: 'DELETE' });
+      if (res.ok) setComments(prev => prev.filter(c => c.id !== commentId));
+    } catch { /* silent */ }
+  };
+
+  const startEditComment = (c: Comment) => { setEditingCommentId(c.id); setEditText(c.text); };
+  const cancelEditComment = () => { setEditingCommentId(null); setEditText(''); };
+  const saveEditComment = async (commentId: number) => {
+    const text = editText.trim();
+    if (!text) return;
+    try {
+      const res = await fetch(`/api/onboarding-tasks/${task.id}/comments/${commentId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setComments(prev => prev.map(c => c.id === commentId ? { ...c, text: updated.text } : c));
+        cancelEditComment();
       }
     } catch { /* silent */ }
   };
@@ -3402,7 +3431,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                     ? (typeof c.files === 'string' ? JSON.parse(c.files) : c.files)
                     : [];
                   return (
-                  <div key={c.id} className="flex gap-2.5">
+                  <div key={c.id} className="flex gap-2.5 group/cmt">
                     {c.author_avatar ? (
                       <img src={c.author_avatar} alt="" className="w-7 h-7 rounded-full object-cover shrink-0 mt-0.5" />
                     ) : (
@@ -3417,9 +3446,31 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                           <Clock size={8} />
                           {new Date(c.created_at).toLocaleString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
                         </span>
+                        {editingCommentId !== c.id && (
+                          <div className="ml-auto flex items-center gap-1.5 opacity-0 group-hover/cmt:opacity-100 transition-opacity shrink-0">
+                            <button onClick={() => startEditComment(c)} title="Editar" className="text-slate-500 hover:text-violet-400 transition-colors"><Edit2 size={12} /></button>
+                            <button onClick={() => deleteComment(c.id)} title="Excluir" className="text-slate-500 hover:text-red-400 transition-colors"><Trash2 size={12} /></button>
+                          </div>
+                        )}
                       </div>
+                      {editingCommentId === c.id ? (
+                        <div className="space-y-1.5">
+                          <textarea
+                            value={editText}
+                            onChange={e => setEditText(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEditComment(c.id); } else if (e.key === 'Escape') cancelEditComment(); }}
+                            autoFocus
+                            rows={2}
+                            className="w-full bg-dark-bg border border-violet-500/40 rounded-xl px-3 py-2 text-[13px] text-dark-text focus:outline-none resize-none leading-relaxed"
+                          />
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => saveEditComment(c.id)} className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-violet-600 hover:bg-violet-500 text-white transition-colors">Salvar</button>
+                            <button onClick={cancelEditComment} className="text-[10px] font-semibold px-2.5 py-1 rounded-lg text-slate-400 hover:text-dark-text transition-colors">Cancelar</button>
+                          </div>
+                        </div>
+                      ) : (
                       <div className="bg-dark-card border border-white/5 rounded-2xl rounded-tl-sm px-3.5 py-2.5">
-                        {c.text && <p className="text-[13px] text-slate-300 whitespace-pre-wrap leading-relaxed break-words">{renderCommentText(c.text)}</p>}
+                        {c.text && <p className="text-[13px] text-slate-300 whitespace-pre-wrap leading-relaxed break-words select-text">{renderCommentText(c.text)}</p>}
                         {commentFiles.length > 0 && (
                           <div className={`flex flex-wrap gap-2 ${c.text ? 'mt-2' : ''}`}>
                             {commentFiles.map((cf, fi) => (
@@ -3448,6 +3499,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                           </div>
                         )}
                       </div>
+                      )}
                     </div>
                   </div>
                   );

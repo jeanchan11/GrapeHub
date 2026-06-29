@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   X, Trash2, Loader2, Send, Plus, Check, CheckCircle2,
   ChevronDown, ChevronRight, FileText, Paperclip,
-  ImageIcon, MessageSquare, Eye
+  ImageIcon, MessageSquare, Eye, Calendar
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
@@ -33,6 +33,8 @@ interface ListaTask {
   description?: string;
   subtask_count: number;
   created_at: string;
+  tags?: string[];
+  due_date?: string;
 }
 
 interface Props {
@@ -75,6 +77,9 @@ export default function ListaTaskDetailModal({ task, onClose, onUpdate, onDelete
   const [editingDesc, setEditingDesc] = useState(false);
   const [savingDesc, setSavingDesc] = useState(false);
   const descSavedRef = useRef(false);
+
+  // Due Date
+  const [dueDate, setDueDate] = useState(task.due_date ? task.due_date.split('T')[0] : '');
 
   // Subtasks
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
@@ -293,6 +298,13 @@ export default function ListaTaskDetailModal({ task, onClose, onUpdate, onDelete
                   {task.client_name}
                 </h2>
               )}
+              {Array.isArray(task.tags) && task.tags.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-1.5">
+                  {task.tags.map(t => (
+                    <span key={t} className="px-2 py-0.5 bg-white/5 border border-white/10 rounded-full text-[9px] text-slate-400 font-bold uppercase tracking-wider">{t}</span>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-2 ml-4 shrink-0">
               <button
@@ -315,6 +327,31 @@ export default function ListaTaskDetailModal({ task, onClose, onUpdate, onDelete
           <div className="flex flex-1 overflow-hidden">
             {/* LEFT: Description + Subtasks */}
             <div className="flex-1 overflow-y-auto border-r border-white/5 p-6 space-y-6">
+              {/* Due Date (Prazo) */}
+              <div className="flex items-center justify-between bg-dark-bg border border-white/5 rounded-xl p-3">
+                <div className="flex items-center gap-2">
+                  <Calendar size={14} className="text-violet-500" />
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Prazo de Entrega</span>
+                </div>
+                <input
+                  type="date"
+                  value={dueDate}
+                  onChange={async (e) => {
+                    const val = e.target.value;
+                    setDueDate(val);
+                    try {
+                      await fetch(`/api/onboarding-tasks/${task.id}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ due_date: val || null }),
+                      });
+                      onUpdate();
+                    } catch { /* silent */ }
+                  }}
+                  className="bg-transparent border border-white/10 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none focus:border-violet-500/50 [color-scheme:dark]"
+                />
+              </div>
+
               {/* Description */}
               <div>
                 <div className="flex items-center justify-between mb-2">

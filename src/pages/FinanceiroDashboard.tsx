@@ -195,30 +195,30 @@ const CustomTooltip = ({ active, payload, label }: any) => {
     const formatCurrency = (val: number) => 'R$ ' + val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     
     return (
-      <div className="bg-white rounded-[8px] shadow-[0_4px_12px_rgba(0,0,0,0.1)] p-3 border border-slate-100 font-sans text-[13px] min-w-[220px]">
-        <div className="font-bold text-slate-700 mb-2">{label}</div>
-        <hr className="border-slate-200 mb-2" />
+      <div className="bg-white dark:bg-dark-card rounded-[8px] shadow-[0_4px_12px_rgba(0,0,0,0.15)] p-3 border border-slate-100 dark:border-white/10 font-sans text-[13px] min-w-[220px]">
+        <div className="font-bold text-slate-700 dark:text-white mb-2">{label}</div>
+        <hr className="border-slate-200 dark:border-white/5 mb-2" />
         
         <div className="flex justify-between items-center mb-1">
-          <span className="text-slate-600">↑ Entradas:</span>
-          <span className="font-medium text-slate-800">
+          <span className="text-slate-600 dark:text-slate-400">↑ Entradas:</span>
+          <span className="font-medium text-slate-800 dark:text-slate-200">
             {formatCurrency(totalEntradas)}
-            {entradasPrevistas > 0 && <span className="text-slate-400 ml-1 text-xs">(previsto)</span>}
+            {entradasPrevistas > 0 && <span className="text-slate-400 dark:text-slate-500 ml-1 text-xs">(previsto)</span>}
           </span>
         </div>
         
         <div className="flex justify-between items-center mb-2">
-          <span className="text-slate-600">↓ Saídas:</span>
-          <span className="font-medium text-slate-800">
+          <span className="text-slate-600 dark:text-slate-400">↓ Saídas:</span>
+          <span className="font-medium text-slate-800 dark:text-slate-200">
             {formatCurrency(totalSaidas)}
-            {saidasPrevistas > 0 && <span className="text-slate-400 ml-1 text-xs">(previsto)</span>}
+            {saidasPrevistas > 0 && <span className="text-slate-400 dark:text-slate-500 ml-1 text-xs">(previsto)</span>}
           </span>
         </div>
         
-        <hr className="border-slate-200 my-2" />
+        <hr className="border-slate-200 dark:border-white/5 my-2" />
         
         <div className="flex justify-between items-center font-bold">
-          <span className="text-slate-700">Saldo do dia:</span>
+          <span className="text-slate-700 dark:text-slate-300">Saldo do dia:</span>
           <span className={saldo >= 0 ? 'text-emerald-500' : 'text-red-500'}>
             {saldo < 0 ? '- ' : ''}{formatCurrency(Math.abs(saldo))}
           </span>
@@ -474,9 +474,9 @@ export default function FinanceiroDashboard() {
       <div className="max-w-[1600px] mx-auto space-y-6">
         
         {/* Header */}
-        <PageHeader 
-          title="" 
-          titleAccent="Financeiro" 
+        <PageHeader
+          title="Fluxo de"
+          titleAccent="Caixa"
           subtitle="Gestão integrada de caixa e indicadores de saúde do negócio"
         >
           <div className="flex items-center gap-2">
@@ -811,7 +811,7 @@ export default function FinanceiroDashboard() {
       {/* AIChat — modo inline, sem botão flutuante, controlado pelo header */}
       <AIChat
         activePage="financeiro-dashboard"
-        userName={userData?.nome || userData?.name || user?.displayName || user?.email || undefined}
+        userName={(userData as any)?.nome || userData?.name || user?.displayName || user?.email || undefined}
         floatingButton={false}
         externalOpen={showAI}
         onExternalToggle={() => setShowAI(o => !o)}

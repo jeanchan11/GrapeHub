@@ -174,6 +174,7 @@ interface RichTextEditorProps {
   onChange: (content: string) => void;
   systemUsers?: {name: string, email: string, picture?: string}[];
   placeholder?: string;
+  minHeight?: string;
 }
 
 const SLASH_COMMANDS = [
@@ -202,7 +203,7 @@ function isMarkdown(t: string) {
 
 interface MenuPos { top: number; left: number; }
 
-export default function RichTextEditor({ content, onChange, systemUsers = [] }: RichTextEditorProps) {
+export default function RichTextEditor({ content, onChange, systemUsers = [], minHeight = '380px' }: RichTextEditorProps) {
   const [slashOpen, setSlashOpen] = useState(false);
   const [slashFrom, setSlashFrom] = useState(0);
   const [slashQuery, setSlashQuery] = useState('');
@@ -230,7 +231,10 @@ export default function RichTextEditor({ content, onChange, systemUsers = [] }: 
     ],
     content: initialHTML,
     editorProps: {
-      attributes: { class: 'tiptap-editor outline-none min-h-[380px] break-words' },
+      attributes: {
+        class: 'tiptap-editor outline-none break-words',
+        style: `min-height: ${minHeight}`,
+      },
     },
     onUpdate({ editor }) {
       onChange(editor.getHTML());

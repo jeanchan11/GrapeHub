@@ -49,6 +49,7 @@ import ContasAReceber from './src/pages/ContasAReceber';
 import ColaboradoresPage from './src/pages/ColaboradoresPage';
 import CollaboratorProfile from './src/pages/CollaboratorProfile';
 import MinhaEquipePage from './src/pages/MinhaEquipePage';
+import SuperAdminDashboard from './src/pages/SuperAdminDashboard';
 
 import MeetingNotes from './src/pages/MeetingNotes';
 import PlanejamentoCrescimento from './src/pages/PlanejamentoCrescimento';
@@ -131,6 +132,7 @@ const AppContent: React.FC = () => {
   // Resolve o template da página ativa (necessário para detectar páginas financeiras no AIChat)
   const pageTemplate = useMemo(() => {
     if (activePage.startsWith('colaboradores/')) return 'colaborador-perfil';
+    if (activePage === 'superadmin-dashboard') return 'superadmin-dashboard';
     if (!Array.isArray(menu)) return activePage;
     let resolved = activePage;
     let found = false;
@@ -410,6 +412,8 @@ const AppContent: React.FC = () => {
         return <ColaboradoresPage />;
       case 'minha-equipe':
         return <MinhaEquipePage />;
+      case 'superadmin-dashboard':
+        return <SuperAdminDashboard />;
       case 'colaborador-perfil': {
         const rawId = activePage.split('/')[1] || '';
         const cleanId = rawId.split('?')[0];

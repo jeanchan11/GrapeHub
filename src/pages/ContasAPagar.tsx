@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Plus, Pencil, Trash2, CheckCircle2, Clock, AlertTriangle, X, Upload,
   RefreshCw, ChevronDown, ChevronLeft, ChevronRight, BarChart2, CreditCard,
-  Receipt, Tag, Calendar, DollarSign, FileText, Check, Loader2
+  Receipt, Tag, Calendar, DollarSign, FileText, Check, Loader2,
+  Home, Laptop, Truck, Megaphone, Users, Wrench, Code, Zap
 } from 'lucide-react';
 import SplitHeadline from '../components/SplitHeadline';
 import { motion, AnimatePresence, useSpring, useTransform, useInView } from 'motion/react';
@@ -36,6 +37,7 @@ interface Entry {
   linked_description: string | null;
   linked_date: string | null;
   linked_value: string | null;
+  recurrence?: string;
 }
 
 interface EntrySummary {
@@ -114,13 +116,65 @@ const StatusBadge = ({ status, dueDate }: { status: Entry['status']; dueDate: st
   return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/5 text-slate-400">Pendente</span>;
 };
 
-// ── Category Dot ─────────────────────────────────────────────────────────────
+// ── Category Styles & Colors ──────────────────────────────────────────────────
 const CAT_COLORS: Record<string, string> = {
   'Salários': 'bg-violet-500', 'Aluguel': 'bg-amber-500', 'Software': 'bg-blue-500',
   'Marketing': 'bg-pink-500', 'Impostos': 'bg-rose-500', 'Serviços': 'bg-teal-500',
   'Fornecedores': 'bg-orange-500', 'Utilidades': 'bg-cyan-500', 'Equipamentos': 'bg-indigo-500',
   'Outros': 'bg-slate-500',
 };
+
+const getCategoryStyles = (category: string) => {
+  const colors: Record<string, { bg: string, text: string, border: string, dot: string }> = {
+    'Salários': { bg: 'bg-violet-500/10', text: 'text-violet-400', border: 'border-violet-500/20', dot: 'bg-violet-500' },
+    'Aluguel': { bg: 'bg-amber-500/10', text: 'text-amber-400', border: 'border-amber-500/20', dot: 'bg-amber-500' },
+    'Software': { bg: 'bg-blue-500/10', text: 'text-blue-400', border: 'border-blue-500/20', dot: 'bg-blue-500' },
+    'Marketing': { bg: 'bg-pink-500/10', text: 'text-pink-400', border: 'border-pink-500/20', dot: 'bg-pink-500' },
+    'Impostos': { bg: 'bg-rose-500/10', text: 'text-rose-400', border: 'border-rose-500/20', dot: 'bg-rose-500' },
+    'Serviços': { bg: 'bg-teal-500/10', text: 'text-teal-400', border: 'border-teal-500/20', dot: 'bg-teal-500' },
+    'Fornecedores': { bg: 'bg-orange-500/10', text: 'text-orange-400', border: 'border-orange-500/20', dot: 'bg-orange-500' },
+    'Utilidades': { bg: 'bg-cyan-500/10', text: 'text-cyan-400', border: 'border-cyan-500/20', dot: 'bg-cyan-500' },
+    'Equipamentos': { bg: 'bg-indigo-500/10', text: 'text-indigo-400', border: 'border-indigo-500/20', dot: 'bg-indigo-500' },
+    'Outros': { bg: 'bg-slate-500/10', text: 'text-slate-400', border: 'border-slate-500/20', dot: 'bg-slate-500' },
+  };
+
+  if (colors[category]) return colors[category];
+
+  // Hash/modulo fallback for custom categories
+  const keys = Object.keys(colors).filter(k => k !== 'Outros');
+  let hash = 0;
+  for (let i = 0; i < category.length; i++) {
+    hash = category.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % keys.length;
+  return colors[keys[index]];
+};
+
+const getCategoryIcon = (category: string, size = 16) => {
+  switch (category) {
+    case 'Aluguel':
+      return <Home size={size} />;
+    case 'Equipamentos':
+      return <Laptop size={size} />;
+    case 'Fornecedores':
+      return <Truck size={size} />;
+    case 'Impostos':
+      return <Receipt size={size} />;
+    case 'Marketing':
+      return <Megaphone size={size} />;
+    case 'Salários':
+      return <Users size={size} />;
+    case 'Serviços':
+      return <Wrench size={size} />;
+    case 'Software':
+      return <Code size={size} />;
+    case 'Utilidades':
+      return <Zap size={size} />;
+    default:
+      return <DollarSign size={size} />;
+  }
+};
+
 const CatDot = ({ cat }: { cat: string }) => (
   <span className={`w-2 h-2 rounded-full inline-block mr-1.5 shrink-0 ${CAT_COLORS[cat] || 'bg-slate-500'}`} />
 );
@@ -156,34 +210,34 @@ const BillModal: React.FC<BillModalProps> = ({ bill, categories, onSave, onClose
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={e => e.target === e.currentTarget && onClose()}>
       <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }}
-        className="bg-dark-card border border-white/10 rounded-2xl w-full max-w-md p-6 shadow-2xl mx-4">
+        className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl w-full max-w-md p-6 shadow-2xl mx-4">
         <div className="flex items-center justify-between mb-5">
-          <h3 className="text-base font-bold text-white">{form.id ? 'Editar Conta' : 'Nova Conta'}</h3>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors"><X size={16} /></button>
+          <h3 className="text-base font-bold text-dark-text">{form.id ? 'Editar Conta' : 'Nova Conta'}</h3>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-slate-400 hover:text-dark-text transition-colors"><X size={16} /></button>
         </div>
         <div className="space-y-4">
           <div>
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Nome *</label>
             <input value={form.name || ''} onChange={e => set('name', e.target.value)} placeholder="Ex: Aluguel escritório"
-              className="w-full bg-dark-bg border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500/50" />
+              className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text placeholder-slate-500 focus:outline-none focus:border-violet-500/50" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Categoria</label>
               <select value={form.category || 'Outros'} onChange={e => set('category', e.target.value)}
-                className="w-full bg-dark-bg border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500/50">
+                className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500/50">
                 {allCats.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
               <button onClick={() => setShowNewCat(!showNewCat)} className="text-[10px] text-violet-400 mt-1 hover:underline">+ Nova categoria</button>
               {showNewCat && (
                 <input value={newCat} onChange={e => { setNewCat(e.target.value); set('category', e.target.value); }}
-                  placeholder="Nome da categoria" className="mt-1 w-full bg-dark-bg border border-violet-500/40 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none" />
+                  placeholder="Nome da categoria" className="mt-1 w-full bg-dark-bg border border-violet-500/40 rounded-lg px-3 py-1.5 text-sm text-dark-text focus:outline-none" />
               )}
             </div>
             <div>
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Recorrência</label>
               <select value={form.recurrence || 'monthly'} onChange={e => set('recurrence', e.target.value as any)}
-                className="w-full bg-dark-bg border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500/50">
+                className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500/50">
                 {Object.entries(RECURRENCE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </select>
             </div>
@@ -192,31 +246,31 @@ const BillModal: React.FC<BillModalProps> = ({ bill, categories, onSave, onClose
             <div>
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Valor (R$)</label>
               <input type="number" step="0.01" value={form.value || ''} onChange={e => set('value', e.target.value)} placeholder="0,00"
-                className="w-full bg-dark-bg border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500/50" />
+                className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500/50" />
             </div>
-            {form.recurrence === 'monthly' && (
+            {(form.recurrence === 'monthly' || form.recurrence === 'weekly') && (
               <div>
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Dia de Vencimento</label>
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Dia de Pagar (1–31)</label>
                 <input type="number" min={1} max={31} value={form.due_day || ''} onChange={e => set('due_day', Number(e.target.value))} placeholder="Ex: 10"
-                  className="w-full bg-dark-bg border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500/50" />
+                  className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500/50" />
               </div>
             )}
             {(form.recurrence === 'once' || form.recurrence === 'yearly') && (
               <div>
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Data de Vencimento</label>
                 <input type="date" value={form.due_date || ''} onChange={e => set('due_date', e.target.value)}
-                  className="w-full bg-dark-bg border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500/50" />
+                  className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500/50" />
               </div>
             )}
           </div>
           <div>
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Observações</label>
             <textarea value={form.notes || ''} onChange={e => set('notes', e.target.value)} rows={2} placeholder="Opcional"
-              className="w-full bg-dark-bg border border-white/10 rounded-xl px-3 py-2 text-sm text-white resize-none focus:outline-none focus:border-violet-500/50" />
+              className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text resize-none focus:outline-none focus:border-violet-500/50" />
           </div>
         </div>
         <div className="flex gap-3 mt-5">
-          <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-slate-400 text-sm font-semibold hover:bg-white/5">Cancelar</button>
+          <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl border border-black/10 dark:border-white/10 text-slate-400 text-sm font-semibold hover:bg-black/5 dark:hover:bg-white/5">Cancelar</button>
           <button onClick={handleSave} disabled={saving || !form.name?.trim()}
             className="flex-1 px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-sm font-bold flex items-center justify-center gap-2 transition-colors">
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
@@ -243,26 +297,26 @@ const PayModal = ({ entry, onSave, onClose }: { entry: Entry; onSave: (id: numbe
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={e => e.target === e.currentTarget && onClose()}>
       <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }}
-        className="bg-dark-card border border-white/10 rounded-2xl w-full max-w-sm p-6 mx-4">
+        className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl w-full max-w-sm p-6 mx-4">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-bold text-white">Marcar como Pago</h3>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400"><X size={14} /></button>
+          <h3 className="text-sm font-bold text-dark-text">Marcar como Pago</h3>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-slate-400"><X size={14} /></button>
         </div>
         <p className="text-xs text-slate-400 mb-4">{entry.bill_name}</p>
         <div className="space-y-3">
           <div>
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Valor Pago (R$)</label>
             <input type="number" step="0.01" value={val} onChange={e => setVal(e.target.value)}
-              className="w-full bg-dark-bg border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500/50" />
+              className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-emerald-500/50" />
           </div>
           <div>
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Data de Pagamento</label>
             <input type="date" value={date} onChange={e => setDate(e.target.value)}
-              className="w-full bg-dark-bg border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500/50" />
+              className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-emerald-500/50" />
           </div>
         </div>
         <div className="flex gap-3 mt-5">
-          <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-slate-400 text-sm font-semibold hover:bg-white/5">Cancelar</button>
+          <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl border border-black/10 dark:border-white/10 text-slate-400 text-sm font-semibold hover:bg-black/5 dark:hover:bg-white/5">Cancelar</button>
           <button onClick={handleSave} disabled={saving}
             className="flex-1 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-bold flex items-center justify-center gap-2">
             {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
@@ -293,22 +347,22 @@ const SicrediEditModal = ({ item, categories, onSave, onClose }: {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={e => e.target === e.currentTarget && onClose()}>
       <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }}
-        className="bg-dark-card border border-white/10 rounded-2xl w-full max-w-sm p-6 mx-4">
+        className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl w-full max-w-sm p-6 mx-4">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-bold text-white">Editar Lançamento</h3>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400"><X size={14} /></button>
+          <h3 className="text-sm font-bold text-dark-text">Editar Lançamento</h3>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-slate-400"><X size={14} /></button>
         </div>
         <p className="text-[10px] text-slate-500 mb-4 truncate">{item.description}</p>
         <div className="space-y-3">
           <div>
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Descrição Personalizada</label>
             <input value={desc} onChange={e => setDesc(e.target.value)}
-              className="w-full bg-dark-bg border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500/50" />
+              className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-emerald-500/50" />
           </div>
           <div>
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Categoria</label>
             <select value={cat} onChange={e => setCat(e.target.value)}
-              className="w-full bg-dark-bg border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500/50">
+              className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-emerald-500/50">
               <option value="">— Sem categoria —</option>
               {categories.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
@@ -316,11 +370,11 @@ const SicrediEditModal = ({ item, categories, onSave, onClose }: {
           <div>
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Observação</label>
             <input value={comment} onChange={e => setComment(e.target.value)} placeholder="Opcional"
-              className="w-full bg-dark-bg border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500/50" />
+              className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-emerald-500/50" />
           </div>
         </div>
         <div className="flex gap-3 mt-5">
-          <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-slate-400 text-sm font-semibold hover:bg-white/5">Cancelar</button>
+          <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl border border-black/10 dark:border-white/10 text-slate-400 text-sm font-semibold hover:bg-black/5 dark:hover:bg-white/5">Cancelar</button>
           <button onClick={handleSave} disabled={saving}
             className="flex-1 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-bold flex items-center justify-center gap-2">
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
@@ -336,14 +390,14 @@ const SicrediEditModal = ({ item, categories, onSave, onClose }: {
 const KpiCard = ({
   icon, label, value, sub, subColor, accent
 }: { icon: React.ReactNode; label: string; value: string; sub?: string; subColor?: string; accent?: string }) => (
-  <div className={`bg-dark-card border border-white/10 rounded-2xl p-5 flex flex-col gap-3 hover:border-white/20 transition-all duration-200`}>
+  <div className={`bg-dark-card border border-black/10 dark:border-white/10 rounded-xl px-4 py-3 flex flex-col gap-2 hover:border-white/20 transition-all duration-200`}>
     <div className="flex items-center justify-between">
-      <div className={`p-2 rounded-xl ${accent || 'bg-violet-600'}`}>{icon}</div>
+      <div className={`p-1.5 rounded-lg ${accent || 'bg-violet-600'}`}>{icon}</div>
       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{label}</p>
     </div>
     <div>
-      <p className="text-2xl font-black text-white tracking-tight">{value}</p>
-      {sub && <p className={`text-xs mt-1 font-semibold ${subColor || 'text-slate-500'}`}>{sub}</p>}
+      <p className="text-lg font-black text-dark-text tracking-tight leading-tight">{value}</p>
+      {sub && <p className={`text-[11px] mt-0.5 font-semibold ${subColor || 'text-slate-500'}`}>{sub}</p>}
     </div>
   </div>
 );
@@ -442,6 +496,12 @@ export default function ContasAPagar() {
     await fetchBills(); await fetchEntries();
   };
 
+  const handleDeleteEntry = async (id: number) => {
+    if (!confirm('Excluir este lançamento do mês? (Esta ação não remove a conta recorrente cadastrada)')) return;
+    const r = await fetch(`/api/fin/bills/entries/${id}`, { method: 'DELETE' });
+    if (r.ok) await fetchEntries();
+  };
+
   const handlePayEntry = async (id: number, data: any) => {
     const r = await fetch(`/api/fin/bills/entries/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
     if (r.ok) await fetchEntries();
@@ -530,25 +590,25 @@ export default function ContasAPagar() {
     <div className="min-h-screen bg-dark-bg">
       {/* ── Header ── */}
       <div className="px-6 pt-6 pb-4 flex flex-col gap-1">
-        <div className="flex items-start justify-between">
-          <SplitHeadline text="Contas a" highlight="Pagar" subtitle={`REFERÊNCIA: ${monthLabel.toUpperCase()}`} />
-          <div className="flex items-center gap-2 mt-1">
-            <button onClick={prevMonth} className="p-1.5 rounded-lg bg-dark-card border border-white/10 hover:bg-white/10 text-slate-400 hover:text-white transition-colors"><ChevronLeft size={14} /></button>
-            <span className="text-xs font-bold text-white bg-dark-card border border-white/10 px-3 py-1.5 rounded-lg min-w-[110px] text-center">{monthLabel}</span>
-            <button onClick={nextMonth} className="p-1.5 rounded-lg bg-dark-card border border-white/10 hover:bg-white/10 text-slate-400 hover:text-white transition-colors"><ChevronRight size={14} /></button>
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <SplitHeadline text="Contas a" highlight="Pagar" subtitle={`Referência: ${monthLabel}`} subtitleClassName="text-sm text-gray-500 dark:text-gray-400 mt-1" />
+          <div className="flex items-center gap-4 mt-1 flex-wrap">
+            {/* Tabs */}
+            <div className="flex items-center gap-1">
+              {([['contas', 'Contas a Pagar', 'violet'], ['sicredi', 'Sicredi', 'emerald']] as const).map(([key, label, color]) => (
+                <button key={key} onClick={() => setActiveTab(key)}
+                  className={`px-3 py-1.5 text-sm font-bold border-b-2 transition-all ${activeTab === key ? `border-${color}-400 text-${color}-400` : 'border-transparent text-slate-500 hover:text-dark-text'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            {/* Month nav */}
+            <div className="flex items-center gap-2">
+              <button onClick={prevMonth} className="p-1.5 rounded-lg bg-dark-card border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 text-slate-400 hover:text-dark-text transition-colors"><ChevronLeft size={14} /></button>
+              <span className="text-xs font-bold text-dark-text bg-dark-card border border-black/10 dark:border-white/10 px-3 py-1.5 rounded-lg min-w-[110px] text-center">{monthLabel}</span>
+              <button onClick={nextMonth} className="p-1.5 rounded-lg bg-dark-card border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 text-slate-400 hover:text-dark-text transition-colors"><ChevronRight size={14} /></button>
+            </div>
           </div>
-        </div>
-      </div>
-
-      {/* ── Tabs ── */}
-      <div className="px-6">
-        <div className="flex items-center gap-1 border-b border-white/10">
-          {([['contas', 'Contas a Pagar', 'violet'], ['sicredi', 'Sicredi', 'emerald']] as const).map(([key, label, color]) => (
-            <button key={key} onClick={() => setActiveTab(key)}
-              className={`px-4 py-2.5 text-sm font-bold border-b-2 transition-all -mb-px ${activeTab === key ? `border-${color}-400 text-${color}-400` : 'border-transparent text-slate-500 hover:text-white'}`}>
-              {label}
-            </button>
-          ))}
         </div>
       </div>
 
@@ -576,11 +636,11 @@ export default function ContasAPagar() {
             </div>
 
             {/* Sub-tabs A pagar / Pagos */}
-            <div className="flex items-center gap-1 border-b border-white/10">
+            <div className="flex items-center gap-1 border-b border-black/10 dark:border-white/10">
               {([['pending', 'A Pagar', pendingCount, 'amber'], ['paid', 'Pagos', paidCount, 'emerald']] as const).map(([key, label, count, color]) => (
                 <button key={key} onClick={() => setEntrySubTab(key)}
                   className={`pb-2.5 px-1 text-sm font-bold border-b-2 transition-all -mb-px flex items-center gap-2 ${
-                    entrySubTab === key ? `border-${color}-400 text-${color}-400` : 'border-transparent text-slate-500 hover:text-white'
+                    entrySubTab === key ? `border-${color}-400 text-${color}-400` : 'border-transparent text-slate-500 hover:text-dark-text'
                   }`}>
                   {label}
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
@@ -592,12 +652,12 @@ export default function ContasAPagar() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <select value={filterCat} onChange={e => setFilterCat(e.target.value)}
-                  className="bg-dark-card border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none hover:border-white/20">
+                  className="bg-dark-card border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 text-xs text-dark-text focus:outline-none hover:border-white/20">
                   <option value="">Todas categorias</option>
                   {categories.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
                 <button onClick={() => setShowBillsConfig(!showBillsConfig)}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-white/10 bg-dark-card text-xs text-slate-400 hover:text-white hover:border-white/20 transition-colors">
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-black/10 dark:border-white/10 bg-dark-card text-xs text-slate-400 hover:text-dark-text hover:border-white/20 transition-colors">
                   <Receipt size={13} /> Contas Cadastradas
                 </button>
                 <button onClick={async () => {
@@ -622,44 +682,89 @@ export default function ContasAPagar() {
             <AnimatePresence>
               {showBillsConfig && (
                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-                  className="bg-dark-card border border-white/10 rounded-2xl overflow-hidden">
-                  <div className="px-5 py-3 border-b border-white/5 flex items-center justify-between">
-                    <p className="text-xs font-bold text-white">Contas Recorrentes Cadastradas</p>
-                    <span className="text-[10px] text-slate-500">{bills.length} contas</span>
+                  className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl overflow-hidden">
+                  <div className="px-5 py-3 border-b border-black/5 dark:border-white/5 flex items-center justify-between">
+                    <p className="text-xs font-bold text-dark-text">Contas Cadastradas</p>
+                    <span className="text-[10px] text-slate-500">{bills.filter(b => b.recurrence !== 'once').length} contas</span>
                   </div>
-                  {bills.length === 0 ? (
+                  {bills.filter(b => b.recurrence !== 'once').length === 0 ? (
                     <div className="px-5 py-8 text-center text-slate-500 text-sm">Nenhuma conta cadastrada.</div>
                   ) : (
-                    <div className="divide-y divide-white/5">
-                      {bills.map(b => (
-                        <div key={b.id} className="flex items-center px-5 py-3 hover:bg-white/3 transition-colors">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold text-white truncate">{b.name}</p>
-                            <p className="text-[10px] text-slate-500">
-                              <CatDot cat={b.category} />{b.category} · {RECURRENCE_LABELS[b.recurrence] || b.recurrence}
-                              {b.due_day ? ` · Todo dia ${b.due_day}` : ''}
-                            </p>
+                    <div className="divide-y divide-black/5 dark:divide-white/5">
+                      {/* Column header */}
+                      <div className="flex items-center px-5 py-2 bg-dark-bg/30 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                        <span className="flex-1">Nome</span>
+                        <span className="w-40 shrink-0">Vencimento</span>
+                        <span className="w-44 shrink-0">Valor</span>
+                        <span className="w-20 shrink-0"></span>
+                      </div>
+                      {bills.filter(b => b.recurrence !== 'once').map(b => {
+                        return (
+                          <div key={b.id} className="flex items-center px-5 py-3 hover:bg-black/[0.03] dark:hover:bg-white/3 transition-colors">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold text-dark-text truncate">{b.name}</p>
+                              <p className="text-[10px] text-slate-500">
+                                <CatDot cat={b.category} />{b.category} · {RECURRENCE_LABELS[b.recurrence] || b.recurrence}
+                              </p>
+                            </div>
+                            <div className="w-40 shrink-0">
+                              {b.recurrence === 'monthly' && b.due_day ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-violet-500/10 border border-violet-500/20 text-violet-400 text-[11px] font-bold whitespace-nowrap">
+                                  <Calendar size={10} />
+                                  Dia {b.due_day}
+                                </span>
+                              ) : b.recurrence === 'once' && b.due_date ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] font-bold whitespace-nowrap">
+                                  <Calendar size={10} />
+                                  {fmtDate(b.due_date)}
+                                </span>
+                              ) : b.recurrence === 'yearly' && b.due_date ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-pink-500/10 border border-pink-500/20 text-pink-400 text-[11px] font-bold whitespace-nowrap">
+                                  <Calendar size={10} />
+                                  {fmtDate(b.due_date).slice(0, 5)}
+                                </span>
+                              ) : b.recurrence === 'weekly' && b.due_day ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[11px] font-bold whitespace-nowrap">
+                                  <Calendar size={10} />
+                                  Dia {b.due_day} (Semanal)
+                                </span>
+                              ) : b.due_day ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-violet-500/10 border border-violet-500/20 text-violet-400 text-[11px] font-bold whitespace-nowrap">
+                                  <Calendar size={10} />
+                                  Dia {b.due_day}
+                                </span>
+                              ) : b.due_date ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] font-bold whitespace-nowrap">
+                                  <Calendar size={10} />
+                                  {fmtDate(b.due_date)}
+                                </span>
+                              ) : (
+                                <span className="text-[11px] text-slate-600">—</span>
+                              )}
+                            </div>
+                            <div className="w-44 shrink-0">
+                              <p className="text-sm font-bold text-dark-text">{b.value ? fmtBRL(Number(b.value)) : 'Variável'}</p>
+                            </div>
+                            <div className="w-20 shrink-0 flex items-center gap-2 justify-end">
+                              <button onClick={() => setBillModal(b)} className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-slate-400 hover:text-dark-text transition-colors"><Pencil size={13} /></button>
+                              <button onClick={() => handleDeleteBill(b.id)} className="p-1.5 rounded-lg hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition-colors"><Trash2 size={13} /></button>
+                            </div>
                           </div>
-                          <p className="text-sm font-bold text-white mr-4">{b.value ? fmtBRL(Number(b.value)) : 'Variável'}</p>
-                          <div className="flex items-center gap-1">
-                            <button onClick={() => setBillModal(b)} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors"><Pencil size={13} /></button>
-                            <button onClick={() => handleDeleteBill(b.id)} className="p-1.5 rounded-lg hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition-colors"><Trash2 size={13} /></button>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </motion.div>
               )}
             </AnimatePresence>
 
-            {/* Entries table grouped by category */}
+            {/* Entries table in a single unified list layout (resembling the second screenshot) */}
             {loading ? (
               <div className="flex items-center justify-center py-16">
                 <div className="w-8 h-8 rounded-full border-2 border-violet-500/30 border-t-violet-500 animate-spin" />
               </div>
             ) : filteredEntries.length === 0 ? (
-              <div className="bg-dark-card border border-white/10 rounded-2xl py-16 flex flex-col items-center gap-3">
+              <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl py-16 flex flex-col items-center gap-3">
                 <Receipt size={32} className="text-slate-600" />
                 <p className="text-sm text-slate-500">Nenhuma conta prevista para {monthLabel}.</p>
                 <button onClick={() => setBillModal({})} className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold mt-1">
@@ -667,44 +772,103 @@ export default function ContasAPagar() {
                 </button>
               </div>
             ) : (
-              <div className="space-y-3">
-                {Object.entries(entriesByCategory).map(([cat, catEntries]) => (
-                  <div key={cat} className="bg-dark-card border border-white/10 rounded-2xl overflow-hidden">
-                    {/* Category header */}
-                    <div className="flex items-center justify-between px-5 py-3 border-b border-white/5 bg-dark-bg/30">
-                      <div className="flex items-center gap-2">
-                        <CatDot cat={cat} />
-                        <span className="text-xs font-bold text-slate-300 uppercase tracking-widest">{cat}</span>
-                        <span className="text-[10px] text-slate-500">{catEntries.length} conta{catEntries.length !== 1 ? 's' : ''}</span>
-                      </div>
-                      <span className="text-xs font-bold text-white">{fmtBRL(catEntries.reduce((s, e) => s + Number(e.expected_value || 0), 0))}</span>
-                    </div>
-                    {/* Rows */}
-                    <div className="divide-y divide-white/5">
-                      {catEntries.map((entry, idx) => {
-                        const isPaid = entry.status === 'paid';
-                        return (
-                          <motion.div key={entry.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: idx * 0.04 }}
-                            className="flex items-center px-5 py-3.5 hover:bg-white/3 transition-colors gap-3">
-                            {/* Paid indicator */}
-                            <div className={`w-1 h-8 rounded-full shrink-0 ${isPaid ? 'bg-emerald-500' : getDueDateStatus(entry.due_date, entry.status) === 'overdue' ? 'bg-rose-500' : 'bg-white/10'}`} />
-                            <div className="flex-1 min-w-0">
-                              <p className={`text-sm font-semibold truncate ${isPaid ? 'text-slate-400 line-through' : 'text-white'}`}>{entry.bill_name}</p>
-                              {isPaid && entry.linked_description ? (
-                                <p className="text-[10px] text-emerald-400/70 truncate mt-0.5" title={entry.linked_description}>
-                                  🔗 {entry.linked_description}
-                                </p>
-                              ) : entry.notes ? (
-                                <p className="text-[10px] text-slate-500 truncate mt-0.5">{entry.notes}</p>
-                              ) : null}
+              <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl overflow-x-auto">
+                <table className="w-full text-left border-collapse min-w-[800px]">
+                  <thead>
+                    <tr className="border-b border-black/10 dark:border-white/10 text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-dark-bg/25">
+                      <th className="px-4 py-2.5">Conta</th>
+                      <th className="px-4 py-2.5">Valor</th>
+                      <th className="px-4 py-2.5">Categoria</th>
+                      <th className="px-4 py-2.5">Recorrência</th>
+                      <th className="px-4 py-2.5">Vencimento</th>
+                      <th className="px-4 py-2.5 text-right">Status / Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-black/5 dark:divide-white/5">
+                    {filteredEntries.map((entry) => {
+                      const isPaid = entry.status === 'paid';
+                      const value = Number(isPaid && entry.actual_value ? entry.actual_value : entry.expected_value);
+                      const catStyle = getCategoryStyles(entry.category || 'Outros');
+                      
+                      // Recurrence colors/labels
+                      const recColors: Record<string, string> = {
+                        monthly: 'bg-violet-500/10 text-violet-400 border-violet-500/20',
+                        once: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+                        yearly: 'bg-pink-500/10 text-pink-400 border-pink-500/20',
+                        weekly: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
+                      };
+                      const recStyle = recColors[entry.recurrence || ''] || 'bg-slate-500/10 text-slate-400 border-slate-500/20';
+                      const recLabel = RECURRENCE_LABELS[entry.recurrence || ''] || entry.recurrence || '';
+
+                      const ds = getDueDateStatus(entry.due_date, entry.status);
+                      const rowBg = ds === 'overdue'
+                        ? 'bg-red-500/5 border-l-2 border-l-red-500/40 hover:bg-red-500/10'
+                        : ds === 'today'
+                          ? 'bg-emerald-500/5 border-l-2 border-l-emerald-500/40 hover:bg-emerald-500/10'
+                          : ds === 'paid'
+                            ? 'hover:bg-black/[0.03] dark:hover:bg-white/3'
+                            : 'hover:bg-black/[0.03] dark:hover:bg-white/3';
+
+                      return (
+                        <tr key={entry.id} className={`transition-colors align-middle ${rowBg}`}>
+                          {/* Col 1: Conta */}
+                          <td className="px-4 py-2">
+                            <div className="flex items-center gap-2.5">
+                              {/* Circle avatar with Category colors and category icon */}
+                              <div className={`w-7 h-7 rounded-full ${catStyle.bg} ${catStyle.text} ${catStyle.border} border flex items-center justify-center shrink-0 shadow-[0_0_15px_rgba(255,255,255,0.02)]`}>
+                                {getCategoryIcon(entry.category, 13)}
+                              </div>
+                              <div 
+                                onClick={() => {
+                                  const b = bills.find(x => x.id === entry.bill_id);
+                                  if (b) setBillModal(b);
+                                }}
+                                className="min-w-0 cursor-pointer group"
+                              >
+                                <p className={`text-[13px] font-semibold truncate group-hover:text-violet-400 transition-colors ${isPaid ? 'text-slate-500 line-through group-hover:text-slate-400' : 'text-dark-text'}`}>{entry.bill_name}</p>
+                                {isPaid && entry.linked_description ? (
+                                  <p className="text-[10px] text-emerald-400/70 truncate mt-0.5" title={entry.linked_description}>
+                                    🔗 {entry.linked_description}
+                                  </p>
+                                ) : entry.notes ? (
+                                  <p className="text-[10px] text-slate-500 truncate mt-0.5 group-hover:text-slate-400 transition-colors">{entry.notes}</p>
+                                ) : null}
+                              </div>
                             </div>
-                            <div className="flex items-center gap-3 shrink-0">
-                              <span className="text-xs text-slate-400 hidden md:block">{fmtDate(entry.due_date)}</span>
-                              <span className={`text-sm font-bold ${isPaid ? 'text-emerald-400' : 'text-white'}`}>{fmtBRL(Number(isPaid && entry.actual_value ? entry.actual_value : entry.expected_value))}</span>
+                          </td>
+
+                          {/* Col 2: Valor */}
+                          <td className="px-4 py-2 text-[13px] font-bold text-dark-text">
+                            {fmtBRL(value)}
+                          </td>
+
+                          {/* Col 3: Categoria (Tag/Badge) */}
+                          <td className="px-4 py-2">
+                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border ${catStyle.bg} ${catStyle.text} ${catStyle.border}`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${catStyle.dot}`} />
+                              {entry.category || 'Outros'}
+                            </span>
+                          </td>
+
+                          {/* Col 4: Recorrência */}
+                          <td className="px-4 py-2">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold border ${recStyle}`}>
+                              {recLabel}
+                            </span>
+                          </td>
+
+                          {/* Col 4: Vencimento */}
+                          <td className="px-4 py-2 text-xs text-slate-600 dark:text-slate-300 font-medium">
+                            {fmtDate(entry.due_date)}
+                          </td>
+
+                          {/* Col 5: Status / Ações */}
+                          <td className="px-4 py-2 text-right">
+                            <div className="inline-flex items-center gap-2">
                               <StatusBadge status={entry.status} dueDate={entry.due_date} />
                               {isPaid && entry.linked_movement_id ? (
                                 <button onClick={() => handleUnlink(entry.id)}
-                                  className="flex items-center gap-1 px-2 py-1 rounded-lg bg-white/5 hover:bg-rose-600/20 text-slate-500 hover:text-rose-400 text-[10px] font-bold transition-colors border border-white/5 hover:border-rose-500/20"
+                                  className="flex items-center gap-1 px-2 py-1 rounded-lg bg-white/5 hover:bg-rose-600/20 text-slate-500 hover:text-rose-400 text-[10px] font-bold transition-colors border border-black/5 dark:border-white/5 hover:border-rose-500/20"
                                   title="Desvincular do extrato">
                                   <X size={10} /> Desvincular
                                 </button>
@@ -719,15 +883,20 @@ export default function ContasAPagar() {
                                     className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 text-[10px] font-bold transition-colors border border-emerald-500/20">
                                     <Check size={10} /> Pagar
                                   </button>
+                                  <button onClick={() => handleDeleteEntry(entry.id)}
+                                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-600/10 hover:bg-rose-600/25 text-rose-400 text-[10px] font-bold transition-colors border border-rose-500/20"
+                                    title="Excluir este lançamento do mês">
+                                    <Trash2 size={10} />
+                                  </button>
                                 </>
                               ) : null}
                             </div>
-                          </motion.div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             )}
           </>
@@ -752,9 +921,9 @@ export default function ContasAPagar() {
             </div>
 
             {/* Upload area */}
-            <div className="bg-dark-card border border-white/10 rounded-2xl p-5 flex flex-col sm:flex-row items-center gap-4">
+            <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-5 flex flex-col sm:flex-row items-center gap-4">
               <div className="flex-1">
-                <p className="text-sm font-bold text-white mb-0.5">Importar Fatura OFX</p>
+                <p className="text-sm font-bold text-dark-text mb-0.5">Importar Fatura OFX</p>
                 <p className="text-xs text-slate-500">Faça upload do arquivo .ofx exportado pelo Sicredi Internet Banking</p>
                 {uploadMsg && (
                   <p className={`text-xs mt-2 font-semibold ${uploadMsg.type === 'ok' ? 'text-emerald-400' : 'text-rose-400'}`}>{uploadMsg.text}</p>
@@ -767,7 +936,7 @@ export default function ContasAPagar() {
                   {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
                   {uploading ? 'Importando...' : 'Upload OFX'}
                 </button>
-                <button onClick={fetchSicredi} className="p-2.5 rounded-xl border border-white/10 hover:bg-white/10 text-slate-400 hover:text-white transition-colors">
+                <button onClick={fetchSicredi} className="p-2.5 rounded-xl border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 text-slate-400 hover:text-dark-text transition-colors">
                   <RefreshCw size={14} className={sicrediLoading ? 'animate-spin' : ''} />
                 </button>
               </div>
@@ -777,7 +946,7 @@ export default function ContasAPagar() {
             {sicrediItems.length > 0 && (
               <div className="flex items-center gap-2">
                 <select value={filterSicrediCat} onChange={e => setFilterSicrediCat(e.target.value)}
-                  className="bg-dark-card border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none hover:border-white/20">
+                  className="bg-dark-card border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 text-xs text-dark-text focus:outline-none hover:border-white/20">
                   <option value="">Todas categorias</option>
                   {sicrediCats.map(c => <option key={c!} value={c!}>{c}</option>)}
                   <option value="__uncategorized">Sem categoria</option>
@@ -792,22 +961,22 @@ export default function ContasAPagar() {
                 <div className="w-8 h-8 rounded-full border-2 border-emerald-500/30 border-t-emerald-500 animate-spin" />
               </div>
             ) : sicrediItems.length === 0 ? (
-              <div className="bg-dark-card border border-white/10 rounded-2xl py-16 flex flex-col items-center gap-3">
+              <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl py-16 flex flex-col items-center gap-3">
                 <CreditCard size={32} className="text-slate-600" />
                 <p className="text-sm text-slate-500">Nenhum lançamento para {monthLabel}.</p>
                 <p className="text-xs text-slate-600">Faça o upload do arquivo OFX para importar.</p>
               </div>
             ) : (
-              <div className="bg-dark-card border border-white/10 rounded-2xl overflow-hidden">
+              <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl overflow-hidden">
                 {/* Header */}
-                <div className="hidden md:grid grid-cols-12 px-5 py-2.5 border-b border-white/5 bg-dark-bg/30">
+                <div className="hidden md:grid grid-cols-12 px-5 py-2.5 border-b border-black/5 dark:border-white/5 bg-dark-bg/30">
                   <span className="col-span-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Descrição</span>
                   <span className="col-span-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Categoria</span>
                   <span className="col-span-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Data</span>
                   <span className="col-span-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right">Valor</span>
                 </div>
                 {/* Rows */}
-                <div className="divide-y divide-white/5 max-h-[560px] overflow-y-auto">
+                <div className="divide-y divide-black/5 dark:divide-white/5 max-h-[560px] overflow-y-auto">
                   {(filterSicrediCat === '__uncategorized'
                     ? sicrediItems.filter(i => !i.grapehub_category && !i.custom_category)
                     : filteredSicredi
@@ -817,14 +986,14 @@ export default function ContasAPagar() {
                     const isDebit = item.type === -1;
                     return (
                       <motion.div key={item.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: idx * 0.02 }}
-                        className="grid grid-cols-12 items-center px-5 py-3 hover:bg-white/3 transition-colors gap-2">
+                        className="grid grid-cols-12 items-center px-5 py-3 hover:bg-black/[0.03] dark:hover:bg-white/3 transition-colors gap-2">
                         <div className="col-span-5 min-w-0">
-                          <p className="text-sm text-white truncate">{desc}</p>
+                          <p className="text-sm text-dark-text truncate">{desc}</p>
                           {item.user_comment && <p className="text-[10px] text-slate-500 truncate">{item.user_comment}</p>}
                         </div>
                         <div className="col-span-3">
                           {cat ? (
-                            <span className="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/5 text-slate-300">
+                            <span className="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full bg-black/5 dark:bg-white/5 text-slate-600 dark:text-slate-300">
                               <CatDot cat={cat} />{cat}
                             </span>
                           ) : (
@@ -839,7 +1008,7 @@ export default function ContasAPagar() {
                             {isDebit ? '-' : '+'}{fmtBRL(Number(item.value))}
                           </span>
                           <button onClick={() => setSicrediEditItem(item)}
-                            className="p-1 rounded-lg hover:bg-white/10 text-slate-500 hover:text-white transition-colors shrink-0">
+                            className="p-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-slate-500 hover:text-dark-text transition-colors shrink-0">
                             <Pencil size={11} />
                           </button>
                         </div>
@@ -848,7 +1017,7 @@ export default function ContasAPagar() {
                   })}
                 </div>
                 {/* Footer total */}
-                <div className="flex items-center justify-between px-5 py-3 border-t border-white/10 bg-dark-bg/30">
+                <div className="flex items-center justify-between px-5 py-3 border-t border-black/10 dark:border-white/10 bg-dark-bg/30">
                   <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Total de Despesas</span>
                   <span className="text-base font-black text-rose-400">{fmtBRL(sicrediSummary.total)}</span>
                 </div>
@@ -869,16 +1038,16 @@ export default function ContasAPagar() {
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
             onClick={() => setLinkModal(null)}>
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-              className="bg-dark-card border border-white/10 rounded-2xl w-full max-w-2xl max-h-[80vh] flex flex-col"
+              className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl w-full max-w-2xl max-h-[80vh] flex flex-col"
               onClick={e => e.stopPropagation()}>
-              <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
+              <div className="px-5 py-4 border-b border-black/5 dark:border-white/5 flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-bold text-white">Vincular ao Extrato</p>
+                  <p className="text-sm font-bold text-dark-text">Vincular ao Extrato</p>
                   <p className="text-[10px] text-slate-500 mt-0.5">
                     {linkModal.entry.bill_name} · Previsto: {fmtBRL(Number(linkModal.entry.expected_value))}
                   </p>
                 </div>
-                <button onClick={() => setLinkModal(null)} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white">
+                <button onClick={() => setLinkModal(null)} className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-slate-400 hover:text-dark-text">
                   <X size={16} />
                 </button>
               </div>
@@ -897,19 +1066,19 @@ export default function ContasAPagar() {
                     return (
                       <div key={c.id}
                         className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-colors cursor-pointer ${
-                          isLinked ? 'border-white/5 opacity-40' : isExact ? 'border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/10' : isClose ? 'border-amber-500/20 hover:bg-amber-500/5' : 'border-white/5 hover:bg-white/3'
+                          isLinked ? 'border-black/5 dark:border-white/5 opacity-40' : isExact ? 'border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/10' : isClose ? 'border-amber-500/20 hover:bg-amber-500/5' : 'border-black/5 dark:border-white/5 hover:bg-black/[0.03] dark:hover:bg-white/3'
                         }`}
                         onClick={() => !isLinked && handleManualLink(linkModal.entry.id, c.id)}>
                         <div className={`w-2 h-2 rounded-full shrink-0 ${isExact ? 'bg-emerald-500' : isClose ? 'bg-amber-500' : 'bg-white/20'}`} />
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm text-white truncate">{c.description || 'Sem descrição'}</p>
+                          <p className="text-sm text-dark-text truncate">{c.description || 'Sem descrição'}</p>
                           <p className="text-[10px] text-slate-500">
                             {fmtDate(c.transaction_date)} · {c.transaction_type}
                             {isLinked && ' · Já vinculado'}
                           </p>
                         </div>
                         <div className="text-right shrink-0">
-                          <p className={`text-sm font-bold ${isExact ? 'text-emerald-400' : isClose ? 'text-amber-400' : 'text-white'}`}>{fmtBRL(Number(c.value))}</p>
+                          <p className={`text-sm font-bold ${isExact ? 'text-emerald-400' : isClose ? 'text-amber-400' : 'text-dark-text'}`}>{fmtBRL(Number(c.value))}</p>
                           {pctDiff > 0 && (
                             <p className={`text-[10px] ${pctDiff < 5 ? 'text-emerald-400/60' : 'text-amber-400/60'}`}>
                               {pctDiff < 1 ? '≈ Exato' : `Δ ${pctDiff.toFixed(1)}%`}

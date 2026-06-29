@@ -22,6 +22,7 @@ interface Subtask {
   id: string;
   title: string;
   done: boolean;
+  images?: string[];
 }
 
 interface Comment {
@@ -580,6 +581,8 @@ const TodoModal: React.FC<TodoModalProps> = ({ initial, allColumns, globalTags, 
   const [tags, setTags]           = useState<string[]>(initial?.tags ?? []);
   const [subtasks, setSubtasks]   = useState<Subtask[]>(initial?.subtasks ?? []);
   const [newSubtask, setNewSubtask] = useState('');
+  const [newSubImages, setNewSubImages] = useState<string[]>([]);
+  const [subPreview, setSubPreview] = useState<string | null>(null);
   const [editingSubId, setEditingSubId] = useState<string | null>(null);
   const [subDragFrom, setSubDragFrom] = useState<number | null>(null);
   const [subDragOver, setSubDragOver] = useState<number | null>(null);
@@ -589,9 +592,22 @@ const TodoModal: React.FC<TodoModalProps> = ({ initial, allColumns, globalTags, 
 
   const addSubtask = () => {
     const v = newSubtask.trim();
-    if (!v) return;
-    setSubtasks(p => [...p, { id: uid(), title: v, done: false }]);
+    if (!v && newSubImages.length === 0) return;
+    setSubtasks(p => [...p, { id: uid(), title: v, done: false, ...(newSubImages.length ? { images: newSubImages } : {}) }]);
     setNewSubtask('');
+    setNewSubImages([]);
+  };
+
+  const handleSubtaskPaste = async (e: React.ClipboardEvent) => {
+    const imgItem = Array.from(e.clipboardData.items).find(i => i.type.startsWith('image/'));
+    if (imgItem) {
+      e.preventDefault();
+      const blob = imgItem.getAsFile();
+      if (blob) {
+        const src = await compressImage(blob);
+        setNewSubImages(p => [...p, src]);
+      }
+    }
   };
 
   const removeSubtask = (id: string) => setSubtasks(p => p.filter(s => s.id !== id));
@@ -812,11 +828,11 @@ const TodoModal: React.FC<TodoModalProps> = ({ initial, allColumns, globalTags, 
                     setSubDragFrom(null); setSubDragOver(null);
                   }}
                   onDragEnd={() => { setSubDragFrom(null); setSubDragOver(null); }}
-                  className="flex items-center gap-2 group/sub cursor-default py-0.5"
+                  className="flex items-start gap-2 group/sub cursor-default py-0.5"
                 >
-                  <span className="text-dark-text/20 cursor-grab active:cursor-grabbing flex-shrink-0"><GripVertical size={12} /></span>
+                  <span className="text-dark-text/20 cursor-grab active:cursor-grabbing flex-shrink-0 mt-[3px]"><GripVertical size={12} /></span>
                   <button type="button" onClick={() => setSubtasks(p => p.map((x, j) => j === i ? { ...x, done: !x.done } : x))}
-                    className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition-all ${
+                    className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition-all mt-[2px] ${
                       s.done ? 'bg-emerald-500 border-emerald-500' : 'border-dark-text/20 hover:border-violet-400'
                     }`}>
                     {s.done && <Check size={9} className="text-white" />}
@@ -831,11 +847,28 @@ const TodoModal: React.FC<TodoModalProps> = ({ initial, allColumns, globalTags, 
                       className="flex-1 bg-transparent border-b border-violet-500/50 text-sm text-dark-text focus:outline-none py-0.5"
                     />
                   ) : (
-                    <span
-                      className={`text-sm flex-1 text-dark-text cursor-text ${s.done ? 'line-through opacity-40' : ''}`}
-                      onDoubleClick={() => !s.done && setEditingSubId(s.id)}
-                      title="Clique duplo para editar"
-                    >{s.title}</span>
+                    <div className="flex-1 min-w-0">
+                      {s.title && (
+                        <span
+                          className={`text-sm text-dark-text cursor-text select-text whitespace-pre-wrap break-words ${s.done ? 'line-through opacity-40' : ''}`}
+                          onDoubleClick={() => !s.done && setEditingSubId(s.id)}
+                          title="Clique duplo para editar"
+                        >{s.title}</span>
+                      )}
+                      {s.images && s.images.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                          {s.images.map((src, idx) => (
+                            <div key={idx} className="relative group/img">
+                              <img src={src} alt="" onClick={() => setSubPreview(src)} className="h-14 w-14 object-cover rounded-md border border-dark-text/10 cursor-zoom-in" />
+                              <button type="button" onClick={() => setSubtasks(p => p.map(x => x.id === s.id ? { ...x, images: (x.images || []).filter((_, j) => j !== idx) } : x))}
+                                className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover/img:opacity-100 transition-all" title="Remover imagem">
+                                <X size={9} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   )}
                   <button type="button" onClick={() => removeSubtask(s.id)}
                     className="opacity-0 group-hover/sub:opacity-100 text-dark-text/30 hover:text-red-400 transition-all">
@@ -847,16 +880,36 @@ const TodoModal: React.FC<TodoModalProps> = ({ initial, allColumns, globalTags, 
             {/* Drop indicator at the end */}
             {subDragOver === subtasks.length && <DropLine />}
           </div>
+          {newSubImages.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-2">
+              {newSubImages.map((src, idx) => (
+                <div key={idx} className="relative group/img">
+                  <img src={src} alt="" onClick={() => setSubPreview(src)} className="h-16 w-16 object-cover rounded-lg border border-dark-text/10 cursor-zoom-in" />
+                  <button type="button" onClick={() => setNewSubImages(p => p.filter((_, j) => j !== idx))}
+                    className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover/img:opacity-100 transition-all" title="Remover imagem">
+                    <X size={9} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="flex gap-2">
             <input
               value={newSubtask}
               onChange={e => setNewSubtask(e.target.value)}
+              onPaste={handleSubtaskPaste}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addSubtask(); } }}
-              placeholder="Adicionar subtarefa... (Enter)"
+              placeholder="Adicionar subtarefa... (cole imagem com Ctrl+V)"
               className="flex-1 bg-dark-card border border-dark-text/10 rounded-xl px-3 py-2 text-sm text-dark-text placeholder-dark-text/30 focus:outline-none focus:border-violet-500/50 transition-all"
             />
           </div>
         </div>
+
+        {subPreview && (
+          <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-8" onClick={() => setSubPreview(null)}>
+            <img src={subPreview} alt="" className="max-w-full max-h-full rounded-lg object-contain" />
+          </div>
+        )}
 
         <div className="flex gap-3 pt-1">
           <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-dark-text/10 text-sm font-semibold text-dark-text/50 hover:bg-dark-text/5 transition-all">Cancelar</button>
@@ -880,11 +933,11 @@ interface TaskDetailModalProps {
   onClose: () => void;
   onSubtaskToggle: (taskId: string, subtaskId: string) => void;
   onSubtasksReorder: (taskId: string, subtasks: Subtask[]) => void;
-  onAddSubtask: (taskId: string, title: string) => void;
+  onAddSubtask: (taskId: string, title: string, images?: string[]) => void;
   onAddComment: (taskId: string, text: string) => void;
 }
 
-const SortableSubtaskItem: React.FC<{ subtask: Subtask; onToggle: () => void }> = ({ subtask, onToggle }) => {
+const SortableSubtaskItem: React.FC<{ subtask: Subtask; onToggle: () => void; onImageClick?: (src: string) => void }> = ({ subtask, onToggle, onImageClick }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: subtask.id });
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -894,27 +947,43 @@ const SortableSubtaskItem: React.FC<{ subtask: Subtask; onToggle: () => void }> 
     position: 'relative' as const,
   };
   return (
-    <div ref={setNodeRef} style={style} className="flex items-center gap-2 group/sub">
+    <div ref={setNodeRef} style={style} className="flex items-start gap-2 group/sub">
       <span
         {...attributes}
         {...listeners}
-        className="text-dark-text/20 hover:text-violet-400 cursor-grab active:cursor-grabbing flex-shrink-0 touch-none transition-colors"
+        className="text-dark-text/20 hover:text-violet-400 cursor-grab active:cursor-grabbing flex-shrink-0 touch-none transition-colors mt-2.5"
       >
         <GripVertical size={12} />
       </span>
-      <button
-        onClick={onToggle}
-        className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl bg-dark-card border border-dark-text/[0.06] hover:border-violet-500/20 transition-all group/check flex-1`}
-      >
-        <div className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition-all ${
-          subtask.done ? 'bg-emerald-500 border-emerald-500' : 'border-dark-text/20 group-hover/check:border-violet-400'
-        }`}>
-          {subtask.done && <Check size={9} className="text-white" />}
+      <div className="w-full flex items-start gap-3 px-3 py-2 rounded-xl bg-dark-card border border-dark-text/[0.06] hover:border-violet-500/20 transition-all flex-1 min-w-0">
+        <button onClick={onToggle} className="group/check flex-shrink-0 mt-0.5" title="Marcar como concluída">
+          <div className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${
+            subtask.done ? 'bg-emerald-500 border-emerald-500' : 'border-dark-text/20 group-hover/check:border-violet-400'
+          }`}>
+            {subtask.done && <Check size={9} className="text-white" />}
+          </div>
+        </button>
+        <div className="flex-1 min-w-0">
+          {subtask.title && (
+            <span className={`text-sm text-left select-text whitespace-pre-wrap break-words ${subtask.done ? 'line-through text-dark-text/30' : 'text-dark-text/80'}`}>
+              {subtask.title}
+            </span>
+          )}
+          {subtask.images && subtask.images.length > 0 && (
+            <div className="flex flex-wrap gap-2 mt-2">
+              {subtask.images.map((src, idx) => (
+                <img
+                  key={idx}
+                  src={src}
+                  alt=""
+                  onClick={() => onImageClick?.(src)}
+                  className="h-20 w-20 object-cover rounded-lg border border-dark-text/10 cursor-zoom-in hover:border-violet-500/40 transition-all"
+                />
+              ))}
+            </div>
+          )}
         </div>
-        <span className={`text-sm text-left ${subtask.done ? 'line-through text-dark-text/30' : 'text-dark-text/80'}`}>
-          {subtask.title}
-        </span>
-      </button>
+      </div>
     </div>
   );
 };
@@ -922,7 +991,27 @@ const SortableSubtaskItem: React.FC<{ subtask: Subtask; onToggle: () => void }> 
 const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ item, allColumns, coloredTagDefs, enableImageUpload, onEdit, onClose, onSubtaskToggle, onSubtasksReorder, onAddSubtask, onAddComment }) => {
   const [newComment, setNewComment] = useState('');
   const [newSubtask, setNewSubtask] = useState('');
+  const [newSubImages, setNewSubImages] = useState<string[]>([]);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+
+  const handleSubtaskPaste = async (e: React.ClipboardEvent) => {
+    const imgItem = Array.from(e.clipboardData.items).find(i => i.type.startsWith('image/'));
+    if (imgItem) {
+      e.preventDefault();
+      const blob = imgItem.getAsFile();
+      if (blob) {
+        const src = await compressImage(blob);
+        setNewSubImages(p => [...p, src]);
+      }
+    }
+  };
+  const submitNewSubtask = () => {
+    const title = newSubtask.trim();
+    if (!title && newSubImages.length === 0) return;
+    onAddSubtask(item.id, title, newSubImages);
+    setNewSubtask('');
+    setNewSubImages([]);
+  };
 
   const subtaskSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -1050,7 +1139,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ item, allColumns, col
                 <DndContext sensors={subtaskSensors} collisionDetection={closestCenter} onDragEnd={handleSubtaskDragEnd}>
                   <SortableContext items={item.subtasks.map(s => s.id)} strategy={verticalListSortingStrategy}>
                     {item.subtasks.map(s => (
-                      <SortableSubtaskItem key={s.id} subtask={s} onToggle={() => onSubtaskToggle(item.id, s.id)} />
+                      <SortableSubtaskItem key={s.id} subtask={s} onToggle={() => onSubtaskToggle(item.id, s.id)} onImageClick={setPreviewImage} />
                     ))}
                   </SortableContext>
                 </DndContext>
@@ -1059,30 +1148,41 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ item, allColumns, col
           )}
 
           {/* Add new subtask inline */}
-          <div className="mt-2 flex items-center gap-2">
-            <input
-              value={newSubtask}
-              onChange={e => setNewSubtask(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter' && newSubtask.trim()) {
-                  onAddSubtask(item.id, newSubtask.trim());
-                  setNewSubtask('');
-                }
-              }}
-              placeholder="Adicionar subtarefa e pressionar Enter..."
-              className="w-full bg-dark-bg border border-dark-text/10 rounded-xl px-3 py-2 text-xs text-dark-text placeholder-dark-text/30 focus:outline-none focus:border-violet-500/50 transition-all"
-            />
-            {newSubtask.trim() && (
-              <button
-                onClick={() => {
-                  onAddSubtask(item.id, newSubtask.trim());
-                  setNewSubtask('');
-                }}
-                className="shrink-0 w-8 h-8 flex items-center justify-center bg-violet-600 hover:bg-violet-500 text-white rounded-xl transition-colors"
-              >
-                <Plus size={14} />
-              </button>
+          <div className="mt-2">
+            {newSubImages.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-2">
+                {newSubImages.map((src, idx) => (
+                  <div key={idx} className="relative group/img">
+                    <img src={src} alt="" onClick={() => setPreviewImage(src)} className="h-16 w-16 object-cover rounded-lg border border-dark-text/10 cursor-zoom-in" />
+                    <button
+                      onClick={() => setNewSubImages(p => p.filter((_, j) => j !== idx))}
+                      className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover/img:opacity-100 transition-all"
+                      title="Remover imagem"
+                    >
+                      <X size={9} />
+                    </button>
+                  </div>
+                ))}
+              </div>
             )}
+            <div className="flex items-center gap-2">
+              <input
+                value={newSubtask}
+                onChange={e => setNewSubtask(e.target.value)}
+                onPaste={handleSubtaskPaste}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); submitNewSubtask(); } }}
+                placeholder="Adicionar subtarefa... (cole imagem com Ctrl+V)"
+                className="w-full bg-dark-bg border border-dark-text/10 rounded-xl px-3 py-2 text-xs text-dark-text placeholder-dark-text/30 focus:outline-none focus:border-violet-500/50 transition-all"
+              />
+              {(newSubtask.trim() || newSubImages.length > 0) && (
+                <button
+                  onClick={submitNewSubtask}
+                  className="shrink-0 w-8 h-8 flex items-center justify-center bg-violet-600 hover:bg-violet-500 text-white rounded-xl transition-colors"
+                >
+                  <Plus size={14} />
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Comments */}
@@ -2001,8 +2101,8 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
     if (item) apiCall('PUT', `/api/todo-staff/tasks/${id}`, todoToApi({ ...item, status, doneAt: doneAt ?? item.doneAt }));
   };
 
-  const addSubtask = (taskId: string, title: string) => {
-    const newSub: Subtask = { id: uid(), title, done: false };
+  const addSubtask = (taskId: string, title: string, images?: string[]) => {
+    const newSub: Subtask = { id: uid(), title, done: false, ...(images && images.length ? { images } : {}) };
     setTodos(p => p.map(t => t.id === taskId ? { ...t, subtasks: [...(t.subtasks || []), newSub] } : t));
     setViewingTodo(prev => prev?.id === taskId ? { ...prev, subtasks: [...(prev.subtasks || []), newSub] } : prev);
     const item = todos.find(t => t.id === taskId);

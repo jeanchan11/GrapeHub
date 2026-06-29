@@ -3867,13 +3867,14 @@ const HeaderMetaWidget: React.FC<{
             <DropdownMenu.Trigger asChild>
               <button
                 className="flex items-center gap-3 px-3 py-2 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-dark-card hover:border-violet-500/30 hover:bg-violet-500/5 transition-all cursor-pointer min-h-[52px]"
+                style={{ minWidth: '210px' }}
                 title={`${meta.nome} — Clique para trocar`}
               >
                 {meta.tipo === 'taxa_conversao' ? (
                   (() => {
                     const rateColor = Number(meta.valor_atual || 0) >= meta.alvo ? '#10b981' : '#f59e0b';
                     return (
-                      <div className="flex flex-col items-start">
+                      <div className="flex-1 flex flex-col items-start min-w-0">
                         <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 leading-tight whitespace-nowrap uppercase tracking-wider">
                           {meta.nome}
                         </span>
@@ -3887,7 +3888,7 @@ const HeaderMetaWidget: React.FC<{
                 ) : (
                   <>
                     <MiniCircleAnimated pct={meta.percentual} color={color} />
-                    <div className="flex flex-col items-start">
+                    <div className="flex-1 flex flex-col items-start min-w-0">
                       <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 leading-tight whitespace-nowrap uppercase tracking-wider">
                         {meta.nome}
                       </span>
@@ -3898,7 +3899,7 @@ const HeaderMetaWidget: React.FC<{
                     </div>
                   </>
                 )}
-                <ChevronDown size={12} className="text-slate-400 ml-0.5" />
+                <ChevronDown size={12} className="text-slate-400 ml-0.5 shrink-0" />
               </button>
             </DropdownMenu.Trigger>
             <DropdownMenu.Content

@@ -1,0 +1,14 @@
+#!/usr/bin/expect -f
+set timeout 300
+spawn rsync -avz --delete -e "ssh -o StrictHostKeyChecking=no -p 65002" /Users/convidado/Desktop/grapehub/dist/ u318361931@185.245.180.185:/home/u318361931/domains/hub.grapemidia.com.br/nodejs/dist/
+expect { "*password:*" { send "Grape22@@\r" } }
+expect eof
+spawn ssh -o StrictHostKeyChecking=no -p 65002 u318361931@185.245.180.185
+expect { "*password:*" { send "Grape22@@\r" } }
+expect "$ "
+send "cp -r /home/u318361931/domains/hub.grapemidia.com.br/nodejs/dist/* /home/u318361931/domains/hub.grapemidia.com.br/public_html/\r"
+expect "$ "
+send "touch /home/u318361931/domains/hub.grapemidia.com.br/nodejs/tmp/restart.txt\r"
+expect "$ "
+send "exit\r"
+expect eof

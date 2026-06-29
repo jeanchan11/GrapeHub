@@ -313,6 +313,10 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
   const canManagePermissionsBase = userRole === 'superadmin' || userRole === 'diretor-operacional';
   const [permissionsPage, setPermissionsPage] = useState<{ id: string; label: string } | null>(null);
 
+  const handleLogoClick = () => {
+    onPageChange('welcome');
+  };
+
   // Diretor operacional não pode gerenciar permissões de páginas do setor financeiro
   const canManageForSection = (sectionTitle: string) => {
     if (userRole === 'superadmin') return true;
@@ -474,7 +478,8 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
                 transition={{ duration: 0.2 }}
-                className="flex items-center gap-3"
+                className="flex items-center gap-3 cursor-pointer hover:opacity-85 select-none"
+                onClick={handleLogoClick}
               >
                 <div className="w-8 h-8 bg-violet-600 rounded-lg flex items-center justify-center shrink-0 overflow-hidden">
                   <img src="logobranca.png" alt="Logo" className="w-5 h-5 object-contain" referrerPolicy="no-referrer" />
@@ -491,7 +496,8 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                 initial={{ opacity: 0, scale: 0.5 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.5 }}
-                className="w-8 h-8 bg-violet-600 rounded-lg flex items-center justify-center mx-auto shrink-0 overflow-hidden"
+                className="w-8 h-8 bg-violet-600 rounded-lg flex items-center justify-center mx-auto shrink-0 overflow-hidden cursor-pointer hover:opacity-85"
+                onClick={handleLogoClick}
               >
                 <img src="logobranca.png" alt="Logo" className="w-5 h-5 object-contain" referrerPolicy="no-referrer" />
               </motion.div>

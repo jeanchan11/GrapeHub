@@ -5395,20 +5395,20 @@ app.get("/api/todos", async (req, res) => {
       `, [inicio, fim]);
       const a_receber = parseFloat(aReceberRes.rows[0].total);
 
-      // 5) A pagar (provisões pendentes — fin_payables synced from Marvee)
+      // 5) A pagar (provisões pendentes — fin_bill_entries nativo)
       //    Exclui provisões que já têm uma saída realizada com valor ±5% dentro de ±3 dias (evita duplo lançamento)
       const aPagarRes = await pool.query(`
-        SELECT COALESCE(SUM(fp.value), 0) AS total
-        FROM fin_payables fp
-        WHERE fp.due_date >= $1 AND fp.due_date < $2
-          AND fp.status = 'Pendente'
+        SELECT COALESCE(SUM(e.expected_value), 0) AS total
+        FROM fin_bill_entries e
+        WHERE e.due_date >= $1 AND e.due_date < $2
+          AND e.status NOT IN ('paid', 'cancelled')
           AND NOT EXISTS (
             SELECT 1 FROM fin_movements_asaas m
             WHERE m.type = -1
               AND m.account = 'asaas'
-              AND ABS(m.value - fp.value) / NULLIF(fp.value, 0) < 0.05
-              AND m.transaction_date BETWEEN fp.due_date - INTERVAL '3 days'
-                                        AND fp.due_date + INTERVAL '3 days'
+              AND ABS(m.value - e.expected_value) / NULLIF(e.expected_value, 0) < 0.05
+              AND m.transaction_date BETWEEN e.due_date - INTERVAL '3 days'
+                                        AND e.due_date + INTERVAL '3 days'
           )
       `, [inicio, fim]);
       const a_pagar = parseFloat(aPagarRes.rows[0].total);
@@ -5509,14 +5509,14 @@ app.get("/api/todos", async (req, res) => {
         
         // Subtrai Saídas Pendentes de hoje até o início do mês futuro (com mesma regra de dedup)
         const prevSaiAteInicioRes = await pool.query(`
-          SELECT COALESCE(SUM(fp.value), 0) as val
-          FROM fin_payables fp
-          WHERE fp.due_date >= $1 AND fp.due_date < $2 AND fp.status = 'Pendente'
+          SELECT COALESCE(SUM(e.expected_value), 0) as val
+          FROM fin_bill_entries e
+          WHERE e.due_date >= $1 AND e.due_date < $2 AND e.status NOT IN ('paid', 'cancelled')
             AND NOT EXISTS (
               SELECT 1 FROM fin_movements_asaas m
               WHERE m.type = -1 AND m.account = 'asaas'
-                AND ABS(m.value - fp.value) / NULLIF(fp.value, 0) < 0.05
-                AND m.transaction_date BETWEEN fp.due_date - INTERVAL '3 days' AND fp.due_date + INTERVAL '3 days'
+                AND ABS(m.value - e.expected_value) / NULLIF(e.expected_value, 0) < 0.05
+                AND m.transaction_date BETWEEN e.due_date - INTERVAL '3 days' AND e.due_date + INTERVAL '3 days'
             )
         `, [todayIso, inicio]);
         
@@ -5551,23 +5551,23 @@ app.get("/api/todos", async (req, res) => {
         GROUP BY due_date
       `, [inicio, fim]);
 
-      // 7) Previsto saídas — Contas a Pagar (fin_payables pendentes por due_date)
+      // 7) Previsto saídas — Contas a Pagar (fin_bill_entries nativo)
       //    Exclui provisões com saída realizada correspondente em ±3 dias e valor ±5%
       const prevSaiRes = await pool.query(`
-        SELECT TO_CHAR(fp.due_date, 'DD/MM') AS dia,
-               COALESCE(SUM(fp.value), 0) AS saidas_previstas
-        FROM fin_payables fp
-        WHERE fp.due_date >= $1 AND fp.due_date < $2
-          AND fp.status = 'Pendente'
+        SELECT TO_CHAR(e.due_date, 'DD/MM') AS dia,
+               COALESCE(SUM(e.expected_value), 0) AS saidas_previstas
+        FROM fin_bill_entries e
+        WHERE e.due_date >= $1 AND e.due_date < $2
+          AND e.status NOT IN ('paid', 'cancelled')
           AND NOT EXISTS (
             SELECT 1 FROM fin_movements_asaas m
             WHERE m.type = -1
               AND m.account = 'asaas'
-              AND ABS(m.value - fp.value) / NULLIF(fp.value, 0) < 0.05
-              AND m.transaction_date BETWEEN fp.due_date - INTERVAL '3 days'
-                                        AND fp.due_date + INTERVAL '3 days'
+              AND ABS(m.value - e.expected_value) / NULLIF(e.expected_value, 0) < 0.05
+              AND m.transaction_date BETWEEN e.due_date - INTERVAL '3 days'
+                                        AND e.due_date + INTERVAL '3 days'
           )
-        GROUP BY fp.due_date
+        GROUP BY e.due_date
       `, [inicio, fim]);
 
 
@@ -5704,20 +5704,20 @@ app.get("/api/todos", async (req, res) => {
       `, [inicio, fim]);
       const entradas_previstas = parseFloat(recRes.rows[0].total);
 
-      // A pagar (from fin_payables — Marvee sync)
+      // A pagar (from fin_bill_entries nativo)
       //    Exclui provisões com saída realizada correspondente em ±3 dias e valor ±5%
       const pagRes = await pool.query(`
-        SELECT COALESCE(SUM(fp.value), 0) AS total
-        FROM fin_payables fp
-        WHERE fp.due_date >= $1 AND fp.due_date < $2
-          AND fp.status = 'Pendente'
+        SELECT COALESCE(SUM(e.expected_value), 0) AS total
+        FROM fin_bill_entries e
+        WHERE e.due_date >= $1 AND e.due_date < $2
+          AND e.status NOT IN ('paid', 'cancelled')
           AND NOT EXISTS (
             SELECT 1 FROM fin_movements_asaas m
             WHERE m.type = -1
               AND m.account = 'asaas'
-              AND ABS(m.value - fp.value) / NULLIF(fp.value, 0) < 0.05
-              AND m.transaction_date BETWEEN fp.due_date - INTERVAL '3 days'
-                                        AND fp.due_date + INTERVAL '3 days'
+              AND ABS(m.value - e.expected_value) / NULLIF(e.expected_value, 0) < 0.05
+              AND m.transaction_date BETWEEN e.due_date - INTERVAL '3 days'
+                                        AND e.due_date + INTERVAL '3 days'
           )
       `, [inicio, fim]);
       const despesas_previstas = parseFloat(pagRes.rows[0].total);
@@ -6301,23 +6301,24 @@ app.get("/api/todos", async (req, res) => {
       // A pagar neste dia (excluindo os que já têm realizado correspondente)
       const pagRes = await pool.query(`
         SELECT
-          fp.id,
-          fp.description,
-          fp.value,
-          fp.due_date,
-          COALESCE(fp.supplier_fantasy_name, fp.supplier_name, '') AS person_name
-        FROM fin_payables fp
-        WHERE fp.due_date = $1
-          AND fp.status = 'Pendente'
+          e.id,
+          b.name AS description,
+          e.expected_value AS value,
+          e.due_date,
+          '' AS person_name
+        FROM fin_bill_entries e
+        JOIN fin_bills b ON b.id = e.bill_id
+        WHERE e.due_date = $1
+          AND e.status NOT IN ('paid', 'cancelled')
           AND NOT EXISTS (
             SELECT 1 FROM fin_movements_asaas m
             WHERE m.type = -1
               AND m.account = 'asaas'
-              AND ABS(m.value - fp.value) / NULLIF(fp.value, 0) < 0.05
-              AND m.transaction_date BETWEEN fp.due_date - INTERVAL '3 days'
-                                        AND fp.due_date + INTERVAL '3 days'
+              AND ABS(m.value - e.expected_value) / NULLIF(e.expected_value, 0) < 0.05
+              AND m.transaction_date BETWEEN e.due_date - INTERVAL '3 days'
+                                        AND e.due_date + INTERVAL '3 days'
           )
-        ORDER BY fp.value DESC
+        ORDER BY e.expected_value DESC
       `, [dia]);
 
       const recebimentos = recRes.rows.map((r: any) => ({
@@ -11219,6 +11220,140 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
+  // ==========================================
+  // SUPERADMIN DASHBOARD STATS
+  // ==========================================
+  app.get("/api/superadmin/dashboard-stats", async (req, res) => {
+    try {
+      const now = new Date();
+      const currentMonth = now.toISOString().slice(0, 7); // YYYY-MM
+      
+      // 1) Cobranças (Fila de Disparos Realizados)
+      const cobHojeRes = await pool.query(
+        `SELECT COUNT(*)::int as count FROM fin_dispatch_queue WHERE sent_at::date = CURRENT_DATE AND status = 'ENVIADO'`
+      );
+      const cobMesRes = await pool.query(
+        `SELECT COUNT(*)::int as count FROM fin_dispatch_queue WHERE TO_CHAR(sent_at, 'YYYY-MM') = $1 AND status = 'ENVIADO'`,
+        [currentMonth]
+      );
+      const cobRecentesRes = await pool.query(
+        `SELECT id::text as id, customer_name, customer_phone, rule_triggered as rule_label, day_offset, channel, sent_at as triggered_at, sent_at, message_rendered, status
+         FROM fin_dispatch_queue
+         WHERE status = 'ENVIADO'
+         ORDER BY sent_at DESC
+         LIMIT 5`
+      );
+
+      // 2) Contas a Pagar do Dia
+      const cpPendenteRes = await pool.query(
+        `SELECT COALESCE(SUM(expected_value), 0)::float as total FROM fin_bill_entries WHERE due_date = CURRENT_DATE AND status NOT IN ('paid', 'cancelled')`
+      );
+      const cpPagoRes = await pool.query(
+        `SELECT COALESCE(SUM(actual_value), 0)::float as total FROM fin_bill_entries WHERE due_date = CURRENT_DATE AND status = 'paid'`
+      );
+      const cpItensRes = await pool.query(
+        `SELECT e.*, b.name as bill_name, b.category
+         FROM fin_bill_entries e
+         JOIN fin_bills b ON b.id = e.bill_id
+         WHERE e.due_date = CURRENT_DATE
+         ORDER BY e.expected_value DESC`
+      );
+
+      // 2b) Próximas Contas a Pagar (futuras)
+      const cpProximasRes = await pool.query(
+        `SELECT e.id, e.due_date, e.expected_value, e.status, b.name as bill_name, b.category
+         FROM fin_bill_entries e
+         JOIN fin_bills b ON b.id = e.bill_id
+         WHERE e.due_date > CURRENT_DATE AND e.status NOT IN ('paid', 'cancelled')
+         ORDER BY e.due_date ASC, e.expected_value DESC
+         LIMIT 7`
+      );
+
+      // 3) Clientes em Atraso
+      const atrQtdRes = await pool.query(
+        `SELECT COUNT(*)::int as count FROM fin_receivables WHERE status IN ('Confirmado', 'OVERDUE') AND due_date < CURRENT_DATE`
+      );
+      const atrValRes = await pool.query(
+        `SELECT COALESCE(SUM(value), 0)::float as total FROM fin_receivables WHERE status IN ('Confirmado', 'OVERDUE') AND due_date < CURRENT_DATE`
+      );
+      const atrRecentesRes = await pool.query(
+        `SELECT r.id, COALESCE(p.name, r.customer_name) as customer_name, r.value as valor, r.due_date, CURRENT_DATE - r.due_date::date as dias_atraso
+         FROM fin_receivables r
+         LEFT JOIN fin_people p ON p.asaas_id = r.customer_id
+         WHERE r.status IN ('Confirmado', 'OVERDUE') AND r.due_date < CURRENT_DATE
+         ORDER BY dias_atraso DESC, valor DESC
+         LIMIT 5`
+      );
+
+      // 4) Novos Leads Comerciais
+      const leadsHojeRes = await pool.query(
+        `SELECT COUNT(*)::int as count FROM crm_comercial_leads WHERE created_at::date = CURRENT_DATE`
+      );
+      const leadsMesRes = await pool.query(
+        `SELECT COUNT(*)::int as count FROM crm_comercial_leads WHERE TO_CHAR(created_at, 'YYYY-MM') = $1`,
+        [currentMonth]
+      );
+      const leadsRecentesRes = await pool.query(
+        `SELECT l.id, l.nome, l.telefone, l.email, l.created_at, c.title as coluna_nome
+         FROM crm_comercial_leads l
+         LEFT JOIN crm_comercial_columns c ON l.coluna::text = c.id::text
+         ORDER BY l.created_at DESC
+         LIMIT 5`
+      );
+
+      // 5) Indicadores Comerciais
+      const salesRes = await pool.query(
+        `SELECT 
+           COUNT(*)::int AS quantidade_vendas,
+           COALESCE(SUM(CAST(REPLACE(REPLACE(REPLACE(COALESCE("Valor", '0'), 'R$', ''), ',', '.'), ' ', '') AS NUMERIC)), 0)::float AS faturamento_vendas
+         FROM fechamentos
+         WHERE TO_CHAR(day, 'YYYY-MM') = $1`,
+        [currentMonth]
+      );
+      const reunioesRes = await pool.query(
+        `SELECT
+           COALESCE(SUM(CAST(COALESCE(NULLIF("REUNIÕES MARCADAS", ''), '0') AS INTEGER)), 0)::int AS marcadas,
+           COALESCE(SUM(CAST(COALESCE(NULLIF("REUNIÃO REALIZADA", ''), '0') AS INTEGER)), 0)::int AS realizadas
+         FROM reunioes
+         WHERE day LIKE $1 || '%'`,
+        [currentMonth]
+      );
+
+      res.json({
+        cobrancas: {
+          hoje: cobHojeRes.rows[0].count,
+          mes: cobMesRes.rows[0].count,
+          recentes: cobRecentesRes.rows
+        },
+        contas_pagar_hoje: {
+          total_pendente: cpPendenteRes.rows[0].total,
+          total_pago: cpPagoRes.rows[0].total,
+          itens: cpItensRes.rows
+        },
+        contas_pagar_proximas: cpProximasRes.rows,
+        clientes_atraso: {
+          total_quantidade: atrQtdRes.rows[0].count,
+          total_valor: atrValRes.rows[0].total,
+          recentes: atrRecentesRes.rows
+        },
+        leads: {
+          novos_hoje: leadsHojeRes.rows[0].count,
+          novos_mes: leadsMesRes.rows[0].count,
+          recentes: leadsRecentesRes.rows
+        },
+        comercial_kpis: {
+          faturamento_vendas: salesRes.rows[0].faturamento_vendas,
+          quantidade_vendas: salesRes.rows[0].quantidade_vendas,
+          reunioes_marcadas: reunioesRes.rows[0].reunioes_marcadas,
+          reunioes_realizadas: reunioesRes.rows[0].reunioes_realizadas
+        }
+      });
+    } catch (err: any) {
+      console.error("Error fetching superadmin dashboard stats:", err);
+      res.status(500).json({ error: "Failed to load dashboard stats", details: err.message });
+    }
+  });
+
   // ══════════════════════════════════════════════════════════════════
   // CRM MÉTRICAS DASHBOARD
   // Agrega dados de fechamentos + reunioes para o dashboard de comercial
@@ -11962,10 +12097,13 @@ app.get("/api/todos", async (req, res) => {
         page_id TEXT PRIMARY KEY,
         headline TEXT NOT NULL DEFAULT 'Minha Lista',
         subtitle TEXT DEFAULT 'GESTÃO DE TAREFAS',
+        notes_html TEXT DEFAULT '',
         updated_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
-  } catch (e: any) { console.log('lista_page_settings table already exists or migration skipped:', e.code); }
+    await pool.query(`ALTER TABLE lista_page_settings ADD COLUMN IF NOT EXISTS notes_html TEXT DEFAULT ''`);
+    await pool.query(`ALTER TABLE lista_page_settings ADD COLUMN IF NOT EXISTS notes_html_right TEXT DEFAULT ''`);
+  } catch (e: any) { console.log('lista_page_settings table initialization or migration error:', e.message); }
 
   try {
     await pool.query(`
@@ -12240,12 +12378,12 @@ app.get("/api/todos", async (req, res) => {
   app.put('/api/lista-page-settings/:pageId', async (req, res) => {
     try {
       const { pageId } = req.params;
-      const { headline, subtitle } = req.body;
+      const { headline, subtitle, notes_html, notes_html_right } = req.body;
       const result = await pool.query(
-        `INSERT INTO lista_page_settings (page_id, headline, subtitle) VALUES ($1, $2, $3)
-         ON CONFLICT (page_id) DO UPDATE SET headline = $2, subtitle = $3, updated_at = NOW()
+        `INSERT INTO lista_page_settings (page_id, headline, subtitle, notes_html, notes_html_right) VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (page_id) DO UPDATE SET headline = $2, subtitle = $3, notes_html = $4, notes_html_right = $5, updated_at = NOW()
          RETURNING *`,
-        [pageId, headline || 'Minha Lista', subtitle || 'GESTÃO DE TAREFAS']
+        [pageId, headline || 'Minha Lista', subtitle || 'GESTÃO DE TAREFAS', notes_html || '', notes_html_right || '']
       );
       res.json(result.rows[0]);
     } catch (err) {
@@ -12799,6 +12937,23 @@ app.get("/api/todos", async (req, res) => {
     } catch (err) {
       console.error('DELETE /api/onboarding-comment error:', err);
       res.status(500).json({ error: 'Erro ao excluir comentário.' });
+    }
+  });
+
+  app.put('/api/onboarding-tasks/:taskId/comments/:commentId', async (req, res) => {
+    try {
+      const { commentId } = req.params;
+      const { text } = req.body;
+      if (!text?.trim()) return res.status(400).json({ error: 'text obrigatório.' });
+      const result = await pool.query(
+        'UPDATE onboarding_comments SET text = $1 WHERE id = $2 RETURNING *',
+        [text.trim(), commentId]
+      );
+      if (result.rowCount === 0) return res.status(404).json({ error: 'Comentário não encontrado.' });
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error('PUT /api/onboarding-comment error:', err);
+      res.status(500).json({ error: 'Erro ao editar comentário.' });
     }
   });
 

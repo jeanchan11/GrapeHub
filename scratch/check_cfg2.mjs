@@ -1,0 +1,12 @@
+import pg from 'pg';
+import dotenv from 'dotenv';
+dotenv.config();
+const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+const cols = await pool.query(`SELECT column_name FROM information_schema.columns WHERE table_name='fin_dispatch_config' ORDER BY ordinal_position`);
+console.log('colunas:', cols.rows.map(c=>c.column_name).join(', '));
+const r = await pool.query(`SELECT * FROM fin_dispatch_config LIMIT 1`);
+const row = {...r.rows[0]}; delete row.n8n_webhook_url;
+console.log(JSON.stringify(row, null, 2));
+const d = await pool.query(`SELECT MIN(sent_at) primeiro, MAX(sent_at) ultimo, COUNT(*)::int qtd FROM fin_dispatch_queue WHERE status='ENVIADO' AND sent_at::date='2026-06-28'`);
+console.log('disparos hoje (UTC):', d.rows[0]);
+await pool.end();

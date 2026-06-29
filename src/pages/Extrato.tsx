@@ -1109,7 +1109,7 @@ export default function Extrato() {
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState<string | null>(null);
   const [search, setSearch]     = useState('');
-  const [typeFilter, setTypeFilter] = useState<'todos'|'entradas'|'saidas'|'realizados'|'previstos'>('todos');
+  const [typeFilter, setTypeFilter] = useState<'todos'|'entradas'|'saidas'|'realizados'>('todos');
   const [categoryFilter, setCategoryFilter] = useState<string>('');
   const [hideAnticipation, setHideAnticipation] = useState(true);
   const [anticipationStats, setAnticipationStats] = useState<{ antecipado_bruto: number; taxas_antecipacao: number; liquido: number; count_pares: number } | null>(null);
@@ -1272,7 +1272,6 @@ export default function Extrato() {
     if (typeFilter === 'entradas')   return item.type === 1;
     if (typeFilter === 'saidas')     return item.type === -1;
     if (typeFilter === 'realizados') return item.type_column === 'realizado';
-    if (typeFilter === 'previstos')  return item.type_column === 'previsto';
     return true;
   }).filter(item => {
     if (!categoryFilter) return true;
@@ -1368,37 +1367,40 @@ export default function Extrato() {
       {activeTab === 'Extrato' && (
         <div className="px-6 md:px-8 pb-8 space-y-6">
           {/* KPI Cards */}
-          <div className="grid grid-cols-3 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-3 lg:grid-cols-4 gap-3 items-start">
             {[
               { label: 'Total Entradas', value: totalEntradas, color: 'text-emerald-400' },
               { label: 'Total Saídas',   value: totalSaidas,   color: 'text-rose-400' },
               { label: 'Resultado',       value: resultado,     color: resultado >= 0 ? 'text-emerald-400' : 'text-rose-400' },
             ].map(({ label, value, color }) => (
-              <div key={label} className="bg-dark-card border border-white/10 rounded-2xl p-5 transition-colors duration-200">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">{label}</p>
+              <div key={label} className="bg-dark-card border border-white/10 rounded-2xl px-4 py-3 transition-colors duration-200">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">{label}</p>
                 {loading
                   ? <div className="h-8 w-32 bg-white/5 rounded animate-pulse" />
-                  : <p className={`text-2xl font-black ${color}`}>{formatCurrency(value)}</p>
+                  : <p className={`text-xl font-black ${color}`}>{formatCurrency(value)}</p>
                 }
               </div>
             ))}
             {/* Anticipation KPI Card */}
-            <div className="bg-dark-card border border-white/10 rounded-2xl p-5 transition-colors duration-200">
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Antecipações no Mês</p>
+            <div className="group bg-dark-card border border-white/10 rounded-2xl px-4 py-3 transition-colors duration-200">
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Antecipações no Mês</p>
               {loading || !anticipationStats
                 ? <div className="h-8 w-32 bg-white/5 rounded animate-pulse" />
                 : (
                   <>
-                    <p className="text-2xl font-black text-violet-400">{formatCurrency(anticipationStats.liquido)}</p>
-                    <div className="flex items-center gap-3 mt-1.5">
-                      <span className="text-[9px] text-slate-500">Bruto: {formatCurrency(anticipationStats.antecipado_bruto)}</span>
-                      <span className="text-[9px] text-rose-400">Taxas: -{formatCurrency(anticipationStats.taxas_antecipacao)}</span>
+                    <p className="text-xl font-black text-violet-400">{formatCurrency(anticipationStats.liquido)}</p>
+                    {/* Detalhes — só aparecem ao passar o mouse */}
+                    <div className="max-h-0 opacity-0 overflow-hidden transition-all duration-200 ease-out group-hover:max-h-24 group-hover:opacity-100">
+                      <div className="flex items-center gap-3 mt-1.5">
+                        <span className="text-[9px] text-slate-500">Bruto: {formatCurrency(anticipationStats.antecipado_bruto)}</span>
+                        <span className="text-[9px] text-rose-400">Taxas: -{formatCurrency(anticipationStats.taxas_antecipacao)}</span>
+                      </div>
+                      {anticipationStats.count_pares > 0 && (
+                        <span className="inline-flex items-center gap-1 mt-1.5 text-[9px] font-bold text-slate-500">
+                          <Link2 size={8} />{anticipationStats.count_pares} pares identificados
+                        </span>
+                      )}
                     </div>
-                    {anticipationStats.count_pares > 0 && (
-                      <span className="inline-flex items-center gap-1 mt-1.5 text-[9px] font-bold text-slate-500">
-                        <Link2 size={8} />{anticipationStats.count_pares} pares identificados
-                      </span>
-                    )}
                   </>
                 )
               }
@@ -1416,7 +1418,7 @@ export default function Extrato() {
               />
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              {(['todos','entradas','saidas','realizados','previstos'] as const).map(f => (
+              {(['todos','entradas','saidas','realizados'] as const).map(f => (
                 <button key={f} onClick={() => setTypeFilter(f)}
                   className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all ${
                     typeFilter === f
@@ -1479,7 +1481,7 @@ export default function Extrato() {
 
           {/* Table */}
           <div className="bg-dark-card border border-white/10 rounded-2xl overflow-visible relative">
-            <div className={`grid ${accountFilter === 'all' ? 'grid-cols-[1fr_160px_80px_90px_100px_110px_120px]' : 'grid-cols-[1fr_160px_90px_100px_110px_120px]'} px-5 py-3 border-b border-white/5 sticky top-0 z-10 bg-dark-card`}>
+            <div className={`grid ${accountFilter === 'all' ? 'grid-cols-[1fr_160px_80px_90px_100px_110px_120px]' : 'grid-cols-[1fr_160px_90px_100px_110px_120px]'} px-4 py-2.5 border-b border-white/5 sticky top-0 z-10 bg-dark-card`}>
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Descrição / Contraparte</span>
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider text-center">Categoria</span>
               {accountFilter === 'all' && <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider text-center">Conta</span>}
@@ -1491,7 +1493,7 @@ export default function Extrato() {
             <div className="divide-y divide-white/5 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 320px)' }}>
               {loading ? (
                 Array.from({ length: 8 }).map((_, i) => (
-                  <div key={i} className="flex items-center gap-4 px-5 py-4">
+                  <div key={i} className="flex items-center gap-4 px-4 py-2">
                     <div className="flex-1 space-y-1.5">
                       <div className="h-3 w-48 bg-white/5 rounded animate-pulse" />
                       <div className="h-2.5 w-32 bg-white/5 rounded animate-pulse" />
@@ -1533,10 +1535,10 @@ export default function Extrato() {
                         setModalDescription(item.custom_description || item.description || '');
                         setModalSaved(false);
                       }}
-                      className={`grid ${accountFilter === 'all' ? 'grid-cols-[1fr_160px_80px_90px_100px_110px_120px]' : 'grid-cols-[1fr_160px_90px_100px_110px_120px]'} px-5 py-3.5 hover:bg-white/[0.02] transition-colors items-center cursor-pointer`}>
+                      className={`grid ${accountFilter === 'all' ? 'grid-cols-[1fr_160px_80px_90px_100px_110px_120px]' : 'grid-cols-[1fr_160px_90px_100px_110px_120px]'} px-4 py-2 hover:bg-white/[0.02] transition-colors items-center cursor-pointer`}>
                       <div className="min-w-0 pr-4">
                         <div className="flex items-center gap-1.5">
-                          <p className={`text-sm font-medium truncate ${item.is_anticipation_pair ? 'text-slate-500' : 'text-dark-text'}`}>{item.description || '—'}</p>
+                          <p className={`text-[13px] font-medium truncate ${item.is_anticipation_pair ? 'text-slate-500' : 'text-dark-text'}`}>{item.description || '—'}</p>
                           {item.is_anticipation_pair && (
                             <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-slate-500/10 text-slate-400 text-[9px] font-bold rounded-full">
                               <Link2 size={8} /> Antecipação
@@ -1577,7 +1579,7 @@ export default function Extrato() {
                         <span className="text-xs text-slate-400">{fmtDate(getItemDate(item))}</span>
                       </div>
                       <div className="text-right pl-4">
-                        <span className={`text-sm font-bold ${item.is_anticipation_pair ? 'text-slate-500 line-through' : isEntrada ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        <span className={`text-[13px] font-bold ${item.is_anticipation_pair ? 'text-slate-500 line-through' : isEntrada ? 'text-emerald-400' : 'text-rose-400'}`}>
                           {isEntrada ? '+' : '-'}{formatCurrency(Math.abs(valor))}
                         </span>
                       </div>

@@ -695,15 +695,15 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
           )}
 
           {/* Métricas */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
             {/* 1) Disparos Hoje */}
-            <div className="bg-dark-card border border-white/10 rounded-2xl p-5 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[140px]">
+            <div className="bg-dark-card border border-white/10 rounded-2xl px-4 py-3 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[108px]">
               <div className="flex items-center justify-between mb-3">
-                <div className="p-2 rounded-xl bg-slate-600"><Send size={16} className="text-white" /></div>
+                <div className="p-1.5 rounded-lg bg-slate-600"><Send size={16} className="text-white" /></div>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Disparos</p>
               </div>
               <div className="flex flex-col mt-auto">
-                <h3 className="text-3xl font-black tracking-tight mb-2 text-dark-text"><CountUp value={dispatchStats.disparos_hoje} /></h3>
+                <h3 className="text-2xl font-black tracking-tight mb-1 text-dark-text"><CountUp value={dispatchStats.disparos_hoje} /></h3>
                 <div className="pt-2 border-t border-white/10">
                   <div className="flex justify-between items-center text-xs">
                     <span className="text-slate-500">Hoje</span>
@@ -713,13 +713,13 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
               </div>
             </div>
             {/* 2) Preventivo */}
-            <div onClick={() => openPhaseDetail('preventivo')} className="bg-dark-card border border-white/10 rounded-2xl p-5 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[140px] cursor-pointer hover:border-[#2dd4bf]/40">
+            <div onClick={() => openPhaseDetail('preventivo')} className="bg-dark-card border border-white/10 rounded-2xl px-4 py-3 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[108px] cursor-pointer hover:border-[#2dd4bf]/40">
               <div className="flex items-center justify-between mb-3">
-                <div className="p-2 rounded-xl bg-teal-600"><Activity size={16} className="text-white" /></div>
+                <div className="p-1.5 rounded-lg bg-teal-600"><Activity size={16} className="text-white" /></div>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Preventivo</p>
               </div>
               <div className="flex flex-col mt-auto">
-                <h3 className="text-3xl font-black tracking-tight mb-2 text-dark-text"><CountUp value={summary.preventivo} /></h3>
+                <h3 className="text-2xl font-black tracking-tight mb-1 text-dark-text"><CountUp value={summary.preventivo} /></h3>
                 <div className="pt-2 border-t border-white/10">
                   <div className="flex justify-between items-center text-xs">
                     <span className="text-slate-500">Antes do venc.</span>
@@ -729,13 +729,13 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
               </div>
             </div>
             {/* 3) No Vencimento */}
-            <div onClick={() => openPhaseDetail('vencimento')} className="bg-dark-card border border-white/10 rounded-2xl p-5 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[140px] cursor-pointer hover:border-amber-500/40">
+            <div onClick={() => openPhaseDetail('vencimento')} className="bg-dark-card border border-white/10 rounded-2xl px-4 py-3 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[108px] cursor-pointer hover:border-amber-500/40">
               <div className="flex items-center justify-between mb-3">
-                <div className="p-2 rounded-xl bg-amber-500"><Clock size={16} className="text-white" /></div>
+                <div className="p-1.5 rounded-lg bg-amber-500"><Clock size={16} className="text-white" /></div>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Vencimento</p>
               </div>
               <div className="flex flex-col mt-auto">
-                <h3 className="text-3xl font-black tracking-tight mb-2 text-dark-text"><CountUp value={summary.vencimento} /></h3>
+                <h3 className="text-2xl font-black tracking-tight mb-1 text-dark-text"><CountUp value={summary.vencimento} /></h3>
                 <div className="pt-2 border-t border-white/10">
                   <div className="flex justify-between items-center text-xs">
                     <span className="text-slate-500">No dia</span>
@@ -745,13 +745,13 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
               </div>
             </div>
             {/* 4) Em Atraso */}
-            <div onClick={() => openPhaseDetail('reativo')} className="bg-dark-card border border-white/10 rounded-2xl p-5 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[140px] cursor-pointer hover:border-rose-500/40">
+            <div onClick={() => openPhaseDetail('reativo')} className="bg-dark-card border border-white/10 rounded-2xl px-4 py-3 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[108px] cursor-pointer hover:border-rose-500/40">
               <div className="flex items-center justify-between mb-3">
-                <div className="p-2 rounded-xl bg-rose-600"><AlertTriangle size={16} className="text-white" /></div>
+                <div className="p-1.5 rounded-lg bg-rose-600"><AlertTriangle size={16} className="text-white" /></div>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Em Atraso</p>
               </div>
               <div className="flex flex-col mt-auto">
-                <h3 className={`text-3xl font-black tracking-tight mb-2 ${summary.reativo > 0 ? 'text-rose-400/80' : 'text-dark-text'}`}><CountUp value={summary.reativo} /></h3>
+                <h3 className={`text-2xl font-black tracking-tight mb-1 ${summary.reativo > 0 ? 'text-rose-400/80' : 'text-dark-text'}`}><CountUp value={summary.reativo} /></h3>
                 <div className="pt-2 border-t border-white/10">
                   <div className="flex justify-between items-center text-xs">
                     <span className="text-slate-500">Pós-vencimento</span>
@@ -761,16 +761,16 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
               </div>
             </div>
             {/* 5) Contato Humano */}
-            <div onClick={() => openPhaseDetail('humano')} className="bg-dark-card border border-white/10 rounded-2xl p-5 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[140px] cursor-pointer hover:border-violet-500/40">
+            <div onClick={() => openPhaseDetail('humano')} className="bg-dark-card border border-white/10 rounded-2xl px-4 py-3 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[108px] cursor-pointer hover:border-violet-500/40">
               <div className="flex items-center justify-between mb-3">
-                <div className="p-2 rounded-xl bg-violet-600"><Phone size={16} className="text-white" /></div>
+                <div className="p-1.5 rounded-lg bg-violet-600"><Phone size={16} className="text-white" /></div>
                 <div className="flex items-center gap-2">
                   {dispatchHumanoCount > 0 && <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shadow-[0_0_8px_rgba(244,63,94,0.8)]" />}
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Humano</p>
                 </div>
               </div>
               <div className="flex flex-col mt-auto">
-                <h3 className={`text-3xl font-black tracking-tight mb-2 ${dispatchHumanoCount > 0 ? 'text-violet-400/80' : 'text-dark-text'}`}><CountUp value={dispatchHumanoCount} /></h3>
+                <h3 className={`text-2xl font-black tracking-tight mb-1 ${dispatchHumanoCount > 0 ? 'text-violet-400/80' : 'text-dark-text'}`}><CountUp value={dispatchHumanoCount} /></h3>
                 <div className="pt-2 border-t border-white/10">
                   <div className="flex justify-between items-center text-xs">
                     <span className="text-slate-500">D+10</span>
@@ -780,16 +780,16 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
               </div>
             </div>
             {/* 6) Suspensão */}
-            <div onClick={() => openPhaseDetail('suspensao')} className="bg-dark-card border border-white/10 rounded-2xl p-5 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[140px] cursor-pointer hover:border-orange-500/40">
+            <div onClick={() => openPhaseDetail('suspensao')} className="bg-dark-card border border-white/10 rounded-2xl px-4 py-3 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[108px] cursor-pointer hover:border-orange-500/40">
               <div className="flex items-center justify-between mb-3">
-                <div className="p-2 rounded-xl bg-orange-600"><ShieldAlert size={16} className="text-white" /></div>
+                <div className="p-1.5 rounded-lg bg-orange-600"><ShieldAlert size={16} className="text-white" /></div>
                 <div className="flex items-center gap-2">
                   {dispatchSuspensaoCount > 0 && <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse shadow-[0_0_8px_rgba(249,115,22,0.8)]" />}
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Suspensão</p>
                 </div>
               </div>
               <div className="flex flex-col mt-auto">
-                <h3 className={`text-3xl font-black tracking-tight mb-2 ${dispatchSuspensaoCount > 0 ? 'text-orange-400/80' : 'text-dark-text'}`}><CountUp value={dispatchSuspensaoCount} /></h3>
+                <h3 className={`text-2xl font-black tracking-tight mb-1 ${dispatchSuspensaoCount > 0 ? 'text-orange-400/80' : 'text-dark-text'}`}><CountUp value={dispatchSuspensaoCount} /></h3>
                 <div className="pt-2 border-t border-white/10">
                   <div className="flex justify-between items-center text-xs">
                     <span className="text-slate-500">D+15</span>
@@ -1035,7 +1035,7 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                     })}
                   </div>
                   {/* Header */}
-                  <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] gap-4 px-5 py-3 bg-dark-bg/50 border-b border-white/5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                  <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] gap-4 px-4 py-2.5 bg-dark-bg/50 border-b border-white/5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
                     <span>Cliente / Valor</span>
                     <span>Regra</span>
                     <span>Canal</span>
@@ -1080,16 +1080,16 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                           }}
                         >
                           <div
-                            className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] gap-4 px-5 py-4 hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors cursor-pointer items-center"
+                            className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] gap-4 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors cursor-pointer items-center"
                             onClick={() => setExpandedDispatchId(isRowExpanded ? null : item.id)}
                           >
                             {/* Client Info */}
                             <div className="flex items-center gap-3 min-w-0">
-                              <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-sm shrink-0 ${pillColors[phaseKey]}`}>
+                              <div className={`w-7 h-7 rounded-xl flex items-center justify-center font-black text-xs shrink-0 ${pillColors[phaseKey]}`}>
                                 {(item.customer_name || 'X').charAt(0).toUpperCase()}
                               </div>
                               <div className="min-w-0">
-                                <p className="text-sm font-bold text-gray-900 dark:text-dark-text truncate">{item.customer_name}</p>
+                                <p className="text-[13px] font-bold text-gray-900 dark:text-dark-text truncate">{item.customer_name}</p>
                                 <p className="text-[10px] text-gray-500 dark:text-slate-500">{formatCurrency(item.amount)} • {fmtDate(item.due_date)}</p>
                               </div>
                             </div>
@@ -1864,68 +1864,68 @@ const InadimplentesBlock = ({ selectedMonth, onCountChange }: { selectedMonth: s
       </div>
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-dark-card border border-white/10 rounded-2xl p-6 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[160px]">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-2.5 rounded-2xl bg-rose-500"><Users size={20} className="text-white" /></div>
+        <div className="bg-dark-card border border-white/10 rounded-2xl px-4 py-3 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[108px]">
+          <div className="flex items-center justify-between mb-2">
+            <div className="p-1.5 rounded-lg bg-rose-500"><Users size={16} className="text-white" /></div>
             <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Inadimplentes</p>
           </div>
           <div className="flex flex-col mt-auto">
-            <h3 className="text-3xl font-black tracking-tight mb-3 text-dark-text">
+            <h3 className="text-2xl font-black tracking-tight mb-1 text-dark-text">
               <CountUp value={activeClients.length} />
             </h3>
-            <div className="pt-3 border-t border-white/10">
-              <div className="flex justify-between items-center text-sm">
+            <div className="pt-2 border-t border-white/10">
+              <div className="flex justify-between items-center text-xs">
                 <span className="text-slate-500">Clientes com atraso</span>
               </div>
             </div>
           </div>
         </div>
 
-        <div className="bg-dark-card border border-white/10 rounded-2xl p-6 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[160px]">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-2.5 rounded-2xl bg-orange-500"><DollarSign size={20} className="text-white" /></div>
+        <div className="bg-dark-card border border-white/10 rounded-2xl px-4 py-3 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[108px]">
+          <div className="flex items-center justify-between mb-2">
+            <div className="p-1.5 rounded-lg bg-orange-500"><DollarSign size={16} className="text-white" /></div>
             <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Total Em Risco</p>
           </div>
           <div className="flex flex-col mt-auto">
-            <h3 className="text-3xl font-black tracking-tight mb-3 text-dark-text">
+            <h3 className="text-2xl font-black tracking-tight mb-1 text-dark-text">
               <CountUp value={totalAmount} isCurrency />
             </h3>
-            <div className="pt-3 border-t border-white/10">
-              <div className="flex justify-between items-center text-sm">
+            <div className="pt-2 border-t border-white/10">
+              <div className="flex justify-between items-center text-xs">
                 <span className="text-slate-500">Em cobranças abertas</span>
               </div>
             </div>
           </div>
         </div>
 
-        <div className="bg-dark-card border border-white/10 rounded-2xl p-6 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[160px]">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-2.5 rounded-2xl bg-amber-500"><Clock size={20} className="text-white" /></div>
+        <div className="bg-dark-card border border-white/10 rounded-2xl px-4 py-3 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[108px]">
+          <div className="flex items-center justify-between mb-2">
+            <div className="p-1.5 rounded-lg bg-amber-500"><Clock size={16} className="text-white" /></div>
             <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Média De Atraso</p>
           </div>
           <div className="flex flex-col mt-auto">
-            <h3 className="text-3xl font-black tracking-tight mb-3 text-dark-text">
+            <h3 className="text-2xl font-black tracking-tight mb-1 text-dark-text">
               <CountUp value={avgDays} suffix="d" />
             </h3>
-            <div className="pt-3 border-t border-white/10">
-              <div className="flex justify-between items-center text-sm">
+            <div className="pt-2 border-t border-white/10">
+              <div className="flex justify-between items-center text-xs">
                 <span className="text-slate-500">Dias em média</span>
               </div>
             </div>
           </div>
         </div>
 
-        <div className="bg-dark-card border border-white/10 rounded-2xl p-6 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[160px]">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-2.5 rounded-2xl bg-rose-600"><AlertTriangle size={20} className="text-white" /></div>
+        <div className="bg-dark-card border border-white/10 rounded-2xl px-4 py-3 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[108px]">
+          <div className="flex items-center justify-between mb-2">
+            <div className="p-1.5 rounded-lg bg-rose-600"><AlertTriangle size={16} className="text-white" /></div>
             <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Críticos +30d</p>
           </div>
           <div className="flex flex-col mt-auto">
-            <h3 className="text-3xl font-black tracking-tight mb-3 text-red-500/80 dark:text-red-400/80">
+            <h3 className="text-2xl font-black tracking-tight mb-1 text-red-500/80 dark:text-red-400/80">
               <CountUp value={criticalCount} />
             </h3>
-            <div className="pt-3 border-t border-white/10">
-              <div className="flex justify-between items-center text-sm">
+            <div className="pt-2 border-t border-white/10">
+              <div className="flex justify-between items-center text-xs">
                 <span className="text-slate-500">Clientes críticos</span>
               </div>
             </div>
@@ -1978,7 +1978,7 @@ const InadimplentesBlock = ({ selectedMonth, onCountChange }: { selectedMonth: s
         ) : (
           <>
             {/* Table Header */}
-            <div className="grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 px-5 py-3 bg-dark-bg/50 border-b border-white/5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+            <div className="grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 px-4 py-2.5 bg-dark-bg/50 border-b border-white/5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
               <span>Cliente</span>
               <span>Cobranças</span>
               <span>Total Em Aberto</span>
@@ -2008,16 +2008,16 @@ const InadimplentesBlock = ({ selectedMonth, onCountChange }: { selectedMonth: s
                   >
                     {/* Main Row */}
                     <div
-                      className="grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 px-5 py-4 hover:bg-white/[0.02] transition-colors cursor-pointer items-center"
+                      className="grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 px-4 py-2.5 hover:bg-white/[0.02] transition-colors cursor-pointer items-center"
                       onClick={() => setExpandedId(isExpanded ? null : client.customer_id)}
                     >
                       {/* Client Info */}
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-sm shrink-0 ${daysColor.bg} ${daysColor.text}`}>
+                        <div className={`w-7 h-7 rounded-xl flex items-center justify-center font-black text-xs shrink-0 ${daysColor.bg} ${daysColor.text}`}>
                           {(client.customer_name || 'X').charAt(0).toUpperCase()}
                         </div>
                         <div className="min-w-0">
-                          <p className="text-sm font-bold text-dark-text truncate">{client.customer_name || 'Desconhecido'}</p>
+                          <p className="text-[13px] font-bold text-dark-text truncate">{client.customer_name || 'Desconhecido'}</p>
                           <div className="flex items-center gap-2 mt-0.5">
                             {client.phone && (
                               <span className="text-[10px] text-slate-500 flex items-center gap-1">
@@ -2267,51 +2267,54 @@ export default function ContasAReceber() {
     <div className="min-h-screen bg-dark-bg transition-colors duration-300">
 
       {/* ── Header ── */}
-      <div className="flex items-center justify-between px-6 md:px-8 pt-8 pb-2">
+      <div className="flex items-start justify-between gap-4 flex-wrap px-6 md:px-8 pt-8 pb-4">
         <div>
           <SplitHeadline text="Contas a " highlight="Receber" className="text-2xl font-black tracking-tight text-dark-text" />
-          <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5">
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
             Referência: {monthLabel}
           </p>
         </div>
 
-        <div className="flex items-center gap-1">
-          <button onClick={prevMonth}
-            className="w-9 h-9 rounded-xl bg-dark-card border border-white/10 hover:border-violet-500/60 flex items-center justify-center transition-all hover:bg-dark-card-hover">
-            <ChevronDown size={14} className="text-slate-400 rotate-90" />
-          </button>
-          <div className="flex items-center gap-2 px-4 py-2 bg-dark-card border border-violet-500/60 rounded-xl">
-            <Calendar size={16} className="text-violet-500" />
-            <span className="text-sm font-bold text-dark-text">{monthLabel}</span>
+        <div className="flex items-center gap-4 mt-1 flex-wrap">
+          {/* Tabs */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setMainTab('cobrancas')}
+              className={`px-3 py-1.5 text-sm font-bold border-b-2 transition-colors ${mainTab === 'cobrancas' ? 'border-violet-500 text-violet-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
+            >
+              Cobranças
+            </button>
+            <button
+              onClick={() => setMainTab('receber')}
+              className={`px-3 py-1.5 text-sm font-bold border-b-2 transition-colors ${mainTab === 'receber' ? 'border-violet-500 text-violet-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
+            >
+              A Receber
+            </button>
+            <button
+              onClick={() => setMainTab('inadimplentes')}
+              className={`px-3 py-1.5 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${mainTab === 'inadimplentes' ? 'border-rose-500 text-rose-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
+            >
+              <span>Inadimplentes</span>
+              {inadimplenteCount > 0 && <span className="text-[10px] font-black bg-rose-500/20 text-rose-400 border border-rose-500/30 px-1.5 py-0.5 rounded-full">{inadimplenteCount}</span>}
+            </button>
           </div>
-          <button onClick={nextMonth}
-            className="w-9 h-9 rounded-xl bg-dark-card border border-white/10 hover:border-violet-500/60 flex items-center justify-center transition-all hover:bg-dark-card-hover">
-            <ChevronDown size={14} className="text-slate-400 -rotate-90" />
-          </button>
-        </div>
-      </div>
 
-      {/* ── Tab Navigation ── */}
-      <div className="px-6 md:px-8 mb-4 flex items-center gap-1 border-b border-white/5">
-        <button
-          onClick={() => setMainTab('cobrancas')}
-          className={`px-5 py-3 text-sm font-bold border-b-2 transition-colors ${mainTab === 'cobrancas' ? 'border-violet-500 text-violet-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
-        >
-          Cobranças
-        </button>
-        <button
-          onClick={() => setMainTab('receber')}
-          className={`px-5 py-3 text-sm font-bold border-b-2 transition-colors ${mainTab === 'receber' ? 'border-violet-500 text-violet-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
-        >
-          A Receber
-        </button>
-        <button
-          onClick={() => setMainTab('inadimplentes')}
-          className={`px-5 py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${mainTab === 'inadimplentes' ? 'border-rose-500 text-rose-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
-        >
-          <span>Inadimplentes</span>
-          {inadimplenteCount > 0 && <span className="text-[10px] font-black bg-rose-500/20 text-rose-400 border border-rose-500/30 px-1.5 py-0.5 rounded-full">{inadimplenteCount}</span>}
-        </button>
+          {/* Month nav */}
+          <div className="flex items-center gap-1">
+            <button onClick={prevMonth}
+              className="w-9 h-9 rounded-xl bg-dark-card border border-white/10 hover:border-violet-500/60 flex items-center justify-center transition-all hover:bg-dark-card-hover">
+              <ChevronDown size={14} className="text-slate-400 rotate-90" />
+            </button>
+            <div className="flex items-center gap-2 px-4 py-2 bg-dark-card border border-violet-500/60 rounded-xl">
+              <Calendar size={16} className="text-violet-500" />
+              <span className="text-sm font-bold text-dark-text">{monthLabel}</span>
+            </div>
+            <button onClick={nextMonth}
+              className="w-9 h-9 rounded-xl bg-dark-card border border-white/10 hover:border-violet-500/60 flex items-center justify-center transition-all hover:bg-dark-card-hover">
+              <ChevronDown size={14} className="text-slate-400 -rotate-90" />
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="px-6 md:px-8 pb-8 space-y-6">
@@ -2327,17 +2330,17 @@ export default function ContasAReceber() {
                 {/* KPI Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   {/* 1) Recebidas */}
-                  <div className="bg-dark-card border border-white/10 rounded-2xl p-6 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[160px]">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="p-2.5 rounded-2xl bg-emerald-600"><TrendingUp size={20} className="text-white" /></div>
+                  <div className="bg-dark-card border border-white/10 rounded-2xl px-4 py-3 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[108px]">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="p-1.5 rounded-lg bg-emerald-600"><TrendingUp size={16} className="text-white" /></div>
                       <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Recebidas</p>
                     </div>
                     <div className="flex flex-col mt-auto">
-                      <h3 className="text-3xl font-black tracking-tight mb-3 text-dark-text">
+                      <h3 className="text-2xl font-black tracking-tight mb-1 text-dark-text">
                         <CountUp value={summary.total_recebidas} isCurrency />
                       </h3>
-                      <div className="pt-3 border-t border-white/10">
-                        <div className="flex justify-between items-center text-sm">
+                      <div className="pt-2 border-t border-white/10">
+                        <div className="flex justify-between items-center text-xs">
                           <span className="text-slate-500">Pix + Boleto</span>
                           <span className="font-semibold text-emerald-500">{recebidas.length} cobranças</span>
                         </div>
@@ -2345,17 +2348,17 @@ export default function ContasAReceber() {
                     </div>
                   </div>
                   {/* 2) Confirmadas */}
-                  <div className="bg-dark-card border border-white/10 rounded-2xl p-6 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[160px]">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="p-2.5 rounded-2xl bg-blue-600"><Banknote size={20} className="text-white" /></div>
+                  <div className="bg-dark-card border border-white/10 rounded-2xl px-4 py-3 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[108px]">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="p-1.5 rounded-lg bg-blue-600"><Banknote size={16} className="text-white" /></div>
                       <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Confirmadas</p>
                     </div>
                     <div className="flex flex-col mt-auto">
-                      <h3 className="text-3xl font-black tracking-tight mb-3 text-dark-text">
+                      <h3 className="text-2xl font-black tracking-tight mb-1 text-dark-text">
                         <CountUp value={summary.total_confirmadas} isCurrency />
                       </h3>
-                      <div className="pt-3 border-t border-white/10">
-                        <div className="flex justify-between items-center text-sm">
+                      <div className="pt-2 border-t border-white/10">
+                        <div className="flex justify-between items-center text-xs">
                           <span className="text-slate-500">Cartão + Antecipadas</span>
                           <span className="font-semibold text-blue-500">{confirmadas.length} cobranças</span>
                         </div>
@@ -2363,17 +2366,17 @@ export default function ContasAReceber() {
                     </div>
                   </div>
                   {/* 3) A Receber */}
-                  <div className="bg-dark-card border border-white/10 rounded-2xl p-6 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[160px]">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="p-2.5 rounded-2xl bg-amber-500"><Clock size={20} className="text-white" /></div>
+                  <div className="bg-dark-card border border-white/10 rounded-2xl px-4 py-3 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[108px]">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="p-1.5 rounded-lg bg-amber-500"><Clock size={16} className="text-white" /></div>
                       <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">A Receber</p>
                     </div>
                     <div className="flex flex-col mt-auto">
-                      <h3 className="text-3xl font-black tracking-tight mb-3 text-dark-text">
+                      <h3 className="text-2xl font-black tracking-tight mb-1 text-dark-text">
                         <CountUp value={pendentes.reduce((s, r) => s + parseFloat(r.value || '0'), 0)} isCurrency />
                       </h3>
-                      <div className="pt-3 border-t border-white/10">
-                        <div className="flex justify-between items-center text-sm">
+                      <div className="pt-2 border-t border-white/10">
+                        <div className="flex justify-between items-center text-xs">
                           <span className="text-slate-500">Cobranças</span>
                           <span className="font-semibold text-amber-500">{pendentes.length} pendentes</span>
                         </div>
@@ -2381,17 +2384,17 @@ export default function ContasAReceber() {
                     </div>
                   </div>
                   {/* 4) Vencidas */}
-                  <div className="bg-dark-card border border-white/10 rounded-2xl p-6 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[160px]">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="p-2.5 rounded-2xl bg-rose-600"><AlertTriangle size={20} className="text-white" /></div>
+                  <div className="bg-dark-card border border-white/10 rounded-2xl px-4 py-3 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[108px]">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="p-1.5 rounded-lg bg-rose-600"><AlertTriangle size={16} className="text-white" /></div>
                       <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Vencidas</p>
                     </div>
                     <div className="flex flex-col mt-auto">
-                      <h3 className={`text-3xl font-black tracking-tight mb-3 ${vencidos.length > 0 ? 'text-red-500/80 dark:text-red-400/80' : 'text-dark-text'}`}>
+                      <h3 className={`text-2xl font-black tracking-tight mb-1 ${vencidos.length > 0 ? 'text-red-500/80 dark:text-red-400/80' : 'text-dark-text'}`}>
                         <CountUp value={vencidos.reduce((s, r) => s + parseFloat(r.value || '0'), 0)} isCurrency />
                       </h3>
-                      <div className="pt-3 border-t border-white/10">
-                        <div className="flex justify-between items-center text-sm">
+                      <div className="pt-2 border-t border-white/10">
+                        <div className="flex justify-between items-center text-xs">
                           <span className="text-slate-500">Atrasadas</span>
                           <span className={`font-semibold ${vencidos.length > 0 ? 'text-rose-500' : 'text-slate-500'}`}>{vencidos.length} cobranças</span>
                         </div>

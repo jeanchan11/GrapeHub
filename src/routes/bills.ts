@@ -123,12 +123,46 @@ export function setupBillsRoutes(app: Express, pool: Pool) {
     const month = (req.query.month as string) || new Date().toISOString().slice(0, 7);
     try {
       // Auto-provisionar: para cada conta recorrente ativa do tipo monthly, garante entrada no mês
-      const bills = await pool.query(`SELECT * FROM fin_bills WHERE is_active=true AND recurrence='monthly'`);
-      const [year, mon] = month.split('-').map(Number);
-
-      for (const bill of bills.rows) {
+      const monthlyBills = await pool.query(`SELECT * FROM fin_bills WHERE is_active=true AND recurrence='monthly'`);
+      for (const bill of monthlyBills.rows) {
         const dueDay = bill.due_day || 10;
         const dueDate = `${month}-${String(dueDay).padStart(2, '0')}`;
+        await pool.query(
+          `INSERT INTO fin_bill_entries (bill_id, reference_month, due_date, expected_value, status)
+           VALUES ($1, $2, $3, $4, 'pending')
+           ON CONFLICT (bill_id, reference_month) DO NOTHING`,
+          [bill.id, month, dueDate, bill.value]
+        );
+      }
+
+      // Auto-provisionar contas únicas (once) que vencem neste mês
+      const onceBills = await pool.query(
+        `SELECT * FROM fin_bills WHERE is_active=true AND recurrence='once' AND TO_CHAR(due_date, 'YYYY-MM') = $1`,
+        [month]
+      );
+      for (const bill of onceBills.rows) {
+        const dueDateStr = bill.due_date instanceof Date
+          ? bill.due_date.toISOString().slice(0, 10)
+          : String(bill.due_date).slice(0, 10);
+        await pool.query(
+          `INSERT INTO fin_bill_entries (bill_id, reference_month, due_date, expected_value, status)
+           VALUES ($1, $2, $3, $4, 'pending')
+           ON CONFLICT (bill_id, reference_month) DO NOTHING`,
+          [bill.id, month, dueDateStr, bill.value]
+        );
+      }
+
+      // Auto-provisionar contas anuais (yearly) que vencem neste mês (independente do ano)
+      const targetMonthPart = month.split('-')[1]; // e.g. '07'
+      const yearlyBills = await pool.query(
+        `SELECT * FROM fin_bills WHERE is_active=true AND recurrence='yearly' AND TO_CHAR(due_date, 'MM') = $1`,
+        [targetMonthPart]
+      );
+      for (const bill of yearlyBills.rows) {
+        const dueDayStr = bill.due_date instanceof Date
+          ? String(bill.due_date.getDate()).padStart(2, '0')
+          : String(bill.due_date).split('-')[2].slice(0, 2);
+        const dueDate = `${month}-${dueDayStr}`;
         await pool.query(
           `INSERT INTO fin_bill_entries (bill_id, reference_month, due_date, expected_value, status)
            VALUES ($1, $2, $3, $4, 'pending')
@@ -298,6 +332,20 @@ export function setupBillsRoutes(app: Express, pool: Pool) {
       res.json(result.rows[0]);
     } catch (err) {
       res.status(500).json({ error: 'Failed to update entry' });
+    }
+  });
+
+  // DELETE /api/fin/bills/entries/:id — cancela (exclui) uma parcela do mês
+  app.delete('/api/fin/bills/entries/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+      await pool.query(
+        `UPDATE fin_bill_entries SET status = 'cancelled', updated_at = NOW() WHERE id = $1`,
+        [id]
+      );
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to delete entry' });
     }
   });
 

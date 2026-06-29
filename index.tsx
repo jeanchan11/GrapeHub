@@ -1,13 +1,13 @@
 
 // Entry point for GrapeHub
 // Last updated: 2026-04-02 21:00 UTC
+import { setupAuthInterceptor } from './src/utils/authFetch';
+// Install global fetch interceptor to add Firebase Auth token to all API requests
+setupAuthInterceptor();
+
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
-import { setupAuthInterceptor } from './src/utils/authFetch';
-
-// Install global fetch interceptor to add Firebase Auth token to all API requests
-setupAuthInterceptor();
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {

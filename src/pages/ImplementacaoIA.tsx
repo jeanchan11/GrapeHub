@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import SplitHeadline from '../components/SplitHeadline';
 import OptionPicker from '../components/ui/OptionPicker';
 import { createPortal } from 'react-dom';
-import { Plus, ChevronDown, ChevronRight, Calendar, Users, Tag, MoreHorizontal, Circle, CheckCircle2, Loader2, X, Trash2, GripVertical, Settings, FileText, Link as LinkIcon, Save, Heading1, Heading2, Heading3, Type, List, ListOrdered, CheckSquare, Check, Edit2, Palette, Layers, MessageCircle } from 'lucide-react';
+import { Plus, ChevronDown, ChevronRight, Calendar, Users, Tag, MoreHorizontal, Circle, CheckCircle2, Loader2, X, Trash2, GripVertical, Settings, FileText, Link as LinkIcon, Save, Heading1, Heading2, Heading3, Type, List, ListOrdered, CheckSquare, Check, Edit2, Palette, Layers, MessageCircle, Paperclip } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -57,12 +57,20 @@ interface OnboardingTask {
   time_members?: { id: string; name: string; avatar: string | null }[];
 }
 
+interface CommentFile {
+  name: string;
+  url: string;
+  type: 'image' | 'doc' | 'file';
+}
+
 interface Comment {
   id: number;
   task_id: number;
   author_name: string | null;
   author_email: string | null;
+  author_avatar?: string | null;
   text: string;
+  files?: CommentFile[] | null;
   created_at: string;
 }
 
@@ -180,8 +188,8 @@ const DEFAULT_COL_ORDER: ColId[] = ['tags', 'squad', 'resp', 'time', 'due_date']
 const COL_DEFS: Record<ColId, ColDef> = {
   tags:       { id: 'tags',       label: 'Tags',        width: 'w-40' },
   squad:      { id: 'squad',      label: 'Squad',       width: 'w-36' },
-  resp:       { id: 'resp',       label: 'Resp.',       width: 'w-20' },
-  time:       { id: 'time',       label: 'Time',        width: 'w-20' },
+  resp:       { id: 'resp',       label: 'Resp.',       width: 'w-24' },
+  time:       { id: 'time',       label: 'Time',        width: 'w-24' },
   due_date:   { id: 'due_date',   label: 'Vencimento',  width: 'w-28' },
 };
 
@@ -810,11 +818,11 @@ const DraggableColHeaders = () => {
             onDragEnd={reset}
             className={`shrink-0 ${def.width} flex items-center gap-1 group/col cursor-grab select-none transition-all ${
               isDragging ? 'opacity-30' : isOver ? 'text-violet-400' : ''
-            } ${colId === 'resp' ? 'justify-center' : ''}`}
+            } ${(colId === 'resp' || colId === 'time') ? 'justify-center' : ''}`}
           >
             <GripVertical
               size={10}
-              className="opacity-0 group-hover/col:opacity-60 transition-opacity shrink-0 text-slate-600"
+              className={`opacity-0 group-hover/col:opacity-60 transition-opacity shrink-0 text-slate-600 ${(colId === 'resp' || colId === 'time') ? 'hidden' : ''}`}
             />
             <span className={`transition-colors ${isOver ? 'text-violet-400' : ''}`}>{def.label}</span>
           </div>
@@ -2176,6 +2184,46 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [loadingComments, setLoadingComments] = useState(true);
+  const [editingCommentId, setEditingCommentId] = useState<number | null>(null);
+  const [editText, setEditText] = useState('');
+  const [pendingCommentFiles, setPendingCommentFiles] = useState<CommentFile[]>([]);
+  const commentFileInputRef = React.useRef<HTMLInputElement>(null);
+  const [commentPreviewImg, setCommentPreviewImg] = useState<string | null>(null);
+
+  const handleCommentPaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (!file) continue;
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64 = reader.result as string;
+          setPendingCommentFiles(prev => [...prev, { name: `screenshot-${Date.now()}.png`, url: base64, type: 'image' }]);
+        };
+        reader.readAsDataURL(file);
+        break;
+      }
+    }
+  };
+
+  const handleCommentFileSelect = (fileList: FileList | null) => {
+    if (!fileList) return;
+    Array.from(fileList).forEach(file => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64 = reader.result as string;
+        const isImg = file.type.startsWith('image/');
+        const isPdf = file.type === 'application/pdf';
+        const type: CommentFile['type'] = isImg ? 'image' : isPdf ? 'doc' : 'file';
+        setPendingCommentFiles(prev => [...prev, { name: file.name, url: base64, type }]);
+      };
+      reader.readAsDataURL(file);
+    });
+  };
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitleStr, setEditTitleStr] = useState(task.client_name);
   const commentsEndRef = React.useRef<HTMLDivElement>(null);
@@ -2207,7 +2255,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
   }, [task.id]);
 
   const addComment = async () => {
-    if (!newComment.trim()) return;
+    if (!newComment.trim() && pendingCommentFiles.length === 0) return;
     const authorName = userData?.name || user?.displayName || null;
     const authorEmail = userData?.email || user?.email || null;
     const authorAvatar = userData?.picture || user?.photoURL || null;
@@ -2215,14 +2263,49 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
       const res = await fetch(`/api/onboarding-tasks/${task.id}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: newComment, author_name: authorName, author_email: authorEmail, author_avatar: authorAvatar }),
+        body: JSON.stringify({
+          text: newComment,
+          author_name: authorName,
+          author_email: authorEmail,
+          author_avatar: authorAvatar,
+          files: pendingCommentFiles.length > 0 ? pendingCommentFiles : undefined,
+        }),
       });
       if (res.ok) {
         const c = await res.json();
+        if (c.files && typeof c.files === 'string') c.files = JSON.parse(c.files);
         setComments(prev => [...prev, c]);
         setNewComment('');
+        setPendingCommentFiles([]);
         if (textareaRef.current) { textareaRef.current.style.height = 'auto'; }
         setTimeout(() => commentsEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+      }
+    } catch { /* silent */ }
+  };
+
+  const deleteComment = async (commentId: number) => {
+    if (!window.confirm('Excluir este comentário?')) return;
+    try {
+      const res = await fetch(`/api/onboarding-tasks/${task.id}/comments/${commentId}`, { method: 'DELETE' });
+      if (res.ok) setComments(prev => prev.filter(c => c.id !== commentId));
+    } catch { /* silent */ }
+  };
+
+  const startEditComment = (c: Comment) => { setEditingCommentId(c.id); setEditText(c.text); };
+  const cancelEditComment = () => { setEditingCommentId(null); setEditText(''); };
+  const saveEditComment = async (commentId: number) => {
+    const text = editText.trim();
+    if (!text) return;
+    try {
+      const res = await fetch(`/api/onboarding-tasks/${task.id}/comments/${commentId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setComments(prev => prev.map(c => c.id === commentId ? { ...c, text: updated.text } : c));
+        cancelEditComment();
       }
     } catch { /* silent */ }
   };
@@ -2381,8 +2464,10 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                 <p className="text-[10px] text-slate-600 mt-1">Seja o primeiro a comentar!</p>
               </div>
             ) : (
-              comments.map(c => (
-                <div key={c.id} className="flex gap-2.5">
+              comments.map(c => {
+                const commentFiles: CommentFile[] = c.files ? (typeof c.files === 'string' ? JSON.parse(c.files) : c.files) : [];
+                return (
+                <div key={c.id} className="flex gap-2.5 group/cmt">
                   {c.author_avatar ? (
                     <img src={c.author_avatar} alt="" className="w-7 h-7 rounded-full object-cover shrink-0 mt-0.5 ring-1 ring-white/10" />
                   ) : (
@@ -2396,18 +2481,91 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                       <span className="text-[9px] text-slate-600 shrink-0">
                         {new Date(c.created_at).toLocaleString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
                       </span>
+                      {editingCommentId !== c.id && (
+                        <div className="ml-auto flex items-center gap-1.5 opacity-0 group-hover/cmt:opacity-100 transition-opacity shrink-0">
+                          <button onClick={() => startEditComment(c)} title="Editar" className="text-slate-500 hover:text-violet-400 transition-colors"><Edit2 size={11} /></button>
+                          <button onClick={() => deleteComment(c.id)} title="Excluir" className="text-slate-500 hover:text-red-400 transition-colors"><Trash2 size={11} /></button>
+                        </div>
+                      )}
                     </div>
-                    <div className="bg-dark-card border border-white/[0.06] rounded-2xl rounded-tl-sm px-3 py-2.5">
-                      <p className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed">{c.text}</p>
-                    </div>
+                    {editingCommentId === c.id ? (
+                      <div className="space-y-1.5">
+                        <textarea
+                          value={editText}
+                          onChange={e => setEditText(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEditComment(c.id); } else if (e.key === 'Escape') cancelEditComment(); }}
+                          autoFocus
+                          rows={2}
+                          className="w-full bg-dark-bg border border-violet-500/40 rounded-xl px-3 py-2 text-xs text-dark-text focus:outline-none resize-none leading-relaxed"
+                        />
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => saveEditComment(c.id)} className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-violet-600 hover:bg-violet-500 text-white transition-colors">Salvar</button>
+                          <button onClick={cancelEditComment} className="text-[10px] font-semibold px-2.5 py-1 rounded-lg text-slate-400 hover:text-dark-text transition-colors">Cancelar</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="bg-dark-card border border-white/[0.06] rounded-2xl rounded-tl-sm px-3 py-2.5">
+                        {c.text && <p className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed select-text">{c.text}</p>}
+                        {commentFiles.length > 0 && (
+                          <div className={`flex flex-wrap gap-2 ${c.text ? 'mt-2' : ''}`}>
+                            {commentFiles.map((cf, fi) => (
+                              cf.type === 'image' ? (
+                                <img
+                                  key={fi}
+                                  src={cf.url}
+                                  alt={cf.name}
+                                  className="max-w-full rounded-lg border border-white/10 cursor-pointer hover:opacity-90 transition-opacity"
+                                  style={{ maxHeight: 200 }}
+                                  onClick={() => setCommentPreviewImg(cf.url)}
+                                />
+                              ) : (
+                                <a
+                                  key={fi}
+                                  href={cf.url}
+                                  download={cf.name}
+                                  className="flex items-center gap-2 px-3 py-2 bg-white/5 border border-white/10 rounded-lg hover:border-violet-500/30 transition-colors text-xs text-slate-300"
+                                  onClick={e => e.stopPropagation()}
+                                >
+                                  <FileText size={14} className="text-violet-400 shrink-0" />
+                                  <span className="truncate max-w-[180px]">{cf.name}</span>
+                                </a>
+                              )
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
-              ))
+                );
+              })
             )}
             <div ref={commentsEndRef} />
           </div>
 
           <div className="border-t border-white/5 px-4 py-3 bg-dark-card shrink-0">
+            {pendingCommentFiles.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-2 ml-9">
+                {pendingCommentFiles.map((pf, i) => (
+                  <div key={i} className="relative group/pf">
+                    {pf.type === 'image' ? (
+                      <img src={pf.url} alt={pf.name} onClick={() => setCommentPreviewImg(pf.url)} className="h-16 rounded-lg border border-white/10 object-cover cursor-zoom-in" />
+                    ) : (
+                      <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white/5 border border-white/10 rounded-lg text-[10px] text-slate-400">
+                        <FileText size={12} className="text-violet-400" />
+                        <span className="truncate max-w-[100px]">{pf.name}</span>
+                      </div>
+                    )}
+                    <button
+                      onClick={() => setPendingCommentFiles(prev => prev.filter((_, idx) => idx !== i))}
+                      className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center text-white opacity-0 group-hover/pf:opacity-100 transition-opacity"
+                    >
+                      <X size={8} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="flex gap-2 items-end">
               {(userData?.picture || user?.photoURL) ? (
                 <img src={userData?.picture || user?.photoURL || ''} alt="" className="w-7 h-7 rounded-full object-cover shrink-0 ring-1 ring-white/10" />
@@ -2421,6 +2579,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                 value={newComment}
                 onChange={e => setNewComment(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addComment(); } }}
+                onPaste={handleCommentPaste}
                 placeholder="Escreva um comentário..."
                 rows={1}
                 className="flex-1 bg-dark-bg border border-white/10 rounded-2xl px-3 py-2.5 text-xs text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500/50 transition-colors resize-none leading-relaxed"
@@ -2432,8 +2591,23 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                 }}
               />
               <button
+                onClick={() => commentFileInputRef.current?.click()}
+                title="Anexar arquivo"
+                className="w-8 h-8 rounded-full text-slate-500 hover:text-violet-400 hover:bg-white/5 flex items-center justify-center transition-all shrink-0"
+              >
+                <Paperclip size={14} />
+              </button>
+              <input
+                ref={commentFileInputRef}
+                type="file"
+                multiple
+                accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"
+                className="hidden"
+                onChange={e => { handleCommentFileSelect(e.target.files); e.target.value = ''; }}
+              />
+              <button
                 onClick={addComment}
-                disabled={!newComment.trim()}
+                disabled={!newComment.trim() && pendingCommentFiles.length === 0}
                 className="w-8 h-8 rounded-full bg-violet-600 hover:bg-violet-500 disabled:opacity-30 disabled:cursor-not-allowed text-white flex items-center justify-center transition-all shrink-0"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -2441,10 +2615,17 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
                 </svg>
               </button>
             </div>
-            <p className="text-[9px] text-slate-700 mt-1.5 ml-9">Enter para enviar · Shift+Enter para nova linha</p>
+            <p className="text-[9px] text-slate-700 mt-1.5 ml-9">Ctrl+V colar imagem · Enter para enviar · Shift+Enter para nova linha</p>
           </div>
         </div>
       </div>
+
+      {commentPreviewImg && createPortal(
+        <div className="fixed inset-0 z-[10000] bg-black/85 flex items-center justify-center p-8" onClick={() => setCommentPreviewImg(null)}>
+          <img src={commentPreviewImg} alt="" className="max-w-full max-h-full rounded-lg object-contain" />
+        </div>,
+        document.body
+      )}
     </div>
   );
 };
