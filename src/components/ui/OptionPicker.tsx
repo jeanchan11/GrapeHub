@@ -54,6 +54,7 @@ const OptionPicker: React.FC<OptionPickerProps> = ({
   return (
     <div ref={ref} className={`relative ${className}`}>
       <button
+        type="button"
         onClick={() => setOpen(v => !v)}
         className={`flex items-center gap-1.5 rounded-lg transition-all cursor-pointer ${
           compact
@@ -78,6 +79,7 @@ const OptionPicker: React.FC<OptionPickerProps> = ({
         <div className="absolute top-full left-0 mt-1 z-50 bg-dark-card border border-white/10 rounded-xl shadow-2xl py-1.5 min-w-[160px] animate-in fade-in slide-in-from-top-1 duration-150">
           {emptyLabel !== undefined && (
             <button
+              type="button"
               onClick={() => { onChange(null); setOpen(false); }}
               className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-500 hover:bg-white/5 transition-colors"
             >
@@ -88,6 +90,7 @@ const OptionPicker: React.FC<OptionPickerProps> = ({
           {options.map(opt => (
             <button
               key={opt.label}
+              type="button"
               onClick={() => { onChange(opt.label); setOpen(false); }}
               className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-dark-text hover:bg-white/5 transition-colors"
             >
