@@ -200,6 +200,28 @@ export const RenderIcon = ({ name, size = 20, className = "" }: { name: string, 
   }
 };
 
+// Estrelas de qualificação do lead (Score do lead) — clicar na estrela atual zera.
+function LeadScoreStars({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  const [hover, setHover] = useState(0);
+  return (
+    <div className="flex items-center gap-0.5">
+      {[1, 2, 3, 4, 5].map(n => (
+        <button
+          key={n}
+          type="button"
+          onMouseEnter={() => setHover(n)}
+          onMouseLeave={() => setHover(0)}
+          onClick={() => onChange(n === value ? 0 : n)}
+          className="transition-transform hover:scale-110"
+          title={`${n} estrela${n > 1 ? 's' : ''}`}
+        >
+          <Star size={16} className={n <= (hover || value) ? 'fill-amber-400 text-amber-400' : 'text-slate-300 dark:text-white/20'} />
+        </button>
+      ))}
+    </div>
+  );
+}
+
 const isWonColumn = (title?: string) =>
   title?.toLowerCase().includes('ganho') || title?.toLowerCase().includes('fechado');
 
@@ -502,6 +524,12 @@ const SortableCard = (props: SortableCardProps) => {
                 }`}></span>
               {lead.origem}
             </span>
+            {(lead as any).lead_score != null && (lead as any).lead_score > 0 && (
+              <span className="flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-md border border-amber-300/60 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 shrink-0" title={`Score do lead: ${(lead as any).lead_score}/5`}>
+                <Star size={9} className="fill-amber-400 text-amber-400" />
+                {(lead as any).lead_score}
+              </span>
+            )}
             {((lead as any).tags || []).map((tag: any) => (
               <span key={tag.name} className="px-1.5 py-0.5 text-[9px] font-bold rounded-md text-white shadow-sm shrink-0" style={{ backgroundColor: tag.color }}>
                 {tag.name}
@@ -3058,6 +3086,15 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                         <Clock size={13} /> Data de criação
                       </span>
                       <span className="text-sm text-gray-700 dark:text-slate-300">{new Date(lead.created_at).toLocaleDateString('pt-BR')}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
+                        <Star size={13} /> Score do lead
+                      </span>
+                      <LeadScoreStars
+                        value={(lead as any).lead_score ?? 0}
+                        onChange={(v) => onUpdateLeadField(lead.id, 'lead_score', v === 0 ? null : v)}
+                      />
                     </div>
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">

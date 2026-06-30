@@ -385,7 +385,7 @@ async function startServer() {
   }
 
   // Postgres Pool Configuration
-  const poolConfig: any = dbUrl 
+  const poolConfig: any = dbUrl
     ? { connectionString: dbUrl }
     : {
         host: dbHost,
@@ -394,6 +394,15 @@ async function startServer() {
         password: dbPass,
         port: 5432,
       };
+
+  // Resiliência da conexão — evita travas quando a rede oscila e o Neon fecha conexões ociosas.
+  // Sem isso, o pg fica esperando indefinidamente por conexão (connectionTimeout=0) e reusa
+  // conexões TCP mortas (sem keepAlive), causando lentidão e "Connection terminated unexpectedly".
+  poolConfig.max = 10;                          // máximo de conexões no pool
+  poolConfig.idleTimeoutMillis = 30000;         // libera conexões ociosas após 30s
+  poolConfig.connectionTimeoutMillis = 8000;    // falha em 8s em vez de travar para sempre
+  poolConfig.keepAlive = true;                  // mantém o TCP vivo (impede drop silencioso)
+  poolConfig.keepAliveInitialDelayMillis = 10000;
 
   if (dbUrl) {
     try {
@@ -1309,6 +1318,7 @@ async function startServer() {
     // Ensure missing columns in crm_comercial_leads
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS previsao DATE`);
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS prob_fechamento INTEGER`);
+    await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS lead_score INTEGER`);
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS etapa_updated_at TIMESTAMPTZ DEFAULT NOW()`);
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS tags JSONB DEFAULT '[]'::jsonb`);
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS instagram TEXT`);
@@ -8801,7 +8811,7 @@ app.get("/api/todos", async (req, res) => {
     try {
       const { id } = req.params;
       const { 
-        coluna, valor, responsavel_id, moved_by, kanban_id, previsao, prob_fechamento, tags, origem, instagram, nicho, tempo_oab, faturamento,
+        coluna, valor, responsavel_id, moved_by, kanban_id, previsao, prob_fechamento, lead_score, tags, origem, instagram, nicho, tempo_oab, faturamento,
         reunion_date, office_location, monthly_closings, closing_goal, reunion_link,
         utm_platform, utm_campaign, utm_set, utm_creative, utm_position,
         nome, telefone, observacoes,
@@ -8866,6 +8876,10 @@ app.get("/api/todos", async (req, res) => {
       if (prob_fechamento !== undefined) {
         updates.push(`prob_fechamento = $${paramIdx++}`);
         params.push(prob_fechamento);
+      }
+      if (lead_score !== undefined) {
+        updates.push(`lead_score = $${paramIdx++}`);
+        params.push(lead_score);
       }
       if (tags !== undefined) {
         updates.push(`tags = $${paramIdx++}`);

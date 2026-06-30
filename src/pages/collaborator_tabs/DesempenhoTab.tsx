@@ -123,7 +123,7 @@ function StarRow({ value, max = 5, size = 14 }: { value: number; max?: number; s
         <Star
           key={i}
           size={size}
-          className={i < Math.round(value) ? 'fill-amber-400 text-amber-400' : 'text-white/15'}
+          className={i < Math.round(value) ? 'fill-amber-400 text-amber-400' : 'text-slate-300 dark:text-white/15'}
         />
       ))}
     </div>
@@ -174,7 +174,7 @@ function StarPicker({ value, onChange }: { value: number; onChange: (v: number) 
         >
           <Star
             size={22}
-            className={n <= (hover || value) ? 'fill-amber-400 text-amber-400' : 'text-white/20'}
+            className={n <= (hover || value) ? 'fill-amber-400 text-amber-400' : 'text-slate-300 dark:text-white/20'}
           />
         </button>
       ))}

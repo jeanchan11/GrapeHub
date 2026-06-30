@@ -445,9 +445,16 @@ export default function FinanceiroDashboard() {
         .catch(() => setDayPopup({ iso, label, items: [], isPrevisto: true, recebimentos: [], pagamentos: [] } as any))
         .finally(() => setDayLoading(false));
     } else {
-      fetch(`/api/financeiro/extrato?start=${iso}&end=${iso}`)
-        .then(res => res.ok ? res.json() : [])
-        .then(items => setDayPopup({ iso, label, items: Array.isArray(items) ? items : [], isPrevisto: false } as any))
+      // Dia passado: mostra os realizados + contas ainda pendentes/atrasadas que venceram nesse dia
+      Promise.all([
+        fetch(`/api/financeiro/extrato?start=${iso}&end=${iso}`).then(res => res.ok ? res.json() : []),
+        fetch(`/api/financeiro/previsto-dia?dia=${iso}`).then(res => res.ok ? res.json() : { recebimentos: [], pagamentos: [] }),
+      ])
+        .then(([realized, prev]) => {
+          const realizedItems = Array.isArray(realized) ? realized : [];
+          const pendentes = [...(prev.recebimentos || []), ...(prev.pagamentos || [])];
+          setDayPopup({ iso, label, items: [...realizedItems, ...pendentes], isPrevisto: false } as any);
+        })
         .catch(() => setDayPopup({ iso, label, items: [], isPrevisto: false } as any))
         .finally(() => setDayLoading(false));
     }
@@ -939,8 +946,8 @@ export default function FinanceiroDashboard() {
                           {contra && <p className="text-[11px] text-slate-400 truncate">{contra}</p>}
                         </div>
                         <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold shrink-0 ${
-                          isReal ? 'bg-violet-500/10 text-violet-500' : 'bg-slate-100 dark:bg-white/5 text-slate-400'
-                        }`}>{isReal ? 'Realizado' : 'Previsto'}</span>
+                          isReal ? 'bg-violet-500/10 text-violet-500' : 'bg-amber-500/10 text-amber-500'
+                        }`}>{isReal ? 'Realizado' : 'Atrasado'}</span>
                         <span className={`text-sm font-bold shrink-0 ${isEntrada ? 'text-emerald-500' : 'text-rose-500'}`}>
                           {isEntrada ? '+' : '-'}{formatCurrency(Math.abs(valor))}
                         </span>
