@@ -5059,6 +5059,20 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
+  app.get("/api/churn", async (req, res) => {
+    try {
+      const result = await pool.query(
+        `SELECT id, "CLIENTE" AS cliente, "day_exit" AS day_exit, "Evitavel - inevitavel" AS tipo,
+                "gestor" AS gestor, "LTV" AS ltv, "SQUAD" AS squad, "Motivo de saída" AS motivo, "comments" AS comments
+         FROM churn WHERE "day_exit" IS NOT NULL ORDER BY "day_exit" DESC`
+      );
+      res.json(result.rows);
+    } catch (err) {
+      console.error("Error fetching churn list:", err);
+      res.status(500).json({ error: "Failed to fetch churn list" });
+    }
+  });
+
   app.get("/api/churn/:clientName", async (req, res) => {
     const { clientName } = req.params;
     try {
@@ -5402,14 +5416,7 @@ app.get("/api/todos", async (req, res) => {
         FROM fin_bill_entries e
         WHERE e.due_date >= $1 AND e.due_date < $2
           AND e.status NOT IN ('paid', 'cancelled')
-          AND NOT EXISTS (
-            SELECT 1 FROM fin_movements_asaas m
-            WHERE m.type = -1
-              AND m.account = 'asaas'
-              AND ABS(m.value - e.expected_value) / NULLIF(e.expected_value, 0) < 0.05
-              AND m.transaction_date BETWEEN e.due_date - INTERVAL '3 days'
-                                        AND e.due_date + INTERVAL '3 days'
-          )
+          -- dedup por valor/data removido: vínculo agora é manual; o status 'paid' já exclui as pagas.
       `, [inicio, fim]);
       const a_pagar = parseFloat(aPagarRes.rows[0].total);
 
@@ -5512,12 +5519,7 @@ app.get("/api/todos", async (req, res) => {
           SELECT COALESCE(SUM(e.expected_value), 0) as val
           FROM fin_bill_entries e
           WHERE e.due_date >= $1 AND e.due_date < $2 AND e.status NOT IN ('paid', 'cancelled')
-            AND NOT EXISTS (
-              SELECT 1 FROM fin_movements_asaas m
-              WHERE m.type = -1 AND m.account = 'asaas'
-                AND ABS(m.value - e.expected_value) / NULLIF(e.expected_value, 0) < 0.05
-                AND m.transaction_date BETWEEN e.due_date - INTERVAL '3 days' AND e.due_date + INTERVAL '3 days'
-            )
+            -- dedup por valor/data removido: vínculo agora é manual; o status 'paid' já exclui as pagas.
         `, [todayIso, inicio]);
         
         saldoAnterior += parseFloat(prevEntAteInicioRes.rows[0].val) - parseFloat(prevSaiAteInicioRes.rows[0].val);
@@ -5559,14 +5561,7 @@ app.get("/api/todos", async (req, res) => {
         FROM fin_bill_entries e
         WHERE e.due_date >= $1 AND e.due_date < $2
           AND e.status NOT IN ('paid', 'cancelled')
-          AND NOT EXISTS (
-            SELECT 1 FROM fin_movements_asaas m
-            WHERE m.type = -1
-              AND m.account = 'asaas'
-              AND ABS(m.value - e.expected_value) / NULLIF(e.expected_value, 0) < 0.05
-              AND m.transaction_date BETWEEN e.due_date - INTERVAL '3 days'
-                                        AND e.due_date + INTERVAL '3 days'
-          )
+          -- dedup por valor/data removido: vínculo agora é manual; o status 'paid' já exclui as pagas.
         GROUP BY e.due_date
       `, [inicio, fim]);
 
@@ -5711,14 +5706,7 @@ app.get("/api/todos", async (req, res) => {
         FROM fin_bill_entries e
         WHERE e.due_date >= $1 AND e.due_date < $2
           AND e.status NOT IN ('paid', 'cancelled')
-          AND NOT EXISTS (
-            SELECT 1 FROM fin_movements_asaas m
-            WHERE m.type = -1
-              AND m.account = 'asaas'
-              AND ABS(m.value - e.expected_value) / NULLIF(e.expected_value, 0) < 0.05
-              AND m.transaction_date BETWEEN e.due_date - INTERVAL '3 days'
-                                        AND e.due_date + INTERVAL '3 days'
-          )
+          -- dedup por valor/data removido: vínculo agora é manual; o status 'paid' já exclui as pagas.
       `, [inicio, fim]);
       const despesas_previstas = parseFloat(pagRes.rows[0].total);
 
@@ -6310,14 +6298,7 @@ app.get("/api/todos", async (req, res) => {
         JOIN fin_bills b ON b.id = e.bill_id
         WHERE e.due_date = $1
           AND e.status NOT IN ('paid', 'cancelled')
-          AND NOT EXISTS (
-            SELECT 1 FROM fin_movements_asaas m
-            WHERE m.type = -1
-              AND m.account = 'asaas'
-              AND ABS(m.value - e.expected_value) / NULLIF(e.expected_value, 0) < 0.05
-              AND m.transaction_date BETWEEN e.due_date - INTERVAL '3 days'
-                                        AND e.due_date + INTERVAL '3 days'
-          )
+          -- dedup por valor/data removido: vínculo agora é manual; o status 'paid' já exclui as pagas.
         ORDER BY e.expected_value DESC
       `, [dia]);
 

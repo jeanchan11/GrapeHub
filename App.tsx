@@ -31,6 +31,7 @@ import MarketingDashboard from './src/pages/MarketingDashboard';
 import MarketingAcoes from './src/pages/MarketingAcoes';
 import PlaybookAcoes from './src/pages/PlaybookAcoes';
 import DashboardOperacional from './src/pages/DashboardOperacional';
+import OperacionalConsolidado from './src/pages/OperacionalConsolidado';
 import ParceirosSquad from './src/pages/ParceirosSquad';
 import TodoStaff from './src/pages/TodoStaff';
 import ChamadosGrapehub from './src/pages/ChamadosGrapehub';
@@ -383,6 +384,8 @@ const AppContent: React.FC = () => {
         return <PlaybookAcoes />;
       case 'dashboard-operacional':
         return <DashboardOperacional key={activePage} activePage={activePage} subsessionId={activeSubsessionId} />;
+      case 'operacional-consolidado':
+        return <OperacionalConsolidado key={activePage} />;
       case 'todo-staff':
         return <TodoStaff key={activePage} activePage={activePage} />;
       case 'chamados-grapehub':

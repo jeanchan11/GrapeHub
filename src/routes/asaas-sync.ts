@@ -394,12 +394,13 @@ export async function runAsaasSync(pool: any): Promise<void> {
       syncCustomers(pool),
     ]);
 
-    // Reconcilia provisões (contas a pagar) com pagamentos do extrato
-    const reconResult = await reconcileBills(pool);
+    // Reconciliação automática DESATIVADA — o vínculo de contas a pagar agora é feito
+    // manualmente pelo botão "Vincular" de cada conta (estava casando só pelo valor e errando).
+    // const reconResult = await reconcileBills(pool);
+    const reconResult = { matched: 0 };
 
     const duration = ((Date.now() - startedAt) / 1000).toFixed(1);
-    console.log(`[asaas-sync] ✅ Concluído em ${duration}s — faturas: ${paymentsResult.upserted} (${paymentsResult.deleted} removidas), extrato: ${extratoResult.upserted}, assinaturas: ${subscriptionsResult.upserted}, clientes: ${customersResult.updated}, reconciliados: ${reconResult.matched}`);
-    console.log(`[reconcile] ${reconResult.matched} provisões vinculadas automaticamente ao extrato`);
+    console.log(`[asaas-sync] ✅ Concluído em ${duration}s — faturas: ${paymentsResult.upserted} (${paymentsResult.deleted} removidas), extrato: ${extratoResult.upserted}, assinaturas: ${subscriptionsResult.upserted}, clientes: ${customersResult.updated} (reconciliação automática desativada)`);
 
     if (logId) {
       await pool.query(`

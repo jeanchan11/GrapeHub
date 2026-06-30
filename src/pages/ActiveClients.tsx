@@ -62,6 +62,7 @@ const ActiveClients: React.FC = () => {
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'ativos' | 'tcv' | 'recorrente' | 'quarentena' | 'churn'>('ativos');
+  const [churnMap, setChurnMap] = useState<Record<string, { exit: string; gestor: string | null; ltv: string | null }>>({});
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [menuPos, setMenuPos] = useState<{top: number, left: number}>({top: 0, left: 0});
@@ -73,6 +74,12 @@ const ActiveClients: React.FC = () => {
   const [pendingUploadFile, setPendingUploadFile] = useState<File | null>(null);
   const [sortBy, setSortBy] = useState<string>('name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+
+  // Default sort por aba: churn começa pela data de saída (mais recente primeiro)
+  useEffect(() => {
+    if (activeTab === 'churn') { setSortBy('exitDate'); setSortDir('desc'); }
+    else { setSortBy('name'); setSortDir('asc'); }
+  }, [activeTab]);
 
   // Churn modal state
   const [churnClient, setChurnClient] = useState<Client | null>(null);
@@ -255,17 +262,28 @@ const ActiveClients: React.FC = () => {
 
       try {
         // Fire ALL requests in parallel
-        const [clientsRes, projectsRes, finRes, statsRes, collabRes] = await Promise.all([
+        const [clientsRes, projectsRes, finRes, statsRes, collabRes, churnRes] = await Promise.all([
           fetch('/api/clients').then(r => r.ok ? r.json() : []),
           fetch('/api/projects').then(r => r.ok ? r.json() : []),
           fetch('/api/fin-people').then(r => r.ok ? r.json() : []),
           fetch('/api/clients/stats').then(r => r.ok ? r.json() : { ativos: 0, tcv: 0, fee: 0, entradas: 0, churn: 0 }),
-          fetch('/api/collaborators').then(r => r.ok ? r.json() : [])
+          fetch('/api/collaborators').then(r => r.ok ? r.json() : []),
+          fetch('/api/churn').then(r => r.ok ? r.json() : [])
         ]);
 
         // Process clients
         if (clientsRes && clientsRes.length > 0) {
           setClients(clientsRes);
+        }
+
+        // Map client name → churn info (most recent record per client; lista vem por day_exit DESC)
+        if (Array.isArray(churnRes)) {
+          const m: Record<string, { exit: string; gestor: string | null; ltv: string | null }> = {};
+          for (const c of churnRes) {
+            const key = String(c.cliente || '').toLowerCase().trim();
+            if (key && !m[key]) m[key] = { exit: c.day_exit, gestor: c.gestor || null, ltv: c.ltv || null };
+          }
+          setChurnMap(m);
         }
 
         // Process projects
@@ -484,6 +502,11 @@ const ActiveClients: React.FC = () => {
     switch (sortBy) {
       case 'name': return dir * (a.name || '').localeCompare(b.name || '');
       case 'startDate': return dir * ((a.startDate || '').localeCompare(b.startDate || ''));
+      case 'exitDate': {
+        const ae = churnMap[(a.name || '').toLowerCase().trim()]?.exit || '';
+        const be = churnMap[(b.name || '').toLowerCase().trim()]?.exit || '';
+        return dir * ae.localeCompare(be);
+      }
       case 'squad': return dir * ((a.squad || '').localeCompare(b.squad || ''));
       case 'product': return dir * ((a.product || '').localeCompare(b.product || ''));
       case 'financial': {
@@ -687,11 +710,6 @@ const ActiveClients: React.FC = () => {
         >
           <UserMinus size={14} />
           Churn
-          <span className={`min-w-[22px] h-[22px] flex items-center justify-center rounded-full text-[10px] font-black ${
-            activeTab === 'churn' ? 'bg-white/20 text-white' : 'bg-rose-500/10 text-rose-500'
-          }`}>
-            {churnClients.length}
-          </span>
         </button>
 
         {isSuperAdmin && (
@@ -737,12 +755,15 @@ const ActiveClients: React.FC = () => {
               <tr className="bg-slate-50/50 dark:bg-white/5 border-b border-slate-200 dark:border-white/5">
                 <SortHeader col="name" label="Nome" className="px-8" />
                 <SortHeader col="startDate" label="Data Inicial" />
-                <th className="px-8 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Local do Escritório</th>
+                {activeTab === 'churn' && <SortHeader col="exitDate" label="Data de Saída" />}
+                {activeTab === 'churn' && <th className="px-8 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Gestor</th>}
+                {activeTab === 'churn' && <th className="px-8 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">LTV</th>}
+                {activeTab !== 'churn' && <th className="px-8 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Local do Escritório</th>}
                 <SortHeader col="squad" label="Squad" />
-                <SortHeader col="product" label="Produto" />
-                {isSuperAdmin && <SortHeader col="financial" label="Financeiro" className="text-center" />}
-                {isSuperAdmin && <SortHeader col="subscription" label="Valor" />}
-                <SortHeader col="project" label="Projeto" className="text-center" />
+                {activeTab !== 'churn' && <SortHeader col="product" label="Produto" />}
+                {activeTab !== 'churn' && isSuperAdmin && <SortHeader col="financial" label="Financeiro" className="text-center" />}
+                {activeTab !== 'churn' && isSuperAdmin && <SortHeader col="subscription" label="Valor" />}
+                {activeTab !== 'churn' && <SortHeader col="project" label="Projeto" className="text-center" />}
                 <SortHeader col="contracts" label="Contratos" />
                 <th className="px-8 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right">Ações</th>
               </tr>
@@ -793,11 +814,34 @@ const ActiveClients: React.FC = () => {
                         {client.startDate ? new Date(client.startDate).toLocaleDateString('pt-BR') : '-'}
                       </div>
                     </td>
+                    {activeTab === 'churn' && (() => {
+                      const ci = churnMap[(client.name || '').toLowerCase().trim()];
+                      const ltvDays = ci?.ltv ? parseInt(String(ci.ltv), 10) : NaN;
+                      return (
+                        <>
+                          <td className="px-4 py-3">
+                            <span className="text-xs font-semibold text-rose-400 whitespace-nowrap">
+                              {ci?.exit ? new Date(String(ci.exit).slice(0, 10) + 'T12:00:00').toLocaleDateString('pt-BR') : '-'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="text-xs text-slate-300 whitespace-nowrap" title={ci?.gestor || ''}>{ci?.gestor ? ci.gestor.trim().split(/\s+/)[0] : '-'}</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="text-xs font-semibold text-slate-300 whitespace-nowrap">
+                              {!isNaN(ltvDays) ? `${ltvDays} dias` : '-'}
+                            </span>
+                          </td>
+                        </>
+                      );
+                    })()}
+                    {activeTab !== 'churn' && (
                     <td className="px-4 py-3">
                       <p className="text-xs text-slate-500 truncate max-w-[150px]">
                         {client.location || '-'}
                       </p>
                     </td>
+                    )}
                     <td className="px-4 py-3">
                       <div className={`inline-flex items-center px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-widest ${
                         client.squad === 'Able' ? 'bg-emerald-500/10 text-emerald-500' :
@@ -807,6 +851,7 @@ const ActiveClients: React.FC = () => {
                         {client.squad || 'Able'}
                       </div>
                     </td>
+                    {activeTab !== 'churn' && (
                     <td className="px-4 py-3">
                       {client.product ? (
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-widest ${
@@ -818,7 +863,8 @@ const ActiveClients: React.FC = () => {
                         <span className="text-[10px] text-slate-400 italic">-</span>
                       )}
                     </td>
-                    {isSuperAdmin && (
+                    )}
+                    {activeTab !== 'churn' && isSuperAdmin && (
                     <td className="px-4 py-3 text-center">
                       <div className="flex flex-col items-center gap-1">
                         <div className="flex items-center justify-center gap-1.5">
@@ -850,7 +896,7 @@ const ActiveClients: React.FC = () => {
                       </div>
                     </td>
                     )}
-                    {isSuperAdmin && (
+                    {activeTab !== 'churn' && isSuperAdmin && (
                     <td className="px-4 py-3 whitespace-nowrap">
                       {(() => {
                         const showSubValue = client.hasActiveSubscription && client.subscriptionValue;
@@ -871,6 +917,7 @@ const ActiveClients: React.FC = () => {
                       })()}
                     </td>
                     )}
+                    {activeTab !== 'churn' && (
                     <td className="px-4 py-3 text-center">
                       <div className="flex justify-center" title={client.hasProjectLink ? (client.projectName || "Projeto vinculado") : "Sem projeto vinculado"}>
                         {client.hasProjectLink ? (
@@ -880,6 +927,7 @@ const ActiveClients: React.FC = () => {
                         )}
                       </div>
                     </td>
+                    )}
                     <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-1">
                         {(() => {

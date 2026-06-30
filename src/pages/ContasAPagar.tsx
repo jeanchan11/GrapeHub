@@ -660,17 +660,6 @@ export default function ContasAPagar() {
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-black/10 dark:border-white/10 bg-dark-card text-xs text-slate-400 hover:text-dark-text hover:border-white/20 transition-colors">
                   <Receipt size={13} /> Contas Cadastradas
                 </button>
-                <button onClick={async () => {
-                  try {
-                    const r = await fetch('/api/fin/bills/reconcile', { method: 'POST' });
-                    const data = await r.json();
-                    if (data.matched > 0) { await fetchEntries(); }
-                    alert(data.matched > 0 ? `✅ ${data.matched} conta(s) vinculada(s) ao extrato!` : 'Nenhum novo vínculo encontrado.');
-                  } catch { alert('Erro na reconciliação.'); }
-                }}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-violet-500/30 bg-violet-600/10 text-xs text-violet-400 hover:bg-violet-600/20 hover:text-violet-300 transition-colors">
-                  <RefreshCw size={13} /> Reconciliar
-                </button>
               </div>
               <button onClick={() => setBillModal({})}
                 className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition-colors">
@@ -678,36 +667,41 @@ export default function ContasAPagar() {
               </button>
             </div>
 
-            {/* Bills config panel */}
+            {/* Bills config modal */}
             <AnimatePresence>
               {showBillsConfig && (
-                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-                  className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl overflow-hidden">
-                  <div className="px-5 py-3 border-b border-black/5 dark:border-white/5 flex items-center justify-between">
-                    <p className="text-xs font-bold text-dark-text">Contas Cadastradas</p>
-                    <span className="text-[10px] text-slate-500">{bills.filter(b => b.recurrence !== 'once').length} contas</span>
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={e => e.target === e.currentTarget && setShowBillsConfig(false)}>
+                <motion.div initial={{ opacity: 0, scale: 0.96, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96, y: 10 }}
+                  className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl overflow-hidden w-full max-w-3xl max-h-[80vh] flex flex-col shadow-2xl">
+                  <div className="px-5 py-3 border-b border-black/5 dark:border-white/5 flex items-center justify-between shrink-0">
+                    <div className="flex items-center gap-2">
+                      <Receipt size={15} className="text-violet-400" />
+                      <p className="text-sm font-bold text-dark-text">Contas Cadastradas</p>
+                      <span className="text-[10px] text-slate-500">{bills.filter(b => b.recurrence !== 'once').length} contas</span>
+                    </div>
+                    <button onClick={() => setShowBillsConfig(false)} className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-slate-400 hover:text-dark-text transition-colors"><X size={16} /></button>
                   </div>
                   {bills.filter(b => b.recurrence !== 'once').length === 0 ? (
                     <div className="px-5 py-8 text-center text-slate-500 text-sm">Nenhuma conta cadastrada.</div>
                   ) : (
-                    <div className="divide-y divide-black/5 dark:divide-white/5">
+                    <div className="divide-y divide-black/5 dark:divide-white/5 overflow-y-auto">
                       {/* Column header */}
                       <div className="flex items-center px-5 py-2 bg-dark-bg/30 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
                         <span className="flex-1">Nome</span>
-                        <span className="w-40 shrink-0">Vencimento</span>
-                        <span className="w-44 shrink-0">Valor</span>
+                        <span className="w-32 shrink-0">Vencimento</span>
+                        <span className="w-36 shrink-0">Valor</span>
                         <span className="w-20 shrink-0"></span>
                       </div>
                       {bills.filter(b => b.recurrence !== 'once').map(b => {
                         return (
                           <div key={b.id} className="flex items-center px-5 py-3 hover:bg-black/[0.03] dark:hover:bg-white/3 transition-colors">
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-semibold text-dark-text truncate">{b.name}</p>
+                            <div className="flex-1 min-w-0 pr-3">
+                              <p className="text-sm font-semibold text-dark-text break-words leading-tight">{b.name}</p>
                               <p className="text-[10px] text-slate-500">
                                 <CatDot cat={b.category} />{b.category} · {RECURRENCE_LABELS[b.recurrence] || b.recurrence}
                               </p>
                             </div>
-                            <div className="w-40 shrink-0">
+                            <div className="w-32 shrink-0">
                               {b.recurrence === 'monthly' && b.due_day ? (
                                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-violet-500/10 border border-violet-500/20 text-violet-400 text-[11px] font-bold whitespace-nowrap">
                                   <Calendar size={10} />
@@ -742,7 +736,7 @@ export default function ContasAPagar() {
                                 <span className="text-[11px] text-slate-600">—</span>
                               )}
                             </div>
-                            <div className="w-44 shrink-0">
+                            <div className="w-36 shrink-0">
                               <p className="text-sm font-bold text-dark-text">{b.value ? fmtBRL(Number(b.value)) : 'Variável'}</p>
                             </div>
                             <div className="w-20 shrink-0 flex items-center gap-2 justify-end">
@@ -755,6 +749,7 @@ export default function ContasAPagar() {
                     </div>
                   )}
                 </motion.div>
+                </div>
               )}
             </AnimatePresence>
 

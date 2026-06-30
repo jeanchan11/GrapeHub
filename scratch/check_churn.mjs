@@ -1,0 +1,11 @@
+import pg from 'pg'; import dotenv from 'dotenv'; dotenv.config();
+const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+const cols = await pool.query(`SELECT column_name, data_type FROM information_schema.columns WHERE table_name='churn' ORDER BY ordinal_position`);
+console.log('colunas:', cols.rows.map(c=>`${c.column_name}(${c.data_type})`).join(', '));
+const cnt = await pool.query(`SELECT COUNT(*)::int n FROM churn`);
+console.log('total registros:', cnt.rows[0].n);
+const sample = await pool.query(`SELECT "CLIENTE","day_exit","SQUAD","gestor","Evitavel - inevitavel" tipo FROM churn ORDER BY day_exit DESC NULLS LAST LIMIT 5`);
+console.table(sample.rows);
+const byMonth = await pool.query(`SELECT to_char(day_exit::date,'YYYY-MM') mes, COUNT(*)::int n FROM churn WHERE day_exit IS NOT NULL GROUP BY 1 ORDER BY 1 DESC LIMIT 6`);
+console.log('por mês:', byMonth.rows);
+await pool.end();
