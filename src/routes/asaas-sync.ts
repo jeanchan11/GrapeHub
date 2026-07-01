@@ -1,4 +1,5 @@
 import https from 'https';
+import { categorizeMovements } from './bills';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Asaas Sync Engine
@@ -54,6 +55,42 @@ async function asaasFetchAll(endpoint: string, params: Record<string, string> = 
   }
 
   return results;
+}
+
+// Busca um objeto único do Asaas (ex.: /finance/balance)
+async function asaasFetchOne(endpoint: string): Promise<any | null> {
+  const key = getAsaasKey();
+  if (!key) return null;
+  const url = `https://api.asaas.com/v3${endpoint}`;
+  return await new Promise<any | null>((resolve) => {
+    const req = https.request(url, { method: 'GET', headers: { 'access_token': key } }, (res) => {
+      let body = ''; res.on('data', (c: string) => body += c);
+      res.on('end', () => { try { resolve(JSON.parse(body)); } catch { resolve(null); } });
+    });
+    req.on('error', () => resolve(null));
+    req.setTimeout(15000, () => { req.destroy(); resolve(null); });
+    req.end();
+  });
+}
+
+// Snapshot do saldo REAL do Asaas → grava como saldo de abertura do PRÓXIMO mês.
+// Roda a cada sync: durante o mês, mantém a abertura do mês seguinte = último saldo; congela na virada.
+async function snapshotSaldoVirada(pool: any) {
+  try {
+    const bal = await asaasFetchOne('/finance/balance');
+    const balance = bal && bal.balance != null ? parseFloat(bal.balance) : null;
+    if (balance == null || isNaN(balance)) return;
+    const now = new Date();
+    let y = now.getFullYear(), m = now.getMonth() + 2; // próximo mês (getMonth é 0-based)
+    if (m > 12) { m = 1; y += 1; }
+    const nextMonth = `${y}-${String(m).padStart(2, '0')}`;
+    await pool.query(
+      `INSERT INTO fin_dfc_historico (ref_month, structure, description, value, sort_order)
+       VALUES ($1, '_saldo_abertura', 'Saldo de abertura (real)', $2, 1)
+       ON CONFLICT (ref_month, structure) DO UPDATE SET value=EXCLUDED.value`,
+      [nextMonth, balance]
+    );
+  } catch (e: any) { console.warn('[asaas-sync] snapshot saldo da virada:', e.message); }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -156,7 +193,25 @@ async function syncPayments(pool: any): Promise<{ upserted: number; deleted: num
     } catch { /* ignora erros individuais */ }
   }
 
-  return { upserted, deleted: 0 };
+  // 6. Remove faturas OBSOLETAS: cobranças em aberto na janela de vencimento que o Asaas
+  //    não retornou mais (foram canceladas/removidas/regeneradas). Preserva as já pagas (histórico).
+  let deleted = 0;
+  try {
+    const ids = [...allPayments.keys()];
+    const delRes = await pool.query(
+      `DELETE FROM fin_receivables
+       WHERE due_date >= $1 AND due_date <= $2
+         AND status IN ('PENDING', 'Pendente', 'OVERDUE')
+         AND NOT (asaas_id = ANY($3))
+       RETURNING id`,
+      [fmt(from), fmt(to), ids]
+    );
+    deleted = delRes.rowCount || 0;
+  } catch (e: any) {
+    console.warn('[asaas-sync] cleanup faturas obsoletas:', e.message);
+  }
+
+  return { upserted, deleted };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -399,6 +454,12 @@ export async function runAsaasSync(pool: any): Promise<void> {
     // const reconResult = await reconcileBills(pool);
     const reconResult = { matched: 0 };
 
+    // Categoriza movimentos novos no plano de contas (alimenta a DRE ao vivo)
+    try { await categorizeMovements(pool); } catch (e: any) { console.warn('[categorizar] pós-sync:', e.message); }
+
+    // Snapshot do saldo real → abertura do próximo mês (o "último saldo antes de virar")
+    await snapshotSaldoVirada(pool);
+
     const duration = ((Date.now() - startedAt) / 1000).toFixed(1);
     console.log(`[asaas-sync] ✅ Concluído em ${duration}s — faturas: ${paymentsResult.upserted} (${paymentsResult.deleted} removidas), extrato: ${extratoResult.upserted}, assinaturas: ${subscriptionsResult.upserted}, clientes: ${customersResult.updated} (reconciliação automática desativada)`);
 
@@ -487,6 +548,24 @@ export function setupAsaasSyncRoutes(app: any, pool: any) {
       ALTER TABLE fin_bill_entries ADD COLUMN IF NOT EXISTS linked_movement_id INT;
     `);
   }).catch((e: any) => console.warn('[bills] migrate fin_bills/fin_bill_entries:', e.message));
+
+  // Notas/anotações de cobrança por cliente inadimplente (status do contato, aguardando pagamento, etc.)
+  pool.query(`
+    CREATE TABLE IF NOT EXISTS fin_inadimplente_notes (
+      customer_id TEXT PRIMARY KEY,
+      note        TEXT,
+      updated_at  TIMESTAMPTZ DEFAULT NOW()
+    );
+  `).catch((e: any) => console.warn('[inadimplentes] migrate notes table:', e.message));
+
+  // Data de pagamento da fatura do cartão Sicredi (uma por mês de competência)
+  pool.query(`
+    CREATE TABLE IF NOT EXISTS fin_sicredi_invoice (
+      billing_month TEXT PRIMARY KEY,
+      payment_date  DATE,
+      updated_at    TIMESTAMPTZ DEFAULT NOW()
+    );
+  `).catch((e: any) => console.warn('[sicredi] migrate invoice table:', e.message));
 
   // Alterações na tabela fin_movements_asaas (independentes)
   pool.query(`

@@ -1728,6 +1728,7 @@ interface InadimplentesClient {
   latest_due_date: string;
   max_days_overdue: number;
   charges: InadimplentesCharge[];
+  note: string | null;
 }
 
 const getDaysColor = (days: number) => {
@@ -1753,6 +1754,27 @@ const InadimplentesBlock = ({ selectedMonth, onCountChange }: { selectedMonth: s
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'days' | 'value' | 'charges'>('days');
   const [subTab, setSubTab] = useState<'mes' | 'todos'>('mes');
+  const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
+  const [savingNote, setSavingNote] = useState<string | null>(null);
+
+  const handleSaveNote = async (customerId: string) => {
+    const note = noteDrafts[customerId] ?? '';
+    setSavingNote(customerId);
+    try {
+      const res = await fetch(`/api/fin/inadimplentes/${encodeURIComponent(customerId)}/note`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note }),
+      });
+      if (res.ok) {
+        setClients(prev => prev.map(c => c.customer_id === customerId ? { ...c, note } : c));
+      }
+    } catch (err) {
+      console.error('Erro ao salvar nota:', err);
+    } finally {
+      setSavingNote(null);
+    }
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -2128,6 +2150,33 @@ const InadimplentesBlock = ({ selectedMonth, onCountChange }: { selectedMonth: s
                             <span>{client.email}</span>
                           </div>
                         )}
+
+                        {/* Anotação de cobrança */}
+                        <div className="mt-4 pt-4 border-t border-white/5" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center gap-1.5 mb-2">
+                            <MessageSquare size={12} className="text-slate-500" />
+                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Anotação de cobrança</p>
+                          </div>
+                          <textarea
+                            value={noteDrafts[client.customer_id] ?? client.note ?? ''}
+                            onChange={(e) => setNoteDrafts(prev => ({ ...prev, [client.customer_id]: e.target.value }))}
+                            placeholder="Ex: conversei dia 02, cliente vai pagar até sexta, aguardando comprovante..."
+                            rows={3}
+                            className="w-full bg-dark-card border border-white/10 rounded-xl px-3 py-2 text-xs text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500/40 resize-y"
+                          />
+                          <div className="flex items-center justify-end gap-2 mt-2">
+                            {noteDrafts[client.customer_id] !== undefined && noteDrafts[client.customer_id] !== (client.note ?? '') && (
+                              <span className="text-[10px] text-amber-400">não salvo</span>
+                            )}
+                            <button
+                              onClick={() => handleSaveNote(client.customer_id)}
+                              disabled={savingNote === client.customer_id}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold bg-violet-500/10 border border-violet-500/20 text-violet-400 hover:bg-violet-500/20 transition-colors disabled:opacity-50"
+                            >
+                              <Check size={11} /> {savingNote === client.customer_id ? 'Salvando...' : 'Salvar nota'}
+                            </button>
+                          </div>
+                        </div>
                       </div>
                     )}
                   </motion.div>

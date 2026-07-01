@@ -76,7 +76,7 @@ const OptionPicker: React.FC<OptionPickerProps> = ({
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 mt-1 z-50 bg-dark-card border border-white/10 rounded-xl shadow-2xl py-1.5 min-w-[160px] animate-in fade-in slide-in-from-top-1 duration-150">
+        <div className="absolute top-full left-0 mt-1 z-50 bg-dark-card border border-white/10 rounded-xl shadow-2xl py-1.5 min-w-[160px] max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-1 duration-150">
           {emptyLabel !== undefined && (
             <button
               type="button"

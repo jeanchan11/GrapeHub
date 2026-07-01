@@ -350,8 +350,13 @@ const ActiveClients: React.FC = () => {
     const reader = new FileReader();
     reader.onload = async () => {
       const base64 = reader.result as string;
-      const client = clients.find(c => c.id === clientId);
-      const existing: {name: string, url: string}[] = (() => { try { return JSON.parse(client?.contracts || '[]'); } catch { return []; } })();
+      // Busca os contratos COMPLETOS (com arquivo) sob demanda — a lista vem sem o arquivo,
+      // então não dá pra ler de client.contracts (perderia os arquivos existentes ao salvar).
+      let existing: {name: string, url: string}[] = [];
+      try {
+        const r = await fetch(`/api/clients/${clientId}/contracts`);
+        if (r.ok) existing = await r.json();
+      } catch { existing = []; }
       existing.push({ name: file.name, url: base64 });
       try {
         await fetch(`/api/clients/${clientId}`, {
@@ -368,6 +373,15 @@ const ActiveClients: React.FC = () => {
       setPendingUploadFile(null);
     };
     reader.readAsDataURL(file);
+  };
+
+  // Carrega o contrato completo (com o arquivo) sob demanda para pré-visualizar.
+  const openContractPreview = async (clientId: string) => {
+    try {
+      const r = await fetch(`/api/clients/${clientId}/contracts`);
+      const full: {name: string, url: string}[] = r.ok ? await r.json() : [];
+      if (full[0]) setContractPreview(full[0]);
+    } catch { /* noop */ }
   };
 
   const handleToggleStatus = async (client: Client) => {
@@ -933,7 +947,7 @@ const ActiveClients: React.FC = () => {
                         {(() => {
                           const contracts: {name: string, url: string}[] = (() => { try { return JSON.parse(client.contracts || '[]'); } catch { return []; } })();
                           return contracts.length > 0 ? (
-                            <button onClick={() => setContractPreview(contracts[0])} className="w-7 h-7 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-500 hover:bg-emerald-500/20 transition-colors" title={contracts[0].name || 'Ver contrato'}>
+                            <button onClick={() => openContractPreview(client.id)} className="w-7 h-7 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-500 hover:bg-emerald-500/20 transition-colors" title={contracts[0].name || 'Ver contrato'}>
                               <FileText size={14} />
                             </button>
                           ) : (

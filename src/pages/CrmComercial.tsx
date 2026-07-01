@@ -5253,7 +5253,6 @@ const CrmComercial = () => {
         [data-radix-popper-content-wrapper] > [role="menu"] {
           animation: none !important;
           opacity: 1 !important;
-          transform: none !important;
           transition: none !important;
         }
       `}</style>
@@ -5295,6 +5294,7 @@ const CrmComercial = () => {
               </button>
             </DropdownMenu.Trigger>
 
+              <DropdownMenu.Portal>
               <DropdownMenu.Content className="bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-xl p-2 min-w-[280px] shadow-xl z-50" style={{ opacity: 1, animation: 'none' }}>
                 {kanbans.map(kanban => (
                   <DropdownMenu.Item
@@ -5336,6 +5336,7 @@ const CrmComercial = () => {
                   Gerenciar Kanbans
                 </DropdownMenu.Item>
               </DropdownMenu.Content>
+              </DropdownMenu.Portal>
 
           </DropdownMenu.Root>
 
@@ -5350,6 +5351,7 @@ const CrmComercial = () => {
               </button>
             </DropdownMenu.Trigger>
 
+              <DropdownMenu.Portal>
               <DropdownMenu.Content
                 className="bg-white dark:bg-[#1A1625] border border-gray-200 dark:border-white/10 rounded-xl p-2 min-w-[220px] shadow-2xl z-[200]"
                 align="end"
@@ -5422,6 +5424,7 @@ const CrmComercial = () => {
                   </div>
                 </DropdownMenu.Item>
               </DropdownMenu.Content>
+              </DropdownMenu.Portal>
 
           </DropdownMenu.Root>
 

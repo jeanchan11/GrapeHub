@@ -3332,7 +3332,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-xl modal-container overflow-hidden my-auto transition-colors"
+              className="relative w-full max-w-xl modal-container overflow-visible my-auto transition-colors"
             >
               <div className="p-8 border-b border-slate-200 dark:border-white/10">
                 <div className="flex items-center justify-between mb-6">

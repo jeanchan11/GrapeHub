@@ -66,6 +66,7 @@ interface SicrediSummary {
   total: number;
   total_items: number;
   categorized: number;
+  payment_date?: string | null;
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -512,28 +513,66 @@ export default function ContasAPagar() {
     if (r.ok) await fetchSicredi();
   };
 
-  // ── OFX Upload ──
+  // ── Upload Fatura (OFX ou CSV da Sicredi) ──
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
     setUploadMsg(null);
     try {
-      const form = new FormData();
-      form.append('file', file);
-      form.append('account', 'sicredi');
-      form.append('billingMonth', selectedMonth);
-      const r = await fetch('/api/fin/movements/upload', { method: 'POST', body: form });
+      // Lê o arquivo em base64 (suporta .ofx e .csv)
+      const fileData = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          resolve(result.includes(',') ? result.split(',')[1] : result);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const r = await fetch('/api/financeiro/extrato/importar-ofx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account: 'sicredi', billing_month: selectedMonth, fileName: file.name, fileData }),
+      });
       if (r.ok) {
         const data = await r.json();
-        setUploadMsg({ type: 'ok', text: `${data.inserted ?? data.count ?? 0} lançamentos importados com sucesso.` });
-        await fetchSicredi();
+        const ins = data.inserted ?? data.count ?? 0;
+        const skip = data.skipped ?? 0;
+        const pruned = data.pruned ?? 0;
+        const bm: string | null = data.billing_month || null;
+        const parts = [`${ins} novo(s)`];
+        if (skip) parts.push(`${skip} mantido(s)`);
+        if (pruned) parts.push(`${pruned} removido(s)`);
+        let prefix = '';
+        if (data.month_source === 'vencimento' && bm) {
+          const [y, m] = bm.split('-');
+          const dd = data.due_date ? `${data.due_date.slice(8, 10)}/${data.due_date.slice(5, 7)}/${data.due_date.slice(0, 4)}` : '';
+          prefix = `Fatura ${m}/${y}${dd ? ` (vence ${dd})` : ''} · `;
+        }
+        setUploadMsg({ type: 'ok', text: `${prefix}${parts.join(' · ')}.` });
+        // A fatura pode cair num mês diferente do selecionado (auto-detecção pelo vencimento):
+        // pula para o mês em que ela foi lançada para o usuário vê-la.
+        if (bm && bm !== selectedMonth) setSelectedMonth(bm);
+        else await fetchSicredi();
       } else {
         const err = await r.json().catch(() => ({}));
         setUploadMsg({ type: 'err', text: err.error || 'Erro ao importar arquivo.' });
       }
     } catch { setUploadMsg({ type: 'err', text: 'Falha na conexão.' }); }
     finally { setUploading(false); if (fileRef.current) fileRef.current.value = ''; }
+  };
+
+  // ── Data de pagamento da fatura ──
+  const handleSavePaymentDate = async (date: string) => {
+    setSicrediSummary(prev => ({ ...prev, payment_date: date || null }));
+    try {
+      await fetch('/api/fin/bills/sicredi/payment-date', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ month: selectedMonth, payment_date: date || null }),
+      });
+    } catch { /* silencioso */ }
   };
 
   // ── Filtered entries ──
@@ -918,18 +957,30 @@ export default function ContasAPagar() {
             {/* Upload area */}
             <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-5 flex flex-col sm:flex-row items-center gap-4">
               <div className="flex-1">
-                <p className="text-sm font-bold text-dark-text mb-0.5">Importar Fatura OFX</p>
-                <p className="text-xs text-slate-500">Faça upload do arquivo .ofx exportado pelo Sicredi Internet Banking</p>
+                <p className="text-sm font-bold text-dark-text mb-0.5">Importar Fatura (OFX ou CSV)</p>
+                <p className="text-xs text-slate-500">Faça upload do arquivo .ofx ou .csv da fatura exportada pelo Sicredi Internet Banking</p>
                 {uploadMsg && (
                   <p className={`text-xs mt-2 font-semibold ${uploadMsg.type === 'ok' ? 'text-emerald-400' : 'text-rose-400'}`}>{uploadMsg.text}</p>
                 )}
               </div>
+              <div className="flex flex-col shrink-0">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Pagamento da fatura</label>
+                <div className="relative">
+                  <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-violet-400 pointer-events-none z-10" />
+                  <input
+                    type="date"
+                    value={sicrediSummary.payment_date || ''}
+                    onChange={(e) => handleSavePaymentDate(e.target.value)}
+                    className="w-[152px] bg-dark-card border border-black/10 dark:border-white/10 rounded-xl pl-9 pr-3 py-2.5 text-xs font-bold text-dark-text cursor-pointer transition-colors hover:border-violet-500/40 focus:outline-none focus:border-violet-500/60 focus:ring-2 focus:ring-violet-500/15 dark:[color-scheme:dark] [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0"
+                  />
+                </div>
+              </div>
               <div className="flex items-center gap-2 shrink-0">
-                <input ref={fileRef} type="file" accept=".ofx,.OFX" className="hidden" onChange={handleUpload} />
+                <input ref={fileRef} type="file" accept=".ofx,.OFX,.csv,.CSV" className="hidden" onChange={handleUpload} />
                 <button onClick={() => fileRef.current?.click()} disabled={uploading}
                   className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-bold transition-colors">
                   {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                  {uploading ? 'Importando...' : 'Upload OFX'}
+                  {uploading ? 'Importando...' : 'Upload OFX / CSV'}
                 </button>
                 <button onClick={fetchSicredi} className="p-2.5 rounded-xl border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 text-slate-400 hover:text-dark-text transition-colors">
                   <RefreshCw size={14} className={sicrediLoading ? 'animate-spin' : ''} />
@@ -959,7 +1010,7 @@ export default function ContasAPagar() {
               <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl py-16 flex flex-col items-center gap-3">
                 <CreditCard size={32} className="text-slate-600" />
                 <p className="text-sm text-slate-500">Nenhum lançamento para {monthLabel}.</p>
-                <p className="text-xs text-slate-600">Faça o upload do arquivo OFX para importar.</p>
+                <p className="text-xs text-slate-600">Faça o upload do arquivo OFX ou CSV para importar.</p>
               </div>
             ) : (
               <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl overflow-hidden">

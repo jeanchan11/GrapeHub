@@ -13,7 +13,7 @@ import admin from "firebase-admin";
 import { setupCollectionRoutes } from "./src/routes/collection";
 import { setupDispatchRoutes } from "./src/routes/dispatch";
 import { setupAsaasSyncRoutes, runAsaasSync } from "./src/routes/asaas-sync";
-import { setupBillsRoutes } from "./src/routes/bills";
+import { setupBillsRoutes, syncSicrediBillEntry, categorizeMovements } from "./src/routes/bills";
 import { setupBolaoRoutes } from "./src/routes/bolao";
 import { normalizePhoneBR } from './src/utils/phoneNormalize';
 import rateLimit from 'express-rate-limit';
@@ -1229,6 +1229,15 @@ async function startServer() {
         SELECT true, '09:00', 60, ''
         WHERE NOT EXISTS (SELECT 1 FROM fin_dispatch_config);
       ALTER TABLE fin_dispatch_config ADD COLUMN IF NOT EXISTS last_batch_date DATE;
+
+      -- Orçamento (Orçado vs Realizado): valor planejado por categoria (plano de contas) x mês
+      CREATE TABLE IF NOT EXISTS fin_budget (
+        ref_month TEXT NOT NULL,
+        structure TEXT NOT NULL,
+        value NUMERIC(14,2) NOT NULL DEFAULT 0,
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        PRIMARY KEY (ref_month, structure)
+      );
     `);
     console.log("Database tables initialized successfully.");
 
@@ -2404,10 +2413,39 @@ async function startServer() {
               const tags = Array.isArray(lead.tags) ? lead.tags : [];
               const produtoTag = tags.length > 0 ? tags[0] : null;
 
+              // Busca a reunião mais recente do lead para levar as Informações da Reunião ao onboarding.
+              // O card de onboarding espera meeting_info como JSON: { date, title, responsible, responsible_avatar, local, link, niche, closings, goal, notes }
+              let meetingInfoJson: string | null = null;
+              try {
+                const mtgRes = await pool.query(
+                  `SELECT title, meeting_date, responsible_name, responsible_avatar, notes,
+                          office_location, reunion_link, reunion_niche, monthly_closings, closing_goal
+                   FROM crm_comercial_meetings WHERE lead_id = $1 ORDER BY meeting_date DESC, created_at DESC LIMIT 1`,
+                  [leadId]
+                );
+                if (mtgRes.rows.length > 0) {
+                  const m = mtgRes.rows[0];
+                  meetingInfoJson = JSON.stringify({
+                    date: m.meeting_date,
+                    title: m.title,
+                    responsible: m.responsible_name,
+                    responsible_avatar: m.responsible_avatar,
+                    local: m.office_location,
+                    link: m.reunion_link,
+                    niche: m.reunion_niche,
+                    closings: m.monthly_closings,
+                    goal: m.closing_goal,
+                    notes: m.notes,
+                  });
+                }
+              } catch (e: any) {
+                console.warn('[Automação] create_onboarding: falha ao buscar reunião do lead:', e.message);
+              }
+
               // Verifica se já existe tarefa de onboarding para este lead (evita duplicatas)
               const existingOnboarding = await pool.query(
-                `SELECT id, produto FROM onboarding_tasks 
-                 WHERE LOWER(TRIM(client_name)) = LOWER(TRIM($1)) 
+                `SELECT id, produto, meeting_info FROM onboarding_tasks
+                 WHERE LOWER(TRIM(client_name)) = LOWER(TRIM($1))
                    AND type = 'operacional'
                    AND created_at > NOW() - INTERVAL '1 hour'
                  LIMIT 1`,
@@ -2415,22 +2453,20 @@ async function startServer() {
               );
 
               if (existingOnboarding.rows.length > 0) {
-                // Já existe — apenas atualiza o produto se estiver faltando
+                // Já existe — atualiza produto e/ou Informações da Reunião se estiverem faltando
                 const existing = existingOnboarding.rows[0];
                 if (produtoTag && !existing.produto) {
-                  await pool.query(
-                    `UPDATE onboarding_tasks SET produto = $1 WHERE id = $2`,
-                    [produtoTag, existing.id]
-                  );
-                  console.log(`[Automação] create_onboarding: tarefa já existia para "${clientName}", produto atualizado para "${produtoTag}"`);
-                } else {
-                  console.log(`[Automação] create_onboarding: tarefa já existia para "${clientName}", pulando criação duplicada`);
+                  await pool.query(`UPDATE onboarding_tasks SET produto = $1 WHERE id = $2`, [produtoTag, existing.id]);
                 }
+                if (meetingInfoJson && !existing.meeting_info) {
+                  await pool.query(`UPDATE onboarding_tasks SET meeting_info = $1 WHERE id = $2`, [meetingInfoJson, existing.id]);
+                }
+                console.log(`[Automação] create_onboarding: tarefa já existia para "${clientName}", atualizada (produto/reunião se faltavam)`);
               } else {
                 const result = await pool.query(
-                  `INSERT INTO onboarding_tasks (client_name, nome_completo, telefone_whatsapp, cidade, produto, status_group, type)
-                   VALUES ($1, $2, $3, $4, $5, 'briefing-realizado', 'operacional') RETURNING *`,
-                  [clientName, nomeCompleto, telefone, cidade, produtoTag]
+                  `INSERT INTO onboarding_tasks (client_name, nome_completo, telefone_whatsapp, cidade, produto, meeting_info, status_group, type)
+                   VALUES ($1, $2, $3, $4, $5, $6, 'briefing-realizado', 'operacional') RETURNING *`,
+                  [clientName, nomeCompleto, telefone, cidade, produtoTag, meetingInfoJson]
                 );
                 const newTask = result.rows[0];
 
@@ -4510,8 +4546,15 @@ app.get("/api/todos", async (req, res) => {
           WHERE r.status IN ('OVERDUE', 'PENDING')
           GROUP BY r.customer_id
         )
-        SELECT 
-          c.*,
+        SELECT
+          c.id, c.name, c.email, c.phone, c.status, c.created_at, c.start_date, c.location, c.squad, c.tags,
+          c.fin_people_guid, c.cnpjcpf, c.crm_status, c.aviso_previo_date, c.product, c.fin_subscription_id,
+          c.manager_id, c.sort_order, c.billing_name, c.billing_email, c.billing_phone, c.billing_method, c.billing_notes,
+          -- Contratos SEM o conteúdo do arquivo (url base64): a listagem só precisa do nome/contagem.
+          -- O arquivo completo é carregado sob demanda via GET /api/clients/:id/contracts.
+          CASE WHEN left(c.contracts, 1) = '[' THEN
+            COALESCE((SELECT jsonb_agg(jsonb_build_object('name', elem->>'name')) FROM jsonb_array_elements(c.contracts::jsonb) elem), '[]'::jsonb)::text
+          ELSE '[]' END AS contracts,
           fp_link.id IS NOT NULL as has_financial_link,
           fp_link.guid as fin_people_guid_resolved,
           EXISTS(SELECT 1 FROM projects p WHERE p.active_client_id = c.id) as has_project_link,
@@ -4593,6 +4636,22 @@ app.get("/api/todos", async (req, res) => {
     } catch (err) {
       console.error("Error fetching clients:", err);
       res.status(500).json({ error: "Failed to fetch clients" });
+    }
+  });
+
+  // Contratos completos (com o arquivo base64) de UM cliente — carregado sob demanda,
+  // já que a listagem /api/clients devolve os contratos sem o arquivo (por performance).
+  app.get("/api/clients/:id/contracts", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const r = await pool.query("SELECT contracts FROM clients WHERE id = $1", [id]);
+      if (r.rows.length === 0) return res.status(404).json({ error: "Client not found" });
+      let contracts: any[] = [];
+      try { contracts = JSON.parse(r.rows[0].contracts || "[]"); } catch { contracts = []; }
+      res.json(Array.isArray(contracts) ? contracts : []);
+    } catch (err) {
+      console.error("Error fetching client contracts:", err);
+      res.status(500).json({ error: "Failed to fetch contracts" });
     }
   });
 
@@ -5459,6 +5518,299 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
+  // DRE / Fluxo de Caixa por categoria (plano de contas) × meses do ano.
+  // Meses com histórico importado (fin_dfc_historico, ex.: Jan–Jun do Marvee) vêm de lá;
+  // os demais são calculados AO VIVO a partir dos movimentos (Asaas + cartão) rolados pelo plano de contas.
+  app.get("/api/financeiro/dre", async (req, res) => {
+    try {
+      const year = (req.query.year as string) || String(new Date().getFullYear());
+      const months = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`);
+
+      // Linhas canônicas (estrutura + descrição + ordem) — layout do histórico (Marvee)
+      const rowsRes = await pool.query(
+        `SELECT structure, MAX(description) AS description, MIN(sort_order) AS sort_order
+         FROM fin_dfc_historico GROUP BY structure ORDER BY MIN(sort_order)`
+      );
+
+      // Valores históricos do ano
+      const histRes = await pool.query(
+        `SELECT ref_month, structure, value FROM fin_dfc_historico WHERE ref_month LIKE $1`, [`${year}-%`]
+      );
+      const hist: Record<string, number> = {};
+      const histMonths = new Set<string>();
+      // histMonths = meses com dados de CATEGORIA (01/02/...). Registros só de saldo (_saldo_abertura) não marcam o mês como histórico.
+      for (const r of histRes.rows) { hist[`${r.ref_month}|${r.structure}`] = parseFloat(r.value); if (/^[0-9]/.test(r.structure)) histMonths.add(r.ref_month); }
+
+      // Cálculo ao vivo (meses sem histórico)
+      const live: Record<string, number> = {};
+      const liveSemCat: Record<string, number> = {};
+      for (const month of months) {
+        if (histMonths.has(month)) continue;
+        const mv = await pool.query(
+          `SELECT c.structure AS structure, SUM(m.value::numeric * m.type) AS val
+           FROM fin_movements_asaas m JOIN fin_categories c ON c.id = m.custom_category_id
+           WHERE m.is_anticipation_pair = false
+             AND ((m.account='asaas' AND to_char(m.transaction_date,'YYYY-MM') = $1)
+               OR (m.account='sicredi' AND m.billing_month = $1))
+           GROUP BY c.structure`, [month]
+        );
+        for (const row of mv.rows) {
+          const parts = String(row.structure || '').split('.');
+          const val = parseFloat(row.val) || 0;
+          for (let i = 1; i <= parts.length; i++) {
+            const anc = parts.slice(0, i).join('.');
+            live[`${month}|${anc}`] = (live[`${month}|${anc}`] || 0) + val;
+          }
+        }
+        const semcat = await pool.query(
+          `SELECT COALESCE(SUM(m.value::numeric * m.type),0) AS val FROM fin_movements_asaas m
+           WHERE m.is_anticipation_pair = false AND m.custom_category_id IS NULL
+             AND ((m.account='asaas' AND to_char(m.transaction_date,'YYYY-MM') = $1)
+               OR (m.account='sicredi' AND m.billing_month = $1))`, [month]
+        );
+        liveSemCat[month] = parseFloat(semcat.rows[0].val) || 0;
+      }
+
+      const isCat = (s: string) => /^[0-9]+(\.[0-9]+)*$/.test(s);
+      const isLvl1 = (s: string) => /^[0-9]+$/.test(s);
+
+      const catRows = rowsRes.rows.filter((r: any) => isCat(r.structure)).map((r: any) => {
+        const values: Record<string, number> = {}; let total = 0;
+        for (const month of months) {
+          const v = histMonths.has(month) ? (hist[`${month}|${r.structure}`] ?? 0) : (live[`${month}|${r.structure}`] ?? 0);
+          values[month] = v; total += v;
+        }
+        return { structure: r.structure, description: r.description, level: r.structure.split('.').length, values, total };
+      });
+
+      const semCatValues: Record<string, number> = {}; let semCatTotal = 0;
+      for (const month of months) { const v = histMonths.has(month) ? 0 : (liveSemCat[month] || 0); semCatValues[month] = v; semCatTotal += v; }
+
+      const sumLvl1 = (month: string) =>
+        catRows.filter((r: any) => isLvl1(r.structure)).reduce((s: number, r: any) => s + (r.values[month] || 0), 0) + (semCatValues[month] || 0);
+
+      const saldoInicial: Record<string, number> = {}, geracao: Record<string, number> = {}, saldoFinal: Record<string, number> = {};
+      let prevFinal: number | null = null;
+      for (const month of months) {
+        // Abertura: se há um saldo REAL de abertura (snapshot da virada, ex.: saldo do Asaas no fim do mês
+        // anterior), ele "reseta" o carry-forward. Senão, carrega o saldo final do mês anterior; e o 1º mês
+        // do ano usa o saldo inicial histórico.
+        const abertura = hist[`${month}|_saldo_abertura`];
+        const histSI = hist[`${month}|_saldo_inicial`];
+        saldoInicial[month] = abertura !== undefined ? abertura
+          : (prevFinal !== null ? prevFinal : (histSI !== undefined ? histSI : 0));
+        geracao[month] = histMonths.has(month) ? (hist[`${month}|_geracao`] ?? sumLvl1(month)) : sumLvl1(month);
+        saldoFinal[month] = saldoInicial[month] + geracao[month];
+        prevFinal = saldoFinal[month];
+      }
+      const special = (desc: string, src: Record<string, number>) => {
+        const values: Record<string, number> = {}; for (const m of months) values[m] = src[m] || 0;
+        return { description: desc, values };
+      };
+
+      res.json({
+        year, months, historicalMonths: [...histMonths].sort(),
+        saldoInicial: special('Saldo inicial', saldoInicial),
+        rows: catRows,
+        semCategoria: { description: '(Sem categoria — classificar)', values: semCatValues, total: semCatTotal },
+        geracao: special('Geração de Caixa do Período', geracao),
+        saldoFinal: special('Saldo final', saldoFinal),
+      });
+    } catch (err) {
+      console.error("Error building DRE:", err);
+      res.status(500).json({ error: "Failed to build DRE" });
+    }
+  });
+
+  // Motor de categorização — classifica movimentos no plano de contas (alimenta a DRE ao vivo).
+  // POST com { month: 'YYYY-MM' } para um mês, ou sem corpo para todos.
+  app.post("/api/financeiro/categorizar", async (req, res) => {
+    try {
+      const month = (req.body?.month || req.query?.month) as string | undefined;
+      const result = await categorizeMovements(pool, month ? { month } : {});
+      res.json(result);
+    } catch (err) {
+      console.error("Error categorizing movements:", err);
+      res.status(500).json({ error: "Failed to categorize movements" });
+    }
+  });
+
+  // ── Orçado vs Realizado ──
+  // GET: retorna categorias nível-2, o orçado (fin_budget) e o realizado (mesma lógica da DRE:
+  // histórico Marvee p/ meses fechados, cálculo ao vivo p/ meses correntes). Realizado em magnitude.
+  app.get("/api/financeiro/orcamento", async (req, res) => {
+    try {
+      const year = (req.query.year as string) || String(new Date().getFullYear());
+      const months = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`);
+
+      // Categorias nível-2 (18) + pai + tipo (receita/despesa)
+      const catRes = await pool.query(
+        `SELECT c.structure, c.description, left(c.structure,2) AS parent, p.description AS parent_desc
+         FROM fin_categories c
+         LEFT JOIN fin_categories p ON p.structure = left(c.structure,2)
+         WHERE c.structure ~ '^[0-9][0-9]\\.[0-9][0-9]$'
+         ORDER BY c.structure`
+      );
+      const categorias = catRes.rows.map((r: any) => ({
+        structure: r.structure, description: r.description,
+        parent: r.parent, parentDesc: r.parent_desc,
+        tipo: (r.parent === '01' || r.parent === '03') ? 'receita' : 'despesa',
+      }));
+
+      // Orçado
+      const budRes = await pool.query(`SELECT ref_month, structure, value FROM fin_budget WHERE ref_month LIKE $1`, [`${year}-%`]);
+      const budget: Record<string, Record<string, number>> = {};
+      for (const r of budRes.rows) { (budget[r.structure] ||= {})[r.ref_month] = parseFloat(r.value); }
+
+      // Realizado — histórico x ao vivo (idêntico à DRE)
+      const histRes = await pool.query(`SELECT ref_month, structure, value FROM fin_dfc_historico WHERE ref_month LIKE $1`, [`${year}-%`]);
+      const hist: Record<string, number> = {}; const histMonths = new Set<string>();
+      for (const r of histRes.rows) { hist[`${r.ref_month}|${r.structure}`] = parseFloat(r.value); if (/^[0-9]/.test(r.structure)) histMonths.add(r.ref_month); }
+
+      const live: Record<string, number> = {};
+      for (const month of months) {
+        if (histMonths.has(month)) continue;
+        const mv = await pool.query(
+          `SELECT c.structure AS structure, SUM(m.value::numeric * m.type) AS val
+           FROM fin_movements_asaas m JOIN fin_categories c ON c.id = m.custom_category_id
+           WHERE m.is_anticipation_pair = false
+             AND ((m.account='asaas' AND to_char(m.transaction_date,'YYYY-MM') = $1)
+               OR (m.account='sicredi' AND m.billing_month = $1))
+           GROUP BY c.structure`, [month]
+        );
+        for (const row of mv.rows) {
+          const parts = String(row.structure || '').split('.'); const val = parseFloat(row.val) || 0;
+          for (let i = 1; i <= parts.length; i++) { const anc = parts.slice(0, i).join('.'); live[`${month}|${anc}`] = (live[`${month}|${anc}`] || 0) + val; }
+        }
+      }
+
+      const realizado: Record<string, Record<string, number>> = {};
+      for (const cat of categorias) {
+        realizado[cat.structure] = {};
+        for (const month of months) {
+          const v = histMonths.has(month) ? (hist[`${month}|${cat.structure}`] ?? 0) : (live[`${month}|${cat.structure}`] ?? 0);
+          realizado[cat.structure][month] = Math.abs(v);
+        }
+      }
+
+      res.json({ year, months, categorias, budget, realizado, historicalMonths: [...histMonths].sort() });
+    } catch (err) {
+      console.error("Error building orçamento:", err);
+      res.status(500).json({ error: "Failed to build orçamento" });
+    }
+  });
+
+  // PUT: salva o orçado em lote. Body: { items: [{ ref_month, structure, value }] }
+  app.put("/api/financeiro/orcamento", async (req, res) => {
+    try {
+      const items = (req.body?.items || []) as { ref_month: string; structure: string; value: number }[];
+      if (!Array.isArray(items)) return res.status(400).json({ error: 'items inválido' });
+      let saved = 0;
+      for (const it of items) {
+        if (!it.ref_month || !it.structure) continue;
+        await pool.query(
+          `INSERT INTO fin_budget (ref_month, structure, value, updated_at)
+           VALUES ($1,$2,$3,NOW())
+           ON CONFLICT (ref_month, structure) DO UPDATE SET value=EXCLUDED.value, updated_at=NOW()`,
+          [it.ref_month, it.structure, Number(it.value) || 0]
+        );
+        saved++;
+      }
+      res.json({ saved });
+    } catch (err) {
+      console.error("Error saving orçamento:", err);
+      res.status(500).json({ error: "Failed to save orçamento" });
+    }
+  });
+
+  // Indicadores executivos (Painel do Diretor): MRR, ticket, inadimplência %, LTV, CAC, payback, margem, runway.
+  app.get("/api/financeiro/indicadores", async (req, res) => {
+    try {
+      // MRR (assinaturas ativas, normalizado por ciclo)
+      const mrrRes = await pool.query(`
+        SELECT COUNT(*) AS n, COALESCE(SUM(
+          CASE UPPER(cycle)
+            WHEN 'MONTHLY' THEN value::numeric
+            WHEN 'YEARLY' THEN value::numeric/12
+            WHEN 'SEMIANNUALLY' THEN value::numeric/6
+            WHEN 'QUARTERLY' THEN value::numeric/3
+            WHEN 'WEEKLY' THEN value::numeric*4.33
+            WHEN 'BIWEEKLY' THEN value::numeric*2.17
+            ELSE value::numeric END), 0) AS mrr
+        FROM fin_subscriptions WHERE status='ACTIVE'`);
+      const mrr = parseFloat(mrrRes.rows[0].mrr) || 0;
+      const subsCount = parseInt(mrrRes.rows[0].n) || 0;
+      const ticket = subsCount > 0 ? mrr / subsCount : 0;
+
+      const cliRes = await pool.query(`SELECT COUNT(*) AS n FROM clients WHERE status='Ativo'`);
+      const clientesAtivos = parseInt(cliRes.rows[0].n) || 0;
+
+      // Mês de referência = último mês com DRE histórico
+      const refRes = await pool.query(`SELECT MAX(ref_month) AS m FROM fin_dfc_historico`);
+      const refMonth = refRes.rows[0].m || new Date().toISOString().slice(0, 7);
+      const dval = async (structure: string) => {
+        const r = await pool.query(`SELECT value FROM fin_dfc_historico WHERE ref_month=$1 AND structure=$2`, [refMonth, structure]);
+        return r.rows.length ? parseFloat(r.rows[0].value) : 0;
+      };
+      const receitaRef = await dval('01');
+      const despesaOpRef = await dval('02');
+      const marketingRef = Math.abs(await dval('02.05'));
+      const geracaoOpRef = receitaRef + despesaOpRef; // 01 + 02 (despesa já negativa)
+
+      // Novos clientes no mês de referência
+      const novosRes = await pool.query(`SELECT COUNT(*) AS n FROM clients WHERE start_date LIKE $1`, [`${refMonth}%`]);
+      const novosClientes = parseInt(novosRes.rows[0].n) || 0;
+
+      // Margens (operacional e líquida) do mês de referência
+      const geracaoLiqRes = await pool.query(`SELECT value FROM fin_dfc_historico WHERE ref_month=$1 AND structure='_geracao'`, [refMonth]);
+      const geracaoLiq = geracaoLiqRes.rows.length ? parseFloat(geracaoLiqRes.rows[0].value) : 0;
+      const margemOp = receitaRef > 0 ? geracaoOpRef / receitaRef : 0;
+      const margemLiq = receitaRef > 0 ? geracaoLiq / receitaRef : 0;
+
+      // CAC e payback (base: Marketing ÷ novos clientes)
+      const cac = novosClientes > 0 ? marketingRef / novosClientes : 0;
+      const paybackMeses = (ticket > 0 && margemOp > 0) ? cac / (ticket * margemOp) : null;
+
+      // Inadimplência
+      const inadRes = await pool.query(`SELECT COUNT(DISTINCT customer_id) AS n, COALESCE(SUM(value::numeric),0) AS v FROM fin_receivables WHERE status='OVERDUE'`);
+      const inadValor = parseFloat(inadRes.rows[0].v) || 0;
+      const inadClientes = parseInt(inadRes.rows[0].n) || 0;
+      const inadPct = mrr > 0 ? inadValor / mrr : 0;
+
+      // LTV (ticket × tempo médio de vida — base churns)
+      const ltvRes = await pool.query(`SELECT AVG(NULLIF(regexp_replace("LTV"::text,'[^0-9]','','g'),'')::numeric) AS dias FROM churn WHERE "LTV" IS NOT NULL`);
+      const ltvDias = ltvRes.rows[0].dias ? parseFloat(ltvRes.rows[0].dias) : 0;
+      const ltvMeses = ltvDias / 30;
+      const ltv = ticket * ltvMeses;
+
+      // Burn / Runway (média da geração líquida dos meses históricos + saldo de caixa atual)
+      const geracoesRes = await pool.query(`SELECT value FROM fin_dfc_historico WHERE structure='_geracao' AND ref_month LIKE $1 ORDER BY ref_month`, [`${refMonth.slice(0, 4)}%`]);
+      const geracoes = geracoesRes.rows.map((r: any) => parseFloat(r.value));
+      const burnMedio = geracoes.length ? geracoes.reduce((a, b) => a + b, 0) / geracoes.length : 0;
+      // Caixa = abertura do ano + soma das gerações históricas
+      const aberturaRes = await pool.query(`SELECT value FROM fin_dfc_historico WHERE structure='_saldo_inicial' AND ref_month=$1`, [`${refMonth.slice(0, 4)}-01`]);
+      const abertura = aberturaRes.rows.length ? parseFloat(aberturaRes.rows[0].value) : 0;
+      // Caixa = saldo REAL de abertura mais recente (snapshot da virada); senão, abertura do ano + gerações.
+      const realRes = await pool.query(`SELECT value FROM fin_dfc_historico WHERE structure='_saldo_abertura' ORDER BY ref_month DESC LIMIT 1`);
+      const caixa = realRes.rows.length ? parseFloat(realRes.rows[0].value) : (abertura + geracoes.reduce((a, b) => a + b, 0));
+      const runwayMeses = burnMedio < 0 ? caixa / Math.abs(burnMedio) : null;
+
+      res.json({
+        ref_month: refMonth,
+        mrr, subs_count: subsCount, ticket_medio: ticket, clientes_ativos: clientesAtivos,
+        faturamento_mes: receitaRef,
+        margem_operacional: margemOp, margem_liquida: margemLiq,
+        cac, novos_clientes: novosClientes, payback_meses: paybackMeses, marketing_mes: marketingRef,
+        inadimplencia_valor: inadValor, inadimplencia_clientes: inadClientes, inadimplencia_pct: inadPct,
+        ltv, ltv_dias: ltvDias,
+        caixa, burn_medio: burnMedio, runway_meses: runwayMeses,
+      });
+    } catch (err) {
+      console.error("Error building indicadores:", err);
+      res.status(500).json({ error: "Failed to build indicadores" });
+    }
+  });
+
   // Fluxo diário do mês
   app.get("/api/financeiro/fluxo-diario", async (req, res) => {
     try {
@@ -6208,6 +6560,7 @@ app.get("/api/todos", async (req, res) => {
           c.id AS client_id,
           c.name AS client_name_internal,
           c.squad,
+          n.note AS note,
           -- Aggregated data
           COUNT(r.id) AS total_charges,
           SUM(r.value::numeric) AS total_value,
@@ -6228,14 +6581,33 @@ app.get("/api/todos", async (req, res) => {
         FROM fin_receivables r
         LEFT JOIN fin_people p ON p.asaas_id = r.customer_id
         LEFT JOIN clients c ON c.id = p.grapehub_client_id
+        LEFT JOIN fin_inadimplente_notes n ON n.customer_id = r.customer_id
         WHERE r.status = 'OVERDUE'
-        GROUP BY r.customer_id, p.name, r.customer_name, p.phone, p.cnpjcpf, p.email, c.id, c.name, c.squad
+        GROUP BY r.customer_id, p.name, r.customer_name, p.phone, p.cnpjcpf, p.email, c.id, c.name, c.squad, n.note
         ORDER BY max_days_overdue DESC, total_value DESC
       `);
       res.json(result.rows);
     } catch (err) {
       console.error("Error fetching inadimplentes:", err);
       res.status(500).json({ error: "Failed to fetch inadimplentes" });
+    }
+  });
+
+  // Salva/atualiza a anotação de cobrança de um cliente inadimplente
+  app.put("/api/fin/inadimplentes/:customerId/note", async (req, res) => {
+    try {
+      const { customerId } = req.params;
+      const { note } = req.body;
+      await pool.query(
+        `INSERT INTO fin_inadimplente_notes (customer_id, note, updated_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (customer_id) DO UPDATE SET note = EXCLUDED.note, updated_at = NOW()`,
+        [customerId, note ?? null]
+      );
+      res.json({ ok: true });
+    } catch (err) {
+      console.error("Error saving inadimplente note:", err);
+      res.status(500).json({ error: "Failed to save note" });
     }
   });
 
@@ -6491,6 +6863,9 @@ app.get("/api/todos", async (req, res) => {
     try {
       const account = (req.body.account as string) || 'sicredi';
       const billingMonth = (req.body.billing_month as string) || null;
+      // Mês efetivo da fatura: auto-detectado do vencimento do CSV; senão, cai no dropdown.
+      let effectiveBillingMonth = billingMonth;
+      let detectedDueDate: string | null = null;
 
       // Support base64 file upload via JSON
       let content: string;
@@ -6508,7 +6883,7 @@ app.get("/api/todos", async (req, res) => {
 
       const isCSV = fileName.endsWith('.csv') || (!fileName.endsWith('.ofx') && content.includes(';'));
 
-      const transactions: { fitid: string; trntype: string; trnamt: number; dtposted: string; memo: string }[] = [];
+      const transactions: { fitid: string; trntype: string; trnamt: number; dtposted: string; memo: string; card?: string }[] = [];
 
       if (isCSV) {
         // ── CSV Parser — Sicredi credit card statement format ──
@@ -6519,6 +6894,20 @@ app.get("/api/todos", async (req, res) => {
 
         const lines = content.split(/\r?\n/);
         if (lines.length < 2) return res.status(400).json({ error: 'CSV vazio ou inválido' });
+
+        // ── Auto-detecção do mês da fatura pela "Data de Vencimento" no cabeçalho ──
+        // A fatura pertence ao mês em que VENCE/é paga (regime de caixa), não ao mês das compras.
+        for (const ln of lines.slice(0, 30)) {
+          const norm = ln.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+          if (norm.includes('vencimento')) {
+            const m = ln.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/);
+            if (m) {
+              detectedDueDate = `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+              effectiveBillingMonth = `${m[3]}-${m[2].padStart(2, '0')}`;
+              break;
+            }
+          }
+        }
 
         // Detect delimiter
         const semiCount = (content.match(/;/g) || []).length;
@@ -6561,7 +6950,6 @@ app.get("/api/todos", async (req, res) => {
         let currentCardLabel = '';
         let inTransactions = false;
         let dateCol = -1, descCol = -1, parcelaCol = -1, valorCol = -1;
-        let rowIdx = 0;
 
         for (let i = 0; i < lines.length; i++) {
           const raw = lines[i];
@@ -6611,20 +6999,27 @@ app.get("/api/todos", async (req, res) => {
           // Build full description with parcela info
           const fullDesc = parcela ? `${description} ${parcela}` : description;
 
-          // Generate unique ID from date + description + value + card + row
-          const rawId = `${dateStr}_${fullDesc}_${amount.toFixed(2)}_${currentCardLabel}_${rowIdx}`;
-          const fitid = crypto.createHash('md5').update(rawId).digest('hex').slice(0, 16);
-          rowIdx++;
-
           // Credit card items are all expenses (negative) except payments (which are negative in the CSV = credit)
           const isPayment = amount < 0; // Negative values like "Pag Fat Deb Cc" = payment
           transactions.push({
-            fitid,
+            fitid: '', // preenchido abaixo com impressão digital estável (independe da ordem no arquivo)
             trntype: isPayment ? 'CREDIT' : 'DEBIT',
             trnamt: isPayment ? Math.abs(amount) : -Math.abs(amount), // expenses = negative, payments = positive
             dtposted: dateStr,
             memo: fullDesc,
+            card: currentCardLabel,
           });
+        }
+
+        // ── Impressão digital estável: data + descrição + valor + cartão + nº de ocorrência ──
+        // O nº de ocorrência (determinístico) desambigua compras idênticas no mesmo dia sem
+        // depender da posição da linha no arquivo — assim reenviar a fatura não duplica.
+        const occ = new Map<string, number>();
+        for (const t of transactions) {
+          const key = `${t.dtposted}_${t.memo}_${t.trnamt.toFixed(2)}_${t.card || ''}`;
+          const n = occ.get(key) || 0;
+          occ.set(key, n + 1);
+          t.fitid = crypto.createHash('md5').update(`${key}_${n}`).digest('hex').slice(0, 16);
         }
       } else {
         // ── OFX Parser ──
@@ -6672,81 +7067,52 @@ app.get("/api/todos", async (req, res) => {
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
            ON CONFLICT (asaas_id) DO UPDATE SET billing_month = COALESCE(EXCLUDED.billing_month, fin_movements_asaas.billing_month)
            RETURNING id, (xmax = 0) AS was_inserted`,
-          [asaasId, type, txType, value, tx.dtposted, tx.memo, account, account === 'sicredi' ? 'pendente' : 'realizado', billingMonth]
+          [asaasId, type, txType, value, tx.dtposted, tx.memo, account, account === 'sicredi' ? 'pendente' : 'realizado', effectiveBillingMonth]
         );
         if (r.rows.length > 0 && r.rows[0].was_inserted) inserted++;
         else skipped++;
       }
 
+      // ── Prune: torna o import idempotente ──
+      // Após gravar a fatura, remove do mesmo mês tudo que NÃO está no arquivo atual.
+      // Assim reenviar uma fatura mais atualizada faz o banco espelhar o arquivo:
+      // atualiza o que mudou, adiciona o novo, remove o que saiu. Categorias manuais dos
+      // itens que permanecem são preservadas (ON CONFLICT não mexe em custom_category_id).
+      let pruned = 0;
+      if (account === 'sicredi' && effectiveBillingMonth) {
+        const currentIds = transactions.map((t) => `${account}_${t.fitid}`);
+        const pr = await pool.query(
+          `DELETE FROM fin_movements_asaas
+             WHERE account = 'sicredi' AND billing_month = $1 AND asaas_id <> ALL($2)
+           RETURNING id`,
+          [effectiveBillingMonth, currentIds]
+        );
+        pruned = pr.rowCount || 0;
+      }
+
       // ── Auto-provision: create/update recurring bill entry for Sicredi card ──
-      if (account === 'sicredi' && billingMonth) {
+      if (account === 'sicredi' && effectiveBillingMonth) {
         try {
-          // Find or create the "Cartão Sicredi" recurring bill
-          let billRes = await pool.query(
-            `SELECT id FROM fin_recurring_bills WHERE LOWER(name) LIKE '%sicredi%' AND LOWER(name) LIKE '%cart%' LIMIT 1`
-          );
-          let billId: number;
-          if (billRes.rows.length === 0) {
-            // Auto-create the bill
-            const newBill = await pool.query(
-              `INSERT INTO fin_recurring_bills (name, description, due_day, is_active, default_value)
-               VALUES ('Cartão Sicredi', 'Fatura do cartão de crédito Sicredi', 18, true, 0) RETURNING id`
-            );
-            billId = newBill.rows[0].id;
-          } else {
-            billId = billRes.rows[0].id;
-          }
-
-          // Calculate total of Sicredi items for this billing month
-          const totalRes = await pool.query(
-            `SELECT COALESCE(SUM(ABS(value::numeric)), 0) AS total
-             FROM fin_movements_asaas
-             WHERE account = 'sicredi' AND billing_month = $1`,
-            [billingMonth]
-          );
-          const faturaTotal = parseFloat(totalRes.rows[0].total) || 0;
-
-          // Check current status of Sicredi items
-          const statusRes = await pool.query(
-            `SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE sicredi_status = 'realizado') AS paid
-             FROM fin_movements_asaas WHERE account = 'sicredi' AND billing_month = $1`,
-            [billingMonth]
-          );
-          const allPaid = statusRes.rows[0].total > 0 && statusRes.rows[0].total === statusRes.rows[0].paid;
-
-          const refMonth = billingMonth + '-01';
-          const [bY, bM] = billingMonth.split('-').map(Number);
-          const dueDate = `${bY}-${String(bM).padStart(2, '0')}-18`;
-
-          // Check if entry already exists
-          const existingEntry = await pool.query(
-            `SELECT id, status FROM fin_recurring_bill_entries WHERE recurring_bill_id = $1 AND reference_month = $2`,
-            [billId, refMonth]
-          );
-
-          if (existingEntry.rows.length > 0) {
-            // Update existing — but don't overwrite if already paid
-            const entry = existingEntry.rows[0];
-            if (entry.status !== 'paid') {
-              await pool.query(
-                `UPDATE fin_recurring_bill_entries SET expected_value = $1, updated_at = NOW() WHERE id = $2`,
-                [faturaTotal, entry.id]
-              );
-            }
-          } else {
-            // Create new entry
-            await pool.query(
-              `INSERT INTO fin_recurring_bill_entries (recurring_bill_id, reference_month, expected_value, actual_value, due_date, source, status)
-               VALUES ($1, $2, $3, 0, $4, 'manual', 'pending')`,
-              [billId, refMonth, faturaTotal, dueDate]
-            );
-          }
+          // Lança a fatura no Contas a Pagar nativo usando a DATA DE PAGAMENTO da fatura (se já definida).
+          // Sem data de pagamento, a fatura só é lançada quando o usuário define a data ("Pagamento da Fatura").
+          await syncSicrediBillEntry(pool, effectiveBillingMonth);
         } catch (provErr: any) {
           console.error('Auto-provision Sicredi error (non-fatal):', provErr.message);
         }
       }
 
-      res.json({ inserted, skipped, total: transactions.length });
+      // Categoriza os movimentos recém-importados no plano de contas (alimenta a DRE)
+      try { await categorizeMovements(pool, effectiveBillingMonth ? { month: effectiveBillingMonth } : {}); } catch (e: any) { console.warn('[categorizar] pós-import:', e.message); }
+
+      res.json({
+        inserted,
+        skipped,
+        pruned,
+        total: transactions.length,
+        billing_month: effectiveBillingMonth,
+        due_date: detectedDueDate,
+        month_source: detectedDueDate ? 'vencimento' : 'manual',
+      });
     } catch (err: any) {
       console.error('Import error:', err.message);
       res.status(500).json({ error: 'Failed to import file', detail: err.message });

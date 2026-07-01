@@ -32,6 +32,113 @@ function autoCategory(description: string): string | null {
   return null;
 }
 
+// Lança/move a fatura do cartão Sicredi no Contas a Pagar (fin_bill_entries) usando a
+// DATA DE PAGAMENTO definida para aquela competência. Sem data de pagamento, não lança.
+// A parcela é identificada pela nota "Competência MM/AAAA" para poder ser movida/atualizada.
+export async function syncSicrediBillEntry(pool: Pool, billingMonth: string): Promise<void> {
+  if (!billingMonth) return;
+  try {
+    let billRes = await pool.query(`SELECT id FROM fin_bills WHERE LOWER(name) LIKE '%sicredi%' AND LOWER(name) LIKE '%cart%' LIMIT 1`);
+    let billId: number;
+    if (billRes.rows.length === 0) {
+      const nb = await pool.query(`INSERT INTO fin_bills (name, category, value, recurrence, due_day, is_active) VALUES ('Cartão Sicredi','Cartão de Crédito',NULL,'monthly',18,false) RETURNING id`);
+      billId = nb.rows[0].id;
+    } else billId = billRes.rows[0].id;
+
+    const [bY, bM] = billingMonth.split('-').map(Number);
+    const noteTag = `Competência ${String(bM).padStart(2, '0')}/${bY}`;
+
+    // Remove a parcela anterior desta fatura (em qualquer mês), exceto se já paga/cancelada
+    await pool.query(`DELETE FROM fin_bill_entries WHERE bill_id=$1 AND notes=$2 AND status NOT IN ('paid','cancelled')`, [billId, noteTag]);
+
+    const pd = await pool.query(`SELECT payment_date FROM fin_sicredi_invoice WHERE billing_month=$1`, [billingMonth]);
+    const payDate = pd.rows[0]?.payment_date;
+    if (!payDate) return; // sem data de pagamento -> ainda não lança
+
+    const payIso = new Date(payDate).toISOString().slice(0, 10);
+    const refMonth = payIso.slice(0, 7);
+    const totalRes = await pool.query(`SELECT COALESCE(SUM(value::numeric),0) AS total FROM fin_movements_asaas WHERE account='sicredi' AND billing_month=$1 AND type=-1`, [billingMonth]);
+    const total = parseFloat(totalRes.rows[0].total) || 0;
+
+    await pool.query(
+      `INSERT INTO fin_bill_entries (bill_id, reference_month, due_date, expected_value, status, notes)
+       VALUES ($1,$2,$3,$4,'pending',$5)
+       ON CONFLICT (bill_id, reference_month)
+       DO UPDATE SET due_date=EXCLUDED.due_date, expected_value=EXCLUDED.expected_value, notes=EXCLUDED.notes
+       WHERE fin_bill_entries.status NOT IN ('paid','cancelled')`,
+      [billId, refMonth, payIso, total, noteTag]
+    );
+  } catch (e: any) {
+    console.warn('[sicredi] syncSicrediBillEntry:', e.message);
+  }
+}
+
+// ── Motor de categorização: mapeia movimentos (Asaas + cartão) ao plano de contas (fin_categories) ──
+// Conservador: só categoriza padrões de alta confiança; o resto fica "sem categoria" pra revisão manual.
+// Toca apenas movimentos sem categoria ou auto-categorizados (preserva o que foi classificado à mão).
+const DRE_RULES: { re: RegExp; s: string }[] = [
+  { re: /cobranca recebida/, s: '01.01.01' },
+  { re: /taxa\s*pix/, s: '02.07.06' }, { re: /taxa\s*boleto/, s: '02.07.07' }, { re: /taxa.*cart/, s: '02.07.08' },
+  { re: /tarifa|taxa de antecip/, s: '02.07.03' }, { re: /\biof\b/, s: '02.07.99' },
+  { re: /simples nacional/, s: '02.01.01' }, { re: /\bdarf\b|\birpj\b|\bcsll\b/, s: '02.01.05' }, { re: /\biss\b/, s: '02.01.06' },
+  { re: /\binss\b/, s: '02.03.99' }, { re: /\bfgts\b/, s: '02.03.07' },
+  { re: /seguro/, s: '02.06.14' }, { re: /aluguel|condominio|iptu/, s: '02.06.05' },
+  { re: /energia|cpfl|enel|\bagua\b|sabesp/, s: '02.06.06' }, { re: /internet|telefone|\btim\b|\bvivo\b|\bclaro\b/, s: '02.06.07' },
+  { re: /contabil|contador/, s: '02.06.03' }, { re: /marvee|assessoria financeira/, s: '02.06.01' }, { re: /honorario|advogad|juridic/, s: '02.06.04' },
+  { re: /facebk|facebook|meta ads|instagram ads/, s: '02.05.08' },
+  { re: /openai|anthropic|elevenlabs|\bclaude\b/, s: '02.02.10' },
+  { re: /hostinger|neon|atlassian|clickup|1password|capcut|canva|myhubi|uazapi|pichau|apple\.com|google|gsuite|workspace|dominio|\bvps\b/, s: '02.02.06' },
+  { re: /wellhub|gympass/, s: '02.03.09' },
+];
+
+export async function categorizeMovements(pool: Pool, opts: { month?: string } = {}): Promise<{ categorized: number; transfers: number; uncategorized: number }> {
+  const norm = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const cats = (await pool.query("SELECT id, structure, description FROM fin_categories")).rows;
+  const structId: Record<string, number> = {}; const structDesc: Record<string, string> = {};
+  for (const c of cats) { structId[c.structure] = c.id; structDesc[c.structure] = c.description; }
+
+  // Nó de transferência (excluído da DRE — não é receita/despesa)
+  let transferId: number | undefined = structId['99'];
+  if (!transferId) {
+    await pool.query("INSERT INTO fin_categories (external_id, structure, description, level) VALUES (999999,'99','Transferências entre Contas / Pagamento de Cartão',1) ON CONFLICT DO NOTHING");
+    transferId = (await pool.query("SELECT id FROM fin_categories WHERE structure='99'")).rows[0]?.id;
+  }
+
+  const colab = (await pool.query("SELECT DISTINCT name FROM collaborators")).rows.map((r: any) => r.name).filter(Boolean);
+  const employees = colab.map((n: string) => { const t = norm(n).split(/\s+/).filter(Boolean); return { first: t[0], second: (t[1] || '').slice(0, 3) }; });
+
+  const classify = (desc: string): string | null => {
+    const d = norm(desc);
+    if (/pix.*para|transferencia/.test(d)) {
+      if (d.includes('grape midia')) return '_T';
+      if (d.includes('jean') && d.includes('chan')) return '05.01';
+      for (const e of employees) if (e.first && d.includes(e.first) && (e.second === '' || d.includes(e.second))) return '02.03.03';
+    }
+    for (const r of DRE_RULES) if (r.re.test(d)) return r.s;
+    return null;
+  };
+
+  const where = opts.month ? `AND ((account='asaas' AND to_char(transaction_date,'YYYY-MM')=$1) OR (account='sicredi' AND billing_month=$1))` : '';
+  const params: any[] = opts.month ? [opts.month] : [];
+  const mv = (await pool.query(
+    `SELECT id, COALESCE(NULLIF(custom_description,''),description) AS desc FROM fin_movements_asaas
+     WHERE is_anticipation_pair=false AND (custom_category_id IS NULL OR edited_by IN ('regra-auto','motor-auto')) ${where}`, params
+  )).rows;
+
+  let categorized = 0, transfers = 0, uncategorized = 0;
+  for (const m of mv) {
+    const s = classify(m.desc);
+    if (s === '_T') {
+      if (transferId) { await pool.query("UPDATE fin_movements_asaas SET custom_category_id=$1, custom_category='Transferência', grapehub_category='Transferência', edited_by='motor-auto' WHERE id=$2", [transferId, m.id]); transfers++; }
+      continue;
+    }
+    if (!s || !structId[s]) { uncategorized++; continue; }
+    await pool.query("UPDATE fin_movements_asaas SET custom_category_id=$1, custom_category=$2, grapehub_category=$2, edited_by='motor-auto' WHERE id=$3", [structId[s], structDesc[s] || s, m.id]);
+    categorized++;
+  }
+  return { categorized, transfers, uncategorized };
+}
+
 export function setupBillsRoutes(app: Express, pool: Pool) {
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -389,10 +496,39 @@ export function setupBillsRoutes(app: Express, pool: Pool) {
       const total = rows.filter((r: any) => r.type === -1).reduce((s: number, r: any) => s + parseFloat(r.value || '0'), 0);
       const categorized = rows.filter((r: any) => r.grapehub_category || r.custom_category).length;
 
-      res.json({ items: rows, summary: { total, total_items: rows.length, categorized } });
+      // Data de pagamento da fatura (uma por mês de competência)
+      let paymentDate: string | null = null;
+      try {
+        const pd = await pool.query(`SELECT payment_date FROM fin_sicredi_invoice WHERE billing_month = $1`, [month]);
+        if (pd.rows.length > 0 && pd.rows[0].payment_date) {
+          paymentDate = new Date(pd.rows[0].payment_date).toISOString().slice(0, 10);
+        }
+      } catch { /* tabela pode não existir ainda */ }
+
+      res.json({ items: rows, summary: { total, total_items: rows.length, categorized, payment_date: paymentDate } });
     } catch (err) {
       console.error('[fin/bills/sicredi] GET error:', err);
       res.status(500).json({ error: 'Failed to fetch sicredi items' });
+    }
+  });
+
+  // PUT /api/fin/bills/sicredi/payment-date — define a data de pagamento da fatura do mês
+  app.put('/api/fin/bills/sicredi/payment-date', async (req, res) => {
+    try {
+      const { month, payment_date } = req.body;
+      if (!month) return res.status(400).json({ error: 'month obrigatório' });
+      await pool.query(
+        `INSERT INTO fin_sicredi_invoice (billing_month, payment_date, updated_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (billing_month) DO UPDATE SET payment_date = EXCLUDED.payment_date, updated_at = NOW()`,
+        [month, payment_date || null]
+      );
+      // Lança/move a fatura no Contas a Pagar para o mês da data de pagamento
+      await syncSicrediBillEntry(pool, month);
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('[fin/bills/sicredi] payment-date error:', err);
+      res.status(500).json({ error: 'Failed to save payment date' });
     }
   });
 

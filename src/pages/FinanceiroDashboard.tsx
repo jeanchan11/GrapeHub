@@ -10,6 +10,8 @@ import { AIChat } from '../components/AIChat/AIChat';
 import { useAuth } from '../contexts/AuthContext';
 import fredImg from '../assets/fred.png';
 import LoadingSpinner from '../components/LoadingSpinner';
+import DrePanel from './DrePanel';
+import BudgetPanel from './BudgetPanel';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend, Filler, LineController, BarController);
 
@@ -244,6 +246,7 @@ export default function FinanceiroDashboard() {
   const [dayPopup, setDayPopup] = useState<{ iso: string; label: string; items: any[] } | null>(null);
   const [dayLoading, setDayLoading] = useState(false);
   const [chartAnimKey, setChartAnimKey] = useState(0);
+  const [activeTab, setActiveTab] = useState<'visao' | 'dre' | 'orcamento'>('visao');
 
   useEffect(() => {
     const fetchData = async () => {
@@ -542,7 +545,25 @@ export default function FinanceiroDashboard() {
           </div>{/* end outer flex gap-2 */}
         </PageHeader>
 
+        {/* Abas */}
+        <div className="flex items-center gap-1 border-b border-white/10">
+          {([['visao', 'Fluxo de Caixa'], ['dre', 'DRE / Fluxo de Caixa'], ['orcamento', 'Orçamento']] as const).map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setActiveTab(key)}
+              className={`px-4 py-2.5 text-sm font-bold border-b-2 -mb-px transition-colors ${activeTab === key ? 'border-violet-500 text-violet-400' : 'border-transparent text-slate-500 hover:text-dark-text'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === 'dre' && <DrePanel />}
+
+        {activeTab === 'orcamento' && <BudgetPanel />}
+
         {/* Visão Geral */}
+        {activeTab === 'visao' && (
         <>
             {/* Linha 1 - KPIs */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -812,6 +833,7 @@ export default function FinanceiroDashboard() {
           </div>
         </div>
           </>
+        )}
 
       </div>
 
