@@ -1238,6 +1238,13 @@ async function startServer() {
         updated_at TIMESTAMPTZ DEFAULT NOW(),
         PRIMARY KEY (ref_month, structure)
       );
+
+      -- Override por-instância: permite editar a conta LANÇADA (parcela do mês) sem alterar
+      -- a conta recorrente cadastrada. Se preenchido, tem prioridade sobre o template.
+      ALTER TABLE fin_bill_entries ADD COLUMN IF NOT EXISTS custom_name TEXT;
+      ALTER TABLE fin_bill_entries ADD COLUMN IF NOT EXISTS custom_category TEXT;
+      -- Marca a parcela como editada à mão: edições na conta cadastrada NÃO sobrescrevem estas.
+      ALTER TABLE fin_bill_entries ADD COLUMN IF NOT EXISTS manual_override BOOLEAN DEFAULT false;
     `);
     console.log("Database tables initialized successfully.");
 

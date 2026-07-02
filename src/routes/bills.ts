@@ -204,7 +204,36 @@ export function setupBillsRoutes(app: Express, pool: Pool) {
         [name, category, value || null, recurrence || 'monthly', due_day || null, due_date || null, notes || null, id]
       );
       if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
-      res.json(result.rows[0]);
+
+      // Propaga a mudança para as parcelas do mês CORRENTE em diante — só as que estão
+      // pendentes e NÃO foram editadas à mão (manual_override=false). Nome/categoria já
+      // seguem o template via COALESCE; aqui atualizamos valor e vencimento (que são copiados
+      // pra parcela na geração). O passado e as pagas ficam intactos.
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      const affected = await pool.query(
+        `SELECT id, reference_month FROM fin_bill_entries
+         WHERE bill_id=$1 AND COALESCE(manual_override,false)=false
+           AND status NOT IN ('paid','cancelled') AND reference_month >= $2`,
+        [id, currentMonth]
+      );
+      for (const e of affected.rows) {
+        // Recalcula o vencimento mensal a partir do dia (com clamp p/ meses curtos)
+        let newDue: string | null = null;
+        const [yy, mm] = e.reference_month.split('-').map(Number);
+        if ((recurrence || 'monthly') === 'monthly' || recurrence === 'weekly') {
+          const lastDay = new Date(yy, mm, 0).getDate();
+          const day = Math.min(due_day || 10, lastDay);
+          newDue = `${e.reference_month}-${String(day).padStart(2, '0')}`;
+        }
+        await pool.query(
+          `UPDATE fin_bill_entries
+           SET expected_value=$1, due_date=COALESCE($2::date, due_date), updated_at=NOW()
+           WHERE id=$3`,
+          [value || null, newDue, e.id]
+        );
+      }
+
+      res.json({ ...result.rows[0], propagated: affected.rows.length });
     } catch (err) {
       res.status(500).json({ error: 'Failed to update bill' });
     }
@@ -280,7 +309,10 @@ export function setupBillsRoutes(app: Express, pool: Pool) {
 
       // Busca todas as entradas do mês com dados da conta + vínculo extrato
       const entries = await pool.query(
-        `SELECT e.*, b.name as bill_name, b.category, b.recurrence,
+        `SELECT e.*,
+                COALESCE(NULLIF(e.custom_name,''), b.name) as bill_name,
+                COALESCE(NULLIF(e.custom_category,''), b.category) as category,
+                b.recurrence,
                 m.description as linked_description,
                 m.transaction_date as linked_date,
                 m.value as linked_value
@@ -420,10 +452,12 @@ export function setupBillsRoutes(app: Express, pool: Pool) {
     }
   });
 
-  // PATCH /api/fin/bills/entries/:id — atualiza status/valor de uma parcela
+  // PATCH /api/fin/bills/entries/:id — edita a parcela do mês (apenas esta instância).
+  // Aceita status/valor pago (fluxo "pagar") e também edição da conta lançada:
+  // expected_value, due_date, custom_name, custom_category — sem tocar a conta cadastrada (fin_bills).
   app.patch('/api/fin/bills/entries/:id', async (req, res) => {
     const { id } = req.params;
-    const { status, actual_value, paid_at, notes } = req.body;
+    const { status, actual_value, paid_at, notes, expected_value, due_date, custom_name, custom_category, manual_override } = req.body;
     try {
       const result = await pool.query(
         `UPDATE fin_bill_entries
@@ -431,9 +465,14 @@ export function setupBillsRoutes(app: Express, pool: Pool) {
              actual_value=COALESCE($2, actual_value),
              paid_at=COALESCE($3, paid_at),
              notes=COALESCE($4, notes),
+             expected_value=COALESCE($5, expected_value),
+             due_date=COALESCE($6, due_date),
+             custom_name=COALESCE($7, custom_name),
+             custom_category=COALESCE($8, custom_category),
+             manual_override=COALESCE($9, manual_override),
              updated_at=NOW()
-         WHERE id=$5 RETURNING *`,
-        [status, actual_value, paid_at, notes, id]
+         WHERE id=$10 RETURNING *`,
+        [status, actual_value, paid_at, notes, expected_value, due_date, custom_name, custom_category, manual_override, id]
       );
       if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
       res.json(result.rows[0]);

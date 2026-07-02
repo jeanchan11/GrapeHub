@@ -38,6 +38,8 @@ interface Entry {
   linked_date: string | null;
   linked_value: string | null;
   recurrence?: string;
+  custom_name?: string | null;
+  custom_category?: string | null;
 }
 
 interface EntrySummary {
@@ -387,6 +389,80 @@ const SicrediEditModal = ({ item, categories, onSave, onClose }: {
   );
 };
 
+// ── Entry Edit Modal (edita SÓ a parcela do mês, não a conta cadastrada) ──────
+const EntryEditModal = ({ entry, categories, onSave, onClose }: {
+  entry: Entry; categories: string[];
+  onSave: (id: number, data: any) => Promise<void>; onClose: () => void;
+}) => {
+  const [name, setName] = useState(entry.bill_name || '');
+  const [cat, setCat] = useState(entry.category || 'Outros');
+  const [value, setValue] = useState(entry.expected_value || '');
+  const [due, setDue] = useState((entry.due_date || '').slice(0, 10));
+  const [saving, setSaving] = useState(false);
+  const allCats = categories.includes(cat) || !cat ? categories : [cat, ...categories];
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await onSave(entry.id, {
+        custom_name: name.trim(),
+        custom_category: cat,
+        expected_value: value === '' ? null : Number(value),
+        due_date: due || null,
+        manual_override: true,
+      });
+      onClose();
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={e => e.target === e.currentTarget && onClose()}>
+      <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }}
+        className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl w-full max-w-md p-6 mx-4 shadow-2xl">
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="text-base font-bold text-dark-text">Editar Lançamento do Mês</h3>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-slate-400"><X size={16} /></button>
+        </div>
+        <p className="text-[11px] text-amber-400/90 mb-5">Altera apenas esta conta lançada — a conta cadastrada (recorrente) não muda.</p>
+        <div className="space-y-4">
+          <div>
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Descrição</label>
+            <input value={name} onChange={e => setName(e.target.value)}
+              className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500/50" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Categoria</label>
+              <select value={cat} onChange={e => setCat(e.target.value)}
+                className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500/50">
+                {allCats.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Valor (R$)</label>
+              <input type="number" step="0.01" value={value} onChange={e => setValue(e.target.value)} placeholder="0,00"
+                className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500/50" />
+            </div>
+          </div>
+          <div>
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Vencimento</label>
+            <input type="date" value={due} onChange={e => setDue(e.target.value)}
+              className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500/50" />
+          </div>
+        </div>
+        <div className="flex gap-3 mt-5">
+          <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl border border-black/10 dark:border-white/10 text-slate-400 text-sm font-semibold hover:bg-black/5 dark:hover:bg-white/5">Cancelar</button>
+          <button onClick={handleSave} disabled={saving}
+            className="flex-1 px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-sm font-bold flex items-center justify-center gap-2 transition-colors">
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+            {saving ? 'Salvando...' : 'Salvar'}
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
 // ── KPI Card ─────────────────────────────────────────────────────────────────
 const KpiCard = ({
   icon, label, value, sub, subColor, accent
@@ -417,6 +493,7 @@ export default function ContasAPagar() {
   const [loading, setLoading] = useState(true);
   const [billModal, setBillModal] = useState<Partial<Bill> | null | undefined>(undefined); // undefined = closed
   const [payModal, setPayModal] = useState<Entry | null>(null);
+  const [editEntry, setEditEntry] = useState<Entry | null>(null);
   const [filterCat, setFilterCat] = useState('');
   const [entrySubTab, setEntrySubTab] = useState<'pending' | 'paid'>('pending');
   const [showBillsConfig, setShowBillsConfig] = useState(false);
@@ -504,6 +581,11 @@ export default function ContasAPagar() {
   };
 
   const handlePayEntry = async (id: number, data: any) => {
+    const r = await fetch(`/api/fin/bills/entries/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+    if (r.ok) await fetchEntries();
+  };
+
+  const handleEditEntry = async (id: number, data: any) => {
     const r = await fetch(`/api/fin/bills/entries/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
     if (r.ok) await fetchEntries();
   };
@@ -908,6 +990,11 @@ export default function ContasAPagar() {
                                 </button>
                               ) : !isPaid && entry.status !== 'cancelled' ? (
                                 <>
+                                  <button onClick={() => setEditEntry(entry)}
+                                    className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-dark-text text-[10px] font-bold transition-colors border border-black/5 dark:border-white/5"
+                                    title="Editar este lançamento (só o mês)">
+                                    <Pencil size={11} />
+                                  </button>
                                   <button onClick={() => openLinkModal(entry)}
                                     className="flex items-center gap-1 px-2 py-1 rounded-lg bg-violet-600/15 hover:bg-violet-600/30 text-violet-400 text-[10px] font-bold transition-colors border border-violet-500/20"
                                     title="Vincular manualmente ao extrato">
@@ -1079,6 +1166,7 @@ export default function ContasAPagar() {
           <BillModal bill={billModal} categories={categories} onSave={handleSaveBill} onClose={() => setBillModal(undefined)} />
         )}
         {payModal && <PayModal entry={payModal} onSave={handlePayEntry} onClose={() => setPayModal(null)} />}
+        {editEntry && <EntryEditModal entry={editEntry} categories={categories} onSave={handleEditEntry} onClose={() => setEditEntry(null)} />}
         {linkModal && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
