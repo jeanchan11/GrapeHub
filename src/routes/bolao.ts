@@ -282,6 +282,16 @@ export async function setupBolaoRoutes(app: Express, pool: Pool) {
     try {
       const { jogoId } = req.params;
       const uid = req.user?.uid;
+      // 🔍 DEBUG TEMPORÁRIO — grava o conteúdo do req.user pra diagnosticar o "Não autenticado".
+      try {
+        require('fs').writeFileSync('/private/tmp/claude-501/-Users-convidado-Desktop-grapehub/2368e71a-7295-43fe-9f5a-38a4cb2324d1/scratchpad/bolao_auth_debug.json',
+          JSON.stringify({
+            at: new Date().toISOString(),
+            hasUser: !!req.user,
+            keys: req.user ? Object.keys(req.user) : [],
+            uid: req.user?.uid, sub: req.user?.sub, user_id: req.user?.user_id, email: req.user?.email,
+          }, null, 2));
+      } catch (e) { console.error('[debug-write]', (e as any).message); }
       if (!uid) return res.status(401).json({ error: 'Não autenticado.' });
 
       const { palpite_casa, palpite_fora } = req.body;
