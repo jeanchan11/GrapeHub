@@ -1,12 +1,11 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   ComposedChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
 import {
-  X, DollarSign, MousePointerClick, Eye, Users, Megaphone, Loader2, AlertCircle, Image as ImageIcon, MessageCircle, Calendar, ChevronDown, Download
+  X, DollarSign, MousePointerClick, Eye, Users, Megaphone, Loader2, AlertCircle, Image as ImageIcon, MessageCircle, Calendar, ChevronDown, Download, ArrowUp, ArrowDown, ChevronsUpDown
 } from 'lucide-react';
-import { toPng } from 'html-to-image';
-import { jsPDF } from 'jspdf';
+import MetaAdsReport, { exportMetaReportPdf } from './MetaAdsReport';
 
 // ── Helpers (same as MarketingDashboard) ──────────────────────────────────
 function fmtCurrency(val: number | string | null | undefined) {
@@ -267,8 +266,69 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
   const [error, setError] = useState<string | null>(null);
   const [creatives, setCreatives] = useState<Creative[]>([]);
   const [loadingCreatives, setLoadingCreatives] = useState(true);
+  // Ordenação da tabela de criativos
+  type CreativeSortKey = 'name' | 'result' | 'clicks' | 'impressions' | 'ctr' | 'cpr' | 'spend';
+  const [sortKey, setSortKey] = useState<CreativeSortKey>('spend');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const toggleSort = (key: CreativeSortKey) => {
+    if (key === sortKey) {
+      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir(key === 'name' ? 'asc' : 'desc'); // texto começa A→Z, números maior→menor
+    }
+  };
   const [exporting, setExporting] = useState(false);
+  const [thumbData, setThumbData] = useState<Record<string, string>>({}); // ad_id → dataURL (pré-carregado p/ o relatório)
   const contentRef = useRef<HTMLDivElement>(null);
+  const reportRef = useRef<HTMLDivElement>(null);
+  const thumbsReadyRef = useRef(false);
+
+  // Busca uma thumbnail via proxy (com cache por ad_id no backend) e converte em data URL. Null se falhar.
+  const fetchThumb = async (adId: string, url: string): Promise<string | null> => {
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 9000);
+      const r = await fetch(`/api/meta-thumb?id=${encodeURIComponent(adId)}&url=${encodeURIComponent(url)}`, { signal: ctrl.signal });
+      clearTimeout(t);
+      if (!r.ok) return null;
+      const blob = await r.blob();
+      if (!blob.size || !blob.type.startsWith('image/')) return null;
+      return await new Promise<string | null>((resolve) => {
+        const fr = new FileReader();
+        fr.onload = () => resolve(fr.result as string);
+        fr.onerror = () => resolve(null);
+        fr.readAsDataURL(blob);
+      });
+    } catch { return null; }
+  };
+
+  // Pré-carrega as thumbnails dos criativos que aparecem no relatório (top por conversas), de forma
+  // INCREMENTAL — cada uma que chega já entra no estado, sem esperar as lentas/expiradas.
+  useEffect(() => {
+    let cancelled = false;
+    thumbsReadyRef.current = false;
+    const pm = data?.kpis?.primary_metric || 'messages';
+    const conv = (c: Creative) => (pm === 'messages' ? c.messages : c.leads) || 0;
+    const top = [...creatives]
+      .filter(c => c.thumbnail_url && !thumbData[c.ad_id])
+      .sort((a, b) => conv(b) - conv(a) || b.spend - a.spend)
+      .slice(0, 12);
+    if (top.length === 0) { thumbsReadyRef.current = true; return; }
+    (async () => {
+      // 1. Recupera no Meta as thumbnails expiradas e cacheia no servidor
+      try { await fetch(`/api/partners/${projectId}/refresh-thumbs?ids=${top.map(c => c.ad_id).join(',')}`); } catch { /* segue */ }
+      if (cancelled) return;
+      // 2. Carrega cada uma como data URL (agora servida do cache)
+      await Promise.allSettled(top.map(async (c) => {
+        const d = await fetchThumb(c.ad_id, c.thumbnail_url || '');
+        if (!cancelled && d) setThumbData(prev => (prev[c.ad_id] ? prev : { ...prev, [c.ad_id]: d }));
+      }));
+      if (!cancelled) thumbsReadyRef.current = true;
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [creatives, data]);
 
   const fetchData = useCallback(async (r: DateRange) => {
     setLoading(true);
@@ -303,83 +363,65 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
   const dailyData = (data?.daily || []).map(d => ({ ...d, day: getDay(d.date) }));
   const campaigns = data?.campaigns || [];
 
+  // Criativos ordenados conforme a coluna escolhida (clique no cabeçalho)
+  const sortedCreatives = useMemo(() => {
+    const dir = sortDir === 'asc' ? 1 : -1;
+    const resultOf = (cr: Creative) => (isPM ? cr.messages : cr.leads) || 0;
+    const numOf = (cr: Creative): number => {
+      switch (sortKey) {
+        case 'result': return resultOf(cr);
+        case 'clicks': return cr.clicks || 0;
+        case 'impressions': return cr.impressions || 0;
+        case 'ctr': return cr.ctr || 0;
+        case 'cpr': { const rv = resultOf(cr); return rv > 0 ? cr.spend / rv : Number.POSITIVE_INFINITY; }
+        case 'spend': return cr.spend || 0;
+        default: return 0;
+      }
+    };
+    return [...creatives].sort((a, b) => {
+      if (sortKey === 'name') return dir * (a.ad_name || '').localeCompare(b.ad_name || '', 'pt-BR');
+      const va = numOf(a), vb = numOf(b);
+      // Criativos sem resultado (cpr = ∞) sempre no fim, independente da direção
+      if (va === Number.POSITIVE_INFINITY && vb === Number.POSITIVE_INFINITY) return 0;
+      if (va === Number.POSITIVE_INFINITY) return 1;
+      if (vb === Number.POSITIVE_INFINITY) return -1;
+      return dir * (va - vb);
+    });
+  }, [creatives, sortKey, sortDir, isPM]);
+
+  // Cabeçalho de coluna clicável (ordena a tabela de criativos)
+  const SortableTh = ({ label, k, extraClass = '' }: { label: React.ReactNode; k: CreativeSortKey; extraClass?: string }) => (
+    <th className={`pb-3 ${extraClass}`}>
+      <button
+        type="button"
+        onClick={() => toggleSort(k)}
+        className={`group flex items-center gap-1 w-full text-[10px] font-bold uppercase tracking-widest transition-colors ${k === 'name' ? '' : 'justify-end'} ${sortKey === k ? 'text-violet-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-300'}`}
+        title="Clique para ordenar"
+      >
+        {label}
+        {sortKey === k
+          ? (sortDir === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} />)
+          : <ChevronsUpDown size={11} className="opacity-0 group-hover:opacity-50 transition-opacity" />}
+      </button>
+    </th>
+  );
+
   // Calc days difference for labels
   const daysDiff = Math.round((+new Date(range.end) - +new Date(range.start)) / 86400000) + 1;
 
-  // PDF Export
+  // PDF Export — relatório profissional de performance (documento A4 dedicado)
   const handleExportPDF = async () => {
-    if (!contentRef.current || exporting) return;
+    if (!reportRef.current || exporting || !data?.kpis) return;
     setExporting(true);
     try {
-      const el = contentRef.current;
-      // Temporarily expand to capture all content
-      const origMaxH = el.style.maxHeight;
-      const origOverflow = el.style.overflow;
-      el.style.maxHeight = 'none';
-      el.style.overflow = 'visible';
-
-      // Wait for render
+      // Garante que o logo e as fontes carregaram antes de rasterizar
+      await (document as any).fonts?.ready?.catch?.(() => {});
+      // espera o pré-carregamento das thumbnails terminar (até 7s) antes de rasterizar
+      const t0 = Date.now();
+      while (!thumbsReadyRef.current && Date.now() - t0 < 15000) { await new Promise(r => setTimeout(r, 200)); }
       await new Promise(r => setTimeout(r, 300));
-
-      const dataUrl = await toPng(el, {
-        quality: 0.95,
-        pixelRatio: 2,
-        backgroundColor: '#0f0e17',
-      });
-
-      // Restore
-      el.style.maxHeight = origMaxH;
-      el.style.overflow = origOverflow;
-
-      const img = new Image();
-      img.src = dataUrl;
-      await new Promise((resolve) => { img.onload = resolve; });
-
-      const imgW = img.width;
-      const imgH = img.height;
-
-      // A4 landscape dimensions in mm
-      const pageW = 297;
-      const pageH = 210;
-      const margin = 10;
-      const usableW = pageW - margin * 2;
-      const usableH = pageH - margin * 2;
-
-      const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-
-      // Scale image to fit page width
-      const scale = usableW / imgW;
-      const scaledH = imgH * scale;
-
-      // If it fits in one page
-      if (scaledH <= usableH) {
-        pdf.addImage(dataUrl, 'PNG', margin, margin, usableW, scaledH);
-      } else {
-        // Multi-page: slice the image
-        const pageContentH = usableH / scale; // pixels per page
-        let yOffset = 0;
-        let pageNum = 0;
-
-        while (yOffset < imgH) {
-          if (pageNum > 0) pdf.addPage();
-          const sliceH = Math.min(pageContentH, imgH - yOffset);
-          
-          // Create a canvas for the slice
-          const canvas = document.createElement('canvas');
-          canvas.width = imgW;
-          canvas.height = sliceH;
-          const ctx = canvas.getContext('2d')!;
-          ctx.drawImage(img, 0, yOffset, imgW, sliceH, 0, 0, imgW, sliceH);
-          const sliceUrl = canvas.toDataURL('image/png');
-          
-          pdf.addImage(sliceUrl, 'PNG', margin, margin, usableW, sliceH * scale);
-          yOffset += sliceH;
-          pageNum++;
-        }
-      }
-
-      const fileName = `${partnerName.replace(/[^a-zA-Z0-9]/g, '_')}_MetaAds_${range.start}_${range.end}.pdf`;
-      pdf.save(fileName);
+      const fileName = `Relatório (${partnerName.replace(/[\\/:*?"<>|]/g, '').trim()}).pdf`;
+      await exportMetaReportPdf(reportRef.current, fileName);
     } catch (err) {
       console.error('Export PDF error:', err);
     } finally {
@@ -390,6 +432,19 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={onClose}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+
+      {/* Documento de relatório (renderizado fora da tela, rasterizado no export) */}
+      {data?.kpis && (
+        <MetaAdsReport
+          ref={reportRef}
+          data={{
+            partnerName, range, kpis: data.kpis, campaigns: data.campaigns || [],
+            // thumbnail já embutida como data URL (evita fetch externo na rasterização)
+            creatives: creatives.map(c => ({ ...c, thumbnail_url: thumbData[c.ad_id] || null })),
+          }}
+        />
+      )}
+
       <div
         ref={contentRef}
         className="relative bg-dark-bg rounded-2xl border border-white/10 shadow-2xl w-[1200px] max-w-[96vw] max-h-[92vh] overflow-y-auto"
@@ -642,19 +697,17 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
                       <thead>
                         <tr className="border-b text-left" style={{ borderColor: 'rgba(100,100,120,0.2)' }}>
                           <th className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest pb-3 pr-4" style={{ width: 96 }}>Imagem</th>
-                          <th className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest pb-3 pr-4">Nome do Criativo</th>
-                          <th className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest pb-3 px-3 text-right">
-                            <span className="flex items-center justify-end gap-1">{isPM ? <><MessageCircle size={10} /> Mensagens</> : <>Leads</>}</span>
-                          </th>
-                          <th className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest pb-3 px-3 text-right">Cliques</th>
-                          <th className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest pb-3 px-3 text-right">Impressões</th>
-                          <th className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest pb-3 px-3 text-right">CTR</th>
-                          <th className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest pb-3 px-3 text-right">{isPM ? 'Custo/Msg' : 'Custo/Lead'}</th>
-                          <th className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest pb-3 pl-3 text-right">Investimento</th>
+                          <SortableTh k="name" extraClass="pr-4" label="Nome do Criativo" />
+                          <SortableTh k="result" extraClass="px-3" label={isPM ? <><MessageCircle size={10} /> Mensagens</> : <>Leads</>} />
+                          <SortableTh k="clicks" extraClass="px-3" label="Cliques" />
+                          <SortableTh k="impressions" extraClass="px-3" label="Impressões" />
+                          <SortableTh k="ctr" extraClass="px-3" label="CTR" />
+                          <SortableTh k="cpr" extraClass="px-3" label={isPM ? 'Custo/Msg' : 'Custo/Lead'} />
+                          <SortableTh k="spend" extraClass="pl-3" label="Investimento" />
                         </tr>
                       </thead>
                       <tbody>
-                        {creatives.map((cr, i) => {
+                        {sortedCreatives.map((cr, i) => {
                           const resultVal = isPM ? cr.messages : cr.leads;
                           const costPerResult = resultVal > 0 ? cr.spend / resultVal : null;
                           return (
@@ -696,7 +749,7 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
               {/* Empty state for all data */}
               {kpis.spend === 0 && kpis.clicks === 0 && kpis.leads === 0 && (
                 <div className="text-center text-slate-500 py-6 text-sm">
-                  Nenhum dado de campanha encontrado nos últimos {days} dias.
+                  Nenhum dado de campanha encontrado nos últimos {daysDiff} dias.
                 </div>
               )}
             </>

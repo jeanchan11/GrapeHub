@@ -4,7 +4,7 @@ import {
   Plus, Trash2, Trophy, TrendingUp, DollarSign,
   Activity, Target, CheckCircle2, Clock, AlertCircle, X,
   ChevronRight, ChevronLeft, BarChart3, RefreshCw, Pencil,
-  Calendar, Video, Percent
+  Calendar, Video, Percent, Archive, ArchiveRestore
 } from 'lucide-react';
 import { motion, AnimatePresence, useMotionValue, useTransform, animate } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
@@ -241,7 +241,8 @@ const AnimatedRate: React.FC<{ value: number; color: string }> = ({ value, color
   const [displayValue, setDisplayValue] = useState('0.0');
   const blurFilter = useTransform(progress, (v) => {
     const ratio = value > 0 ? Math.min(v / value, 1) : 1;
-    return `blur(${8 * (1 - ratio)}px)`;
+    const b = 8 * (1 - ratio);
+    return b < 0.3 ? 'none' : `blur(${b}px)`; // zera o filter no fim — evita camada de GPU residual
   });
   const textOpacity = useTransform(progress, (v) => {
     const ratio = value > 0 ? Math.min(v / value, 1) : 1;
@@ -289,6 +290,7 @@ const MetasPopup: React.FC<MetasPopupProps> = ({ isOpen, onClose }) => {
   const [step, setStep]           = useState(1);
   const [saving, setSaving]       = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
 
   const [form, setForm] = useState({
     tipo: '',
@@ -309,13 +311,21 @@ const MetasPopup: React.FC<MetasPopupProps> = ({ isOpen, onClose }) => {
     if (!silent) setLoading(true);
     else setRefreshing(true);
     try {
-      const res = await fetch(`/api/crm-metas`);
+      const res = await fetch(`/api/crm-metas${showArchived ? '?archived=1' : ''}`);
       if (res.ok) setMetas(await res.json());
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [user]);
+  }, [user, showArchived]);
+
+  // Arquivar / desarquivar meta
+  const handleArchive = async (id: string, archived: boolean) => {
+    setMetas(prev => prev.filter(m => m.id !== id)); // sai da lista atual imediatamente
+    await fetch(`/api/crm-metas/${id}/archive`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ archived }),
+    });
+  };
 
   const fetchAuxData = useCallback(async () => {
     if (!user?.email) return;
@@ -439,6 +449,16 @@ const MetasPopup: React.FC<MetasPopupProps> = ({ isOpen, onClose }) => {
                 </div>
               </div>
               <div className="flex items-center gap-2">
+                <div className="flex items-center bg-slate-100 dark:bg-white/5 rounded-lg p-0.5 mr-1">
+                  <button onClick={() => setShowArchived(false)}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-md transition-colors ${!showArchived ? 'bg-white dark:bg-white/10 text-violet-600 dark:text-violet-300 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-white'}`}>
+                    Ativas
+                  </button>
+                  <button onClick={() => setShowArchived(true)}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-md transition-colors ${showArchived ? 'bg-white dark:bg-white/10 text-violet-600 dark:text-violet-300 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-white'}`}>
+                    Arquivadas
+                  </button>
+                </div>
                 <button
                   onClick={() => fetchMetas(true)}
                   disabled={refreshing}
@@ -472,14 +492,16 @@ const MetasPopup: React.FC<MetasPopupProps> = ({ isOpen, onClose }) => {
                 </div>
               ) : metas.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16 gap-4 text-slate-400">
-                  <Target size={48} className="opacity-20" />
-                  <p className="font-medium">Nenhuma meta cadastrada ainda.</p>
-                  <button
-                    onClick={openModal}
-                    className="px-5 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg transition-colors"
-                  >
-                    Criar primeira meta
-                  </button>
+                  {showArchived ? <Archive size={48} className="opacity-20" /> : <Target size={48} className="opacity-20" />}
+                  <p className="font-medium">{showArchived ? 'Nenhuma meta arquivada.' : 'Nenhuma meta cadastrada ainda.'}</p>
+                  {!showArchived && (
+                    <button
+                      onClick={openModal}
+                      className="px-5 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg transition-colors"
+                    >
+                      Criar primeira meta
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
@@ -506,7 +528,7 @@ const MetasPopup: React.FC<MetasPopupProps> = ({ isOpen, onClose }) => {
                               <Icon size={18} className={tipoConfig?.color || 'text-slate-500'} />
                             </div>
                             <div className="min-w-0">
-                              <p className="font-semibold text-sm text-slate-900 dark:text-white truncate">{meta.nome}</p>
+                              <p title={meta.nome} className="font-semibold text-sm text-slate-900 dark:text-white leading-snug break-words line-clamp-2">{meta.nome}</p>
                               <p className="text-xs text-slate-400 truncate">{tipoConfig?.label} | {periodoLabel}</p>
                             </div>
                           </div>
@@ -517,6 +539,13 @@ const MetasPopup: React.FC<MetasPopupProps> = ({ isOpen, onClose }) => {
                               title="Editar meta"
                             >
                               <Pencil size={14} />
+                            </button>
+                            <button
+                              onClick={() => handleArchive(meta.id, !showArchived)}
+                              className="p-1.5 text-slate-300 dark:text-slate-600 hover:text-amber-500 transition-colors rounded-lg"
+                              title={showArchived ? 'Desarquivar meta' : 'Arquivar meta'}
+                            >
+                              {showArchived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
                             </button>
                             <button
                               onClick={() => handleDelete(meta.id)}

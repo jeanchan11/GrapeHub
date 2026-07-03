@@ -867,7 +867,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
 
         {/* ── User Profile ─────────────────────────────────────── */}
         <div className={`mt-auto transition-all duration-300 ${isCollapsed ? 'p-2' : 'p-3'}`}>
-          <div className={`flex items-center gap-3 p-2 rounded-2xl bg-dark-card/40 backdrop-blur-md border border-slate-200 dark:border-white/10 ${isCollapsed ? 'justify-center border-none bg-transparent' : ''}`}>
+          <div className={`flex items-center gap-3 p-2 rounded-2xl bg-slate-100 dark:bg-dark-card/40 dark:backdrop-blur-md border border-slate-200 dark:border-white/10 ${isCollapsed ? 'justify-center border-none bg-transparent dark:bg-transparent' : ''}`}>
             <div className="relative shrink-0">
               <div className="w-9 h-9 rounded-xl bg-violet-500/20 flex items-center justify-center overflow-hidden border border-violet-500/30">
                 <img

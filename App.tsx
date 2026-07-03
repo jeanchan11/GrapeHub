@@ -515,10 +515,9 @@ const AppContent: React.FC = () => {
       />
       <main 
         className="h-screen overflow-y-auto scrollbar-hide rounded-tl-[2.5rem] bg-light-bg dark:bg-dark-bg"
-        style={{ 
-          marginLeft: sidebarCollapsed ? 80 : 280, 
+        style={{
+          marginLeft: sidebarCollapsed ? 80 : 280,
           transition: 'margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s',
-          willChange: 'margin-left',
         }}
       >
         <PageTransition pageKey={activePage}>

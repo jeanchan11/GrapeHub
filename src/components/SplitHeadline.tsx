@@ -37,7 +37,7 @@ const SplitHeadline: React.FC<SplitHeadlineProps> = ({
           <motion.span
             key={`b-${i}`}
             initial={{ opacity: 0, y: 20, filter: 'blur(8px)' }}
-            animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+            animate={{ opacity: 1, y: 0, filter: 'blur(0px)', transitionEnd: { filter: 'none' } }}
             transition={{ duration: 0.4, delay: i * 0.03, ease: [0.25, 0.46, 0.45, 0.94] }}
             className="inline-block"
             style={char === ' ' ? { width: '0.3em' } : undefined}
@@ -49,7 +49,7 @@ const SplitHeadline: React.FC<SplitHeadlineProps> = ({
           <motion.span
             key={`h-${i}`}
             initial={{ opacity: 0, y: 20, filter: 'blur(8px)' }}
-            animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+            animate={{ opacity: 1, y: 0, filter: 'blur(0px)', transitionEnd: { filter: 'none' } }}
             transition={{ duration: 0.4, delay: (totalBase + i) * 0.03, ease: [0.25, 0.46, 0.45, 0.94] }}
             className="inline-block text-violet-500"
           >

@@ -157,6 +157,9 @@ async function syncPayments(pool: any): Promise<{ upserted: number; deleted: num
   let upserted = 0;
   for (const p of allPayments.values()) {
     try {
+      // O Asaas marca cancelamento/remoção com deleted:true (o status pode continuar OVERDUE).
+      // Normalizamos para CANCELLED para não contar como cobrança em aberto/inadimplente.
+      const effStatus = p.deleted === true ? 'CANCELLED' : p.status;
       await pool.query(`
         INSERT INTO fin_receivables (
           asaas_id, customer_id, customer_name, billing_type, status,
@@ -178,7 +181,7 @@ async function syncPayments(pool: any): Promise<{ upserted: number; deleted: num
         p.customer,
         nameMap[p.customer] || p.customerName || null,
         p.billingType,
-        p.status,
+        effStatus,
         p.value,
         p.netValue,
         p.dueDate,
@@ -209,6 +212,41 @@ async function syncPayments(pool: any): Promise<{ upserted: number; deleted: num
     deleted = delRes.rowCount || 0;
   } catch (e: any) {
     console.warn('[asaas-sync] cleanup faturas obsoletas:', e.message);
+  }
+
+  // 7. Reconciliação de cobranças ABERTAS fora da janela de vencimento.
+  //    Cobranças PENDING/OVERDUE no nosso banco que o Asaas não retornou nesta sync (venceram
+  //    há muito) ficariam "presas". Reverificamos 1 a 1 no Asaas: se foram removidas
+  //    (deleted:true) ou canceladas → CANCELLED; se pagas → status real. Cap p/ limitar chamadas.
+  let cancelled = 0, reconciled = 0;
+  try {
+    const openRows = await pool.query(
+      `SELECT asaas_id, status FROM fin_receivables
+       WHERE status IN ('PENDING','Pendente','OVERDUE') AND NOT (asaas_id = ANY($1))
+       ORDER BY due_date ASC LIMIT 150`,
+      [[...allPayments.keys()]]
+    );
+    for (const row of openRows.rows) {
+      const pay = await asaasFetchOne(`/payments/${row.asaas_id}`);
+      if (!pay || pay.deleted === true || pay.status === 'CANCELLED') {
+        await pool.query(
+          `UPDATE fin_receivables SET status='CANCELLED', raw_json=COALESCE($2, raw_json), synced_at=NOW() WHERE asaas_id=$1`,
+          [row.asaas_id, pay ? JSON.stringify(pay) : null]
+        );
+        cancelled++;
+      } else if (pay.status && pay.status !== row.status) {
+        await pool.query(
+          `UPDATE fin_receivables SET status=$1, payment_date=$2, raw_json=$3, synced_at=NOW() WHERE asaas_id=$4`,
+          [pay.status, pay.paymentDate || null, JSON.stringify(pay), row.asaas_id]
+        );
+        reconciled++;
+      } else {
+        await pool.query(`UPDATE fin_receivables SET synced_at=NOW() WHERE asaas_id=$1`, [row.asaas_id]);
+      }
+    }
+    if (cancelled || reconciled) console.log(`[asaas-sync] reconciliação abertas: ${cancelled} cancelada(s), ${reconciled} atualizada(s)`);
+  } catch (e: any) {
+    console.warn('[asaas-sync] reconciliação abertas:', e.message);
   }
 
   return { upserted, deleted };

@@ -78,6 +78,28 @@ export const SettingsPage = ({ onPageChange, isSuperAdmin }: { onPageChange?: (p
   const [logs, setLogs] = useState<any[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
 
+  // ── Webhook de Alertas ──
+  const [webhookOpen, setWebhookOpen] = useState(false);
+  const [webhookForm, setWebhookForm] = useState({ url: '', secret: '', enabled: false });
+  const [webhookLoading, setWebhookLoading] = useState(false);
+  const [webhookSaving, setWebhookSaving] = useState(false);
+  const [webhookMsg, setWebhookMsg] = useState<string | null>(null);
+  const openWebhook = async () => {
+    setWebhookOpen(true); setWebhookMsg(null); setWebhookLoading(true);
+    try { const r = await fetch('/api/alert-webhook'); if (r.ok) { const d = await r.json(); setWebhookForm({ url: d.url || '', secret: d.secret || '', enabled: !!d.enabled }); } } catch { /* */ }
+    finally { setWebhookLoading(false); }
+  };
+  const saveWebhook = async () => {
+    setWebhookSaving(true); setWebhookMsg(null);
+    try { const r = await fetch('/api/alert-webhook', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(webhookForm) }); setWebhookMsg(r.ok ? 'Configuração salva.' : 'Erro ao salvar.'); }
+    catch { setWebhookMsg('Falha de conexão.'); } finally { setWebhookSaving(false); setTimeout(() => setWebhookMsg(null), 4000); }
+  };
+  const testWebhook = async () => {
+    setWebhookMsg('Enviando teste...');
+    try { const r = await fetch('/api/alert-webhook/test', { method: 'POST' }); const d = await r.json(); setWebhookMsg(d.sent ? 'Teste disparado ✅ — confira no n8n / grupo.' : 'Não enviado — salve a URL e marque "Ativo" primeiro.'); }
+    catch { setWebhookMsg('Falha ao testar.'); }
+  };
+
   // Fetch Api4Com settings when integrations view opens
   React.useEffect(() => {
     if (activeSection === 'integrations' && user?.email && !loaded) {
@@ -231,6 +253,12 @@ export const SettingsPage = ({ onPageChange, isSuperAdmin }: { onPageChange?: (p
     { label: 'Categorias Financeiras', description: 'Plano de contas hierárquico da empresa', icon: FolderTree, action: () => setActiveSection('categories') },
     { label: 'Automações', description: 'Automações ativas que criam tarefas no CRM', icon: Zap, action: () => setActiveSection('automacoes') },
     { label: 'Logs de Atividade', description: 'Histórico de ações no sistema' },
+    ...(isSuperAdmin ? [{
+      label: 'Webhook Alertas',
+      description: 'Recebe erros e alertas do sistema (você envia no WhatsApp via n8n)',
+      icon: Bell,
+      action: () => openWebhook()
+    }] : []),
     ...(isSuperAdmin ? [{
       label: 'Painel Admin',
       description: 'Gerenciar usuários, permissões e configurações do sistema',
@@ -778,6 +806,46 @@ export const SettingsPage = ({ onPageChange, isSuperAdmin }: { onPageChange?: (p
           </div>
         </div>
       </div>
+
+      {/* ── Popup: Webhook de Alertas ── */}
+      {webhookOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={e => e.target === e.currentTarget && setWebhookOpen(false)}>
+          <div className="bg-light-card dark:bg-dark-card rounded-2xl border border-slate-200 dark:border-white/10 w-full max-w-lg p-6 shadow-2xl">
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-lg font-bold text-light-text dark:text-white flex items-center gap-2"><Bell size={18} className="text-violet-500" /> Webhook de Alertas</h3>
+              <button onClick={() => setWebhookOpen(false)} className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-slate-400 text-lg leading-none">✕</button>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-5">Quando o sistema detecta um erro ou alerta (conta bloqueada, saldo baixo, falha no sync do Meta), ele faz um <b>POST JSON</b> para esta URL. Use no n8n pra formatar e enviar no grupo do WhatsApp.</p>
+            {webhookLoading ? <p className="text-sm text-slate-400">Carregando…</p> : (
+              <div className="space-y-4">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">URL do Webhook (n8n)</label>
+                  <input value={webhookForm.url} onChange={e => setWebhookForm(f => ({ ...f, url: e.target.value }))} placeholder="https://n8n.srv.../webhook/..."
+                    className="w-full bg-light-bg dark:bg-dark-bg border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-light-text dark:text-white focus:outline-none focus:border-violet-500/50" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Segredo (opcional)</label>
+                  <input value={webhookForm.secret} onChange={e => setWebhookForm(f => ({ ...f, secret: e.target.value }))} placeholder="Enviado no header X-Webhook-Secret"
+                    className="w-full bg-light-bg dark:bg-dark-bg border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-light-text dark:text-white focus:outline-none focus:border-violet-500/50" />
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input type="checkbox" checked={webhookForm.enabled} onChange={e => setWebhookForm(f => ({ ...f, enabled: e.target.checked }))} className="w-4 h-4 accent-violet-500" />
+                  <span className="text-sm text-light-text dark:text-white">Ativo — empurrar alertas para este webhook</span>
+                </label>
+                <div className="text-[11px] text-slate-500 dark:text-slate-400 bg-black/5 dark:bg-white/5 rounded-lg p-3 leading-relaxed">
+                  <span className="font-bold">Payload enviado (JSON):</span>
+                  <code className="block mt-1 text-[10px] break-all">{`{ type, severity, title, message, partner, squad, account, timestamp }`}</code>
+                </div>
+                {webhookMsg && <p className="text-xs font-semibold text-violet-500">{webhookMsg}</p>}
+                <div className="flex gap-3 pt-1">
+                  <button onClick={testWebhook} className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 text-slate-500 text-sm font-semibold hover:bg-black/5 dark:hover:bg-white/5 transition-colors">Testar</button>
+                  <button onClick={saveWebhook} disabled={webhookSaving} className="flex-1 px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold disabled:opacity-50 transition-colors">{webhookSaving ? 'Salvando…' : 'Salvar'}</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

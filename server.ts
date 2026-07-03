@@ -215,6 +215,7 @@ const PUBLIC_ROUTES: Array<{ method?: string; pattern: RegExp }> = [
   { pattern: /^\/api\/crm-comercial\/checklist-template/ },
   { pattern: /^\/api\/crm-comercial\/migrate-tasks-responsible$/, method: 'POST' }, // TEMP MIGRATION
   { pattern: /^\/api\/lista-/ },
+  { pattern: /^\/api\/meta-thumb$/, method: 'GET' }, // proxy de thumbnail do Meta (host restrito a fbcdn) — usado na rasterização do relatório PDF
 ];
 
 function isPublicRoute(method: string, path: string): boolean {
@@ -1245,6 +1246,61 @@ async function startServer() {
       ALTER TABLE fin_bill_entries ADD COLUMN IF NOT EXISTS custom_category TEXT;
       -- Marca a parcela como editada à mão: edições na conta cadastrada NÃO sobrescrevem estas.
       ALTER TABLE fin_bill_entries ADD COLUMN IF NOT EXISTS manual_override BOOLEAN DEFAULT false;
+
+      -- Cache permanente das thumbnails de criativos do Meta (as URLs do CDN expiram em ~semanas).
+      -- Guardamos os bytes por ad_id na 1ª vez que a URL ainda está válida; depois nunca mais quebra.
+      CREATE TABLE IF NOT EXISTS meta_thumb_cache (
+        ad_id TEXT PRIMARY KEY,
+        mime TEXT,
+        bytes BYTEA,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      -- Status/saldo da conta de anúncios do Meta (cache) + configuração e estado dos alertas.
+      CREATE TABLE IF NOT EXISTS meta_account_cache (
+        project_id TEXT PRIMARY KEY,
+        data JSONB,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS meta_alert_config (
+        id INT PRIMARY KEY DEFAULT 1,
+        alert_phone TEXT DEFAULT '',
+        low_balance_threshold NUMERIC(12,2) DEFAULT 100,
+        enabled BOOLEAN DEFAULT false,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      INSERT INTO meta_alert_config (id) SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM meta_alert_config);
+      CREATE TABLE IF NOT EXISTS meta_account_alert_state (
+        project_id TEXT PRIMARY KEY,
+        last_status INT,
+        blocked_alerted BOOLEAN DEFAULT false,
+        low_balance_alerted BOOLEAN DEFAULT false,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      -- Sync diário do Meta Ads (migrado do n8n): config + estado da última execução.
+      CREATE TABLE IF NOT EXISTS meta_sync_config (
+        id INT PRIMARY KEY DEFAULT 1,
+        enabled BOOLEAN DEFAULT false,
+        uazapi_url TEXT DEFAULT 'https://grapemidia.uazapi.com/send/text',
+        uazapi_token TEXT DEFAULT '',
+        uazapi_group TEXT DEFAULT '',
+        last_run_at TIMESTAMPTZ,
+        last_run_date DATE,
+        last_result TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      INSERT INTO meta_sync_config (id) SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM meta_sync_config);
+
+      -- Webhook único de alertas: GrapeHub empurra erros/alertas; o n8n formata e envia (WhatsApp).
+      CREATE TABLE IF NOT EXISTS alert_webhook_config (
+        id INT PRIMARY KEY DEFAULT 1,
+        url TEXT DEFAULT '',
+        secret TEXT DEFAULT '',
+        enabled BOOLEAN DEFAULT false,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      INSERT INTO alert_webhook_config (id) SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM alert_webhook_config);
     `);
     console.log("Database tables initialized successfully.");
 
@@ -1506,6 +1562,7 @@ async function startServer() {
     // Garante que coluna_id e activity_type existem em tabelas já criadas
     await pool.query(`ALTER TABLE crm_metas ADD COLUMN IF NOT EXISTS coluna_id TEXT`);
     await pool.query(`ALTER TABLE crm_metas ADD COLUMN IF NOT EXISTS activity_type TEXT`);
+    await pool.query(`ALTER TABLE crm_metas ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT false`);
     
     
     // Auto-fix template for Metas page
@@ -8568,6 +8625,497 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
+  // Proxy + cache de thumbnail do Meta (mesma origem) — permite rasterizar as imagens no relatório
+  // PDF (falharia por CORS direto do CDN) e as guarda por ad_id, pois as URLs do Meta EXPIRAM.
+  // Restrito a hosts do Meta (evita SSRF).
+  app.get('/api/meta-thumb', async (req: any, res) => {
+    const send = (mime: string, buf: Buffer) => {
+      res.setHeader('Content-Type', mime || 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=604800');
+      res.end(buf);
+    };
+    try {
+      const raw = req.query.url as string;
+      const id = (req.query.id as string) || '';
+
+      // 1. Cache por ad_id (imagem já baixada anteriormente — nunca expira)
+      if (id) {
+        const c = await pool.query('SELECT mime, bytes FROM meta_thumb_cache WHERE ad_id=$1', [id]);
+        if (c.rows.length && c.rows[0].bytes) return send(c.rows[0].mime, c.rows[0].bytes);
+      }
+
+      // 2. Busca ao vivo (URL do CDN, se ainda válida) + valida host
+      if (!raw) return res.status(404).end();
+      let u: URL;
+      try { u = new URL(raw); } catch { return res.status(400).end(); }
+      if (u.protocol !== 'https:' || !/(\.fbcdn\.net|\.cdninstagram\.com)$/i.test(u.hostname)) {
+        return res.status(403).end();
+      }
+      const chunks: Buffer[] = [];
+      const upstream = https.get(raw, (up: any) => {
+        if (!up.statusCode || up.statusCode >= 400) { up.resume(); return res.status(502).end(); }
+        const mime = up.headers['content-type'] || 'image/jpeg';
+        up.on('data', (d: Buffer) => chunks.push(d));
+        up.on('end', async () => {
+          const buf = Buffer.concat(chunks);
+          if (id && buf.length) {
+            pool.query(
+              `INSERT INTO meta_thumb_cache (ad_id, mime, bytes, updated_at) VALUES ($1,$2,$3,NOW())
+               ON CONFLICT (ad_id) DO UPDATE SET mime=EXCLUDED.mime, bytes=EXCLUDED.bytes, updated_at=NOW()`,
+              [id, mime, buf]
+            ).catch(() => {});
+          }
+          if (!res.headersSent) send(mime, buf);
+        });
+      });
+      upstream.on('error', () => { if (!res.headersSent) res.status(502).end(); });
+      upstream.setTimeout(8000, () => { upstream.destroy(); if (!res.headersSent) res.status(504).end(); });
+    } catch { if (!res.headersSent) res.status(500).end(); }
+  });
+
+  // Recupera thumbnails EXPIRADAS: busca URLs frescas na API do Meta (Graph) por ad_id, baixa a
+  // imagem e guarda no cache permanente (meta_thumb_cache). Usado pelo modal antes de exportar.
+  app.get('/api/partners/:projectId/refresh-thumbs', async (req: any, res) => {
+    try {
+      const { projectId } = req.params;
+      const ids = String(req.query.ids || '').split(',').map((s: string) => s.trim()).filter(Boolean).slice(0, 20);
+      if (ids.length === 0) return res.json({ cached: 0 });
+
+      const tok = await pool.query(
+        `SELECT token_encrypted FROM project_tokens WHERE project_id=$1 AND platform='meta_ads' AND token_encrypted IS NOT NULL LIMIT 1`,
+        [projectId]
+      );
+      if (!tok.rows.length) return res.json({ cached: 0, reason: 'no_token' });
+      let token: string;
+      try { token = decryptToken(tok.rows[0].token_encrypted); } catch { return res.json({ cached: 0, reason: 'token_error' }); }
+
+      // Só busca as que ainda não estão em cache
+      const existing = await pool.query(`SELECT ad_id FROM meta_thumb_cache WHERE ad_id = ANY($1)`, [ids]);
+      const have = new Set(existing.rows.map((r: any) => r.ad_id));
+      const todo = ids.filter(id => !have.has(id));
+
+      const graphThumb = (adId: string): Promise<string | null> => new Promise((resolve) => {
+        const rq = https.get(
+          `https://graph.facebook.com/v21.0/${adId}?fields=creative%7Bthumbnail_url%7D&access_token=${encodeURIComponent(token)}`,
+          (r: any) => { let b = ''; r.on('data', (c: string) => b += c); r.on('end', () => { try { resolve(JSON.parse(b)?.creative?.thumbnail_url || null); } catch { resolve(null); } }); }
+        );
+        rq.on('error', () => resolve(null));
+        rq.setTimeout(8000, () => { rq.destroy(); resolve(null); });
+      });
+      const fetchBytes = (url: string): Promise<{ mime: string; buf: Buffer } | null> => new Promise((resolve) => {
+        const chunks: Buffer[] = [];
+        const rq = https.get(url, (r: any) => {
+          if (!r.statusCode || r.statusCode >= 400) { r.resume(); return resolve(null); }
+          const mime = r.headers['content-type'] || 'image/jpeg';
+          r.on('data', (c: Buffer) => chunks.push(c));
+          r.on('end', () => resolve({ mime, buf: Buffer.concat(chunks) }));
+        });
+        rq.on('error', () => resolve(null));
+        rq.setTimeout(8000, () => { rq.destroy(); resolve(null); });
+      });
+
+      let cached = 0;
+      await Promise.all(todo.map(async (adId) => {
+        const url = await graphThumb(adId);
+        if (!url) return;
+        const img = await fetchBytes(url);
+        if (!img || !img.buf.length) return;
+        await pool.query(
+          `INSERT INTO meta_thumb_cache (ad_id, mime, bytes, updated_at) VALUES ($1,$2,$3,NOW())
+           ON CONFLICT (ad_id) DO UPDATE SET mime=EXCLUDED.mime, bytes=EXCLUDED.bytes, updated_at=NOW()`,
+          [adId, img.mime, img.buf]
+        ).catch(() => {});
+        cached++;
+      }));
+      res.json({ cached, total: ids.length, already: have.size });
+    } catch (e: any) {
+      console.error('[refresh-thumbs]', e.message);
+      res.status(500).json({ error: 'refresh failed' });
+    }
+  });
+
+  // ── Status + saldo da conta de anúncios do Meta ────────────────────────────
+  const META_STATUS: Record<number, string> = { 1: 'Ativa', 2: 'Desativada', 3: 'Não quitada', 7: 'Em análise de risco', 8: 'Aguardando pagamento', 9: 'Período de carência', 100: 'Encerramento pendente', 101: 'Encerrada', 201: 'Ativa', 202: 'Encerrada' };
+  const META_DISABLE: Record<number, string> = { 1: 'Política de conteúdo/integridade', 2: 'Análise de IP', 3: 'Pagamento / risco', 4: 'Conta desativada', 5: 'Análise AFC', 7: 'Risco pendente' };
+
+  async function fetchMetaAccountInfo(projectId: string, force = false): Promise<any | null> {
+    const saveCache = async (data: any) => {
+      await pool.query(
+        `INSERT INTO meta_account_cache (project_id, data, updated_at) VALUES ($1,$2,NOW())
+         ON CONFLICT (project_id) DO UPDATE SET data=EXCLUDED.data, updated_at=NOW()`,
+        [projectId, JSON.stringify(data)]
+      ).catch(() => {});
+      return data;
+    };
+    if (!force) {
+      const c = await pool.query(`SELECT data, updated_at FROM meta_account_cache WHERE project_id=$1`, [projectId]);
+      if (c.rows.length) {
+        const ttl = c.rows[0].data?.error ? 5 * 60 * 1000 : 20 * 60 * 1000; // erros expiram mais rápido (pra recuperar)
+        if (Date.now() - new Date(c.rows[0].updated_at).getTime() < ttl) return c.rows[0].data;
+      }
+    }
+    const tok = await pool.query(
+      `SELECT token_encrypted, account_id FROM project_tokens WHERE project_id=$1 AND platform='meta_ads' AND token_encrypted IS NOT NULL AND account_id IS NOT NULL LIMIT 1`,
+      [projectId]
+    );
+    if (!tok.rows.length) return null; // sem token conectado → coluna vazia
+    let token: string;
+    try { token = decryptToken(tok.rows[0].token_encrypted); } catch { return saveCache({ error: true, errorMsg: 'Token inválido (não foi possível ler)' }); }
+    let acc = String(tok.rows[0].account_id); if (!acc.startsWith('act_')) acc = 'act_' + acc;
+    const fields = 'name,account_status,disable_reason,balance,amount_spent,spend_cap,currency,is_prepay_account,funding_source_details';
+    const raw: any = await new Promise((resolve) => {
+      const rq = https.get(`https://graph.facebook.com/v21.0/${acc}?fields=${fields}&access_token=${encodeURIComponent(token)}`,
+        (r: any) => { let b = ''; r.on('data', (c: string) => b += c); r.on('end', () => { try { resolve(JSON.parse(b)); } catch { resolve(null); } }); });
+      rq.on('error', () => resolve(null));
+      rq.setTimeout(10000, () => { rq.destroy(); resolve(null); });
+    });
+    const setTokenStatus = async (s: string, err: string | null) => {
+      await pool.query(
+        `UPDATE project_tokens SET status=$2, last_error=$3, last_synced_at=NOW() WHERE project_id=$1 AND platform='meta_ads'`,
+        [projectId, s, err]
+      ).catch(() => {});
+    };
+    const lastGood = async () => (await pool.query(`SELECT data FROM meta_account_cache WHERE project_id=$1`, [projectId])).rows[0]?.data;
+    // Falha de rede/timeout — transitório: não rebaixa o token, mantém último status bom.
+    if (!raw) { const prev = await lastGood(); return prev && !prev.error ? prev : { error: true, transient: true, errorMsg: 'Sem resposta do Meta' }; }
+    if (raw.error) {
+      const code = Number(raw.error.code);
+      const transient = raw.error.is_transient === true || [1, 2, 4, 17, 32, 341, 368, 613].includes(code) || Number(raw.error.error_subcode) === 1504044;
+      if (transient) { const prev = await lastGood(); return prev && !prev.error ? prev : { error: true, transient: true, errorMsg: 'Instabilidade no Meta' }; }
+      await setTokenStatus('error', String(raw.error.message || 'Token com erro').slice(0, 300));
+      return saveCache({ error: true, errorMsg: raw.error.message || 'Token com erro' });
+    }
+    if (raw.account_status == null) { await setTokenStatus('error', 'Sem acesso à conta'); return saveCache({ error: true, errorMsg: 'Sem acesso à conta' }); }
+    await setTokenStatus('active', null); // token funciona → reconcilia o status (limpa "Erro" antigo/transitório)
+    const status = Number(raw.account_status);
+    const disp = raw.funding_source_details?.display_string || '';
+    const m = disp.match(/R\$\s*([\d.]+,\d{2})/);
+    const saldo = m ? parseFloat(m[1].replace(/\./g, '').replace(',', '.')) : null;
+    const info = {
+      name: raw.name || '', status,
+      statusLabel: META_STATUS[status] || `Status ${status}`,
+      blocked: status !== 1 && status !== 201,
+      disableReason: raw.disable_reason ? (META_DISABLE[Number(raw.disable_reason)] || `motivo ${raw.disable_reason}`) : '',
+      prepaid: !!raw.is_prepay_account,
+      saldo, saldoLabel: disp,
+      spendCap: raw.spend_cap != null ? Number(raw.spend_cap) / 100 : null,
+      amountSpent: raw.amount_spent != null ? Number(raw.amount_spent) / 100 : null,
+      balance: raw.balance != null ? Number(raw.balance) / 100 : null,
+      currency: raw.currency || 'BRL',
+      checkedAt: new Date().toISOString(),
+    };
+    return saveCache(info);
+  }
+
+  app.get('/api/partners/:projectId/meta-account', async (req: any, res) => {
+    try {
+      const info = await fetchMetaAccountInfo(req.params.projectId, req.query.force === '1');
+      if (!info) return res.json({ has_meta: false });
+      res.json({ has_meta: true, ...info });
+    } catch (e: any) {
+      res.status(500).json({ error: 'meta account failed' });
+    }
+  });
+
+  // ── Webhook único de alertas ──────────────────────────────────────────────
+  // Todo alerta/erro do sistema é empurrado para este webhook (o n8n formata e envia no WhatsApp).
+  async function pushAlert(payload: Record<string, any>): Promise<boolean> {
+    try {
+      const cfg = (await pool.query(`SELECT url, secret, enabled FROM alert_webhook_config WHERE id=1`)).rows[0];
+      if (!cfg || !cfg.enabled || !cfg.url) return false;
+      await fetch(cfg.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(cfg.secret ? { 'X-Webhook-Secret': cfg.secret } : {}) },
+        body: JSON.stringify({ ...payload, timestamp: new Date().toISOString() }),
+      });
+      return true;
+    } catch (e: any) { console.warn('[alert-webhook] falhou:', e.message); return false; }
+  }
+  app.get('/api/alert-webhook', async (_req: any, res) => {
+    try {
+      const r = await pool.query(`SELECT url, secret, enabled, updated_at FROM alert_webhook_config WHERE id=1`);
+      res.json(r.rows[0] || {});
+    } catch { res.status(500).json({ error: 'config failed' }); }
+  });
+  app.put('/api/alert-webhook', async (req: any, res) => {
+    try {
+      const { url, secret, enabled } = req.body || {};
+      await pool.query(
+        `UPDATE alert_webhook_config SET url=COALESCE($1,url), secret=COALESCE($2,secret), enabled=COALESCE($3,enabled), updated_at=NOW() WHERE id=1`,
+        [url ?? null, secret ?? null, typeof enabled === 'boolean' ? enabled : null]
+      );
+      const r = await pool.query(`SELECT url, secret, enabled, updated_at FROM alert_webhook_config WHERE id=1`);
+      res.json(r.rows[0]);
+    } catch { res.status(500).json({ error: 'config save failed' }); }
+  });
+  // Dispara um alerta de teste para o webhook configurado.
+  app.post('/api/alert-webhook/test', async (_req: any, res) => {
+    const ok = await pushAlert({ type: 'teste', severity: 'info', title: 'Teste de webhook', message: 'Se você recebeu esta mensagem, o webhook de alertas do GrapeHub está funcionando. ✅' });
+    res.json({ sent: ok });
+  });
+
+  // ── Config dos alertas de conta Meta (número WhatsApp, limite de saldo, on/off) ──
+  app.get('/api/meta-alert-config', async (_req: any, res) => {
+    try {
+      const r = await pool.query(`SELECT alert_phone, low_balance_threshold, enabled FROM meta_alert_config WHERE id=1`);
+      res.json(r.rows[0] || {});
+    } catch { res.status(500).json({ error: 'config failed' }); }
+  });
+  app.put('/api/meta-alert-config', async (req: any, res) => {
+    try {
+      const { alert_phone, low_balance_threshold, enabled } = req.body || {};
+      await pool.query(
+        `UPDATE meta_alert_config SET alert_phone=COALESCE($1,alert_phone), low_balance_threshold=COALESCE($2,low_balance_threshold), enabled=COALESCE($3,enabled), updated_at=NOW() WHERE id=1`,
+        [alert_phone ?? null, low_balance_threshold ?? null, typeof enabled === 'boolean' ? enabled : null]
+      );
+      const r = await pool.query(`SELECT alert_phone, low_balance_threshold, enabled FROM meta_alert_config WHERE id=1`);
+      res.json(r.rows[0]);
+    } catch { res.status(500).json({ error: 'config save failed' }); }
+  });
+
+  // Envia alerta por WhatsApp reaproveitando o webhook n8n (mesmo canal das cobranças).
+  async function sendWhatsappAlert(webhookUrl: string, phone: string, mensagem: string, nome: string) {
+    try {
+      await fetch(webhookUrl, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ telefone: phone, mensagem, nome, metodo: 'Whatsapp' }),
+      });
+    } catch (e: any) { console.warn('[meta-alert] whatsapp falhou:', e.message); }
+  }
+
+  // Verificador: checa cada conta Meta; empurra alerta (edge-triggered) ao BLOQUEAR ou SALDO BAIXO.
+  async function checkMetaAccounts() {
+    try {
+      const whCfg = (await pool.query(`SELECT enabled, url FROM alert_webhook_config WHERE id=1`)).rows[0];
+      if (!whCfg || !whCfg.enabled || !whCfg.url) return; // sem webhook configurado, nada a empurrar
+      const threshold = parseFloat((await pool.query(`SELECT low_balance_threshold FROM meta_alert_config WHERE id=1`)).rows[0]?.low_balance_threshold) || 100;
+      const projs = await pool.query(
+        `SELECT DISTINCT pt.project_id, p.partner, p.squad FROM project_tokens pt JOIN projects p ON p.id=pt.project_id
+         WHERE pt.platform='meta_ads' AND pt.token_encrypted IS NOT NULL AND pt.account_id IS NOT NULL`
+      );
+      for (const row of projs.rows) {
+        const info = await fetchMetaAccountInfo(row.project_id, true);
+        if (!info || info.error) continue;
+        const st = (await pool.query(`SELECT blocked_alerted, low_balance_alerted FROM meta_account_alert_state WHERE project_id=$1`, [row.project_id])).rows[0]
+          || { blocked_alerted: false, low_balance_alerted: false };
+        if (info.blocked && !st.blocked_alerted) {
+          await pushAlert({
+            type: 'meta_account_blocked', severity: 'error', partner: row.partner, squad: row.squad || null, account: info.name,
+            status: info.statusLabel, reason: info.disableReason || '',
+            title: `Conta de anúncios com problema: ${row.partner}`,
+            message: `A conta de anúncios de ${row.partner} está "${info.statusLabel}"${info.disableReason ? ` (${info.disableReason})` : ''}. As campanhas podem ter parado — verifique no Gerenciador de Anúncios.`,
+          });
+        }
+        const lowNow = info.prepaid && info.saldo != null && info.saldo < threshold;
+        if (lowNow && !st.low_balance_alerted) {
+          await pushAlert({
+            type: 'meta_low_balance', severity: 'warning', partner: row.partner, squad: row.squad || null,
+            saldo: info.saldo, threshold,
+            title: `Saldo baixo: ${row.partner}`,
+            message: `Saldo da conta de ${row.partner}: R$ ${info.saldo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (abaixo de R$ ${threshold.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}). Recarregue antes que as campanhas parem.`,
+          });
+        }
+        await pool.query(
+          `INSERT INTO meta_account_alert_state (project_id, last_status, blocked_alerted, low_balance_alerted, updated_at)
+           VALUES ($1,$2,$3,$4,NOW())
+           ON CONFLICT (project_id) DO UPDATE SET last_status=EXCLUDED.last_status, blocked_alerted=EXCLUDED.blocked_alerted, low_balance_alerted=EXCLUDED.low_balance_alerted, updated_at=NOW()`,
+          [row.project_id, info.status, !!info.blocked, !!lowNow]
+        );
+      }
+    } catch (e: any) { console.warn('[meta-account-check]', e.message); }
+  }
+
+  // Verificação manual imediata (para testar)
+  app.post('/api/meta-account/check-now', async (_req: any, res) => {
+    try { await checkMetaAccounts(); res.json({ ok: true }); } catch { res.status(500).json({ error: 'check failed' }); }
+  });
+
+  // Agenda a verificação: ~5 min após o boot e a cada 60 min (early-return se desativado).
+  setTimeout(() => { checkMetaAccounts(); }, 5 * 60 * 1000);
+  setInterval(() => { checkMetaAccounts(); }, 60 * 60 * 1000);
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // SYNC DIÁRIO DO META ADS (migrado do n8n) — campanhas + criativos + thumbnails
+  // ══════════════════════════════════════════════════════════════════════════
+  const graphJson = (url: string, timeoutMs = 30000): Promise<any> => new Promise((resolve) => {
+    const rq = https.get(url, (r: any) => { let b = ''; r.on('data', (c: string) => b += c); r.on('end', () => { try { resolve(JSON.parse(b)); } catch { resolve(null); } }); });
+    rq.on('error', () => resolve(null));
+    rq.setTimeout(timeoutMs, () => { rq.destroy(); resolve(null); });
+  });
+  const sumActions = (actions: any[], match: string) =>
+    (actions || []).filter((a: any) => a.action_type && a.action_type.includes(match)).reduce((s: number, a: any) => s + parseInt(a.value || '0', 10), 0);
+
+  // Busca insights (segue paginação) para um nível (campaign|ad).
+  async function fetchMetaInsights(acc: string, level: string, fields: string, since: string, until: string, token: string): Promise<any[]> {
+    let url: string | null =
+      `https://graph.facebook.com/v21.0/${acc}/insights?level=${level}&fields=${encodeURIComponent(fields)}` +
+      `&time_increment=1&time_range=${encodeURIComponent(JSON.stringify({ since, until }))}&limit=500&access_token=${encodeURIComponent(token)}`;
+    const rows: any[] = [];
+    for (let page = 0; page < 25 && url; page++) {
+      const json: any = await graphJson(url);
+      if (!json) throw Object.assign(new Error('Sem resposta do Meta'), { transient: true });
+      if (json.error) throw Object.assign(new Error(json.error.message || 'Erro Graph'), { meta: json.error });
+      if (Array.isArray(json.data)) rows.push(...json.data);
+      url = json.paging?.next || null;
+    }
+    return rows;
+  }
+
+  async function markTokenError(id: number, msg: string) {
+    await pool.query(`UPDATE project_tokens SET status='error', last_error=$1 WHERE id=$2`, [String(msg).slice(0, 300), id]).catch(() => {});
+  }
+  const isTransientMeta = (err: any) => {
+    const code = Number(err?.meta?.code);
+    return err?.transient === true || err?.meta?.is_transient === true || [1, 2, 4, 17, 32, 341, 368, 613].includes(code) || Number(err?.meta?.error_subcode) === 1504044;
+  };
+
+  let metaSyncRunning = false;
+  async function runMetaAdsSync(): Promise<{ accounts: number; insights: number; creatives: number; errors: number }> {
+    if (metaSyncRunning) return { accounts: 0, insights: 0, creatives: 0, errors: 0 };
+    metaSyncRunning = true;
+    const stats = { accounts: 0, insights: 0, creatives: 0, errors: 0 };
+    const failed: { name: string; account: string; msg: string; squad: string | null }[] = [];
+    try {
+      const toks = await pool.query(
+        `SELECT t.id, t.account_id, t.token_encrypted, p.partner AS client_name, p.squad AS squad
+         FROM project_tokens t LEFT JOIN projects p ON TRIM(p.id)=TRIM(t.project_id)
+         WHERE t.platform='meta_ads' AND t.status='active' AND t.account_id IS NOT NULL`
+      );
+      const now = new Date();
+      const d = (n: number) => { const x = new Date(now); x.setDate(now.getDate() - n); return x.toISOString().slice(0, 10); };
+      const since = d(30), until = d(1);
+      const CAMP_FIELDS = 'campaign_id,campaign_name,spend,impressions,clicks,ctr,actions';
+      const AD_FIELDS = 'ad_id,ad_name,campaign_id,campaign_name,spend,impressions,clicks,ctr,actions';
+
+      for (const t of toks.rows) {
+        stats.accounts++;
+        let token: string;
+        try { token = decryptToken(t.token_encrypted); } catch { await markTokenError(t.id, 'Token inválido'); failed.push({ name: t.client_name || '?', account: t.account_id, msg: 'Token inválido', squad: t.squad || null }); stats.errors++; continue; }
+        const acc = String(t.account_id).startsWith('act_') ? String(t.account_id) : 'act_' + t.account_id;
+
+        // ── Campanhas → meta_insights ──
+        try {
+          const rows = await fetchMetaInsights(acc, 'campaign', CAMP_FIELDS, since, until, token);
+          for (const row of rows) {
+            await pool.query(
+              `INSERT INTO marketing.meta_insights (account_id, campaign_id, campaign_name, date, spend, impressions, clicks, ctr, leads, messages)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+               ON CONFLICT (account_id, campaign_id, date) DO UPDATE SET
+                 campaign_name=EXCLUDED.campaign_name, spend=EXCLUDED.spend, impressions=EXCLUDED.impressions,
+                 clicks=EXCLUDED.clicks, ctr=EXCLUDED.ctr, leads=EXCLUDED.leads, messages=EXCLUDED.messages, updated_at=now()`,
+              [t.account_id, row.campaign_id, row.campaign_name, row.date_start,
+               parseFloat(row.spend || 0), parseInt(row.impressions || 0, 10), parseInt(row.clicks || 0, 10),
+               parseFloat(row.ctr || 0), sumActions(row.actions, 'lead'), sumActions(row.actions, 'messaging_conversation_started')]
+            ).catch(() => {});
+            stats.insights++;
+          }
+        } catch (e: any) {
+          if (!isTransientMeta(e)) { await markTokenError(t.id, e.message); failed.push({ name: t.client_name || '?', account: t.account_id, msg: e.message, squad: t.squad || null }); stats.errors++; continue; }
+        }
+
+        // ── Criativos → meta_creatives (com thumbnail por ad, deduplicado) ──
+        try {
+          const rows = await fetchMetaInsights(acc, 'ad', AD_FIELDS, since, until, token);
+          const uniqueAds = Array.from(new Set(rows.map((r: any) => r.ad_id).filter(Boolean))) as string[];
+          // Busca as thumbnails em LOTE (endpoint ?ids= aceita até 50 ads por chamada). Antes era 1
+          // chamada por anúncio: com dezenas de ads isso estourava o rate-limit do Meta e ~metade
+          // voltava vazia (gravando thumbnail nula). Em lote são poucas chamadas e não é limitado.
+          // Fallback de campos: anúncios de VÍDEO costumam ter thumbnail_url nula → usa image_url /
+          // object_story_spec.
+          const pickThumb = (cr: any): string | null =>
+            cr?.thumbnail_url || cr?.image_url ||
+            cr?.object_story_spec?.video_data?.image_url ||
+            cr?.object_story_spec?.link_data?.picture || null;
+          const thumbFields = encodeURIComponent('creative{thumbnail_url,image_url,object_story_spec{video_data{image_url},link_data{picture}}}');
+          const thumbs: Record<string, string | null> = {};
+          for (let k = 0; k < uniqueAds.length; k += 50) {
+            const chunk = uniqueAds.slice(k, k + 50);
+            const j: any = await graphJson(`https://graph.facebook.com/v21.0/?ids=${encodeURIComponent(chunk.join(','))}&fields=${thumbFields}&access_token=${encodeURIComponent(token)}`, 30000);
+            if (j && !j.error) {
+              for (const adId of chunk) thumbs[adId] = pickThumb(j[adId]?.creative);
+            }
+            // Se um lote falhar, os ads ficam sem entrada em `thumbs` → o upsert usa COALESCE e
+            // preserva a thumbnail já salva, em vez de sobrescrever com null.
+          }
+          for (const row of rows) {
+            await pool.query(
+              `INSERT INTO marketing.meta_creatives (account_id, campaign_id, campaign_name, ad_id, ad_name, thumbnail_url, date, spend, impressions, clicks, ctr, messages, leads)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+               ON CONFLICT (account_id, ad_id, date) DO UPDATE SET
+                 campaign_name=EXCLUDED.campaign_name, ad_name=EXCLUDED.ad_name,
+                 thumbnail_url=COALESCE(EXCLUDED.thumbnail_url, meta_creatives.thumbnail_url),
+                 spend=EXCLUDED.spend, impressions=EXCLUDED.impressions, clicks=EXCLUDED.clicks, ctr=EXCLUDED.ctr,
+                 messages=EXCLUDED.messages, leads=EXCLUDED.leads, updated_at=now()`,
+              [t.account_id, row.campaign_id, row.campaign_name, row.ad_id, row.ad_name, thumbs[row.ad_id] || null, row.date_start,
+               parseFloat(row.spend || 0), parseInt(row.impressions || 0, 10), parseInt(row.clicks || 0, 10),
+               parseFloat(row.ctr || 0), sumActions(row.actions, 'messaging_conversation_started'), sumActions(row.actions, 'lead')]
+            ).catch(() => {});
+            stats.creatives++;
+          }
+        } catch (e: any) {
+          if (!isTransientMeta(e)) { await markTokenError(t.id, e.message); failed.push({ name: t.client_name || '?', account: t.account_id, msg: e.message, squad: t.squad || null }); stats.errors++; continue; }
+        }
+      }
+
+      // Empurra 1 alerta por cliente que falhou para o webhook único de alertas.
+      for (const f of failed) {
+        await pushAlert({
+          type: 'meta_sync_error', severity: 'error', partner: f.name, squad: f.squad || null, account: f.account, error: f.msg,
+          title: `Falha no sync do Meta: ${f.name}`,
+          message: `Falha ao sincronizar ${f.name} (conta ${f.account}): ${f.msg}. Verifique se o token expirou ou o acesso foi revogado.`,
+        });
+      }
+
+      const result = `contas:${stats.accounts} insights:${stats.insights} criativos:${stats.creatives} erros:${stats.errors}`;
+      await pool.query(`UPDATE meta_sync_config SET last_run_at=NOW(), last_run_date=CURRENT_DATE, last_result=$1 WHERE id=1`, [result]).catch(() => {});
+      console.log(`[meta-sync] concluído — ${result}`);
+      return stats;
+    } catch (e: any) {
+      console.error('[meta-sync] erro geral:', e.message);
+      return stats;
+    } finally {
+      metaSyncRunning = false;
+    }
+  }
+
+  // Config / status / trigger manual do sync
+  app.get('/api/meta-sync/config', async (_req: any, res) => {
+    try {
+      const r = await pool.query(`SELECT enabled, uazapi_url, uazapi_group, last_run_at, last_run_date, last_result FROM meta_sync_config WHERE id=1`);
+      res.json(r.rows[0] || {});
+    } catch { res.status(500).json({ error: 'config failed' }); }
+  });
+  app.put('/api/meta-sync/config', async (req: any, res) => {
+    try {
+      const { enabled, uazapi_url, uazapi_token, uazapi_group } = req.body || {};
+      await pool.query(
+        `UPDATE meta_sync_config SET enabled=COALESCE($1,enabled), uazapi_url=COALESCE($2,uazapi_url), uazapi_token=COALESCE($3,uazapi_token), uazapi_group=COALESCE($4,uazapi_group), updated_at=NOW() WHERE id=1`,
+        [typeof enabled === 'boolean' ? enabled : null, uazapi_url ?? null, uazapi_token ?? null, uazapi_group ?? null]
+      );
+      const r = await pool.query(`SELECT enabled, uazapi_url, uazapi_group, last_run_at, last_run_date, last_result FROM meta_sync_config WHERE id=1`);
+      res.json(r.rows[0]);
+    } catch { res.status(500).json({ error: 'config save failed' }); }
+  });
+  app.post('/api/meta-sync/run', async (_req: any, res) => {
+    res.json({ started: true }); // responde já; roda em background
+    setImmediate(() => runMetaAdsSync());
+  });
+
+  // Agenda diária às 02h (America/Sao_Paulo, UTC-3 ≈ 05h UTC): checa a cada 30 min e roda 1×/dia se enabled.
+  setInterval(async () => {
+    try {
+      const cfg = (await pool.query(`SELECT enabled, last_run_date FROM meta_sync_config WHERE id=1`)).rows[0];
+      if (!cfg || !cfg.enabled) return;
+      const nowUtcHour = new Date().getUTCHours(); // 02h SP = 05h UTC
+      const todaySP = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
+      const lastRun = cfg.last_run_date ? new Date(cfg.last_run_date).toISOString().slice(0, 10) : null;
+      if (nowUtcHour >= 5 && lastRun !== todaySP) {
+        console.log('[meta-sync] disparando sync diário');
+        runMetaAdsSync();
+      }
+    } catch { /* ignora */ }
+  }, 30 * 60 * 1000);
+
   // ==========================================
   // MARKETING AÇÕES
   // ==========================================
@@ -8616,8 +9164,10 @@ app.get("/api/todos", async (req, res) => {
   // ==========================================
   app.get("/api/crm-metas", async (req, res) => {
     try {
+      const showArchived = req.query.archived === '1';
       const metas = await pool.query(
-        `SELECT * FROM crm_metas ORDER BY created_at DESC`
+        `SELECT * FROM crm_metas WHERE COALESCE(archived, false) = $1 ORDER BY created_at DESC`,
+        [showArchived]
       );
 
       const now = new Date();
@@ -8980,6 +9530,17 @@ app.get("/api/todos", async (req, res) => {
       res.json({ success: true });
     } catch(e: any) {
       res.status(500).json({ error: "Failed to delete meta" });
+    }
+  });
+
+  // Arquivar / desarquivar uma meta (ex.: metas antigas que já passaram do prazo)
+  app.post("/api/crm-metas/:id/archive", async (req, res) => {
+    try {
+      const archived = req.body?.archived !== false; // default true
+      await pool.query(`UPDATE crm_metas SET archived = $1, updated_at = NOW() WHERE id = $2`, [archived, req.params.id]);
+      res.json({ success: true, archived });
+    } catch (e: any) {
+      res.status(500).json({ error: "Failed to archive meta" });
     }
   });
 
@@ -15429,19 +15990,42 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
   // ── Desempenho Quinzenal ───────────────────────────────────────────────────
 
   // GET todos os ciclos do colaborador
+  // Critérios fixos legados — usados para converter avaliações antigas
+  // (colunas nota_*) para o formato dinâmico de snapshot (notas JSONB).
+  const LEGACY_CRITERIA = [
+    { key: 'nota_campanhas', criterio_id: -1, label: 'Campanhas',         icon: 'Megaphone',     cor: 'violet' },
+    { key: 'nota_grapehub',  criterio_id: -2, label: 'GrapeHub',          icon: 'LayoutGrid',    cor: 'emerald' },
+    { key: 'nota_reunioes',  criterio_id: -3, label: 'Reuniões Internas', icon: 'Users',         cor: 'blue' },
+    { key: 'nota_tmr',       criterio_id: -4, label: 'TMR / Grupos',      icon: 'MessageCircle', cor: 'amber' },
+  ];
+  const buildNotas = (row: any): any[] => {
+    if (Array.isArray(row.notas) && row.notas.length) return row.notas;
+    const arr: any[] = [];
+    for (const l of LEGACY_CRITERIA) {
+      if (row[l.key] != null) {
+        arr.push({ criterio_id: l.criterio_id, label: l.label, icon: l.icon, cor: l.cor, nota: Number(row[l.key]) });
+      }
+    }
+    return arr;
+  };
+
   app.get("/api/colaboradores/:id/desempenho", async (req, res) => {
     try {
       const { rows } = await pool.query(`
-        SELECT
-          c.*,
-          av.name AS avaliador_nome,
-          ROUND((c.nota_campanhas + c.nota_grapehub + c.nota_reunioes + c.nota_tmr) / 4.0, 2) AS media_geral
+        SELECT c.*, av.name AS avaliador_nome
         FROM collaborator_performance_cycles c
         LEFT JOIN collaborators av ON av.id = c.avaliador_id
         WHERE c.collaborator_id = $1
         ORDER BY c.periodo_inicio DESC
       `, [req.params.id]);
-      res.json(rows);
+      const result = rows.map((r: any) => {
+        const notas = buildNotas(r);
+        const media = notas.length
+          ? Math.round((notas.reduce((a: number, n: any) => a + Number(n.nota), 0) / notas.length) * 100) / 100
+          : 0;
+        return { ...r, notas, media_geral: media };
+      });
+      res.json(result);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -15495,9 +16079,11 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
     }
   });
 
-  // POST criar novo ciclo (somente admin)
+  // POST criar novo ciclo (somente admin) — critérios dinâmicos por cargo
   app.post("/api/colaboradores/:id/desempenho", async (req, res) => {
-    const { periodo_inicio, periodo_fim, nota_campanhas, nota_grapehub, nota_reunioes, nota_tmr, comentario } = req.body;
+    const { periodo_inicio, periodo_fim, notas, comentario } = req.body;
+    if (!periodo_inicio || !periodo_fim) return res.status(400).json({ error: 'Período de início e fim são obrigatórios.' });
+    if (!Array.isArray(notas) || notas.length === 0) return res.status(400).json({ error: 'Informe ao menos um critério avaliado.' });
     try {
       // Resolve avaliador pelo email enviado no header x-user-email
       const emailHeader = req.headers['x-user-email'] as string | undefined;
@@ -15516,11 +16102,21 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
         }
       }
 
+      // Sanitiza o snapshot de notas
+      const cleanNotas = notas.map((n: any) => ({
+        criterio_id: Number(n.criterio_id) || 0,
+        label: String(n.label || 'Avaliação'),
+        descricao: n.descricao ?? null,
+        icon: String(n.icon || 'Star'),
+        cor: String(n.cor || 'violet'),
+        nota: Math.max(1, Math.min(5, Number(n.nota) || 0)),
+      }));
+
       const { rows } = await pool.query(
         `INSERT INTO collaborator_performance_cycles
-          (collaborator_id, avaliador_id, periodo_inicio, periodo_fim, nota_campanhas, nota_grapehub, nota_reunioes, nota_tmr, comentario)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-        [req.params.id, avaliadorId, periodo_inicio, periodo_fim, nota_campanhas, nota_grapehub, nota_reunioes, nota_tmr, comentario || null]
+          (collaborator_id, avaliador_id, periodo_inicio, periodo_fim, notas, comentario)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+        [req.params.id, avaliadorId, periodo_inicio, periodo_fim, JSON.stringify(cleanNotas), comentario || null]
       );
       res.status(201).json(rows[0]);
     } catch (e: any) {
@@ -15608,6 +16204,137 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
     try {
       await pool.query(`DELETE FROM collaborator_performance_schedule WHERE collaborator_id = $1`, [req.params.id]);
       res.status(204).send();
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── Cargos e Critérios de Avaliação ──────────────────────────────────────────
+  // Critérios de avaliação de desempenho definidos por cargo (collaborators.role)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS performance_criteria (
+      id SERIAL PRIMARY KEY,
+      cargo TEXT NOT NULL,
+      label TEXT NOT NULL,
+      descricao TEXT,
+      icon TEXT DEFAULT 'Star',
+      cor TEXT DEFAULT 'violet',
+      ordem INTEGER DEFAULT 0,
+      ativo BOOLEAN DEFAULT TRUE,
+      criado_em TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  // Avaliação dinâmica por cargo: guarda um snapshot dos critérios+notas em JSONB.
+  // As colunas fixas antigas (nota_campanhas/grapehub/reunioes/tmr) viram opcionais
+  // para que ciclos com critérios dinâmicos possam ser inseridos sem elas.
+  await pool.query(`ALTER TABLE collaborator_performance_cycles ADD COLUMN IF NOT EXISTS notas JSONB`);
+  await pool.query(`ALTER TABLE collaborator_performance_cycles ALTER COLUMN nota_campanhas DROP NOT NULL`).catch(() => {});
+  await pool.query(`ALTER TABLE collaborator_performance_cycles ALTER COLUMN nota_grapehub DROP NOT NULL`).catch(() => {});
+  await pool.query(`ALTER TABLE collaborator_performance_cycles ALTER COLUMN nota_reunioes DROP NOT NULL`).catch(() => {});
+  await pool.query(`ALTER TABLE collaborator_performance_cycles ALTER COLUMN nota_tmr DROP NOT NULL`).catch(() => {});
+
+  // GET - lista os cargos existentes (a partir de collaborators.role) com contagem
+  app.get("/api/admin/cargos", async (_req, res) => {
+    try {
+      const { rows } = await pool.query(`
+        SELECT TRIM(role) AS cargo, COUNT(*)::int AS total_colaboradores
+        FROM collaborators
+        WHERE role IS NOT NULL AND TRIM(role) <> ''
+        GROUP BY TRIM(role)
+        ORDER BY TRIM(role) ASC
+      `);
+      res.json(rows);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // GET - lista critérios (opcionalmente filtrados por cargo)
+  app.get("/api/admin/performance-criteria", async (req, res) => {
+    try {
+      const { cargo } = req.query as { cargo?: string };
+      const params: any[] = [];
+      let where = '';
+      if (cargo) { params.push(cargo); where = 'WHERE cargo = $1'; }
+      const { rows } = await pool.query(
+        `SELECT * FROM performance_criteria ${where} ORDER BY cargo ASC, ordem ASC, id ASC`,
+        params
+      );
+      res.json(rows);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // POST - cria critério para um cargo
+  app.post("/api/admin/performance-criteria", async (req, res) => {
+    const { cargo, label, descricao, icon, cor, ordem } = req.body;
+    if (!cargo || !label) return res.status(400).json({ error: 'Cargo e nome do critério são obrigatórios.' });
+    try {
+      const { rows } = await pool.query(
+        `INSERT INTO performance_criteria (cargo, label, descricao, icon, cor, ordem)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+        [cargo, label, descricao || null, icon || 'Star', cor || 'violet', Number.isFinite(ordem) ? ordem : 0]
+      );
+      res.status(201).json(rows[0]);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // PUT - atualiza critério
+  app.put("/api/admin/performance-criteria/:id", async (req, res) => {
+    const { label, descricao, icon, cor, ordem, ativo } = req.body;
+    try {
+      const { rows } = await pool.query(
+        `UPDATE performance_criteria SET
+           label = COALESCE($2, label),
+           descricao = $3,
+           icon = COALESCE($4, icon),
+           cor = COALESCE($5, cor),
+           ordem = COALESCE($6, ordem),
+           ativo = COALESCE($7, ativo)
+         WHERE id = $1 RETURNING *`,
+        [req.params.id, label ?? null, descricao ?? null, icon ?? null, cor ?? null,
+         Number.isFinite(ordem) ? ordem : null, typeof ativo === 'boolean' ? ativo : null]
+      );
+      if (rows.length === 0) return res.status(404).json({ error: 'Critério não encontrado.' });
+      res.json(rows[0]);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // DELETE - remove critério
+  app.delete("/api/admin/performance-criteria/:id", async (req, res) => {
+    try {
+      await pool.query(`DELETE FROM performance_criteria WHERE id = $1`, [req.params.id]);
+      res.status(204).send();
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // GET - critérios de avaliação para um colaborador (resolvidos pelo cargo/role).
+  // Se o cargo não tiver critérios cadastrados, devolve um único card "Avaliação".
+  const FALLBACK_CRITERIO = { id: 0, label: 'Avaliação', descricao: null, icon: 'Star', cor: 'violet' };
+  app.get("/api/colaboradores/:id/criterios-avaliacao", async (req, res) => {
+    try {
+      const colRes = await pool.query(`SELECT role FROM collaborators WHERE id = $1`, [req.params.id]);
+      const cargo = (colRes.rows[0]?.role || '').trim();
+      let criterios: any[] = [];
+      if (cargo) {
+        const { rows } = await pool.query(
+          `SELECT id, label, descricao, icon, cor FROM performance_criteria
+           WHERE cargo = $1 AND ativo = TRUE ORDER BY ordem ASC, id ASC`,
+          [cargo]
+        );
+        criterios = rows;
+      }
+      if (criterios.length === 0) criterios = [FALLBACK_CRITERIO];
+      res.json({ cargo: cargo || null, criterios });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

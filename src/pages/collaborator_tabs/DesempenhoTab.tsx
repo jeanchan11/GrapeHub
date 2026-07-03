@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import {
-  Plus, X, Star, TrendingUp, TrendingDown, Minus,
-  Megaphone, LayoutGrid, Users, MessageCircle, ChevronDown,
-  Trash2, Award, BarChart3, CalendarClock, Clock, Trash
+  Plus, X, Star, ChevronDown,
+  Trash2, Award, BarChart3, CalendarClock, Clock, Trash, Loader2
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import SplitHeadline from '../../components/SplitHeadline';
 import { auth } from '../../firebase';
+import { iconOf, colorOf, NotaSnapshot } from '../../components/performanceCriteria';
 
 // Helper: fetch autenticado com token Firebase
 async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
@@ -39,82 +39,30 @@ interface Cycle {
   avaliador_nome: string;
   periodo_inicio: string;
   periodo_fim: string;
-  nota_campanhas: number;
-  nota_grapehub: number;
-  nota_reunioes: number;
-  nota_tmr: number;
+  notas: NotaSnapshot[];
   comentario: string | null;
   criado_em: string;
   media_geral: number;
 }
 
-interface Summary {
-  media_campanhas: number;
-  media_grapehub: number;
-  media_reunioes: number;
-  media_tmr: number;
-  media_geral: number;
-  tendencia_campanhas: 'subiu' | 'caiu' | 'estavel' | null;
-  tendencia_grapehub: 'subiu' | 'caiu' | 'estavel' | null;
-  tendencia_reunioes: 'subiu' | 'caiu' | 'estavel' | null;
-  tendencia_tmr: 'subiu' | 'caiu' | 'estavel' | null;
-  diff_campanhas: number;
-  diff_grapehub: number;
-  diff_reunioes: number;
-  diff_tmr: number;
+interface Criterio {
+  id: number;
+  label: string;
+  descricao: string | null;
+  icon: string;
+  cor: string;
+}
+
+// Resumo por critério, calculado no cliente a partir do histórico de ciclos.
+interface CriterioResumo extends NotaSnapshot {
+  media: number;
+  tendencia: 'subiu' | 'caiu' | 'estavel' | null;
+  diff: number;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-const CRITERIA = [
-  {
-    key: 'nota_campanhas' as const,
-    summaryKey: 'media_campanhas' as const,
-    tendKey: 'tendencia_campanhas' as const,
-    diffKey: 'diff_campanhas' as const,
-    label: 'Campanhas',
-    desc: 'Otimizações no prazo',
-    icon: <Megaphone size={16} />,
-    bg: 'bg-violet-500/15',
-    color: 'text-violet-400',
-    bar: 'bg-violet-500',
-  },
-  {
-    key: 'nota_grapehub' as const,
-    summaryKey: 'media_grapehub' as const,
-    tendKey: 'tendencia_grapehub' as const,
-    diffKey: 'diff_grapehub' as const,
-    label: 'GrapeHub',
-    desc: 'Uso correto e registros atualizados',
-    icon: <LayoutGrid size={16} />,
-    bg: 'bg-emerald-500/15',
-    color: 'text-emerald-400',
-    bar: 'bg-emerald-500',
-  },
-  {
-    key: 'nota_reunioes' as const,
-    summaryKey: 'media_reunioes' as const,
-    tendKey: 'tendencia_reunioes' as const,
-    diffKey: 'diff_reunioes' as const,
-    label: 'Reuniões Internas',
-    desc: 'Comparecimento e participação',
-    icon: <Users size={16} />,
-    bg: 'bg-blue-500/15',
-    color: 'text-blue-400',
-    bar: 'bg-blue-500',
-  },
-  {
-    key: 'nota_tmr' as const,
-    summaryKey: 'media_tmr' as const,
-    tendKey: 'tendencia_tmr' as const,
-    diffKey: 'diff_tmr' as const,
-    label: 'TMR / Grupos',
-    desc: 'Envolvimento e resposta rápida',
-    icon: <MessageCircle size={16} />,
-    bg: 'bg-amber-500/15',
-    color: 'text-amber-400',
-    bar: 'bg-amber-500',
-  },
-];
+const critKey = (n: { criterio_id: number; label: string }) =>
+  n.criterio_id && n.criterio_id !== 0 ? `id:${n.criterio_id}` : `label:${n.label}`;
 
 function StarRow({ value, max = 5, size = 14 }: { value: number; max?: number; size?: number }) {
   return (
@@ -324,7 +272,10 @@ interface ModalProps {
 function NovaAvaliacaoModal({ collaboratorId, userEmail, onClose, onSaved }: ModalProps) {
   const [periodoInicio, setPeriodoInicio] = useState('');
   const [periodoFim, setPeriodoFim] = useState('');
-  const [notas, setNotas] = useState({ nota_campanhas: 0, nota_grapehub: 0, nota_reunioes: 0, nota_tmr: 0 });
+  const [criterios, setCriterios] = useState<Criterio[]>([]);
+  const [cargo, setCargo] = useState<string | null>(null);
+  const [loadingCrit, setLoadingCrit] = useState(true);
+  const [notas, setNotas] = useState<number[]>([]);
   const [comentario, setComentario] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -336,21 +287,52 @@ function NovaAvaliacaoModal({ collaboratorId, userEmail, onClose, onSaved }: Mod
     return () => document.removeEventListener('keydown', handler);
   }, [onClose]);
 
+  // Carrega os critérios do cargo do colaborador
+  useEffect(() => {
+    (async () => {
+      setLoadingCrit(true);
+      try {
+        const res = await authFetch(`/api/colaboradores/${collaboratorId}/criterios-avaliacao`);
+        const data = res.ok ? await res.json() : { cargo: null, criterios: [] };
+        const list: Criterio[] = data.criterios?.length
+          ? data.criterios
+          : [{ id: 0, label: 'Avaliação', descricao: null, icon: 'Star', cor: 'violet' }];
+        setCriterios(list);
+        setCargo(data.cargo || null);
+        setNotas(new Array(list.length).fill(0));
+      } catch {
+        const fb = [{ id: 0, label: 'Avaliação', descricao: null, icon: 'Star', cor: 'violet' }];
+        setCriterios(fb);
+        setNotas([0]);
+      } finally {
+        setLoadingCrit(false);
+      }
+    })();
+  }, [collaboratorId]);
+
   const handleSave = async () => {
     if (!periodoInicio || !periodoFim) { setError('Informe o período de início e fim.'); return; }
-    for (const c of CRITERIA) {
-      if (!notas[c.key]) { setError(`Selecione as estrelas para "${c.label}".`); return; }
+    for (let i = 0; i < criterios.length; i++) {
+      if (!notas[i]) { setError(`Selecione as estrelas para "${criterios[i].label}".`); return; }
     }
     setError('');
     setSaving(true);
     try {
+      const payloadNotas: NotaSnapshot[] = criterios.map((c, i) => ({
+        criterio_id: c.id,
+        label: c.label,
+        descricao: c.descricao,
+        icon: c.icon,
+        cor: c.cor,
+        nota: notas[i],
+      }));
       const res = await authFetch(`/api/colaboradores/${collaboratorId}/desempenho`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...(userEmail ? { 'x-user-email': userEmail } : {}),
         },
-        body: JSON.stringify({ periodo_inicio: periodoInicio, periodo_fim: periodoFim, ...notas, comentario }),
+        body: JSON.stringify({ periodo_inicio: periodoInicio, periodo_fim: periodoFim, notas: payloadNotas, comentario }),
       });
       if (!res.ok) {
         const err = await res.json();
@@ -380,7 +362,9 @@ function NovaAvaliacaoModal({ collaboratorId, userEmail, onClose, onSaved }: Mod
             </div>
             <div>
               <h2 className="font-black text-slate-800 dark:text-white text-base">Registrar Avaliação Quinzenal</h2>
-              <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-0.5">Desempenho do colaborador</p>
+              <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-0.5">
+                {cargo ? `Desempenho — ${cargo}` : 'Desempenho do colaborador'}
+              </p>
             </div>
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-xl hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-colors">
@@ -418,22 +402,32 @@ function NovaAvaliacaoModal({ collaboratorId, userEmail, onClose, onSaved }: Mod
           {/* Critérios */}
           <div>
             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3 block">Avaliação por critério</label>
-            <div className="space-y-3">
-              {CRITERIA.map(c => (
-                <div key={c.key} className="bg-slate-50 dark:bg-white/[0.03] border border-slate-100 dark:border-white/[0.06] rounded-2xl px-4 py-3.5 flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${c.bg} ${c.color}`}>
-                      {c.icon}
+            {loadingCrit ? (
+              <div className="flex items-center justify-center py-8 text-slate-400">
+                <Loader2 size={22} className="animate-spin" />
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {criterios.map((c, i) => {
+                  const Ico = iconOf(c.icon);
+                  const col = colorOf(c.cor);
+                  return (
+                    <div key={`${c.id}-${i}`} className="bg-slate-50 dark:bg-white/[0.03] border border-slate-100 dark:border-white/[0.06] rounded-2xl px-4 py-3.5 flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${col.bg} ${col.text}`}>
+                          <Ico size={16} />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-bold text-slate-800 dark:text-white text-sm">{c.label}</p>
+                          {c.descricao && <p className="text-[11px] text-slate-500 truncate">{c.descricao}</p>}
+                        </div>
+                      </div>
+                      <StarPicker value={notas[i] || 0} onChange={v => setNotas(prev => prev.map((n, idx) => idx === i ? v : n))} />
                     </div>
-                    <div className="min-w-0">
-                      <p className="font-bold text-slate-800 dark:text-white text-sm">{c.label}</p>
-                      <p className="text-[11px] text-slate-500 truncate">{c.desc}</p>
-                    </div>
-                  </div>
-                  <StarPicker value={notas[c.key]} onChange={v => setNotas(prev => ({ ...prev, [c.key]: v }))} />
-                </div>
-              ))}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Comentário */}
@@ -463,7 +457,7 @@ function NovaAvaliacaoModal({ collaboratorId, userEmail, onClose, onSaved }: Mod
           </button>
           <button
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || loadingCrit}
             className="px-5 py-2 rounded-xl text-sm font-bold bg-violet-600 hover:bg-violet-700 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
             {saving && <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
@@ -478,7 +472,6 @@ function NovaAvaliacaoModal({ collaboratorId, userEmail, onClose, onSaved }: Mod
 // ── Main Component ─────────────────────────────────────────────────────────────
 export default function DesempenhoTab({ collaboratorId, isAdmin }: { collaboratorId: string; isAdmin: boolean }) {
   const [cycles, setCycles] = useState<Cycle[]>([]);
-  const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [showAgendarModal, setShowAgendarModal] = useState(false);
@@ -490,34 +483,17 @@ export default function DesempenhoTab({ collaboratorId, isAdmin }: { collaborato
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [cRes, sRes, aRes] = await Promise.all([
+      const [cRes, aRes] = await Promise.all([
         authFetch(`/api/colaboradores/${collaboratorId}/desempenho`),
-        authFetch(`/api/colaboradores/${collaboratorId}/desempenho/resumo`),
         authFetch(`/api/colaboradores/${collaboratorId}/proxima-avaliacao`),
       ]);
       if (cRes.ok) {
         const data = await cRes.json();
-        // PostgreSQL ROUND() returns strings — parse to float
-        setCycles(data.map((c: any) => ({ ...c, media_geral: parseFloat(c.media_geral) })));
-      }
-      if (sRes.ok) {
-        const s = await sRes.json();
-        if (s) {
-          setSummary({
-            ...s,
-            media_campanhas: parseFloat(s.media_campanhas),
-            media_grapehub: parseFloat(s.media_grapehub),
-            media_reunioes: parseFloat(s.media_reunioes),
-            media_tmr: parseFloat(s.media_tmr),
-            media_geral: parseFloat(s.media_geral),
-            diff_campanhas: parseFloat(s.diff_campanhas),
-            diff_grapehub: parseFloat(s.diff_grapehub),
-            diff_reunioes: parseFloat(s.diff_reunioes),
-            diff_tmr: parseFloat(s.diff_tmr),
-          });
-        } else {
-          setSummary(null);
-        }
+        setCycles(data.map((c: any) => ({
+          ...c,
+          notas: Array.isArray(c.notas) ? c.notas : [],
+          media_geral: parseFloat(c.media_geral),
+        })));
       }
       if (aRes.ok) {
         const a = await aRes.json();
@@ -553,6 +529,23 @@ export default function DesempenhoTab({ collaboratorId, isAdmin }: { collaborato
   }
 
   const lastCycle = cycles[0] ?? null;
+
+  // Resumo por critério, calculado a partir do histórico (cycles vem em ordem DESC).
+  // Usa os critérios do ciclo mais recente como conjunto "atual".
+  const resumo: CriterioResumo[] = (lastCycle?.notas ?? []).map(cur => {
+    const k = critKey(cur);
+    const serie = cycles
+      .map(cy => cy.notas.find(n => critKey(n) === k)?.nota)
+      .filter((v): v is number => v != null);
+    const media = serie.length ? serie.reduce((a, b) => a + b, 0) / serie.length : 0;
+    let tendencia: 'subiu' | 'caiu' | 'estavel' | null = null;
+    let diff = 0;
+    if (serie.length >= 2) {
+      diff = serie[0] - serie[1];
+      tendencia = diff > 0 ? 'subiu' : diff < 0 ? 'caiu' : 'estavel';
+    }
+    return { ...cur, media, tendencia, diff };
+  });
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
@@ -674,30 +667,31 @@ export default function DesempenhoTab({ collaboratorId, isAdmin }: { collaborato
         </div>
       ) : (
         <>
-          {/* ── 4 Metric Cards ── */}
+          {/* ── Metric Cards (por critério) ── */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            {CRITERIA.map(c => {
-              const avg = summary ? summary[c.summaryKey] : null;
-              const trend = summary ? summary[c.tendKey] : null;
-              const diff = summary ? summary[c.diffKey] : 0;
+            {resumo.map((c, i) => {
+              const Ico = iconOf(c.icon);
+              const col = colorOf(c.cor);
               return (
-                <div key={c.key} className="bg-white dark:bg-dark-bg border border-slate-200 dark:border-white/10 rounded-2xl p-5 flex flex-col gap-2 min-w-0 transition-colors duration-200 hover:border-violet-500/30 dark:hover:border-violet-500/30 hover:shadow-sm">
+                <div key={`${critKey(c)}-${i}`} className="bg-white dark:bg-dark-bg border border-slate-200 dark:border-white/10 rounded-2xl p-5 flex flex-col gap-2 min-w-0 transition-colors duration-200 hover:border-violet-500/30 dark:hover:border-violet-500/30 hover:shadow-sm">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">{c.label}</span>
-                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${c.bg} ${c.color}`}>
-                      {c.icon}
+                    <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest truncate">{c.label}</span>
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${col.bg} ${col.text}`}>
+                      <Ico size={16} />
                     </div>
                   </div>
                   <div className="text-2xl font-black text-slate-800 dark:text-white leading-tight mt-1">
-                    {avg !== null ? avg.toFixed(1) : '—'}
+                    {c.media > 0 ? c.media.toFixed(1) : '—'}
                   </div>
-                  <div className="text-xs text-slate-400 dark:text-slate-500 leading-snug">
-                    {c.desc}
-                  </div>
+                  {c.descricao && (
+                    <div className="text-xs text-slate-400 dark:text-slate-500 leading-snug truncate">
+                      {c.descricao}
+                    </div>
+                  )}
                   <div className="flex items-center gap-2 mt-auto pt-2">
-                    <StarRow value={avg ?? 0} size={12} />
+                    <StarRow value={c.media} size={12} />
                     <span className="text-slate-300 dark:text-white/20 text-[10px]">|</span>
-                    <div className="text-[10px] text-slate-500">vs. anterior: <TrendBadge trend={trend} diff={diff} /></div>
+                    <div className="text-[10px] text-slate-500">vs. anterior: <TrendBadge trend={c.tendencia} diff={c.diff} /></div>
                   </div>
                 </div>
               );
@@ -705,9 +699,9 @@ export default function DesempenhoTab({ collaboratorId, isAdmin }: { collaborato
           </div>
 
           {/* ── Média Geral + Barras ── */}
-          {summary && (
+          {resumo.length > 0 && (
             <div className="bg-white dark:bg-dark-bg border border-slate-200 dark:border-white/10 rounded-2xl p-6 flex flex-col md:flex-row gap-8 items-center">
-              
+
               {/* Big Score Block */}
               <div className="flex flex-col items-center justify-center md:min-w-[240px] shrink-0 md:border-r border-slate-200 dark:border-white/10 md:pr-8">
                 <div className="flex items-center gap-2 mb-3">
@@ -716,15 +710,15 @@ export default function DesempenhoTab({ collaboratorId, isAdmin }: { collaborato
                   </div>
                   <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Média Geral</span>
                 </div>
-                
+
                 <div className="text-5xl font-black text-slate-800 dark:text-white leading-none mb-3">
                   {lastCycle ? lastCycle.media_geral.toFixed(1) : '—'}
                 </div>
-                
+
                 <div className="mb-4">
                   <StarRow value={lastCycle?.media_geral ?? 0} size={16} />
                 </div>
-                
+
                 <div className="text-[10px] font-medium text-slate-500 bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/5 px-3 py-1.5 rounded-full">
                   Referente ao último ciclo avaliado
                 </div>
@@ -736,14 +730,15 @@ export default function DesempenhoTab({ collaboratorId, isAdmin }: { collaborato
                   Média histórica por critério
                 </p>
                 <div className="space-y-4">
-                  {CRITERIA.map(c => {
-                    const avg = summary[c.summaryKey];
-                    const pct = (avg / 5) * 100;
+                  {resumo.map((c, i) => {
+                    const Ico = iconOf(c.icon);
+                    const col = colorOf(c.cor);
+                    const pct = (c.media / 5) * 100;
                     return (
-                      <div key={c.key} className="flex items-center justify-between gap-4">
+                      <div key={`${critKey(c)}-${i}`} className="flex items-center justify-between gap-4">
                         <div className="flex items-center gap-3 w-40 shrink-0">
-                          <div className={`p-1.5 rounded text-slate-400 ${c.bg} ${c.color}`}>
-                            {React.cloneElement(c.icon as React.ReactElement, { size: 14 })}
+                          <div className={`p-1.5 rounded ${col.bg} ${col.text}`}>
+                            <Ico size={14} />
                           </div>
                           <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate">{c.label}</span>
                         </div>
@@ -752,11 +747,11 @@ export default function DesempenhoTab({ collaboratorId, isAdmin }: { collaborato
                             initial={{ width: 0 }}
                             animate={{ width: `${pct}%` }}
                             transition={{ duration: 1, ease: "easeOut" }}
-                            className={`h-full rounded-full ${c.bar}`}
+                            className={`h-full rounded-full ${col.bar}`}
                           />
                         </div>
                         <div className="flex items-center justify-end w-10 shrink-0">
-                          <span className="text-sm font-black text-slate-800 dark:text-white">{avg.toFixed(1)}</span>
+                          <span className="text-sm font-black text-slate-800 dark:text-white">{c.media.toFixed(1)}</span>
                         </div>
                       </div>
                     );
@@ -796,15 +791,18 @@ export default function DesempenhoTab({ collaboratorId, isAdmin }: { collaborato
                       <div className="flex items-center gap-5 shrink-0">
                         {/* Notas compactas */}
                         <div className="hidden lg:flex items-center gap-2">
-                          {CRITERIA.map(c => (
-                            <div key={c.key} className={`flex items-center gap-1.5 px-2 py-1 rounded-md ${c.bg}`}>
-                              <span className={`text-[9px] font-bold uppercase tracking-widest ${c.color}`}>{c.label.split(' ')[0]}</span>
-                              <div className="flex items-center gap-0.5">
-                                <span className="text-[10px] font-bold text-slate-700 dark:text-slate-200">{cycle[c.key].toFixed(1)}</span>
-                                <Star size={9} className="fill-amber-400 text-amber-400" />
+                          {cycle.notas.map((n, i) => {
+                            const col = colorOf(n.cor);
+                            return (
+                              <div key={i} className={`flex items-center gap-1.5 px-2 py-1 rounded-md ${col.bg}`}>
+                                <span className={`text-[9px] font-bold uppercase tracking-widest ${col.text}`}>{n.label.split(' ')[0]}</span>
+                                <div className="flex items-center gap-0.5">
+                                  <span className="text-[10px] font-bold text-slate-700 dark:text-slate-200">{Number(n.nota).toFixed(1)}</span>
+                                  <Star size={9} className="fill-amber-400 text-amber-400" />
+                                </div>
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                         {/* Média */}
                         <div className="flex items-center gap-4 pl-4 border-l border-slate-200 dark:border-white/10">
@@ -828,16 +826,20 @@ export default function DesempenhoTab({ collaboratorId, isAdmin }: { collaborato
                       <div className="border-t border-slate-200 dark:border-white/[0.06] px-5 py-4 space-y-4">
                         {/* Notas detalhadas */}
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                          {CRITERIA.map(c => (
-                            <div key={c.key} className={`${c.bg} rounded-xl p-3`}>
-                              <div className={`flex items-center gap-1.5 mb-2 ${c.color}`}>
-                                {c.icon}
-                                <span className="text-[10px] font-bold uppercase tracking-wider">{c.label}</span>
+                          {cycle.notas.map((n, i) => {
+                            const Ico = iconOf(n.icon);
+                            const col = colorOf(n.cor);
+                            return (
+                              <div key={i} className={`${col.bg} rounded-xl p-3`}>
+                                <div className={`flex items-center gap-1.5 mb-2 ${col.text}`}>
+                                  <Ico size={16} />
+                                  <span className="text-[10px] font-bold uppercase tracking-wider truncate">{n.label}</span>
+                                </div>
+                                <div className="text-xl font-black text-slate-800 dark:text-white mb-1">{Number(n.nota).toFixed(1)}</div>
+                                <StarRow value={Number(n.nota)} size={11} />
                               </div>
-                              <div className="text-xl font-black text-slate-800 dark:text-white mb-1">{cycle[c.key]}.0</div>
-                              <StarRow value={cycle[c.key]} size={11} />
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
 
                         {/* Comentário */}

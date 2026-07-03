@@ -664,6 +664,8 @@ export default function ContasAPagar() {
   );
   const pendingCount = entries.filter(e => e.status !== 'paid' && e.status !== 'cancelled').length;
   const paidCount = entries.filter(e => e.status === 'paid').length;
+  const filteredTotal = filteredEntries.reduce((s, e) =>
+    s + Number(e.status === 'paid' && e.actual_value ? e.actual_value : e.expected_value || 0), 0);
   const filteredSicredi = sicrediItems.filter(i => !filterSicrediCat || (i.custom_category || i.grapehub_category) === filterSicrediCat);
 
   // Group by category for entries
@@ -1017,6 +1019,15 @@ export default function ContasAPagar() {
                       );
                     })}
                   </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-black/10 dark:border-white/10 bg-dark-bg/40">
+                      <td className="px-4 py-3 text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+                        Total {filterCat ? `· ${filterCat}` : ''} <span className="text-slate-500 normal-case">({filteredEntries.length} {filteredEntries.length === 1 ? 'conta' : 'contas'})</span>
+                      </td>
+                      <td className="px-4 py-3 text-sm font-black text-dark-text tabular-nums">{fmtBRL(filteredTotal)}</td>
+                      <td colSpan={4}></td>
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             )}

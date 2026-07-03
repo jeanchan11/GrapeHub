@@ -122,6 +122,179 @@ const formatCurrency = (val: string) => {
   return amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 };
 
+// Busca status/saldo da conta Meta uma vez por projeto (dedup entre células da mesma linha).
+const _metaAcctPromises: Record<string, Promise<any>> = {};
+const loadMetaAccount = (projectId: string): Promise<any> => {
+  if (!_metaAcctPromises[projectId]) {
+    _metaAcctPromises[projectId] = fetch(`/api/partners/${projectId}/meta-account`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => (d?.has_meta ? d : null))
+      .catch(() => null);
+  }
+  return _metaAcctPromises[projectId];
+};
+const useMetaAccount = (projectId: string) => {
+  const [info, setInfo] = useState<any>(null);
+  useEffect(() => { let ok = true; loadMetaAccount(projectId).then(v => { if (ok) setInfo(v); }); return () => { ok = false; }; }, [projectId]);
+  return info;
+};
+
+// Resumo humano do problema da conta Meta + como corrigir (usado no tooltip da coluna "Conta").
+function metaIssueSummary(info: any): { title: string; detail?: string; fix: string } | null {
+  if (!info) return null;
+  // Token com erro real (não transitório)
+  if (info.error && !info.transient) {
+    const raw: string = info.errorMsg || '';
+    const permission = /permission|ads_read|ads_management|#200|#10\b|not grant|não.*acesso|sem acesso/i.test(raw);
+    const expired = /expir|revok|session|oauth|inválid|invalid|#190|token/i.test(raw);
+    let fix: string;
+    if (permission) {
+      fix = 'O token não tem as permissões ads_read/ads_management nesta conta (ou o dono não as concedeu). Reautorize o acesso concedendo essas permissões ao gerar o token, ou verifique se o usuário do token tem acesso à conta no Business Manager.';
+    } else if (expired) {
+      fix = 'O token de acesso expirou ou foi revogado. Gere um novo token no Gerenciador de Negócios do Meta e atualize em Configurações → Integrações/Tokens deste parceiro.';
+    } else {
+      fix = 'Não foi possível ler a conta com este token. Verifique se ele ainda é válido e tem acesso à conta de anúncios; se necessário, gere um novo token.';
+    }
+    return {
+      title: 'Token do Meta com erro',
+      detail: raw || 'Não foi possível ler a conta de anúncios na API do Meta.',
+      fix,
+    };
+  }
+  // Conta bloqueada / com restrição
+  if (info.blocked) {
+    const s: string = info.statusLabel || 'Conta com restrição';
+    let fix = 'Acesse o Gerenciador de Anúncios do Meta para ver os detalhes e regularizar a conta.';
+    if (/quitad|pagamento|carência|carencia/i.test(s)) fix = 'Pendência de pagamento. Regularize o cartão/fatura no Gerenciador de Anúncios — as campanhas ficam pausadas até quitar.';
+    else if (/análise|analise|risco/i.test(s)) fix = 'A conta está em análise pelo Meta. Costuma resolver sozinho em algumas horas; se persistir, solicite uma revisão no Gerenciador de Anúncios.';
+    else if (/desativ|encerr/i.test(s)) fix = 'Conta desativada pelo Meta. Solicite uma revisão/contestação no Gerenciador de Anúncios ou contate o suporte do Meta.';
+    return {
+      title: `Conta: ${s}`,
+      detail: info.disableReason ? `Motivo do Meta: ${info.disableReason}` : undefined,
+      fix,
+    };
+  }
+  return null;
+}
+
+// Tooltip estilizado (portal + position:fixed p/ não ser cortado pela tabela; sem transform → sem glitch de GPU).
+const MetaIssueTooltip: React.FC<{ summary: { title: string; detail?: string; fix: string }; children: React.ReactNode }> = ({ summary, children }) => {
+  const [show, setShow] = useState(false);
+  const [pos, setPos] = useState<{ left: number; top: number }>({ left: 0, top: 0 });
+  const ref = useRef<HTMLSpanElement>(null);
+  const open = () => {
+    const r = ref.current?.getBoundingClientRect();
+    if (r) {
+      const width = 300;
+      let left = r.right - width;
+      if (left < 8) left = 8;
+      setPos({ left, top: r.bottom + 6 });
+    }
+    setShow(true);
+  };
+  return (
+    <span ref={ref} className="inline-flex cursor-help" onMouseEnter={open} onMouseLeave={() => setShow(false)}>
+      {children}
+      {show && ReactDOM.createPortal(
+        <div
+          style={{ position: 'fixed', left: pos.left, top: pos.top, zIndex: 9999, width: 300 }}
+          className="rounded-xl border border-white/10 bg-white dark:bg-[#1A1625] shadow-2xl p-3 text-left pointer-events-none"
+        >
+          <div className="flex items-center gap-1.5 text-xs font-bold text-rose-500">
+            <AlertTriangle size={12} /> {summary.title}
+          </div>
+          {summary.detail && <p className="text-[11px] text-slate-500 dark:text-slate-300 mt-1.5 break-words leading-snug">{summary.detail}</p>}
+          <div className="mt-2 pt-2 border-t border-gray-200 dark:border-white/10">
+            <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">Como corrigir</p>
+            <p className="text-[11px] text-slate-700 dark:text-slate-200 leading-snug">{summary.fix}</p>
+          </div>
+        </div>,
+        document.body
+      )}
+    </span>
+  );
+};
+
+// Coluna "Conta": status da conta de anúncios do Meta (Ativa / erro).
+const AccountStatusCell: React.FC<{ projectId: string }> = ({ projectId }) => {
+  const info = useMetaAccount(projectId);
+  if (!info || (info.error && info.transient)) return <span className="text-xs text-slate-400">—</span>;
+  const summary = metaIssueSummary(info);
+  // Token com erro real (não conseguiu ler a conta na API do Meta) — sinaliza pra corrigir o token.
+  if (info.error) {
+    const chip = (
+      <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border w-fit bg-rose-500/10 text-rose-500 border-rose-500/20">
+        <AlertTriangle size={10} />
+        Erro token
+      </span>
+    );
+    return summary ? <MetaIssueTooltip summary={summary}>{chip}</MetaIssueTooltip> : chip;
+  }
+  const blocked = !!info.blocked;
+  const chip = (
+    <span
+      className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border w-fit ${
+        blocked ? 'bg-rose-500/10 text-rose-500 border-rose-500/20' : 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+      }`}
+    >
+      <span className={`w-1.5 h-1.5 rounded-full ${blocked ? 'bg-rose-500' : 'bg-emerald-500'}`} />
+      {info.statusLabel}
+    </span>
+  );
+  return summary ? <MetaIssueTooltip summary={summary}>{chip}</MetaIssueTooltip> : chip;
+};
+
+// Coluna "Pagamento": cartão → "Automático" (azul); manual → SALDO da conta em laranja.
+// Conta com problema de PAGAMENTO (carência / não quitada / aguardando pagamento) → coluna Pagamento fica vermelha.
+function isMetaPaymentIssue(info: any): boolean {
+  if (!info || info.error || !info.blocked) return false;
+  const s = String(info.statusLabel || '');
+  return /quitad|pagamento|carência|carencia/i.test(s) || [3, 8, 9].includes(Number(info.status));
+}
+
+const PaymentCell: React.FC<{ project: any }> = ({ project }) => {
+  const info = useMetaAccount(project.id);
+  const methods = (project.products && project.products.length > 0)
+    ? Array.from(new Set(project.products.map((prod: any) => normalizePaymentMethod(prod.paymentMethod)))) as string[]
+    : [];
+  if (methods.length === 0) return <span className="text-xs text-slate-400">—</span>;
+  const isManual = methods.includes('Manual');
+  const saldo = isManual && info?.prepaid && info?.saldo != null
+    ? `R$ ${Number(info.saldo).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : null;
+  const label = isManual ? (saldo || 'Manual') : 'Cartão';
+  const Icon = isManual ? Wallet : CreditCard;
+
+  // Problema de pagamento na conta de anúncios → vermelho + tooltip explicando como corrigir.
+  if (isMetaPaymentIssue(info)) {
+    const summary = metaIssueSummary(info);
+    const chip = (
+      <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border w-fit bg-rose-500/10 text-rose-500 border-rose-500/20">
+        <Icon size={9} />
+        {label}
+      </span>
+    );
+    return summary ? <MetaIssueTooltip summary={summary}>{chip}</MetaIssueTooltip> : chip;
+  }
+
+  if (isManual) {
+    return (
+      <span
+        title={saldo ? 'Saldo disponível na conta de anúncios' : 'Pagamento manual (pré-pago)'}
+        className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border w-fit bg-orange-500/10 text-orange-500 border-orange-500/20"
+      >
+        <Wallet size={9} />
+        {saldo || 'Manual'}
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border w-fit bg-blue-500/10 text-blue-500 border-blue-500/20">
+      <CreditCard size={9} />
+      Cartão
+    </span>
+  );
+};
+
 const formatDateShort = (dateStr?: string) => {
   if (!dateStr) return '';
   const parts = dateStr.split('/');
@@ -531,17 +704,9 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       };
 
       // Update project state
-      const updatedProjects = projects.map(p => {
-        if (p.id === selectedProject.id) {
-          return {
-            ...p,
-            files: [...(p.files || []), newFile]
-          };
-        }
-        return p;
-      });
-      setProjects(updatedProjects);
-      saveProjects(updatedProjects);
+      commitProjects(prev => prev.map(p =>
+        p.id === selectedProject.id ? { ...p, files: [...(p.files || []), newFile] } : p
+      ));
 
       console.log('File uploaded successfully:', downloadURL);
     } catch (error) {
@@ -599,6 +764,27 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
+  // Espelho SÍNCRONO do estado de projetos. Os saves (imediato e com debounce) leem daqui para
+  // sempre enviar a versão mais recente — evita que um save com closure antigo reverta uma
+  // alteração feita logo antes ("volta como estava"). Atualizado tanto nos handlers quanto aqui.
+  const projectsRef = useRef<Project[]>([]);
+  useEffect(() => { projectsRef.current = projects; }, [projects]);
+  // Projetos cuja conta Meta tem PROBLEMA (token com erro OU conta bloqueada — carência, não quitada,
+  // aguardando pagamento, desativada, em análise) → forçam status "Gargalo" (além do derivado dos produtos).
+  // Consulta a conta Meta de cada projeto (mesmo endpoint/cache das colunas Conta/Pagamento).
+  const [metaAccountIssues, setMetaAccountIssues] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    let alive = true;
+    projects.forEach(p => {
+      if (!p.id) return;
+      loadMetaAccount(p.id).then(info => {
+        if (!alive) return;
+        const issue = !!(info && ((info.error && !info.transient) || info.blocked));
+        setMetaAccountIssues(prev => (prev[p.id] === issue ? prev : { ...prev, [p.id]: issue }));
+      });
+    });
+    return () => { alive = false; };
+  }, [projects]);
   const [clients, setClients] = useState<{ id: string, name: string, status?: string }[]>([]);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [filterPerson, setFilterPerson] = useState('Pessoa');
@@ -940,11 +1126,22 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     }
   };
 
+  // Aplica uma alteração ao estado E persiste, sempre a partir da versão MAIS RECENTE (ref
+  // síncrono). Encadeia mudanças rápidas sem perder nenhuma: cada chamada parte do resultado
+  // da anterior, então nenhum save "velho" sobrescreve uma alteração já feita.
+  const commitProjects = (updater: (prev: Project[]) => Project[]): Project[] => {
+    const updated = updater(projectsRef.current);
+    projectsRef.current = updated;
+    setProjects(updated);
+    saveProjects(updated);
+    return updated;
+  };
+
   // Auto-save when projects change
   useEffect(() => {
     if (!isLoading && projects.length > 0) {
       const timer = setTimeout(() => {
-        saveProjects(projects);
+        saveProjects(projectsRef.current);
       }, 500); // Debounce save
       return () => clearTimeout(timer);
     }
@@ -1090,20 +1287,23 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       : project.partner;
     const projectWithResolvedPartner = { ...project, partner: resolvedPartner };
 
+    // Problema na conta Meta (token com erro OU conta bloqueada/pagamento) também força "Gargalo".
+    const tokenErr = !!metaAccountIssues[project.id];
+
     if (projectWithResolvedPartner.products && projectWithResolvedPartner.products.length > 0) {
       const productNames = projectWithResolvedPartner.products.map(p => p.name).join(', ');
-      
+
       let derivedStatus: Project['status'] = 'Rodando';
       const activeProducts = projectWithResolvedPartner.products.filter(p => p.status !== 'Inativo');
       const productStatuses = activeProducts.map(p => p.status);
-      
-      if (productStatuses.length > 0 && productStatuses.some(s => s && s !== 'Rodando')) {
+
+      if (tokenErr || (productStatuses.length > 0 && productStatuses.some(s => s && s !== 'Rodando'))) {
         derivedStatus = 'Gargalo';
       }
-      
+
       // Soma apenas o investimento dos produtos ATIVOS (ignora os 'Inativo')
       const totalInvestment = activeProducts.reduce((acc, p) => acc + parseCurrency(p.budget), 0);
-      
+
       return {
         ...projectWithResolvedPartner,
         product: productNames,
@@ -1111,7 +1311,9 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
         investment: `R$ ${totalInvestment.toLocaleString('pt-BR')}`
       };
     }
-    return projectWithResolvedPartner;
+    return tokenErr
+      ? { ...projectWithResolvedPartner, status: 'Gargalo' as Project['status'] }
+      : projectWithResolvedPartner;
   }).filter(project => {
     const query = searchQuery.toLowerCase();
     const matchesSearch = (project.partner || '').toLowerCase().includes(query) || 
@@ -1383,12 +1585,10 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       fechamentosGoal: tempGoals.fechamentos
     };
 
-    const updatedProjects = projects.map(proj => ({
+    commitProjects(prev => prev.map(proj => ({
       ...proj,
       products: proj.products?.map(p => p.id === selectedProduct.id ? updatedProduct : p)
-    }));
-    setProjects(updatedProjects);
-    saveProjects(updatedProjects);
+    })));
 
     setSelectedProduct(updatedProduct);
     setIsGoalsModalOpen(false);
@@ -1465,15 +1665,9 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       optimizations: []
     };
 
-    setProjects(prev => prev.map(proj => {
-      if (proj.id === activeProjectId) {
-        return {
-          ...proj,
-          products: [...(proj.products || []), newProduct]
-        };
-      }
-      return proj;
-    }));
+    commitProjects(prev => prev.map(proj =>
+      proj.id === activeProjectId ? { ...proj, products: [...(proj.products || []), newProduct] } : proj
+    ));
 
     setIsAddProductModalOpen(false);
     setActiveProjectId(null);
@@ -1497,9 +1691,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       group: newPartnerData.group
     };
 
-    const updatedProjects = [newPartner, ...projects];
-    setProjects(updatedProjects);
-    saveProjects(updatedProjects);
+    commitProjects(prev => [newPartner, ...prev]);
     setIsAddPartnerModalOpen(false);
     setNewPartnerData({
       partner: '',
@@ -1568,12 +1760,10 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       finalProduct.optimizations = [note, ...(finalProduct.optimizations || [])];
     }
 
-    const updatedProjects = projects.map(proj => ({
+    commitProjects(prev => prev.map(proj => ({
       ...proj,
       products: proj.products?.map(p => p.id === selectedProduct.id ? finalProduct : p)
-    }));
-    setProjects(updatedProjects);
-    saveProjects(updatedProjects);
+    })));
 
     setSelectedProduct(finalProduct);
     setTempProduct(finalProduct);
@@ -1603,16 +1793,11 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     setEditingNoteId(null);
     setEditingNoteMessage('');
     
-    const updatedProjects = projects.map(proj => {
-      if (proj.products?.some(p => p.id === selectedProduct.id)) {
-        return {
-          ...proj,
-          products: proj.products.map(p => p.id === selectedProduct.id ? updatedProduct : p)
-        };
-      }
-      return proj;
-    });
-    setProjects(updatedProjects as any);
+    commitProjects(prev => prev.map(proj =>
+      proj.products?.some(p => p.id === selectedProduct.id)
+        ? { ...proj, products: proj.products.map(p => p.id === selectedProduct.id ? updatedProduct : p) }
+        : proj
+    ) as any);
   };
 
   const handleSaveReply = (noteId: string, productId?: string) => {
@@ -1629,7 +1814,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
     };
 
-    const updatedProjects = projects.map(proj => {
+    const updatedProjects = projectsRef.current.map(proj => {
       if (proj.id === selectedProject?.id || proj.products?.some(p => p.id === targetProductId)) {
         return {
           ...proj,
@@ -1658,7 +1843,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       }
       return proj;
     });
-    setProjects(updatedProjects as any);
+    commitProjects(() => updatedProjects as any);
     setReplyingNoteId(null);
     setReplyMessage('');
   };
@@ -1668,7 +1853,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     const targetProductId = productId || selectedProduct?.id;
     if (!targetProductId) return;
 
-    const updatedProjects = projects.map(proj => {
+    const updatedProjects = projectsRef.current.map(proj => {
       if (proj.id === selectedProject?.id || proj.products?.some(p => p.id === targetProductId)) {
         return {
           ...proj,
@@ -1699,7 +1884,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       }
       return proj;
     });
-    setProjects(updatedProjects as any);
+    commitProjects(() => updatedProjects as any);
   };
 
   const handleDeleteNote = (noteId: string) => {
@@ -1713,17 +1898,11 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     
     setSelectedProduct(updatedProduct);
 
-    const updatedProjects = projects.map(proj => {
-      if (proj.products?.some(p => p.id === selectedProduct.id)) {
-        return {
-          ...proj,
-          products: proj.products.map(p => p.id === selectedProduct.id ? updatedProduct : p)
-        };
-      }
-      return proj;
-    });
-    setProjects(updatedProjects);
-    saveProjects(updatedProjects);
+    commitProjects(prev => prev.map(proj =>
+      proj.products?.some(p => p.id === selectedProduct.id)
+        ? { ...proj, products: proj.products.map(p => p.id === selectedProduct.id ? updatedProduct : p) }
+        : proj
+    ));
   };
 
   const handleDeleteMeeting = async (meetingId: string) => {
@@ -1822,9 +2001,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       };
     };
 
-    const updatedProjects = projects.map(applyResultChange);
-    setProjects(updatedProjects);
-    saveProjects(updatedProjects);
+    commitProjects(prev => prev.map(applyResultChange));
 
     setIsResultDropdownOpen(false);
   };
@@ -1857,7 +2034,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     setSelectedProduct(updatedProduct);
     setTempProduct(updatedProduct);
 
-    const updatedProjects = projects.map(proj => {
+    commitProjects(prev => prev.map(proj => {
       const updatedProducts = proj.products?.map(p => p.id === selectedProduct.id ? updatedProduct : p);
       // If any active (non-Inativo) product is NOT "Rodando", project becomes "Gargalo"
       const hasNonRodando = updatedProducts?.some(p => p.status && p.status !== 'Rodando' && p.status !== 'Inativo');
@@ -1867,9 +2044,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
         products: updatedProducts,
         status: proj.products?.some(p => p.id === selectedProduct.id) ? newProjectStatus : proj.status
       };
-    }) as Project[];
-    setProjects(updatedProjects);
-    saveProjects(updatedProjects);
+    }) as Project[]);
 
     setIsStatusDropdownOpen(false);
   };
@@ -1905,12 +2080,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     setSelectedProduct(updatedProduct);
     setTempProduct(updatedProduct);
 
-    setProjects(prev => prev.map(proj => ({
-      ...proj,
-      products: proj.products?.map(p => p.id === selectedProduct.id ? updatedProduct : p)
-    })));
-    
-    saveProjects(projects.map(proj => ({
+    commitProjects(prev => prev.map(proj => ({
       ...proj,
       products: proj.products?.map(p => p.id === selectedProduct.id ? updatedProduct : p)
     })));
@@ -1929,9 +2099,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     };
     
     setSelectedProject(updatedProject);
-    const updatedProjects = projects.map(p => p.id === updatedProject.id ? updatedProject : p);
-    setProjects(updatedProjects);
-    saveProjects(updatedProjects);
+    commitProjects(prev => prev.map(p => p.id === updatedProject.id ? updatedProject : p));
     setIsProjectResultDropdownOpen(false);
   };
 
@@ -2030,8 +2198,8 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       };
 
       setSelectedProduct(updatedProduct);
-      
-      setProjects(prev => prev.map(proj => ({
+
+      commitProjects(prev => prev.map(proj => ({
         ...proj,
         products: proj.products?.map(p => p.id === selectedProduct.id ? updatedProduct : p)
       })));
@@ -2919,12 +3087,10 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                               cpa: totalLeads > 0 ? `R$ ${(totalInv / totalLeads).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'R$ 0,00'
                             };
                             
-                            const updatedProjects = projects.map(p => ({
+                            commitProjects(prev => prev.map(p => ({
                               ...p,
                               products: p.products?.map(prod => prod.id === updatedProduct.id ? updatedProduct : prod)
-                            }));
-                            setProjects(updatedProjects);
-                            saveProjects(updatedProjects);
+                            })));
                             setSelectedProduct(updatedProduct);
                             setIsAddMetricsModalOpen(false);
                           }
@@ -3152,9 +3318,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     onClick={() => {
                       if (!groupModalProjectId) return;
                       const targetId = groupModalProjectId;
-                      const updatedList = projects.map(p => p.id === targetId ? { ...p, group } : p);
-                      setProjects(updatedList);
-                      saveProjects(updatedList);
+                      commitProjects(prev => prev.map(p => p.id === targetId ? { ...p, group } : p));
                       setIsGroupModalOpen(false);
                       setGroupModalProjectId(null);
                     }}
@@ -3671,6 +3835,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                         { key: 'lastMeetingDate' as const, label: 'Última Reunião' },
                         { key: 'investment' as const, label: 'Investimento' },
                         { key: null, label: 'Pagamento' },
+                        { key: null, label: 'Conta' },
                       ].map((col, idx) => (
                         <th
                           key={idx}
@@ -3847,24 +4012,11 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     </td>
                     <td className="px-3 py-3.5" onClick={() => handleRowClick(project)}>
                       <div className="cursor-pointer flex flex-col gap-1">
-                        {(project.products && project.products.length > 0) ? (
-                          [...new Set(project.products.map((prod: any) => normalizePaymentMethod(prod.paymentMethod)))].map((pm: string) => (
-                            <span
-                              key={pm}
-                              className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border w-fit ${
-                                pm === 'Manual'
-                                  ? 'bg-orange-500/10 text-orange-500 border-orange-500/20'
-                                  : 'bg-blue-500/10 text-blue-500 border-blue-500/20'
-                              }`}
-                            >
-                              <CreditCard size={9} />
-                              {pm}
-                            </span>
-                          ))
-                        ) : (
-                          <span className="text-xs text-slate-400">—</span>
-                        )}
+                        <PaymentCell project={project} />
                       </div>
+                    </td>
+                    <td className="px-3 py-3.5">
+                      <AccountStatusCell projectId={project.id} />
                     </td>
                     <td className="px-3 py-3.5 text-right overflow-visible">
                       <div className="flex items-center justify-end gap-2">
@@ -3955,7 +4107,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                   <AnimatePresence>
                     {expandedRowId === project.id && (
                       <tr>
-                        <td colSpan={7} className="p-0 border-b border-slate-200 dark:border-white/5">
+                        <td colSpan={8} className="p-0 border-b border-slate-200 dark:border-white/5">
                           <motion.div
                             initial={{ height: 0, opacity: 0 }}
                             animate={{ height: 'auto', opacity: 1 }}
@@ -4906,17 +5058,11 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                   a.click();
                                 }} className="hover:text-violet-500"><Download size={16} /></button>
                                 <button onClick={() => {
-                                  const updatedProjects = projects.map(p => {
-                                    if (p.id === selectedProject.id) {
-                                      return {
-                                        ...p,
-                                        files: p.files?.filter((_, i) => i !== index)
-                                      };
-                                    }
-                                    return p;
-                                  });
-                                  setProjects(updatedProjects);
-                                  saveProjects(updatedProjects);
+                                  commitProjects(prev => prev.map(p =>
+                                    p.id === selectedProject.id
+                                      ? { ...p, files: p.files?.filter((_, i) => i !== index) }
+                                      : p
+                                  ));
                                 }} className="hover:text-rose-500"><Trash2 size={16} /></button>
                               </td>
                             </tr>

@@ -1,12 +1,13 @@
 
 import React, { useState, useEffect } from 'react';
-import { Users, Shield, Check, X, Search, UserMinus, UserPlus, Lock, Unlock, Database, ChevronDown, ChevronUp, Layers, Loader2, FileText, MoreHorizontal, Edit3, Trash2 } from 'lucide-react';
+import { Users, Shield, Check, X, Search, UserMinus, UserPlus, Lock, Unlock, Database, ChevronDown, ChevronUp, Layers, Loader2, FileText, MoreHorizontal, Edit3, Trash2, ClipboardList } from 'lucide-react';
 import LoadingSpinner from './LoadingSpinner';
 import { UserData, UserRole } from '../../types';
 import { useMenu } from '../context/MenuContext';
 import { useAuth } from '../contexts/AuthContext';
 import { UserPermissionsModal } from './UserPermissionsModal';
 import { PageManager } from './PageManager';
+import { CargosAvaliacoes } from './CargosAvaliacoes';
 
 const AdminPanel: React.FC = () => {
   const { userData: currentUser, refreshUserData } = useAuth();
@@ -21,7 +22,7 @@ const AdminPanel: React.FC = () => {
   const [editingUser, setEditingUser] = useState<UserData | null>(null);
   const [pendingChanges, setPendingChanges] = useState<Record<string, { allowedPages: string[], role: UserRole, squad?: string, name?: string }>>({});
   const [isSaving, setIsSaving] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'users' | 'pages'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'pages' | 'cargos'>('users');
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -447,6 +448,19 @@ const AdminPanel: React.FC = () => {
             Gerenciar Páginas
           </div>
         </button>
+        <button
+          onClick={() => setActiveTab('cargos')}
+          className={`pb-4 px-2 text-sm font-bold transition-all border-b-2 ${
+            activeTab === 'cargos'
+              ? 'border-violet-500 text-violet-600 dark:text-violet-400'
+              : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <ClipboardList size={18} />
+            Cargos e avaliações
+          </div>
+        </button>
       </div>
 
       {activeTab === 'users' ? (
@@ -635,8 +649,10 @@ const AdminPanel: React.FC = () => {
             />
           )}
         </>
-      ) : (
+      ) : activeTab === 'pages' ? (
         <PageManager />
+      ) : (
+        <CargosAvaliacoes />
       )}
     </div>
   );

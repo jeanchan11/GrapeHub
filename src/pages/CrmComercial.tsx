@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   Plus, Search, Filter, MessageSquare, Clock, Trash2,
   ChevronRight, ChevronLeft, Flame, DollarSign, X, Edit2, ChevronDown, Check, Users, LayoutGrid,
@@ -376,34 +375,32 @@ const SortableColumn = ({ column, children, setEditColumnData, setIsEditColumnMo
           </div>
         </div>
         <div className="flex items-center gap-1" onPointerDown={(e) => e.stopPropagation()}>
-          <DropdownMenu.Root>
-            <DropdownMenu.Trigger asChild>
-              <button className="p-1.5 text-gray-400 dark:text-slate-500 hover:text-gray-900 dark:hover:text-white transition-colors">
-                <MoreHorizontal size={16} />
-              </button>
-            </DropdownMenu.Trigger>
-
-              <DropdownMenu.Content align="end" sideOffset={5} className="min-w-[160px] bg-white dark:bg-slate-800 border border-gray-100 dark:border-white/10 rounded-xl shadow-xl p-2 z-[1100]" style={{ opacity: 1, animation: 'none' }}>
-                <DropdownMenu.Item
+          <PlainMenu
+            align="end"
+            triggerClassName="p-1.5 text-gray-400 dark:text-slate-500 hover:text-gray-900 dark:hover:text-white transition-colors"
+            triggerContent={<MoreHorizontal size={16} />}
+            panelClassName="min-w-[160px] bg-white dark:bg-slate-800 border border-gray-100 dark:border-white/10 rounded-xl shadow-xl p-2 z-[1100]"
+          >
+                <button
+                  type="button" role="menuitem"
                   onClick={() => {
                     setEditColumnData({ id: column.id, title: column.title, color: column.color || 'orange', icon: column.icon || 'LayoutGrid' });
                     setIsEditColumnModalOpen(true);
                   }}
-                  className="flex items-center gap-2.5 px-3 py-2 text-sm font-semibold text-gray-600 dark:text-slate-300 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer outline-none transition-colors"
+                  className="w-full text-left flex items-center gap-2.5 px-3 py-2 text-sm font-semibold text-gray-600 dark:text-slate-300 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer outline-none transition-colors"
                 >
                   <Settings size={15} />
                   Editar Coluna
-                </DropdownMenu.Item>
-                <DropdownMenu.Item
+                </button>
+                <button
+                  type="button" role="menuitem"
                   onClick={() => setColumnToDelete(column.id)}
-                  className="flex items-center gap-2.5 px-3 py-2 text-sm font-semibold text-rose-500 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-500/10 cursor-pointer outline-none transition-colors mt-1"
+                  className="w-full text-left flex items-center gap-2.5 px-3 py-2 text-sm font-semibold text-rose-500 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-500/10 cursor-pointer outline-none transition-colors mt-1"
                 >
                   <Trash2 size={15} />
                   Excluir
-                </DropdownMenu.Item>
-              </DropdownMenu.Content>
-
-          </DropdownMenu.Root>
+                </button>
+          </PlainMenu>
         </div>
       </div>
       {children}
@@ -3693,45 +3690,43 @@ const GerenciarKanbansModal = ({ isOpen, onClose, kanbans, columns, leads, onRen
                   </div>
                 </div>
 
-                <DropdownMenu.Root>
-                  <DropdownMenu.Trigger asChild>
-                    <button className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-white rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 transition-colors">
-                      <MoreHorizontal size={18} />
-                    </button>
-                  </DropdownMenu.Trigger>
-
-                    <DropdownMenu.Content align="end" sideOffset={5} className="min-w-[180px] bg-white dark:bg-slate-800 border border-gray-100 dark:border-white/10 rounded-xl shadow-xl p-2 z-[1100]" style={{ opacity: 1, animation: 'none' }}>
-                      <DropdownMenu.Item className="flex items-center gap-2.5 px-3 py-2.5 text-sm font-semibold text-gray-600 dark:text-slate-300 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer outline-none transition-colors opacity-50 cursor-not-allowed">
+                <PlainMenu
+                  align="end"
+                  triggerClassName="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-white rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
+                  triggerContent={<MoreHorizontal size={18} />}
+                  panelClassName="min-w-[180px] bg-white dark:bg-slate-800 border border-gray-100 dark:border-white/10 rounded-xl shadow-xl p-2 z-[1100]"
+                >
+                      <button type="button" role="menuitem" className="w-full text-left flex items-center gap-2.5 px-3 py-2.5 text-sm font-semibold text-gray-600 dark:text-slate-300 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 outline-none transition-colors opacity-50 cursor-not-allowed">
                         <Copy size={15} />
                         Criar cópia
-                      </DropdownMenu.Item>
-                      <DropdownMenu.Item
+                      </button>
+                      <button
+                        type="button" role="menuitem"
                         onClick={() => { setEditingId(kanban.id); setEditName(kanban.nome || ''); }}
-                        className="flex items-center gap-2.5 px-3 py-2.5 text-sm font-semibold text-gray-600 dark:text-slate-300 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer outline-none transition-colors"
+                        className="w-full text-left flex items-center gap-2.5 px-3 py-2.5 text-sm font-semibold text-gray-600 dark:text-slate-300 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer outline-none transition-colors"
                       >
                         <Edit2 size={15} />
                         Renomear
-                      </DropdownMenu.Item>
-                      <DropdownMenu.Item className="flex items-center gap-2.5 px-3 py-2.5 text-sm font-semibold text-gray-600 dark:text-slate-300 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer outline-none transition-colors opacity-50 cursor-not-allowed">
+                      </button>
+                      <button type="button" role="menuitem" className="w-full text-left flex items-center gap-2.5 px-3 py-2.5 text-sm font-semibold text-gray-600 dark:text-slate-300 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 outline-none transition-colors opacity-50 cursor-not-allowed">
                         <Users size={15} />
                         Gerenciar permissões
-                      </DropdownMenu.Item>
+                      </button>
 
                       {!kanban.is_default && (
                         <>
-                          <DropdownMenu.Separator className="h-px bg-gray-100 dark:bg-white/10 my-1" />
-                          <DropdownMenu.Item
+                          <div className="h-px bg-gray-100 dark:bg-white/10 my-1" />
+                          <button
+                            type="button" role="menuitem"
                             onClick={() => onDelete(kanban.id)}
-                            className="flex items-center gap-2.5 px-3 py-2.5 text-sm font-semibold text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 cursor-pointer outline-none transition-colors"
+                            className="w-full text-left flex items-center gap-2.5 px-3 py-2.5 text-sm font-semibold text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 cursor-pointer outline-none transition-colors"
                           >
                             <Trash2 size={15} />
                             Deletar
-                          </DropdownMenu.Item>
+                          </button>
                         </>
                       )}
-                    </DropdownMenu.Content>
-
-                </DropdownMenu.Root>
+                </PlainMenu>
 
               </div>
             );
@@ -3807,7 +3802,8 @@ const MiniCircleAnimated: React.FC<{ pct: number; color: string }> = ({ pct, col
   });
   const blurFilter = useTransform(progress, (v) => {
     const ratio = pct > 0 ? Math.min(v, pct) / pct : 1;
-    return `blur(${4 * (1 - ratio)}px)`;
+    const b = 4 * (1 - ratio);
+    return b < 0.3 ? 'none' : `blur(${b}px)`; // zera o filter no fim — evita camada de GPU residual
   });
   const textOpacity = useTransform(progress, (v) => {
     const ratio = pct > 0 ? Math.min(v, pct) / pct : 1;
@@ -3841,149 +3837,200 @@ const HeaderMetaWidget: React.FC<{
   onSlotChange: (slotIndex: number, metaId: string) => void;
   onOpenMetas: () => void;
 }> = ({ metas, slots, onSlotChange, onOpenMetas }) => {
+  // Custom (non-Radix, non-portal) dropdown. The Radix DropdownMenu positioned its
+  // panel with a CSS `transform`, which promotes the panel to its own GPU compositing
+  // layer — and Chrome painted that fresh layer translucent on the first open per page
+  // load (the "meio apagado" bug). A plain `absolute` panel (top/left, no transform) is
+  // painted in the normal paint pass, never gets its own layer, so it can't glitch.
+  const [openSlot, setOpenSlot] = React.useState<number | null>(null);
+  const rootRef = React.useRef<HTMLDivElement | null>(null);
+
+  React.useEffect(() => {
+    if (openSlot === null) return;
+    const onDocDown = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpenSlot(null);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpenSlot(null); };
+    document.addEventListener('mousedown', onDocDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [openSlot]);
+
   if (metas.length === 0) return null;
 
   // Build the 3 slot entries — resolve each slot to a meta (or null)
   const slotCount = Math.min(3, Math.max(metas.length, 1));
 
+  const renderPanel = (idx: number, activeMetaId: string | null) => (
+    <div
+      className="absolute left-0 top-full mt-1.5 bg-white dark:bg-[#1A1625] border border-gray-200 dark:border-white/10 rounded-xl p-2 min-w-[240px] shadow-2xl z-[200]"
+      role="menu"
+    >
+      <div className="px-2 py-1.5 mb-1">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+          {activeMetaId ? 'Trocar meta deste slot' : 'Selecione uma meta'}
+        </span>
+      </div>
+      {metas.map(m => {
+        const isActive = activeMetaId != null && m.id === activeMetaId;
+        const mColor = getMetaColor(m.percentual);
+        return (
+          <button
+            key={m.id}
+            type="button"
+            role="menuitem"
+            onClick={() => { onSlotChange(idx, m.id); setOpenSlot(null); }}
+            className={`w-full text-left flex items-center gap-3 p-2.5 rounded-lg cursor-pointer outline-none transition-colors ${
+              isActive
+                ? 'bg-violet-500/10 dark:bg-violet-500/15'
+                : 'hover:bg-gray-50 dark:hover:bg-white/5'
+            }`}
+          >
+            <MiniCircleStatic pct={m.percentual} color={mColor} />
+            <div className="flex-1 min-w-0">
+              <p className={`text-xs font-bold truncate ${isActive ? 'text-violet-600 dark:text-violet-400' : 'text-slate-800 dark:text-white'}`}>{m.nome}</p>
+              <p className="text-[10px] text-slate-400 truncate">
+                {formatMetaValue(m.tipo, m.metrica, m.valor_atual)} de {formatMetaValue(m.tipo, m.metrica, m.alvo)}
+              </p>
+            </div>
+            {isActive && <Check size={14} className="text-violet-500 shrink-0" />}
+          </button>
+        );
+      })}
+      {activeMetaId && (
+        <>
+          <div className="h-px bg-gray-200 dark:bg-white/10 my-1.5" />
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => { setOpenSlot(null); onOpenMetas(); }}
+            className="w-full text-left flex items-center gap-2 p-2.5 rounded-lg cursor-pointer outline-none hover:bg-gray-50 dark:hover:bg-white/5 text-violet-600 dark:text-violet-400 font-bold text-xs"
+          >
+            <Target size={14} />
+            Ver todas as metas
+          </button>
+        </>
+      )}
+    </div>
+  );
+
   return (
-    <div className="flex items-center gap-2">
+    <div ref={rootRef} className="flex items-center gap-2">
       {Array.from({ length: slotCount }).map((_, idx) => {
         const assignedId = slots[idx];
         const meta = metas.find(m => m.id === assignedId) || null;
+        const isOpen = openSlot === idx;
 
         if (!meta) {
           // Empty slot — show placeholder with dropdown to pick
           return (
-            <DropdownMenu.Root key={`slot-${idx}`}>
-              <DropdownMenu.Trigger asChild>
-                <button
-                  className="flex items-center gap-2.5 px-3 py-2 rounded-xl border border-dashed border-gray-300 dark:border-white/15 bg-white dark:bg-dark-card hover:border-violet-500/30 hover:bg-violet-500/5 transition-all cursor-pointer min-h-[52px] min-w-[120px] justify-center"
-                  title="Clique para atribuir uma meta"
-                >
-                  <Target size={16} className="text-slate-400" />
-                  <span className="text-[11px] text-slate-400 font-medium">Selecionar meta</span>
-                  <ChevronDown size={12} className="text-slate-400" />
-                </button>
-              </DropdownMenu.Trigger>
-              <DropdownMenu.Content
-                className="bg-white dark:bg-[#1A1625] border border-gray-200 dark:border-white/10 rounded-xl p-2 min-w-[240px] shadow-2xl z-[200]"
-                align="start"
-                sideOffset={6}
-                style={{ opacity: 1, animation: 'none' }}
+            <div key={`slot-${idx}`} className="relative">
+              <button
+                type="button"
+                onClick={() => setOpenSlot(isOpen ? null : idx)}
+                className="flex items-center gap-2.5 px-3 py-2 rounded-xl border border-dashed border-gray-300 dark:border-white/15 bg-white dark:bg-dark-card hover:border-violet-500/30 hover:bg-violet-500/5 transition-all cursor-pointer min-h-[58px] min-w-[120px] justify-center"
+                title="Clique para atribuir uma meta"
               >
-                <div className="px-2 py-1.5 mb-1">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Selecione uma meta</span>
-                </div>
-                {metas.map(m => {
-                  const mColor = getMetaColor(m.percentual);
-                  return (
-                    <DropdownMenu.Item
-                      key={m.id}
-                      onClick={() => onSlotChange(idx, m.id)}
-                      className="flex items-center gap-3 p-2.5 rounded-lg cursor-pointer outline-none transition-colors hover:bg-gray-50 dark:hover:bg-white/5"
-                    >
-                      <MiniCircleStatic pct={m.percentual} color={mColor} />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-bold truncate text-slate-800 dark:text-white">{m.nome}</p>
-                        <p className="text-[10px] text-slate-400 truncate">
-                          {formatMetaValue(m.tipo, m.metrica, m.valor_atual)} de {formatMetaValue(m.tipo, m.metrica, m.alvo)}
-                        </p>
-                      </div>
-                    </DropdownMenu.Item>
-                  );
-                })}
-              </DropdownMenu.Content>
-            </DropdownMenu.Root>
+                <Target size={16} className="text-slate-400" />
+                <span className="text-[11px] text-slate-400 font-medium">Selecionar meta</span>
+                <ChevronDown size={12} className={`text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {isOpen && renderPanel(idx, null)}
+            </div>
           );
         }
 
         const color = getMetaColor(meta.percentual);
         return (
-          <DropdownMenu.Root key={`slot-${idx}`}>
-            <DropdownMenu.Trigger asChild>
-              <button
-                className="flex items-center gap-3 px-3 py-2 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-dark-card hover:border-violet-500/30 hover:bg-violet-500/5 transition-all cursor-pointer min-h-[52px]"
-                style={{ minWidth: '210px' }}
-                title={`${meta.nome} — Clique para trocar`}
-              >
-                {meta.tipo === 'taxa_conversao' ? (
-                  (() => {
-                    const rateColor = Number(meta.valor_atual || 0) >= meta.alvo ? '#10b981' : '#f59e0b';
-                    return (
-                      <div className="flex-1 flex flex-col items-start min-w-0">
-                        <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 leading-tight whitespace-nowrap uppercase tracking-wider">
-                          {meta.nome}
-                        </span>
-                        <span className="text-[13px] font-black leading-tight whitespace-nowrap mt-0.5 tabular-nums" style={{ color: rateColor }}>
-                          {formatMetaValue(meta.tipo, meta.metrica, meta.valor_atual)}
-                          <span className="text-[10px] font-medium text-slate-400 ml-1">/ {formatMetaValue(meta.tipo, meta.metrica, meta.alvo)}</span>
-                        </span>
-                      </div>
-                    );
-                  })()
-                ) : (
-                  <>
-                    <MiniCircleAnimated pct={meta.percentual} color={color} />
+          <div key={`slot-${idx}`} className="relative">
+            <button
+              type="button"
+              onClick={() => setOpenSlot(isOpen ? null : idx)}
+              className="flex items-center gap-3 px-3 py-2 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-dark-card hover:border-violet-500/30 hover:bg-violet-500/5 transition-all cursor-pointer min-h-[58px]"
+              style={{ minWidth: '210px' }}
+              title={`${meta.nome} — Clique para trocar`}
+            >
+              {meta.tipo === 'taxa_conversao' ? (
+                (() => {
+                  const rateColor = Number(meta.valor_atual || 0) >= meta.alvo ? '#10b981' : '#f59e0b';
+                  return (
                     <div className="flex-1 flex flex-col items-start min-w-0">
                       <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 leading-tight whitespace-nowrap uppercase tracking-wider">
                         {meta.nome}
                       </span>
-                      <span className="text-[13px] font-black text-slate-900 dark:text-white leading-tight whitespace-nowrap mt-0.5">
+                      <span className="text-[13px] font-black leading-tight whitespace-nowrap mt-0.5 tabular-nums" style={{ color: rateColor }}>
                         {formatMetaValue(meta.tipo, meta.metrica, meta.valor_atual)}
                         <span className="text-[10px] font-medium text-slate-400 ml-1">/ {formatMetaValue(meta.tipo, meta.metrica, meta.alvo)}</span>
                       </span>
                     </div>
-                  </>
-                )}
-                <ChevronDown size={12} className="text-slate-400 ml-0.5 shrink-0" />
-              </button>
-            </DropdownMenu.Trigger>
-            <DropdownMenu.Content
-              className="bg-white dark:bg-[#1A1625] border border-gray-200 dark:border-white/10 rounded-xl p-2 min-w-[240px] shadow-2xl z-[200]"
-              align="start"
-              sideOffset={6}
-              style={{ opacity: 1, animation: 'none' }}
-            >
-              <div className="px-2 py-1.5 mb-1">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Trocar meta deste slot</span>
-              </div>
-              {metas.map(m => {
-                const isActive = m.id === meta.id;
-                const mColor = getMetaColor(m.percentual);
-                return (
-                  <DropdownMenu.Item
-                    key={m.id}
-                    onClick={() => onSlotChange(idx, m.id)}
-                    className={`flex items-center gap-3 p-2.5 rounded-lg cursor-pointer outline-none transition-colors ${
-                      isActive
-                        ? 'bg-violet-500/10 dark:bg-violet-500/15'
-                        : 'hover:bg-gray-50 dark:hover:bg-white/5'
-                    }`}
-                  >
-                    <MiniCircleStatic pct={m.percentual} color={mColor} />
-                    <div className="flex-1 min-w-0">
-                      <p className={`text-xs font-bold truncate ${isActive ? 'text-violet-600 dark:text-violet-400' : 'text-slate-800 dark:text-white'}`}>{m.nome}</p>
-                      <p className="text-[10px] text-slate-400 truncate">
-                        {formatMetaValue(m.tipo, m.metrica, m.valor_atual)} de {formatMetaValue(m.tipo, m.metrica, m.alvo)}
-                      </p>
-                    </div>
-                    {isActive && <Check size={14} className="text-violet-500 shrink-0" />}
-                  </DropdownMenu.Item>
-                );
-              })}
-              <DropdownMenu.Separator className="h-px bg-gray-200 dark:bg-white/10 my-1.5" />
-              <DropdownMenu.Item
-                onClick={onOpenMetas}
-                className="flex items-center gap-2 p-2.5 rounded-lg cursor-pointer outline-none hover:bg-gray-50 dark:hover:bg-white/5 text-violet-600 dark:text-violet-400 font-bold text-xs"
-              >
-                <Target size={14} />
-                Ver todas as metas
-              </DropdownMenu.Item>
-            </DropdownMenu.Content>
-          </DropdownMenu.Root>
+                  );
+                })()
+              ) : (
+                <>
+                  <MiniCircleAnimated pct={meta.percentual} color={color} />
+                  <div className="flex-1 flex flex-col items-start min-w-0">
+                    <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 leading-tight whitespace-nowrap uppercase tracking-wider">
+                      {meta.nome}
+                    </span>
+                    <span className="text-[13px] font-black text-slate-900 dark:text-white leading-tight whitespace-nowrap mt-0.5">
+                      {formatMetaValue(meta.tipo, meta.metrica, meta.valor_atual)}
+                      <span className="text-[10px] font-medium text-slate-400 ml-1">/ {formatMetaValue(meta.tipo, meta.metrica, meta.alvo)}</span>
+                    </span>
+                  </div>
+                </>
+              )}
+              <ChevronDown size={12} className={`text-slate-400 ml-0.5 shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {isOpen && renderPanel(idx, meta.id)}
+          </div>
         );
       })}
+    </div>
+  );
+};
+
+
+/**
+ * Dropdown menu SEM Radix e SEM portal. Posiciona o painel com `absolute` (top/left),
+ * nunca com `transform` — então o Chrome não promove o painel a uma camada de GPU e
+ * ele não sofre o glitch de transparência na 1ª abertura por carregamento de página.
+ * Fecha ao clicar fora, no Esc, ou ao clicar em qualquer item (o clique borbulha até o painel).
+ */
+const PlainMenu: React.FC<{
+  align?: 'start' | 'end';
+  panelClassName?: string;
+  triggerClassName?: string;
+  triggerTitle?: string;
+  triggerContent: React.ReactNode;
+  children: React.ReactNode;
+}> = ({ align = 'start', panelClassName = '', triggerClassName = '', triggerTitle, triggerContent, children }) => {
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef<HTMLDivElement | null>(null);
+  React.useEffect(() => {
+    if (!open) return;
+    const down = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', down);
+    document.addEventListener('keydown', key);
+    return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key); };
+  }, [open]);
+  return (
+    <div ref={ref} className="relative">
+      <button type="button" className={triggerClassName} title={triggerTitle} onClick={() => setOpen(o => !o)}>
+        {triggerContent}
+      </button>
+      {open && (
+        <div
+          role="menu"
+          onClick={() => setOpen(false)}
+          className={`absolute top-full mt-1.5 ${align === 'end' ? 'right-0' : 'left-0'} ${panelClassName}`}
+        >
+          {children}
+        </div>
+      )}
     </div>
   );
 };
@@ -4010,6 +4057,36 @@ const CrmComercial = () => {
       return next;
     });
   };
+  // Busca as metas ATIVAS (não arquivadas) do header e reconcilia os slots.
+  const fetchHeaderMetas = useCallback(() => {
+    fetch('/api/crm-metas')
+      .then(r => r.ok ? r.json() : [])
+      .then((metas: any[]) => {
+        const items: HeaderMetaItem[] = metas.map((m: any) => ({
+          id: m.id, nome: m.nome, tipo: m.tipo, metrica: m.metrica,
+          valor_atual: m.valor_atual, alvo: m.alvo, percentual: m.percentual,
+        }));
+        setHeaderMetas(items);
+        setHeaderMetaSlots(prev => {
+          const activeIds = new Set(items.map(i => i.id));
+          let next = [...prev];
+          while (next.length < 3) next.push(null);
+          // Remove slots que apontam para metas arquivadas/inexistentes
+          next = next.map(s => (s && activeIds.has(s) ? s : null));
+          // Preenche vazios com metas ativas ainda não usadas
+          const used = new Set(next.filter(Boolean) as string[]);
+          for (let i = 0; i < next.length; i++) {
+            if (!next[i]) {
+              const cand = items.find(it => !used.has(it.id));
+              if (cand) { next[i] = cand.id; used.add(cand.id); }
+            }
+          }
+          localStorage.setItem('headerMetaSlots', JSON.stringify(next));
+          return next;
+        });
+      })
+      .catch(() => setHeaderMetas([]));
+  }, []);
   const kanbanBoardRef = useRef<HTMLDivElement>(null);
   const [celebrationDetails, setCelebrationDetails] = useState<{ gif: string, value: number, name: string } | null>(null);
 
@@ -4348,38 +4425,8 @@ const CrmComercial = () => {
         })
         .catch(() => setApi4comSettings({ configured: false }));
 
-      // Fetch todas as metas para exibir no header
-      fetch('/api/crm-metas')
-        .then(r => r.ok ? r.json() : [])
-        .then((metas: any[]) => {
-          const items: HeaderMetaItem[] = metas.map((m: any) => ({
-            id: m.id,
-            nome: m.nome,
-            tipo: m.tipo,
-            metrica: m.metrica,
-            valor_atual: m.valor_atual,
-            alvo: m.alvo,
-            percentual: m.percentual,
-          }));
-          setHeaderMetas(items);
-          // Auto-populate empty slots with the first available metas
-          if (items.length > 0) {
-            setHeaderMetaSlots(prev => {
-              const next = [...prev];
-              while (next.length < 3) next.push(null);
-              const allEmpty = next.every(s => s === null);
-              if (allEmpty) {
-                // First-time: fill slots with first N metas
-                for (let i = 0; i < Math.min(3, items.length); i++) {
-                  next[i] = items[i].id;
-                }
-                localStorage.setItem('headerMetaSlots', JSON.stringify(next));
-              }
-              return next;
-            });
-          }
-        })
-        .catch(() => setHeaderMetas([]));
+      // Metas ATIVAS para exibir no header (recarrega ao abrir/fechar o popup de Metas)
+      fetchHeaderMetas();
     }
   }, [user?.email, activeKanbanId]);
 
@@ -5243,19 +5290,6 @@ const CrmComercial = () => {
 
   return (
     <div className="p-8 w-full min-h-screen flex flex-col">
-      {/* Fix: Remove Radix DropdownMenu fade-in animation that causes transparency on first open */}
-      <style>{`
-        [data-radix-popper-content-wrapper] {
-          animation: none !important;
-          opacity: 1 !important;
-          transition: none !important;
-        }
-        [data-radix-popper-content-wrapper] > [role="menu"] {
-          animation: none !important;
-          opacity: 1 !important;
-          transition: none !important;
-        }
-      `}</style>
       <PageHeader
         title="CRM"
         titleAccent={kanbans.find(k => k.id === activeKanbanId)?.nome || 'Comercial'}
@@ -5273,34 +5307,26 @@ const CrmComercial = () => {
             />
           )}
 
-          {/* 2 — Botão Metas */}
-          <button
-            onClick={() => setShowMetasPopup(true)}
-            className="flex items-center gap-2 px-3 py-2 rounded-xl border font-bold text-xs bg-white dark:bg-dark-card border-gray-200 dark:border-white/10 text-amber-500 hover:border-amber-500/50 hover:bg-amber-500/10 transition-all"
-            title="Metas de vendas"
-          >
-            <Target size={16} />
-            <span>Metas</span>
-          </button>
-
-          {/* 3 — Kanban selector */}
-          <DropdownMenu.Root>
-            <DropdownMenu.Trigger asChild>
-              <button className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-lg text-sm text-gray-700 dark:text-white hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
+          {/* 2 — Kanban selector */}
+          <PlainMenu
+            align="start"
+            triggerClassName="flex items-center gap-2 px-4 py-2 bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-lg text-sm text-gray-700 dark:text-white hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+            triggerContent={
+              <>
                 <LayoutGrid size={16} />
                 {kanbans.find(k => k.id === activeKanbanId)?.nome || 'Carregando...'}
                 <span className="bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-white px-1.5 py-0.5 rounded text-xs ml-1">{leads.length}</span>
                 <ChevronDown size={16} className="text-gray-500 dark:text-slate-400" />
-              </button>
-            </DropdownMenu.Trigger>
-
-              <DropdownMenu.Portal>
-              <DropdownMenu.Content className="bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-xl p-2 min-w-[280px] shadow-xl z-50" style={{ opacity: 1, animation: 'none' }}>
+              </>
+            }
+            panelClassName="bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-xl p-2 min-w-[280px] shadow-xl z-50"
+          >
                 {kanbans.map(kanban => (
-                  <DropdownMenu.Item
+                  <button
                     key={kanban.id}
+                    type="button" role="menuitem"
                     onClick={() => setActiveKanbanId(String(kanban.id))}
-                    className="flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-white/5 rounded-lg cursor-pointer outline-none group"
+                    className="w-full text-left flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-white/5 rounded-lg cursor-pointer outline-none group"
                   >
                     <div className="flex items-center gap-3">
                       <div className={`w-8 h-8 rounded-lg ${KANBAN_COLORS.find(c => c.id === kanban.cor)?.class || 'bg-violet-500'} flex items-center justify-center text-white font-bold text-xs uppercase`}>
@@ -5318,61 +5344,64 @@ const CrmComercial = () => {
 
                       {activeKanbanId === kanban.id && <Check size={16} className="text-violet-500" />}
                     </div>
-                  </DropdownMenu.Item>
+                  </button>
                 ))}
-                <DropdownMenu.Separator className="h-px bg-gray-200 dark:bg-white/10 my-2" />
-                <DropdownMenu.Item
+                <div className="h-px bg-gray-200 dark:bg-white/10 my-2" />
+                <button
+                  type="button" role="menuitem"
                   onClick={() => setIsNewKanbanModalOpen(true)}
-                  className="flex items-center gap-2 p-3 hover:bg-gray-50 dark:hover:bg-white/5 rounded-lg cursor-pointer text-violet-600 dark:text-violet-400 font-bold text-sm outline-none"
+                  className="w-full text-left flex items-center gap-2 p-3 hover:bg-gray-50 dark:hover:bg-white/5 rounded-lg cursor-pointer text-violet-600 dark:text-violet-400 font-bold text-sm outline-none"
                 >
                   <Plus size={16} />
                   Novo Kanban
-                </DropdownMenu.Item>
-                <DropdownMenu.Item
+                </button>
+                <button
+                  type="button" role="menuitem"
                   onClick={() => setIsManageKanbansOpen(true)}
-                  className="flex items-center gap-2 p-3 hover:bg-gray-50 dark:hover:bg-white/5 rounded-lg cursor-pointer text-gray-600 dark:text-slate-300 font-bold text-sm outline-none"
+                  className="w-full text-left flex items-center gap-2 p-3 hover:bg-gray-50 dark:hover:bg-white/5 rounded-lg cursor-pointer text-gray-600 dark:text-slate-300 font-bold text-sm outline-none"
                 >
                   <Settings size={16} />
                   Gerenciar Kanbans
-                </DropdownMenu.Item>
-              </DropdownMenu.Content>
-              </DropdownMenu.Portal>
-
-          </DropdownMenu.Root>
+                </button>
+          </PlainMenu>
 
           {/* 4 — Dropdown "Mais" com Fred, Ramal, Novo Lead */}
-          <DropdownMenu.Root>
-            <DropdownMenu.Trigger asChild>
-              <button
-                className="flex items-center justify-center w-[38px] h-[38px] bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-lg text-gray-500 dark:text-slate-400 hover:text-violet-600 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-white/5 transition-all"
-                title="Mais opções"
-              >
-                <MoreHorizontal size={18} />
-              </button>
-            </DropdownMenu.Trigger>
-
-              <DropdownMenu.Portal>
-              <DropdownMenu.Content
-                className="bg-white dark:bg-[#1A1625] border border-gray-200 dark:border-white/10 rounded-xl p-2 min-w-[220px] shadow-2xl z-[200]"
-                align="end"
-                sideOffset={6}
-                style={{ opacity: 1, animation: 'none' }}
-              >
+          <PlainMenu
+            align="end"
+            triggerTitle="Mais opções"
+            triggerClassName="flex items-center justify-center w-[38px] h-[38px] bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-lg text-gray-500 dark:text-slate-400 hover:text-violet-600 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-white/5 transition-all"
+            triggerContent={<MoreHorizontal size={18} />}
+            panelClassName="bg-white dark:bg-[#1A1625] border border-gray-200 dark:border-white/10 rounded-xl p-2 min-w-[220px] shadow-2xl z-[200]"
+          >
                 {/* Novo Lead */}
-                <DropdownMenu.Item
+                <button
+                  type="button" role="menuitem"
                   onClick={() => setIsNewLeadModalOpen(true)}
-                  className="flex items-center gap-3 p-2.5 rounded-lg cursor-pointer outline-none hover:bg-violet-500/10 dark:hover:bg-violet-500/15 transition-colors"
+                  className="w-full text-left flex items-center gap-3 p-2.5 rounded-lg cursor-pointer outline-none hover:bg-violet-500/10 dark:hover:bg-violet-500/15 transition-colors"
                 >
                   <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-violet-500/10 text-violet-500">
                     <Plus size={15} />
                   </div>
                   <span className="text-xs font-bold text-gray-800 dark:text-white">Novo Lead</span>
-                </DropdownMenu.Item>
+                </button>
+
+                {/* Metas de vendas */}
+                <button
+                  type="button" role="menuitem"
+                  onClick={() => setShowMetasPopup(true)}
+                  className="w-full text-left flex items-center gap-3 p-2.5 rounded-lg cursor-pointer outline-none hover:bg-amber-500/10 transition-colors"
+                >
+                  <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-amber-500/10 text-amber-500">
+                    <Target size={15} />
+                  </div>
+                  <span className="text-xs font-bold text-gray-800 dark:text-white">Metas</span>
+                </button>
 
                 {/* Consultar Fred IA */}
-                <DropdownMenu.Item
+                <button
+                  type="button" role="menuitem"
                   onClick={() => setShowAI(o => !o)}
-                  className="flex items-center gap-3 p-2.5 rounded-lg cursor-pointer outline-none hover:bg-violet-500/10 dark:hover:bg-violet-500/15 transition-colors"
+                  className="w-full text-left flex items-center gap-3 p-2.5 rounded-lg cursor-pointer outline-none hover:bg-violet-500/10 dark:hover:bg-violet-500/15 transition-colors"
                 >
                   <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-violet-500/10 overflow-hidden">
                     <img src={fredImg} alt="Fred" style={{ width: 18, height: 18, objectFit: 'contain' }} />
@@ -5382,25 +5411,27 @@ const CrmComercial = () => {
                     <span className="text-[10px] text-slate-400">Especialista financeiro IA</span>
                   </div>
                   {showAI && <Check size={14} className="text-violet-500 ml-auto" />}
-                </DropdownMenu.Item>
+                </button>
 
-                <DropdownMenu.Separator className="h-px bg-gray-200 dark:bg-white/10 my-1.5" />
+                <div className="h-px bg-gray-200 dark:bg-white/10 my-1.5" />
 
                 {/* Configurações CRM */}
-                <DropdownMenu.Item
+                <button
+                  type="button" role="menuitem"
                   onClick={() => { setSettingsTab('webhook'); fetchLossReasons(); setIsTelefonySettingsOpen(true); }}
-                  className="flex items-center gap-3 p-2.5 rounded-lg cursor-pointer outline-none hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+                  className="w-full text-left flex items-center gap-3 p-2.5 rounded-lg cursor-pointer outline-none hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
                 >
                   <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-slate-400">
                     <Settings size={15} />
                   </div>
                   <span className="text-xs font-bold text-gray-800 dark:text-white">Configurações</span>
-                </DropdownMenu.Item>
+                </button>
 
                 {/* Ramal / Telefonia */}
-                <DropdownMenu.Item
+                <button
+                  type="button" role="menuitem"
                   onClick={() => { setTestResult(null); setSettingsTab('telefonia'); fetchLossReasons(); setIsTelefonySettingsOpen(true); }}
-                  className="flex items-center gap-3 p-2.5 rounded-lg cursor-pointer outline-none hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+                  className="w-full text-left flex items-center gap-3 p-2.5 rounded-lg cursor-pointer outline-none hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
                 >
                   <div className="relative flex items-center justify-center w-7 h-7 rounded-lg bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-slate-400">
                     <Phone size={15} />
@@ -5422,11 +5453,8 @@ const CrmComercial = () => {
                           softphone.sipStatus === 'error' ? 'Falha' : 'Ramal offline'}
                     </span>
                   </div>
-                </DropdownMenu.Item>
-              </DropdownMenu.Content>
-              </DropdownMenu.Portal>
-
-          </DropdownMenu.Root>
+                </button>
+          </PlainMenu>
 
         </div>
       </PageHeader>
@@ -5443,43 +5471,44 @@ const CrmComercial = () => {
           />
         </div>
 
-        <DropdownMenu.Root>
-          <DropdownMenu.Trigger asChild>
-            <button className="p-2 bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-lg text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="1"></circle>
-                <circle cx="12" cy="5" r="1"></circle>
-                <circle cx="12" cy="19" r="1"></circle>
-              </svg>
-            </button>
-          </DropdownMenu.Trigger>
-
-            <DropdownMenu.Content className="m-2 min-w-[200px] bg-white dark:bg-[#1A1625] rounded-xl shadow-xl border border-gray-100 dark:border-white/10 p-2 z-[100]" align="end" style={{ opacity: 1, animation: 'none' }}>
-              <DropdownMenu.Item
+        <PlainMenu
+          align="end"
+          triggerClassName="p-2 bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-lg text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+          triggerContent={
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="1"></circle>
+              <circle cx="12" cy="5" r="1"></circle>
+              <circle cx="12" cy="19" r="1"></circle>
+            </svg>
+          }
+          panelClassName="min-w-[200px] bg-white dark:bg-[#1A1625] rounded-xl shadow-xl border border-gray-100 dark:border-white/10 p-2 z-[100]"
+        >
+              <button
+                type="button" role="menuitem"
                 onClick={() => setIsNewColumnModalOpen(true)}
-                className="flex items-center gap-2 p-2 hover:bg-gray-50 dark:hover:bg-white/5 rounded-lg cursor-pointer text-violet-600 dark:text-violet-400 font-bold text-sm outline-none"
+                className="w-full text-left flex items-center gap-2 p-2 hover:bg-gray-50 dark:hover:bg-white/5 rounded-lg cursor-pointer text-violet-600 dark:text-violet-400 font-bold text-sm outline-none"
               >
                 <Plus size={14} />
                 Nova Coluna
-              </DropdownMenu.Item>
-              <DropdownMenu.Separator className="h-px bg-gray-200 dark:bg-white/10 my-1" />
-              <DropdownMenu.Item
+              </button>
+              <div className="h-px bg-gray-200 dark:bg-white/10 my-1" />
+              <button
+                type="button" role="menuitem"
                 onClick={() => setShowWonLeads(!showWonLeads)}
-                className="flex items-center gap-2 p-2 hover:bg-gray-50 dark:hover:bg-white/5 rounded-lg cursor-pointer text-gray-700 dark:text-slate-300 font-medium text-sm outline-none"
+                className="w-full text-left flex items-center gap-2 p-2 hover:bg-gray-50 dark:hover:bg-white/5 rounded-lg cursor-pointer text-gray-700 dark:text-slate-300 font-medium text-sm outline-none"
               >
                 {showWonLeads ? <Eye size={14} className="text-gray-400" /> : <EyeOff size={14} className="text-gray-400" />}
                 Mostrar ganhos
-              </DropdownMenu.Item>
-              <DropdownMenu.Item
+              </button>
+              <button
+                type="button" role="menuitem"
                 onClick={() => setShowLostLeads(!showLostLeads)}
-                className="flex items-center gap-2 p-2 hover:bg-gray-50 dark:hover:bg-white/5 rounded-lg cursor-pointer text-gray-700 dark:text-slate-300 font-medium text-sm outline-none"
+                className="w-full text-left flex items-center gap-2 p-2 hover:bg-gray-50 dark:hover:bg-white/5 rounded-lg cursor-pointer text-gray-700 dark:text-slate-300 font-medium text-sm outline-none"
               >
                 {showLostLeads ? <Eye size={14} className="text-gray-400" /> : <EyeOff size={14} className="text-gray-400" />}
                 Mostrar perdidos
-              </DropdownMenu.Item>
-            </DropdownMenu.Content>
-
-        </DropdownMenu.Root>
+              </button>
+        </PlainMenu>
       </div>
 
 
@@ -7062,7 +7091,7 @@ const CrmComercial = () => {
         externalOpen={showAI}
         onExternalToggle={() => setShowAI(o => !o)}
       />
-      <MetasPopup isOpen={showMetasPopup} onClose={() => setShowMetasPopup(false)} />
+      <MetasPopup isOpen={showMetasPopup} onClose={() => { setShowMetasPopup(false); fetchHeaderMetas(); }} />
     </div>
   );
 };
