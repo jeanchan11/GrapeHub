@@ -191,9 +191,17 @@ export async function setupBolaoRoutes(app: Express, pool: Pool) {
   }
 
   // ── Helper: admin check ────────────────────────────────────────────────────
-  async function isAdmin(uid: string): Promise<boolean> {
+  // Identifica o usuário por EMAIL (como o resto do app) ou pelo Firebase UID — o
+  // `users.uid` pode conter um placeholder (ex: seed inicial), então o email é o mais confiável.
+  async function isAdmin(user: any): Promise<boolean> {
     try {
-      const r = await pool.query(`SELECT role FROM users WHERE id = $1`, [uid]);
+      const email = user?.email || '';
+      const uid = user?.uid || '';
+      if (!email && !uid) return false;
+      const r = await pool.query(
+        `SELECT role FROM users WHERE (email = $1 AND $1 <> '') OR (uid = $2 AND $2 <> '') LIMIT 1`,
+        [email, uid]
+      );
       const role = r.rows[0]?.role;
       return role === 'superadmin' || role === 'admin';
     } catch { return false; }
@@ -245,6 +253,30 @@ export async function setupBolaoRoutes(app: Express, pool: Pool) {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
+  // GET /api/bolao/:id/palpites — palpites de TODOS, por jogo (só jogos já travados: revela após o início)
+  app.get('/api/bolao/:id/palpites', async (req: any, res: any) => {
+    try {
+      const { id } = req.params;
+      const r = await pool.query(`
+        SELECT
+          j.id AS jogo_id, j.fase, j.time_casa, j.time_fora, j.inicia_em,
+          j.gols_casa, j.gols_fora, j.status,
+          COALESCE(c.name, 'Participante') AS user_name,
+          u.picture AS user_picture, c.bolao_avatar_url,
+          p.palpite_casa, p.palpite_fora,
+          vp.pontos, vp.placar_exato, vp.resultado_certo
+        FROM bolao.jogos j
+        JOIN bolao.palpites p ON p.jogo_id = j.id
+        LEFT JOIN collaborators c ON c.linked_user_id = p.user_id
+        LEFT JOIN users u ON u.id = c.linked_user_id
+        LEFT JOIN bolao.v_pontos vp ON vp.jogo_id = j.id AND vp.user_id = p.user_id
+        WHERE j.bolao_id = $1 AND j.inicia_em <= now()
+        ORDER BY j.inicia_em DESC, vp.pontos DESC NULLS LAST, c.name ASC
+      `, [id]);
+      res.json(r.rows);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // POST /api/bolao/jogos/:jogoId/palpite — upsert palpite
   app.post('/api/bolao/jogos/:jogoId/palpite', async (req: any, res: any) => {
     try {
@@ -284,7 +316,7 @@ export async function setupBolaoRoutes(app: Express, pool: Pool) {
   app.put('/api/bolao/jogos/:jogoId/resultado', async (req: any, res: any) => {
     try {
       const uid = req.user?.uid;
-      if (!uid || !(await isAdmin(uid))) {
+      if (!uid || !(await isAdmin(req.user))) {
         return res.status(403).json({ error: 'Acesso restrito a administradores.' });
       }
       const { jogoId } = req.params;
@@ -305,7 +337,7 @@ export async function setupBolaoRoutes(app: Express, pool: Pool) {
   app.post('/api/bolao/:id/jogos', async (req: any, res: any) => {
     try {
       const uid = req.user?.uid;
-      if (!uid || !(await isAdmin(uid))) {
+      if (!uid || !(await isAdmin(req.user))) {
         return res.status(403).json({ error: 'Acesso restrito a administradores.' });
       }
       const { id } = req.params;
@@ -330,7 +362,7 @@ export async function setupBolaoRoutes(app: Express, pool: Pool) {
   app.put('/api/bolao/jogos/:jogoId', async (req: any, res: any) => {
     try {
       const uid = req.user?.uid;
-      if (!uid || !(await isAdmin(uid))) {
+      if (!uid || !(await isAdmin(req.user))) {
         return res.status(403).json({ error: 'Acesso restrito a administradores.' });
       }
       const { jogoId } = req.params;

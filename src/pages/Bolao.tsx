@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import SplitHeadline from '../components/SplitHeadline';
 import { useAuth } from '../contexts/AuthContext';
-import { Trophy, Target, Settings, Check, Plus, X, Medal, Crown, Gift, Lock, Edit2 } from 'lucide-react';
+import { Trophy, Target, Settings, Check, Plus, X, Medal, Crown, Gift, Lock, Edit2, Eye } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface Jogo {
@@ -950,6 +950,69 @@ function ColaboradorDetalhesModal({ entry, myUid, bolaoId, onClose, apiFetch }: 
   );
 }
 
+// ── Palpites de Todos — mostra os palpites de todo mundo por jogo (revelados após o início) ──
+function PalpitesTodosView({ rows }: { rows: any[] }) {
+  if (!rows || rows.length === 0) {
+    return (
+      <div className="text-center py-24 text-slate-500">
+        <Eye size={40} className="mx-auto mb-4 opacity-30" />
+        <p className="text-sm font-bold text-slate-400">Nenhum palpite revelado ainda</p>
+        <p className="text-xs mt-1 opacity-60">Os palpites de todos aparecem aqui assim que cada jogo começa.</p>
+      </div>
+    );
+  }
+  // Agrupa por jogo preservando a ordem (rows já vem ordenado por data desc)
+  const games: any[] = [];
+  const idx: Record<number, number> = {};
+  for (const r of rows) {
+    if (idx[r.jogo_id] === undefined) {
+      idx[r.jogo_id] = games.length;
+      games.push({ ...r, bets: [] });
+    }
+    games[idx[r.jogo_id]].bets.push(r);
+  }
+  return (
+    <div className="space-y-5">
+      {games.map(g => {
+        const encerrado = g.status === 'encerrado';
+        return (
+          <div key={g.jogo_id} className="bg-dark-card rounded-2xl border border-white/10 overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-white/5 bg-white/[0.02]">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-[9px] text-violet-400 font-black uppercase bg-violet-500/10 px-1.5 py-0.5 rounded shrink-0">{g.fase}</span>
+                <p className="text-sm font-black text-white truncate">{g.time_casa} <span className="text-slate-500">×</span> {g.time_fora}</p>
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                {encerrado && <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg">{g.gols_casa} × {g.gols_fora} ✓</span>}
+                <span className="text-[10px] text-slate-500 hidden sm:block">{new Date(g.inicia_em).toLocaleString('pt-BR')}</span>
+                <span className="text-[10px] text-slate-500">{g.bets.length} palpite{g.bets.length === 1 ? '' : 's'}</span>
+              </div>
+            </div>
+            <div className="divide-y divide-white/5">
+              {g.bets.map((b: any, i: number) => (
+                <div key={i} className="flex items-center justify-between px-5 py-2.5 hover:bg-white/[0.02] transition-colors">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <Avatar name={b.user_name} url={b.bolao_avatar_url || b.user_picture} size={6} />
+                    <span className="text-sm text-slate-300 font-medium truncate">{b.user_name}</span>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span className="text-sm font-black text-white tabular-nums">{b.palpite_casa} <span className="text-slate-500 font-normal">×</span> {b.palpite_fora}</span>
+                    {encerrado && b.pontos != null && (
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full w-16 text-center ${b.placar_exato ? 'bg-emerald-500/15 text-emerald-400' : b.resultado_certo ? 'bg-amber-500/15 text-amber-400' : 'bg-white/5 text-slate-500'}`}>
+                        {b.pontos} pt{b.pontos === 1 ? '' : 's'}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Main Page ──────────────────────────────────────────────────────────────────
 export default function Bolao() {
   const { user, userData } = useAuth();
@@ -962,7 +1025,9 @@ export default function Bolao() {
   const [ranking, setRanking] = useState<RankingEntry[]>([]);
   const [loadingJogos, setLoadingJogos] = useState(true);
   const [loadingRanking, setLoadingRanking] = useState(true);
-  const [activeTab, setActiveTab] = useState<'palpites' | 'leaderboard' | 'premiacoes' | 'admin'>('palpites');
+  const [activeTab, setActiveTab] = useState<'palpites' | 'apostas' | 'leaderboard' | 'premiacoes' | 'admin'>('palpites');
+  const [palpitesAll, setPalpitesAll] = useState<any[]>([]);
+  const [loadingPalpites, setLoadingPalpites] = useState(false);
 
   useEffect(() => {
     apiFetch('/api/bolao').then(r => r.json())
@@ -989,7 +1054,16 @@ export default function Bolao() {
       .catch(() => setLoadingRanking(false));
   }, [bolaoId, apiFetch]);
 
+  const loadPalpites = useCallback(() => {
+    if (!bolaoId) return;
+    setLoadingPalpites(true);
+    apiFetch(`/api/bolao/${bolaoId}/palpites`).then(r => r.json())
+      .then((data: any) => { setPalpitesAll(Array.isArray(data) ? data : []); setLoadingPalpites(false); })
+      .catch(() => setLoadingPalpites(false));
+  }, [bolaoId, apiFetch]);
+
   useEffect(() => { loadJogos(); loadRanking(); }, [bolaoId]);
+  useEffect(() => { if (activeTab === 'apostas') loadPalpites(); }, [activeTab, loadPalpites]);
 
 
 
@@ -1008,6 +1082,7 @@ export default function Bolao() {
 
   const tabs = [
     { id: 'palpites' as const, label: 'Chaveamento', icon: Target },
+    { id: 'apostas' as const, label: 'Palpites de Todos', icon: Eye },
     { id: 'leaderboard' as const, label: 'Ranking', icon: Trophy },
     { id: 'premiacoes' as const, label: 'Premiações', icon: Gift },
     ...(isAdmin ? [{ id: 'admin' as const, label: 'Admin', icon: Settings }] : []),
@@ -1050,6 +1125,11 @@ export default function Bolao() {
         loadingJogos
           ? <div className="flex justify-center py-24"><div className="w-8 h-8 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" /></div>
           : <BracketView jogos={jogos} onSave={handleSavePalpite} />
+      )}
+      {activeTab === 'apostas' && (
+        loadingPalpites
+          ? <div className="flex justify-center py-24"><div className="w-8 h-8 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" /></div>
+          : <PalpitesTodosView rows={palpitesAll} />
       )}
       {activeTab === 'leaderboard' && (
         <TabLeaderboard 
