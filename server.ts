@@ -184,6 +184,11 @@ async function verifyFirebaseToken(token: string): Promise<any> {
   const valid = verify.verify(publicKey, signature);
   if (!valid) throw new Error('Assinatura JWT inválida');
 
+  // Normaliza o payload para o mesmo formato do Admin SDK, que expõe o id do usuário em `uid`.
+  // No JWT cru o id vem em `sub`/`user_id` (não em `uid`), então rotas que leem req.user.uid
+  // (ex: registrar palpite) falhavam com "Não autenticado" quando o Admin SDK caía no fallback manual.
+  if (!payload.uid) payload.uid = payload.user_id || payload.sub;
+
   // ── 4. Cache successful verification ──
   cacheVerifiedToken(token, payload);
   return payload;
