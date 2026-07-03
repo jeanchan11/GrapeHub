@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import SplitHeadline from '../components/SplitHeadline';
 import { useAuth } from '../contexts/AuthContext';
-import { Trophy, Target, Settings, Check, Plus, X, Medal, Crown, Gift, Lock } from 'lucide-react';
+import { Trophy, Target, Settings, Check, Plus, X, Medal, Crown, Gift, Lock, Edit2 } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface Jogo {
@@ -579,18 +579,50 @@ const TabAdmin = ({
   const [saving, setSaving] = useState(false);
   const [resultModal, setResultModal] = useState<{ jogo: Jogo; casa: string; fora: string } | null>(null);
   const [savingResult, setSavingResult] = useState(false);
+  const [editModal, setEditModal] = useState<{ jogo: Jogo; fase: string; time_casa: string; time_fora: string; inicia_em: string } | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  // ISO → valor do input datetime-local (YYYY-MM-DDTHH:mm) no fuso local
+  const toLocalInput = (iso: string) => {
+    const d = new Date(iso);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  const handleEditJogo = async () => {
+    if (!editModal) return;
+    if (!editModal.time_casa.trim() || !editModal.time_fora.trim() || !editModal.inicia_em) return;
+    setSavingEdit(true);
+    try {
+      const r = await apiFetch(`/api/bolao/jogos/${editModal.jogo.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          fase: editModal.fase,
+          time_casa: editModal.time_casa.trim(),
+          time_fora: editModal.time_fora.trim(),
+          inicia_em: new Date(editModal.inicia_em).toISOString(),
+        }),
+      });
+      if (!r.ok) { const err = await r.json().catch(() => ({} as any)); alert(err.error || 'Erro ao salvar o jogo.'); }
+      else { setEditModal(null); onRefresh(); }
+    } catch (e) { console.error(e); alert('Erro de rede ao salvar.'); }
+    setSavingEdit(false);
+  };
 
   const handleAddJogo = async () => {
     if (!form.time_casa.trim() || !form.time_fora.trim() || !form.inicia_em) return;
     setSaving(true);
     try {
-      await apiFetch(`/api/bolao/${bolaoId}/jogos`, {
+      const r = await apiFetch(`/api/bolao/${bolaoId}/jogos`, {
         method: 'POST',
         body: JSON.stringify({ fase: form.fase, time_casa: form.time_casa.trim(), time_fora: form.time_fora.trim(), inicia_em: new Date(form.inicia_em).toISOString() }),
       });
-      setForm({ fase: 'Quartas', time_casa: '', time_fora: '', inicia_em: '' });
-      onRefresh();
-    } catch (e) { console.error(e); }
+      if (!r.ok) { const err = await r.json().catch(() => ({} as any)); alert(err.error || 'Erro ao cadastrar o jogo.'); }
+      else {
+        setForm({ fase: 'Quartas', time_casa: '', time_fora: '', inicia_em: '' });
+        onRefresh();
+      }
+    } catch (e) { console.error(e); alert('Erro de rede ao cadastrar.'); }
     setSaving(false);
   };
 
@@ -663,15 +695,23 @@ const TabAdmin = ({
               </div>
               <p className="text-[10px] text-slate-500 mt-0.5">{new Date(j.inicia_em).toLocaleString('pt-BR')}</p>
             </div>
-            {j.status === 'encerrado'
-              ? <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-lg">{j.gols_casa} × {j.gols_fora} ✓</span>
-              : j.travado
-              ? <button onClick={() => setResultModal({ jogo: j, casa: '', fora: '' })}
-                  className="text-xs font-bold text-violet-400 hover:text-violet-300 bg-violet-500/10 hover:bg-violet-500/20 px-3 py-1.5 rounded-lg transition-colors">
-                  Lançar resultado
+            <div className="flex items-center gap-2">
+              {j.status !== 'encerrado' && (
+                <button onClick={() => setEditModal({ jogo: j, fase: j.fase, time_casa: j.time_casa, time_fora: j.time_fora, inicia_em: toLocalInput(j.inicia_em) })}
+                  className="text-xs font-bold text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1">
+                  <Edit2 size={12} /> Editar
                 </button>
-              : <span className="text-[10px] text-slate-600">Aguardando início</span>
-            }
+              )}
+              {j.status === 'encerrado'
+                ? <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-lg">{j.gols_casa} × {j.gols_fora} ✓</span>
+                : j.travado
+                ? <button onClick={() => setResultModal({ jogo: j, casa: '', fora: '' })}
+                    className="text-xs font-bold text-violet-400 hover:text-violet-300 bg-violet-500/10 hover:bg-violet-500/20 px-3 py-1.5 rounded-lg transition-colors">
+                    Lançar resultado
+                  </button>
+                : <span className="text-[10px] text-slate-600">Aguardando início</span>
+              }
+            </div>
           </div>
         ))}
         {sorted.length === 0 && <div className="py-8 text-center text-slate-600 text-xs">Nenhum jogo cadastrado.</div>}
@@ -698,6 +738,47 @@ const TabAdmin = ({
               className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-sm font-bold text-white transition-all flex items-center justify-center gap-2">
               {savingResult ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Check size={14} />}
               Confirmar Resultado
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Edit game modal — definir times/fase/data dos próximos jogos */}
+      {editModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setEditModal(null)}>
+          <div className="bg-dark-card border border-white/10 rounded-2xl p-6 w-96 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-black text-dark-text flex items-center gap-2"><Edit2 size={14} className="text-violet-400" /> Editar Jogo</h3>
+              <button onClick={() => setEditModal(null)} className="text-slate-500 hover:text-dark-text"><X size={16} /></button>
+            </div>
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div>
+                <label className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider block mb-1">Fase</label>
+                <select value={editModal.fase} onChange={e => setEditModal(m => m ? { ...m, fase: e.target.value } : m)}
+                  className="w-full bg-dark-bg border border-white/10 rounded-xl px-3 py-2.5 text-sm text-dark-text focus:outline-none focus:border-violet-500">
+                  {FASE_OPTIONS.map(f => <option key={f} value={f}>{f}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider block mb-1">Data/Hora</label>
+                <input type="datetime-local" value={editModal.inicia_em} onChange={e => setEditModal(m => m ? { ...m, inicia_em: e.target.value } : m)}
+                  className="w-full bg-dark-bg border border-white/10 rounded-xl px-3 py-2.5 text-sm text-dark-text focus:outline-none focus:border-violet-500" />
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider block mb-1">Time Casa</label>
+                <input value={editModal.time_casa} onChange={e => setEditModal(m => m ? { ...m, time_casa: e.target.value } : m)} placeholder="Ex: Brasil"
+                  className="w-full bg-dark-bg border border-white/10 rounded-xl px-3 py-2.5 text-sm text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500" />
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider block mb-1">Time Fora</label>
+                <input value={editModal.time_fora} onChange={e => setEditModal(m => m ? { ...m, time_fora: e.target.value } : m)} placeholder="Ex: França"
+                  className="w-full bg-dark-bg border border-white/10 rounded-xl px-3 py-2.5 text-sm text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500" />
+              </div>
+            </div>
+            <button onClick={handleEditJogo} disabled={savingEdit || !editModal.time_casa.trim() || !editModal.time_fora.trim() || !editModal.inicia_em}
+              className="w-full py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-sm font-bold text-white transition-all flex items-center justify-center gap-2">
+              {savingEdit ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Check size={14} />}
+              Salvar
             </button>
           </div>
         </div>

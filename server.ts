@@ -483,6 +483,7 @@ async function startServer() {
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS files JSONB DEFAULT '[]';
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS squad TEXT;
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
+      ALTER TABLE projects ADD COLUMN IF NOT EXISTS churn_checklist JSONB DEFAULT '{}';
 
       -- Backfill squad from linked client for existing projects
       UPDATE projects p
@@ -2863,6 +2864,12 @@ async function startServer() {
           }
           return row.files || [];
         })(),
+        churnChecklist: (() => {
+          if (typeof row.churn_checklist === 'string') {
+            try { return JSON.parse(row.churn_checklist); } catch (e) { return {}; }
+          }
+          return row.churn_checklist || {};
+        })(),
         sortOrder: row.sort_order,
         products: prodsByProject.get(row.id) || []
       }));
@@ -2928,8 +2935,8 @@ async function startServer() {
             }
 
             await pool.query(
-              `INSERT INTO projects (id, partner, status, roi, investment, responsible, last_update, active_client_id, page_id, "group", project_result, files, squad) 
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+              `INSERT INTO projects (id, partner, status, roi, investment, responsible, last_update, active_client_id, page_id, "group", project_result, files, squad, churn_checklist)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
                ON CONFLICT (id) DO UPDATE SET
                  partner = EXCLUDED.partner,
                  status = EXCLUDED.status,
@@ -2942,8 +2949,9 @@ async function startServer() {
                  "group" = EXCLUDED."group",
                  project_result = EXCLUDED.project_result,
                  files = EXCLUDED.files,
-                 squad = COALESCE(EXCLUDED.squad, projects.squad)`,
-              [p.id, p.partner, p.status, p.roi, p.investment, p.responsible, p.lastUpdate, p.activeClientId, p.page_id, p.group, p.projectResult, JSON.stringify(p.files || []), squadValue]
+                 squad = COALESCE(EXCLUDED.squad, projects.squad),
+                 churn_checklist = COALESCE(EXCLUDED.churn_checklist, projects.churn_checklist)`,
+              [p.id, p.partner, p.status, p.roi, p.investment, p.responsible, p.lastUpdate, p.activeClientId, p.page_id, p.group, p.projectResult, JSON.stringify(p.files || []), squadValue, JSON.stringify(p.churnChecklist || {})]
             );
             console.log(`[SAVE] Projeto ${p.id} salvo.`);
           } catch (err) {

@@ -452,7 +452,65 @@ interface Project {
   sortOrder?: number;
   lastMeetingDate?: string;
   files?: { name: string; date: string; size: string; url: string; sender: string }[];
+  churnChecklist?: Record<string, boolean>;
 }
+
+// Template FIXO do "Risco de Churn" — 15 sinais em 4 grupos. Cada projeto guarda apenas quais IDs
+// estão marcados (em churnChecklist). Os ids são estáveis; mudar um label não perde a marcação.
+const CHURN_TEMPLATE: { group: string; items: { id: string; label: string }[] }[] = [
+  { group: 'Insatisfação com o projeto', items: [
+    { id: 'insat_volume', label: 'Demonstrou insatisfação — Volume de leads' },
+    { id: 'insat_qualidade', label: 'Demonstrou insatisfação — Qualidade de leads' },
+    { id: 'insat_contratos', label: 'Demonstrou insatisfação — Contratos fechados' },
+    { id: 'insat_crm', label: 'Demonstrou insatisfação — Erro de CRM' },
+    { id: 'insat_ia', label: 'Demonstrou insatisfação — Erro de IA' },
+  ]},
+  { group: 'Baixa aderência ao projeto', items: [
+    { id: 'ader_semresposta', label: 'Sem responder grupo a partir de 2 feedbacks' },
+    { id: 'ader_naoatende', label: 'Não atendimento dos leads' },
+    { id: 'ader_naocrm', label: 'Não utilização do CRM sem motivos claros' },
+    { id: 'ader_sugestoes', label: 'Baixa aderência às sugestões' },
+    { id: 'ader_noshow', label: 'Muito no-show nas reuniões de alinhamento' },
+  ]},
+  { group: 'Problemas internos', items: [
+    { id: 'int_operacional', label: 'Problemas operacionais' },
+    { id: 'int_atraso', label: 'Atraso no pagamento dos honorários' },
+    { id: 'int_financeiro', label: 'Problema financeiro' },
+  ]},
+  { group: 'Plataforma', items: [
+    { id: 'plat_pausa', label: 'Pausa constante nas campanhas' },
+    { id: 'plat_bloqueios', label: 'Bloqueios (BM / WhatsApp / Redes sociais)' },
+  ]},
+];
+export const CHURN_TOTAL = CHURN_TEMPLATE.reduce((n, g) => n + g.items.length, 0);
+// Nível de risco pela quantidade de sinais marcados.
+const churnRisk = (checked: number): { label: string; color: string; bar: string; chip: string } => {
+  if (checked === 0) return { label: 'Sem sinais', color: 'text-emerald-500', bar: 'bg-emerald-500', chip: 'bg-emerald-500/10' };
+  if (checked <= 3) return { label: 'Baixo', color: 'text-lime-500', bar: 'bg-lime-500', chip: 'bg-lime-500/10' };
+  if (checked <= 6) return { label: 'Médio', color: 'text-amber-500', bar: 'bg-amber-500', chip: 'bg-amber-500/10' };
+  return { label: 'Alto', color: 'text-rose-500', bar: 'bg-rose-500', chip: 'bg-rose-500/10' };
+};
+export const churnCheckedCount = (p: { churnChecklist?: Record<string, boolean> }): number =>
+  CHURN_TEMPLATE.reduce((n, g) => n + g.items.filter(it => p.churnChecklist?.[it.id]).length, 0);
+
+// Indicador de risco de churn na linha do projeto — círculo de % no mesmo estilo do kanban comercial.
+export const ChurnRiskCircle: React.FC<{ project: { churnChecklist?: Record<string, boolean> } }> = ({ project }) => {
+  const count = churnCheckedCount(project);
+  const pct = Math.round((count / CHURN_TOTAL) * 100);
+  const risk = churnRisk(count);
+  // Cor por faixa (churn alto = vermelho, baixo = verde) — hex igual às cores do CRM.
+  const colorHex = count === 0 ? '#10b981' : count <= 3 ? '#84cc16' : count <= 6 ? '#f59e0b' : '#f43f5e';
+  const r = 9; const c = 2 * Math.PI * r; const offset = c * (1 - pct / 100);
+  return (
+    <div className="relative w-7 h-7 shrink-0" title={`Risco de churn: ${risk.label} — ${count}/${CHURN_TOTAL} sinais (${pct}%)`}>
+      <svg viewBox="0 0 24 24" className="w-full h-full -rotate-90">
+        <circle cx="12" cy="12" r={r} fill="none" stroke="currentColor" strokeWidth="2.5" className="text-gray-200 dark:text-white/10" />
+        <circle cx="12" cy="12" r={r} fill="none" stroke={colorHex} strokeWidth="2.5" strokeLinecap="round" strokeDasharray={c} strokeDashoffset={offset} style={{ transition: 'stroke-dashoffset 0.5s ease' }} />
+      </svg>
+      <span className="absolute inset-0 flex items-center justify-center text-[7px] font-black" style={{ color: colorHex }}>{pct}</span>
+    </div>
+  );
+};
 
 const parseCurrency = (val: string) => {
   return parseFloat((val || '').replace(/[^\d,]/g, '').replace('.', '').replace(',', '.')) || 0;
@@ -619,7 +677,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
   const [pageModalProjectId, setPageModalProjectId] = useState<string | null>(null);
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const [activeProductTab, setActiveProductTab] = useState<'resultado' | 'kpis'>('resultado');
-  const [activeProjectTab, setActiveProjectTab] = useState<'resultado' | 'reunioes' | 'arquivos' | 'comentarios' | 'analise' | 'nps' | 'tokens'>('resultado');
+  const [activeProjectTab, setActiveProjectTab] = useState<'resultado' | 'reunioes' | 'arquivos' | 'comentarios' | 'analise' | 'nps' | 'tokens' | 'churn'>('resultado');
   const [npsResponses, setNpsResponses] = useState<any[]>([]);
   const [isNpsLoading, setIsNpsLoading] = useState(false);
   const [timelineFilter, setTimelineFilter] = useState('Todos');
@@ -2101,6 +2159,17 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     setSelectedProject(updatedProject);
     commitProjects(prev => prev.map(p => p.id === updatedProject.id ? updatedProject : p));
     setIsProjectResultDropdownOpen(false);
+  };
+
+  // Marca/desmarca um sinal do checklist de Risco de Churn e persiste no projeto.
+  const toggleChurnItem = (itemId: string) => {
+    if (!selectedProject) return;
+    const current = selectedProject.churnChecklist || {};
+    const nextChecklist = { ...current, [itemId]: !current[itemId] };
+    if (!nextChecklist[itemId]) delete nextChecklist[itemId]; // guarda só os marcados
+    const updatedProject = { ...selectedProject, churnChecklist: nextChecklist };
+    setSelectedProject(updatedProject);
+    commitProjects(prev => prev.map(p => p.id === updatedProject.id ? updatedProject : p));
   };
 
   const [isSavingNote, setIsSavingNote] = useState(false);
@@ -3830,10 +3899,10 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                       {[
                         { key: 'partner' as const, label: 'Parceiro' },
                         { key: null, label: '' },
+                        { key: null, label: 'Churn' },
                         { key: 'projectResult' as const, label: 'Resultado' },
                         { key: 'status' as const, label: 'Status' },
                         { key: 'lastMeetingDate' as const, label: 'Última Reunião' },
-                        { key: 'investment' as const, label: 'Investimento' },
                         { key: null, label: 'Pagamento' },
                         { key: null, label: 'Conta' },
                       ].map((col, idx) => (
@@ -3986,6 +4055,11 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     </td>
                     <td className="px-3 py-3.5" onClick={() => handleRowClick(project)}>
                       <div className="cursor-pointer">
+                        <ChurnRiskCircle project={project} />
+                      </div>
+                    </td>
+                    <td className="px-3 py-3.5" onClick={() => handleRowClick(project)}>
+                      <div className="cursor-pointer">
                         {getResultBadge(project.projectResult)}
                       </div>
                     </td>
@@ -4006,9 +4080,6 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                           sem reunião
                         </span>
                       )}
-                    </td>
-                    <td className="px-3 py-3.5" onClick={() => handleRowClick(project)}>
-                      <p className="text-sm text-slate-600 dark:text-slate-300 cursor-pointer">{project.investment}</p>
                     </td>
                     <td className="px-3 py-3.5" onClick={() => handleRowClick(project)}>
                       <div className="cursor-pointer flex flex-col gap-1">
@@ -4328,7 +4399,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
         <div className="flex flex-col min-h-[750px]">
           {/* Tabs */}
           <div className="flex items-center gap-6 mb-6 border-b modal-divider shrink-0">
-            {(['resultado', 'reunioes', 'comentarios', 'analise', 'arquivos', 'nps', 'tokens'] as const).map((tab) => (
+            {(['resultado', 'reunioes', 'comentarios', 'analise', 'arquivos', 'nps', 'tokens', 'churn'] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveProjectTab(tab as any)}
@@ -4338,7 +4409,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     : 'text-slate-500 hover:text-gray-900 dark:hover:text-white'
                 }`}
               >
-                {tab === 'resultado' ? 'Resultado do projeto' : tab === 'reunioes' ? 'Reuniões' : tab === 'arquivos' ? 'Arquivos do projeto' : tab === 'comentarios' ? 'Comentários' : tab === 'nps' ? 'NPS' : tab === 'tokens' ? 'Tokens' : 'Análise de Leads'}
+                {tab === 'resultado' ? 'Resultado do projeto' : tab === 'reunioes' ? 'Reuniões' : tab === 'arquivos' ? 'Arquivos do projeto' : tab === 'comentarios' ? 'Comentários' : tab === 'nps' ? 'NPS' : tab === 'tokens' ? 'Tokens' : tab === 'churn' ? 'Risco de Churn' : 'Análise de Leads'}
                 {activeProjectTab === tab && (
                   <motion.div
                     layoutId="project-tab-indicator"
@@ -5214,6 +5285,64 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     </div>
                   </div>
                 )}
+
+                {activeProjectTab === 'churn' && (() => {
+                  const cl = selectedProject.churnChecklist || {};
+                  const checkedCount = CHURN_TEMPLATE.reduce((n, g) => n + g.items.filter(it => cl[it.id]).length, 0);
+                  const risk = churnRisk(checkedCount);
+                  const pct = Math.round((checkedCount / CHURN_TOTAL) * 100);
+                  return (
+                    <div className="space-y-5 mt-2 pb-4">
+                      {/* Indicador de risco */}
+                      <div className="p-5 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-200 dark:border-white/5">
+                        <div className="flex items-center justify-between mb-3">
+                          <div>
+                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Nível de risco de churn</p>
+                            <p className={`text-2xl font-black ${risk.color}`}>{risk.label}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className={`text-2xl font-black ${risk.color}`}>{checkedCount}<span className="text-slate-400 text-base font-bold">/{CHURN_TOTAL}</span></p>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">sinais marcados</p>
+                          </div>
+                        </div>
+                        <div className="h-2 rounded-full bg-slate-200 dark:bg-white/10 overflow-hidden">
+                          <div className={`h-full ${risk.bar} transition-all duration-300`} style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+
+                      {/* 4 grupos de sinais */}
+                      {CHURN_TEMPLATE.map(group => {
+                        const gChecked = group.items.filter(it => cl[it.id]).length;
+                        return (
+                          <div key={group.group} className="rounded-2xl border border-slate-200 dark:border-white/5 overflow-hidden">
+                            <div className="flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-800/30 border-b border-slate-200 dark:border-white/5">
+                              <p className="text-xs font-bold text-slate-700 dark:text-white uppercase tracking-wider">{group.group}</p>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${gChecked > 0 ? 'bg-rose-500/10 text-rose-500' : 'bg-slate-500/10 text-slate-400'}`}>{gChecked}/{group.items.length}</span>
+                            </div>
+                            <div className="p-2 space-y-1">
+                              {group.items.map(it => {
+                                const on = !!cl[it.id];
+                                return (
+                                  <button
+                                    key={it.id}
+                                    type="button"
+                                    onClick={() => toggleChurnItem(it.id)}
+                                    className={`w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${on ? 'bg-rose-500/5' : 'hover:bg-slate-100 dark:hover:bg-white/5'}`}
+                                  >
+                                    <span className={`shrink-0 w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${on ? 'bg-rose-500 border-rose-500' : 'border-slate-300 dark:border-white/20'}`}>
+                                      {on && <Check size={13} className="text-white" />}
+                                    </span>
+                                    <span className={`text-sm ${on ? 'text-slate-800 dark:text-white font-medium' : 'text-slate-600 dark:text-slate-300'}`}>{it.label}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
 
                 {activeProjectTab === 'analise' && (
                   <div className="flex flex-col items-center justify-center py-20 gap-4 text-slate-400">

@@ -326,6 +326,27 @@ export async function setupBolaoRoutes(app: Express, pool: Pool) {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
+  // PUT /api/bolao/jogos/:jogoId — admin: edita fase/times/data de um jogo (definir "A Definir")
+  app.put('/api/bolao/jogos/:jogoId', async (req: any, res: any) => {
+    try {
+      const uid = req.user?.uid;
+      if (!uid || !(await isAdmin(uid))) {
+        return res.status(403).json({ error: 'Acesso restrito a administradores.' });
+      }
+      const { jogoId } = req.params;
+      const { fase, time_casa, time_fora, inicia_em } = req.body;
+      if (!fase || !time_casa || !time_fora || !inicia_em) {
+        return res.status(400).json({ error: 'fase, time_casa, time_fora e inicia_em são obrigatórios.' });
+      }
+      const r = await pool.query(`
+        UPDATE bolao.jogos SET fase = $1, time_casa = $2, time_fora = $3, inicia_em = $4
+        WHERE id = $5 RETURNING *
+      `, [fase, time_casa, time_fora, inicia_em, jogoId]);
+      if (r.rowCount === 0) return res.status(404).json({ error: 'Jogo não encontrado.' });
+      res.json(r.rows[0]);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // GET /api/bolao/:id/ranking
   app.get('/api/bolao/:id/ranking', async (req: any, res: any) => {
     try {

@@ -4,7 +4,7 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { RefreshCw, ChevronDown, Check, ArrowUp, ArrowDown, ArrowUpDown, Search, Filter, Download, Briefcase, DollarSign, Target, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useMenu } from '../context/MenuContext';
-import ProjectsModule from './ProjectsModule';
+import ProjectsModule, { ChurnRiskCircle } from './ProjectsModule';
 import LoadingSpinner from '../components/LoadingSpinner';
 
 
@@ -26,6 +26,7 @@ interface ProjectRow {
   squad?: string;
   files?: any[];
   products?: any[];
+  churnChecklist?: Record<string, boolean>;
 }
 
 const RESULT_COLORS: Record<string, string> = {
@@ -325,7 +326,7 @@ export default function ParceirosSquad({ activePage, onPageChange }: { activePag
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50/50 dark:bg-white/5 border-b border-slate-200 dark:border-white/5">
-                {['Cliente', 'Responsável', 'Resultado', 'Orçamento Mensal', 'Produtos'].map(h => (
+                {['Cliente', 'Responsável', 'Resultado', 'Orçamento Mensal', 'Produtos', 'Churn'].map(h => (
                   <th 
                     key={h} 
                     className="px-8 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-left cursor-pointer hover:text-violet-400 transition-colors group select-none"
@@ -431,6 +432,11 @@ export default function ParceirosSquad({ activePage, onPageChange }: { activePag
 
                     {/* Produtos */}
                     <td className="px-8 py-5 text-sm text-slate-500">{(p.products || []).length}</td>
+
+                    {/* Churn */}
+                    <td className="px-8 py-5">
+                      <ChurnRiskCircle project={p} />
+                    </td>
                   </tr>
                 );
               })}

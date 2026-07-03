@@ -10,6 +10,7 @@ import {
 import { auth } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import LoadingSpinner from '../components/LoadingSpinner';
+import { ChurnRiskCircle, churnCheckedCount, CHURN_TOTAL } from './ProjectsModule';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types  (matching real API response shape)
@@ -39,6 +40,7 @@ interface ProjectRow {
   squad?: string;           // ← new field from DB
   activeClientId?: string;
   products?: Product[];
+  churnChecklist?: Record<string, boolean>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -841,16 +843,13 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
 
   // Product summary
   const allProducts = filteredProjects.flatMap(p => p.products || []);
-  const productResultDist = (() => {
-    const counts: Record<string, number> = {};
-    for (const prod of allProducts) {
-      const r = prod.projectResult || prod.status || '-';
-      counts[r] = (counts[r] || 0) + 1;
-    }
-    return Object.entries(counts)
-      .map(([label, count]) => ({ label, count, color: getResultColor(label) }))
-      .sort((a, b) => b.count - a.count);
-  })();
+
+  // Radar de Churn — projetos com sinais marcados, do maior risco para o menor.
+  const churnRadar = filteredProjects
+    .map(p => ({ p, count: churnCheckedCount(p) }))
+    .filter(x => x.count > 0)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8);
 
   return (
     <div className="min-h-screen bg-dark-bg transition-colors duration-300">
@@ -1239,26 +1238,42 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
         {/* ── Linha 4 — Dist. Produtos + Tarefas Críticas ───────────────── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
 
-          {/* Distribuição por resultado dos Produtos */}
+          {/* Radar de Churn — projetos com maior probabilidade de churn */}
           <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200">
-            <h2 className="text-sm font-bold text-dark-text mb-1">Resultados por Produto</h2>
-            <p className="text-xs text-slate-500 mb-4">{allProducts.length} produtos cadastrados</p>
-            {productResultDist.length === 0 ? (
-              <p className="text-slate-500 text-sm text-center py-10">Sem produtos cadastrados</p>
+            <h2 className="text-sm font-bold text-dark-text mb-1">Radar de Churn</h2>
+            <p className="text-xs text-slate-500 mb-4">Projetos com maior probabilidade de churn</p>
+            {churnRadar.length === 0 ? (
+              <div className="text-center text-slate-500 text-sm py-10">Nenhum sinal de churn marcado ✅</div>
             ) : (
-              <div className="space-y-3">
-                {productResultDist.slice(0, 8).map(d => (
-                  <div key={d.label}>
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full" style={{ background: d.color }} />
-                        <span className="text-xs text-slate-400">{d.label}</span>
+              <div className="space-y-2">
+                {churnRadar.map(({ p, count }, idx) => {
+                  const dbUser = findUser(p.responsible);
+                  return (
+                    <div
+                      key={p.id}
+                      className="flex items-center justify-between gap-3 p-3 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5 hover:border-slate-300 dark:hover:border-white/10 transition-colors"
+                      style={{ animation: 'rowFadeIn 0.3s ease both', animationDelay: `${idx * 0.04}s` }}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-dark-text truncate">{p.partner}</p>
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <div className="w-4 h-4 rounded-full overflow-hidden bg-slate-200 dark:bg-slate-800 shrink-0 border border-slate-300 dark:border-white/10">
+                            {dbUser?.picture ? (
+                              <img src={dbUser.picture} alt={p.responsible || ''} className="w-full h-full object-cover" />
+                            ) : (
+                              <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${p.responsible}`} alt={p.responsible || ''} className="w-full h-full object-cover" />
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500 truncate">{p.responsible || '—'}</p>
+                        </div>
                       </div>
-                      <CountUp value={d.count} className="text-xs font-bold text-dark-text" />
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[10px] font-bold text-slate-400 whitespace-nowrap">{count}/{CHURN_TOTAL}</span>
+                        <ChurnRiskCircle project={p} />
+                      </div>
                     </div>
-                    <AnimatedColorBar widthPercent={(d.count / allProducts.length) * 100} color={d.color} />
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
