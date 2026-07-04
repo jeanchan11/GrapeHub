@@ -732,10 +732,10 @@ const TabAdmin = ({
             <p className="text-sm text-white mb-4 text-center font-black">{resultModal.jogo.time_casa} × {resultModal.jogo.time_fora}</p>
             <div className="flex items-center gap-3 mb-5">
               <input type="number" min={0} value={resultModal.casa} onChange={e => setResultModal(r => r ? { ...r, casa: e.target.value } : r)} placeholder="0"
-                className="flex-1 bg-dark-bg border border-white/10 rounded-xl px-3 py-3 text-xl font-black text-white text-center focus:outline-none focus:border-violet-500" />
-              <span className="text-slate-500 font-bold text-lg">×</span>
+                className="flex-1 min-w-0 w-0 bg-dark-bg border border-white/10 rounded-xl px-3 py-3 text-xl font-black text-white text-center focus:outline-none focus:border-violet-500" />
+              <span className="text-slate-500 font-bold text-lg shrink-0">×</span>
               <input type="number" min={0} value={resultModal.fora} onChange={e => setResultModal(r => r ? { ...r, fora: e.target.value } : r)} placeholder="0"
-                className="flex-1 bg-dark-bg border border-white/10 rounded-xl px-3 py-3 text-xl font-black text-white text-center focus:outline-none focus:border-violet-500" />
+                className="flex-1 min-w-0 w-0 bg-dark-bg border border-white/10 rounded-xl px-3 py-3 text-xl font-black text-white text-center focus:outline-none focus:border-violet-500" />
             </div>
             <button onClick={handleLancarResultado} disabled={savingResult || !resultModal.casa || !resultModal.fora}
               className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-sm font-bold text-white transition-all flex items-center justify-center gap-2">
@@ -1137,7 +1137,7 @@ export default function Bolao() {
       {activeTab === 'leaderboard' && (
         <TabLeaderboard 
           ranking={ranking} 
-          myUid={userData?.id || ''} 
+          myUid={user?.uid || ''}
           loading={loadingRanking} 
           onSelectCollab={setSelectedCollab}
         />
@@ -1220,7 +1220,7 @@ export default function Bolao() {
       {selectedCollab && bolaoId && (
         <ColaboradorDetalhesModal
           entry={selectedCollab}
-          myUid={userData?.id || ''}
+          myUid={user?.uid || ''}
           bolaoId={bolaoId}
           onClose={() => setSelectedCollab(null)}
           apiFetch={apiFetch}

@@ -54,12 +54,8 @@ export async function setupBolaoRoutes(app: Express, pool: Pool) {
       p.user_id,
       j.bolao_id,
       CASE
-        WHEN p.palpite_casa = j.gols_casa AND p.palpite_fora = j.gols_fora THEN 10
-        WHEN
-          SIGN((p.palpite_casa - p.palpite_fora)::float) = SIGN((j.gols_casa - j.gols_fora)::float)
-          AND (p.palpite_casa - p.palpite_fora) = (j.gols_casa - j.gols_fora)
-        THEN 7
-        WHEN SIGN((p.palpite_casa - p.palpite_fora)::float) = SIGN((j.gols_casa - j.gols_fora)::float) THEN 5
+        WHEN p.palpite_casa = j.gols_casa AND p.palpite_fora = j.gols_fora THEN 3   -- placar exato
+        WHEN SIGN((p.palpite_casa - p.palpite_fora)::float) = SIGN((j.gols_casa - j.gols_fora)::float) THEN 1  -- resultado certo (vitória/empate/derrota)
         ELSE 0
       END AS pontos,
       (p.palpite_casa = j.gols_casa AND p.palpite_fora = j.gols_fora) AS placar_exato,
@@ -207,6 +203,43 @@ export async function setupBolaoRoutes(app: Express, pool: Pool) {
     } catch { return false; }
   }
 
+  // ── Helper: resolve apostadores (Firebase uid → nome, foto e AVATAR BOLÃO) ──────────────
+  // Palpites são salvos por Firebase uid. Aqui resolvemos: nome/foto no Firebase Auth, e o
+  // "Avatar Bolão" cruzando o email do Firebase → users → collaborators.bolao_avatar_url.
+  async function resolveBettors(uids: string[]): Promise<Record<string, { name?: string; pic?: string; bolaoAvatar?: string }>> {
+    const map: Record<string, { name?: string; pic?: string; bolaoAvatar?: string }> = {};
+    if (!uids.length) return map;
+    const uidToEmail: Record<string, string> = {};
+    try {
+      for (let i = 0; i < uids.length; i += 100) {
+        const chunk = uids.slice(i, i + 100).map((uid) => ({ uid }));
+        const resu = await admin.auth().getUsers(chunk);
+        for (const u of resu.users) {
+          map[u.uid] = { name: u.displayName || (u.email ? u.email.split('@')[0] : undefined), pic: u.photoURL || undefined };
+          if (u.email) uidToEmail[u.uid] = u.email.toLowerCase();
+        }
+      }
+    } catch (e: any) { console.warn('[bolao] resolveBettors (firebase):', e.message); }
+    try {
+      const emails = [...new Set(Object.values(uidToEmail))];
+      if (emails.length) {
+        const r = await pool.query(`
+          SELECT lower(u.email) AS email, c.bolao_avatar_url
+          FROM collaborators c
+          JOIN users u ON u.id::text = c.linked_user_id
+          WHERE lower(u.email) = ANY($1) AND c.bolao_avatar_url IS NOT NULL
+        `, [emails]);
+        const emailToAvatar: Record<string, string> = {};
+        for (const row of r.rows) emailToAvatar[row.email] = row.bolao_avatar_url;
+        for (const uid of Object.keys(uidToEmail)) {
+          const av = emailToAvatar[uidToEmail[uid]];
+          if (av && map[uid]) map[uid].bolaoAvatar = av;
+        }
+      }
+    } catch (e: any) { console.warn('[bolao] resolveBettors (avatar):', e.message); }
+    return map;
+  }
+
   // ── Routes ─────────────────────────────────────────────────────────────────
 
   // GET /api/bolao — lista bolões
@@ -275,28 +308,13 @@ export async function setupBolaoRoutes(app: Express, pool: Pool) {
         ORDER BY j.inicia_em DESC, vp.pontos DESC NULLS LAST, c.name ASC
       `, [id]);
       const rows = r.rows;
-      // Resolve o nome real de cada apostador via Firebase Auth. Os palpites são salvos pelo
-      // Firebase uid, que NÃO bate com collaborators.linked_user_id — por isso o join acima
-      // devolve "Participante". Aqui buscamos displayName/foto no Firebase (em lote, até 100/chamada).
-      try {
-        const uids = [...new Set(rows.map((x: any) => x.user_id).filter(Boolean))];
-        if (uids.length) {
-          const nameMap: Record<string, { name?: string; pic?: string }> = {};
-          for (let i = 0; i < uids.length; i += 100) {
-            const chunk = uids.slice(i, i + 100).map((uid: string) => ({ uid }));
-            const resu = await admin.auth().getUsers(chunk);
-            for (const u of resu.users) {
-              nameMap[u.uid] = { name: u.displayName || (u.email ? u.email.split('@')[0] : undefined), pic: u.photoURL || undefined };
-            }
-          }
-          for (const row of rows) {
-            const m = nameMap[row.user_id];
-            if (m?.name) row.user_name = m.name;
-            if (m?.pic && !row.user_picture) row.user_picture = m.pic;
-          }
-        }
-      } catch (e: any) {
-        console.warn('[bolao/palpites] não foi possível resolver nomes via Firebase:', e.message);
+      // Resolve nome, foto e AVATAR BOLÃO de cada apostador (palpites são por Firebase uid).
+      const resolved = await resolveBettors([...new Set(rows.map((x: any) => x.user_id).filter(Boolean))]);
+      for (const row of rows) {
+        const m = resolved[row.user_id];
+        if (m?.name) row.user_name = m.name;
+        if (m?.bolaoAvatar) row.bolao_avatar_url = m.bolaoAvatar;
+        if (m?.pic && !row.user_picture) row.user_picture = m.pic;
       }
       res.json(rows);
     } catch (e: any) { res.status(500).json({ error: e.message }); }
@@ -404,35 +422,47 @@ export async function setupBolaoRoutes(app: Express, pool: Pool) {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
-  // GET /api/bolao/:id/ranking
+  // GET /api/bolao/:id/ranking — agregado por APOSTADOR (Firebase uid), nomes resolvidos no Firebase.
+  // (Antes somava por collaborators.linked_user_id, que não bate com o uid dos palpites → dava 0 pra todos.)
   app.get('/api/bolao/:id/ranking', async (req: any, res: any) => {
     try {
       const { id } = req.params;
       const r = await pool.query(`
         SELECT
-          $1::int AS bolao_id,
-          c.linked_user_id AS user_id,
-          c.name AS user_name,
-          u.picture AS user_picture,
-          c.bolao_avatar_url,
+          p.user_id,
           COALESCE(SUM(vp.pontos), 0)::int AS total_pontos,
           COUNT(vp.palpite_id) FILTER (WHERE vp.placar_exato)::int AS qtd_exatos,
           COUNT(vp.palpite_id) FILTER (WHERE vp.resultado_certo)::int AS qtd_resultados,
-          (
-            SELECT COUNT(*)::int FROM bolao.palpites p
-            JOIN bolao.jogos j ON j.id = p.jogo_id
-            WHERE p.user_id = c.linked_user_id AND j.bolao_id = $1
-          ) AS qtd_palpites
-        FROM collaborators c
-        LEFT JOIN users u ON u.id = c.linked_user_id
-        LEFT JOIN bolao.v_pontos vp ON vp.user_id = c.linked_user_id AND vp.bolao_id = $1
-        WHERE c.linked_user_id IS NOT NULL
-          AND c.status = 'Efetivado'
-        GROUP BY c.linked_user_id, c.name, u.picture, c.bolao_avatar_url
-        ORDER BY total_pontos DESC, qtd_exatos DESC, qtd_resultados DESC, c.name ASC
+          COUNT(DISTINCT p.jogo_id)::int AS qtd_palpites
+        FROM bolao.palpites p
+        JOIN bolao.jogos j ON j.id = p.jogo_id AND j.bolao_id = $1
+        LEFT JOIN bolao.v_pontos vp ON vp.palpite_id = p.id
+        GROUP BY p.user_id
+        ORDER BY total_pontos DESC, qtd_exatos DESC, qtd_resultados DESC
       `, [id]);
 
-      res.json(r.rows);
+      const rows = r.rows.map((x: any) => ({
+        bolao_id: Number(id),
+        user_id: x.user_id,
+        user_name: 'Participante',
+        user_picture: null as string | null,
+        bolao_avatar_url: null as string | null,
+        total_pontos: x.total_pontos,
+        qtd_exatos: x.qtd_exatos,
+        qtd_resultados: x.qtd_resultados,
+        qtd_palpites: x.qtd_palpites,
+      }));
+
+      // Resolve nome, foto e AVATAR BOLÃO de cada apostador.
+      const resolved = await resolveBettors([...new Set(rows.map(x => x.user_id).filter(Boolean))]);
+      for (const row of rows) {
+        const m = resolved[row.user_id];
+        if (m?.name) row.user_name = m.name;
+        if (m?.bolaoAvatar) row.bolao_avatar_url = m.bolaoAvatar;
+        if (m?.pic) row.user_picture = m.pic;
+      }
+
+      res.json(rows);
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
