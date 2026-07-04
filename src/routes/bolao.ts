@@ -261,6 +261,7 @@ export async function setupBolaoRoutes(app: Express, pool: Pool) {
         SELECT
           j.id AS jogo_id, j.fase, j.time_casa, j.time_fora, j.inicia_em,
           j.gols_casa, j.gols_fora, j.status,
+          p.user_id,
           COALESCE(c.name, 'Participante') AS user_name,
           u.picture AS user_picture, c.bolao_avatar_url,
           p.palpite_casa, p.palpite_fora,
@@ -273,7 +274,31 @@ export async function setupBolaoRoutes(app: Express, pool: Pool) {
         WHERE j.bolao_id = $1 AND j.inicia_em <= now()
         ORDER BY j.inicia_em DESC, vp.pontos DESC NULLS LAST, c.name ASC
       `, [id]);
-      res.json(r.rows);
+      const rows = r.rows;
+      // Resolve o nome real de cada apostador via Firebase Auth. Os palpites são salvos pelo
+      // Firebase uid, que NÃO bate com collaborators.linked_user_id — por isso o join acima
+      // devolve "Participante". Aqui buscamos displayName/foto no Firebase (em lote, até 100/chamada).
+      try {
+        const uids = [...new Set(rows.map((x: any) => x.user_id).filter(Boolean))];
+        if (uids.length) {
+          const nameMap: Record<string, { name?: string; pic?: string }> = {};
+          for (let i = 0; i < uids.length; i += 100) {
+            const chunk = uids.slice(i, i + 100).map((uid: string) => ({ uid }));
+            const resu = await admin.auth().getUsers(chunk);
+            for (const u of resu.users) {
+              nameMap[u.uid] = { name: u.displayName || (u.email ? u.email.split('@')[0] : undefined), pic: u.photoURL || undefined };
+            }
+          }
+          for (const row of rows) {
+            const m = nameMap[row.user_id];
+            if (m?.name) row.user_name = m.name;
+            if (m?.pic && !row.user_picture) row.user_picture = m.pic;
+          }
+        }
+      } catch (e: any) {
+        console.warn('[bolao/palpites] não foi possível resolver nomes via Firebase:', e.message);
+      }
+      res.json(rows);
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 

@@ -4,6 +4,7 @@ import {
   Target, Users, TrendingUp, FileText, BarChart3,
   Wallet, ArrowRight, Check, Menu, X, LogIn,
 } from 'lucide-react';
+import Typewriter from '../components/Typewriter';
 
 // Paleta da landing (auto-contida, independente do tema do app)
 const V = '#7C3AED';       // violeta primário
@@ -113,7 +114,7 @@ export default function LandingPage({ onEnter }: { onEnter: () => void }) {
       </header>
 
       {/* ── HERO ────────────────────────────────────────────── */}
-      <section id="top" className="relative pt-36 pb-28 px-5">
+      <section id="top" className="relative min-h-screen flex flex-col justify-center pt-28 pb-16 px-5">
         {/* glow */}
         <div className="pointer-events-none absolute inset-0 overflow-hidden">
           <div className="absolute -top-40 left-1/2 -translate-x-1/2 w-[900px] h-[600px] rounded-full opacity-30"
@@ -148,8 +149,11 @@ export default function LandingPage({ onEnter }: { onEnter: () => void }) {
               initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.12 }}
               className="mt-6 text-base sm:text-lg text-white/60 max-w-lg mx-auto lg:mx-0 leading-relaxed"
             >
-              Campanhas, leads, relatórios e reuniões do seu escritório — num só lugar.
-              Veja em tempo real o que a Grape está construindo pelo seu resultado.
+              Acompanhe, em tempo real e num só lugar,{' '}
+              <Typewriter
+                words={['suas campanhas.', 'seus leads.', 'seus relatórios.', 'suas reuniões.', 'seus resultados.']}
+                color={V_LIGHT}
+              />
             </motion.p>
 
             <motion.div
