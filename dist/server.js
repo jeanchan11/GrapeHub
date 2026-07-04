@@ -2410,12 +2410,8 @@ async function setupBolaoRoutes(app, pool) {
       p.user_id,
       j.bolao_id,
       CASE
-        WHEN p.palpite_casa = j.gols_casa AND p.palpite_fora = j.gols_fora THEN 10
-        WHEN
-          SIGN((p.palpite_casa - p.palpite_fora)::float) = SIGN((j.gols_casa - j.gols_fora)::float)
-          AND (p.palpite_casa - p.palpite_fora) = (j.gols_casa - j.gols_fora)
-        THEN 7
-        WHEN SIGN((p.palpite_casa - p.palpite_fora)::float) = SIGN((j.gols_casa - j.gols_fora)::float) THEN 5
+        WHEN p.palpite_casa = j.gols_casa AND p.palpite_fora = j.gols_fora THEN 3   -- placar exato
+        WHEN SIGN((p.palpite_casa - p.palpite_fora)::float) = SIGN((j.gols_casa - j.gols_fora)::float) THEN 1  -- resultado certo (vit\xF3ria/empate/derrota)
         ELSE 0
       END AS pontos,
       (p.palpite_casa = j.gols_casa AND p.palpite_fora = j.gols_fora) AS placar_exato,
@@ -2556,6 +2552,43 @@ async function setupBolaoRoutes(app, pool) {
       return false;
     }
   }
+  async function resolveBettors(uids) {
+    const map = {};
+    if (!uids.length) return map;
+    const uidToEmail = {};
+    try {
+      for (let i = 0; i < uids.length; i += 100) {
+        const chunk = uids.slice(i, i + 100).map((uid) => ({ uid }));
+        const resu = await admin.auth().getUsers(chunk);
+        for (const u of resu.users) {
+          map[u.uid] = { name: u.displayName || (u.email ? u.email.split("@")[0] : void 0), pic: u.photoURL || void 0 };
+          if (u.email) uidToEmail[u.uid] = u.email.toLowerCase();
+        }
+      }
+    } catch (e) {
+      console.warn("[bolao] resolveBettors (firebase):", e.message);
+    }
+    try {
+      const emails = [...new Set(Object.values(uidToEmail))];
+      if (emails.length) {
+        const r = await pool.query(`
+          SELECT lower(u.email) AS email, c.bolao_avatar_url
+          FROM collaborators c
+          JOIN users u ON u.id::text = c.linked_user_id
+          WHERE lower(u.email) = ANY($1) AND c.bolao_avatar_url IS NOT NULL
+        `, [emails]);
+        const emailToAvatar = {};
+        for (const row of r.rows) emailToAvatar[row.email] = row.bolao_avatar_url;
+        for (const uid of Object.keys(uidToEmail)) {
+          const av = emailToAvatar[uidToEmail[uid]];
+          if (av && map[uid]) map[uid].bolaoAvatar = av;
+        }
+      }
+    } catch (e) {
+      console.warn("[bolao] resolveBettors (avatar):", e.message);
+    }
+    return map;
+  }
   app.get("/api/bolao", async (req, res) => {
     try {
       const r = await pool.query(`SELECT * FROM bolao.boloes ORDER BY created_at DESC`);
@@ -2607,6 +2640,7 @@ async function setupBolaoRoutes(app, pool) {
         SELECT
           j.id AS jogo_id, j.fase, j.time_casa, j.time_fora, j.inicia_em,
           j.gols_casa, j.gols_fora, j.status,
+          p.user_id,
           COALESCE(c.name, 'Participante') AS user_name,
           u.picture AS user_picture, c.bolao_avatar_url,
           p.palpite_casa, p.palpite_fora,
@@ -2619,7 +2653,15 @@ async function setupBolaoRoutes(app, pool) {
         WHERE j.bolao_id = $1 AND j.inicia_em <= now()
         ORDER BY j.inicia_em DESC, vp.pontos DESC NULLS LAST, c.name ASC
       `, [id]);
-      res.json(r.rows);
+      const rows = r.rows;
+      const resolved = await resolveBettors([...new Set(rows.map((x) => x.user_id).filter(Boolean))]);
+      for (const row of rows) {
+        const m = resolved[row.user_id];
+        if (m?.name) row.user_name = m.name;
+        if (m?.bolaoAvatar) row.bolao_avatar_url = m.bolaoAvatar;
+        if (m?.pic && !row.user_picture) row.user_picture = m.pic;
+      }
+      res.json(rows);
     } catch (e) {
       res.status(500).json({ error: e.message });
     }
@@ -2724,28 +2766,36 @@ async function setupBolaoRoutes(app, pool) {
       const { id } = req.params;
       const r = await pool.query(`
         SELECT
-          $1::int AS bolao_id,
-          c.linked_user_id AS user_id,
-          c.name AS user_name,
-          u.picture AS user_picture,
-          c.bolao_avatar_url,
+          p.user_id,
           COALESCE(SUM(vp.pontos), 0)::int AS total_pontos,
           COUNT(vp.palpite_id) FILTER (WHERE vp.placar_exato)::int AS qtd_exatos,
           COUNT(vp.palpite_id) FILTER (WHERE vp.resultado_certo)::int AS qtd_resultados,
-          (
-            SELECT COUNT(*)::int FROM bolao.palpites p
-            JOIN bolao.jogos j ON j.id = p.jogo_id
-            WHERE p.user_id = c.linked_user_id AND j.bolao_id = $1
-          ) AS qtd_palpites
-        FROM collaborators c
-        LEFT JOIN users u ON u.id = c.linked_user_id
-        LEFT JOIN bolao.v_pontos vp ON vp.user_id = c.linked_user_id AND vp.bolao_id = $1
-        WHERE c.linked_user_id IS NOT NULL
-          AND c.status = 'Efetivado'
-        GROUP BY c.linked_user_id, c.name, u.picture, c.bolao_avatar_url
-        ORDER BY total_pontos DESC, qtd_exatos DESC, qtd_resultados DESC, c.name ASC
+          COUNT(DISTINCT p.jogo_id)::int AS qtd_palpites
+        FROM bolao.palpites p
+        JOIN bolao.jogos j ON j.id = p.jogo_id AND j.bolao_id = $1
+        LEFT JOIN bolao.v_pontos vp ON vp.palpite_id = p.id
+        GROUP BY p.user_id
+        ORDER BY total_pontos DESC, qtd_exatos DESC, qtd_resultados DESC
       `, [id]);
-      res.json(r.rows);
+      const rows = r.rows.map((x) => ({
+        bolao_id: Number(id),
+        user_id: x.user_id,
+        user_name: "Participante",
+        user_picture: null,
+        bolao_avatar_url: null,
+        total_pontos: x.total_pontos,
+        qtd_exatos: x.qtd_exatos,
+        qtd_resultados: x.qtd_resultados,
+        qtd_palpites: x.qtd_palpites
+      }));
+      const resolved = await resolveBettors([...new Set(rows.map((x) => x.user_id).filter(Boolean))]);
+      for (const row of rows) {
+        const m = resolved[row.user_id];
+        if (m?.name) row.user_name = m.name;
+        if (m?.bolaoAvatar) row.bolao_avatar_url = m.bolaoAvatar;
+        if (m?.pic) row.user_picture = m.pic;
+      }
+      res.json(rows);
     } catch (e) {
       res.status(500).json({ error: e.message });
     }
