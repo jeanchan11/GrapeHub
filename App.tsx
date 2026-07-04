@@ -62,6 +62,7 @@ import DiscTestPage from './src/pages/DiscTestPage';
 import SenhasPage from './src/pages/SenhasPage';
 import PlanosDeCarreira from './src/pages/PlanosDeCarreira';
 import Login from './src/components/LoginView';
+import LandingPage from './src/pages/LandingPage';
 import AdminPanel from './src/components/AdminPanel';
 import LoadingSpinner from './src/components/LoadingSpinner';
 import { auth, db, handleFirestoreError, OperationType, isFirebaseConfigValid } from './src/firebase';
@@ -85,6 +86,8 @@ const AppContent: React.FC = () => {
   const { user, userData, loading, refreshUserData } = useAuth();
   const { menu, refreshMenu } = useMenu();
   console.log('AppContent userData:', userData);
+  // Deslogado: landing por padrão; botão "Entrar" leva pra tela de login antiga.
+  const [showLoginPage, setShowLoginPage] = useState(false);
   const [activePage, setActivePage] = useState(() => {
     // Read from URL hash first (e.g. /#/chamados-grapehub)
     const hash = window.location.hash.replace(/^#\/?/, '');
@@ -499,7 +502,9 @@ const AppContent: React.FC = () => {
   }
 
   if (!user) {
-    return <Login />;
+    return showLoginPage
+      ? <Login onBack={() => setShowLoginPage(false)} />
+      : <LandingPage onEnter={() => setShowLoginPage(true)} />;
   }
 
   return (

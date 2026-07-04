@@ -4,7 +4,7 @@
 import React, { useState, useEffect } from 'react';
 import { auth, googleProvider } from '../firebase';
 import { signInWithPopup } from 'firebase/auth';
-import { LogIn, AlertTriangle, Play, ChevronRight, BarChart3, Target, Zap, Sun, Moon } from 'lucide-react';
+import { LogIn, AlertTriangle, Play, ChevronRight, BarChart3, Target, Zap, Sun, Moon, ArrowLeft } from 'lucide-react';
 import { motion } from 'motion/react';
 
 const ROLE_ORDER: Record<string, number> = {
@@ -18,7 +18,7 @@ const ROLE_ORDER: Record<string, number> = {
   'user': 7,
 };
 
-const Login: React.FC = () => {
+const Login: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
   const [error, setError] = useState<string | null>(null);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [teamMembers, setTeamMembers] = useState<{ id: string; name: string; picture?: string; role: string }[]>([]);
@@ -89,7 +89,15 @@ const Login: React.FC = () => {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 md:p-10 bg-light-bg dark:bg-dark-bg transition-colors duration-300">
-      <button 
+      {onBack && (
+        <button
+          onClick={onBack}
+          className="absolute top-6 left-6 flex items-center gap-1.5 pl-3 pr-4 py-2.5 rounded-full bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-white/20 transition-colors text-sm font-semibold"
+        >
+          <ArrowLeft size={16} /> Voltar
+        </button>
+      )}
+      <button
         onClick={toggleTheme}
         className="absolute top-6 right-6 p-3 rounded-full bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-white/20 transition-colors"
       >
