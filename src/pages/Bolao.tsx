@@ -279,9 +279,12 @@ const BracketView = ({
   const [betJogo, setBetJogo] = useState<Jogo | null>(null);
 
   const pad = <T,>(arr: T[], n: number): (T | null)[] => [...arr, ...Array(n).fill(null)].slice(0, n);
-  const oitavas  = pad(jogos.filter(j => j.fase === 'Oitavas'),  8) as (Jogo | null)[];
-  const quartas  = pad(jogos.filter(j => j.fase === 'Quartas'),  4) as (Jogo | null)[];
-  const semi     = pad(jogos.filter(j => j.fase === 'Semifinal'), 2) as (Jogo | null)[];
+  // Ordena por `id` (ordem estável das chaves), NÃO por data — as datas reais dos jogos não
+  // seguem a ordem do bracket, então ordenar por data trocava os cruzamentos das Quartas/Semi.
+  const byId = (a: Jogo, b: Jogo) => Number(a.id) - Number(b.id);
+  const oitavas  = pad(jogos.filter(j => j.fase === 'Oitavas').sort(byId),  8) as (Jogo | null)[];
+  const quartas  = pad(jogos.filter(j => j.fase === 'Quartas').sort(byId),  4) as (Jogo | null)[];
+  const semi     = pad(jogos.filter(j => j.fase === 'Semifinal').sort(byId), 2) as (Jogo | null)[];
   const finalJogo    = jogos.find(j => j.fase === 'Final') ?? null;
   const terceiroJogo = jogos.find(j => j.fase === 'Terceiro Lugar') ?? null;
 
