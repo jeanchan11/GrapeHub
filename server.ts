@@ -6629,7 +6629,7 @@ app.get("/api/todos", async (req, res) => {
       const result = await pool.query(`
         SELECT
           r.customer_id,
-          COALESCE(p.name, r.customer_name) AS customer_name,
+          COALESCE(p.name, MAX(r.customer_name)) AS customer_name,
           p.phone,
           p.cnpjcpf,
           p.email,
@@ -6660,7 +6660,7 @@ app.get("/api/todos", async (req, res) => {
         LEFT JOIN clients c ON c.id = p.grapehub_client_id
         LEFT JOIN fin_inadimplente_notes n ON n.customer_id = r.customer_id
         WHERE r.status = 'OVERDUE'
-        GROUP BY r.customer_id, p.name, r.customer_name, p.phone, p.cnpjcpf, p.email, c.id, c.name, c.squad, n.note
+        GROUP BY r.customer_id, p.name, p.phone, p.cnpjcpf, p.email, c.id, c.name, c.squad, n.note
         ORDER BY max_days_overdue DESC, total_value DESC
       `);
       res.json(result.rows);
@@ -7254,15 +7254,43 @@ app.get("/api/todos", async (req, res) => {
   });
 
   // Backward compat: PATCH /api/financeiro/extrato/:id/category
+  // Sincroniza a categoria do Extrato com o DRE gravando também o custom_category_id
+  // (campo que o DRE usa para agrupar no plano de contas).
+  // TRAVA DE DATA: essa sincronização só vale de julho/2026 em diante. Movimentos de
+  // junho/2026 e anteriores mantêm o comportamento antigo (só texto), para NÃO alterar
+  // o histórico já fechado.
+  const EXTRATO_DRE_SYNC_CUTOFF = '2026-07-01';
   app.patch("/api/financeiro/extrato/:id/category", async (req, res) => {
     try {
       const { id } = req.params;
-      const { category } = req.body as { category: string | null };
-      const result = await pool.query(
-        'UPDATE fin_movements_asaas SET custom_category = $1, grapehub_category = $1, edited_at = NOW() WHERE id = $2 RETURNING id, custom_category',
-        [category || null, id]
+      const { category, category_id } = req.body as { category: string | null; category_id?: number | null };
+
+      const chk = await pool.query(
+        `SELECT (transaction_date >= $2) AS is_forward FROM fin_movements_asaas WHERE id = $1`,
+        [id, EXTRATO_DRE_SYNC_CUTOFF]
       );
-      if (result.rowCount === 0) return res.status(404).json({ error: 'Movement not found' });
+      if (chk.rowCount === 0) return res.status(404).json({ error: 'Movement not found' });
+      const isForward = chk.rows[0].is_forward === true;
+
+      let result;
+      if (isForward) {
+        // Julho/2026+: grava o custom_category_id (o DRE passa a refletir a mudança) e marca
+        // como edição manual ('manual') para o motor automático não sobrescrever.
+        const catId = Number.isInteger(category_id) ? category_id : null;
+        result = await pool.query(
+          `UPDATE fin_movements_asaas
+              SET custom_category = $1, grapehub_category = $1, custom_category_id = $2,
+                  edited_by = 'manual', edited_at = NOW()
+            WHERE id = $3 RETURNING id, custom_category, custom_category_id`,
+          [category || null, catId, id]
+        );
+      } else {
+        // Junho/2026 e anteriores: comportamento antigo — só texto, não toca no custom_category_id.
+        result = await pool.query(
+          'UPDATE fin_movements_asaas SET custom_category = $1, grapehub_category = $1, edited_at = NOW() WHERE id = $2 RETURNING id, custom_category',
+          [category || null, id]
+        );
+      }
       res.json(result.rows[0]);
     } catch (err) {
       console.error("Error updating category:", err);

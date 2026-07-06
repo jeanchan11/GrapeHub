@@ -214,7 +214,7 @@ function CategoryPicker({ item, onSave }: { item: ExtratoItem; onSave: (id: numb
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ category: name }),
+        body: JSON.stringify({ category: name, category_id: categoryId ?? null }),
       });
       if (!res.ok) {
         const err = await res.text();
@@ -643,6 +643,15 @@ const formatCurrency = (value: string | number) => {
 const fmtDate = (d: string | null) => {
   if (!d) return '—';
   return new Date(d).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+};
+
+// Datas de calendário (transação/vencimento) vêm como meia-noite UTC.
+// Formatar direto pela parte YYYY-MM-DD evita a conversão de fuso que voltava um dia
+// (ex: 2026-07-01T00:00:00Z virava 30/06 em horário de Brasília).
+const fmtCalDate = (d: string | null) => {
+  if (!d) return '—';
+  const m = String(d).slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : fmtDate(d);
 };
 
 const getItemDate = (item: ExtratoItem) => item.movement_date || item.expiration_date;
@@ -1576,7 +1585,7 @@ export default function Extrato() {
                         </span>
                       </div>
                       <div className="text-right px-4">
-                        <span className="text-xs text-slate-400">{fmtDate(getItemDate(item))}</span>
+                        <span className="text-xs text-slate-400">{fmtCalDate(getItemDate(item))}</span>
                       </div>
                       <div className="text-right pl-4">
                         <span className={`text-[13px] font-bold ${item.is_anticipation_pair ? 'text-slate-500 line-through' : isEntrada ? 'text-emerald-400' : 'text-rose-400'}`}>
@@ -1673,7 +1682,7 @@ export default function Extrato() {
                 </div>
                 <div className="bg-dark-bg rounded-xl p-3 border border-dark-text/5">
                   <label className="text-[10px] font-bold text-dark-text/50 uppercase tracking-widest">Data</label>
-                  <p className="text-sm font-bold text-dark-text mt-1">{fmtDate(selectedTransaction.movement_date || selectedTransaction.expiration_date || '')}</p>
+                  <p className="text-sm font-bold text-dark-text mt-1">{fmtCalDate(selectedTransaction.movement_date || selectedTransaction.expiration_date || '')}</p>
                 </div>
                 {/* Category — editable */}
                 <div className="bg-dark-bg rounded-xl p-3 border border-dark-text/5 relative">
