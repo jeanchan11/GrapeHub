@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronDown, Check } from 'lucide-react';
 
 export interface OptionPickerOption {
@@ -34,6 +35,32 @@ const OptionPicker: React.FC<OptionPickerProps> = ({
 }) => {
   const [open, setOpen] = useState(false);
   const ref = React.useRef<HTMLDivElement>(null);
+  const menuRef = React.useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number; minWidth: number } | null>(null);
+
+  // Posiciona o menu via portal (fixed) para não ser cortado por modais/overflow
+  useEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const el = ref.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const MENU_H = 248; // ~max-h-60 + padding
+      const MENU_W = Math.max(r.width, 180);
+      const below = window.innerHeight - r.bottom;
+      const openUp = below < MENU_H && r.top > below;
+      const top = openUp ? Math.max(8, r.top - 4 - MENU_H) : r.bottom + 4;
+      const left = Math.min(r.left, window.innerWidth - MENU_W - 8);
+      setPos({ top, left: Math.max(8, left), minWidth: MENU_W });
+    };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [open]);
 
   const selected = options.find(o => o.label === value);
   const cs = selected ? {
@@ -45,7 +72,8 @@ const OptionPicker: React.FC<OptionPickerProps> = ({
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (ref.current && !ref.current.contains(t) && menuRef.current && !menuRef.current.contains(t)) setOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -64,7 +92,8 @@ const OptionPicker: React.FC<OptionPickerProps> = ({
         style={cs ? {
           background: cs.bg,
           color: cs.text,
-          borderColor: cs.border,
+          // opção sem cor definida → sem borda (evita a borda branca padrão)
+          borderColor: cs.border || 'transparent',
         } : {
           background: 'transparent',
           borderColor: compact ? 'transparent' : 'rgba(255,255,255,0.1)',
@@ -75,8 +104,12 @@ const OptionPicker: React.FC<OptionPickerProps> = ({
         <ChevronDown size={12} className="opacity-50" />
       </button>
 
-      {open && (
-        <div className="absolute top-full left-0 mt-1 z-50 bg-dark-card border border-white/10 rounded-xl shadow-2xl py-1.5 min-w-[160px] max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-1 duration-150">
+      {open && pos && createPortal(
+        <div
+          ref={menuRef}
+          className="fixed z-[1300] bg-dark-card border border-white/10 rounded-xl shadow-2xl py-1.5 max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-1 duration-150"
+          style={{ top: pos.top, left: pos.left, minWidth: pos.minWidth }}
+        >
           {emptyLabel !== undefined && (
             <button
               type="button"
@@ -101,7 +134,8 @@ const OptionPicker: React.FC<OptionPickerProps> = ({
               {value === opt.label && <Check size={14} className="text-violet-400 shrink-0" />}
             </button>
           ))}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

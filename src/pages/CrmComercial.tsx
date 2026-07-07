@@ -74,7 +74,17 @@ interface User {
   picture?: string;
   role?: string;
   allowedPages?: string[];
+  group_name?: string | null;
 }
+
+// Responsáveis do CRM = apenas colaboradores do grupo Comercial
+const isComercialUser = (u: any) => (u?.group_name || '').toLowerCase() === 'comercial';
+// Filtra a lista para só Comercial. Fallback: se NINGUÉM tem grupo definido (endpoint antigo
+// sem group_name), retorna a lista original — evita dropdown vazio.
+const comercialOnly = (list: any[]) => {
+  const com = list.filter(isComercialUser);
+  return list.some((u: any) => u && u.group_name) ? com : list;
+};
 
 const COLUMN_HEADER_COLORS: Record<string, string> = {
   orange: 'border-orange-500',
@@ -3080,7 +3090,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                       </span>
                       <OptionPicker
                         value={(() => { const u = users.find(u => u.id === lead.responsavel_id); return u ? u.name : null; })()}
-                        options={users.map(u => ({ label: u.name }))}
+                        options={comercialOnly(users).map(u => ({ label: u.name }))}
                         placeholder="— Sem responsável"
                         emptyLabel="— Sem responsável"
                         onChange={(val) => {
@@ -3108,27 +3118,18 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                       <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
                         <Target size={13} /> Prob. fechamento
                       </span>
-                      <div className="flex items-center gap-1.5">
-                        <input
-                          type="number"
-                          min={0}
-                          max={100}
-                          value={(lead as any).prob_fechamento ?? ''}
-                          onChange={(e) => {
-                            const val = e.target.value === '' ? null : Math.min(100, Math.max(0, parseInt(e.target.value)));
-                            onUpdateLeadField(lead.id, 'prob_fechamento', val);
-                          }}
-                          placeholder="—"
-                          className={`text-right text-sm font-bold bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 w-14 ${
-                            (lead as any).prob_fechamento != null
-                              ? (lead as any).prob_fechamento <= 30 ? 'text-rose-500' : (lead as any).prob_fechamento <= 70 ? 'text-amber-500' : 'text-emerald-500'
-                              : 'text-gray-400'
-                          }`}
-                        />
-                        {(lead as any).prob_fechamento != null && <span className={`text-xs font-bold ${
-                          (lead as any).prob_fechamento <= 30 ? 'text-rose-500' : (lead as any).prob_fechamento <= 70 ? 'text-amber-500' : 'text-emerald-500'
-                        }`}>%</span>}
-                      </div>
+                      <OptionPicker
+                        value={(lead as any).prob_fechamento != null ? `${(lead as any).prob_fechamento}%` : null}
+                        options={[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map(p => ({
+                          label: `${p}%`,
+                          color: p <= 30 ? '#f43f5e' : p <= 70 ? '#f59e0b' : '#10b981',
+                        }))}
+                        placeholder="—"
+                        emptyLabel="—"
+                        onChange={(val) => {
+                          onUpdateLeadField(lead.id, 'prob_fechamento', val == null ? null : parseInt(val));
+                        }}
+                      />
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5">
@@ -5994,7 +5995,7 @@ const CrmComercial = () => {
               <label className={designSystem.input.label}>Responsável</label>
               <OptionPicker
                 value={(() => { const u = availableUsers.find(u => u.id === newLeadData.responsavel_id); return u ? u.name : null; })()}
-                options={availableUsers.map(u => ({ label: u.name }))}
+                options={comercialOnly(availableUsers).map(u => ({ label: u.name }))}
                 placeholder="Selecione..."
                 emptyLabel="Selecione..."
                 onChange={(val) => {
@@ -6925,7 +6926,7 @@ const CrmComercial = () => {
                                 <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 block mb-1.5">Responsável Automático (Opcional)</label>
                                 <OptionPicker
                                   value={(() => { const u = users.find((u: any) => u.id === crmWebhookSettings.inbound_responsavel_id); return u ? u.name : null; })()}
-                                  options={users.map((u: any) => ({ label: u.name }))}
+                                  options={comercialOnly(users).map((u: any) => ({ label: u.name }))}
                                   placeholder="Padrão (Dono do Webhook)"
                                   emptyLabel="Padrão (Dono do Webhook)"
                                   onChange={(val) => {

@@ -3688,7 +3688,14 @@ async function startServer() {
   // Users API
   app.get("/api/users", async (req, res) => {
     try {
-      const result = await pool.query("SELECT * FROM users ORDER BY email ASC");
+      const result = await pool.query(`
+        SELECT u.*, (
+          SELECT c.group_name FROM collaborators c
+          WHERE c.linked_user_id::text = u.id::text
+          ORDER BY (c.status = 'Efetivado') DESC NULLS LAST, c.id DESC
+          LIMIT 1
+        ) AS group_name
+        FROM users u ORDER BY u.email ASC`);
       res.json(result.rows.map(row => ({
         id: row.id,
         email: row.email,
@@ -3697,7 +3704,8 @@ async function startServer() {
         role: row.role,
         allowedPages: row.allowed_pages || [],
         phone: row.phone,
-        bio: row.bio
+        bio: row.bio,
+        group_name: row.group_name || null
       })));
     } catch (err) {
       console.error("Error fetching users:", err);
