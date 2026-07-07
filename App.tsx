@@ -16,6 +16,7 @@ import CrmFinanceiro from './src/pages/CrmFinanceiro';
 import CrmComercial from './src/pages/CrmComercial';
 import { GestorDashboard } from './src/pages/GestorDashboard';
 import FinanceiroDashboard from './src/pages/FinanceiroDashboard';
+import Dre from './src/pages/Dre';
 import Extrato from './src/pages/Extrato';
 import TaskTemplates from './src/pages/TaskTemplates';
 import Atividades from './src/pages/Atividades';
@@ -338,6 +339,8 @@ const AppContent: React.FC = () => {
         return <SettingsPage onPageChange={navigateTo} isSuperAdmin={userData?.role === 'superadmin'} />;
       case 'financeiro-dashboard':
         return <FinanceiroDashboard />;
+      case 'financeiro-dre':
+        return <Dre />;
       case 'fin-extrato':
         return <Extrato />;
       case 'kpis-squad':

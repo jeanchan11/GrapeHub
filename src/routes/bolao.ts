@@ -272,7 +272,7 @@ export async function setupBolaoRoutes(app: Express, pool: Pool) {
           p.id AS palpite_id,
           CASE WHEN (j.inicia_em <= now() OR $3 = true) THEN p.palpite_casa ELSE null END AS palpite_casa,
           CASE WHEN (j.inicia_em <= now() OR $3 = true) THEN p.palpite_fora ELSE null END AS palpite_fora,
-          (j.inicia_em <= now()) AS travado,
+          (j.inicia_em - interval '1 hour' <= now()) AS travado,
           vp.pontos,
           vp.placar_exato,
           vp.resultado_certo
@@ -335,11 +335,13 @@ export async function setupBolaoRoutes(app: Express, pool: Pool) {
         return res.status(400).json({ error: 'Palpite inválido. Gols devem ser inteiros >= 0.' });
       }
 
-      // Verificar se o jogo já travou (validação obrigatória no backend)
+      // Verificar se o jogo já travou (validação obrigatória no backend).
+      // Trava 1h antes do início: até lá pode apostar e editar livremente.
       const jogoR = await pool.query(`SELECT inicia_em FROM bolao.jogos WHERE id = $1`, [jogoId]);
       if (!jogoR.rows[0]) return res.status(404).json({ error: 'Jogo não encontrado.' });
-      if (new Date(jogoR.rows[0].inicia_em) <= new Date()) {
-        return res.status(403).json({ error: 'Jogo já iniciado. Palpite bloqueado.' });
+      const lockAt = new Date(new Date(jogoR.rows[0].inicia_em).getTime() - 60 * 60 * 1000);
+      if (new Date() >= lockAt) {
+        return res.status(403).json({ error: 'Apostas encerradas — o palpite trava 1h antes do jogo.' });
       }
 
       const r = await pool.query(`

@@ -87,7 +87,8 @@ const GameNode: React.FC<GameNodeProps> = ({ jogo, onClickBet, saved, isHighligh
     );
   }
 
-  const canBet = !isTravado && !isEncerrado && !hasBet;
+  // Pode apostar OU editar enquanto não travou (1h antes) e não encerrou.
+  const canBet = !isTravado && !isEncerrado;
 
   return (
     <div
@@ -152,7 +153,7 @@ const GameNode: React.FC<GameNodeProps> = ({ jogo, onClickBet, saved, isHighligh
           {isEncerrado && jogo.gols_casa !== null
             ? <span className="text-[8px] text-slate-500">Real: {jogo.gols_casa}×{jogo.gols_fora}</span>
             : canBet
-            ? <span className="text-[8px] text-violet-400/60 font-bold">Clique para apostar</span>
+            ? <span className="text-[8px] text-violet-400/60 font-bold">{hasBet ? 'Clique para editar' : 'Clique para apostar'}</span>
             : <span />
           }
           {isEncerrado && jogo.pontos !== null
@@ -161,8 +162,10 @@ const GameNode: React.FC<GameNodeProps> = ({ jogo, onClickBet, saved, isHighligh
               }`}>{acertouExato ? '🎯' : acertouResult ? '✅' : '❌'} +{jogo.pontos}pts</span>
             : saved
             ? <span className="text-[8px] text-emerald-400 font-bold flex items-center gap-0.5"><Check size={8} /> Salvo</span>
+            : hasBet && isTravado
+            ? <span className="text-[7px] text-emerald-500/50 font-bold">🔒 Trancado</span>
             : hasBet
-            ? <span className="text-[7px] text-emerald-500/50 font-bold">🔒 Definitivo</span>
+            ? <span className="text-[7px] text-emerald-400/60 font-bold">✏️ Editável</span>
             : null
           }
         </div>
@@ -179,9 +182,10 @@ const BetModal = ({
   onClose: () => void;
   onConfirm: (casa: number, fora: number) => Promise<void>;
 }) => {
-  const [casa, setCasa] = useState(0);
-  const [fora, setFora] = useState(0);
+  const [casa, setCasa] = useState(jogo.palpite_casa ?? 0);
+  const [fora, setFora] = useState(jogo.palpite_fora ?? 0);
   const [saving, setSaving] = useState(false);
+  const jaApostou = jogo.palpite_casa !== null && jogo.palpite_fora !== null;
 
   const handleConfirm = async () => {
     setSaving(true);
@@ -217,8 +221,8 @@ const BetModal = ({
       >
         {/* Header */}
         <div className="text-center mb-6">
-          <span className="text-[9px] font-bold uppercase tracking-widest text-violet-400">Fazer Palpite</span>
-          <p className="text-xs text-slate-500 mt-1">⚠️ Após apostar, não pode alterar!</p>
+          <span className="text-[9px] font-bold uppercase tracking-widest text-violet-400">{jaApostou ? 'Editar Palpite' : 'Fazer Palpite'}</span>
+          <p className="text-xs text-slate-500 mt-1">✏️ Dá pra editar até 1h antes do jogo.</p>
         </div>
 
         {/* Score selectors */}
@@ -247,7 +251,7 @@ const BetModal = ({
             disabled={saving}
             className="flex-1 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-violet-500/20 active:scale-95 disabled:opacity-50"
           >
-            {saving ? 'Salvando...' : '⚽ Apostar'}
+            {saving ? 'Salvando...' : (jaApostou ? '✏️ Salvar' : '⚽ Apostar')}
           </button>
         </div>
       </div>

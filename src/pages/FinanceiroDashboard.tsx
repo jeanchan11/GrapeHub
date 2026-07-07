@@ -10,8 +10,6 @@ import { AIChat } from '../components/AIChat/AIChat';
 import { useAuth } from '../contexts/AuthContext';
 import fredImg from '../assets/fred.png';
 import LoadingSpinner from '../components/LoadingSpinner';
-import DrePanel from './DrePanel';
-import BudgetPanel from './BudgetPanel';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend, Filler, LineController, BarController);
 
@@ -363,16 +361,21 @@ export default function FinanceiroDashboard() {
   const saldoPrevistoData: (number | null)[] = [];
   
   let saldoRealizadoAtual = saldoAnterior;
-  
+  // Previstas (a receber/a pagar pendentes) que caem em dias já "realizados" — vencidas ou de hoje,
+  // mas ainda não pagas/recebidas. Sem isso elas somem da projeção (não são realizadas nem futuras).
+  let previstasPendentes = 0;
+
   for (let i = 0; i < todosOsDias.length; i++) {
     const f = todosOsDias[i];
-    
+
     if (i <= ultimoIndiceRealizado) {
       const entradasDoDia = f.entradas_realizadas;
       const saidasDoDia = f.saidas_realizadas;
       saldoRealizadoAtual += (entradasDoDia - saidasDoDia);
       saldoRealizadoData.push(saldoRealizadoAtual);
-      
+      // acumula o que venceu (ou vence hoje) e ainda está pendente — vai bater no caixa em breve
+      previstasPendentes += (f.entradas_previstas - f.saidas_previstas);
+
       if (i === ultimoIndiceRealizado) {
         saldoPrevistoData.push(saldoRealizadoAtual);
       } else {
@@ -380,11 +383,13 @@ export default function FinanceiroDashboard() {
       }
     } else {
       saldoRealizadoData.push(null);
-      
+
       let saldoPrevistoAnterior = i > 0 && saldoPrevistoData[i - 1] !== null ? saldoPrevistoData[i - 1]! : saldoRealizadoAtual;
       const entradasDoDia = f.entradas_previstas;
       const saidasDoDia = f.saidas_previstas;
-      saldoPrevistoData.push(saldoPrevistoAnterior + (entradasDoDia - saidasDoDia));
+      // no 1º dia projetado, injeta as pendentes vencidas/de-hoje que ficaram de fora
+      const injecao = i === ultimoIndiceRealizado + 1 ? previstasPendentes : 0;
+      saldoPrevistoData.push(saldoPrevistoAnterior + injecao + (entradasDoDia - saidasDoDia));
     }
   }
 
@@ -545,24 +550,7 @@ export default function FinanceiroDashboard() {
           </div>{/* end outer flex gap-2 */}
         </PageHeader>
 
-        {/* Abas */}
-        <div className="flex items-center gap-1 border-b border-white/10">
-          {([['visao', 'Fluxo de Caixa'], ['dre', 'DRE / Fluxo de Caixa'], ['orcamento', 'Orçamento']] as const).map(([key, label]) => (
-            <button
-              key={key}
-              onClick={() => setActiveTab(key)}
-              className={`px-4 py-2.5 text-sm font-bold border-b-2 -mb-px transition-colors ${activeTab === key ? 'border-violet-500 text-violet-400' : 'border-transparent text-slate-500 hover:text-dark-text'}`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
-        {activeTab === 'dre' && <DrePanel />}
-
-        {activeTab === 'orcamento' && <BudgetPanel />}
-
-        {/* Visão Geral */}
+        {/* Visão Geral — Fluxo de Caixa (DRE e Orçamento migraram para a página "DRE") */}
         {activeTab === 'visao' && (
         <>
             {/* Linha 1 - KPIs */}

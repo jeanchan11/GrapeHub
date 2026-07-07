@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   X, UserPlus, CheckCircle2, AlertCircle, Link as LinkIcon, 
@@ -127,6 +128,30 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
   const [allSubscriptions, setAllSubscriptions] = useState<(FinSubscription & { customer_name?: string; customer_cnpjcpf?: string; grapehub_client_id?: string })[]>([]);
   const [subSearchQuery, setSubSearchQuery] = useState('');
   const [isSubDropdownOpen, setIsSubDropdownOpen] = useState(false);
+  const subTriggerRef = React.useRef<HTMLButtonElement>(null);
+  const [subMenuPos, setSubMenuPos] = useState<{ top: number; left: number; width: number } | null>(null);
+
+  // Posiciona o dropdown de assinatura via portal (fixed) para não ser cortado pelo modal
+  useEffect(() => {
+    if (!isSubDropdownOpen) return;
+    const place = () => {
+      const el = subTriggerRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const MENU_H = 340; // altura estimada (busca + lista)
+      const below = window.innerHeight - r.bottom;
+      const openUp = below < MENU_H && r.top > below; // sem espaço embaixo e mais espaço em cima
+      const top = openUp ? Math.max(8, r.top - 8 - MENU_H) : r.bottom + 8;
+      setSubMenuPos({ top, left: r.left, width: r.width });
+    };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [isSubDropdownOpen]);
   const [isFetchingSubs, setIsFetchingSubs] = useState(false);
 
   // Project state
@@ -828,7 +853,7 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block ml-1">Vincular a uma assinatura do Asaas</label>
                         <div className="flex gap-2">
                           <div className="relative flex-1">
-                            <button type="button" onClick={() => setIsSubDropdownOpen(!isSubDropdownOpen)}
+                            <button ref={subTriggerRef} type="button" onClick={() => setIsSubDropdownOpen(!isSubDropdownOpen)}
                               className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-5 py-4 text-left flex items-center justify-between transition-all hover:border-violet-500/50">
                               {formData.finSubscriptionId ? (() => {
                                 const sub = allSubscriptions.find(s => String(s.id) === formData.finSubscriptionId);
@@ -839,8 +864,13 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
                               })() : (<span className="text-slate-400">Selecionar assinatura...</span>)}
                               <ChevronDown size={18} className={`text-slate-400 transition-transform ${isSubDropdownOpen ? 'rotate-180' : ''}`} />
                             </button>
-                            {isSubDropdownOpen && (
-                              <div className="absolute z-[110] top-full left-0 right-0 mt-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden">
+                            {isSubDropdownOpen && subMenuPos && createPortal(
+                              <>
+                                <div className="fixed inset-0 z-[1200]" onClick={() => setIsSubDropdownOpen(false)} />
+                                <div
+                                  className="fixed z-[1201] bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden"
+                                  style={{ top: subMenuPos.top, left: subMenuPos.left, width: subMenuPos.width }}
+                                >
                                 <div className="p-3 border-b border-slate-100 dark:border-white/5">
                                   <div className="relative">
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
@@ -867,7 +897,9 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
                                         </span>
                                       </button>))}
                                 </div>
-                              </div>
+                                </div>
+                              </>,
+                              document.body
                             )}
                           </div>
                           {formData.finSubscriptionId && (

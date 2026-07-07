@@ -43,12 +43,15 @@ import { useSoftphone, formatCallTime } from '../hooks/useSoftphone';
 import { AIChat } from '../components/AIChat/AIChat';
 import fredImg from '../assets/fred.png';
 import MetasPopup from '../components/MetasPopup';
+import ContratoTab from '../components/ContratoTab';
+import PropostaTab from '../components/PropostaTab';
 import OptionPicker from '../components/ui/OptionPicker';
 
 interface Lead {
   id: string;
   nome: string;
   telefone: string | null;
+  email?: string | null;
   origem: string;
   instagram?: string | null;
   nicho?: string | null;
@@ -574,7 +577,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   onRefreshTasks, currentKanbanId, api4comSettings, callingLeadId, onCallLead, onUpdateLeadField,
   tags, onRefreshTags, currentUserEmail, currentUserName, currentUserAvatar, lossReasons, sequences, onApplySequence
 }) => {
-  const [activeTab, setActiveTab] = useState<'atividades' | 'histórico' | 'notas' | 'ligações' | 'arquivos' | 'checklist'>('atividades');
+  const [activeTab, setActiveTab] = useState<'atividades' | 'histórico' | 'notas' | 'ligações' | 'arquivos' | 'checklist' | 'contrato' | 'proposta'>('atividades');
   const [callLogs, setCallLogs] = useState<any[]>([]);
   const [callStatuses, setCallStatuses] = useState<Record<string, boolean>>({});
   const [callLogsLoading, setCallLogsLoading] = useState(false);
@@ -1065,7 +1068,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
 
   const responsavel = users.find(u => u.id === lead.responsavel_id);
   const currentColumn = columns.find(c => c.id === lead.coluna);
-  const tabs = ['Atividades', 'Histórico', 'Notas', 'Reuniões', 'Ligações', 'Checklist'];
+  const tabs = ['Atividades', 'Histórico', 'Notas', 'Reuniões', 'Ligações', 'Checklist', 'Contrato', 'Proposta'];
 
   return (
     <>
@@ -2788,6 +2791,14 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                   )}
                 </div>
               )}
+
+                {activeTab === 'contrato' && (
+                  <ContratoTab lead={lead} />
+                )}
+
+                {activeTab === 'proposta' && (
+                  <PropostaTab lead={lead} />
+                )}
                 </motion.div>
                 </AnimatePresence>
               </div>
@@ -3306,6 +3317,18 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                         type="text"
                         value={lead.telefone || ''}
                         onChange={(e) => onUpdateLeadField(lead.id, 'telefone', e.target.value)}
+                        placeholder="Adicionar..."
+                        className="text-right text-sm text-gray-700 dark:text-slate-300 bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 min-w-0 flex-1"
+                      />
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs text-gray-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
+                        <Mail size={13} /> E-mail
+                      </span>
+                      <input
+                        type="email"
+                        value={lead.email || ''}
+                        onChange={(e) => onUpdateLeadField(lead.id, 'email', e.target.value)}
                         placeholder="Adicionar..."
                         className="text-right text-sm text-gray-700 dark:text-slate-300 bg-transparent border-none outline-none focus:ring-1 focus:ring-violet-500/40 rounded px-1 -mr-1 min-w-0 flex-1"
                       />
@@ -4094,7 +4117,7 @@ const CrmComercial = () => {
   const [api4comSettings, setApi4comSettings] = useState<{ configured: boolean, sip_extension?: string } | null>(null);
   const [isTelefonySettingsOpen, setIsTelefonySettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<'webhook' | 'sequencias' | 'motivos-perda'>('webhook');
-  const [crmWebhookSettings, setCrmWebhookSettings] = useState<any>({ form_webhook_url: '', whatsapp_webhook_url: '', inbound_token: '', inbound_kanban_id: '', inbound_coluna: '', inbound_responsavel_id: '' });
+  const [crmWebhookSettings, setCrmWebhookSettings] = useState<any>({ form_webhook_url: '', whatsapp_webhook_url: '', inbound_token: '', inbound_kanban_id: '', inbound_coluna: '', inbound_responsavel_id: '', inbound_valor: 0 });
   const [savingWebhookSettings, setSavingWebhookSettings] = useState(false);
   const [showWebhookConfig, setShowWebhookConfig] = useState<'form' | 'whatsapp' | 'inbound' | null>(null);
   const [inboundColumns, setInboundColumns] = useState<any[]>([]);
@@ -5319,7 +5342,7 @@ const CrmComercial = () => {
                 <ChevronDown size={16} className="text-gray-500 dark:text-slate-400" />
               </>
             }
-            panelClassName="bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-xl p-2 min-w-[280px] shadow-xl z-50"
+            panelClassName="bg-[rgb(var(--dark-card))] border border-gray-200 dark:border-white/10 rounded-xl p-2 min-w-[280px] shadow-xl z-50"
           >
                 {kanbans.map(kanban => (
                   <button
@@ -6910,6 +6933,23 @@ const CrmComercial = () => {
                                     setCrmWebhookSettings({ ...crmWebhookSettings, inbound_responsavel_id: u ? u.id : '' });
                                   }}
                                 />
+                              </div>
+
+                              <div className="col-span-2">
+                                <label className="text-xs font-semibold text-gray-700 dark:text-gray-300 block mb-1.5">Valor Padrão do Card (Opcional)</label>
+                                <div className="relative">
+                                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-gray-400">R$</span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={crmWebhookSettings.inbound_valor ?? 0}
+                                    onChange={(e) => setCrmWebhookSettings({ ...crmWebhookSettings, inbound_valor: e.target.value })}
+                                    placeholder="0,00"
+                                    className="w-full pl-9 pr-3 py-2 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-white/5 text-gray-800 dark:text-white border border-transparent focus:border-violet-500 outline-none dark:[color-scheme:dark]"
+                                  />
+                                </div>
+                                <p className="text-[10px] text-gray-400 mt-1">Todo lead recebido pelo webhook já entra com esse valor (se o JSON não mandar um <span className="font-mono">valor</span> próprio).</p>
                               </div>
                             </div>
 

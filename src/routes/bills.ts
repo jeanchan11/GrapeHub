@@ -78,8 +78,9 @@ export async function syncSicrediBillEntry(pool: Pool, billingMonth: string): Pr
 // Toca apenas movimentos sem categoria ou auto-categorizados (preserva o que foi classificado à mão).
 const DRE_RULES: { re: RegExp; s: string }[] = [
   { re: /cobranca recebida/, s: '01.01.01' },
-  { re: /taxa\s*pix/, s: '02.07.06' }, { re: /taxa\s*boleto/, s: '02.07.07' }, { re: /taxa.*cart/, s: '02.07.08' },
-  { re: /tarifa|taxa de antecip/, s: '02.07.03' }, { re: /\biof\b/, s: '02.07.99' },
+  { re: /taxa.*pix/, s: '02.07.04' }, { re: /taxa.*boleto/, s: '02.07.03' }, { re: /taxa.*cart/, s: '02.07.05' },
+  { re: /baixa da antecip/, s: '02.07.07' }, { re: /taxa de antecip/, s: '02.07.06' },
+  { re: /tarifa|taxa.*notificac|taxa.*mensageria|taxa.*whatsapp/, s: '02.07.08' }, { re: /\biof\b/, s: '02.07.99' },
   { re: /simples nacional/, s: '02.01.01' }, { re: /\bdarf\b|\birpj\b|\bcsll\b/, s: '02.01.05' }, { re: /\biss\b/, s: '02.01.06' },
   { re: /\binss\b/, s: '02.03.99' }, { re: /\bfgts\b/, s: '02.03.07' },
   { re: /seguro/, s: '02.06.14' }, { re: /aluguel|condominio|iptu/, s: '02.06.05' },

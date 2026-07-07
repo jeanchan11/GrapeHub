@@ -132,9 +132,14 @@ async function syncPayments(pool: any): Promise<{ upserted: number; deleted: num
     status: 'CANCELLED',
   });
 
+  // 5. TODAS as cobranças vencidas em aberto (qualquer vencimento) — garante que cobranças
+  //    reativadas/reabertas fora da janela de datas voltem a aparecer como inadimplentes
+  //    (senão uma cobrança marcada CANCELLED e depois restaurada no Asaas ficava presa).
+  const allOverdue = await asaasFetchAll('/payments', { status: 'OVERDUE' });
+
   // Junta tudo e deduplica por id
   const allPayments = new Map<string, any>();
-  for (const p of [...byDueDate, ...recentlyPaid, ...recentlyConfirmed, ...recentlyCancelled]) {
+  for (const p of [...byDueDate, ...recentlyPaid, ...recentlyConfirmed, ...recentlyCancelled, ...allOverdue]) {
     allPayments.set(p.id, p);
   }
 
@@ -349,6 +354,31 @@ async function syncSubscriptions(pool: any): Promise<{ upserted: number }> {
       upserted++;
     } catch { /* ignora erros individuais */ }
   }
+
+  // Garante que todo cliente com assinatura ativa exista em fin_people. Sem isso, o nome
+  // fica NULL no dropdown de vínculo (join por asaas_id) e a assinatura vira "sem nome",
+  // impossível de achar. O syncCustomers só ATUALIZA registros existentes — não cria novos.
+  try {
+    const custIds = [...new Set(subscriptions.map((s: any) => s.customer).filter(Boolean))];
+    if (custIds.length) {
+      const existing = await pool.query(`SELECT asaas_id FROM fin_people WHERE asaas_id = ANY($1)`, [custIds]);
+      const have = new Set(existing.rows.map((r: any) => r.asaas_id));
+      const missing = custIds.filter((id: string) => !have.has(id));
+      let created = 0;
+      for (const cid of missing) {
+        const c = await asaasFetchOne(`/customers/${cid}`);
+        if (!c || !c.name) continue;
+        await pool.query(
+          `INSERT INTO fin_people (guid, name, email, phone, cnpjcpf, asaas_id, is_client, synced_at)
+           VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, true, NOW())
+           ON CONFLICT DO NOTHING`,
+          [c.name, c.email || null, c.mobilePhone || c.phone || null, c.cpfCnpj || null, cid]
+        );
+        created++;
+      }
+      if (created) console.log(`[asaas-sync] fin_people: +${created} cliente(s) de assinatura criados`);
+    }
+  } catch (e: any) { console.warn('[asaas-sync] garantir fin_people:', e?.message); }
 
   return { upserted };
 }

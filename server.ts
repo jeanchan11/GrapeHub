@@ -44,13 +44,45 @@ const FIREBASE_STORAGE_BUCKET = (process.env.FIREBASE_STORAGE_BUCKET || process.
 const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || '';
 
 let firebaseAdminReady = false;
+
+// A Hostinger/Passenger às vezes injeta a FIREBASE_PRIVATE_KEY com escape quebrado
+// (\\n duplo), corrompendo o PEM e derrubando o Admin SDK ("no start line"), o que faz
+// o bolão não resolver nomes/avatares. Normaliza os escapes; e se ainda assim não for um
+// PEM válido, lê a chave direto do .env do app (cwd), que costuma estar correto.
+function loadFirebasePrivateKey(): string {
+  const norm = (k: string) => (k || '').trim()
+    .replace(/^["']|["']$/g, '')
+    .replace(/\\r\\n/g, '\n')
+    .replace(/\\\\n/g, '\n')
+    .replace(/\\n/g, '\n')
+    .replace(/\\r/g, '');
+  const isValid = (k: string) => { try { crypto.createPrivateKey(k); return true; } catch { return false; } };
+
+  const fromEnv = norm(process.env.FIREBASE_PRIVATE_KEY || '');
+  if (isValid(fromEnv)) return fromEnv;
+
+  // Fallback: lê do arquivo .env (o app roda com cwd = pasta do server)
+  for (const p of ['.env', './.env']) {
+    try {
+      if (!fs.existsSync(p)) continue;
+      const line = fs.readFileSync(p, 'utf8').split('\n').find((l) => l.startsWith('FIREBASE_PRIVATE_KEY='));
+      if (!line) continue;
+      let v = line.slice('FIREBASE_PRIVATE_KEY='.length);
+      if (v.startsWith('"') && v.endsWith('"')) v = v.slice(1, -1).replace(/\\n/g, '\n');
+      v = norm(v);
+      if (isValid(v)) { console.log('[BOOT] FIREBASE_PRIVATE_KEY carregada do .env (env var estava malformada).'); return v; }
+    } catch { /* ignora e segue */ }
+  }
+  return fromEnv; // melhor esforço; o initializeApp vai logar o erro se inválido
+}
+
 if (FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
   try {
     admin.initializeApp({
       credential: admin.credential.cert({
         projectId: FIREBASE_PROJECT_ID,
         clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+        privateKey: loadFirebasePrivateKey(),
       }),
       storageBucket: FIREBASE_STORAGE_BUCKET || `${FIREBASE_PROJECT_ID}.appspot.com`,
     });
@@ -766,6 +798,16 @@ async function startServer() {
         created_at TIMESTAMP DEFAULT NOW(),
         done_at TIMESTAMP
       );
+      ALTER TABLE to_do_staff ADD COLUMN IF NOT EXISTS folder_id TEXT;
+
+      CREATE TABLE IF NOT EXISTS to_do_staff_folders (
+        id TEXT PRIMARY KEY,
+        page_id TEXT NOT NULL DEFAULT 'default',
+        name TEXT NOT NULL,
+        color TEXT,
+        sort_order INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
 
       CREATE TABLE IF NOT EXISTS to_do_staff_recurring (
         id TEXT PRIMARY KEY,
@@ -1389,6 +1431,7 @@ async function startServer() {
     await pool.query(`ALTER TABLE crm_webhook_settings ADD COLUMN IF NOT EXISTS inbound_kanban_id TEXT`);
     await pool.query(`ALTER TABLE crm_webhook_settings ADD COLUMN IF NOT EXISTS inbound_coluna TEXT`);
     await pool.query(`ALTER TABLE crm_webhook_settings ADD COLUMN IF NOT EXISTS inbound_responsavel_id TEXT`);
+    await pool.query(`ALTER TABLE crm_webhook_settings ADD COLUMN IF NOT EXISTS inbound_valor NUMERIC DEFAULT 0`);
 
     // Migration: add squad column to users if missing
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS squad TEXT`);
@@ -1426,6 +1469,7 @@ async function startServer() {
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS utm_creative TEXT`);
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS utm_position TEXT`);
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS email TEXT`);
+    await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS lead_score_manual BOOLEAN DEFAULT false`);
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS investimento TEXT`);
     
     // Tabela de Pessoas (Contacts)
@@ -5603,10 +5647,27 @@ app.get("/api/todos", async (req, res) => {
       const year = (req.query.year as string) || String(new Date().getFullYear());
       const months = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`);
 
-      // Linhas canônicas (estrutura + descrição + ordem) — layout do histórico (Marvee)
+      // Linhas canônicas (estrutura + descrição + ordem) — layout do histórico (Marvee).
+      // Inclui também categorias do plano ao vivo (fin_categories) que ainda não existem no
+      // histórico, para que taxas categorizadas só a partir de julho/2026 tenham linha própria
+      // (o histórico manda na descrição/ordem quando a estrutura existe nos dois).
       const rowsRes = await pool.query(
-        `SELECT structure, MAX(description) AS description, MIN(sort_order) AS sort_order
-         FROM fin_dfc_historico GROUP BY structure ORDER BY MIN(sort_order)`
+        `WITH hist AS (
+           SELECT structure, MAX(description) AS description, MIN(sort_order) AS sort_order
+           FROM fin_dfc_historico GROUP BY structure
+         ), extra AS (
+           SELECT c.structure, c.description,
+             (SELECT MAX(h.sort_order) FROM fin_dfc_historico h
+                WHERE h.structure LIKE left(c.structure, length(c.structure) - 2) || '%')
+             + right(c.structure, 2)::numeric * 0.001 AS sort_order
+           FROM fin_categories c
+           WHERE c.structure ~ '^[0-9]' AND c.structure LIKE '%.%'
+             AND c.structure NOT IN (SELECT structure FROM hist)
+         )
+         SELECT structure, description, sort_order FROM hist
+         UNION ALL
+         SELECT structure, description, sort_order FROM extra
+         ORDER BY sort_order`
       );
 
       // Valores históricos do ano
@@ -7455,6 +7516,14 @@ app.get("/api/todos", async (req, res) => {
   // Reconciliation Rules Engine
   // ═══════════════════════════════════════════════════════
 
+  // Normalização sem acento (não depende da extensão unaccent) — faz as regras
+  // casarem independente de acentuação (ex.: "Antecipacao" pega "Antecipação").
+  pool.query(`CREATE OR REPLACE FUNCTION fin_unaccent(text) RETURNS text AS $func$
+    SELECT translate($1,
+      'áàâãäéèêëíìîïóòôõöúùûüçñÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇÑ',
+      'aaaaaeeeeiiiiooooouuuucnAAAAAEEEEIIIIOOOOOUUUUCN')
+  $func$ LANGUAGE sql IMMUTABLE`).catch((e: any) => console.error('[fin_unaccent] create failed:', e.message));
+
   // GET /api/fin-reconciliation-rules — list all rules
   app.get("/api/fin-reconciliation-rules", async (req, res) => {
     try {
@@ -7712,7 +7781,7 @@ app.get("/api/todos", async (req, res) => {
                edited_at = NOW(),
                edited_by = 'regra-auto'
            WHERE is_anticipation_pair = false
-             AND description ILIKE $1
+             AND fin_unaccent(description) ILIKE fin_unaccent($1)
            RETURNING id`,
           [pattern, rule.category_name, rule.category_id]
         );
@@ -7776,7 +7845,7 @@ app.get("/api/todos", async (req, res) => {
            WHERE custom_category IS NULL
              AND (grapehub_category IS NULL OR grapehub_category = '')
              AND is_anticipation_pair = false
-             AND description ILIKE $1
+             AND fin_unaccent(description) ILIKE fin_unaccent($1)
            RETURNING id`,
           [pattern, rule.category_name, rule.category_id]
         );
@@ -9780,6 +9849,34 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
+  // ── Score automático do lead (1–5 estrelas) a partir de Tempo de OAB × Faturamento ──
+  // Retorna null quando algum dos dois não estiver preenchido/reconhecido (não pontua).
+  function computeLeadScore(tempoOab: any, faturamento: any): number | null {
+    const norm = (s: any) => (s || '').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
+    const t = norm(tempoOab);
+    const f = norm(faturamento);
+    // Tempo de OAB → coluna 1..4
+    let col: number | null = null;
+    if (t.includes('mais de 5')) col = 4;
+    else if (t.includes('3 a 5')) col = 3;
+    else if (t.includes('1 a 2')) col = 2;
+    else if (t.includes('ate um ano') || t.includes('ate 1 ano') || t.includes('menos de um ano')) col = 1;
+    // Faturamento → linha 1..4
+    let row: number | null = null;
+    if (f.includes('acima de r$50') || f.includes('acima de r$ 50') || f.includes('acima de 50')) row = 4;
+    else if (f.includes('20 a r$50') || f.includes('20 a 50')) row = 3;
+    else if (f.includes('10 a r$20') || f.includes('10 a 20')) row = 2;
+    else if (f.includes('menos de r$10') || f.includes('menos de r$ 10') || f.includes('menos de 10')) row = 1;
+    if (col === null || row === null) return null;
+    const MATRIX: Record<number, number[]> = {
+      1: [1, 2, 3, 3], // Menos de R$10 mil
+      2: [3, 4, 4, 4], // De R$10 a R$20 mil
+      3: [3, 4, 4, 5], // De R$20 a R$50 mil
+      4: [4, 5, 5, 5], // Acima de R$50 mil
+    };
+    return MATRIX[row][col - 1];
+  }
+
   app.patch("/api/crm-comercial/leads/:id", async (req, res) => {
     console.log(`[PATCH] Received request for lead ID: ${req.params.id}`);
     console.log(`[PATCH] Request body:`, req.body);
@@ -9789,7 +9886,7 @@ app.get("/api/todos", async (req, res) => {
         coluna, valor, responsavel_id, moved_by, kanban_id, previsao, prob_fechamento, lead_score, tags, origem, instagram, nicho, tempo_oab, faturamento,
         reunion_date, office_location, monthly_closings, closing_goal, reunion_link,
         utm_platform, utm_campaign, utm_set, utm_creative, utm_position,
-        nome, telefone, observacoes,
+        nome, telefone, email, observacoes,
         form_nome_completo, form_nome_fantasia, form_telefone_whatsapp, form_cnpj_cpf, form_cep, form_cidade, form_estado
       } = req.body;
       
@@ -9855,6 +9952,10 @@ app.get("/api/todos", async (req, res) => {
       if (lead_score !== undefined) {
         updates.push(`lead_score = $${paramIdx++}`);
         params.push(lead_score);
+        // Clique manual nas estrelas → marca como manual (automação não sobrescreve).
+        // Se limpou (null/0), volta a ser automático.
+        updates.push(`lead_score_manual = $${paramIdx++}`);
+        params.push(lead_score !== null && lead_score !== 0);
       }
       if (tags !== undefined) {
         updates.push(`tags = $${paramIdx++}`);
@@ -9879,6 +9980,10 @@ app.get("/api/todos", async (req, res) => {
       if (faturamento !== undefined) {
         updates.push(`faturamento = $${paramIdx++}`);
         params.push(faturamento);
+      }
+      if (email !== undefined) {
+        updates.push(`email = $${paramIdx++}`);
+        params.push(email);
       }
       if (reunion_date !== undefined) { updates.push(`reunion_date = $${paramIdx++}`); params.push(reunion_date); }
       if (office_location !== undefined) { updates.push(`office_location = $${paramIdx++}`); params.push(office_location); }
@@ -9914,7 +10019,23 @@ app.get("/api/todos", async (req, res) => {
           `UPDATE crm_comercial_leads SET ${updates.join(', ')} WHERE id = $${paramIdx} RETURNING *`,
           params
         );
-        
+
+        // Score automático: se o Tempo de OAB ou Faturamento mudou e o lead NÃO é manual,
+        // recalcula a nota (o usuário não clicou nas estrelas nesta requisição).
+        if (lead_score === undefined && (tempo_oab !== undefined || faturamento !== undefined)) {
+          const row = result.rows[0];
+          if (row && !row.lead_score_manual) {
+            const auto = computeLeadScore(row.tempo_oab, row.faturamento);
+            if (auto !== (row.lead_score ?? null)) {
+              const upd = await pool.query(
+                `UPDATE crm_comercial_leads SET lead_score = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
+                [auto, id]
+              );
+              result.rows[0] = upd.rows[0];
+            }
+          }
+        }
+
         if (!kanban_id && coluna !== undefined && coluna !== currentColuna) {
           await pool.query(
             `INSERT INTO crm_comercial_history (lead_id, from_coluna, to_coluna, moved_by) VALUES ($1, $2, $3, $4)`,
@@ -11376,7 +11497,7 @@ app.get("/api/todos", async (req, res) => {
     const { user_id } = req.query;
     if (!user_id) return res.status(400).json({ error: "user_id is required" });
     try {
-      const result = await pool.query('SELECT form_webhook_url, whatsapp_webhook_url, inbound_token, inbound_kanban_id, inbound_coluna, inbound_responsavel_id FROM crm_webhook_settings WHERE user_id = $1', [user_id]);
+      const result = await pool.query('SELECT form_webhook_url, whatsapp_webhook_url, inbound_token, inbound_kanban_id, inbound_coluna, inbound_responsavel_id, inbound_valor FROM crm_webhook_settings WHERE user_id = $1', [user_id]);
       
       let settings = result.rows[0];
       if (settings && !settings.inbound_token) {
@@ -11386,7 +11507,7 @@ app.get("/api/todos", async (req, res) => {
       } else if (!settings) {
         const token = crypto.randomUUID();
         await pool.query('INSERT INTO crm_webhook_settings (user_id, inbound_token) VALUES ($1, $2)', [user_id, token]);
-        settings = { form_webhook_url: '', whatsapp_webhook_url: '', inbound_token: token, inbound_kanban_id: '', inbound_coluna: '', inbound_responsavel_id: '' };
+        settings = { form_webhook_url: '', whatsapp_webhook_url: '', inbound_token: token, inbound_kanban_id: '', inbound_coluna: '', inbound_responsavel_id: '', inbound_valor: 0 };
       }
       
       res.json(settings);
@@ -11397,12 +11518,12 @@ app.get("/api/todos", async (req, res) => {
   });
 
   app.post("/api/crm/settings/webhooks", async (req, res) => {
-    const { user_id, form_webhook_url, whatsapp_webhook_url, inbound_kanban_id, inbound_coluna, inbound_token, inbound_responsavel_id } = req.body;
+    const { user_id, form_webhook_url, whatsapp_webhook_url, inbound_kanban_id, inbound_coluna, inbound_token, inbound_responsavel_id, inbound_valor } = req.body;
     if (!user_id) return res.status(400).json({ error: "user_id is required" });
     try {
       await pool.query(
-        `INSERT INTO crm_webhook_settings (user_id, form_webhook_url, whatsapp_webhook_url, inbound_kanban_id, inbound_coluna, inbound_token, inbound_responsavel_id, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+        `INSERT INTO crm_webhook_settings (user_id, form_webhook_url, whatsapp_webhook_url, inbound_kanban_id, inbound_coluna, inbound_token, inbound_responsavel_id, inbound_valor, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
          ON CONFLICT (user_id) DO UPDATE SET
            form_webhook_url = EXCLUDED.form_webhook_url,
            whatsapp_webhook_url = EXCLUDED.whatsapp_webhook_url,
@@ -11410,8 +11531,9 @@ app.get("/api/todos", async (req, res) => {
            inbound_coluna = EXCLUDED.inbound_coluna,
            inbound_token = EXCLUDED.inbound_token,
            inbound_responsavel_id = EXCLUDED.inbound_responsavel_id,
+           inbound_valor = EXCLUDED.inbound_valor,
            updated_at = NOW()`,
-        [user_id, form_webhook_url || '', whatsapp_webhook_url || '', inbound_kanban_id || '', inbound_coluna || '', inbound_token || '', inbound_responsavel_id || '']
+        [user_id, form_webhook_url || '', whatsapp_webhook_url || '', inbound_kanban_id || '', inbound_coluna || '', inbound_token || '', inbound_responsavel_id || '', Number(inbound_valor) || 0]
       );
       res.json({ success: true });
     } catch (err) {
@@ -11430,7 +11552,7 @@ app.get("/api/todos", async (req, res) => {
       if (!nome) return res.status(400).json({ error: "Campo 'nome' é obrigatório" });
 
       const hookSettings = await pool.query(`
-        SELECT ws.inbound_kanban_id, ws.inbound_coluna, ws.inbound_responsavel_id, u.id as user_id 
+        SELECT ws.inbound_kanban_id, ws.inbound_coluna, ws.inbound_responsavel_id, ws.inbound_valor, u.id as user_id
         FROM crm_webhook_settings ws 
         JOIN users u ON u.email = ws.user_id 
         WHERE ws.inbound_token = $1
@@ -11440,7 +11562,7 @@ app.get("/api/todos", async (req, res) => {
         return res.status(404).json({ error: "Token de webhook inválido ou não encontrado." });
       }
 
-      const { inbound_kanban_id, inbound_coluna, inbound_responsavel_id, user_id } = hookSettings.rows[0];
+      const { inbound_kanban_id, inbound_coluna, inbound_responsavel_id, inbound_valor, user_id } = hookSettings.rows[0];
 
       if (!inbound_kanban_id || !inbound_coluna) {
         return res.status(400).json({ error: "Destino do lead (Kanban e Coluna) não foi configurado pelo proprietário deste token nas configurações do CRM." });
@@ -11497,9 +11619,9 @@ app.get("/api/todos", async (req, res) => {
         nicho:          body.nicho    || body.NICHO    || '',
         origem:         finalOrigem,
         responsavel_id: inbound_responsavel_id || user_id,
-        instagram:      body.instagram || '',
+        instagram:      body.instagram || body.INSTAGRAM || body.insta || '',
         forma_pagamento:body.forma_pagamento || '',
-        valor:          Number(body.valor) || 0,
+        valor:          Number(body.valor) || Number(inbound_valor) || 0,
         tags:           JSON.stringify(Array.isArray(tags) ? tags : []),
         kanban_id:      inbound_kanban_id,
         coluna:         resolvedColuna,
@@ -11507,6 +11629,11 @@ app.get("/api/todos", async (req, res) => {
         faturamento:    body.faturamento || body.FATURAMENTO || '',
         tempo_oab:      body.tempo_oab || body.tempo_advocacia || body['TEMPO DE ADV'] || '',
         investimento:   body.investimento || body.INVESTIMENTO || '',
+        // Score automático (1–5) por Tempo de OAB × Faturamento; null se não der pra classificar
+        lead_score:     computeLeadScore(
+                          body.tempo_oab || body.tempo_advocacia || body['TEMPO DE ADV'] || '',
+                          body.faturamento || body.FATURAMENTO || ''
+                        ),
         // UTMs: campo_body → coluna_db (exibição no CRM)
         utm_platform:   body.utm_source  || body.utm_platform  || '',  // Plataforma
         utm_campaign:   finalCampaign,                                  // Campanha
@@ -14804,6 +14931,7 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
         priority: r.priority, status: r.status, tags: r.tags || [],
         assignee: r.assignee || undefined, dueDate: r.due_date || undefined,
         subtasks: r.subtasks || [], comments: r.comments || [],
+        folderId: r.folder_id || undefined,
         createdAt: r.created_at?.toISOString(), doneAt: r.done_at?.toISOString() || undefined,
       }));
       res.json(items);
@@ -14812,14 +14940,14 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
 
   app.post("/api/todo-staff/tasks", async (req, res) => {
     try {
-      const { id, title, description, priority, status, tags, assignee, dueDate, subtasks, comments, doneAt, page_id } = req.body;
+      const { id, title, description, priority, status, tags, assignee, dueDate, subtasks, comments, doneAt, folderId, page_id } = req.body;
       await pool.query(
-        `INSERT INTO to_do_staff (id, title, description, priority, status, tags, assignee, due_date, subtasks, comments, done_at, page_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+        `INSERT INTO to_do_staff (id, title, description, priority, status, tags, assignee, due_date, subtasks, comments, done_at, folder_id, page_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
         [id, title, description || null, priority || 'medium', status || 'todo',
          JSON.stringify(tags || []), assignee || null, dueDate || null,
          JSON.stringify(subtasks || []), JSON.stringify(comments || []),
-         doneAt || null, page_id || 'default']
+         doneAt || null, folderId || null, page_id || 'default']
       );
       res.json({ ok: true });
     } catch (err: any) { res.status(500).json({ error: err.message }); }
@@ -14827,14 +14955,14 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
 
   app.put("/api/todo-staff/tasks/:id", async (req, res) => {
     try {
-      const { title, description, priority, status, tags, assignee, dueDate, subtasks, comments, doneAt } = req.body;
+      const { title, description, priority, status, tags, assignee, dueDate, subtasks, comments, doneAt, folderId } = req.body;
       await pool.query(
         `UPDATE to_do_staff SET title=$1, description=$2, priority=$3, status=$4, tags=$5,
-         assignee=$6, due_date=$7, subtasks=$8, comments=$9, done_at=$10 WHERE id=$11`,
+         assignee=$6, due_date=$7, subtasks=$8, comments=$9, done_at=$10, folder_id=$11 WHERE id=$12`,
         [title, description || null, priority, status,
          JSON.stringify(tags || []), assignee || null, dueDate || null,
          JSON.stringify(subtasks || []), JSON.stringify(comments || []),
-         doneAt || null, req.params.id]
+         doneAt || null, folderId ?? null, req.params.id]
       );
       res.json({ ok: true });
     } catch (err: any) { res.status(500).json({ error: err.message }); }
@@ -14929,6 +15057,53 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
   app.delete("/api/todo-staff/ideas/:id", async (req, res) => {
     try {
       await pool.query("DELETE FROM to_do_staff_ideas WHERE id=$1", [req.params.id]);
+      res.json({ ok: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // Folders CRUD (pastas livres — agrupam tarefas sem vínculo a parceiros)
+  app.get("/api/todo-staff/folders", async (req, res) => {
+    try {
+      const pageId = req.query.page_id || 'default';
+      const { rows } = await pool.query(
+        "SELECT * FROM to_do_staff_folders WHERE page_id = $1 ORDER BY sort_order ASC, created_at ASC",
+        [pageId]
+      );
+      const items = rows.map(r => ({
+        id: r.id, name: r.name, color: r.color || undefined,
+        sortOrder: r.sort_order ?? 0, createdAt: r.created_at?.toISOString(),
+      }));
+      res.json(items);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.post("/api/todo-staff/folders", async (req, res) => {
+    try {
+      const { id, name, color, sortOrder, page_id } = req.body;
+      await pool.query(
+        `INSERT INTO to_do_staff_folders (id, name, color, sort_order, page_id) VALUES ($1,$2,$3,$4,$5)`,
+        [id, name, color || null, sortOrder ?? 0, page_id || 'default']
+      );
+      res.json({ ok: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.put("/api/todo-staff/folders/:id", async (req, res) => {
+    try {
+      const { name, color, sortOrder } = req.body;
+      await pool.query(
+        `UPDATE to_do_staff_folders SET name=$1, color=$2, sort_order=$3 WHERE id=$4`,
+        [name, color || null, sortOrder ?? 0, req.params.id]
+      );
+      res.json({ ok: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // Apaga a pasta e solta as tarefas dela (folder_id → NULL), sem perder tarefas
+  app.delete("/api/todo-staff/folders/:id", async (req, res) => {
+    try {
+      await pool.query("UPDATE to_do_staff SET folder_id=NULL WHERE folder_id=$1", [req.params.id]);
+      await pool.query("DELETE FROM to_do_staff_folders WHERE id=$1", [req.params.id]);
       res.json({ ok: true });
     } catch (err: any) { res.status(500).json({ error: err.message }); }
   });

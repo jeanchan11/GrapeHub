@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Loader2, ChevronLeft, ChevronRight, FileBarChart } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Loader2, ChevronLeft, ChevronRight, FileBarChart, Columns3, Check, Eye } from 'lucide-react';
 
 const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
@@ -39,7 +39,20 @@ const DrePanel: React.FC = () => {
   const [data, setData] = useState<DreData | null>(null);
   const [loading, setLoading] = useState(true);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [hiddenMonths, setHiddenMonths] = useState<Set<string>>(new Set());
+  const [colMenuOpen, setColMenuOpen] = useState(false);
+  const colMenuRef = useRef<HTMLDivElement>(null);
   const [ind, setInd] = useState<any>(null);
+
+  // Fecha o menu de colunas ao clicar fora
+  useEffect(() => {
+    if (!colMenuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (colMenuRef.current && !colMenuRef.current.contains(e.target as Node)) setColMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [colMenuOpen]);
 
   useEffect(() => {
     setLoading(true);
@@ -60,6 +73,12 @@ const DrePanel: React.FC = () => {
   const histSet = new Set(data?.historicalMonths || []);
   const dreRows = data?.rows || [];
 
+  // ── Colunas (meses) visíveis ──
+  const monthLabel = (m: string) => MESES[months.indexOf(m)] || m;
+  const toggleMonth = (m: string) => setHiddenMonths(prev => { const n = new Set(prev); n.has(m) ? n.delete(m) : n.add(m); return n; });
+  const showAllMonths = () => setHiddenMonths(new Set());
+  const visibleCount = months.filter(m => !hiddenMonths.has(m)).length;
+
   // Nível máximo visível por apresentação
   const maxLevel = apresentacao === 'detalhado' ? 99 : apresentacao === 'agrupado' ? 2 : apresentacao === 'totalizadores' ? 1 : 0;
   const treeMode = apresentacao === 'detalhado' || apresentacao === 'agrupado';
@@ -73,6 +92,10 @@ const DrePanel: React.FC = () => {
     return false;
   };
   const toggle = (s: string) => setCollapsed(prev => { const n = new Set(prev); n.has(s) ? n.delete(s) : n.add(s); return n; });
+
+  // ── Oculta linhas/categorias sem nada lançado no ano (todos os meses zerados) ──
+  const rowHasValue = (r: DreRow) => r.total !== 0 || months.some(m => (r.values[m] || 0) !== 0);
+  const branchHasValue = (s: string) => dreRows.some(r => (r.structure === s || r.structure.startsWith(s + '.')) && rowHasValue(r));
 
   // ── Totalizadores calculados ──
   const sumRows = (rows: DreRow[], extra?: SpecialRow) => {
@@ -112,6 +135,7 @@ const DrePanel: React.FC = () => {
         </div>
       </td>
       {months.map(m => {
+        if (hiddenMonths.has(m)) return null;
         const v = values[m] ?? 0;
         return <td key={m} className={`px-3 py-2 text-xs text-right tabular-nums whitespace-nowrap ${valCls(v)} ${!histSet.has(m) ? 'bg-amber-500/[0.04]' : ''}`}>{fmt(v)}</td>;
       })}
@@ -142,6 +166,7 @@ const DrePanel: React.FC = () => {
           insertedOp = true;
         }
         if (isHidden(r.structure)) continue;
+        if (!branchHasValue(r.structure)) continue; // some nada lançado no ano
         const kids = hasChildren(r.structure);
         body.push(Row(r.structure, r.description, r.values, {
           cls: rowCls(r.level), level: r.level, total: r.total,
@@ -183,6 +208,48 @@ const DrePanel: React.FC = () => {
           </div>
         </div>
         <div className="flex items-center gap-3">
+          {/* Colunas (meses) visíveis */}
+          <div className="flex flex-col">
+            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">Colunas</label>
+            <div className="relative" ref={colMenuRef}>
+              <button
+                onClick={() => setColMenuOpen(o => !o)}
+                className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold transition-colors ${hiddenMonths.size > 0 ? 'border-violet-500/50 text-violet-400 bg-violet-500/10' : 'border-black/10 dark:border-white/10 text-dark-text hover:border-violet-500/40'}`}
+              >
+                <Columns3 size={13} />
+                <span>Meses{hiddenMonths.size > 0 ? ` (${visibleCount}/${months.length})` : ''}</span>
+              </button>
+              {colMenuOpen && (
+                <div className="absolute right-0 top-full mt-1.5 z-30 w-52 rounded-xl border border-black/10 dark:border-white/10 bg-dark-card shadow-xl shadow-black/20 p-1.5">
+                  <div className="flex items-center justify-between px-2 py-1.5">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Exibir meses</span>
+                    {hiddenMonths.size > 0 && (
+                      <button onClick={showAllMonths} className="flex items-center gap-1 text-[10px] font-bold text-violet-400 hover:text-violet-300">
+                        <Eye size={11} /> Todos
+                      </button>
+                    )}
+                  </div>
+                  <div className="max-h-64 overflow-y-auto">
+                    {months.map(m => {
+                      const on = !hiddenMonths.has(m);
+                      return (
+                        <button
+                          key={m}
+                          onClick={() => toggleMonth(m)}
+                          className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs font-semibold text-dark-text hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+                        >
+                          <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${on ? 'bg-violet-500 border-violet-500' : 'border-slate-500/50'}`}>
+                            {on && <Check size={11} className="text-white" strokeWidth={3} />}
+                          </span>
+                          <span className={on ? '' : 'text-slate-500'}>{monthLabel(m)}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
           {/* Apresentação */}
           <div className="flex flex-col">
             <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">Apresentação</label>
@@ -217,7 +284,9 @@ const DrePanel: React.FC = () => {
               <tr className="bg-dark-bg/40 border-b border-black/10 dark:border-white/10">
                 <th className="sticky left-0 z-10 bg-dark-card px-3 py-2.5 text-left text-[10px] font-bold text-slate-500 uppercase tracking-widest">Categoria</th>
                 {months.map((m, i) => (
-                  <th key={m} className={`px-3 py-2.5 text-right text-[10px] font-bold uppercase tracking-widest ${histSet.has(m) ? 'text-slate-500' : 'text-amber-500'}`}>{MESES[i]}</th>
+                  hiddenMonths.has(m) ? null : (
+                    <th key={m} className={`px-3 py-2.5 text-right text-[10px] font-bold uppercase tracking-widest ${histSet.has(m) ? 'text-slate-500' : 'text-amber-500'}`}>{MESES[i]}</th>
+                  )
                 ))}
                 <th className="px-3 py-2.5 text-right text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total</th>
               </tr>

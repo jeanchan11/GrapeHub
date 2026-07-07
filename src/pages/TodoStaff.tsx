@@ -3,13 +3,14 @@ import OptionPicker from '../components/ui/OptionPicker';
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragOverlay, useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import SplitHeadline from '../components/SplitHeadline';
 import {
   Plus, X, Check, Clock, AlertCircle, ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
   Trash2, Edit3, MoreHorizontal, Search, RefreshCw, Repeat, Filter, ArrowUpDown,
   Circle, CheckCircle2, Tag, CalendarDays, MessageSquare, ListChecks, Send, GripVertical,
-  Lightbulb, Star, Sparkles, LayoutGrid, AlignJustify, FileText, Loader2, Save
+  Lightbulb, Star, Sparkles, LayoutGrid, AlignJustify, FileText, Loader2, Save,
+  Folder as FolderIcon, FolderOpen, FolderPlus, CornerDownLeft
 } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
 
@@ -44,6 +45,15 @@ interface TodoItem {
   comments: Comment[];
   createdAt: string;
   doneAt?: string;
+  folderId?: string;   // pasta livre (opcional)
+}
+
+interface FolderItem {
+  id: string;
+  name: string;
+  color?: string;
+  sortOrder: number;
+  createdAt: string;
 }
 
 interface RecurringItem {
@@ -80,6 +90,66 @@ const FREQ_CONFIG: Record<RecurringItem['frequency'], { label: string; color: st
 
 const MEMBERS = ['Jean', 'Ana', 'Carlos', 'Mariana', 'Felipe', 'Lucia'];
 const AVAILABLE_TAGS = ['Marketing', 'Financeiro', 'RH', 'Operacional', 'Comercial', 'Tech', 'Reunião', 'Urgente'];
+
+// ── Barra de progresso animada (anima ao entrar na viewport) — igual To Do Gestor ──
+const AnimatedBar = ({ progress, isDone }: { progress: number; isDone: boolean }) => {
+  const [width, setWidth] = useState(0);
+  const ref = useRef<HTMLDivElement>(null);
+  const animated = useRef(false);
+
+  useEffect(() => {
+    if (animated.current) { setWidth(progress); return; }
+    const el = ref.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting && !animated.current) {
+        animated.current = true;
+        requestAnimationFrame(() => setWidth(progress));
+      }
+    }, { threshold: 0.1 });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [progress]);
+
+  return (
+    <div ref={ref} className="w-full h-1.5 bg-dark-text/10 rounded-full mt-1.5 overflow-hidden">
+      <div
+        className={`h-full rounded-full transition-all duration-1000 ease-out ${isDone ? 'bg-emerald-500' : 'bg-violet-500'}`}
+        style={{ width: `${width}%` }}
+      />
+    </div>
+  );
+};
+
+// ── Contador animado (conta de 0 até o valor ao entrar na viewport) ──
+const CountUp = ({ value, suffix = '', className = '' }: { value: number; suffix?: string; className?: string }) => {
+  const [display, setDisplay] = useState(0);
+  const ref = useRef<HTMLSpanElement>(null);
+  const animated = useRef(false);
+
+  useEffect(() => {
+    if (animated.current) { setDisplay(Math.round(value)); return; }
+    const el = ref.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting && !animated.current) {
+        animated.current = true;
+        const duration = 800;
+        const start = performance.now();
+        const tick = (now: number) => {
+          const t = Math.min((now - start) / duration, 1);
+          setDisplay(Math.round(value * (1 - Math.pow(1 - t, 3))));
+          if (t < 1) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }
+    }, { threshold: 0.1 });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [value]);
+
+  return <span ref={ref} className={className}>{display}{suffix}</span>;
+};
 
 const STORAGE_KEY   = 'grapehub_todo_staff';
 const STORAGE_REC   = 'grapehub_recurring_staff';
@@ -1957,9 +2027,16 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
   const [todos,      setTodos]      = useState<TodoItem[]>([]);
   const [recurring,  setRecurring]  = useState<RecurringItem[]>([]);
   const [ideas,      setIdeas]      = useState<IdeaItem[]>([]);
+  const [folders,    setFolders]    = useState<FolderItem[]>([]);
   const [globalTags, setGlobalTags] = useState<string[]>([...AVAILABLE_TAGS]);
   const [activeTab,  setActiveTab]  = useState<'tarefas' | 'ideias'>('tarefas');
-  const [viewMode,   setViewMode]   = useState<'kanban' | 'list' | 'document'>('kanban');
+  const [viewMode,   setViewMode]   = useState<'kanban' | 'list' | 'document' | 'pastas'>('kanban');
+  // Pastas (visão "Pastas")
+  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
+  const [newFolderInput, setNewFolderInput] = useState('');
+  const [folderTaskInput, setFolderTaskInput] = useState<Record<string, string>>({});
+  const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
+  const [renameFolderInput, setRenameFolderInput] = useState('');
   const [notesHtml,  setNotesHtml]  = useState<string>('');
   const [notesDirty, setNotesDirty] = useState(false);
   const [notesSaving, setNotesSaving] = useState(false);
@@ -2013,10 +2090,12 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
       fetch(`/api/todo-staff/ideas${queryStr}`).then(r => r.ok ? r.json() : []).catch(() => []),
       fetch(`/api/todo-staff/notes${queryStr}`).then(r => r.ok ? r.json() : { content: '' }).catch(() => ({ content: '' })),
       fetch(`/api/todo-staff/doc-pages${queryStr}`).then(r => r.ok ? r.json() : []).catch(() => []),
-    ]).then(([tasks, recs, ideasData, notesData, docPagesData]) => {
+      fetch(`/api/todo-staff/folders${queryStr}`).then(r => r.ok ? r.json() : []).catch(() => []),
+    ]).then(([tasks, recs, ideasData, notesData, docPagesData, foldersData]) => {
       setTodos(tasks);
       setRecurring(recs);
       setIdeas(ideasData);
+      setFolders(foldersData);
       setNotesHtml(notesData.content || '');
       setDocPages(docPagesData);
       if (docPagesData.length > 0) setActiveDocPageId(docPagesData[0].id);
@@ -2073,7 +2152,8 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
   const todoToApi = (t: TodoItem) => ({
     id: t.id, title: t.title, description: t.description, priority: t.priority,
     status: t.status, tags: t.tags, assignee: t.assignee, dueDate: t.dueDate,
-    subtasks: t.subtasks, comments: t.comments, doneAt: t.doneAt, page_id: activePage || 'default'
+    subtasks: t.subtasks, comments: t.comments, doneAt: t.doneAt,
+    folderId: t.folderId ?? null, page_id: activePage || 'default'
   });
 
   // Handlers — todos
@@ -2107,6 +2187,54 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
     setViewingTodo(prev => prev?.id === taskId ? { ...prev, subtasks: [...(prev.subtasks || []), newSub] } : prev);
     const item = todos.find(t => t.id === taskId);
     if (item) apiCall('PUT', `/api/todo-staff/tasks/${taskId}`, todoToApi({ ...item, subtasks: [...(item.subtasks || []), newSub] }));
+  };
+
+  // ── Pastas (pastas livres) ──────────────────────────────────────────────────
+  const createFolder = (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const now = new Date().toISOString();
+    const item: FolderItem = { id: uid(), name: trimmed, sortOrder: folders.length, createdAt: now };
+    setFolders(p => [...p, item]);
+    setExpandedFolders(p => ({ ...p, [item.id]: true }));
+    apiCall('POST', '/api/todo-staff/folders', {
+      id: item.id, name: item.name, sortOrder: item.sortOrder, page_id: activePage || 'default',
+    });
+  };
+  const toggleFolder = (id: string) => setExpandedFolders(p => ({ ...p, [id]: !p[id] }));
+  const renameFolder = (id: string, name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const f = folders.find(x => x.id === id);
+    setFolders(p => p.map(x => x.id === id ? { ...x, name: trimmed } : x));
+    apiCall('PUT', `/api/todo-staff/folders/${id}`, { name: trimmed, color: f?.color ?? null, sortOrder: f?.sortOrder ?? 0 });
+  };
+  const deleteFolder = (id: string) => {
+    setFolders(p => p.filter(x => x.id !== id));
+    // solta as tarefas da pasta localmente (o backend faz o mesmo)
+    setTodos(p => p.map(t => t.folderId === id ? { ...t, folderId: undefined } : t));
+    setExpandedFolders(p => { const n = { ...p }; delete n[id]; return n; });
+    apiCall('DELETE', `/api/todo-staff/folders/${id}`);
+  };
+  // Cria uma tarefa simples direto dentro de uma pasta
+  const addTaskToFolder = (folderId: string, title: string) => {
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    const now = new Date().toISOString();
+    const item: TodoItem = {
+      id: uid(), title: trimmed, priority: 'medium', status: 'todo',
+      tags: [], subtasks: [], comments: [], createdAt: now, folderId,
+    };
+    setTodos(p => [item, ...p]);
+    apiCall('POST', '/api/todo-staff/tasks', todoToApi(item));
+  };
+  // Move uma tarefa para uma pasta (ou solta: folderId = undefined)
+  const setTaskFolder = (taskId: string, folderId: string | undefined) => {
+    const item = todos.find(t => t.id === taskId);
+    if (!item) return;
+    const updated = { ...item, folderId };
+    setTodos(p => p.map(t => t.id === taskId ? updated : t));
+    apiCall('PUT', `/api/todo-staff/tasks/${taskId}`, todoToApi(updated));
   };
 
   // ── dnd-kit drag-and-drop ──────────────────────────────────────────────────
@@ -2511,6 +2639,16 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
           >
             <AlignJustify size={13} /> Lista
           </button>
+          <button
+            onClick={() => setViewMode('pastas')}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              viewMode === 'pastas'
+                ? 'bg-violet-600/15 text-violet-500'
+                : 'text-dark-text/50 hover:text-dark-text/80'
+            }`}
+          >
+            <FolderIcon size={13} /> Pastas
+          </button>
           {!hideDocument && (
             <button
               onClick={() => setViewMode('document')}
@@ -2715,6 +2853,177 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
               )}
             </div>
           </div>
+        </div>
+      ) : viewMode === 'pastas' ? (
+        <div className="px-6 md:px-8 pb-10">
+          {/* ── Criar nova pasta ── */}
+          <div className="flex items-center gap-2 mb-6 max-w-md">
+            <div className="relative flex-1">
+              <FolderPlus size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-text/30" />
+              <input
+                value={newFolderInput}
+                onChange={e => setNewFolderInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { createFolder(newFolderInput); setNewFolderInput(''); } }}
+                placeholder="Nova pasta..."
+                className="w-full bg-dark-card border border-white/[0.06] rounded-xl pl-9 pr-3 py-2.5 text-sm text-dark-text placeholder:text-dark-text/30 outline-none focus:border-violet-500/40 transition-colors"
+              />
+            </div>
+            <button
+              onClick={() => { createFolder(newFolderInput); setNewFolderInput(''); }}
+              disabled={!newFolderInput.trim()}
+              className="flex items-center gap-1.5 px-4 py-2.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition-all"
+            >
+              <Plus size={14} /> Criar
+            </button>
+          </div>
+
+          {folders.length === 0 ? (
+            <div className="flex flex-col items-center justify-center text-dark-text/30 gap-3 py-20">
+              <FolderIcon size={44} className="opacity-20" />
+              <p className="text-sm font-medium">Nenhuma pasta ainda</p>
+              <p className="text-xs text-dark-text/40">Crie pastas livres para organizar suas tarefas do jeito que quiser.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
+              {folders.map(folder => {
+                const folderTasks = todos
+                  .filter(t => t.folderId === folder.id)
+                  .sort((a, b) => (a.status === 'done' ? 1 : 0) - (b.status === 'done' ? 1 : 0));
+                const doneCount = folderTasks.filter(t => t.status === 'done').length;
+                const progress = folderTasks.length ? Math.round((doneCount / folderTasks.length) * 100) : 0;
+                const isDone = folderTasks.length > 0 && doneCount === folderTasks.length;
+                const isExpanded = !!expandedFolders[folder.id];
+                const isRenaming = renamingFolderId === folder.id;
+                return (
+                  <div key={folder.id} className={`bg-dark-card border rounded-2xl overflow-hidden flex flex-col transition-colors ${isExpanded ? 'border-violet-500/30' : 'border-white/[0.06] hover:border-white/[0.12]'}`}>
+                    {/* Cabeçalho da pasta — clique para expandir/recolher */}
+                    <div
+                      className="flex items-start gap-2.5 px-4 py-3 cursor-pointer select-none"
+                      onClick={() => { if (!isRenaming) toggleFolder(folder.id); }}
+                    >
+                      <div className="pt-0.5 text-violet-500 flex-shrink-0">
+                        {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                      </div>
+                      <div className="w-8 h-8 rounded-lg bg-violet-500/15 text-violet-400 flex items-center justify-center flex-shrink-0">
+                        {isExpanded ? <FolderOpen size={15} /> : <FolderIcon size={15} />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          {isRenaming ? (
+                            <input
+                              autoFocus
+                              value={renameFolderInput}
+                              onClick={e => e.stopPropagation()}
+                              onChange={e => setRenameFolderInput(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') { renameFolder(folder.id, renameFolderInput); setRenamingFolderId(null); }
+                                if (e.key === 'Escape') setRenamingFolderId(null);
+                              }}
+                              onBlur={() => { renameFolder(folder.id, renameFolderInput); setRenamingFolderId(null); }}
+                              className="flex-1 min-w-0 bg-white/[0.04] border border-violet-500/40 rounded-lg px-2 py-0.5 text-sm font-semibold text-dark-text outline-none"
+                            />
+                          ) : (
+                            <h4 className="flex-1 text-sm font-semibold text-dark-text truncate pr-1">{folder.name}</h4>
+                          )}
+                          <button
+                            onClick={e => { e.stopPropagation(); setRenamingFolderId(folder.id); setRenameFolderInput(folder.name); }}
+                            className="w-6 h-6 flex items-center justify-center rounded-lg text-dark-text/30 hover:text-violet-400 hover:bg-violet-500/10 transition-all flex-shrink-0"
+                            title="Renomear"
+                          >
+                            <Edit3 size={12} />
+                          </button>
+                          <button
+                            onClick={e => { e.stopPropagation(); if (confirm(`Excluir a pasta "${folder.name}"? As tarefas dela voltam a ficar sem pasta.`)) deleteFolder(folder.id); }}
+                            className="w-6 h-6 flex items-center justify-center rounded-lg text-dark-text/30 hover:text-red-400 hover:bg-red-500/10 transition-all flex-shrink-0"
+                            title="Excluir pasta"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                        <div className="flex items-center justify-between mt-2">
+                          <span className="text-[10px] font-bold text-dark-text/40">{doneCount}/{folderTasks.length} tarefas</span>
+                          <CountUp value={progress} suffix="%" className="text-[10px] font-bold text-violet-400" />
+                        </div>
+                        <AnimatedBar progress={progress} isDone={isDone} />
+                      </div>
+                    </div>
+
+                    {/* Conteúdo expansível */}
+                    <AnimatePresence initial={false}>
+                      {isExpanded && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.2, ease: 'easeInOut' }}
+                          className="overflow-hidden border-t border-white/[0.06] bg-dark-bg/40"
+                        >
+                          {/* Lista de tarefas */}
+                          <div className="p-2 space-y-1 min-h-[40px]">
+                            {folderTasks.map(task => {
+                              const done = task.status === 'done';
+                              return (
+                                <div key={task.id} className="group flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/[0.03] transition-colors">
+                                  <button
+                                    onClick={() => changeStatus(task.id, done ? 'todo' : 'done')}
+                                    className="flex-shrink-0"
+                                    title={done ? 'Reabrir' : 'Concluir'}
+                                  >
+                                    {done
+                                      ? <CheckCircle2 size={17} className="text-emerald-500" />
+                                      : <Circle size={17} className="text-dark-text/30 hover:text-violet-400 transition-colors" />}
+                                  </button>
+                                  <button
+                                    onClick={() => setViewingTodo(task)}
+                                    className={`flex-1 min-w-0 text-left text-sm truncate transition-colors ${done ? 'line-through text-dark-text/35' : 'text-dark-text/85 hover:text-dark-text'}`}
+                                  >
+                                    {task.title}
+                                  </button>
+                                  {!done && <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${PRIORITY_CONFIG[task.priority].dot}`} />}
+                                  <button
+                                    onClick={() => setTaskFolder(task.id, undefined)}
+                                    className="w-5 h-5 flex items-center justify-center rounded text-dark-text/25 hover:text-amber-400 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0"
+                                    title="Remover da pasta"
+                                  >
+                                    <X size={13} />
+                                  </button>
+                                </div>
+                              );
+                            })}
+                            {folderTasks.length === 0 && (
+                              <p className="text-[11px] text-dark-text/25 px-2 py-2">Sem tarefas nesta pasta.</p>
+                            )}
+                          </div>
+
+                          {/* Adicionar tarefa */}
+                          <div className="px-3 py-2.5 border-t border-white/[0.06]">
+                            <div className="relative">
+                              <Plus size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-dark-text/30" />
+                              <input
+                                value={folderTaskInput[folder.id] || ''}
+                                onChange={e => setFolderTaskInput(p => ({ ...p, [folder.id]: e.target.value }))}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter') {
+                                    addTaskToFolder(folder.id, folderTaskInput[folder.id] || '');
+                                    setFolderTaskInput(p => ({ ...p, [folder.id]: '' }));
+                                  }
+                                }}
+                                placeholder="Adicionar tarefa..."
+                                className="w-full bg-white/[0.03] border border-white/[0.06] rounded-lg pl-8 pr-8 py-2 text-xs text-dark-text placeholder:text-dark-text/30 outline-none focus:border-violet-500/40 transition-colors"
+                              />
+                              {(folderTaskInput[folder.id] || '').trim() && (
+                                <CornerDownLeft size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-dark-text/30" />
+                              )}
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       ) : (
         <div className="px-6 md:px-8 pb-10">
