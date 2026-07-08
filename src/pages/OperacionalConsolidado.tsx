@@ -13,6 +13,7 @@ interface ProjectRow {
   projectResult?: string;
   squad?: string;
   responsible: string;
+  churnChecklist?: Record<string, boolean>;
 }
 interface ClientRow {
   id: string;
@@ -357,6 +358,255 @@ const ChurnTab = ({ churns, activeCount }: { churns: ChurnRow[]; activeCount: nu
   );
 };
 
+// ── Risco de Churn ────────────────────────────────────────────────────────────
+// Espelha o template de ProjectsModule.tsx (ids estáveis). Mantido local p/ desacoplar.
+const CHURN_TEMPLATE: { group: string; cat: string; items: { id: string; label: string }[] }[] = [
+  { group: 'Insatisfação', cat: 'insat', items: [
+    { id: 'insat_volume', label: 'Volume de leads' },
+    { id: 'insat_qualidade', label: 'Qualidade de leads' },
+    { id: 'insat_contratos', label: 'Contratos fechados' },
+    { id: 'insat_crm', label: 'Erro de CRM' },
+    { id: 'insat_ia', label: 'Erro de IA' },
+  ]},
+  { group: 'Aderência', cat: 'ader', items: [
+    { id: 'ader_semresposta', label: 'Não responde grupo' },
+    { id: 'ader_naoatende', label: 'Não atende leads' },
+    { id: 'ader_naocrm', label: 'Não usa o CRM' },
+    { id: 'ader_sugestoes', label: 'Baixa aderência a sugestões' },
+    { id: 'ader_noshow', label: 'No-show em reuniões' },
+  ]},
+  { group: 'Problemas internos', cat: 'int', items: [
+    { id: 'int_operacional', label: 'Problemas operacionais' },
+    { id: 'int_atraso', label: 'Atraso no pagamento' },
+    { id: 'int_financeiro', label: 'Problema financeiro' },
+  ]},
+  { group: 'Plataforma', cat: 'plat', items: [
+    { id: 'plat_pausa', label: 'Pausa constante' },
+    { id: 'plat_bloqueios', label: 'Bloqueios (BM/WhatsApp/Redes)' },
+  ]},
+];
+const CHURN_TOTAL = CHURN_TEMPLATE.reduce((n, g) => n + g.items.length, 0);
+const CHURN_LABELS: Record<string, { label: string; cat: string }> = {};
+for (const g of CHURN_TEMPLATE) for (const it of g.items) CHURN_LABELS[it.id] = { label: it.label, cat: g.cat };
+const CAT_COLOR: Record<string, string> = { insat: '#f43f5e', ader: '#f59e0b', int: '#fb923c', plat: '#a78bfa' };
+
+const churnCount = (p: ProjectRow): number =>
+  CHURN_TEMPLATE.reduce((n, g) => n + g.items.filter(it => p.churnChecklist?.[it.id]).length, 0);
+const churnRisk = (c: number): { label: string; hex: string } =>
+  c === 0 ? { label: 'Sem sinais', hex: '#10b981' }
+  : c <= 3 ? { label: 'Baixo', hex: '#84cc16' }
+  : c <= 6 ? { label: 'Médio', hex: '#f59e0b' }
+  : { label: 'Alto', hex: '#f43f5e' };
+
+interface ChurnSnap { series: { date: string; comSinais: number; emRisco: number; alto: number; totalSinais: number }[]; baseline: Record<string, number>; }
+
+const RiscoDeChurnTab = ({ projects }: { projects: ProjectRow[] }) => {
+  const [squadFilter, setSquadFilter] = useState<'all' | 'Able' | 'Baker'>('all');
+  const [snap, setSnap] = useState<ChurnSnap | null>(null);
+
+  // Busca a série por squad (reflete no gráfico de evolução e nos deltas).
+  useEffect(() => {
+    let alive = true;
+    const q = squadFilter === 'all' ? '' : `&squad=${squadFilter}`;
+    fetch(`/api/churn-snapshots?days=90${q}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (alive) setSnap(d); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [squadFilter]);
+
+  const fp = squadFilter === 'all' ? projects : projects.filter(p => (p.squad || '') === squadFilter);
+  const squadCounts = {
+    all: projects.length,
+    Able: projects.filter(p => p.squad === 'Able').length,
+    Baker: projects.filter(p => p.squad === 'Baker').length,
+  };
+
+  const total = fp.length;
+  const rows = fp.map(p => ({ p, count: churnCount(p) })).sort((a, b) => b.count - a.count);
+  const withSignals = rows.filter(r => r.count >= 1);
+  const emRisco = rows.filter(r => r.count >= 4);      // Médio + Alto
+  const alto = rows.filter(r => r.count >= 7);
+  const rAtRisco = emRisco.reduce((a, r) => a + parseCurrency(r.p.investment), 0);
+  const buckets = [
+    { key: 'sem', label: 'Sem sinais', hex: '#10b981', n: rows.filter(r => r.count === 0).length },
+    { key: 'baixo', label: 'Baixo', hex: '#84cc16', n: rows.filter(r => r.count >= 1 && r.count <= 3).length },
+    { key: 'medio', label: 'Médio', hex: '#f59e0b', n: rows.filter(r => r.count >= 4 && r.count <= 6).length },
+    { key: 'alto', label: 'Alto', hex: '#f43f5e', n: alto.length },
+  ];
+
+  // Deltas vs baseline (~7 dias). Só mostra quando já há histórico com 7+ dias.
+  const baseline = snap?.baseline || {};
+  const hasBaseline = Object.keys(baseline).length > 0;
+  const baseEmRisco = fp.filter(p => (baseline[p.id] ?? 0) >= 4).length;
+  const baseAlto = fp.filter(p => (baseline[p.id] ?? 0) >= 7).length;
+  const dEmRisco = emRisco.length - baseEmRisco;
+  const dAlto = alto.length - baseAlto;
+
+  const series = snap?.series || [];
+  const trendReady = series.length >= 2;
+  const deltaTxt = (d: number) => d === 0 ? 'estável' : d > 0 ? `▲ +${d} vs 7d` : `▼ ${d} vs 7d`;
+  const deltaColor = (d: number) => d > 0 ? 'text-rose-400' : d < 0 ? 'text-emerald-400' : 'text-slate-500';
+
+  const squadPills: { key: 'all' | 'Able' | 'Baker'; label: string; accent: string }[] = [
+    { key: 'all', label: 'Todos', accent: '#a78bfa' },
+    { key: 'Able', label: 'Squad Able', accent: SQUAD_ACCENT.Able },
+    { key: 'Baker', label: 'Squad Baker', accent: SQUAD_ACCENT.Baker },
+  ];
+
+  return (
+    <div className="space-y-6">
+      {/* Filtro por squad */}
+      <div className="flex flex-wrap items-center gap-3">
+        {squadPills.map(pill => {
+          const active = squadFilter === pill.key;
+          return (
+            <button key={pill.key} onClick={() => setSquadFilter(pill.key)}
+              className={`flex items-center gap-3 pl-3 pr-5 py-2.5 rounded-2xl border transition-all ${
+                active ? 'bg-violet-600/10 border-violet-500/60' : 'bg-dark-card border-white/10 hover:border-white/25'}`}>
+              <span className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: `${pill.accent}22`, color: pill.accent }}>
+                <Users size={17} />
+              </span>
+              <span className="text-left">
+                <span className={`block text-sm font-black leading-tight ${active ? 'text-violet-300' : 'text-dark-text'}`}>{pill.label}</span>
+                <span className="block text-[10px] font-bold uppercase tracking-widest text-slate-500">{squadCounts[pill.key]} parceiros</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* KPIs */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <KpiCard icon={<ShieldAlert size={16} className="text-white" />} accent="bg-amber-600" label="Parceiros em risco"
+          value={String(emRisco.length)} sub={hasBaseline ? deltaTxt(dEmRisco) : 'Médio + Alto'} subColor={hasBaseline ? deltaColor(dEmRisco) : 'text-amber-400'} />
+        <KpiCard icon={<AlertTriangle size={16} className="text-white" />} accent="bg-rose-600" label="Risco alto"
+          value={String(alto.length)} sub={hasBaseline ? deltaTxt(dAlto) : '7+ sinais'} subColor={hasBaseline ? deltaColor(dAlto) : 'text-rose-400'} />
+        <KpiCard icon={<DollarSign size={16} className="text-white" />} accent="bg-blue-600" label="R$/mês em risco"
+          value={fmtBRL(rAtRisco)} sub="Investimento Médio+Alto" subColor="text-blue-400" />
+        <KpiCard icon={<Users size={16} className="text-white" />} accent="bg-violet-600" label="% base com sinais"
+          value={total > 0 ? `${Math.round((withSignals.length / total) * 100)}%` : '—'} sub={`${withSignals.length} de ${total} parceiros`} subColor="text-violet-400" />
+      </div>
+
+      {/* Distribuição + Evolução */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="bg-dark-card border border-white/10 rounded-2xl p-6">
+          <h2 className="text-sm font-bold text-dark-text mb-1">Distribuição de risco</h2>
+          <p className="text-xs text-slate-500 mb-4">Todos os parceiros por nível de sinais</p>
+          <div className="flex w-full h-3 rounded-full overflow-hidden bg-white/5">
+            {total === 0 ? <div className="w-full" /> : buckets.map(b => b.n > 0 && (
+              <div key={b.key} title={`${b.label}: ${b.n}`} style={{ width: `${(b.n / total) * 100}%`, background: b.hex }} />
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-2 mt-4">
+            {buckets.map(b => (
+              <div key={b.key} className="flex items-center justify-between">
+                <span className="flex items-center gap-2 text-xs text-slate-300">
+                  <span className="w-2.5 h-2.5 rounded-full" style={{ background: b.hex }} /> {b.label}
+                </span>
+                <span className="text-xs font-black text-dark-text">{b.n} <span className="text-[10px] text-slate-500 font-semibold">{total > 0 ? `${Math.round((b.n / total) * 100)}%` : ''}</span></span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-dark-card border border-white/10 rounded-2xl p-6">
+          <h2 className="text-sm font-bold text-dark-text mb-1">Evolução do risco</h2>
+          <p className="text-xs text-slate-500 mb-4">Parceiros em risco (Médio+Alto) e risco alto ao longo do tempo</p>
+          {trendReady ? (
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={series} margin={{ top: 5, right: 10, left: -18, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+                <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={(d: string) => d.slice(5).split('-').reverse().join('/')} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#94a3b8' }} />
+                <RechartsTooltip contentStyle={{ background: '#14082e', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, fontSize: 12 }} labelStyle={{ color: '#e2e8f0' }} />
+                <Line type="monotone" dataKey="emRisco" name="Em risco" stroke="#f59e0b" strokeWidth={2.5} dot={false} />
+                <Line type="monotone" dataKey="alto" name="Alto" stroke="#f43f5e" strokeWidth={2.5} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex flex-col items-center justify-center text-center gap-2 py-12 text-slate-500">
+              <TrendingDown size={30} className="opacity-30" />
+              <p className="text-sm font-medium text-slate-400">Começamos a registrar o risco hoje.</p>
+              <p className="text-xs">O gráfico de evolução aparece assim que houver alguns dias de histórico.</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Watchlist */}
+      <div className="bg-dark-card border border-white/10 rounded-2xl p-6">
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="text-sm font-bold text-dark-text">Watchlist — agir agora</h2>
+          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{withSignals.length} parceiro{withSignals.length === 1 ? '' : 's'} com sinais</span>
+        </div>
+        <p className="text-xs text-slate-500 mb-4">Ordenado do maior risco para o menor. Os chips mostram os sinais marcados de cada parceiro.</p>
+        {withSignals.length === 0 ? (
+          <p className="text-sm text-slate-500 text-center py-10">Nenhum parceiro com sinais de churn. 🎉</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-white/10">
+                  <th className="text-left py-2 pr-2">Parceiro</th>
+                  <th className="text-left py-2 pr-2">Squad</th>
+                  <th className="text-left py-2 pr-2">Gestor</th>
+                  <th className="text-left py-2 pr-2">Resultado</th>
+                  <th className="text-right py-2 pr-2">Investimento</th>
+                  <th className="text-center py-2 pr-2">Sinais</th>
+                  <th className="text-center py-2">Δ 7d</th>
+                </tr>
+              </thead>
+              <tbody>
+                {withSignals.map(({ p, count }) => {
+                  const risk = churnRisk(count);
+                  const marked = CHURN_TEMPLATE.flatMap(g => g.items).filter(it => p.churnChecklist?.[it.id]);
+                  const base = baseline[p.id];
+                  const d = base === undefined ? null : count - base;
+                  const resHex = getResultColor(p.projectResult);
+                  return (
+                    <tr key={p.id} className="border-b border-white/[0.04] align-top">
+                      <td className="py-3 pr-3 min-w-[200px]">
+                        <p className="font-semibold text-dark-text">{p.partner}</p>
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          {marked.map(m => {
+                            const c = CAT_COLOR[CHURN_LABELS[m.id]?.cat] || '#64748b';
+                            return <span key={m.id} className="text-[9px] font-semibold px-1.5 py-0.5 rounded-md" style={{ background: `${c}1f`, color: c }}>{m.label}</span>;
+                          })}
+                        </div>
+                      </td>
+                      <td className="py-3 pr-2 whitespace-nowrap">
+                        <span className="text-xs font-bold" style={{ color: SQUAD_ACCENT[p.squad || ''] || '#94a3b8' }}>{p.squad || '—'}</span>
+                      </td>
+                      <td className="py-3 pr-2 text-slate-300 whitespace-nowrap text-xs">{p.responsible || '—'}</td>
+                      <td className="py-3 pr-2 whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1.5 text-xs text-slate-300">
+                          <span className="w-2 h-2 rounded-full" style={{ background: resHex }} />{prettyResult(resultOf(p))}
+                        </span>
+                      </td>
+                      <td className="py-3 pr-2 text-right text-slate-300 font-medium whitespace-nowrap">{fmtBRL(parseCurrency(p.investment))}</td>
+                      <td className="py-3 pr-2 text-center whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: `${risk.hex}1f`, color: risk.hex }}>
+                          {count}/{CHURN_TOTAL} · {risk.label}
+                        </span>
+                      </td>
+                      <td className="py-3 text-center whitespace-nowrap">
+                        {d === null || !hasBaseline
+                          ? <span className="text-[11px] text-slate-600">—</span>
+                          : <span className={`text-[11px] font-bold ${deltaColor(d)}`}>{d === 0 ? '=' : d > 0 ? `▲ +${d}` : `▼ ${d}`}</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 export default function OperacionalConsolidado() {
   const [projects, setProjects] = useState<ProjectRow[]>([]);
@@ -364,7 +614,7 @@ export default function OperacionalConsolidado() {
   const [churns, setChurns] = useState<ChurnRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<'geral' | 'churn'>('geral');
+  const [tab, setTab] = useState<'geral' | 'churn' | 'risco'>('geral');
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -383,6 +633,8 @@ export default function OperacionalConsolidado() {
     } finally {
       setLoading(false);
     }
+    // Registra o snapshot do risco de hoje (idempotente). A série é buscada dentro da aba (por squad).
+    try { await fetch('/api/churn-snapshots/capture', { method: 'POST' }); } catch { /* silencioso */ }
   }, []);
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -449,7 +701,7 @@ export default function OperacionalConsolidado() {
 
       {/* Tabs */}
       <div className="flex items-center gap-1 border-b border-white/10">
-        {([['geral', 'Visão Geral', LayoutDashboard], ['churn', 'Churn', UserX]] as const).map(([key, label, Icon]) => (
+        {([['geral', 'Visão Geral', LayoutDashboard], ['risco', 'Risco de Churn', ShieldAlert], ['churn', 'Churn', UserX]] as const).map(([key, label, Icon]) => (
           <button key={key} onClick={() => setTab(key)}
             className={`flex items-center gap-2 px-4 py-2.5 text-sm font-bold border-b-2 transition-all -mb-px ${
               tab === key ? 'border-violet-400 text-violet-400' : 'border-transparent text-slate-500 hover:text-dark-text'
@@ -620,6 +872,8 @@ export default function OperacionalConsolidado() {
       </div>
       </>
       )}
+
+      {tab === 'risco' && <RiscoDeChurnTab projects={projects} />}
 
       {tab === 'churn' && <ChurnTab churns={churns} activeCount={clients.filter(c => c.status === 'Ativo').length} />}
     </div>

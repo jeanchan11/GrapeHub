@@ -362,7 +362,7 @@ export default function RichTextEditor({ content, onChange, systemUsers = [], mi
       <EditorContent editor={editor} />
       {slashOpen && (
         <div
-          className="fixed z-[9999] w-64 bg-dark-card border border-white/10 rounded-xl shadow-2xl overflow-y-auto flex flex-col py-2"
+          className="fixed z-[9999] w-64 bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl overflow-y-auto flex flex-col py-2"
           style={{ top: menuPos.top, left: menuPos.left, maxHeight: '300px' }}
           onMouseDown={e => e.preventDefault()}
         >
@@ -376,11 +376,11 @@ export default function RichTextEditor({ content, onChange, systemUsers = [], mi
                 const active = selectedIndex === cmd.idx;
                 return (
                   <button key={cmd.label} onMouseDown={e => { e.preventDefault(); run(cmd); }}
-                    className={`flex items-center gap-3 px-4 py-2 w-full text-left transition-colors ${active ? 'bg-violet-600/20' : 'hover:bg-white/5'}`}>
-                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${active ? 'bg-violet-500/30' : 'bg-white/5'}`}>
+                    className={`flex items-center gap-3 px-4 py-2 w-full text-left transition-colors ${active ? 'bg-violet-600/20' : 'hover:bg-slate-100 dark:hover:bg-white/5'}`}>
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${active ? 'bg-violet-500/30' : 'bg-slate-100 dark:bg-white/5'}`}>
                       <Icon size={13} className={active ? 'text-violet-400' : 'text-slate-400'} />
                     </div>
-                    <span className={`text-xs font-medium ${active ? 'text-violet-400' : 'text-dark-text'}`}>{cmd.label}</span>
+                    <span className={`text-xs font-medium ${active ? 'text-violet-500 dark:text-violet-400' : 'text-dark-text'}`}>{cmd.label}</span>
                   </button>
                 );
               })}
@@ -391,7 +391,7 @@ export default function RichTextEditor({ content, onChange, systemUsers = [], mi
       
       {mentionOpen && filteredUsers.length > 0 && (
         <div
-          className="fixed z-[9999] w-64 bg-dark-card border border-white/10 rounded-xl shadow-2xl overflow-y-auto flex flex-col py-2"
+          className="fixed z-[9999] w-64 bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl overflow-y-auto flex flex-col py-2"
           style={{ top: menuPos.top, left: menuPos.left, maxHeight: '300px' }}
           onMouseDown={e => e.preventDefault()}
         >
@@ -403,7 +403,7 @@ export default function RichTextEditor({ content, onChange, systemUsers = [], mi
             const displayName = u.name && u.name.trim() !== '' ? u.name : u.email;
             return (
               <button key={u.email} onMouseDown={e => { e.preventDefault(); runMention(u); }}
-                className={`flex items-center gap-3 px-4 py-2 w-full text-left transition-colors ${active ? 'bg-violet-600/20' : 'hover:bg-white/5'}`}>
+                className={`flex items-center gap-3 px-4 py-2 w-full text-left transition-colors ${active ? 'bg-violet-600/20' : 'hover:bg-slate-100 dark:hover:bg-white/5'}`}>
                 {u.picture ? (
                   <img src={u.picture} className="w-6 h-6 rounded-full object-cover shrink-0" alt={displayName} />
                 ) : (
@@ -411,7 +411,7 @@ export default function RichTextEditor({ content, onChange, systemUsers = [], mi
                     {displayName.slice(0, 2).toUpperCase()}
                   </div>
                 )}
-                <span className={`text-xs font-medium ${active ? 'text-violet-400' : 'text-dark-text'}`}>{displayName}</span>
+                <span className={`text-xs font-medium ${active ? 'text-violet-500 dark:text-violet-400' : 'text-dark-text'}`}>{displayName}</span>
               </button>
             );
           })}

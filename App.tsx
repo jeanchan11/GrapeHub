@@ -64,6 +64,8 @@ import SenhasPage from './src/pages/SenhasPage';
 import PlanosDeCarreira from './src/pages/PlanosDeCarreira';
 import Login from './src/components/LoginView';
 import LandingPage from './src/pages/LandingPage';
+const ClientPortal = React.lazy(() => import('./src/portal/ClientPortal'));
+import { ClientSessionProvider, useClientSession } from './src/portal/ClientSessionContext';
 import AdminPanel from './src/components/AdminPanel';
 import LoadingSpinner from './src/components/LoadingSpinner';
 import { auth, db, handleFirestoreError, OperationType, isFirebaseConfigValid } from './src/firebase';
@@ -85,6 +87,7 @@ import { MoodPopup } from './src/components/MoodPopup';
 
 const AppContent: React.FC = () => {
   const { user, userData, loading, refreshUserData } = useAuth();
+  const { session: clientSession, loading: clientLoading } = useClientSession();
   const { menu, refreshMenu } = useMenu();
   console.log('AppContent userData:', userData);
   // Deslogado: landing por padrão; botão "Entrar" leva pra tela de login antiga.
@@ -473,11 +476,20 @@ const AppContent: React.FC = () => {
     }
   };
 
-  if (loading) {
+  if (loading || clientLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-light-bg dark:bg-dark-bg">
         <LoadingSpinner size="lg" />
       </div>
+    );
+  }
+
+  // ── Portal do Cliente (auth própria via Neon): tem prioridade sobre o app interno ──
+  if (clientSession) {
+    return (
+      <React.Suspense fallback={<div className="min-h-screen flex items-center justify-center" style={{ background: '#0A0118' }}><LoadingSpinner size="lg" /></div>}>
+        <ClientPortal session={clientSession} />
+      </React.Suspense>
     );
   }
 
@@ -561,9 +573,11 @@ const App: React.FC = () => {
 
   return (
     <AuthProvider>
-      <MenuProvider>
-        <AppContent />
-      </MenuProvider>
+      <ClientSessionProvider>
+        <MenuProvider>
+          <AppContent />
+        </MenuProvider>
+      </ClientSessionProvider>
     </AuthProvider>
   );
 };

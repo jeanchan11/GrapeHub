@@ -820,8 +820,19 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
               isCollapsed ? 'w-10 h-10 justify-center mx-auto' : 'w-full px-4 gap-3'
             }`}
           >
-            <div className="shrink-0 flex items-center justify-center">
-              {theme === 'light' ? <Sun size={20} /> : <Moon size={20} />}
+            <div className="shrink-0 relative w-5 h-5 flex items-center justify-center">
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.span
+                  key={theme}
+                  initial={{ rotate: -90, opacity: 0, scale: 0.4 }}
+                  animate={{ rotate: 0, opacity: 1, scale: 1 }}
+                  exit={{ rotate: 90, opacity: 0, scale: 0.4 }}
+                  transition={{ duration: 0.25, ease: 'easeInOut' }}
+                  className="absolute inset-0 flex items-center justify-center"
+                >
+                  {theme === 'light' ? <Sun size={20} /> : <Moon size={20} />}
+                </motion.span>
+              </AnimatePresence>
             </div>
             {!isCollapsed && (
               <span className="text-sm font-medium whitespace-nowrap">

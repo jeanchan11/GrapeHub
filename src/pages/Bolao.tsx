@@ -80,7 +80,7 @@ const GameNode: React.FC<GameNodeProps> = ({ jogo, onClickBet, saved, isHighligh
 
   if (!jogo) {
     return (
-      <div className="rounded-xl border border-white/5 bg-white/[0.02] flex items-center justify-center"
+      <div className="rounded-xl border border-black/10 dark:border-white/5 bg-black/[0.04] dark:bg-white/[0.02] flex items-center justify-center"
         style={{ width: CARD_W, height: CARD_H }}>
         <span className="text-[9px] text-slate-700 font-bold tracking-wider">A Definir</span>
       </div>
@@ -97,17 +97,13 @@ const GameNode: React.FC<GameNodeProps> = ({ jogo, onClickBet, saved, isHighligh
         canBet ? 'cursor-pointer hover:border-violet-500/40 hover:shadow-lg hover:shadow-violet-500/10' : ''
       } ${
         isHighlighted
-          ? 'border-yellow-400/50 shadow-lg shadow-yellow-500/10'
-          : isEncerrado ? 'border-white/8' : hasBet ? 'border-emerald-500/20' : isTravado ? 'border-amber-500/20' : 'border-white/10'
+          ? 'border-yellow-400/50 shadow-lg shadow-yellow-500/10 bg-gradient-to-br from-yellow-500/[0.12] to-violet-600/[0.18]'
+          : hasBet ? 'border-emerald-500/20 bg-emerald-500/[0.06]'
+          : isEncerrado ? 'border-black/10 dark:border-white/8 bg-dark-card'
+          : isTravado ? 'border-amber-500/20 bg-dark-card'
+          : 'border-black/10 dark:border-white/10 bg-dark-card'
       }`}
-      style={{
-        width: CARD_W, height: CARD_H,
-        background: isHighlighted
-          ? 'linear-gradient(135deg, rgba(234,179,8,0.12) 0%, rgba(124,58,237,0.18) 100%)'
-          : hasBet
-          ? 'linear-gradient(135deg, rgba(16,185,129,0.06) 0%, rgba(16,185,129,0.02) 100%)'
-          : 'rgba(255,255,255,0.025)',
-      }}
+      style={{ width: CARD_W, height: CARD_H }}
     >
       <div className="h-full px-3 py-2 flex flex-col justify-between">
 
@@ -123,29 +119,29 @@ const GameNode: React.FC<GameNodeProps> = ({ jogo, onClickBet, saved, isHighligh
 
         {/* Middle: team — score — team */}
         <div className="flex items-center gap-1.5">
-          <span className="text-[12px] font-black text-white truncate flex-1 leading-none">{jogo.time_casa}</span>
+          <span className="text-[12px] font-black text-dark-text truncate flex-1 leading-none">{jogo.time_casa}</span>
 
           <div className="flex items-center gap-0.5 shrink-0">
             {hasBet || isTravado || isEncerrado ? (
               <>
                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black border ${
-                  hasBet ? 'bg-emerald-500/15 border-emerald-500/25 text-emerald-300' : jogo.palpite_casa !== null ? 'bg-white/8 border-white/15 text-white' : 'bg-transparent border-white/5 text-slate-700'
+                  hasBet ? 'bg-emerald-500/15 border-emerald-500/25 text-emerald-600 dark:text-emerald-300' : jogo.palpite_casa !== null ? 'bg-black/5 dark:bg-white/8 border-black/10 dark:border-white/15 text-dark-text' : 'bg-transparent border-black/10 dark:border-white/5 text-slate-700'
                 }`}>{jogo.palpite_casa ?? '–'}</div>
                 <span className="text-[8px] text-slate-600 font-bold">×</span>
                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black border ${
-                  hasBet ? 'bg-emerald-500/15 border-emerald-500/25 text-emerald-300' : jogo.palpite_fora !== null ? 'bg-white/8 border-white/15 text-white' : 'bg-transparent border-white/5 text-slate-700'
+                  hasBet ? 'bg-emerald-500/15 border-emerald-500/25 text-emerald-600 dark:text-emerald-300' : jogo.palpite_fora !== null ? 'bg-black/5 dark:bg-white/8 border-black/10 dark:border-white/15 text-dark-text' : 'bg-transparent border-black/10 dark:border-white/5 text-slate-700'
                 }`}>{jogo.palpite_fora ?? '–'}</div>
               </>
             ) : (
               <>
-                <div className="w-7 h-7 rounded-lg bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-xs font-black text-violet-400">?</div>
+                <div className="w-7 h-7 rounded-lg bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-xs font-black text-violet-600 dark:text-violet-400">?</div>
                 <span className="text-[8px] text-slate-600 font-bold">×</span>
-                <div className="w-7 h-7 rounded-lg bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-xs font-black text-violet-400">?</div>
+                <div className="w-7 h-7 rounded-lg bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-xs font-black text-violet-600 dark:text-violet-400">?</div>
               </>
             )}
           </div>
 
-          <span className="text-[12px] font-black text-white truncate flex-1 leading-none text-right">{jogo.time_fora}</span>
+          <span className="text-[12px] font-black text-dark-text truncate flex-1 leading-none text-right">{jogo.time_fora}</span>
         </div>
 
         {/* Bottom */}
@@ -153,12 +149,12 @@ const GameNode: React.FC<GameNodeProps> = ({ jogo, onClickBet, saved, isHighligh
           {isEncerrado && jogo.gols_casa !== null
             ? <span className="text-[8px] text-slate-500">Real: {jogo.gols_casa}×{jogo.gols_fora}</span>
             : canBet
-            ? <span className="text-[8px] text-violet-400/60 font-bold">{hasBet ? 'Clique para editar' : 'Clique para apostar'}</span>
+            ? <span className="text-[8px] text-violet-600 dark:text-violet-400/60 font-bold">{hasBet ? 'Clique para editar' : 'Clique para apostar'}</span>
             : <span />
           }
           {isEncerrado && jogo.pontos !== null
             ? <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-md ${
-                acertouExato ? 'bg-emerald-500/20 text-emerald-400' : acertouResult ? 'bg-blue-500/15 text-blue-400' : 'bg-white/5 text-slate-500'
+                acertouExato ? 'bg-emerald-500/20 text-emerald-400' : acertouResult ? 'bg-blue-500/15 text-blue-400' : 'bg-black/5 dark:bg-white/5 text-slate-500'
               }`}>{acertouExato ? '🎯' : acertouResult ? '✅' : '❌'} +{jogo.pontos}pts</span>
             : saved
             ? <span className="text-[8px] text-emerald-400 font-bold flex items-center gap-0.5"><Check size={8} /> Salvo</span>
@@ -195,18 +191,18 @@ const BetModal = ({
 
   const ScoreSelector = ({ value, onChange, team }: { value: number; onChange: (v: number) => void; team: string }) => (
     <div className="flex flex-col items-center gap-2">
-      <span className="text-sm font-black text-white text-center truncate w-28">{team}</span>
+      <span className="text-sm font-black text-dark-text text-center truncate w-28">{team}</span>
       <div className="flex items-center gap-2">
         <button
           onClick={() => onChange(Math.max(0, value - 1))}
-          className="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white font-black text-lg transition-all active:scale-90"
+          className="w-9 h-9 rounded-xl bg-black/5 dark:bg-white/5 hover:bg-black/5 dark:hover:bg-white/10 border border-black/10 dark:border-white/10 text-dark-text font-black text-lg transition-all active:scale-90"
         >−</button>
         <div className="w-14 h-14 rounded-2xl bg-violet-600/20 border-2 border-violet-500/40 flex items-center justify-center">
-          <span className="text-2xl font-black text-white">{value}</span>
+          <span className="text-2xl font-black text-dark-text">{value}</span>
         </div>
         <button
           onClick={() => onChange(Math.min(99, value + 1))}
-          className="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white font-black text-lg transition-all active:scale-90"
+          className="w-9 h-9 rounded-xl bg-black/5 dark:bg-white/5 hover:bg-black/5 dark:hover:bg-white/10 border border-black/10 dark:border-white/10 text-dark-text font-black text-lg transition-all active:scale-90"
         >+</button>
       </div>
     </div>
@@ -216,7 +212,7 @@ const BetModal = ({
     <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={onClose}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
       <div
-        className="relative bg-[#1a1a2e] rounded-2xl border border-white/10 shadow-2xl shadow-violet-500/10 p-6 w-[380px] max-w-[90vw]"
+        className="relative bg-dark-card rounded-2xl border border-black/10 dark:border-white/10 shadow-2xl shadow-violet-500/10 p-6 w-[380px] max-w-[90vw]"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -233,16 +229,16 @@ const BetModal = ({
         </div>
 
         {/* Preview */}
-        <div className="bg-white/5 rounded-xl p-3 mb-5 text-center border border-white/5">
+        <div className="bg-black/5 dark:bg-white/5 rounded-xl p-3 mb-5 text-center border border-black/10 dark:border-white/5">
           <span className="text-xs text-slate-400">Seu palpite: </span>
-          <span className="text-sm font-black text-white">{jogo.time_casa} {casa} × {fora} {jogo.time_fora}</span>
+          <span className="text-sm font-black text-dark-text">{jogo.time_casa} {casa} × {fora} {jogo.time_fora}</span>
         </div>
 
         {/* Buttons */}
         <div className="flex gap-3">
           <button
             onClick={onClose}
-            className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 text-xs font-bold transition-all border border-white/5"
+            className="flex-1 py-2.5 rounded-xl bg-black/5 dark:bg-white/5 hover:bg-black/5 dark:hover:bg-white/10 text-slate-400 text-xs font-bold transition-all border border-black/10 dark:border-white/5"
           >
             Cancelar
           </button>
@@ -261,13 +257,13 @@ const BetModal = ({
 
 // ── DrawConnector — conectores absolutos pixel-perfect ──────────────────────────
 const DrawConnector = ({ y1, y2 }: { y1: number; y2: number }) => {
-  const color = 'rgba(148,163,184,0.15)';
+  const cls = 'absolute bg-slate-300 dark:bg-white/10';
   return (
     <>
-      <div className="absolute" style={{ top: y1, left: 0, width: '50%', height: 2, backgroundColor: color }} />
-      <div className="absolute" style={{ top: y2, left: 0, width: '50%', height: 2, backgroundColor: color }} />
-      <div className="absolute" style={{ top: y1, left: '50%', width: 2, height: y2 - y1 + 2, backgroundColor: color }} />
-      <div className="absolute" style={{ top: (y1 + y2) / 2, left: '50%', right: 0, height: 2, backgroundColor: color }} />
+      <div className={cls} style={{ top: y1, left: 0, width: '50%', height: 2 }} />
+      <div className={cls} style={{ top: y2, left: 0, width: '50%', height: 2 }} />
+      <div className={cls} style={{ top: y1, left: '50%', width: 2, height: y2 - y1 + 2 }} />
+      <div className={cls} style={{ top: (y1 + y2) / 2, left: '50%', right: 0, height: 2 }} />
     </>
   );
 };
@@ -412,9 +408,9 @@ const BracketView = ({
       {/* ── Terceiro Lugar ── */}
       <div className="mt-8">
         <div className="flex items-center gap-4 mb-4">
-          <div className="h-px flex-1 bg-white/5" />
+          <div className="h-px flex-1 bg-black/5 dark:bg-white/5" />
           <span className="text-[9px] text-slate-600 font-black uppercase tracking-widest">3° e 4° Lugar</span>
-          <div className="h-px flex-1 bg-white/5" />
+          <div className="h-px flex-1 bg-black/5 dark:bg-white/5" />
         </div>
         <GameNode {...nodeProps(terceiroJogo)} />
       </div>
@@ -459,7 +455,7 @@ const Podio = ({ ranking, myUid, onSelectCollab }: { ranking: RankingEntry[]; my
   ];
 
   return (
-    <div className="relative flex items-end justify-center gap-6 mb-12 pt-8 pb-4 bg-dark-bg/40 rounded-3xl border border-white/5 max-w-2xl mx-auto overflow-hidden px-12 shadow-inner">
+    <div className="relative flex items-end justify-center gap-6 mb-12 pt-8 pb-4 bg-dark-bg/40 rounded-3xl border border-black/10 dark:border-white/5 max-w-2xl mx-auto overflow-hidden px-12 shadow-inner">
       {/* Spotlights/Beams */}
       <div className="absolute inset-x-0 top-0 h-full pointer-events-none overflow-hidden flex justify-center gap-24 opacity-40">
         <div className="w-20 h-80 bg-gradient-to-b from-white/10 via-white/2 to-transparent blur-xl transform rotate-12 -translate-x-16" />
@@ -480,10 +476,10 @@ const Podio = ({ ranking, myUid, onSelectCollab }: { ranking: RankingEntry[]; my
             {entry ? (
               <div 
                 onClick={() => onSelectCollab(entry)}
-                className={`flex flex-col items-center rounded-2xl bg-dark-card/90 border ${isMe ? 'border-violet-500/60 shadow-[0_0_15px_rgba(124,58,237,0.3)]' : 'border-white/10'} w-full shadow-xl transition-all duration-300 hover:scale-105 mb-2 relative cursor-pointer`}
+                className={`flex flex-col items-center rounded-2xl bg-dark-card/90 border ${isMe ? 'border-violet-500/60 shadow-[0_0_15px_rgba(124,58,237,0.3)]' : 'border-black/10 dark:border-white/10'} w-full shadow-xl transition-all duration-300 hover:scale-105 mb-2 relative cursor-pointer`}
               >
                 <div className="absolute -top-3.5 flex justify-center w-full left-0 z-20">
-                  <div className="bg-dark-card/95 border border-white/15 p-1 rounded-full shadow-lg">
+                  <div className="bg-dark-card/95 border border-black/10 dark:border-white/15 p-1 rounded-full shadow-lg">
                     {m.icon}
                   </div>
                 </div>
@@ -491,15 +487,15 @@ const Podio = ({ ranking, myUid, onSelectCollab }: { ranking: RankingEntry[]; my
                   <img
                     src={entry.bolao_avatar_url || entry.user_picture}
                     alt={entry.user_name || ''}
-                    className="w-full h-64 object-cover object-center rounded-t-2xl border-b border-white/5"
+                    className="w-full h-64 object-cover object-center rounded-t-2xl border-b border-black/10 dark:border-white/5"
                   />
                 ) : (
-                  <div className="w-full h-64 bg-violet-500/10 flex items-center justify-center text-violet-400 font-bold text-3xl rounded-t-2xl border-b border-white/5">
+                  <div className="w-full h-64 bg-violet-500/10 flex items-center justify-center text-violet-400 font-bold text-3xl rounded-t-2xl border-b border-black/10 dark:border-white/5">
                     {entry.user_name?.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase() || 'U'}
                   </div>
                 )}
                 <div className="w-full px-2 py-2 flex flex-col items-center gap-0.5">
-                  <span className="text-xs font-black text-white text-center truncate w-full mt-0.5">
+                  <span className="text-xs font-black text-dark-text text-center truncate w-full mt-0.5">
                     {entry.user_name || 'Usuário'}
                   </span>
                   <span className="text-[11px] text-violet-300 font-black">{entry.total_pontos} pts</span>
@@ -507,7 +503,7 @@ const Podio = ({ ranking, myUid, onSelectCollab }: { ranking: RankingEntry[]; my
                 </div>
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center h-[306px] w-full border border-dashed border-white/5 rounded-2xl mb-2 bg-black/10 text-[9px] text-slate-600 uppercase tracking-wider font-bold">
+              <div className="flex flex-col items-center justify-center h-[306px] w-full border border-dashed border-black/10 dark:border-white/5 rounded-2xl mb-2 bg-black/10 text-[9px] text-slate-600 uppercase tracking-wider font-bold">
                 Vazio
               </div>
             )}
@@ -541,8 +537,8 @@ const TabLeaderboard = ({ ranking, myUid, loading, onSelectCollab }: { ranking: 
   return (
     <div>
       <Podio ranking={ranking} myUid={myUid} onSelectCollab={onSelectCollab} />
-      <div className="bg-dark-card rounded-2xl border border-white/10 overflow-hidden">
-        <div className="grid grid-cols-[40px_1fr_80px_80px_80px] px-4 py-2 border-b border-white/5">
+      <div className="bg-dark-card rounded-2xl border border-black/10 dark:border-white/10 overflow-hidden">
+        <div className="grid grid-cols-[40px_1fr_80px_80px_80px] px-4 py-2 border-b border-black/10 dark:border-white/5">
           {['#','Participante','Pts','Exatos','Palp.'].map(h => <span key={h} className="text-[9px] text-slate-600 font-bold uppercase text-center first:text-left">{h}</span>)}
         </div>
         {ranking.map((entry, i) => {
@@ -551,7 +547,7 @@ const TabLeaderboard = ({ ranking, myUid, loading, onSelectCollab }: { ranking: 
             <div 
               key={entry.user_id} 
               onClick={() => onSelectCollab(entry)}
-              className={`grid grid-cols-[40px_1fr_80px_80px_80px] px-4 py-3 border-b border-white/5 last:border-0 cursor-pointer ${isMe ? 'bg-violet-500/10 border-l-2 border-l-violet-500' : 'hover:bg-white/[0.02]'}`}
+              className={`grid grid-cols-[40px_1fr_80px_80px_80px] px-4 py-3 border-b border-black/10 dark:border-white/5 last:border-0 cursor-pointer ${isMe ? 'bg-violet-500/10 border-l-2 border-l-violet-500' : 'hover:bg-black/[0.04] dark:hover:bg-white/[0.02]'}`}
             >
               <span className={`text-sm font-black ${i===0?'text-yellow-400':i===1?'text-slate-300':i===2?'text-amber-600':'text-slate-600'}`}>{i+1}</span>
               <div className="flex items-center gap-2 min-w-0">
@@ -655,46 +651,46 @@ const TabAdmin = ({
   return (
     <div className="space-y-8">
       {/* Add game */}
-      <div className="bg-dark-card rounded-2xl border border-white/10 p-6">
+      <div className="bg-dark-card rounded-2xl border border-black/10 dark:border-white/10 p-6">
         <h3 className="text-sm font-black text-dark-text mb-4 flex items-center gap-2"><Plus size={14} className="text-violet-400" /> Cadastrar Jogo</h3>
         <div className="grid grid-cols-2 gap-3 mb-3">
           <div>
             <label className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider block mb-1">Fase</label>
             <select value={form.fase} onChange={e => setForm(f => ({ ...f, fase: e.target.value }))}
-              className="w-full bg-dark-bg border border-white/10 rounded-xl px-3 py-2.5 text-sm text-dark-text focus:outline-none focus:border-violet-500">
+              className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2.5 text-sm text-dark-text focus:outline-none focus:border-violet-500">
               {FASE_OPTIONS.map(f => <option key={f} value={f}>{f}</option>)}
             </select>
           </div>
           <div>
             <label className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider block mb-1">Data/Hora</label>
             <input type="datetime-local" value={form.inicia_em} onChange={e => setForm(f => ({ ...f, inicia_em: e.target.value }))}
-              className="w-full bg-dark-bg border border-white/10 rounded-xl px-3 py-2.5 text-sm text-dark-text focus:outline-none focus:border-violet-500" />
+              className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2.5 text-sm text-dark-text focus:outline-none focus:border-violet-500" />
           </div>
           <div>
             <label className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider block mb-1">Time Casa</label>
             <input value={form.time_casa} onChange={e => setForm(f => ({ ...f, time_casa: e.target.value }))} placeholder="Ex: Brasil"
-              className="w-full bg-dark-bg border border-white/10 rounded-xl px-3 py-2.5 text-sm text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500" />
+              className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2.5 text-sm text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500" />
           </div>
           <div>
             <label className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider block mb-1">Time Fora</label>
             <input value={form.time_fora} onChange={e => setForm(f => ({ ...f, time_fora: e.target.value }))} placeholder="Ex: França"
-              className="w-full bg-dark-bg border border-white/10 rounded-xl px-3 py-2.5 text-sm text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500" />
+              className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2.5 text-sm text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500" />
           </div>
         </div>
         <button onClick={handleAddJogo} disabled={saving || !form.time_casa || !form.time_fora || !form.inicia_em}
           className="w-full py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-sm font-bold text-white transition-all flex items-center justify-center gap-2">
-          {saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Plus size={14} />}
+          {saving ? <div className="w-4 h-4 border-2 border-black/10 dark:border-white/30 border-t-white rounded-full animate-spin" /> : <Plus size={14} />}
           Cadastrar
         </button>
       </div>
 
       {/* Results list */}
-      <div className="bg-dark-card rounded-2xl border border-white/10 overflow-hidden">
-        <div className="px-6 py-4 border-b border-white/5">
+      <div className="bg-dark-card rounded-2xl border border-black/10 dark:border-white/10 overflow-hidden">
+        <div className="px-6 py-4 border-b border-black/10 dark:border-white/5">
           <h3 className="text-sm font-black text-dark-text flex items-center gap-2"><Target size={14} className="text-violet-400" /> Lançar Resultados</h3>
         </div>
         {sorted.map(j => (
-          <div key={j.id} className="flex items-center justify-between px-6 py-3 border-b border-white/5 last:border-0">
+          <div key={j.id} className="flex items-center justify-between px-6 py-3 border-b border-black/10 dark:border-white/5 last:border-0">
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-[9px] text-violet-400 font-black uppercase bg-violet-500/10 px-1.5 py-0.5 rounded">{j.fase}</span>
@@ -705,7 +701,7 @@ const TabAdmin = ({
             <div className="flex items-center gap-2">
               {j.status !== 'encerrado' && (
                 <button onClick={() => setEditModal({ jogo: j, fase: j.fase, time_casa: j.time_casa, time_fora: j.time_fora, inicia_em: toLocalInput(j.inicia_em) })}
-                  className="text-xs font-bold text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1">
+                  className="text-xs font-bold text-slate-400 hover:text-dark-text bg-black/5 dark:bg-white/5 hover:bg-black/5 dark:hover:bg-white/10 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1">
                   <Edit2 size={12} /> Editar
                 </button>
               )}
@@ -727,23 +723,23 @@ const TabAdmin = ({
       {/* Result modal */}
       {resultModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setResultModal(null)}>
-          <div className="bg-dark-card border border-white/10 rounded-2xl p-6 w-80 shadow-2xl" onClick={e => e.stopPropagation()}>
+          <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-6 w-80 shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-black text-dark-text">Resultado Final</h3>
               <button onClick={() => setResultModal(null)} className="text-slate-500 hover:text-dark-text"><X size={16} /></button>
             </div>
             <p className="text-xs text-slate-400 mb-1 text-center font-bold">{resultModal.jogo.fase}</p>
-            <p className="text-sm text-white mb-4 text-center font-black">{resultModal.jogo.time_casa} × {resultModal.jogo.time_fora}</p>
+            <p className="text-sm text-dark-text mb-4 text-center font-black">{resultModal.jogo.time_casa} × {resultModal.jogo.time_fora}</p>
             <div className="flex items-center gap-3 mb-5">
               <input type="number" min={0} value={resultModal.casa} onChange={e => setResultModal(r => r ? { ...r, casa: e.target.value } : r)} placeholder="0"
-                className="flex-1 min-w-0 w-0 bg-dark-bg border border-white/10 rounded-xl px-3 py-3 text-xl font-black text-white text-center focus:outline-none focus:border-violet-500" />
+                className="flex-1 min-w-0 w-0 bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-3 text-xl font-black text-dark-text text-center focus:outline-none focus:border-violet-500" />
               <span className="text-slate-500 font-bold text-lg shrink-0">×</span>
               <input type="number" min={0} value={resultModal.fora} onChange={e => setResultModal(r => r ? { ...r, fora: e.target.value } : r)} placeholder="0"
-                className="flex-1 min-w-0 w-0 bg-dark-bg border border-white/10 rounded-xl px-3 py-3 text-xl font-black text-white text-center focus:outline-none focus:border-violet-500" />
+                className="flex-1 min-w-0 w-0 bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-3 text-xl font-black text-dark-text text-center focus:outline-none focus:border-violet-500" />
             </div>
             <button onClick={handleLancarResultado} disabled={savingResult || !resultModal.casa || !resultModal.fora}
               className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-sm font-bold text-white transition-all flex items-center justify-center gap-2">
-              {savingResult ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Check size={14} />}
+              {savingResult ? <div className="w-4 h-4 border-2 border-black/10 dark:border-white/30 border-t-white rounded-full animate-spin" /> : <Check size={14} />}
               Confirmar Resultado
             </button>
           </div>
@@ -753,7 +749,7 @@ const TabAdmin = ({
       {/* Edit game modal — definir times/fase/data dos próximos jogos */}
       {editModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setEditModal(null)}>
-          <div className="bg-dark-card border border-white/10 rounded-2xl p-6 w-96 shadow-2xl" onClick={e => e.stopPropagation()}>
+          <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-6 w-96 shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-black text-dark-text flex items-center gap-2"><Edit2 size={14} className="text-violet-400" /> Editar Jogo</h3>
               <button onClick={() => setEditModal(null)} className="text-slate-500 hover:text-dark-text"><X size={16} /></button>
@@ -762,29 +758,29 @@ const TabAdmin = ({
               <div>
                 <label className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider block mb-1">Fase</label>
                 <select value={editModal.fase} onChange={e => setEditModal(m => m ? { ...m, fase: e.target.value } : m)}
-                  className="w-full bg-dark-bg border border-white/10 rounded-xl px-3 py-2.5 text-sm text-dark-text focus:outline-none focus:border-violet-500">
+                  className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2.5 text-sm text-dark-text focus:outline-none focus:border-violet-500">
                   {FASE_OPTIONS.map(f => <option key={f} value={f}>{f}</option>)}
                 </select>
               </div>
               <div>
                 <label className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider block mb-1">Data/Hora</label>
                 <input type="datetime-local" value={editModal.inicia_em} onChange={e => setEditModal(m => m ? { ...m, inicia_em: e.target.value } : m)}
-                  className="w-full bg-dark-bg border border-white/10 rounded-xl px-3 py-2.5 text-sm text-dark-text focus:outline-none focus:border-violet-500" />
+                  className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2.5 text-sm text-dark-text focus:outline-none focus:border-violet-500" />
               </div>
               <div>
                 <label className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider block mb-1">Time Casa</label>
                 <input value={editModal.time_casa} onChange={e => setEditModal(m => m ? { ...m, time_casa: e.target.value } : m)} placeholder="Ex: Brasil"
-                  className="w-full bg-dark-bg border border-white/10 rounded-xl px-3 py-2.5 text-sm text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500" />
+                  className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2.5 text-sm text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500" />
               </div>
               <div>
                 <label className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider block mb-1">Time Fora</label>
                 <input value={editModal.time_fora} onChange={e => setEditModal(m => m ? { ...m, time_fora: e.target.value } : m)} placeholder="Ex: França"
-                  className="w-full bg-dark-bg border border-white/10 rounded-xl px-3 py-2.5 text-sm text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500" />
+                  className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2.5 text-sm text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500" />
               </div>
             </div>
             <button onClick={handleEditJogo} disabled={savingEdit || !editModal.time_casa.trim() || !editModal.time_fora.trim() || !editModal.inicia_em}
               className="w-full py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-sm font-bold text-white transition-all flex items-center justify-center gap-2">
-              {savingEdit ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Check size={14} />}
+              {savingEdit ? <div className="w-4 h-4 border-2 border-black/10 dark:border-white/30 border-t-white rounded-full animate-spin" /> : <Check size={14} />}
               Salvar
             </button>
           </div>
@@ -832,16 +828,16 @@ function ColaboradorDetalhesModal({ entry, myUid, bolaoId, onClose, apiFetch }: 
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-[#0a0118]/80" onClick={onClose} />
 
-      <div className="relative w-full max-w-3xl bg-[#11111b]/95 border border-white/10 rounded-3xl shadow-2xl overflow-hidden flex flex-col md:flex-row z-10 animate-in fade-in zoom-in-95 duration-200">
-        <button onClick={onClose} className="absolute top-4 right-4 z-20 text-slate-400 hover:text-white transition-colors bg-white/5 hover:bg-white/10 p-1.5 rounded-full">
+      <div className="relative w-full max-w-3xl bg-dark-card border border-black/10 dark:border-white/10 rounded-3xl shadow-2xl overflow-hidden flex flex-col md:flex-row z-10 animate-in fade-in zoom-in-95 duration-200">
+        <button onClick={onClose} className="absolute top-4 right-4 z-20 text-slate-400 hover:text-dark-text transition-colors bg-black/5 dark:bg-white/5 hover:bg-black/5 dark:hover:bg-white/10 p-1.5 rounded-full">
           <X size={18} />
         </button>
 
-        <div className="w-full md:w-72 bg-gradient-to-b from-violet-950/20 to-black/40 flex flex-col items-center justify-center p-8 border-b md:border-b-0 md:border-r border-white/5 relative shrink-0">
+        <div className="w-full md:w-72 bg-gradient-to-b from-violet-950/20 to-black/40 flex flex-col items-center justify-center p-8 border-b md:border-b-0 md:border-r border-black/10 dark:border-white/5 relative shrink-0">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(124,58,237,0.1),transparent_70%)] pointer-events-none" />
           
           {entry.bolao_avatar_url || entry.user_picture ? (
-            <div className="relative w-56 h-80 rounded-2xl overflow-hidden border border-white/15 shadow-[0_0_30px_rgba(124,58,237,0.35)] mb-4 transition-all duration-300 hover:scale-[1.03] hover:shadow-[0_0_40px_rgba(124,58,237,0.5)] group">
+            <div className="relative w-56 h-80 rounded-2xl overflow-hidden border border-black/10 dark:border-white/15 shadow-[0_0_30px_rgba(124,58,237,0.35)] mb-4 transition-all duration-300 hover:scale-[1.03] hover:shadow-[0_0_40px_rgba(124,58,237,0.5)] group">
               <img
                 src={entry.bolao_avatar_url || entry.user_picture}
                 alt={entry.user_name || ''}
@@ -850,12 +846,12 @@ function ColaboradorDetalhesModal({ entry, myUid, bolaoId, onClose, apiFetch }: 
               <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
             </div>
           ) : (
-            <div className="w-56 h-80 rounded-2xl bg-violet-500/10 flex items-center justify-center text-violet-400 font-bold text-7xl border border-white/10 shadow-lg mb-4 transition-all duration-300 hover:scale-[1.03] hover:bg-violet-500/15">
+            <div className="w-56 h-80 rounded-2xl bg-violet-500/10 flex items-center justify-center text-violet-400 font-bold text-7xl border border-black/10 dark:border-white/10 shadow-lg mb-4 transition-all duration-300 hover:scale-[1.03] hover:bg-violet-500/15">
               {entry.user_name?.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase() || 'U'}
             </div>
           )}
 
-          <h3 className="text-lg font-black text-white text-center tracking-tight truncate max-w-full">
+          <h3 className="text-lg font-black text-dark-text text-center tracking-tight truncate max-w-full">
             {entry.user_name || 'Usuário'}
           </h3>
           {isMe && (
@@ -867,21 +863,21 @@ function ColaboradorDetalhesModal({ entry, myUid, bolaoId, onClose, apiFetch }: 
 
         <div className="flex-1 p-6 md:p-8 flex flex-col min-w-0">
           <div className="grid grid-cols-3 gap-3 mb-6">
-            <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-3 flex flex-col items-center">
+            <div className="bg-black/[0.04] dark:bg-white/[0.02] border border-black/10 dark:border-white/5 rounded-2xl p-3 flex flex-col items-center">
               <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">Pontos</span>
               <span className="text-xl font-black text-violet-400">{entry.total_pontos}</span>
             </div>
-            <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-3 flex flex-col items-center">
+            <div className="bg-black/[0.04] dark:bg-white/[0.02] border border-black/10 dark:border-white/5 rounded-2xl p-3 flex flex-col items-center">
               <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">Exatos</span>
               <span className="text-xl font-black text-emerald-400">{entry.qtd_exatos}</span>
             </div>
-            <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-3 flex flex-col items-center">
+            <div className="bg-black/[0.04] dark:bg-white/[0.02] border border-black/10 dark:border-white/5 rounded-2xl p-3 flex flex-col items-center">
               <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">Palpites</span>
               <span className="text-xl font-black text-slate-300">{entry.qtd_palpites}</span>
             </div>
           </div>
 
-          <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-1.5 border-b border-white/5 pb-2">
+          <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-1.5 border-b border-black/10 dark:border-white/5 pb-2">
             <Trophy size={11} /> Palpites Detalhados
           </h4>
 
@@ -897,7 +893,7 @@ function ColaboradorDetalhesModal({ entry, myUid, bolaoId, onClose, apiFetch }: 
                 const showPalpite = isMe || isLocked;
 
                 return (
-                  <div key={j.id} className="bg-white/[0.01] border border-white/5 rounded-xl p-3 flex items-center justify-between gap-4">
+                  <div key={j.id} className="bg-black/[0.04] dark:bg-white/[0.01] border border-black/10 dark:border-white/5 rounded-xl p-3 flex items-center justify-between gap-4">
                     <div className="min-w-0 flex-1">
                       <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">{j.fase}</p>
                       <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300 truncate">
@@ -927,7 +923,7 @@ function ColaboradorDetalhesModal({ entry, myUid, bolaoId, onClose, apiFetch }: 
 
                       {j.status === 'encerrado' && (
                         <>
-                          <div className="h-6 w-px bg-white/5" />
+                          <div className="h-6 w-px bg-black/5 dark:bg-white/5" />
                           <div className="flex flex-col items-center">
                             <span className="text-[8px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Resultado</span>
                             <span className="text-sm font-black text-slate-300">
@@ -939,7 +935,7 @@ function ColaboradorDetalhesModal({ entry, myUid, bolaoId, onClose, apiFetch }: 
 
                       {j.status === 'encerrado' && hasPalpite && (
                         <>
-                          <div className="h-6 w-px bg-white/5" />
+                          <div className="h-6 w-px bg-black/5 dark:bg-white/5" />
                           <div className={`px-2 py-1 rounded-lg text-xs font-black shrink-0 ${j.pontos === 10 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : j.pontos > 0 ? 'bg-violet-500/10 text-violet-400 border border-violet-500/20' : 'bg-slate-500/5 text-slate-600 border border-slate-500/10'}`}>
                             +{j.pontos} pts
                           </div>
@@ -983,11 +979,11 @@ function PalpitesTodosView({ rows }: { rows: any[] }) {
       {games.map(g => {
         const encerrado = g.status === 'encerrado';
         return (
-          <div key={g.jogo_id} className="bg-dark-card rounded-2xl border border-white/10 overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-3 border-b border-white/5 bg-white/[0.02]">
+          <div key={g.jogo_id} className="bg-dark-card rounded-2xl border border-black/10 dark:border-white/10 overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-black/10 dark:border-white/5 bg-black/[0.04] dark:bg-white/[0.02]">
               <div className="flex items-center gap-2 min-w-0">
                 <span className="text-[9px] text-violet-400 font-black uppercase bg-violet-500/10 px-1.5 py-0.5 rounded shrink-0">{g.fase}</span>
-                <p className="text-sm font-black text-white truncate">{g.time_casa} <span className="text-slate-500">×</span> {g.time_fora}</p>
+                <p className="text-sm font-black text-dark-text truncate">{g.time_casa} <span className="text-slate-500">×</span> {g.time_fora}</p>
               </div>
               <div className="flex items-center gap-3 shrink-0">
                 {encerrado && <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg">{g.gols_casa} × {g.gols_fora} ✓</span>}
@@ -997,15 +993,15 @@ function PalpitesTodosView({ rows }: { rows: any[] }) {
             </div>
             <div className="divide-y divide-white/5">
               {g.bets.map((b: any, i: number) => (
-                <div key={i} className="flex items-center justify-between px-5 py-2.5 hover:bg-white/[0.02] transition-colors">
+                <div key={i} className="flex items-center justify-between px-5 py-2.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.02] transition-colors">
                   <div className="flex items-center gap-2.5 min-w-0">
                     <Avatar name={b.user_name} url={b.bolao_avatar_url || b.user_picture} size={6} />
                     <span className="text-sm text-slate-300 font-medium truncate">{b.user_name}</span>
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
-                    <span className="text-sm font-black text-white tabular-nums">{b.palpite_casa} <span className="text-slate-500 font-normal">×</span> {b.palpite_fora}</span>
+                    <span className="text-sm font-black text-dark-text tabular-nums">{b.palpite_casa} <span className="text-slate-500 font-normal">×</span> {b.palpite_fora}</span>
                     {encerrado && b.pontos != null && (
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full w-16 text-center ${b.placar_exato ? 'bg-emerald-500/15 text-emerald-400' : b.resultado_certo ? 'bg-amber-500/15 text-amber-400' : 'bg-white/5 text-slate-500'}`}>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full w-16 text-center ${b.placar_exato ? 'bg-emerald-500/15 text-emerald-400' : b.resultado_certo ? 'bg-amber-500/15 text-amber-400' : 'bg-black/5 dark:bg-white/5 text-slate-500'}`}>
                         {b.pontos} pt{b.pontos === 1 ? '' : 's'}
                       </span>
                     )}
@@ -1096,8 +1092,8 @@ export default function Bolao() {
   ];
 
   return (
-    <div className="p-6 md:p-8 bg-dark-bg text-white min-h-screen">
-      <div className="mb-8 relative overflow-hidden rounded-2xl border border-white/10" style={{ maxHeight: 260 }}>
+    <div className="p-6 md:p-8 bg-dark-bg text-dark-text min-h-screen">
+      <div className="mb-8 relative overflow-hidden rounded-2xl border border-black/10 dark:border-white/10" style={{ maxHeight: 260 }}>
         <img 
           src="/bolao.png" 
           alt="Bolão da Copa" 
@@ -1113,13 +1109,13 @@ export default function Bolao() {
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-1 mb-8 bg-dark-card p-1 rounded-xl border border-white/10 w-fit">
+      <div className="flex items-center gap-1 mb-8 bg-dark-card p-1 rounded-xl border border-black/10 dark:border-white/10 w-fit">
         {tabs.map(tab => {
           const Icon = tab.icon;
           return (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
               className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-                activeTab === tab.id ? 'bg-violet-600 text-white shadow-lg shadow-violet-500/20' : 'text-slate-400 hover:text-dark-text hover:bg-white/5'
+                activeTab === tab.id ? 'bg-violet-600 text-white shadow-lg shadow-violet-500/20' : 'text-slate-400 hover:text-dark-text hover:bg-black/5 dark:hover:bg-white/5'
               }`}>
               <Icon size={13} />{tab.label}
             </button>
@@ -1149,7 +1145,7 @@ export default function Bolao() {
       {activeTab === 'premiacoes' && (
         <div className="space-y-6">
           <div className="text-center mb-2">
-            <h2 className="text-lg font-black text-white">🏆 Premiações do <span className="text-violet-400">Bolão</span></h2>
+            <h2 className="text-lg font-black text-dark-text">🏆 Premiações do <span className="text-violet-400">Bolão</span></h2>
             <p className="text-[11px] text-slate-500 uppercase tracking-widest mt-1">Confira o que está em jogo!</p>
           </div>
 
@@ -1197,7 +1193,7 @@ export default function Bolao() {
             </div>
           </div>
 
-          <div className="bg-dark-card rounded-2xl border border-white/10 p-5 mt-4">
+          <div className="bg-dark-card rounded-2xl border border-black/10 dark:border-white/10 p-5 mt-4">
             <h3 className="text-xs font-bold text-slate-400 uppercase mb-3">📋 Regras de Pontuação</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div className="flex items-center gap-3 bg-emerald-500/5 rounded-xl px-4 py-3 border border-emerald-500/10">

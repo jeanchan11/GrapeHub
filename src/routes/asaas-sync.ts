@@ -304,8 +304,8 @@ async function syncExtrato(pool: any): Promise<{ upserted: number }> {
         tx.date,
         tx.description || tx.type || null,
         tx.balance ?? null,
-        tx.payment || null,
-        tx.transfer || null,
+        tx.paymentId || tx.payment || null,
+        tx.transferId || tx.transfer || null,
         JSON.stringify(tx),
       ]);
       upserted++;
@@ -313,6 +313,34 @@ async function syncExtrato(pool: any): Promise<{ upserted: number }> {
   }
 
   return { upserted };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pareia estornos de Pix (transação cancelada + o crédito de devolução) e marca AMBOS
+// com is_reversed_pair=true para excluí-los dos cálculos financeiros (despesa/entrada/DRE).
+// Link EXATO pelo pixTransactionId: o estorno (PIX_TRANSACTION_DEBIT_REFUND) e o débito
+// original compartilham o mesmo pixTransactionId. Sem chute por valor/data.
+// ─────────────────────────────────────────────────────────────────────────────
+async function pairReversedTransactions(pool: any): Promise<{ marked: number }> {
+  try {
+    const r = await pool.query(`
+      UPDATE fin_movements_asaas m
+      SET is_reversed_pair = true
+      WHERE m.account = 'asaas'
+        AND m.is_reversed_pair = false
+        AND (m.raw_json->>'pixTransactionId') IS NOT NULL
+        AND (m.raw_json->>'pixTransactionId') IN (
+          SELECT raw_json->>'pixTransactionId'
+          FROM fin_movements_asaas
+          WHERE transaction_type = 'PIX_TRANSACTION_DEBIT_REFUND'
+            AND (raw_json->>'pixTransactionId') IS NOT NULL
+        )
+    `);
+    return { marked: r.rowCount || 0 };
+  } catch (e: any) {
+    console.warn('[asaas-sync] pairReversedTransactions:', e.message);
+    return { marked: 0 };
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -522,6 +550,9 @@ export async function runAsaasSync(pool: any): Promise<void> {
     // const reconResult = await reconcileBills(pool);
     const reconResult = { matched: 0 };
 
+    // Pareia estornos de Pix (débito cancelado + devolução) e exclui dos cálculos
+    try { const rev = await pairReversedTransactions(pool); if (rev.marked) console.log(`[asaas-sync] estornos pareados: ${rev.marked} movimento(s) excluído(s)`); } catch (e: any) { console.warn('[estornos] pós-sync:', e.message); }
+
     // Categoriza movimentos novos no plano de contas (alimenta a DRE ao vivo)
     try { await categorizeMovements(pool); } catch (e: any) { console.warn('[categorizar] pós-sync:', e.message); }
 
@@ -646,6 +677,9 @@ export function setupAsaasSyncRoutes(app: any, pool: any) {
     return pool.query(`ALTER TABLE fin_movements_asaas ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;`);
   }).then(() => {
     return pool.query(`ALTER TABLE fin_movements_asaas ADD COLUMN IF NOT EXISTS linked_bill_entry_id INT;`);
+  }).then(() => {
+    // Estornos/cancelamentos: par débito-cancelado + estorno é excluído dos cálculos financeiros
+    return pool.query(`ALTER TABLE fin_movements_asaas ADD COLUMN IF NOT EXISTS is_reversed_pair BOOLEAN DEFAULT false;`);
   }).catch((e: any) => console.warn('[bills] migrate fin_movements_asaas:', e.message));
 
   // POST /api/fin/sync/run — executa sync manual imediato

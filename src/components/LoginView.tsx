@@ -4,9 +4,10 @@
 import React, { useState } from 'react';
 import { auth, googleProvider } from '../firebase';
 import { signInWithPopup } from 'firebase/auth';
-import { LogIn, AlertTriangle, ChevronRight, Zap, ArrowLeft } from 'lucide-react';
+import { LogIn, AlertTriangle, ChevronRight, Zap, ArrowLeft, Loader2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import Typewriter from './Typewriter';
+import { useClientSession } from '../portal/ClientSessionContext';
 
 // Paleta da landing (auto-contida, independente do tema do app)
 const V = '#7C3AED';       // violeta primário
@@ -19,6 +20,21 @@ const TYPE_WORDS = ['relatórios.', 'métricas.', 'reuniões.', 'entregas.'];
 const Login: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
   const [error, setError] = useState<string | null>(null);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loadingEmail, setLoadingEmail] = useState(false);
+  const { login: clientLogin } = useClientSession();
+
+  // Login do cliente: valida no Neon (não no Firebase). Sucesso → o App renderiza o portal.
+  const handleEmailLogin = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    setError(null);
+    if (!email || !password) { setError('Preencha e-mail e senha.'); return; }
+    setLoadingEmail(true);
+    const { ok, error: err } = await clientLogin(email.trim(), password);
+    if (!ok) setError(err || 'E-mail ou senha incorretos.');
+    setLoadingEmail(false);
+  };
 
   const firebaseConfig = {
     apiKey: (window as any).FIREBASE_API_KEY || import.meta.env.VITE_FIREBASE_API_KEY,
@@ -170,7 +186,7 @@ const Login: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
               </motion.div>
             )}
 
-            <div className="space-y-5">
+            <form className="space-y-5" onSubmit={handleEmailLogin}>
               <div className="space-y-3">
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-white/30">
@@ -178,9 +194,11 @@ const Login: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
                   </div>
                   <input
                     type="email"
-                    disabled
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    autoComplete="email"
                     placeholder="seu@email.com"
-                    className="w-full bg-white/[0.03] border border-white/10 rounded-xl py-3.5 pl-12 pr-4 text-sm text-white/60 placeholder-white/30 outline-none cursor-not-allowed"
+                    className="w-full bg-white/[0.03] border border-white/10 rounded-xl py-3.5 pl-12 pr-4 text-sm text-white placeholder-white/30 outline-none focus:border-violet-500/50 transition-colors"
                   />
                 </div>
                 <div className="relative">
@@ -189,35 +207,50 @@ const Login: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
                   </div>
                   <input
                     type="password"
-                    disabled
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    autoComplete="current-password"
                     placeholder="••••••••"
-                    className="w-full bg-white/[0.03] border border-white/10 rounded-xl py-3.5 pl-12 pr-4 text-sm text-white/60 placeholder-white/30 outline-none cursor-not-allowed"
+                    className="w-full bg-white/[0.03] border border-white/10 rounded-xl py-3.5 pl-12 pr-4 text-sm text-white placeholder-white/30 outline-none focus:border-violet-500/50 transition-colors"
                   />
                 </div>
               </div>
 
+              {/* Entrar (clientes — e-mail/senha) */}
               <button
-                onClick={handleLogin}
-                className="w-full rounded-xl py-3.5 flex items-center justify-center gap-3 font-bold text-white transition-all group"
+                type="submit"
+                disabled={loadingEmail}
+                className="w-full rounded-xl py-3.5 flex items-center justify-center gap-2.5 font-bold text-white transition-all group disabled:opacity-60"
                 style={{ background: V, boxShadow: `0 12px 32px -8px ${V}` }}
-                onMouseEnter={e => (e.currentTarget.style.background = '#6D28D9')}
+                onMouseEnter={e => !loadingEmail && (e.currentTarget.style.background = '#6D28D9')}
                 onMouseLeave={e => (e.currentTarget.style.background = V)}
+              >
+                {loadingEmail ? <Loader2 size={18} className="animate-spin" /> : <span>Entrar</span>}
+                {!loadingEmail && <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform" />}
+              </button>
+
+              {/* divisor */}
+              <div className="flex items-center gap-3">
+                <div className="flex-1 h-px bg-white/10" />
+                <span className="text-[11px] uppercase tracking-widest text-white/30">ou</span>
+                <div className="flex-1 h-px bg-white/10" />
+              </div>
+
+              {/* Entrar com Google (colaboradores) */}
+              <button
+                type="button"
+                onClick={handleLogin}
+                className="w-full rounded-xl py-3.5 flex items-center justify-center gap-3 font-bold text-white/90 border border-white/15 hover:bg-white/[0.04] transition-all"
               >
                 <span className="w-6 h-6 rounded-full bg-white flex items-center justify-center shrink-0">
                   <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-4 h-4" />
                 </span>
                 <span>Entrar com Google</span>
-                <ChevronRight size={18} className="group-hover:translate-x-1 transition-transform" />
               </button>
+            </form>
 
-              <div className="flex items-center justify-center gap-2 text-sm">
-                <span className="text-white/40">Não tem uma conta?</span>
-                <button className="font-bold hover:underline" style={{ color: V_LIGHT }}>Criar conta</button>
-              </div>
-            </div>
-
-            <p className="mt-10 text-[10px] text-center text-white/30 leading-relaxed">
-              Ao entrar, você concorda com nossos Termos de Serviço e Política de Privacidade.
+            <p className="mt-8 text-[10px] text-center text-white/30 leading-relaxed">
+              Clientes acessam com e-mail e senha · Equipe Grape entra com Google.
             </p>
           </div>
         </div>

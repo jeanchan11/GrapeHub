@@ -29,6 +29,10 @@ import confetti from 'canvas-confetti';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import PortalAccessTab from './portal_admin/PortalAccessTab';
+import SolicitacoesTab from '../components/SolicitacoesTab';
+import RichTextEditor from '../components/RichTextEditor';
+import MediaLightbox, { LbFile } from '../components/MediaLightbox';
 
 // ── Animated KPI Count Up ─────────────────────────────────
 const KpiCountUp = ({ value, className = '' }: { value: string; className?: string }) => {
@@ -677,7 +681,9 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
   const [pageModalProjectId, setPageModalProjectId] = useState<string | null>(null);
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const [activeProductTab, setActiveProductTab] = useState<'resultado' | 'kpis'>('resultado');
-  const [activeProjectTab, setActiveProjectTab] = useState<'resultado' | 'reunioes' | 'arquivos' | 'comentarios' | 'analise' | 'nps' | 'tokens' | 'churn'>('resultado');
+  const [activeProjectTab, setActiveProjectTab] = useState<'resultado' | 'reunioes' | 'arquivos' | 'comentarios' | 'solicitacoes' | 'analise' | 'nps' | 'tokens' | 'churn' | 'acesso'>('resultado');
+  // Só gestão gerencia o acesso do cliente ao portal.
+  const canManagePortalAccess = ['superadmin', 'gerente-operacional', 'diretor-operacional'].includes((userData?.role || '').toLowerCase());
   const [npsResponses, setNpsResponses] = useState<any[]>([]);
   const [isNpsLoading, setIsNpsLoading] = useState(false);
   const [timelineFilter, setTimelineFilter] = useState('Todos');
@@ -728,10 +734,14 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
   const [gestores, setGestores] = useState<{id: string; name: string; email: string; picture: string; role: string}[]>([]);
   const responsavelBtnRef = useRef<HTMLButtonElement>(null);
   const [responsavelDropdownPos, setResponsavelDropdownPos] = useState({ top: 0, right: 0 });
-  const [projectComments, setProjectComments] = useState<Record<string, {id: string; author: string; author_photo?: string; authorPhoto?: string; text: string; createdAt: string; created_at?: string; isInternal?: boolean; is_internal?: boolean}[]>>({});
+  const [projectComments, setProjectComments] = useState<Record<string, {id: string; author: string; author_photo?: string; authorPhoto?: string; text: string; createdAt: string; created_at?: string; isInternal?: boolean; is_internal?: boolean; images?: string[]}[]>>({});
   const [newComment, setNewComment] = useState('');
   const [isInternalNote, setIsInternalNote] = useState(false);
   const [commentFilter, setCommentFilter] = useState<'all' | 'comment' | 'internal'>('all');
+  const [commentImages, setCommentImages] = useState<File[]>([]);
+  const [commentUploading, setCommentUploading] = useState(false);
+  const commentFileRef = useRef<HTMLInputElement>(null);
+  const [fileLightbox, setFileLightbox] = useState<{ files: LbFile[]; index: number } | null>(null);
   const [isAddMetricsModalOpen, setIsAddMetricsModalOpen] = useState(false);
   const [weeklyMetrics, setWeeklyMetrics] = useState([
     { week: '1', investment: '', leads: '', contracts: '' },
@@ -934,6 +944,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
             text: c.text,
             createdAt: c.created_at,
             isInternal: c.is_internal,
+            images: Array.isArray(c.images) ? c.images : [],
           }));
           setProjectComments(prev => ({ ...prev, [selectedProject.id]: normalized }));
         })
@@ -1813,7 +1824,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
         date: now.toLocaleDateString('pt-BR'),
         time: now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
         message: `Métricas atualizadas:\n${changes.join('\n')}`,
-        type: 'Mudança de Métricas'
+        type: 'Métricas'
       };
       finalProduct.optimizations = [note, ...(finalProduct.optimizations || [])];
     }
@@ -2122,7 +2133,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       date: now.toLocaleDateString('pt-BR'),
       time: now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
       message: `Configuração atualizada: ${label} de "${currentValue}" para "${newValue}"`,
-      status: 'Mudança de Métricas'
+      type: 'Métricas'
     };
 
     let updatedProduct = { 
@@ -2211,15 +2222,8 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
 
       const now = new Date();
       
-      // Categorização automática
-      let category = 'Otimização';
-      const lowerNote = newNote.toLowerCase();
-      if (lowerNote.includes('status') || lowerNote.includes('pausado') || lowerNote.includes('rodando') || lowerNote.includes('bloqueio')) {
-        category = 'Mudança de Status';
-      } else if (lowerNote.includes('métrica') || lowerNote.includes('cpa') || lowerNote.includes('leads') || lowerNote.includes('roi') || lowerNote.includes('custo')) {
-        category = 'Mudança de Métricas';
-      }
-
+      // Nota manual → SEMPRE "Otimização". (Métricas e Status são gerados
+      // automaticamente pelos handlers dos cards do meio e dos dropdowns.)
       const note: Optimization = {
         id: Math.random().toString(36).substr(2, 9),
         author: userData?.name || auth.currentUser?.displayName || 'Usuário',
@@ -2230,9 +2234,9 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
         message: newNote,
         isInternal: isInternal,
         images: imageUrls,
-        optimization: category === 'Otimização' ? 'Otimização' : undefined,
-        type: category === 'Mudança de Métricas' ? 'Mudança de Métricas' : undefined,
-        status: category === 'Mudança de Status' ? 'Mudança de Status' : undefined
+        optimization: 'Otimização',
+        type: undefined,
+        status: undefined
       };
 
       // Save optimization to database — use is_internal (snake_case) as expected by the API
@@ -2717,10 +2721,10 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     <OptionPicker
                       value={filterType === 'Todos' ? null : filterType}
                       options={[
-                        { label: 'Reuniões' },
                         { label: 'Otimizações' },
-                        { label: 'Saldos' },
-                        { label: 'Resultado' },
+                        { label: 'Métricas' },
+                        { label: 'Status' },
+                        { label: 'Reuniões' },
                       ]}
                       placeholder="Todos"
                       emptyLabel="Todos"
@@ -2878,9 +2882,9 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                         let matchesType = true;
                         if (filterType !== 'Tipo' && filterType !== 'Todos') {
                           if (filterType === 'Reuniões') matchesType = opt.type === 'meeting';
-                          else if (filterType === 'Otimizações') matchesType = (opt.optimization === 'Otimização' || opt.status === 'Otimização' || opt.type === 'Otimização' || opt.status === 'Mudança de Métricas' || opt.type === 'optimization') && !opt.message?.includes('Saldo Atual') && !opt.message?.includes('Pagamento') && !opt.message?.includes('Cartão');
-                          else if (filterType === 'Saldos') matchesType = !!(opt.message?.includes('Saldo Atual') || opt.message?.includes('Pagamento') || opt.message?.includes('Cartão'));
-                          else if (filterType === 'Resultado') matchesType = opt.status === 'Mudança de Status' || !!opt.message?.includes('Resultado') || !!opt.message?.includes('Status do Projeto');
+                          else if (filterType === 'Otimizações') matchesType = opt.optimization === 'Otimização' || opt.type === 'Otimização' || opt.type === 'optimization';
+                          else if (filterType === 'Métricas') matchesType = opt.type === 'Métricas' || opt.type === 'Mudança de Métricas' || opt.status === 'Mudança de Métricas';
+                          else if (filterType === 'Status') matchesType = opt.status === 'Mudança de Status';
                         }
                         
                         return matchesPerson && matchesType && 
@@ -2915,22 +2919,20 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                             <div className="flex items-center gap-2">
                               {opt.optimization && (
                                 <span className="px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-500 text-[10px] font-bold uppercase tracking-wider">
-                                  {opt.optimization}
+                                  Otimização
                                 </span>
                               )}
                               {opt.type && (
                                 <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-500 text-[10px] font-bold uppercase tracking-wider">
-                                  {opt.type}
+                                  Métricas
                                 </span>
                               )}
                               {opt.status && (
-                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                                  opt.status === 'Mudança de Status' 
-                                    ? 'bg-emerald-500/10 text-emerald-500' 
-                                    : 'bg-violet-500/10 text-violet-500'
-                                }`}>
-                                  {opt.status === 'Mudança de Status' ? 'STATUS' : 'MÉTRICAS'}
-                                </span>
+                                opt.status === 'Mudança de Status' ? (
+                                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 text-[10px] font-bold uppercase tracking-wider">Status</span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-500 text-[10px] font-bold uppercase tracking-wider">Métricas</span>
+                                )
                               )}
                               <div className="flex items-center">
                                 <p className="text-[10px] text-slate-500 font-medium">{formatDateShort(opt.date)} {opt.time && `às ${opt.time}`}</p>
@@ -3500,47 +3502,69 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-lg modal-container overflow-hidden my-auto transition-colors duration-300"
+              className="relative w-full max-w-2xl modal-container overflow-hidden my-auto transition-colors duration-300"
             >
               <div className="p-6 border-b border-slate-200 dark:border-white/10 flex items-center justify-between">
-                <h2 className="text-lg font-bold text-light-text dark:text-white">Adicionar Reunião</h2>
-                <button 
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-violet-500/15 text-violet-500 flex items-center justify-center"><Calendar size={18} /></div>
+                  <h2 className="text-lg font-bold text-light-text dark:text-white">{meetingData.id ? 'Editar Reunião' : 'Nova Reunião'}</h2>
+                </div>
+                <button
                   onClick={() => setIsMeetingModalOpen(false)}
                   className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl text-slate-500 hover:text-light-text dark:hover:text-white transition-all"
                 >
                   <X size={20} />
                 </button>
               </div>
-              <div className="p-6 space-y-4">
-                <input 
-                  type="text" 
-                  placeholder="Título da Reunião"
-                  value={meetingData.title}
-                  onChange={(e) => setMeetingData({ ...meetingData, title: e.target.value })}
-                  className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-light-text dark:text-white placeholder:text-slate-400 focus:border-violet-500 outline-none transition-all"
-                />
-                <input 
-                  type="date" 
-                  value={meetingData.date}
-                  onChange={(e) => setMeetingData({ ...meetingData, date: e.target.value })}
-                  className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-light-text dark:text-white placeholder:text-slate-400 focus:border-violet-500 outline-none transition-all"
-                />
-                <input 
-                  type="text" 
-                  placeholder="Participantes (separados por vírgula)"
-                  value={meetingData.attendees}
-                  onChange={(e) => setMeetingData({ ...meetingData, attendees: e.target.value })}
-                  className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-light-text dark:text-white placeholder:text-slate-400 focus:border-violet-500 outline-none transition-all"
-                />
-                <textarea 
-                  placeholder="Anotações e Próximas Ações"
-                  value={meetingData.actions}
-                  onChange={(e) => setMeetingData({ ...meetingData, actions: e.target.value })}
-                  className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-light-text dark:text-white placeholder:text-slate-400 focus:border-violet-500 outline-none transition-all min-h-[150px]"
-                />
-                <button 
+              <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto custom-scrollbar">
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1.5">Título</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: Alinhamento mensal de resultados"
+                    value={meetingData.title}
+                    onChange={(e) => setMeetingData({ ...meetingData, title: e.target.value })}
+                    className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-light-text dark:text-white placeholder:text-slate-400 focus:border-violet-500 outline-none transition-all"
+                  />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1.5">Data</label>
+                    <input
+                      type="date"
+                      value={meetingData.date}
+                      onChange={(e) => setMeetingData({ ...meetingData, date: e.target.value })}
+                      className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-light-text dark:text-white placeholder:text-slate-400 focus:border-violet-500 outline-none transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1.5">Participantes</label>
+                    <input
+                      type="text"
+                      placeholder="Separados por vírgula"
+                      value={meetingData.attendees}
+                      onChange={(e) => setMeetingData({ ...meetingData, attendees: e.target.value })}
+                      className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-light-text dark:text-white placeholder:text-slate-400 focus:border-violet-500 outline-none transition-all"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400">Anotações e próximas ações</label>
+                    <span className="text-[10px] text-slate-400">Digite <kbd className="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-white/10 font-mono text-[10px]">/</kbd> para formatar</span>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 px-3 py-2 focus-within:border-violet-500 transition-all">
+                    <RichTextEditor
+                      key={meetingData.id || 'new'}
+                      content={meetingData.actions || ''}
+                      onChange={(html) => setMeetingData({ ...meetingData, actions: html })}
+                      minHeight="200px"
+                    />
+                  </div>
+                </div>
+                <button
                   onClick={handleSaveMeeting}
-                  className="w-full px-6 py-3 bg-violet-600 hover:bg-violet-700 text-slate-900 dark:text-white font-bold rounded-xl transition-all shadow-lg shadow-violet-600/20"
+                  className="w-full px-6 py-3 bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-violet-600/20"
                 >
                   Salvar Reunião
                 </button>
@@ -4027,7 +4051,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                       </button>
                       </div>
                     </td>
-                    <td className="px-3 py-3.5" onClick={(e) => toggleRow(project.id, e)}>
+                    <td className="px-3 py-3.5" onClick={() => handleRowClick(project)}>
                       <div className="flex items-center gap-3 cursor-pointer">
                         {(() => {
                           const colorMap: Record<string, { bg: string; text: string }> = {
@@ -4100,15 +4124,6 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                           title="Campanhas Meta Ads"
                         >
                           <BarChart3 size={16} />
-                        </button>
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleRowClick(project);
-                          }}
-                          className="p-2 rounded-lg hover:bg-slate-200 dark:hover:bg-white/10 text-slate-500 hover:text-light-text dark:hover:text-white transition-all"
-                        >
-                          <Eye size={16} />
                         </button>
                         <DropdownMenu.Root open={openProjectMenuId === project.id} onOpenChange={(open) => setOpenProjectMenuId(open ? project.id : null)}>
                           <div className="relative flex items-center justify-center w-8 h-8">
@@ -4393,23 +4408,23 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
               )}
             </div>
           }
-          maxWidth="max-w-5xl"
+          maxWidth="max-w-[1400px]"
           minHeight="min-h-[800px]"
         >
         <div className="flex flex-col min-h-[750px]">
           {/* Tabs */}
-          <div className="flex items-center gap-6 mb-6 border-b modal-divider shrink-0">
-            {(['resultado', 'reunioes', 'comentarios', 'analise', 'arquivos', 'nps', 'tokens', 'churn'] as const).map((tab) => (
+          <div className="flex items-center gap-7 mb-6 border-b modal-divider shrink-0">
+            {([...(['resultado', 'reunioes', 'comentarios', 'solicitacoes', 'analise', 'arquivos', 'nps', 'tokens', 'churn'] as const), ...(canManagePortalAccess ? ['acesso'] as const : [])] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveProjectTab(tab as any)}
-                className={`pb-4 text-sm font-bold transition-all relative ${
+                className={`pb-4 text-sm font-bold transition-all relative whitespace-nowrap ${
                   activeProjectTab === tab
                     ? 'modal-tab-active'
                     : 'text-slate-500 hover:text-gray-900 dark:hover:text-white'
                 }`}
               >
-                {tab === 'resultado' ? 'Resultado do projeto' : tab === 'reunioes' ? 'Reuniões' : tab === 'arquivos' ? 'Arquivos do projeto' : tab === 'comentarios' ? 'Comentários' : tab === 'nps' ? 'NPS' : tab === 'tokens' ? 'Tokens' : tab === 'churn' ? 'Risco de Churn' : 'Análise de Leads'}
+                {tab === 'resultado' ? 'Resumo' : tab === 'reunioes' ? 'Reuniões' : tab === 'arquivos' ? 'Arquivos' : tab === 'comentarios' ? 'Comentários' : tab === 'solicitacoes' ? 'Solicitações' : tab === 'nps' ? 'NPS' : tab === 'tokens' ? 'Tokens' : tab === 'churn' ? 'Risco de Churn' : tab === 'acesso' ? 'Portal' : 'Análise de Leads'}
                 {activeProjectTab === tab && (
                   <motion.div
                     layoutId="project-tab-indicator"
@@ -4612,10 +4627,10 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                       <OptionPicker
                         value={timelineFilter === 'Todos' ? null : timelineFilter}
                         options={[
-                          { label: 'Reuniões' },
                           { label: 'Otimizações' },
-                          { label: 'Saldos' },
-                          { label: 'Resultado' },
+                          { label: 'Métricas' },
+                          { label: 'Status' },
+                          { label: 'Reuniões' },
                         ]}
                         placeholder="Todos"
                         emptyLabel="Todos"
@@ -4632,9 +4647,9 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                         {timelineItems.filter(opt => {
                           if (timelineFilter === 'Todos') return true;
                           if (timelineFilter === 'Reuniões') return opt.type === 'meeting';
-                          if (timelineFilter === 'Otimizações') return opt.optimization === 'Otimização' || opt.status === 'Otimização' || opt.type === 'Otimização' || opt.type === 'optimization';
-                          if (timelineFilter === 'Saldos') return opt.message?.includes('Saldo Atual') || opt.message?.includes('Forma de Pagamento') || opt.message?.includes('Pagamento') || opt.message?.includes('Cartão');
-                          if (timelineFilter === 'Resultado') return opt.status === 'Mudança de Status' || opt.message?.includes('Resultado') || opt.message?.includes('Status do Projeto');
+                          if (timelineFilter === 'Otimizações') return opt.optimization === 'Otimização' || opt.type === 'Otimização' || opt.type === 'optimization';
+                          if (timelineFilter === 'Métricas') return opt.type === 'Métricas' || opt.type === 'Mudança de Métricas' || opt.status === 'Mudança de Métricas';
+                          if (timelineFilter === 'Status') return opt.status === 'Mudança de Status';
                           return true;
                         }).map((opt, idx) => (
                           <div key={opt.id} className="relative flex items-center justify-center">
@@ -4708,15 +4723,35 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                     </div>
                                   </div>
                                   <div className="border-t border-slate-100 dark:border-white/5 pt-3">
-                                    <p className="text-xs font-bold text-slate-500 uppercase mb-1">Próximas Ações / Acordos:</p>
-                                    <div className="space-y-1">
-                                      {(opt.actions || '').split(',').map((action: string, i: number) => (
-                                        <div key={i} className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
-                                          <Check size={12} className="text-green-500" />
-                                          {action.trim()}
+                                    <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Próximas ações / acordos</p>
+                                    {(() => {
+                                      const raw = (opt.actions || '').trim();
+                                      if (!raw) return <p className="text-xs text-slate-400 italic">Sem ações registradas.</p>;
+                                      const isHtml = /<\/?[a-z][\s\S]*>/i.test(raw);
+                                      return (
+                                        <div className="rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-100 dark:border-white/5 px-4 py-3">
+                                          {isHtml ? (
+                                            <div className="text-[13px] leading-relaxed text-slate-600 dark:text-slate-300 [&_p]:my-1 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-1 [&_li]:my-0.5 [&_h1]:text-base [&_h1]:font-bold [&_h1]:mt-2 [&_h2]:text-sm [&_h2]:font-bold [&_h2]:mt-2 [&_h3]:font-semibold [&_a]:text-violet-500 [&_a]:underline [&_strong]:font-semibold" dangerouslySetInnerHTML={{ __html: raw }} />
+                                          ) : (
+                                            <div className="space-y-2.5">
+                                              {raw.split(/\n\s*\n/).map((para: string, i: number) => {
+                                                const text = para.replace(/\s*\n\s*/g, ' ').trim();
+                                                if (!text) return null;
+                                                const isBullet = /^\s*[-•*✓·]\s+/.test(para.trim());
+                                                return isBullet ? (
+                                                  <div key={i} className="flex items-start gap-2 text-[13px] leading-relaxed text-slate-600 dark:text-slate-300">
+                                                    <Check size={14} className="text-emerald-500 shrink-0 mt-0.5" />
+                                                    <span>{text.replace(/^\s*[-•*✓·]\s+/, '')}</span>
+                                                  </div>
+                                                ) : (
+                                                  <p key={i} className="text-[13px] leading-relaxed text-slate-600 dark:text-slate-300">{text}</p>
+                                                );
+                                              })}
+                                            </div>
+                                          )}
                                         </div>
-                                      ))}
-                                    </div>
+                                      );
+                                    })()}
                                   </div>
                                 </>
                               ) : (
@@ -4740,11 +4775,13 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                   </div>
                                   <div className="flex items-center gap-2 mb-2">
                                     <p className="text-xs font-bold text-violet-600 dark:text-violet-400 uppercase tracking-wide">{opt.productName}</p>
-                                    <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full uppercase whitespace-nowrap ${
-                                      opt.status === 'Mudança de Status' 
-                                        ? 'text-emerald-700 bg-emerald-100 dark:bg-emerald-900/30' 
-                                        : 'text-violet-700 bg-violet-100 dark:bg-violet-900/30'
-                                    }`}>{opt.status === 'Mudança de Status' ? 'STATUS' : 'MÉTRICAS'}</span>
+                                    {opt.optimization ? (
+                                      <span className="px-2 py-0.5 text-[10px] font-bold rounded-full uppercase whitespace-nowrap text-violet-700 bg-violet-100 dark:bg-violet-900/30">Otimização</span>
+                                    ) : opt.status === 'Mudança de Status' ? (
+                                      <span className="px-2 py-0.5 text-[10px] font-bold rounded-full uppercase whitespace-nowrap text-emerald-700 bg-emerald-100 dark:bg-emerald-900/30">Status</span>
+                                    ) : (
+                                      <span className="px-2 py-0.5 text-[10px] font-bold rounded-full uppercase whitespace-nowrap text-blue-700 bg-blue-100 dark:bg-blue-900/30">Métricas</span>
+                                    )}
                                   </div>
                                   <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed whitespace-pre-line">
                                     {opt.message}
@@ -4873,9 +4910,9 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     <div className="flex items-center justify-between">
                       <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Reuniões</h4>
                       <div className="flex gap-2">
-                        <button 
+                        <button
                           onClick={() => setIsMeetingModalOpen(true)}
-                          className="px-3 py-1.5 text-[10px] font-bold text-slate-900 dark:text-white bg-violet-600 hover:bg-violet-700 rounded-lg transition-all"
+                          className="px-3 py-1.5 text-[10px] font-bold text-white bg-violet-600 hover:bg-violet-700 rounded-lg transition-all"
                         >
                           Nova Reunião
                         </button>
@@ -5121,13 +5158,12 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                 </span>
                               </td>
                               <td className="px-6 py-4 text-right flex items-center justify-end gap-2 text-slate-500">
-                                <button onClick={() => window.open(file.url, '_blank')} className="hover:text-violet-500"><Eye size={16} /></button>
+                                <button onClick={() => setFileLightbox({ files: (selectedProject.files || []) as LbFile[], index })} className="hover:text-violet-500" title="Visualizar"><Eye size={16} /></button>
                                 <button onClick={() => {
                                   const a = document.createElement('a');
-                                  a.href = file.url;
-                                  a.download = file.name;
+                                  a.href = `/api/file-download?url=${encodeURIComponent(file.url)}&name=${encodeURIComponent(file.name || 'arquivo')}`;
                                   a.click();
-                                }} className="hover:text-violet-500"><Download size={16} /></button>
+                                }} className="hover:text-violet-500" title="Baixar"><Download size={16} /></button>
                                 <button onClick={() => {
                                   commitProjects(prev => prev.map(p =>
                                     p.id === selectedProject.id
@@ -5141,6 +5177,9 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                         </tbody>
                       </table>
                     </div>
+                    {fileLightbox && (
+                      <MediaLightbox files={fileLightbox.files} index={fileLightbox.index} onClose={() => setFileLightbox(null)} onIndex={i => setFileLightbox(l => l && { ...l, index: i })} />
+                    )}
                   </div>
                 )}
 
@@ -5460,7 +5499,13 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                   </div>
                 )}
 
+                {activeProjectTab === 'solicitacoes' && (
+                  <SolicitacoesTab projectId={selectedProject.id} authorName={userData?.name} />
+                )}
 
+                {activeProjectTab === 'acesso' && (
+                  <PortalAccessTab projectId={selectedProject.id} partnerName={selectedProject.partner} />
+                )}
 
                 {activeProjectTab === 'comentarios' && (() => {
                   const allComments = projectComments[selectedProject.id] || [];
@@ -5469,15 +5514,28 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     : allComments.filter(c => c.isInternal);
 
                   const submitComment = async () => {
-                    if (!newComment.trim()) return;
-                    const body = {
-                      author: userData?.name || 'Você',
-                      author_photo: userData?.picture || auth.currentUser?.photoURL || null,
-                      text: newComment.trim(),
-                      is_internal: isInternalNote,
-                    };
-                    setNewComment('');
+                    if ((!newComment.trim() && commentImages.length === 0) || commentUploading) return;
+                    setCommentUploading(true);
                     try {
+                      const imageUrls: string[] = [];
+                      if (commentImages.length > 0) {
+                        if (!auth.currentUser) throw new Error('Você precisa estar logado para anexar imagens.');
+                        const uid = auth.currentUser.uid;
+                        for (const image of commentImages) {
+                          const safe = (image.name || 'img.png').replace(/[^a-zA-Z0-9._-]/g, '_');
+                          // Mesmo caminho dos comentários dos produtos (permitido pelas storage.rules)
+                          const storageRef = ref(storage, `optimizations/${uid}/${Date.now()}_${safe}`);
+                          await uploadBytes(storageRef, image, { contentType: image.type || 'image/jpeg' });
+                          imageUrls.push(await getDownloadURL(storageRef));
+                        }
+                      }
+                      const body = {
+                        author: userData?.name || 'Você',
+                        author_photo: userData?.picture || auth.currentUser?.photoURL || null,
+                        text: newComment.trim(),
+                        is_internal: isInternalNote,
+                        images: imageUrls,
+                      };
                       const res = await fetch(`/api/project-comments/${encodeURIComponent(selectedProject.id)}`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -5485,16 +5543,25 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                       });
                       if (res.ok) {
                         const saved = await res.json();
-                        const normalized = { id: saved.id, author: saved.author, authorPhoto: saved.author_photo, text: saved.text, createdAt: saved.created_at, isInternal: saved.is_internal };
+                        const normalized = { id: saved.id, author: saved.author, authorPhoto: saved.author_photo, text: saved.text, createdAt: saved.created_at, isInternal: saved.is_internal, images: saved.images || [] };
                         setProjectComments(prev => ({ ...prev, [selectedProject.id]: [...(prev[selectedProject.id] || []), normalized] }));
+                        setNewComment('');
+                        setCommentImages([]);
                       }
-                    } catch (err) {
+                    } catch (err: any) {
                       console.error('Failed to save comment:', err);
+                      if (err?.code === 'storage/quota-exceeded') {
+                        alert('O armazenamento do Firebase está cheio (cota excedida) — não é possível enviar imagens até liberar espaço ou fazer upgrade do plano. Comentários só com texto funcionam normalmente.');
+                      } else {
+                        alert('Não foi possível enviar o comentário: ' + (err?.code || err?.message || err));
+                      }
+                    } finally {
+                      setCommentUploading(false);
                     }
                   };
 
                   return (
-                    <div className="space-y-5">
+                    <div className="flex flex-col gap-5">
                       {/* Header + Filter */}
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
@@ -5523,7 +5590,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                       </div>
 
                       {/* Feed */}
-                      <div className="space-y-3">
+                      <div className="space-y-3 order-2">
                         {filteredComments.length === 0 && (
                           <div className="flex flex-col items-center gap-3 py-10 text-slate-400">
                             <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-white/5 flex items-center justify-center">
@@ -5564,7 +5631,16 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                               {c.isInternal && (
                                 <span className="inline-block mb-2 text-[10px] font-bold text-amber-400 uppercase tracking-wider">🔒 Nota Interna</span>
                               )}
-                              <p className={`text-sm leading-relaxed whitespace-pre-wrap ${c.isInternal ? 'text-amber-100/80' : 'text-slate-600 dark:text-slate-300'}`}>{c.text}</p>
+                              {c.text && <p className={`text-sm leading-relaxed whitespace-pre-wrap ${c.isInternal ? 'text-amber-100/80' : 'text-slate-600 dark:text-slate-300'}`}>{c.text}</p>}
+                              {Array.isArray(c.images) && c.images.length > 0 && (
+                                <div className="flex flex-wrap gap-2 mt-2">
+                                  {c.images.map((url: string, i: number) => (
+                                    <a key={i} href={url} target="_blank" rel="noreferrer" className="block">
+                                      <img src={url} alt="" className="w-24 h-24 object-cover rounded-lg border border-slate-200 dark:border-white/10 hover:opacity-90 transition-opacity" referrerPolicy="no-referrer" />
+                                    </a>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                             <button
                               onClick={async () => {
@@ -5581,26 +5657,56 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                       </div>
 
                       {/* Input */}
-                      <div className={`rounded-2xl border transition-all ${
+                      <div className={`order-1 rounded-2xl border transition-all ${
                         isInternalNote
                           ? 'bg-amber-950/20 border-amber-500/30'
                           : 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/10'
                       }`}>
                         <div className="flex gap-3 p-3">
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
-                            isInternalNote ? 'bg-amber-500/20 text-amber-400' : 'bg-violet-500/20 text-violet-500'
-                          }`}>
-                            {(userData?.name || 'U').charAt(0).toUpperCase()}
-                          </div>
+                          {(userData?.picture || auth.currentUser?.photoURL) ? (
+                            <img
+                              src={userData?.picture || auth.currentUser?.photoURL || ''}
+                              alt={userData?.name || 'Você'}
+                              className="w-8 h-8 rounded-full object-cover flex-shrink-0"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
+                              isInternalNote ? 'bg-amber-500/20 text-amber-400' : 'bg-violet-500/20 text-violet-500'
+                            }`}>
+                              {(userData?.name || 'U').charAt(0).toUpperCase()}
+                            </div>
+                          )}
                           <textarea
                             value={newComment}
                             onChange={(e) => setNewComment(e.target.value)}
+                            onPaste={(e) => {
+                              const items = e.clipboardData.items;
+                              for (let i = 0; i < items.length; i++) {
+                                if (items[i].type.indexOf('image') !== -1) {
+                                  const file = items[i].getAsFile();
+                                  if (file) setCommentImages(prev => [...prev, file]);
+                                }
+                              }
+                            }}
                             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitComment(); } }}
                             placeholder={isInternalNote ? '🔒 Nota interna (só visível para a equipe)...' : 'Escreva um comentário... (Enter para enviar)'}
                             rows={2}
                             className="flex-1 bg-transparent text-sm text-slate-900 dark:text-white placeholder-slate-400 resize-none outline-none"
                           />
                         </div>
+                        {commentImages.length > 0 && (
+                          <div className="flex flex-wrap gap-2 px-4 pb-3">
+                            {commentImages.map((img, i) => (
+                              <div key={i} className="relative group">
+                                <img src={URL.createObjectURL(img)} alt="" className="w-16 h-16 object-cover rounded-lg border border-slate-200 dark:border-white/10" referrerPolicy="no-referrer" />
+                                <button onClick={() => setCommentImages(prev => prev.filter((_, idx) => idx !== i))} className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-slate-900/80 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <X size={11} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                         {/* Footer do input */}
                         <div className={`flex items-center justify-between px-4 py-2.5 border-t ${
                           isInternalNote ? 'border-amber-500/20' : 'border-slate-200 dark:border-white/10'
@@ -5618,14 +5724,32 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                             </div>
                             Nota Interna
                           </button>
-                          <button
-                            onClick={submitComment}
-                            className={`px-4 py-1.5 text-xs font-bold rounded-xl transition-all text-white ${
-                              isInternalNote ? 'bg-amber-600 hover:bg-amber-700' : 'bg-violet-600 hover:bg-violet-700'
-                            }`}
-                          >
-                            Enviar
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => commentFileRef.current?.click()}
+                              className="p-2 text-slate-400 hover:text-violet-500 transition-colors"
+                              title="Anexar imagem"
+                            >
+                              <ImageIcon size={18} />
+                            </button>
+                            <input
+                              type="file"
+                              ref={commentFileRef}
+                              onChange={(e) => { if (e.target.files) setCommentImages(prev => [...prev, ...Array.from(e.target.files!)]); e.target.value = ''; }}
+                              className="hidden"
+                              multiple
+                              accept="image/*"
+                            />
+                            <button
+                              onClick={submitComment}
+                              disabled={commentUploading}
+                              className={`px-4 py-1.5 text-xs font-bold rounded-xl transition-all text-white disabled:opacity-60 ${
+                                isInternalNote ? 'bg-amber-600 hover:bg-amber-700' : 'bg-violet-600 hover:bg-violet-700'
+                              }`}
+                            >
+                              {commentUploading ? 'Enviando...' : 'Enviar'}
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>

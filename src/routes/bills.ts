@@ -123,7 +123,7 @@ export async function categorizeMovements(pool: Pool, opts: { month?: string } =
   const params: any[] = opts.month ? [opts.month] : [];
   const mv = (await pool.query(
     `SELECT id, COALESCE(NULLIF(custom_description,''),description) AS desc FROM fin_movements_asaas
-     WHERE is_anticipation_pair=false AND (custom_category_id IS NULL OR edited_by IN ('regra-auto','motor-auto')) ${where}`, params
+     WHERE is_anticipation_pair = false AND is_reversed_pair = false AND (custom_category_id IS NULL OR edited_by IN ('regra-auto','motor-auto')) ${where}`, params
   )).rows;
 
   let categorized = 0, transfers = 0, uncategorized = 0;

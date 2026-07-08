@@ -49,7 +49,13 @@ export function setupAuthInterceptor(): void {
           console.error('[AuthInterceptor] Failed to get Firebase token:', err);
         }
       } else {
-        console.warn(`[AuthInterceptor] User is not authenticated in Firebase Auth. Skipping token injection for API: "${url}"`);
+        // Sem usuário Firebase: pode ser um cliente do portal (auth própria via Neon).
+        let clientToken: string | null = null;
+        try { clientToken = localStorage.getItem('grapehub_client_token'); } catch { /* ignore */ }
+        if (clientToken) {
+          return _doAuthFetch(input, init, clientToken);
+        }
+        console.warn(`[AuthInterceptor] User is not authenticated. Skipping token injection for API: "${url}"`);
       }
     }
 

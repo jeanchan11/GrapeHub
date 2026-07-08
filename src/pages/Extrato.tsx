@@ -30,6 +30,7 @@ interface ExtratoItem {
   edited_at: string | null;
   edited_by: string | null;
   is_anticipation_pair: boolean;
+  is_reversed_pair?: boolean;
   account?: string;
   raw_grapehub_category?: string | null;
 }
@@ -1297,8 +1298,9 @@ export default function Extrato() {
     new Set(extrato.map(item => getCategory(item).name))
   ).sort();
 
-  const totalEntradas = filtered.filter(i => i.type === 1  && i.type_column === 'realizado').reduce((s, i) => s + parseFloat(i.value || i.movement_value || '0'), 0);
-  const totalSaidas   = filtered.filter(i => i.type === -1 && i.type_column === 'realizado').reduce((s, i) => s + parseFloat(i.value || i.movement_value || '0'), 0);
+  // Estornos/cancelamentos (débito cancelado + devolução) não entram nos totais — foram revertidos.
+  const totalEntradas = filtered.filter(i => i.type === 1  && i.type_column === 'realizado' && !i.is_reversed_pair).reduce((s, i) => s + parseFloat(i.value || i.movement_value || '0'), 0);
+  const totalSaidas   = filtered.filter(i => i.type === -1 && i.type_column === 'realizado' && !i.is_reversed_pair).reduce((s, i) => s + parseFloat(i.value || i.movement_value || '0'), 0);
   const resultado     = totalEntradas - totalSaidas;
 
   // ── Month tabs computed ──
@@ -1547,13 +1549,18 @@ export default function Extrato() {
                       className={`grid ${accountFilter === 'all' ? 'grid-cols-[1fr_160px_80px_90px_100px_110px_120px]' : 'grid-cols-[1fr_160px_90px_100px_110px_120px]'} px-4 py-2 hover:bg-white/[0.02] transition-colors items-center cursor-pointer`}>
                       <div className="min-w-0 pr-4">
                         <div className="flex items-center gap-1.5">
-                          <p className={`text-[13px] font-medium truncate ${item.is_anticipation_pair ? 'text-slate-500' : 'text-dark-text'}`}>{item.description || '—'}</p>
+                          <p className={`text-[13px] font-medium truncate ${item.is_anticipation_pair || item.is_reversed_pair ? 'text-slate-500' : 'text-dark-text'}`}>{item.description || '—'}</p>
+                          {item.is_reversed_pair && (
+                            <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-rose-500/10 text-rose-400 text-[9px] font-bold rounded-full">
+                              ✕ Cancelado
+                            </span>
+                          )}
                           {item.is_anticipation_pair && (
                             <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-slate-500/10 text-slate-400 text-[9px] font-bold rounded-full">
                               <Link2 size={8} /> Antecipação
                             </span>
                           )}
-                          {item.is_edited && !item.is_anticipation_pair && (
+                          {item.is_edited && !item.is_anticipation_pair && !item.is_reversed_pair && (
                             <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-500/10 text-amber-400 text-[9px] font-bold rounded-full">
                               <Pencil size={8} /> Editado
                             </span>
@@ -1579,16 +1586,16 @@ export default function Extrato() {
                       </div>
                       <div className="flex justify-center px-4">
                         <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                          isReal ? 'bg-violet-500/15 text-violet-400' : 'bg-slate-500/15 text-slate-400'
+                          item.is_reversed_pair ? 'bg-rose-500/15 text-rose-400' : isReal ? 'bg-violet-500/15 text-violet-400' : 'bg-slate-500/15 text-slate-400'
                         }`}>
-                          {isReal ? 'Realizado' : 'Previsto'}
+                          {item.is_reversed_pair ? 'Cancelado' : isReal ? 'Realizado' : 'Previsto'}
                         </span>
                       </div>
                       <div className="text-right px-4">
                         <span className="text-xs text-slate-400">{fmtCalDate(getItemDate(item))}</span>
                       </div>
                       <div className="text-right pl-4">
-                        <span className={`text-[13px] font-bold ${item.is_anticipation_pair ? 'text-slate-500 line-through' : isEntrada ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        <span className={`text-[13px] font-bold ${item.is_anticipation_pair || item.is_reversed_pair ? 'text-slate-500 line-through' : isEntrada ? 'text-emerald-400' : 'text-rose-400'}`}>
                           {isEntrada ? '+' : '-'}{formatCurrency(Math.abs(valor))}
                         </span>
                       </div>

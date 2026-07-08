@@ -241,6 +241,7 @@ const PUBLIC_ROUTES: Array<{ method?: string; pattern: RegExp }> = [
   { pattern: /^\/api\/hiring\/candidates\/\d+\/saboteurs$/ },
   { pattern: /^\/api\/hiring\/candidates\/\d+\/disc$/ },
   { pattern: /^\/api\/onboarding\/submit$/, method: 'POST' },
+  { pattern: /^\/api\/portal\/auth\/login$/, method: 'POST' }, // login do cliente (sem token ainda)
   { pattern: /^\/api\/finance\/dispatch\/callback$/, method: 'POST' },
   { pattern: /^\/api\/briefings\/public\// },
   { pattern: /^\/api\/ia-status-groups/ },
@@ -253,6 +254,7 @@ const PUBLIC_ROUTES: Array<{ method?: string; pattern: RegExp }> = [
   { pattern: /^\/api\/crm-comercial\/migrate-tasks-responsible$/, method: 'POST' }, // TEMP MIGRATION
   { pattern: /^\/api\/lista-/ },
   { pattern: /^\/api\/meta-thumb$/, method: 'GET' }, // proxy de thumbnail do Meta (host restrito a fbcdn) — usado na rasterização do relatório PDF
+  { pattern: /^\/api\/file-download$/, method: 'GET' }, // proxy de download (host restrito ao Firebase Storage; a URL já carrega o token)
 ];
 
 function isPublicRoute(method: string, path: string): boolean {
@@ -260,6 +262,49 @@ function isPublicRoute(method: string, path: string): boolean {
     if (r.method && r.method !== method) return false;
     return r.pattern.test(path);
   });
+}
+
+// ── Auth do Portal do Cliente (Neon, independente do Firebase) ──────────────
+// Segredo de assinatura carregado do banco no boot (sobrevive a restart).
+let clientAuthSecret: string | null = null;
+const b64url = (buf: Buffer) => buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const b64urlToBuf = (s: string) => Buffer.from(s.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+
+// Hash de senha com scrypt (salt aleatório). Formato: "<saltHex>:<hashHex>".
+function hashPassword(pw: string): string {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(pw, salt, 64).toString('hex');
+  return `${salt}:${hash}`;
+}
+function verifyPassword(pw: string, stored: string): boolean {
+  try {
+    const [salt, hash] = String(stored).split(':');
+    if (!salt || !hash) return false;
+    const h = crypto.scryptSync(pw, salt, 64);
+    const hb = Buffer.from(hash, 'hex');
+    return h.length === hb.length && crypto.timingSafeEqual(h, hb);
+  } catch { return false; }
+}
+// Token de sessão do cliente (HMAC-SHA256). payload → "<body>.<sig>".
+function signClientToken(payload: Record<string, any>): string {
+  if (!clientAuthSecret) throw new Error('clientAuthSecret ausente');
+  const body = b64url(Buffer.from(JSON.stringify(payload)));
+  const sig = b64url(crypto.createHmac('sha256', clientAuthSecret).update(body).digest());
+  return `${body}.${sig}`;
+}
+function verifyClientToken(token: string): any | null {
+  try {
+    if (!clientAuthSecret || !token || token.indexOf('.') < 0) return null;
+    const [body, sig] = token.split('.');
+    if (!body || !sig) return null;
+    const expected = b64url(crypto.createHmac('sha256', clientAuthSecret).update(body).digest());
+    const a = Buffer.from(sig), b = Buffer.from(expected);
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+    const payload = JSON.parse(b64urlToBuf(body).toString('utf8'));
+    if (payload.typ !== 'client') return null;
+    if (payload.exp && Date.now() / 1000 > payload.exp) return null;
+    return payload;
+  } catch { return null; }
 }
 
 async function authenticateToken(req: any, res: any, next: any) {
@@ -274,6 +319,15 @@ async function authenticateToken(req: any, res: any, next: any) {
   }
 
   const token = authHeader.split('Bearer ')[1];
+
+  // 1) Token do cliente (nosso HMAC, verificação local rápida)
+  const clientPayload = verifyClientToken(token);
+  if (clientPayload) {
+    req.user = { clientAuth: true, clientId: clientPayload.cid, email: clientPayload.email, projectId: clientPayload.pid };
+    return next();
+  }
+
+  // 2) Token do Firebase (colaboradores)
   try {
     const decoded = await verifyFirebaseToken(token);
     req.user = decoded;
@@ -529,7 +583,27 @@ async function startServer() {
       WHERE p.active_client_id = c.id
         AND p.squad IS NULL
         AND c.squad IS NOT NULL;
-      
+
+      -- Snapshots diários do risco de churn (1 registro por projeto por dia) → evolução no tempo
+      CREATE TABLE IF NOT EXISTS churn_risk_snapshots (
+        id BIGSERIAL PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        partner TEXT,
+        squad TEXT,
+        responsible TEXT,
+        investment TEXT,
+        checked_count INTEGER NOT NULL DEFAULT 0,
+        snapshot_date DATE NOT NULL DEFAULT CURRENT_DATE,
+        created_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE (project_id, snapshot_date)
+      );
+
+      -- Marcador do reset semanal do checklist de churn (domingo à noite).
+      CREATE TABLE IF NOT EXISTS churn_reset_state (
+        id INTEGER PRIMARY KEY DEFAULT 1,
+        last_boundary TIMESTAMP
+      );
+
       CREATE TABLE IF NOT EXISTS nps_responses (
         id SERIAL PRIMARY KEY,
         project_id TEXT NOT NULL,
@@ -1167,6 +1241,27 @@ async function startServer() {
         role TEXT NOT NULL DEFAULT 'user',
         allowed_pages JSONB DEFAULT '[]',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      -- Portal do cliente: usuários com role='client' veem apenas o projeto vinculado.
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS client_project_id TEXT;
+
+      -- Contas de cliente (auth própria, no Neon — independente do Firebase).
+      CREATE TABLE IF NOT EXISTS client_users (
+        id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        email TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        name TEXT,
+        project_id TEXT NOT NULL,
+        active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT NOW(),
+        last_login TIMESTAMP
+      );
+
+      -- Segredos da aplicação (ex: chave de assinatura dos tokens do portal).
+      CREATE TABLE IF NOT EXISTS app_secrets (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW()
       );
 
       CREATE TABLE IF NOT EXISTS meetings (
@@ -1860,7 +1955,24 @@ async function startServer() {
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
+    await pool.query(`ALTER TABLE project_comments ADD COLUMN IF NOT EXISTS images JSONB DEFAULT '[]'`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_project_comments_project_id ON project_comments(project_id)`);
+
+    // Solicitações do time para o cliente (criativos, feedback, roteiros...). Aparecem no portal do cliente.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS project_requests (
+        id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        project_id TEXT NOT NULL,
+        type TEXT NOT NULL DEFAULT 'outro',
+        description TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pendente',
+        created_by TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await pool.query(`ALTER TABLE project_requests ADD COLUMN IF NOT EXISTS files JSONB DEFAULT '[]'`);
+    await pool.query(`ALTER TABLE project_requests ADD COLUMN IF NOT EXISTS comments JSONB DEFAULT '[]'`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_project_requests_project_id ON project_requests(project_id)`);
 
     // Passwords / Logins Table
     await pool.query(`
@@ -2213,12 +2325,493 @@ async function startServer() {
   // ── Auth middleware — verifica Firebase token em todas as rotas protegidas ──
   app.use(authenticateToken);
 
+  // ── Portal do Cliente: segredo de assinatura + resolução + muralha ──────────
+  // Carrega (ou gera 1×) o segredo HMAC dos tokens do portal, guardado no Neon.
+  try {
+    const sec = await pool.query(`SELECT value FROM app_secrets WHERE key = 'client_auth'`);
+    if (sec.rows[0]?.value) {
+      clientAuthSecret = sec.rows[0].value;
+    } else {
+      const gen = crypto.randomBytes(48).toString('hex');
+      await pool.query(`INSERT INTO app_secrets (key, value) VALUES ('client_auth', $1) ON CONFLICT (key) DO NOTHING`, [gen]);
+      const re = await pool.query(`SELECT value FROM app_secrets WHERE key = 'client_auth'`);
+      clientAuthSecret = re.rows[0]?.value || gen;
+    }
+    console.log('[portal-auth] segredo de assinatura carregado');
+  } catch (e: any) { console.error('[portal-auth] falha ao carregar segredo:', e.message); }
+
+  // Usuários-cliente (token próprio) só enxergam o projeto vinculado e só podem
+  // tocar em /api/portal/*. Qualquer outra rota interna = 403.
+  const appUserCache = new Map<string, { id: string | null; role: string | null; projectId: string | null; ts: number }>();
+  const APP_USER_TTL = 60 * 1000;
+  async function resolveAppUser(email?: string | null) {
+    if (!email) return null;
+    const cached = appUserCache.get(email);
+    if (cached && Date.now() - cached.ts < APP_USER_TTL) return cached;
+    const { rows } = await pool.query('SELECT id, role, client_project_id FROM users WHERE email = $1', [email]);
+    const rec = {
+      id: rows[0]?.id ?? null,
+      role: rows[0]?.role ?? null,
+      projectId: rows[0]?.client_project_id ?? null,
+      ts: Date.now(),
+    };
+    appUserCache.set(email, rec);
+    return rec;
+  }
+  const invalidateAppUser = (email?: string | null) => { if (email) appUserCache.delete(email); };
+
+  async function clientAccessWall(req: any, res: any, next: any) {
+    if (isPublicRoute(req.method, req.path) || !req.path.startsWith('/api/')) return next();
+    // Cliente (token próprio): identidade vem do token; só pode tocar em /api/portal/*.
+    if (req.user?.clientAuth) {
+      req.appUser = { role: 'client', id: req.user.clientId, projectId: req.user.projectId };
+      if (!req.path.startsWith('/api/portal/')) {
+        return res.status(403).json({ error: 'Acesso restrito ao portal do cliente.' });
+      }
+      return next();
+    }
+    // Colaborador (Firebase): resolve papel pela tabela users.
+    try {
+      req.appUser = await resolveAppUser(req.user?.email);
+    } catch (e) {
+      console.warn('[clientAccessWall] falha ao resolver colaborador:', (e as any)?.message);
+    }
+    next();
+  }
+  app.use(clientAccessWall);
+
+  // Resolve o projeto do portal: cliente → seu projeto (do token); admin → ?projectId (preview).
+  const PORTAL_ADMIN_ROLES = ['superadmin', 'gerente-operacional', 'diretor-operacional'];
+  async function requirePortalClient(req: any, res: any, next: any) {
+    if (req.user?.clientAuth && req.user.projectId) {
+      req.portalProjectId = req.user.projectId;
+      return next();
+    }
+    const appUser = req.appUser || await resolveAppUser(req.user?.email);
+    if (appUser && PORTAL_ADMIN_ROLES.includes(appUser.role || '') && req.query.projectId) {
+      req.portalProjectId = String(req.query.projectId);
+      return next();
+    }
+    return res.status(403).json({ error: 'Nenhum projeto vinculado a esta conta.' });
+  }
+
+  // Login do cliente (público) — valida no Neon e emite token assinado. Rate-limit simples.
+  const loginAttempts = new Map<string, { n: number; ts: number }>();
+  const LOGIN_WINDOW = 15 * 60 * 1000, LOGIN_MAX = 8;
+  app.post('/api/portal/auth/login', async (req: any, res: any) => {
+    try {
+      const email = String(req.body?.email || '').trim().toLowerCase();
+      const password = String(req.body?.password || '');
+      if (!email || !password) return res.status(400).json({ error: 'Informe e-mail e senha.' });
+      const ipKey = `${req.ip || req.headers['x-forwarded-for'] || 'ip'}:${email}`;
+      const att = loginAttempts.get(ipKey);
+      if (att && Date.now() - att.ts < LOGIN_WINDOW && att.n >= LOGIN_MAX) {
+        return res.status(429).json({ error: 'Muitas tentativas. Aguarde alguns minutos.' });
+      }
+      const { rows } = await pool.query('SELECT id, email, password_hash, name, project_id, active FROM client_users WHERE lower(email) = $1', [email]);
+      const u = rows[0];
+      const ok = u && u.active && verifyPassword(password, u.password_hash);
+      if (!ok) {
+        loginAttempts.set(ipKey, { n: (att && Date.now() - att.ts < LOGIN_WINDOW ? att.n : 0) + 1, ts: Date.now() });
+        return res.status(401).json({ error: 'E-mail ou senha incorretos.' });
+      }
+      loginAttempts.delete(ipKey);
+      await pool.query('UPDATE client_users SET last_login = NOW() WHERE id = $1', [u.id]);
+      const proj = await pool.query('SELECT partner FROM projects WHERE id = $1', [u.project_id]);
+      const exp = Math.floor(Date.now() / 1000) + 30 * 24 * 3600; // 30 dias
+      const token = signClientToken({ typ: 'client', cid: u.id, email: u.email, pid: u.project_id, exp });
+      res.json({ token, email: u.email, name: u.name || null, projectId: u.project_id, companyName: proj.rows[0]?.partner || u.name || null });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // PORTAL DO CLIENTE — endpoints somente-leitura, escopados por projeto
+  // ══════════════════════════════════════════════════════════════════════════
+  const MONTH_START_SP = `date_trunc('month', (now() AT TIME ZONE 'America/Sao_Paulo')::date)::date`;
+
+  // Identidade do portal (nome da empresa/parceiro + responsável).
+  app.get('/api/portal/me', requirePortalClient, async (req: any, res: any) => {
+    try {
+      const { rows } = await pool.query('SELECT id, partner, responsible FROM projects WHERE id = $1', [req.portalProjectId]);
+      if (!rows[0]) return res.status(404).json({ error: 'Projeto não encontrado.' });
+      res.json({ project: { id: rows[0].id, name: rows[0].partner, responsible: rows[0].responsible || null } });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // KPIs do mês (investimento, resultados, CPA) + variação vs mês anterior.
+  app.get('/api/portal/kpis', requirePortalClient, async (req: any, res: any) => {
+    try {
+      const acc = await pool.query(
+        "SELECT account_id FROM project_tokens WHERE project_id = $1 AND platform = 'meta_ads' AND account_id IS NOT NULL LIMIT 1",
+        [req.portalProjectId]
+      );
+      if (!acc.rows[0]) return res.json({ hasMeta: false });
+      const accountId = acc.rows[0].account_id;
+      const q = await pool.query(`
+        SELECT
+          COALESCE(SUM(spend)    FILTER (WHERE date >= ${MONTH_START_SP}), 0)::float AS spend_cur,
+          COALESCE(SUM(leads)    FILTER (WHERE date >= ${MONTH_START_SP}), 0)::int   AS leads_cur,
+          COALESCE(SUM(messages) FILTER (WHERE date >= ${MONTH_START_SP}), 0)::int   AS msgs_cur,
+          COALESCE(SUM(spend)    FILTER (WHERE date >= ${MONTH_START_SP} - interval '1 month' AND date < ${MONTH_START_SP}), 0)::float AS spend_prev,
+          COALESCE(SUM(leads)    FILTER (WHERE date >= ${MONTH_START_SP} - interval '1 month' AND date < ${MONTH_START_SP}), 0)::int   AS leads_prev,
+          COALESCE(SUM(messages) FILTER (WHERE date >= ${MONTH_START_SP} - interval '1 month' AND date < ${MONTH_START_SP}), 0)::int   AS msgs_prev
+        FROM marketing.meta_insights WHERE account_id = $1
+      `, [accountId]);
+      const r = q.rows[0];
+      const resCur = r.msgs_cur > 0 ? r.msgs_cur : r.leads_cur;
+      const resPrev = r.msgs_prev > 0 ? r.msgs_prev : r.leads_prev;
+      const cpaCur = resCur > 0 ? r.spend_cur / resCur : null;
+      const cpaPrev = resPrev > 0 ? r.spend_prev / resPrev : null;
+      const pct = (cur: number, prev: number) => (prev > 0 ? Math.round(((cur - prev) / prev) * 100) : null);
+      res.json({
+        hasMeta: true,
+        investment: r.spend_cur,
+        results: resCur,
+        resultLabel: r.msgs_cur > 0 ? 'Conversas' : 'Leads',
+        cpa: cpaCur,
+        deltas: {
+          investment: pct(r.spend_cur, r.spend_prev),
+          results: pct(resCur, resPrev),
+          cpa: cpaCur != null && cpaPrev != null && cpaPrev > 0 ? Math.round(((cpaCur - cpaPrev) / cpaPrev) * 100) : null,
+        },
+      });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // Campanhas ativas (derivadas do Meta, mês atual) + planejadas (marketing_acoes).
+  app.get('/api/portal/campaigns', requirePortalClient, async (req: any, res: any) => {
+    try {
+      const proj = await pool.query('SELECT page_id FROM projects WHERE id = $1', [req.portalProjectId]);
+      const pageId = proj.rows[0]?.page_id || null;
+      const acc = await pool.query(
+        "SELECT account_id FROM project_tokens WHERE project_id = $1 AND platform = 'meta_ads' AND account_id IS NOT NULL LIMIT 1",
+        [req.portalProjectId]
+      );
+      let active: any[] = [];
+      if (acc.rows[0]) {
+        const a = await pool.query(`
+          SELECT campaign_name AS name,
+                 SUM(spend)::float AS spend,
+                 SUM(leads)::int AS leads,
+                 SUM(messages)::int AS messages
+          FROM marketing.meta_insights
+          WHERE account_id = $1 AND date >= ${MONTH_START_SP}
+          GROUP BY campaign_name
+          HAVING SUM(spend) > 0
+          ORDER BY spend DESC
+        `, [acc.rows[0].account_id]);
+        active = a.rows.map(c => {
+          const results = c.messages > 0 ? c.messages : c.leads;
+          return { name: c.name, spend: c.spend, results, resultLabel: c.messages > 0 ? 'Conversas' : 'Leads', cpa: results > 0 ? c.spend / results : null, status: 'Rodando' };
+        });
+      }
+      let planned: any[] = [];
+      if (pageId) {
+        const m = await pool.query('SELECT data FROM marketing_acoes WHERE page_id = $1', [pageId]);
+        planned = Array.isArray(m.rows[0]?.data) ? m.rows[0].data : [];
+      }
+      res.json({ active, planned });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // Histórico de otimizações (apenas as não-internas).
+  app.get('/api/portal/optimizations', requirePortalClient, async (req: any, res: any) => {
+    try {
+      // Só otimizações manuais (categoria "Otimização") — esconde Métricas/Status.
+      const opts = await pool.query(`
+        SELECT o.id, o.author, o.author_photo, o.date, o.time, o.message, o.images
+        FROM optimizations o JOIN products p ON p.id = o.product_id
+        WHERE p.project_id = $1 AND (o.is_internal IS NULL OR o.is_internal = false)
+          AND o.optimization = 'Otimização'
+      `, [req.portalProjectId]);
+      // + comentários do projeto (não-internos).
+      const comments = await pool.query(`
+        SELECT id, author, author_photo, text, images, created_at
+        FROM project_comments
+        WHERE project_id = $1 AND (is_internal IS NULL OR is_internal = false)
+      `, [req.portalProjectId]);
+
+      const optTs = (d: string, t: string) => {
+        const [dd, mm, yyyy] = String(d || '').split('/');
+        const ts = Date.parse(`${yyyy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}T${t || '00:00'}:00`);
+        return isNaN(ts) ? 0 : ts;
+      };
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const items = [
+        ...opts.rows.map(o => ({
+          id: o.id, kind: 'otimizacao', author: o.author, authorPhoto: o.author_photo || null,
+          date: o.date, message: o.message || '', images: Array.isArray(o.images) ? o.images : [], _ts: optTs(o.date, o.time),
+        })),
+        ...comments.rows.map(c => {
+          const d = new Date(c.created_at);
+          return {
+            id: c.id, kind: 'comentario', author: c.author, authorPhoto: c.author_photo || null,
+            date: `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`,
+            message: c.text || '', images: Array.isArray(c.images) ? c.images : [], _ts: d.getTime() || 0,
+          };
+        }),
+      ];
+      items.sort((a, b) => b._ts - a._ts);
+      res.json(items.slice(0, 60));
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // Reuniões do projeto.
+  app.get('/api/portal/meetings', requirePortalClient, async (req: any, res: any) => {
+    try {
+      const { rows } = await pool.query(
+        'SELECT id, title, date, attendees, actions FROM meetings WHERE project_id = $1 ORDER BY date DESC',
+        [req.portalProjectId]
+      );
+      res.json(rows.map(m => ({
+        id: m.id, title: m.title, date: m.date, attendees: m.attendees || '', actions: m.actions || '',
+      })));
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // Documentos (projects.files).
+  app.get('/api/portal/documents', requirePortalClient, async (req: any, res: any) => {
+    try {
+      const { rows } = await pool.query('SELECT files FROM projects WHERE id = $1', [req.portalProjectId]);
+      const files = Array.isArray(rows[0]?.files) ? rows[0].files : [];
+      res.json({ documents: files });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // Solicitações feitas ao cliente — escopado por projeto (o cliente pode responder).
+  app.get('/api/portal/requests', requirePortalClient, async (req: any, res: any) => {
+    try {
+      const { rows } = await pool.query(
+        `SELECT id, type, description, status, files, comments, created_at FROM project_requests WHERE project_id = $1 ORDER BY created_at DESC`,
+        [req.portalProjectId]
+      );
+      res.json(rows);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // Cliente marca uma solicitação como concluída/pendente (só do próprio projeto).
+  app.patch('/api/portal/requests/:id', requirePortalClient, async (req: any, res: any) => {
+    try {
+      const { status } = req.body || {};
+      if (status !== 'concluida' && status !== 'pendente') return res.status(400).json({ error: 'status inválido.' });
+      const { rows } = await pool.query(
+        `UPDATE project_requests SET status = $1 WHERE id = $2 AND project_id = $3 RETURNING id, status`,
+        [status, req.params.id, req.portalProjectId]
+      );
+      if (!rows[0]) return res.status(404).json({ error: 'Solicitação não encontrada.' });
+      res.json(rows[0]);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // Comentário do CLIENTE numa solicitação (só do próprio projeto).
+  app.post('/api/portal/requests/:id/comments', requirePortalClient, async (req: any, res: any) => {
+    try {
+      const { text } = req.body || {};
+      if (!text || !String(text).trim()) return res.status(400).json({ error: 'Comentário vazio.' });
+      const row = await pool.query('SELECT comments FROM project_requests WHERE id = $1 AND project_id = $2', [req.params.id, req.portalProjectId]);
+      if (!row.rows[0]) return res.status(404).json({ error: 'Solicitação não encontrada.' });
+      const proj = await pool.query('SELECT partner FROM projects WHERE id = $1', [req.portalProjectId]);
+      const existing = Array.isArray(row.rows[0].comments) ? row.rows[0].comments : [];
+      const comment = { id: crypto.randomUUID(), author: proj.rows[0]?.partner || 'Cliente', authorType: 'client', text: String(text).trim(), createdAt: new Date().toISOString() };
+      const merged = [...existing, comment];
+      await pool.query('UPDATE project_requests SET comments = $1 WHERE id = $2', [JSON.stringify(merged), req.params.id]);
+      res.status(201).json(comment);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // Cliente envia arquivos (criativos, vídeos, PDFs...) numa solicitação — upload via servidor.
+  const portalUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } }); // 100MB
+  app.post('/api/portal/requests/:id/files', requirePortalClient, portalUpload.array('files', 12), async (req: any, res: any) => {
+    try {
+      const reqRow = await pool.query('SELECT id, files FROM project_requests WHERE id = $1 AND project_id = $2', [req.params.id, req.portalProjectId]);
+      if (!reqRow.rows[0]) return res.status(404).json({ error: 'Solicitação não encontrada.' });
+      const files = Array.isArray(req.files) ? req.files : [];
+      if (files.length === 0) return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
+      const existing = Array.isArray(reqRow.rows[0].files) ? reqRow.rows[0].files : [];
+      const added: any[] = [];
+      for (const f of files) {
+        const safe = String(f.originalname || 'arquivo').replace(/[^a-zA-Z0-9._-]/g, '_');
+        const path = `portal-requests/${req.portalProjectId}/${req.params.id}/${Date.now()}-${safe}`;
+        let url = '';
+        if (firebaseAdminReady) {
+          const bucket = admin.storage().bucket();
+          const blob = bucket.file(path);
+          // Token de download (mesmo mecanismo do SDK do Firebase) — funciona com
+          // uniform bucket-level access, sem precisar de ACL por objeto (makePublic).
+          const token = crypto.randomUUID();
+          await blob.save(f.buffer, { metadata: { contentType: f.mimetype, metadata: { firebaseStorageDownloadTokens: token } } });
+          url = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(path)}?alt=media&token=${token}`;
+        } else {
+          url = `data:${f.mimetype};base64,${f.buffer.toString('base64')}`;
+        }
+        added.push({ name: f.originalname, url, type: f.mimetype, size: f.size, uploadedAt: new Date().toISOString() });
+      }
+      const merged = [...existing, ...added];
+      await pool.query('UPDATE project_requests SET files = $1 WHERE id = $2', [JSON.stringify(merged), req.params.id]);
+      res.json({ ok: true, files: merged });
+    } catch (err: any) {
+      console.error('[portal-requests] upload error:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Relatório de Meta Ads (KPIs + série diária + campanhas) por intervalo — escopado.
+  app.get('/api/portal/report', requirePortalClient, async (req: any, res: any) => {
+    try {
+      const today = new Date();
+      const fb = new Date(today); fb.setDate(today.getDate() - 29);
+      const start = String(req.query.start || fb.toISOString().slice(0, 10));
+      const end = String(req.query.end || today.toISOString().slice(0, 10));
+      const acc = await pool.query(
+        "SELECT account_id FROM project_tokens WHERE project_id = $1 AND platform = 'meta_ads' AND account_id IS NOT NULL LIMIT 1",
+        [req.portalProjectId]
+      );
+      if (!acc.rows[0]) return res.json({ hasMeta: false });
+      const accountId = acc.rows[0].account_id;
+
+      const kpiQ = await pool.query(`
+        SELECT COALESCE(SUM(spend),0)::float AS spend, COALESCE(SUM(impressions),0)::bigint AS impressions,
+               COALESCE(SUM(clicks),0)::bigint AS clicks, COALESCE(SUM(leads),0)::int AS leads,
+               COALESCE(SUM(messages),0)::int AS messages
+        FROM marketing.meta_insights WHERE account_id = $1 AND date >= $2 AND date <= $3
+      `, [accountId, start, end]);
+      const k = kpiQ.rows[0];
+      const impr = Number(k.impressions), clk = Number(k.clicks);
+      const ctr = impr > 0 ? (clk / impr) * 100 : 0;
+      const primaryMetric = k.messages > 0 ? 'messages' : 'leads';
+      const divisor = primaryMetric === 'messages' ? k.messages : k.leads;
+      const costPerResult = divisor > 0 ? k.spend / divisor : null;
+
+      const dailyQ = await pool.query(`
+        SELECT to_char(date,'YYYY-MM-DD') AS date, SUM(spend)::float AS spend, SUM(leads)::int AS leads, SUM(messages)::int AS messages
+        FROM marketing.meta_insights WHERE account_id = $1 AND date >= $2 AND date <= $3
+        GROUP BY date ORDER BY date
+      `, [accountId, start, end]);
+
+      const campQ = await pool.query(`
+        SELECT campaign_name AS name, SUM(spend)::float AS spend, SUM(impressions)::bigint AS impressions,
+               SUM(clicks)::bigint AS clicks, SUM(leads)::int AS leads, SUM(messages)::int AS messages
+        FROM marketing.meta_insights WHERE account_id = $1 AND date >= $2 AND date <= $3
+        GROUP BY campaign_name ORDER BY spend DESC
+      `, [accountId, start, end]);
+
+      // Criativos (agregados por anúncio). Guarda em caso de tabela vazia/inexistente.
+      let creatives: any[] = [];
+      try {
+        const creaQ = await pool.query(`
+          SELECT ad_id, ad_name,
+                 (array_agg(thumbnail_url) FILTER (WHERE thumbnail_url IS NOT NULL))[1] AS thumbnail_url,
+                 SUM(spend)::float AS spend, SUM(impressions)::bigint AS impressions, SUM(clicks)::bigint AS clicks,
+                 SUM(messages)::int AS messages, SUM(leads)::int AS leads
+          FROM marketing.meta_creatives WHERE account_id = $1 AND date >= $2 AND date <= $3
+          GROUP BY ad_id, ad_name ORDER BY spend DESC LIMIT 60
+        `, [accountId, start, end]);
+        creatives = creaQ.rows.map(c => {
+          const results = c.messages > 0 ? c.messages : c.leads;
+          const ci = Number(c.impressions), cc = Number(c.clicks);
+          return { adId: c.ad_id, name: c.ad_name, thumbnailUrl: c.thumbnail_url || null, spend: c.spend, impressions: ci, clicks: cc, ctr: ci > 0 ? Number(((cc / ci) * 100).toFixed(2)) : 0, messages: c.messages, leads: c.leads, costPerResult: results > 0 ? c.spend / results : null };
+        });
+      } catch { creatives = []; }
+
+      res.json({
+        hasMeta: true, start, end,
+        kpis: { spend: k.spend, impressions: impr, clicks: clk, leads: k.leads, messages: k.messages, ctr: Number(ctr.toFixed(2)), primaryMetric, costPerResult },
+        daily: dailyQ.rows.map(d => ({ date: d.date, spend: d.spend, leads: d.leads || 0, messages: d.messages || 0 })),
+        campaigns: campQ.rows.map(c => {
+          const results = c.messages > 0 ? c.messages : c.leads;
+          const cimpr = Number(c.impressions), cclk = Number(c.clicks);
+          return { name: c.name, spend: c.spend, impressions: cimpr, clicks: cclk, ctr: cimpr > 0 ? Number(((cclk / cimpr) * 100).toFixed(2)) : 0, leads: c.leads, messages: c.messages, costPerResult: results > 0 ? c.spend / results : null };
+        }),
+        creatives,
+      });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // ── Gestão de contas de cliente (gestão: superadmin / gerência) ─────────────
+  const requirePortalAdmin = async (req: any) => {
+    const appUser = req.appUser || await resolveAppUser(req.user?.email);
+    return !!appUser && PORTAL_ADMIN_ROLES.includes(appUser.role || '');
+  };
+
+  // Cria/atualiza uma conta de cliente (email + senha no Neon) vinculada a 1 projeto.
+  app.post('/api/portal/admin/provision', async (req: any, res: any) => {
+    try {
+      if (!(await requirePortalAdmin(req))) return res.status(403).json({ error: 'Sem permissão para gerenciar acesso do cliente.' });
+      const email = String(req.body?.email || '').trim().toLowerCase();
+      const { password, name, projectId } = req.body || {};
+      if (!email || !projectId) return res.status(400).json({ error: 'email e projectId são obrigatórios.' });
+      const proj = await pool.query('SELECT id, partner FROM projects WHERE id = $1', [projectId]);
+      if (!proj.rows[0]) return res.status(404).json({ error: 'Projeto não encontrado.' });
+      const displayName = name || proj.rows[0].partner;
+      // Sem senha: cria/atualiza o vínculo mantendo a senha atual (se já existir).
+      const existing = await pool.query('SELECT id FROM client_users WHERE email = $1', [email]);
+      if (!password && !existing.rows[0]) return res.status(400).json({ error: 'Defina uma senha para a nova conta.' });
+      if (password && String(password).length < 6) return res.status(400).json({ error: 'A senha precisa de ao menos 6 caracteres.' });
+      if (password) {
+        const hash = hashPassword(password);
+        await pool.query(`
+          INSERT INTO client_users (email, password_hash, name, project_id, active)
+          VALUES ($1, $2, $3, $4, TRUE)
+          ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, name = EXCLUDED.name, project_id = EXCLUDED.project_id, active = TRUE
+        `, [email, hash, displayName, projectId]);
+      } else {
+        await pool.query('UPDATE client_users SET name = $2, project_id = $3 WHERE email = $1', [email, displayName, projectId]);
+      }
+      res.json({ ok: true, email, projectId, partner: proj.rows[0].partner });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // Conta(s) de cliente vinculada(s) a um projeto (estado atual pra aba do modal).
+  app.get('/api/portal/admin/clients/by-project/:projectId', async (req: any, res: any) => {
+    try {
+      if (!(await requirePortalAdmin(req))) return res.status(403).json({ error: 'Sem permissão.' });
+      const { rows } = await pool.query(
+        'SELECT id, email, name, active, last_login, created_at FROM client_users WHERE project_id = $1 ORDER BY created_at ASC',
+        [req.params.projectId]
+      );
+      res.json(rows);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // Ativa/desativa (ou remove) uma conta de cliente.
+  app.patch('/api/portal/admin/clients/:id', async (req: any, res: any) => {
+    try {
+      if (!(await requirePortalAdmin(req))) return res.status(403).json({ error: 'Sem permissão.' });
+      const { active } = req.body || {};
+      if (typeof active !== 'boolean') return res.status(400).json({ error: 'Envie { active: true|false }.' });
+      const r = await pool.query('UPDATE client_users SET active = $1 WHERE id = $2 RETURNING id', [active, req.params.id]);
+      if (!r.rows[0]) return res.status(404).json({ error: 'Conta não encontrada.' });
+      res.json({ ok: true, active });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.delete('/api/portal/admin/clients/:id', async (req: any, res: any) => {
+    try {
+      if (!(await requirePortalAdmin(req))) return res.status(403).json({ error: 'Sem permissão.' });
+      await pool.query('DELETE FROM client_users WHERE id = $1', [req.params.id]);
+      res.json({ ok: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // Lista todas as contas de cliente (visão geral).
+  app.get('/api/portal/admin/clients', async (req: any, res: any) => {
+    try {
+      if (!(await requirePortalAdmin(req))) return res.status(403).json({ error: 'Sem permissão.' });
+      const { rows } = await pool.query(`
+        SELECT c.id, c.email, c.name, c.project_id, c.active, c.last_login, p.partner
+        FROM client_users c LEFT JOIN projects p ON p.id = c.project_id
+        ORDER BY c.created_at DESC
+      `);
+      res.json(rows);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
   // ── Project Comments ────────────────────────────────────────────────────────
   app.get('/api/project-comments/:projectId', async (req, res) => {
     try {
       const { projectId } = req.params;
       const result = await pool.query(
-        `SELECT id, project_id, author, author_photo, text, is_internal, created_at
+        `SELECT id, project_id, author, author_photo, text, is_internal, images, created_at
          FROM project_comments
          WHERE project_id = $1
          ORDER BY created_at ASC`,
@@ -2234,13 +2827,14 @@ async function startServer() {
   app.post('/api/project-comments/:projectId', async (req, res) => {
     try {
       const { projectId } = req.params;
-      const { author, author_photo, text, is_internal } = req.body;
-      if (!author || !text) return res.status(400).json({ error: 'author and text are required' });
+      const { author, author_photo, text, is_internal, images } = req.body;
+      const imgs = Array.isArray(images) ? images : [];
+      if (!author || (!text && imgs.length === 0)) return res.status(400).json({ error: 'author and text (or images) are required' });
       const result = await pool.query(
-        `INSERT INTO project_comments (project_id, author, author_photo, text, is_internal)
-         VALUES ($1, $2, $3, $4, $5)
-         RETURNING id, project_id, author, author_photo, text, is_internal, created_at`,
-        [projectId, author, author_photo || null, text, is_internal || false]
+        `INSERT INTO project_comments (project_id, author, author_photo, text, is_internal, images)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id, project_id, author, author_photo, text, is_internal, images, created_at`,
+        [projectId, author, author_photo || null, text || '', is_internal || false, JSON.stringify(imgs)]
       );
       res.status(201).json(result.rows[0]);
     } catch (err) {
@@ -2302,6 +2896,90 @@ async function startServer() {
       console.error('Error deleting project comment:', err);
       res.status(500).json({ error: 'Failed to delete comment' });
     }
+  });
+
+  // ── Solicitações do projeto (time → cliente) ────────────────────────────────
+  app.get('/api/project-requests/:projectId', async (req: any, res: any) => {
+    try {
+      const { rows } = await pool.query(
+        `SELECT id, project_id, type, description, status, created_by, files, comments, created_at
+         FROM project_requests WHERE project_id = $1 ORDER BY created_at DESC`,
+        [req.params.projectId]
+      );
+      res.json(rows);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.post('/api/project-requests/:projectId', async (req: any, res: any) => {
+    try {
+      const { type, description, created_by } = req.body || {};
+      if (!description || !String(description).trim()) return res.status(400).json({ error: 'Descrição obrigatória.' });
+      const { rows } = await pool.query(
+        `INSERT INTO project_requests (project_id, type, description, created_by)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, project_id, type, description, status, created_by, created_at`,
+        [req.params.projectId, type || 'outro', String(description).trim(), created_by || null]
+      );
+      res.status(201).json(rows[0]);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.patch('/api/project-requests/:id', async (req: any, res: any) => {
+    try {
+      const { status } = req.body || {};
+      if (!status) return res.status(400).json({ error: 'status obrigatório.' });
+      const { rows } = await pool.query(
+        `UPDATE project_requests SET status = $1 WHERE id = $2 RETURNING id, status`,
+        [status, req.params.id]
+      );
+      if (!rows[0]) return res.status(404).json({ error: 'Solicitação não encontrada.' });
+      res.json(rows[0]);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.delete('/api/project-requests/:id', async (req: any, res: any) => {
+    try {
+      await pool.query(`DELETE FROM project_requests WHERE id = $1`, [req.params.id]);
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // Comentário do TIME numa solicitação.
+  app.post('/api/project-requests/:id/comments', async (req: any, res: any) => {
+    try {
+      const { text, author } = req.body || {};
+      if (!text || !String(text).trim()) return res.status(400).json({ error: 'Comentário vazio.' });
+      const row = await pool.query('SELECT comments FROM project_requests WHERE id = $1', [req.params.id]);
+      if (!row.rows[0]) return res.status(404).json({ error: 'Solicitação não encontrada.' });
+      const existing = Array.isArray(row.rows[0].comments) ? row.rows[0].comments : [];
+      const comment = { id: crypto.randomUUID(), author: author || 'Equipe Grape', authorType: 'team', text: String(text).trim(), createdAt: new Date().toISOString() };
+      const merged = [...existing, comment];
+      await pool.query('UPDATE project_requests SET comments = $1 WHERE id = $2', [JSON.stringify(merged), req.params.id]);
+      res.status(201).json(comment);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // Migração 1×: reclassifica notas antigas pelo texto (manual=Otimização, automáticas=Métricas/Status).
+  app.post('/api/admin/migrate-optimization-types', async (req: any, res: any) => {
+    try {
+      const appUser = req.appUser || await resolveAppUser(req.user?.email);
+      if (appUser?.role !== 'superadmin') return res.status(403).json({ error: 'Apenas superadmin.' });
+      const result = await pool.query(`
+        UPDATE optimizations SET
+          type = CASE
+            WHEN message ILIKE 'Métricas atualizadas%' OR message ILIKE 'Configuração atualizada:%' THEN 'Métricas'
+            ELSE NULL END,
+          status = CASE
+            WHEN message ILIKE 'Resultado do Projeto alterado%' OR message ILIKE 'Status da Campanha alterado%' THEN 'Mudança de Status'
+            ELSE NULL END,
+          optimization = CASE
+            WHEN message ILIKE 'Métricas atualizadas%' OR message ILIKE 'Configuração atualizada:%'
+              OR message ILIKE 'Resultado do Projeto alterado%' OR message ILIKE 'Status da Campanha alterado%'
+            THEN NULL ELSE 'Otimização' END
+        WHERE type IS DISTINCT FROM 'meeting'
+      `);
+      res.json({ ok: true, updated: result.rowCount });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
   });
 
 
@@ -4405,11 +5083,11 @@ app.post('/api/tasks/:id/attachments', taskUpload.single('file'), async (req: an
     if (firebaseAdminReady) {
       const bucket = admin.storage().bucket();
       const blob = bucket.file(fileName);
+      const token = crypto.randomUUID();
       await blob.save(file.buffer, {
-        metadata: { contentType: file.mimetype },
+        metadata: { contentType: file.mimetype, metadata: { firebaseStorageDownloadTokens: token } },
       });
-      await blob.makePublic();
-      fileUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+      fileUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(fileName)}?alt=media&token=${token}`;
     } else {
       // Fallback: save as base64 data URL
       const base64 = file.buffer.toString('base64');
@@ -5271,6 +5949,130 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
+  // ── Risco de Churn — snapshots (evolução no tempo) ──────────────────────────
+  // Grava (idempotente) 1 registro por projeto por dia, com a contagem de sinais marcados.
+  app.post("/api/churn-snapshots/capture", async (_req, res) => {
+    try {
+      await maybeResetChurnChecklists(); // reforço: garante o reset semanal ao abrir o dashboard
+      const { rowCount } = await pool.query(`
+        INSERT INTO churn_risk_snapshots (project_id, partner, squad, responsible, investment, checked_count, snapshot_date)
+        SELECT p.id, p.partner, p.squad, p.responsible, p.investment,
+               (SELECT count(*) FROM jsonb_each(COALESCE(p.churn_checklist, '{}'::jsonb)) e WHERE e.value = 'true'::jsonb),
+               CURRENT_DATE
+        FROM projects p
+        ON CONFLICT (project_id, snapshot_date) DO UPDATE SET
+          checked_count = EXCLUDED.checked_count,
+          partner = EXCLUDED.partner, squad = EXCLUDED.squad,
+          responsible = EXCLUDED.responsible, investment = EXCLUDED.investment,
+          created_at = NOW()
+      `);
+      res.json({ ok: true, captured: rowCount });
+    } catch (err: any) {
+      console.error("Error capturing churn snapshot:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Série diária agregada + baseline por projeto (~7 dias atrás) para calcular deltas.
+  app.get("/api/churn-snapshots", async (req, res) => {
+    try {
+      const days = Math.min(Math.max(parseInt(String(req.query.days || '90'), 10) || 90, 7), 365);
+      const squad = req.query.squad ? String(req.query.squad) : null; // 'Able' | 'Baker' | null (todos)
+      const series = await pool.query(`
+        SELECT to_char(snapshot_date, 'YYYY-MM-DD') AS date,
+               count(*) FILTER (WHERE checked_count >= 1) AS com_sinais,
+               count(*) FILTER (WHERE checked_count >= 4) AS em_risco,
+               count(*) FILTER (WHERE checked_count >= 7) AS alto,
+               COALESCE(sum(checked_count), 0) AS total_sinais
+        FROM churn_risk_snapshots
+        WHERE snapshot_date >= CURRENT_DATE - ($1::int)
+          AND ($2::text IS NULL OR squad = $2)
+        GROUP BY snapshot_date ORDER BY snapshot_date ASC
+      `, [days, squad]);
+      // Baseline: para cada projeto, a contagem no snapshot mais recente com pelo menos 7 dias.
+      const baselineRows = await pool.query(`
+        SELECT DISTINCT ON (project_id) project_id, checked_count,
+               to_char(snapshot_date, 'YYYY-MM-DD') AS date
+        FROM churn_risk_snapshots
+        WHERE snapshot_date <= CURRENT_DATE - 7
+          AND ($1::text IS NULL OR squad = $1)
+        ORDER BY project_id, snapshot_date DESC
+      `, [squad]);
+      const baseline: Record<string, number> = {};
+      for (const r of baselineRows.rows) baseline[r.project_id] = Number(r.checked_count);
+      res.json({
+        series: series.rows.map(r => ({
+          date: r.date,
+          comSinais: Number(r.com_sinais),
+          emRisco: Number(r.em_risco),
+          alto: Number(r.alto),
+          totalSinais: Number(r.total_sinais),
+        })),
+        baseline,
+      });
+    } catch (err: any) {
+      console.error("Error fetching churn snapshots:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Reset semanal do checklist de churn (domingo 23h America/Sao_Paulo) ──────
+  // Antes de zerar, grava o snapshot final da semana (datado no domingo do boundary),
+  // preservando o histórico/evolução. Na 1ª execução só marca o boundary (não zera).
+  async function maybeResetChurnChecklists() {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`INSERT INTO churn_reset_state (id, last_boundary) VALUES (1, NULL) ON CONFLICT (id) DO NOTHING`);
+      await client.query(`SELECT 1 FROM churn_reset_state WHERE id=1 FOR UPDATE`);
+      // Decide 100% no SQL (sem round-trip de Date/fuso). boundary = domingo 23:00
+      // (horário de Brasília) mais recente que já passou.
+      const { rows } = await client.query(`
+        WITH b AS (SELECT (now() AT TIME ZONE 'America/Sao_Paulo') AS t),
+        bound AS (
+          SELECT CASE
+            WHEN (SELECT t FROM b) >= (date_trunc('week',(SELECT t FROM b)) + interval '6 days 23 hours')
+              THEN date_trunc('week',(SELECT t FROM b)) + interval '6 days 23 hours'
+            ELSE date_trunc('week',(SELECT t FROM b)) - interval '1 day' + interval '23 hours'
+          END AS boundary
+        )
+        SELECT to_char((SELECT boundary FROM bound), 'YYYY-MM-DD HH24:MI:SS') AS boundary_str,
+               ((SELECT last_boundary FROM churn_reset_state WHERE id=1) IS NULL) AS is_first,
+               ((SELECT last_boundary FROM churn_reset_state WHERE id=1) < (SELECT boundary FROM bound)) AS due
+      `);
+      const { boundary_str, is_first, due } = rows[0];
+
+      if (is_first) {
+        // 1ª vez: só ancora o ciclo, sem apagar os dados atuais.
+        await client.query(`UPDATE churn_reset_state SET last_boundary = $1::timestamp WHERE id=1`, [boundary_str]);
+      } else if (due === true) {
+        // Passou um domingo desde o último reset → snapshot final (datado no domingo) + zera.
+        await client.query(`
+          INSERT INTO churn_risk_snapshots (project_id, partner, squad, responsible, investment, checked_count, snapshot_date)
+          SELECT p.id, p.partner, p.squad, p.responsible, p.investment,
+                 (SELECT count(*) FROM jsonb_each(COALESCE(p.churn_checklist, '{}'::jsonb)) e WHERE e.value = 'true'::jsonb),
+                 ($1::timestamp)::date
+          FROM projects p
+          ON CONFLICT (project_id, snapshot_date) DO UPDATE SET
+            checked_count = EXCLUDED.checked_count, partner = EXCLUDED.partner, squad = EXCLUDED.squad,
+            responsible = EXCLUDED.responsible, investment = EXCLUDED.investment, created_at = NOW()
+        `, [boundary_str]);
+        const reset = await client.query(`UPDATE projects SET churn_checklist = '{}'::jsonb WHERE churn_checklist IS NOT NULL AND churn_checklist <> '{}'::jsonb`);
+        await client.query(`UPDATE churn_reset_state SET last_boundary = $1::timestamp WHERE id=1`, [boundary_str]);
+        console.log(`[churn-reset] Checklist semanal zerado — ${reset.rowCount} parceiro(s). Boundary: ${boundary_str}`);
+      }
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK').catch(() => {});
+      console.error('[churn-reset] erro:', e);
+    } finally {
+      client.release();
+    }
+  }
+  // Checa no boot e a cada 30 min (roda no máximo 1×/semana, após o domingo 23h).
+  setTimeout(() => { maybeResetChurnChecklists(); }, 8000);
+  setInterval(() => { maybeResetChurnChecklists(); }, 30 * 60 * 1000);
+
   app.get("/api/churn/:clientName", async (req, res) => {
     const { clientName } = req.params;
     try {
@@ -5592,7 +6394,7 @@ app.get("/api/todos", async (req, res) => {
         SELECT COALESCE(SUM(value), 0) AS total
         FROM fin_movements_asaas
         WHERE transaction_date >= $1 AND transaction_date < $2
-          AND type = -1 AND account = 'asaas' AND is_anticipation_pair = false
+          AND type = -1 AND account = 'asaas' AND is_anticipation_pair = false AND is_reversed_pair = false
           AND transaction_type != 'RECEIVABLE_ANTICIPATION_DEBIT'
       `, [inicio, fim]);
       const pago = parseFloat(saidasRes.rows[0].total);
@@ -5695,7 +6497,7 @@ app.get("/api/todos", async (req, res) => {
         const mv = await pool.query(
           `SELECT c.structure AS structure, SUM(m.value::numeric * m.type) AS val
            FROM fin_movements_asaas m JOIN fin_categories c ON c.id = m.custom_category_id
-           WHERE m.is_anticipation_pair = false
+           WHERE m.is_anticipation_pair = false AND m.is_reversed_pair = false
              AND ((m.account='asaas' AND to_char(m.transaction_date,'YYYY-MM') = $1)
                OR (m.account='sicredi' AND m.billing_month = $1))
            GROUP BY c.structure`, [month]
@@ -5710,7 +6512,7 @@ app.get("/api/todos", async (req, res) => {
         }
         const semcat = await pool.query(
           `SELECT COALESCE(SUM(m.value::numeric * m.type),0) AS val FROM fin_movements_asaas m
-           WHERE m.is_anticipation_pair = false AND m.custom_category_id IS NULL
+           WHERE m.is_anticipation_pair = false AND m.is_reversed_pair = false AND m.custom_category_id IS NULL
              AND ((m.account='asaas' AND to_char(m.transaction_date,'YYYY-MM') = $1)
                OR (m.account='sicredi' AND m.billing_month = $1))`, [month]
         );
@@ -5819,7 +6621,7 @@ app.get("/api/todos", async (req, res) => {
         const mv = await pool.query(
           `SELECT c.structure AS structure, SUM(m.value::numeric * m.type) AS val
            FROM fin_movements_asaas m JOIN fin_categories c ON c.id = m.custom_category_id
-           WHERE m.is_anticipation_pair = false
+           WHERE m.is_anticipation_pair = false AND m.is_reversed_pair = false
              AND ((m.account='asaas' AND to_char(m.transaction_date,'YYYY-MM') = $1)
                OR (m.account='sicredi' AND m.billing_month = $1))
            GROUP BY c.structure`, [month]
@@ -5989,7 +6791,7 @@ app.get("/api/todos", async (req, res) => {
           COALESCE(SUM(CASE WHEN type = -1 THEN value ELSE 0 END), 0) AS net
         FROM fin_movements_asaas
         WHERE account = 'asaas' AND transaction_date >= $1
-          AND is_anticipation_pair = false
+          AND is_anticipation_pair = false AND is_reversed_pair = false
           AND LOWER(COALESCE(custom_category, '')) NOT IN ('transferencia entre contas', 'transferência entre contas')
       `, [fim]);
       const netAposMes = parseFloat(netAposRes.rows[0].net);
@@ -6002,7 +6804,7 @@ app.get("/api/todos", async (req, res) => {
         FROM fin_movements_asaas
         WHERE account = 'asaas'
           AND transaction_date >= $1 AND transaction_date < $2
-          AND is_anticipation_pair = false
+          AND is_anticipation_pair = false AND is_reversed_pair = false
           AND LOWER(COALESCE(custom_category, '')) NOT IN ('transferencia entre contas', 'transferência entre contas')
       `, [inicio, fim]);
       const netMes = parseFloat(netMesRes.rows[0].net);
@@ -6039,8 +6841,8 @@ app.get("/api/todos", async (req, res) => {
         SELECT
           TO_CHAR(transaction_date, 'DD/MM') AS dia,
           EXTRACT(DAY FROM transaction_date) AS dia_numero,
-          COALESCE(SUM(CASE WHEN type = 1  AND is_anticipation_pair = false THEN value ELSE 0 END), 0) AS entradas_realizadas,
-          COALESCE(SUM(CASE WHEN type = -1 AND is_anticipation_pair = false THEN value ELSE 0 END), 0) AS saidas_realizadas
+          COALESCE(SUM(CASE WHEN type = 1  AND is_anticipation_pair = false AND is_reversed_pair = false THEN value ELSE 0 END), 0) AS entradas_realizadas,
+          COALESCE(SUM(CASE WHEN type = -1 AND is_anticipation_pair = false AND is_reversed_pair = false THEN value ELSE 0 END), 0) AS saidas_realizadas
         FROM fin_movements_asaas
         WHERE account = 'asaas'
           AND transaction_date >= $1 AND transaction_date < $2
@@ -6910,6 +7712,7 @@ app.get("/api/todos", async (req, res) => {
           edited_at,
           edited_by,
           is_anticipation_pair,
+          is_reversed_pair,
           account,
           COALESCE(custom_description, description) AS display_description,
           COALESCE(custom_category, grapehub_category) AS display_category
@@ -6983,6 +7786,7 @@ app.get("/api/todos", async (req, res) => {
           edited_at: r.edited_at || null,
           edited_by: r.edited_by || null,
           is_anticipation_pair: r.is_anticipation_pair || false,
+          is_reversed_pair: r.is_reversed_pair || false,
           account: r.account || 'asaas',
         };
       });
@@ -7621,7 +8425,7 @@ app.get("/api/todos", async (req, res) => {
     // Step 1: Reset ALL is_anticipation_pair to false (clean slate)
     const resetResult = await pool.query(`
       UPDATE fin_movements_asaas
-      SET is_anticipation_pair = false
+      SET is_anticipation_pair = false AND is_reversed_pair = false
       WHERE is_anticipation_pair = true
       RETURNING id
     `);
@@ -7674,7 +8478,7 @@ app.get("/api/todos", async (req, res) => {
           edited_at = NOW(),
           edited_by = 'conciliacao-auto'
       WHERE (description ILIKE 'Baixa da antecipacao%' OR description ILIKE 'Baixa da antecipação%')
-        AND is_anticipation_pair = false
+        AND is_anticipation_pair = false AND is_reversed_pair = false
         AND transaction_type != 'RECEIVABLE_ANTICIPATION'
       RETURNING id
     `);
@@ -7788,7 +8592,7 @@ app.get("/api/todos", async (req, res) => {
                grapehub_category = $2,
                edited_at = NOW(),
                edited_by = 'regra-auto'
-           WHERE is_anticipation_pair = false
+           WHERE is_anticipation_pair = false AND is_reversed_pair = false
              AND fin_unaccent(description) ILIKE fin_unaccent($1)
            RETURNING id`,
           [pattern, rule.category_name, rule.category_id]
@@ -7819,7 +8623,7 @@ app.get("/api/todos", async (req, res) => {
         SELECT COUNT(*) as count FROM fin_movements_asaas
         WHERE custom_category IS NULL
           AND (grapehub_category IS NULL OR grapehub_category = '')
-          AND is_anticipation_pair = false
+          AND is_anticipation_pair = false AND is_reversed_pair = false
       `);
       const pending = parseInt(pendingCheck.rows[0].count);
       if (pending === 0) {
@@ -7852,7 +8656,7 @@ app.get("/api/todos", async (req, res) => {
                edited_by = 'regra-auto'
            WHERE custom_category IS NULL
              AND (grapehub_category IS NULL OR grapehub_category = '')
-             AND is_anticipation_pair = false
+             AND is_anticipation_pair = false AND is_reversed_pair = false
              AND fin_unaccent(description) ILIKE fin_unaccent($1)
            RETURNING id`,
           [pattern, rule.category_name, rule.category_id]
@@ -8791,6 +9595,30 @@ app.get("/api/todos", async (req, res) => {
     } catch { if (!res.headersSent) res.status(500).end(); }
   });
 
+  // Proxy de download — força o download (Content-Disposition) e evita CORS do bucket.
+  app.get('/api/file-download', (req: any, res: any) => {
+    try {
+      const raw = req.query.url as string;
+      const name = (req.query.name as string) || 'arquivo';
+      if (!raw) return res.status(400).end();
+      let u: URL;
+      try { u = new URL(raw); } catch { return res.status(400).end(); }
+      if (u.protocol !== 'https:' || !/(^|\.)(firebasestorage\.googleapis\.com|storage\.googleapis\.com)$/i.test(u.hostname)) {
+        return res.status(403).end();
+      }
+      const upstream = https.get(raw, (up: any) => {
+        if (!up.statusCode || up.statusCode >= 400) { up.resume(); return res.status(502).end(); }
+        const safe = String(name).replace(/[^a-zA-Z0-9._ -]/g, '_') || 'arquivo';
+        res.setHeader('Content-Type', up.headers['content-type'] || 'application/octet-stream');
+        if (up.headers['content-length']) res.setHeader('Content-Length', up.headers['content-length']);
+        res.setHeader('Content-Disposition', `attachment; filename="${safe}"`);
+        up.pipe(res);
+      });
+      upstream.on('error', () => { if (!res.headersSent) res.status(502).end(); });
+      upstream.setTimeout(30000, () => { upstream.destroy(); if (!res.headersSent) res.status(504).end(); });
+    } catch { if (!res.headersSent) res.status(500).end(); }
+  });
+
   // Recupera thumbnails EXPIRADAS: busca URLs frescas na API do Meta (Graph) por ad_id, baixa a
   // imagem e guarda no cache permanente (meta_thumb_cache). Usado pelo modal antes de exportar.
   app.get('/api/partners/:projectId/refresh-thumbs', async (req: any, res) => {
@@ -9219,8 +10047,8 @@ app.get("/api/todos", async (req, res) => {
     setImmediate(() => runMetaAdsSync());
   });
 
-  // Agenda diária às 02h (America/Sao_Paulo, UTC-3 ≈ 05h UTC): checa a cada 30 min e roda 1×/dia se enabled.
-  setInterval(async () => {
+  // Agenda diária às 02h (America/Sao_Paulo, UTC-3 ≈ 05h UTC): roda 1×/dia se enabled.
+  async function runDailySyncIfDue() {
     try {
       const cfg = (await pool.query(`SELECT enabled, last_run_date FROM meta_sync_config WHERE id=1`)).rows[0];
       if (!cfg || !cfg.enabled) return;
@@ -9232,7 +10060,10 @@ app.get("/api/todos", async (req, res) => {
         runMetaAdsSync();
       }
     } catch { /* ignora */ }
-  }, 30 * 60 * 1000);
+  }
+  // Checa logo após o boot (se estiver pendente) e depois a cada 30 min.
+  setTimeout(() => { runDailySyncIfDue(); }, 15000);
+  setInterval(() => { runDailySyncIfDue(); }, 30 * 60 * 1000);
 
   // ==========================================
   // MARKETING AÇÕES
@@ -14488,7 +15319,7 @@ app.get("/api/todos", async (req, res) => {
                 COUNT(*) AS qtd_recebimentos
               FROM fin_movements_asaas
               WHERE type = 1
-                AND is_anticipation_pair = false
+                AND is_anticipation_pair = false AND is_reversed_pair = false
                 AND transaction_date >= NOW() - INTERVAL '6 months'
               GROUP BY 1 ORDER BY 1 DESC
             `),
@@ -14500,7 +15331,7 @@ app.get("/api/todos", async (req, res) => {
                 COUNT(*) AS qtd
               FROM fin_movements_asaas
               WHERE value < 0
-                AND is_anticipation_pair = false
+                AND is_anticipation_pair = false AND is_reversed_pair = false
                 AND DATE_TRUNC('month', transaction_date) = DATE_TRUNC('month', NOW())
               GROUP BY 1 ORDER BY 2 DESC
             `),
@@ -14532,7 +15363,7 @@ app.get("/api/todos", async (req, res) => {
                 SUM(value)::numeric(14,2) AS saldo_periodo
               FROM fin_movements_asaas
               WHERE DATE_TRUNC('month', transaction_date) = DATE_TRUNC('month', NOW())
-                AND is_anticipation_pair = false
+                AND is_anticipation_pair = false AND is_reversed_pair = false
             `),
             pool.query(`
               SELECT
