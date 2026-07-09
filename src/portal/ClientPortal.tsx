@@ -606,12 +606,15 @@ const Resultados: React.FC = () => {
   const [preset, setPreset] = useState('30d');
   const [loading, setLoading] = useState(true);
   const [rep, setRep] = useState<any>(null);
+  const [account, setAccount] = useState('all');
+  const [campaignFilter, setCampaignFilter] = useState('all');
 
   useEffect(() => {
     setLoading(true);
     const { start, end } = rangeFor(preset);
-    jget(`/api/portal/report?start=${start}&end=${end}`).then(d => { setRep(d); setLoading(false); });
-  }, [preset]);
+    const accParam = account && account !== 'all' ? `&account=${encodeURIComponent(account)}` : '';
+    jget(`/api/portal/report?start=${start}&end=${end}${accParam}`).then(d => { setRep(d); setLoading(false); });
+  }, [preset, account]);
 
   const k = rep?.kpis;
   const isMsg = k?.primaryMetric === 'messages';
@@ -622,6 +625,14 @@ const Resultados: React.FC = () => {
   const tipLabel = { color: light ? '#1e1b37' : '#e2e8f0' } as React.CSSProperties;
   const dayFmt = (d: string) => `${d.slice(8)}/${d.slice(5, 7)}`;
 
+  // Campanhas presentes nos criativos (filtro) + criativos exibidos
+  const creativeCampaigns: string[] = rep?.creatives
+    ? (Array.from(new Set(rep.creatives.map((c: any) => c.campaignName).filter(Boolean))) as string[]).sort((a, b) => a.localeCompare(b, 'pt-BR'))
+    : [];
+  const shownCreatives: any[] = rep?.creatives
+    ? (campaignFilter === 'all' ? rep.creatives : rep.creatives.filter((c: any) => c.campaignName === campaignFilter))
+    : [];
+
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
       <div className="flex items-end justify-between gap-4 flex-wrap mb-6">
@@ -629,12 +640,22 @@ const Resultados: React.FC = () => {
           <h1 className="text-3xl font-black tracking-tight text-[color:rgb(var(--pt-rgb))]">Resultados</h1>
           <p className="text-[color:rgb(var(--pt-rgb)_/_0.5)] mt-1">Desempenho das suas campanhas no Meta Ads.</p>
         </div>
-        <div className="flex gap-1 p-1 rounded-xl" style={glass}>
-          {PRESETS.map(p => (
-            <button key={p.key} onClick={() => setPreset(p.key)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${preset === p.key ? 'text-[color:rgb(var(--pt-rgb))]' : 'text-[color:rgb(var(--pt-rgb)_/_0.45)] hover:text-[color:rgb(var(--pt-rgb)_/_0.8)]'}`}
-              style={preset === p.key ? { background: 'rgba(124,58,237,0.25)' } : undefined}>{p.label}</button>
-          ))}
+        <div className="flex items-center gap-2 flex-wrap">
+          {rep?.accounts?.length > 1 && (
+            <select value={account} onChange={e => setAccount(e.target.value)}
+              className="px-3 py-2 rounded-xl text-xs font-bold outline-none cursor-pointer text-[color:rgb(var(--pt-rgb))]"
+              style={{ ...glass, background: light ? '#ffffff' : '#1a0f33' }} title="Conta de anúncio">
+              <option value="all">Consolidado (todas)</option>
+              {rep.accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          )}
+          <div className="flex gap-1 p-1 rounded-xl" style={glass}>
+            {PRESETS.map(p => (
+              <button key={p.key} onClick={() => setPreset(p.key)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${preset === p.key ? 'text-[color:rgb(var(--pt-rgb))]' : 'text-[color:rgb(var(--pt-rgb)_/_0.45)] hover:text-[color:rgb(var(--pt-rgb)_/_0.8)]'}`}
+                style={preset === p.key ? { background: 'rgba(124,58,237,0.25)' } : undefined}>{p.label}</button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -717,16 +738,31 @@ const Resultados: React.FC = () => {
 
           {rep.creatives?.length > 0 && (
             <div className="p-6 rounded-2xl" style={glass}>
-              <h3 className="font-bold text-[color:rgb(var(--pt-rgb))] mb-1">Criativos <span className="text-[color:rgb(var(--pt-rgb)_/_0.4)] text-sm font-normal">· {rep.creatives.length}</span></h3>
-              <p className="text-xs text-[color:rgb(var(--pt-rgb)_/_0.4)] mb-4">Desempenho por anúncio</p>
+              <div className="flex items-start justify-between gap-3 mb-4 flex-wrap">
+                <div>
+                  <h3 className="font-bold text-[color:rgb(var(--pt-rgb))] mb-1">Criativos <span className="text-[color:rgb(var(--pt-rgb)_/_0.4)] text-sm font-normal">· {shownCreatives.length}</span></h3>
+                  <p className="text-xs text-[color:rgb(var(--pt-rgb)_/_0.4)]">Desempenho por anúncio</p>
+                </div>
+                {creativeCampaigns.length > 1 && (
+                  <select value={campaignFilter} onChange={e => setCampaignFilter(e.target.value)}
+                    className="px-3 py-2 rounded-xl text-xs font-bold outline-none cursor-pointer text-[color:rgb(var(--pt-rgb))] max-w-[240px]"
+                    style={{ ...glass, background: light ? '#ffffff' : '#1a0f33' }} title="Filtrar por campanha">
+                    <option value="all">Todas as campanhas</option>
+                    {creativeCampaigns.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                )}
+              </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-                {rep.creatives.map((c: any, i: number) => {
+                {shownCreatives.map((c: any, i: number) => {
                   const r = isMsg ? c.messages : c.leads;
                   return (
                     <div key={i} className="rounded-xl overflow-hidden border border-[color:rgb(var(--pt-rgb)_/_0.06)] bg-[color:rgb(var(--pt-rgb)_/_0.02)]">
                       <CreativeThumb adId={c.adId} url={c.thumbnailUrl} name={c.name || 'Anúncio'} />
                       <div className="p-3">
                         <p className="text-xs font-semibold text-[color:rgb(var(--pt-rgb))] truncate" title={c.name}>{c.name || 'Anúncio'}</p>
+                        {c.campaignName && (
+                          <p className="text-[10px] text-[color:rgb(var(--pt-rgb)_/_0.4)] truncate mt-0.5" title={c.campaignName}>{c.campaignName}</p>
+                        )}
                         <div className="flex items-center justify-between mt-2 text-[11px]">
                           <span className="font-bold" style={{ color: '#2dd4bf' }}>{r} {isMsg ? 'msg' : 'leads'}</span>
                           <span className="text-[color:rgb(var(--pt-rgb)_/_0.5)]">{brl0(c.spend)}</span>

@@ -2008,6 +2008,7 @@ async function startServer() {
     await pool.query(`ALTER TABLE project_tokens ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'`).catch(e => console.error('migrate status:', e.message));
     await pool.query(`ALTER TABLE project_tokens ADD COLUMN IF NOT EXISTS last_synced_at TIMESTAMPTZ`).catch(e => console.error('migrate last_synced_at:', e.message));
     await pool.query(`ALTER TABLE project_tokens ADD COLUMN IF NOT EXISTS last_error TEXT`).catch(e => console.error('migrate last_error:', e.message));
+    await pool.query(`ALTER TABLE project_tokens ADD COLUMN IF NOT EXISTS account_name TEXT`).catch(e => console.error('migrate account_name:', e.message));
 
     // Marketing schema + meta_insights table
     await pool.query(`CREATE SCHEMA IF NOT EXISTS marketing`).catch(e => console.error('create marketing schema:', e.message));
@@ -2662,19 +2663,15 @@ async function startServer() {
       const fb = new Date(today); fb.setDate(today.getDate() - 29);
       const start = String(req.query.start || fb.toISOString().slice(0, 10));
       const end = String(req.query.end || today.toISOString().slice(0, 10));
-      const acc = await pool.query(
-        "SELECT account_id FROM project_tokens WHERE project_id = $1 AND platform = 'meta_ads' AND account_id IS NOT NULL LIMIT 1",
-        [req.portalProjectId]
-      );
-      if (!acc.rows[0]) return res.json({ hasMeta: false });
-      const accountId = acc.rows[0].account_id;
+      const { target: accountIds, list: accounts } = await resolveMetaAccounts(req.portalProjectId, req.query.account as string);
+      if (accountIds.length === 0) return res.json({ hasMeta: false, accounts: [] });
 
       const kpiQ = await pool.query(`
         SELECT COALESCE(SUM(spend),0)::float AS spend, COALESCE(SUM(impressions),0)::bigint AS impressions,
                COALESCE(SUM(clicks),0)::bigint AS clicks, COALESCE(SUM(leads),0)::int AS leads,
                COALESCE(SUM(messages),0)::int AS messages
-        FROM marketing.meta_insights WHERE account_id = $1 AND date >= $2 AND date <= $3
-      `, [accountId, start, end]);
+        FROM marketing.meta_insights WHERE account_id = ANY($1) AND date >= $2 AND date <= $3
+      `, [accountIds, start, end]);
       const k = kpiQ.rows[0];
       const impr = Number(k.impressions), clk = Number(k.clicks);
       const ctr = impr > 0 ? (clk / impr) * 100 : 0;
@@ -2684,37 +2681,37 @@ async function startServer() {
 
       const dailyQ = await pool.query(`
         SELECT to_char(date,'YYYY-MM-DD') AS date, SUM(spend)::float AS spend, SUM(leads)::int AS leads, SUM(messages)::int AS messages
-        FROM marketing.meta_insights WHERE account_id = $1 AND date >= $2 AND date <= $3
+        FROM marketing.meta_insights WHERE account_id = ANY($1) AND date >= $2 AND date <= $3
         GROUP BY date ORDER BY date
-      `, [accountId, start, end]);
+      `, [accountIds, start, end]);
 
       const campQ = await pool.query(`
         SELECT campaign_name AS name, SUM(spend)::float AS spend, SUM(impressions)::bigint AS impressions,
                SUM(clicks)::bigint AS clicks, SUM(leads)::int AS leads, SUM(messages)::int AS messages
-        FROM marketing.meta_insights WHERE account_id = $1 AND date >= $2 AND date <= $3
+        FROM marketing.meta_insights WHERE account_id = ANY($1) AND date >= $2 AND date <= $3
         GROUP BY campaign_name ORDER BY spend DESC
-      `, [accountId, start, end]);
+      `, [accountIds, start, end]);
 
-      // Criativos (agregados por anúncio). Guarda em caso de tabela vazia/inexistente.
+      // Criativos (agregados por anúncio, com a campanha). Guarda em caso de tabela vazia/inexistente.
       let creatives: any[] = [];
       try {
         const creaQ = await pool.query(`
-          SELECT ad_id, ad_name,
+          SELECT ad_id, ad_name, campaign_name,
                  (array_agg(thumbnail_url) FILTER (WHERE thumbnail_url IS NOT NULL))[1] AS thumbnail_url,
                  SUM(spend)::float AS spend, SUM(impressions)::bigint AS impressions, SUM(clicks)::bigint AS clicks,
                  SUM(messages)::int AS messages, SUM(leads)::int AS leads
-          FROM marketing.meta_creatives WHERE account_id = $1 AND date >= $2 AND date <= $3
-          GROUP BY ad_id, ad_name ORDER BY spend DESC LIMIT 60
-        `, [accountId, start, end]);
+          FROM marketing.meta_creatives WHERE account_id = ANY($1) AND date >= $2 AND date <= $3
+          GROUP BY ad_id, ad_name, campaign_name ORDER BY spend DESC LIMIT 60
+        `, [accountIds, start, end]);
         creatives = creaQ.rows.map(c => {
           const results = c.messages > 0 ? c.messages : c.leads;
           const ci = Number(c.impressions), cc = Number(c.clicks);
-          return { adId: c.ad_id, name: c.ad_name, thumbnailUrl: c.thumbnail_url || null, spend: c.spend, impressions: ci, clicks: cc, ctr: ci > 0 ? Number(((cc / ci) * 100).toFixed(2)) : 0, messages: c.messages, leads: c.leads, costPerResult: results > 0 ? c.spend / results : null };
+          return { adId: c.ad_id, name: c.ad_name, campaignName: c.campaign_name || null, thumbnailUrl: c.thumbnail_url || null, spend: c.spend, impressions: ci, clicks: cc, ctr: ci > 0 ? Number(((cc / ci) * 100).toFixed(2)) : 0, messages: c.messages, leads: c.leads, costPerResult: results > 0 ? c.spend / results : null };
         });
       } catch { creatives = []; }
 
       res.json({
-        hasMeta: true, start, end,
+        hasMeta: true, start, end, accounts,
         kpis: { spend: k.spend, impressions: impr, clicks: clk, leads: k.leads, messages: k.messages, ctr: Number(ctr.toFixed(2)), primaryMetric, costPerResult },
         daily: dailyQ.rows.map(d => ({ date: d.date, spend: d.spend, leads: d.leads || 0, messages: d.messages || 0 })),
         campaigns: campQ.rows.map(c => {
@@ -9369,6 +9366,20 @@ app.get("/api/todos", async (req, res) => {
   // ==========================================
   // META INSIGHTS PER PARTNER
   // ==========================================
+  // Resolve as contas Meta de um projeto e a(s) conta(s)-alvo conforme ?account=
+  // (id único, ou 'all'/vazio = consolidado = todas as contas do projeto).
+  async function resolveMetaAccounts(projectId: string, requested?: string): Promise<{ target: string[]; list: { id: string; name: string }[] }> {
+    const r = await pool.query(
+      `SELECT account_id, COALESCE(NULLIF(account_name, ''), account_id) AS name
+       FROM project_tokens WHERE project_id = $1 AND platform = 'meta_ads' AND account_id IS NOT NULL ORDER BY id`,
+      [projectId]
+    );
+    const list = r.rows.map((x: any) => ({ id: String(x.account_id), name: String(x.name) }));
+    const all = list.map(a => a.id);
+    const target = requested && requested !== 'all' && all.includes(String(requested)) ? [String(requested)] : all;
+    return { target, list };
+  }
+
   app.get('/api/partners/:projectId/meta-insights', async (req: any, res) => {
     try {
       const { projectId } = req.params;
@@ -9379,17 +9390,12 @@ app.get("/api/todos", async (req, res) => {
       const startStr = (req.query.start as string) || fallbackStart.toISOString().slice(0, 10);
       const endStr = (req.query.end as string) || today.toISOString().slice(0, 10);
 
-      // 1. Find account_id for this project
-      const tokenResult = await pool.query(
-        `SELECT account_id FROM project_tokens WHERE project_id = $1 AND platform = 'meta_ads' AND account_id IS NOT NULL LIMIT 1`,
-        [projectId]
-      );
+      // 1. Contas Meta do projeto (todas, ou a selecionada via ?account=)
+      const { target: accountIds, list: accounts } = await resolveMetaAccounts(projectId, req.query.account as string);
 
-      if (tokenResult.rows.length === 0) {
-        return res.json({ has_meta: false, kpis: null, daily: [], campaigns: [] });
+      if (accountIds.length === 0) {
+        return res.json({ has_meta: false, kpis: null, daily: [], campaigns: [], accounts: [] });
       }
-
-      const accountId = tokenResult.rows[0].account_id;
 
       // 2. Aggregated KPIs
       const kpiResult = await pool.query(`
@@ -9401,8 +9407,8 @@ app.get("/api/todos", async (req, res) => {
           COALESCE(SUM(messages), 0)::int AS total_messages,
           CASE WHEN SUM(impressions) > 0 THEN (SUM(clicks)::float / SUM(impressions) * 100) ELSE 0 END AS avg_ctr
         FROM marketing.meta_insights
-        WHERE account_id = $1 AND date >= $2 AND date <= $3
-      `, [accountId, startStr, endStr]);
+        WHERE account_id = ANY($1) AND date >= $2 AND date <= $3
+      `, [accountIds, startStr, endStr]);
 
       // 3. Daily series
       const dailyResult = await pool.query(`
@@ -9412,10 +9418,10 @@ app.get("/api/todos", async (req, res) => {
           SUM(leads)::int AS leads,
           SUM(messages)::int AS messages
         FROM marketing.meta_insights
-        WHERE account_id = $1 AND date >= $2 AND date <= $3
+        WHERE account_id = ANY($1) AND date >= $2 AND date <= $3
         GROUP BY date
         ORDER BY date
-      `, [accountId, startStr, endStr]);
+      `, [accountIds, startStr, endStr]);
 
       // 4. Campaigns breakdown
       const campaignResult = await pool.query(`
@@ -9428,10 +9434,10 @@ app.get("/api/todos", async (req, res) => {
           COALESCE(SUM(leads), 0)::int AS leads,
           COALESCE(SUM(messages), 0)::int AS messages
         FROM marketing.meta_insights
-        WHERE account_id = $1 AND date >= $2 AND date <= $3
+        WHERE account_id = ANY($1) AND date >= $2 AND date <= $3
         GROUP BY campaign_name
         ORDER BY spend DESC
-      `, [accountId, startStr, endStr]);
+      `, [accountIds, startStr, endStr]);
 
       const kpi = kpiResult.rows[0];
       const totalSpend = kpi.total_spend || 0;
@@ -9443,6 +9449,7 @@ app.get("/api/todos", async (req, res) => {
 
       res.json({
         has_meta: true,
+        accounts,
         kpis: {
           spend: totalSpend,
           impressions: Number(kpi.total_impressions),
@@ -9495,23 +9502,19 @@ app.get("/api/todos", async (req, res) => {
       const startStr = (req.query.start as string) || fallbackStart.toISOString().slice(0, 10);
       const endStr = (req.query.end as string) || today.toISOString().slice(0, 10);
 
-      // 1. Find account_id for this project
-      const tokenResult = await pool.query(
-        `SELECT account_id FROM project_tokens WHERE project_id = $1 AND platform = 'meta_ads' AND account_id IS NOT NULL LIMIT 1`,
-        [projectId]
-      );
+      // 1. Contas Meta do projeto (todas, ou a selecionada via ?account=)
+      const { target: accountIds, list: accounts } = await resolveMetaAccounts(projectId, req.query.account as string);
 
-      if (tokenResult.rows.length === 0) {
-        return res.json({ has_meta: false, creatives: [] });
+      if (accountIds.length === 0) {
+        return res.json({ has_meta: false, creatives: [], accounts: [] });
       }
 
-      const accountId = tokenResult.rows[0].account_id;
-
-      // 2. Creatives grouped by ad_id
+      // 2. Creatives grouped by ad_id (com a campanha do anúncio)
       const result = await pool.query(`
         SELECT
           mc.ad_id,
           mc.ad_name,
+          mc.campaign_name,
           (SELECT mc2.thumbnail_url FROM marketing.meta_creatives mc2
            WHERE mc2.ad_id = mc.ad_id AND mc2.account_id = mc.account_id AND mc2.thumbnail_url IS NOT NULL
            ORDER BY mc2.date DESC LIMIT 1) AS thumbnail_url,
@@ -9522,16 +9525,18 @@ app.get("/api/todos", async (req, res) => {
           COALESCE(SUM(mc.messages), 0)::int AS messages,
           COALESCE(SUM(mc.leads), 0)::int AS leads
         FROM marketing.meta_creatives mc
-        WHERE mc.account_id = $1 AND mc.date >= $2 AND mc.date <= $3
-        GROUP BY mc.ad_id, mc.ad_name, mc.account_id
+        WHERE mc.account_id = ANY($1) AND mc.date >= $2 AND mc.date <= $3
+        GROUP BY mc.ad_id, mc.ad_name, mc.campaign_name, mc.account_id
         ORDER BY SUM(mc.spend) DESC
-      `, [accountId, startStr, endStr]);
+      `, [accountIds, startStr, endStr]);
 
       res.json({
         has_meta: true,
+        accounts,
         creatives: result.rows.map(r => ({
           ad_id: r.ad_id,
           ad_name: r.ad_name,
+          campaign_name: r.campaign_name || null,
           thumbnail_url: r.thumbnail_url,
           spend: r.spend,
           impressions: Number(r.impressions),
@@ -18269,7 +18274,7 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
   // POST — create token (encrypted)
   app.post('/api/project-tokens', async (req, res) => {
     try {
-      const { project_id, platform, account_id, token, notes } = req.body;
+      const { project_id, platform, account_id, account_name, token, notes } = req.body;
       if (!project_id || !platform || !token?.trim()) {
         return res.status(400).json({ error: 'project_id, platform, and token are required' });
       }
@@ -18285,9 +18290,9 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
       const encrypted = encryptToken(token.trim());
       const serviceName = PLATFORM_LABELS[platform] || platform;
       const r = await pool.query(
-        `INSERT INTO project_tokens (project_id, platform, service_name, account_id, token_encrypted, notes, status)
-         VALUES ($1,$2,$3,$4,$5,$6,'active') RETURNING id, project_id, platform, service_name, account_id, notes, status, created_at`,
-        [project_id, platform, serviceName, account_id?.trim() || null, encrypted, notes || null]
+        `INSERT INTO project_tokens (project_id, platform, service_name, account_id, account_name, token_encrypted, notes, status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,'active') RETURNING id, project_id, platform, service_name, account_id, account_name, notes, status, created_at`,
+        [project_id, platform, serviceName, account_id?.trim() || null, account_name?.trim() || null, encrypted, notes || null]
       );
       const row = r.rows[0];
       res.json({ ...row, token_masked: maskToken(encrypted) });
@@ -18297,7 +18302,7 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
   // PATCH — update token
   app.patch('/api/project-tokens/:id', async (req, res) => {
     try {
-      const { platform, account_id, token, notes } = req.body;
+      const { platform, account_id, account_name, token, notes } = req.body;
       if (platform && !VALID_PLATFORMS.includes(platform)) {
         return res.status(400).json({ error: `Invalid platform. Must be one of: ${VALID_PLATFORMS.join(', ')}` });
       }
@@ -18325,6 +18330,11 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
       if (account_id !== undefined) {
         updates.push(`account_id = $${paramIdx}`);
         values.push(account_id?.trim() || null);
+        paramIdx++;
+      }
+      if (account_name !== undefined) {
+        updates.push(`account_name = $${paramIdx}`);
+        values.push(account_name?.trim() || null);
         paramIdx++;
       }
       if (token?.trim()) {
@@ -18378,6 +18388,36 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
       if (!token_encrypted) return res.status(404).json({ error: 'No encrypted token stored' });
       const plain = decryptToken(token_encrypted);
       res.json({ token: plain });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST — lista as contas de anúncio que um token Meta consegue acessar (/me/adaccounts).
+  // Aceita { token } (texto puro, ao criar) ou { tokenId } (usa o token salvo, descriptografado).
+  app.post('/api/meta/list-accounts', async (req: any, res) => {
+    try {
+      let token: string | null = (req.body?.token || '').trim() || null;
+      if (!token && req.body?.tokenId) {
+        const r = await pool.query(`SELECT token_encrypted FROM project_tokens WHERE id = $1`, [req.body.tokenId]);
+        if (r.rows[0]?.token_encrypted) token = decryptToken(r.rows[0].token_encrypted);
+      }
+      if (!token) return res.status(400).json({ error: 'Token não informado.' });
+
+      const accounts: { id: string; name: string; status: number }[] = [];
+      let url: string | null = `https://graph.facebook.com/v21.0/me/adaccounts?fields=account_id,name,account_status&limit=200&access_token=${encodeURIComponent(token)}`;
+      let pages = 0;
+      while (url && pages < 10) {
+        const resp = await fetch(url);
+        const j: any = await resp.json();
+        if (j.error) return res.status(400).json({ error: j.error.message || 'Erro ao consultar o Meta.', code: j.error.code });
+        for (const a of (j.data || [])) {
+          accounts.push({ id: String(a.account_id), name: a.name || `Conta ${a.account_id}`, status: Number(a.account_status) });
+        }
+        url = j.paging?.next || null;
+        pages++;
+      }
+      // Ativas primeiro (status 1), depois por nome
+      accounts.sort((a, b) => (a.status === 1 ? 0 : 1) - (b.status === 1 ? 0 : 1) || a.name.localeCompare(b.name, 'pt-BR'));
+      res.json({ accounts });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 

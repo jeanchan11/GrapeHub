@@ -238,6 +238,7 @@ interface MetaData {
 interface Creative {
   ad_id: string;
   ad_name: string;
+  campaign_name?: string | null;
   thumbnail_url: string | null;
   spend: number;
   impressions: number;
@@ -266,6 +267,11 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
   const [error, setError] = useState<string | null>(null);
   const [creatives, setCreatives] = useState<Creative[]>([]);
   const [loadingCreatives, setLoadingCreatives] = useState(true);
+  // Contas de anúncio do projeto e a selecionada ('all' = consolidado)
+  const [accounts, setAccounts] = useState<{ id: string; name: string }[]>([]);
+  const [selectedAccount, setSelectedAccount] = useState<string>('all');
+  // Filtro de campanha na tabela de criativos ('all' = todas)
+  const [campaignFilter, setCampaignFilter] = useState<string>('all');
   // Ordenação da tabela de criativos
   type CreativeSortKey = 'name' | 'result' | 'clicks' | 'impressions' | 'ctr' | 'cpr' | 'spend';
   const [sortKey, setSortKey] = useState<CreativeSortKey>('spend');
@@ -335,12 +341,15 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
     setLoadingCreatives(true);
     setError(null);
     try {
+      const accParam = selectedAccount && selectedAccount !== 'all' ? `&account=${encodeURIComponent(selectedAccount)}` : '';
       const [insightsRes, creativesRes] = await Promise.all([
-        fetch(`/api/partners/${projectId}/meta-insights?start=${r.start}&end=${r.end}`),
-        fetch(`/api/partners/${projectId}/meta-creatives?start=${r.start}&end=${r.end}`),
+        fetch(`/api/partners/${projectId}/meta-insights?start=${r.start}&end=${r.end}${accParam}`),
+        fetch(`/api/partners/${projectId}/meta-creatives?start=${r.start}&end=${r.end}${accParam}`),
       ]);
       if (!insightsRes.ok) throw new Error((await insightsRes.json()).error || 'Erro ao carregar');
-      setData(await insightsRes.json());
+      const insights = await insightsRes.json();
+      setData(insights);
+      if (Array.isArray(insights?.accounts)) setAccounts(insights.accounts);
       if (creativesRes.ok) {
         const cData = await creativesRes.json();
         setCreatives(Array.isArray(cData?.creatives) ? cData.creatives : []);
@@ -353,7 +362,7 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
       setLoading(false);
       setLoadingCreatives(false);
     }
-  }, [projectId]);
+  }, [projectId, selectedAccount]);
 
   useEffect(() => { fetchData(range); }, [range, fetchData]);
 
@@ -388,6 +397,16 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
       return dir * (va - vb);
     });
   }, [creatives, sortKey, sortDir, isPM]);
+
+  // Campanhas disponíveis nos criativos (para o filtro) + lista filtrada
+  const campaignOptions = useMemo(
+    () => (Array.from(new Set(creatives.map(c => c.campaign_name).filter(Boolean))) as string[]).sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    [creatives]
+  );
+  const filteredCreatives = useMemo(
+    () => (campaignFilter === 'all' ? sortedCreatives : sortedCreatives.filter(c => c.campaign_name === campaignFilter)),
+    [sortedCreatives, campaignFilter]
+  );
 
   // Cabeçalho de coluna clicável (ordena a tabela de criativos)
   const SortableTh = ({ label, k, extraClass = '' }: { label: React.ReactNode; k: CreativeSortKey; extraClass?: string }) => (
@@ -461,6 +480,17 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
             </p>
           </div>
           <div className="flex items-center gap-3">
+            {accounts.length > 1 && (
+              <select
+                value={selectedAccount}
+                onChange={e => setSelectedAccount(e.target.value)}
+                className="px-3 py-2 rounded-xl bg-dark-card border border-white/10 text-sm text-slate-200 outline-none focus:border-violet-500/60 max-w-[220px] cursor-pointer"
+                title="Conta de anúncio"
+              >
+                <option value="all">Consolidado (todas as contas)</option>
+                {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            )}
             <ModalDateRangePicker range={range} onChange={setRange} />
             <button
               onClick={handleExportPDF}
@@ -670,9 +700,22 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
                       <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5">Desempenho por anúncio</p>
                     </div>
                   </div>
-                  <span className="bg-violet-500/15 text-violet-500 text-[10px] font-bold px-3 py-1 rounded-full">
-                    {creatives.length} Criativo{creatives.length !== 1 ? 's' : ''}
-                  </span>
+                  <div className="flex items-center gap-3">
+                    {campaignOptions.length > 1 && (
+                      <select
+                        value={campaignFilter}
+                        onChange={e => setCampaignFilter(e.target.value)}
+                        className="px-3 py-1.5 rounded-lg bg-dark-bg border border-white/10 text-xs text-slate-300 outline-none focus:border-violet-500/60 max-w-[240px] cursor-pointer"
+                        title="Filtrar por campanha"
+                      >
+                        <option value="all">Todas as campanhas</option>
+                        {campaignOptions.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    )}
+                    <span className="bg-violet-500/15 text-violet-500 text-[10px] font-bold px-3 py-1 rounded-full whitespace-nowrap">
+                      {filteredCreatives.length} Criativo{filteredCreatives.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
                 </div>
 
                 {loadingCreatives ? (
@@ -707,7 +750,7 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
                         </tr>
                       </thead>
                       <tbody>
-                        {sortedCreatives.map((cr, i) => {
+                        {filteredCreatives.map((cr, i) => {
                           const resultVal = isPM ? cr.messages : cr.leads;
                           const costPerResult = resultVal > 0 ? cr.spend / resultVal : null;
                           return (
@@ -728,6 +771,9 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
                             </td>
                             <td className="py-3 pr-4">
                               <span className="text-dark-text font-medium text-sm line-clamp-2">{cr.ad_name}</span>
+                              {cr.campaign_name && (
+                                <span className="block text-[10px] text-slate-500 mt-0.5 truncate max-w-[240px]" title={cr.campaign_name}>{cr.campaign_name}</span>
+                              )}
                             </td>
                             <td className="py-3 px-3 text-right">
                               <span className="text-emerald-400 font-black text-base">{fmtInt(resultVal)}</span>

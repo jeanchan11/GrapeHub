@@ -851,6 +851,10 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
   const [isTokenEditing, setIsTokenEditing] = useState(false);
   const [tokenForm, setTokenForm] = useState({ platform: '', account_id: '', token: '', notes: '' });
   const [revealedToken, setRevealedToken] = useState<string | null>(null);
+  // Seletor de contas do token Meta (listadas via /me/adaccounts)
+  const [metaAccounts, setMetaAccounts] = useState<{ id: string; name: string; status: number }[] | null>(null);
+  const [loadingMetaAccounts, setLoadingMetaAccounts] = useState(false);
+  const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
   const [isTokenSubmitting, setIsTokenSubmitting] = useState(false);
   const [tokensLoading, setTokensLoading] = useState(false);
   const [tempGoals, setTempGoals] = useState({ cpa: '', leads: '', cac: '', fechamentos: '' });
@@ -1585,6 +1589,8 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     setEditingToken(null);
     setTokenForm({ platform: '', account_id: '', token: '', notes: '' });
     setRevealedToken(null);
+    setMetaAccounts(null);
+    setSelectedAccounts([]);
     setIsTokenEditing(true);
     setIsTokenModalOpen(true);
   };
@@ -1593,8 +1599,35 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     setEditingToken(token);
     setTokenForm({ platform: token.platform || 'outro', account_id: token.account_id || '', token: '', notes: token.notes || '' });
     setRevealedToken(null);
+    setMetaAccounts(null);
+    setSelectedAccounts(token.account_id ? [token.account_id] : []);
     setIsTokenEditing(false);
     setIsTokenModalOpen(true);
+  };
+
+  // Busca no Meta as contas de anúncio que o token acessa (para o seletor)
+  const fetchMetaAccounts = async () => {
+    const body: any = tokenForm.token.trim()
+      ? { token: tokenForm.token.trim() }
+      : (editingToken ? { tokenId: editingToken.id } : null);
+    if (!body) { alert('Cole o token de acesso primeiro.'); return; }
+    setLoadingMetaAccounts(true);
+    try {
+      const res = await fetch('/api/meta/list-accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || 'Erro ao buscar contas do token.'); setMetaAccounts([]); return; }
+      setMetaAccounts(data.accounts || []);
+    } catch { alert('Erro ao buscar contas do token.'); setMetaAccounts([]); }
+    finally { setLoadingMetaAccounts(false); }
+  };
+
+  // Recupera o token em texto puro (do form, ou revelando o salvo) para criar linhas extras
+  const getPlainToken = async (): Promise<string | null> => {
+    if (tokenForm.token.trim()) return tokenForm.token.trim();
+    if (editingToken) {
+      try { const r = await fetch(`/api/project-tokens/${editingToken.id}/reveal`); if (r.ok) return (await r.json()).token; } catch { /* ignore */ }
+    }
+    return null;
   };
 
   const handleRevealToken = async (tokenId: string) => {
@@ -1611,43 +1644,56 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
 
   const handleSaveToken = async () => {
     if (!selectedProject || !tokenForm.platform) return;
-    if (PLATFORMS_REQUIRING_ACCOUNT.includes(tokenForm.platform) && !tokenForm.account_id.trim()) return;
+    const isMeta = tokenForm.platform === 'meta_ads';
+    // Contas escolhidas: seleção do picker (Meta), ou o campo manual como fallback
+    const accts = isMeta && selectedAccounts.length
+      ? selectedAccounts
+      : (tokenForm.account_id.trim() ? [tokenForm.account_id.trim()] : []);
+    if (PLATFORMS_REQUIRING_ACCOUNT.includes(tokenForm.platform) && accts.length === 0) {
+      alert('Selecione ou informe ao menos uma conta de anúncio.'); return;
+    }
     if (!editingToken && !tokenForm.token.trim()) return; // new token requires token value
     setIsTokenSubmitting(true);
     try {
+      const primary = accts[0] || null;
+      const nameOf = (id: string | null) => (id && metaAccounts?.find(a => a.id === id)?.name) || null;
       if (editingToken) {
-        const body: any = { platform: tokenForm.platform, account_id: tokenForm.account_id, notes: tokenForm.notes };
+        const body: any = { platform: tokenForm.platform, account_id: primary, account_name: nameOf(primary), notes: tokenForm.notes };
         if (tokenForm.token.trim()) body.token = tokenForm.token; // only send if changed
         const res = await fetch(`/api/project-tokens/${editingToken.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body)
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
         });
-        if (res.ok) {
-          const updated = await res.json();
-          setProjectTokens(prev => prev.map(t => t.id === editingToken.id ? updated : t));
-          setIsTokenModalOpen(false);
-        } else {
-          const errData = await res.json().catch(() => ({}));
-          alert(`Erro ao atualizar token: ${errData.error || res.statusText}`);
+        if (!res.ok) { const e = await res.json().catch(() => ({})); alert(`Erro ao atualizar token: ${e.error || res.statusText}`); return; }
+        // Contas extras (multi-seleção) viram novas linhas com o mesmo token
+        const extras = accts.slice(1);
+        if (extras.length) {
+          const plain = await getPlainToken();
+          if (plain) {
+            for (const a of extras) {
+              await fetch('/api/project-tokens', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ project_id: selectedProject.id, platform: tokenForm.platform, account_id: a, account_name: nameOf(a), token: plain, notes: tokenForm.notes })
+              });
+            }
+          }
         }
       } else {
-        const res = await fetch('/api/project-tokens', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ project_id: selectedProject.id, platform: tokenForm.platform, account_id: tokenForm.account_id, token: tokenForm.token, notes: tokenForm.notes })
-        });
-        if (res.ok) {
-          const created = await res.json();
-          setProjectTokens(prev => [created, ...prev]);
-          setIsTokenModalOpen(false);
-        } else {
-          const errData = await res.json().catch(() => ({}));
-          alert(`Erro ao salvar token: ${errData.error || res.statusText}`);
+        // Uma linha por conta selecionada (mesmo token)
+        for (const a of (accts.length ? accts : [null])) {
+          const res = await fetch('/api/project-tokens', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ project_id: selectedProject.id, platform: tokenForm.platform, account_id: a, account_name: nameOf(a), token: tokenForm.token, notes: tokenForm.notes })
+          });
+          if (!res.ok) { const e = await res.json().catch(() => ({})); alert(`Erro ao salvar token: ${e.error || res.statusText}`); return; }
         }
       }
+      // Recarrega a lista (mais robusto que mesclar múltiplas linhas manualmente)
+      const listRes = await fetch(`/api/project-tokens?project_id=${encodeURIComponent(selectedProject.id)}`);
+      if (listRes.ok) setProjectTokens(await listRes.json());
+      setIsTokenModalOpen(false);
     } catch (err) {
       console.error('Error saving token:', err);
+      alert('Erro ao salvar token.');
     } finally {
       setIsTokenSubmitting(false);
     }
@@ -5906,13 +5952,51 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                         ID da Conta de Anúncio <span className="text-red-400">*</span>
                       </label>
                       {isTokenEditing ? (
-                        <input
-                          type="text"
-                          value={tokenForm.account_id}
-                          onChange={(e) => setTokenForm(prev => ({ ...prev, account_id: e.target.value.replace(/\D/g, '') }))}
-                          placeholder={tokenForm.platform === 'meta_ads' ? "Apenas os números, sem 'act_'" : "ID numérico da conta"}
-                          className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-light-text dark:text-white placeholder:text-slate-400 focus:border-violet-500 outline-none transition-all font-mono"
-                        />
+                        <div className="space-y-2">
+                          {tokenForm.platform === 'meta_ads' && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={fetchMetaAccounts}
+                                disabled={loadingMetaAccounts}
+                                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-violet-500/10 text-violet-500 hover:bg-violet-500/20 text-xs font-bold transition-colors disabled:opacity-50"
+                              >
+                                {loadingMetaAccounts ? <Loader2 size={13} className="animate-spin" /> : <Search size={13} />}
+                                Buscar contas do token
+                              </button>
+                              {metaAccounts !== null && (
+                                metaAccounts.length === 0 ? (
+                                  <p className="text-xs text-slate-400">Nenhuma conta encontrada para este token.</p>
+                                ) : (
+                                  <div className="max-h-48 overflow-y-auto rounded-xl border border-slate-200 dark:border-white/10 divide-y divide-slate-100 dark:divide-white/5">
+                                    {metaAccounts.map(a => {
+                                      const checked = selectedAccounts.includes(a.id);
+                                      return (
+                                        <label key={a.id} className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5">
+                                          <input type="checkbox" checked={checked}
+                                            onChange={() => setSelectedAccounts(prev => (checked ? prev.filter(x => x !== a.id) : [...prev, a.id]))}
+                                            className="accent-violet-500 w-4 h-4 shrink-0" />
+                                          <div className="min-w-0">
+                                            <p className="text-sm text-light-text dark:text-white truncate">{a.name}{a.status !== 1 && <span className="text-[10px] text-amber-500 ml-1">(inativa)</span>}</p>
+                                            <p className="text-[10px] text-slate-400 font-mono">{a.id}</p>
+                                          </div>
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                )
+                              )}
+                              <p className="text-[10px] text-slate-400">Marque a(s) conta(s) deste cliente — pode ser mais de uma. Ou informe o ID manualmente abaixo.</p>
+                            </>
+                          )}
+                          <input
+                            type="text"
+                            value={tokenForm.account_id}
+                            onChange={(e) => setTokenForm(prev => ({ ...prev, account_id: e.target.value.replace(/\D/g, '') }))}
+                            placeholder={tokenForm.platform === 'meta_ads' ? "Apenas os números, sem 'act_'" : "ID numérico da conta"}
+                            className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-light-text dark:text-white placeholder:text-slate-400 focus:border-violet-500 outline-none transition-all font-mono"
+                          />
+                        </div>
                       ) : (
                         <div className="py-2 text-light-text dark:text-white font-mono text-sm">
                           {tokenForm.account_id || <span className="text-slate-400 italic">Não informado</span>}
@@ -6002,7 +6086,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                   {isTokenEditing ? (
                     <button
                       onClick={handleSaveToken}
-                      disabled={isTokenSubmitting || !tokenForm.platform || (PLATFORMS_REQUIRING_ACCOUNT.includes(tokenForm.platform) && !tokenForm.account_id.trim()) || (!editingToken && !tokenForm.token.trim())}
+                      disabled={isTokenSubmitting || !tokenForm.platform || (PLATFORMS_REQUIRING_ACCOUNT.includes(tokenForm.platform) && !tokenForm.account_id.trim() && selectedAccounts.length === 0) || (!editingToken && !tokenForm.token.trim())}
                       className="bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white px-6 py-2 rounded-lg font-medium transition-colors flex items-center gap-2"
                     >
                       {isTokenSubmitting ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
