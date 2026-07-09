@@ -9735,8 +9735,17 @@ app.get("/api/todos", async (req, res) => {
     await setTokenStatus('active', null); // token funciona → reconcilia o status (limpa "Erro" antigo/transitório)
     const status = Number(raw.account_status);
     const disp = raw.funding_source_details?.display_string || '';
-    const m = disp.match(/R\$\s*([\d.]+,\d{2})/);
-    const saldo = m ? parseFloat(m[1].replace(/\./g, '').replace(',', '.')) : null;
+    // Extrai o saldo do display_string aceitando formato BR ("R$ 1.234,56") E inglês ("R$1,234.56" / "R$145.91").
+    // O Meta às vezes devolve com ponto decimal (inglês), então detectamos o separador antes de converter.
+    let saldo: number | null = null;
+    const m = disp.match(/R\$\s*([\d.,]+)/);
+    if (m) {
+      let num = m[1];
+      if (/,\d{2}$/.test(num)) num = num.replace(/\./g, '').replace(',', '.'); // BR: vírgula decimal
+      else num = num.replace(/,/g, '');                                        // inglês: ponto decimal
+      const v = parseFloat(num);
+      if (!isNaN(v)) saldo = v;
+    }
     const info = {
       name: raw.name || '', status,
       statusLabel: META_STATUS[status] || `Status ${status}`,
