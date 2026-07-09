@@ -248,6 +248,21 @@ const AccountStatusCell: React.FC<{ projectId: string }> = ({ projectId }) => {
   return summary ? <MetaIssueTooltip summary={summary}>{chip}</MetaIssueTooltip> : chip;
 };
 
+// Saldo numérico da conta Meta: usa info.saldo; se vier null (o backend às vezes não parseia
+// o formato inglês "R$145.90"), faz fallback parseando o saldoLabel ("Available Balance (R$145.90 BRL)").
+function metaSaldoNum(info: any): number | null {
+  if (info?.saldo != null) return Number(info.saldo);
+  const lbl = info?.saldoLabel;
+  if (!lbl) return null;
+  const m = String(lbl).match(/R\$\s*([\d.,]+)/);
+  if (!m) return null;
+  let n = m[1];
+  if (/,\d{2}$/.test(n)) n = n.replace(/\./g, '').replace(',', '.'); // BR: vírgula decimal
+  else n = n.replace(/,/g, '');                                      // inglês: ponto decimal
+  const v = parseFloat(n);
+  return isNaN(v) ? null : v;
+}
+
 // Coluna "Pagamento": cartão → "Automático" (azul); manual → SALDO da conta em laranja.
 // Conta com problema de PAGAMENTO (carência / não quitada / aguardando pagamento) → coluna Pagamento fica vermelha.
 function isMetaPaymentIssue(info: any): boolean {
@@ -263,8 +278,9 @@ const PaymentCell: React.FC<{ project: any }> = ({ project }) => {
     : [];
   if (methods.length === 0) return <span className="text-xs text-slate-400">—</span>;
   const isManual = methods.includes('Manual');
-  const saldo = isManual && info?.prepaid && info?.saldo != null
-    ? `R$ ${Number(info.saldo).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : null;
+  const saldoN = metaSaldoNum(info);
+  const saldo = isManual && info?.prepaid && saldoN != null
+    ? `R$ ${saldoN.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : null;
   const label = isManual ? (saldo || 'Manual') : 'Cartão';
   const Icon = isManual ? Wallet : CreditCard;
 
@@ -307,6 +323,17 @@ const formatDateShort = (dateStr?: string) => {
   const months = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
   const monthName = months[parseInt(month, 10) - 1];
   return `${monthName} ${parseInt(day, 10)}`;
+};
+
+// Cor do badge de reunião pelos dias decorridos: até 7 = roxo, 8–14 = amarelo, 15+ = vermelho.
+const meetingBadgeClasses = (dateStr?: string): string => {
+  if (!dateStr) return 'bg-violet-500/10 border-violet-500/25 text-violet-600 dark:text-violet-300';
+  const days = Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
+  return days >= 15
+    ? 'bg-rose-500/10 border-rose-500/25 text-rose-600 dark:text-rose-300'
+    : days >= 8
+    ? 'bg-amber-500/10 border-amber-500/25 text-amber-600 dark:text-amber-300'
+    : 'bg-violet-500/10 border-violet-500/25 text-violet-600 dark:text-violet-300';
 };
 
 // Fix timezone: date-only strings ("2026-06-11") are parsed as UTC by JS,
@@ -2936,11 +2963,8 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                               )}
                               <div className="flex items-center">
                                 <p className="text-[10px] text-slate-500 font-medium">{formatDateShort(opt.date)} {opt.time && `às ${opt.time}`}</p>
-                                {(userData?.role?.toLowerCase() === 'superadmin' || 
-                                  userData?.role?.toLowerCase() === 'super admin' || 
-                                  userData?.role?.toLowerCase() === 'diretor operacional' || 
-                                  userData?.role?.toLowerCase() === 'diretor-operacional' || 
-                                  userData?.role?.toLowerCase() === 'diretoria') && (
+                                {/* Edição/exclusão de notas liberada para todos os usuários (antes: só superadmin/diretoria) */}
+                                {true && (
                                   <>
                                     <button
                                       onClick={(e) => {
@@ -3464,16 +3488,32 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                   return projPages.map((page) => (
                     <button
                       key={page.id}
-                      onClick={() => {
-                        if (!pageModalProjectId) return;
-                        const proj = projects.find(p => p.id === pageModalProjectId);
-                        if (proj) {
-                          const updated = { ...proj, page_id: page.id };
-                          setProjects(prev => prev.filter(p => p.id !== proj.id));
-                          saveProjects([updated]);
-                        }
+                      onClick={async () => {
+                        const targetProjectId = pageModalProjectId;
                         setIsPageModalOpen(false);
                         setPageModalProjectId(null);
+                        if (!targetProjectId) return;
+                        const proj = projectsRef.current.find(p => p.id === targetProjectId);
+                        if (!proj) return;
+                        const updated = { ...proj, page_id: page.id };
+                        // Otimista: tira da página atual (sincroniza o ref pra o auto-save não reverter)
+                        projectsRef.current = projectsRef.current.filter(p => p.id !== proj.id);
+                        setProjects(prev => prev.filter(p => p.id !== proj.id));
+                        // Persiste numa requisição DEDICADA (não abortável pelo auto-save de 500ms)
+                        try {
+                          const res = await fetch('/api/projects', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify([updated]),
+                          });
+                          if (!res.ok) throw new Error(await res.text());
+                        } catch (err) {
+                          console.error('Erro ao mudar de página:', err);
+                          alert('Erro ao mudar o projeto de página. Recarregue e tente novamente.');
+                          // Restaura o projeto na página atual
+                          projectsRef.current = [...projectsRef.current, proj];
+                          setProjects(prev => (prev.some(p => p.id === proj.id) ? prev : [...prev, proj]));
+                        }
                       }}
                       className="w-full text-left px-4 py-3 rounded-xl hover:bg-violet-50 dark:hover:bg-violet-500/10 text-slate-700 dark:text-slate-300 hover:text-violet-600 dark:hover:text-violet-400 transition-colors font-medium"
                     >
@@ -4094,7 +4134,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     </td>
                     <td className="px-3 py-3.5" onClick={() => handleRowClick(project)}>
                       {project.lastMeetingDate ? (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-violet-500/10 border border-violet-500/25 text-violet-600 dark:text-violet-300 text-xs font-bold cursor-pointer whitespace-nowrap">
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold cursor-pointer whitespace-nowrap ${meetingBadgeClasses(project.lastMeetingDate)}`}>
                           <Calendar size={12} className="shrink-0" />
                           {new Date(project.lastMeetingDate).toLocaleDateString('pt-BR', { day: 'numeric', month: 'short', timeZone: 'UTC' }).replace('.', '').toLowerCase()}
                         </span>
@@ -4517,17 +4557,18 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                       </div>
 
                       <div className="p-4 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm">
-                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Última Atualização</p>
-                        <span className="text-sm font-bold text-slate-900 dark:text-white">
-                          {timelineItems.length > 0
-                            ? (() => {
-                                const d = new Date(timelineItems[0].createdAt);
-                                return isNaN(d.getTime())
-                                  ? selectedProject.lastUpdate
-                                  : `${d.toLocaleDateString('pt-BR')} às ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
-                              })()
-                            : selectedProject.lastUpdate || '—'}
-                        </span>
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Última Reunião</p>
+                        {selectedProject.lastMeetingDate ? (
+                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold whitespace-nowrap ${meetingBadgeClasses(selectedProject.lastMeetingDate)}`}>
+                            <Calendar size={12} className="shrink-0" />
+                            {new Date(selectedProject.lastMeetingDate).toLocaleDateString('pt-BR', { day: 'numeric', month: 'short', timeZone: 'UTC' }).replace('.', '').toLowerCase()}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 dark:text-slate-600 whitespace-nowrap">
+                            <Calendar size={12} className="shrink-0 opacity-50" />
+                            sem reunião
+                          </span>
+                        )}
                       </div>
                     </div>
 
@@ -4684,11 +4725,8 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                     <div className="flex flex-col items-end gap-1">
                                       <div className="flex items-center gap-2">
                                         <p className="text-[10px] text-slate-500 font-medium">{formatDateShort(opt.date)} {opt.time && `às ${opt.time}`}</p>
-                                        {(userData?.role?.toLowerCase() === 'superadmin' || 
-                                          userData?.role?.toLowerCase() === 'super admin' || 
-                                          userData?.role?.toLowerCase() === 'diretor operacional' || 
-                                          userData?.role?.toLowerCase() === 'diretor-operacional' || 
-                                          userData?.role?.toLowerCase() === 'diretoria') && (
+                                        {/* Edição/exclusão de reuniões liberada para todos os usuários (antes: só superadmin/diretoria) */}
+                                        {true && (
                                           <>
                                             <button
                                               onClick={(e) => {
@@ -4954,11 +4992,8 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                   <div className="flex flex-col items-end gap-1">
                                     <div className="flex items-center gap-2">
                                       <p className="text-[10px] text-slate-500 font-medium">{formatDateShort(opt.date)} {opt.time && `às ${opt.time}`}</p>
-                                      {(userData?.role?.toLowerCase() === 'superadmin' || 
-                                        userData?.role?.toLowerCase() === 'super admin' || 
-                                        userData?.role?.toLowerCase() === 'diretor operacional' || 
-                                        userData?.role?.toLowerCase() === 'diretor-operacional' || 
-                                        userData?.role?.toLowerCase() === 'diretoria') && (
+                                      {/* Edição/exclusão de reuniões liberada para todos os usuários (antes: só superadmin/diretoria) */}
+                                      {true && (
                                         <>
                                           <button
                                             onClick={(e) => {

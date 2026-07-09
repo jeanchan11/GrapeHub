@@ -633,7 +633,7 @@ const SortableSection = ({ section, editingSection, editSectionData, setEditSect
   );
 };
 
-const SortableSubSession = ({ sub, sectionId, editingSub, editSubData, setEditSubData, setEditingSub, handleSaveEditSub, handleDeleteSub, handleEditSub, children, menu }: any) => {
+const SortableSubSession = ({ sub, sectionId, editingSub, editSubData, setEditSubData, setEditingSub, handleSaveEditSub, handleDeleteSub, handleEditSub, children, menu, onMoveUp, onMoveDown, canMoveUp, canMoveDown }: any) => {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ 
     id: sub.id,
     data: { type: 'subsession', parentId: sectionId }
@@ -688,6 +688,8 @@ const SortableSubSession = ({ sub, sectionId, editingSub, editSubData, setEditSu
               <span className="text-slate-800 dark:text-slate-300">└ {sub.label}</span>
             </div>
             <div className="flex items-center gap-2">
+              <button onClick={(e) => { e.stopPropagation(); onMoveUp && onMoveUp(); }} disabled={!canMoveUp} className="p-1.5 text-slate-400 hover:text-violet-500 hover:bg-violet-500/10 rounded transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed" title="Subir"><ArrowUp size={14} /></button>
+              <button onClick={(e) => { e.stopPropagation(); onMoveDown && onMoveDown(); }} disabled={!canMoveDown} className="p-1.5 text-slate-400 hover:text-violet-500 hover:bg-violet-500/10 rounded transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed" title="Descer"><ArrowDown size={14} /></button>
               <button onClick={(e) => { e.stopPropagation(); handleEditSub(sub, sectionId); }} className="p-1.5 text-blue-500 hover:bg-blue-500/10 rounded transition-colors" title="Editar Sub-seção"><Edit size={14} /></button>
               <button onClick={(e) => { e.stopPropagation(); handleDeleteSub(sub.id); }} className="p-1.5 text-rose-500 hover:bg-rose-500/10 rounded transition-colors" title="Excluir Sub-seção"><Trash2 size={14} /></button>
             </div>
@@ -699,7 +701,7 @@ const SortableSubSession = ({ sub, sectionId, editingSub, editSubData, setEditSu
   );
 };
 
-const SortableSubSubSession = ({ subsub, subId, editingSubsub, editSubsubData, setEditSubsubData, setEditingSubsub, handleSaveEditSubsub, handleDeleteSubsub, handleEditSubsub, children, menu }: any) => {
+const SortableSubSubSession = ({ subsub, subId, editingSubsub, editSubsubData, setEditSubsubData, setEditingSubsub, handleSaveEditSubsub, handleDeleteSubsub, handleEditSubsub, children, menu, onMoveUp, onMoveDown, canMoveUp, canMoveDown }: any) => {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ 
     id: subsub.id,
     data: { type: 'subsubsession', parentId: subId }
@@ -790,6 +792,8 @@ const SortableSubSubSession = ({ subsub, subId, editingSubsub, editSubsubData, s
               <span className="text-slate-800 dark:text-slate-300">└ {subsub.label}</span>
             </div>
             <div className="flex items-center gap-2">
+              <button onClick={(e) => { e.stopPropagation(); onMoveUp && onMoveUp(); }} disabled={!canMoveUp} className="p-1.5 text-slate-400 hover:text-violet-500 hover:bg-violet-500/10 rounded transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed" title="Subir"><ArrowUp size={14} /></button>
+              <button onClick={(e) => { e.stopPropagation(); onMoveDown && onMoveDown(); }} disabled={!canMoveDown} className="p-1.5 text-slate-400 hover:text-violet-500 hover:bg-violet-500/10 rounded transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed" title="Descer"><ArrowDown size={14} /></button>
               <button onClick={(e) => { e.stopPropagation(); handleEditSubsub(subsub, subId, 'subsession'); }} className="p-1.5 text-blue-500 hover:bg-blue-500/10 rounded transition-colors" title="Editar Sub-sub-seção"><Edit size={14} /></button>
               <button onClick={(e) => { e.stopPropagation(); handleDeleteSubsub(subsub.id); }} className="p-1.5 text-rose-500 hover:bg-rose-500/10 rounded transition-colors" title="Excluir Sub-sub-seção"><Trash2 size={14} /></button>
             </div>
@@ -1092,6 +1096,9 @@ export const PageManager: React.FC = () => {
         if (type === 'subsession' && section.id === parentId) {
           return { ...section, subSessions: newItems };
         }
+        if (type === 'subsubsession' && section.id === parentId) {
+          return { ...section, subSubSessions: newItems };
+        }
         if (type === 'page_in_section' && section.id === parentId) {
           return { ...section, pages: newItems };
         }
@@ -1372,7 +1379,26 @@ export const PageManager: React.FC = () => {
     // --- Find the items list for this type ---
     let items: any[] = [];
     let reorderType = activeData.type;
+    let targetId: string = over.id; // sibling id to drop next to (resolved for container types)
     const parentId: string = activeData.parentId;
+
+    // Resolve which direct child (subsession/subsubsession) a drop landed on/inside,
+    // so a container can be reordered even when the cursor is over one of its pages.
+    const resolveSiblingId = (siblings: any[]): string | null => {
+      const overId = over.id;
+      for (const sib of (siblings || [])) {
+        if (sib.id === overId) return sib.id;
+        if (overData.type === 'subsession_container' && overData.subId === sib.id) return sib.id;
+        if (overData.type === 'subsubsession_container' && overData.subsubId === sib.id) return sib.id;
+        if ((sib.pages || []).some((p: any) => p.id === overId)) return sib.id;
+        for (const ss of (sib.subSubSessions || [])) {
+          if (ss.id === overId) return sib.id;
+          if (overData.type === 'subsubsession_container' && overData.subsubId === ss.id) return sib.id;
+          if ((ss.pages || []).some((p: any) => p.id === overId)) return sib.id;
+        }
+      }
+      return null;
+    };
 
     if (activeData.type === 'section') {
       // When dragging sections, the cursor often lands over a child (subsession/page)
@@ -1400,15 +1426,25 @@ export const PageManager: React.FC = () => {
         return;
       }
     } else if (activeData.type === 'subsession') {
-      // For non-section types, require matching over type
-      if (overData.type !== activeData.type) return;
       const section = (menu as any[]).find((s: any) => s.id === parentId);
-      if (section) items = [...(section.subSessions || [])];
+      if (!section) return;
+      items = [...(section.subSessions || [])];
+      const resolved = resolveSiblingId(items);
+      if (!resolved) return; // dropped outside this section — ignore
+      targetId = resolved;
     } else if (activeData.type === 'subsubsession') {
+      // parent may be a section (section-level) or a subsession
+      let parent: any = null;
       for (const section of (menu as any[])) {
+        if (section.id === parentId) { parent = section; break; }
         const sub = (section.subSessions || []).find((s: any) => s.id === parentId);
-        if (sub) { items = [...(sub.subSubSessions || [])]; break; }
+        if (sub) { parent = sub; break; }
       }
+      if (!parent) return;
+      items = [...(parent.subSubSessions || [])];
+      const resolved = resolveSiblingId(items);
+      if (!resolved) return;
+      targetId = resolved;
     } else if (activeData.type === 'page') {
       for (const section of (menu as any[])) {
         // section-level pages
@@ -1431,7 +1467,7 @@ export const PageManager: React.FC = () => {
     if (!items.length) return;
 
     const oldIndex = items.findIndex((i: any) => i.id === active.id);
-    const newIndex = items.findIndex((i: any) => i.id === over.id);
+    const newIndex = items.findIndex((i: any) => i.id === targetId);
     if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
 
     await handleReorder(reorderType, items, oldIndex, newIndex, parentId || null);
@@ -1769,19 +1805,23 @@ export const PageManager: React.FC = () => {
                       {/* Section-level SubSubSessions */}
                       {section.subSubSessions && section.subSubSessions.length > 0 && (
                         <SortableContext items={section.subSubSessions.map((s: any) => s.id)} strategy={verticalListSortingStrategy}>
-                          {section.subSubSessions.map((subsub: any) => (
-                            <SortableSubSubSession 
-                              key={subsub.id} 
-                              subsub={subsub} 
-                              subId={section.id} 
-                              editingSubsub={editingSubsub} 
-                              editSubsubData={editSubsubData} 
-                              setEditSubsubData={setEditSubsubData} 
-                              setEditingSubsub={setEditingSubsub} 
-                              handleSaveEditSubsub={handleSaveEditSubsub} 
-                              handleDeleteSubsub={handleDeleteSubsub} 
+                          {section.subSubSessions.map((subsub: any, ssIdx: number) => (
+                            <SortableSubSubSession
+                              key={subsub.id}
+                              subsub={subsub}
+                              subId={section.id}
+                              editingSubsub={editingSubsub}
+                              editSubsubData={editSubsubData}
+                              setEditSubsubData={setEditSubsubData}
+                              setEditingSubsub={setEditingSubsub}
+                              handleSaveEditSubsub={handleSaveEditSubsub}
+                              handleDeleteSubsub={handleDeleteSubsub}
                               handleEditSubsub={handleEditSubsub}
                               menu={menu}
+                              canMoveUp={ssIdx > 0}
+                              canMoveDown={ssIdx < section.subSubSessions.length - 1}
+                              onMoveUp={() => handleReorder('subsubsession', section.subSubSessions, ssIdx, ssIdx - 1, section.id)}
+                              onMoveDown={() => handleReorder('subsubsession', section.subSubSessions, ssIdx, ssIdx + 1, section.id)}
                             >
                               {subsub.pages && (
                                   <SortableContext items={subsub.pages.map((p: any) => p.id)} strategy={verticalListSortingStrategy}>
@@ -1795,19 +1835,23 @@ export const PageManager: React.FC = () => {
                         </SortableContext>
                       )}
                       <SortableContext items={section.subSessions.map((s: any) => s.id)} strategy={verticalListSortingStrategy}>
-                        {section.subSessions.map((sub: any) => (
-                          <SortableSubSession 
-                            key={sub.id} 
-                            sub={sub} 
-                            sectionId={section.id} 
-                            editingSub={editingSub} 
-                            editSubData={editSubData} 
-                            setEditSubData={setEditSubData} 
-                            setEditingSub={setEditingSub} 
-                            handleSaveEditSub={handleSaveEditSub} 
-                            handleDeleteSub={handleDeleteSub} 
+                        {section.subSessions.map((sub: any, subIdx: number) => (
+                          <SortableSubSession
+                            key={sub.id}
+                            sub={sub}
+                            sectionId={section.id}
+                            editingSub={editingSub}
+                            editSubData={editSubData}
+                            setEditSubData={setEditSubData}
+                            setEditingSub={setEditingSub}
+                            handleSaveEditSub={handleSaveEditSub}
+                            handleDeleteSub={handleDeleteSub}
                             handleEditSub={handleEditSub}
                             menu={menu}
+                            canMoveUp={subIdx > 0}
+                            canMoveDown={subIdx < section.subSessions.length - 1}
+                            onMoveUp={() => handleReorder('subsession', section.subSessions, subIdx, subIdx - 1, section.id)}
+                            onMoveDown={() => handleReorder('subsession', section.subSessions, subIdx, subIdx + 1, section.id)}
                           >
                               {sub.pages && (
                                 <SortableContext items={sub.pages.map((p: any) => p.id)} strategy={verticalListSortingStrategy}>
@@ -1817,19 +1861,23 @@ export const PageManager: React.FC = () => {
                                 </SortableContext>
                               )}
                               <SortableContext items={sub.subSubSessions.map((s: any) => s.id)} strategy={verticalListSortingStrategy}>
-                                {sub.subSubSessions.map((subsub: any) => (
-                                  <SortableSubSubSession 
-                                    key={subsub.id} 
-                                    subsub={subsub} 
-                                    subId={sub.id} 
-                                    editingSubsub={editingSubsub} 
-                                    editSubsubData={editSubsubData} 
-                                    setEditSubsubData={setEditSubsubData} 
-                                    setEditingSubsub={setEditingSubsub} 
-                                    handleSaveEditSubsub={handleSaveEditSubsub} 
-                                    handleDeleteSubsub={handleDeleteSubsub} 
+                                {sub.subSubSessions.map((subsub: any, ssIdx: number) => (
+                                  <SortableSubSubSession
+                                    key={subsub.id}
+                                    subsub={subsub}
+                                    subId={sub.id}
+                                    editingSubsub={editingSubsub}
+                                    editSubsubData={editSubsubData}
+                                    setEditSubsubData={setEditSubsubData}
+                                    setEditingSubsub={setEditingSubsub}
+                                    handleSaveEditSubsub={handleSaveEditSubsub}
+                                    handleDeleteSubsub={handleDeleteSubsub}
                                     handleEditSubsub={handleEditSubsub}
                                     menu={menu}
+                                    canMoveUp={ssIdx > 0}
+                                    canMoveDown={ssIdx < sub.subSubSessions.length - 1}
+                                    onMoveUp={() => handleReorder('subsubsession', sub.subSubSessions, ssIdx, ssIdx - 1, sub.id)}
+                                    onMoveDown={() => handleReorder('subsubsession', sub.subSubSessions, ssIdx, ssIdx + 1, sub.id)}
                                   >
                                     {subsub.pages && (
                                         <SortableContext items={subsub.pages.map((p: any) => p.id)} strategy={verticalListSortingStrategy}>
