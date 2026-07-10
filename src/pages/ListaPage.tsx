@@ -195,11 +195,11 @@ const TaskRow = ({
 
   return (
     <div className="border-b border-black/[0.06] dark:border-white/[0.06] last:border-none">
-      <div className="flex items-center gap-3 px-4 py-3 hover:bg-white/[0.02] transition-colors group">
+      <div className="flex items-center gap-3 px-4 py-3 hover:bg-black/[0.04] dark:hover:bg-white/[0.02] transition-colors group">
         <div {...(dragHandleProps?.attributes || {})} {...(dragHandleProps?.listeners || {})} className="w-[14px] shrink-0 flex justify-center cursor-grab active:cursor-grabbing text-slate-700 hover:text-slate-500">
           <GripVertical size={12} />
         </div>
-        <button onClick={() => setExpanded(!expanded)} className="text-slate-500 hover:text-slate-300 transition-colors">
+        <button onClick={() => setExpanded(!expanded)} className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors">
           {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
         </button>
         <div className="w-5 h-5 rounded-full border-2 border-slate-600 flex items-center justify-center shrink-0">
@@ -208,7 +208,7 @@ const TaskRow = ({
         <div className="flex-1 min-w-0 cursor-pointer flex items-center gap-2" onClick={() => onOpenDetail(task)}>
           <span className="text-sm font-medium text-dark-text hover:text-violet-400 transition-colors truncate">{task.client_name}</span>
           {task.subtask_count > 0 && (
-            <span className="text-[10px] text-slate-500 bg-white/5 px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0">
+            <span className="text-[10px] text-slate-500 bg-black/5 dark:bg-white/5 px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0">
               ↳ {task.subtask_count}
             </span>
           )}
@@ -230,7 +230,7 @@ const TaskRow = ({
             ? 'bg-red-500/10 text-red-400 border-red-500/20'
             : isToday
               ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-              : 'bg-white/5 text-slate-400 border-white/10';
+              : 'bg-black/5 dark:bg-white/5 text-slate-400 border-black/10 dark:border-white/10';
           return (
             <div className="w-28 shrink-0" onClick={() => onOpenDetail(task)}>
               <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1 border cursor-pointer ${style}`}>
@@ -263,7 +263,7 @@ const TaskRow = ({
           {normalizedTags.length > 2 && (
             <button
               onClick={e => { e.stopPropagation(); setTagMenuOpen(v => !v); }}
-              className="text-[10px] text-slate-500 hover:text-slate-300 font-medium transition-colors"
+              className="text-[10px] text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 font-medium transition-colors"
             >
               +{normalizedTags.length - 2}
             </button>
@@ -280,7 +280,7 @@ const TaskRow = ({
           {/* Dropdown menu */}
           {tagMenuOpen && (
             <div
-              className="absolute top-7 left-0 z-50 w-52 bg-dark-card border border-white/10 rounded-xl shadow-2xl p-2"
+              className="absolute top-7 left-0 z-50 w-52 bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl p-2"
               onClick={e => e.stopPropagation()}
             >
               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-2 mb-2">Adicionar / Remover</p>
@@ -298,7 +298,7 @@ const TaskRow = ({
                     const hasTag = normalizedTags.includes(c.name);
                     return (
                       <button key={c.id} onClick={() => handleToggleTag(c.name)}
-                        className={`w-full flex items-center justify-between px-2 py-1.5 rounded-lg transition-colors text-left ${hasTag ? 'bg-violet-500/10' : 'hover:bg-white/5'}`}>
+                        className={`w-full flex items-center justify-between px-2 py-1.5 rounded-lg transition-colors text-left ${hasTag ? 'bg-violet-500/10' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}>
                         <div className="flex items-center gap-2">
                           <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
                           <span className="text-xs text-dark-text truncate">{c.name}</span>
@@ -341,21 +341,21 @@ const TaskRow = ({
               </div>
             ) : (
               <div className="pb-2">
-                <div className="px-12 py-2 flex items-center gap-2 border-b border-white/5 mb-1 bg-white/5">
+                <div className="px-12 py-2 flex items-center gap-2 border-b border-black/10 dark:border-white/5 mb-1 bg-black/5 dark:bg-white/5">
                   <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
                     Subtarefas
                   </span>
                   <span className="text-[10px] text-slate-500">
                     {completedCount}/{subtasks.length}
                   </span>
-                  <div className="flex-1 h-1 bg-white/10 rounded-full overflow-hidden ml-1 max-w-[200px]">
+                  <div className="flex-1 h-1 bg-black/5 dark:bg-white/10 rounded-full overflow-hidden ml-1 max-w-[200px]">
                     <div className="h-full bg-violet-500 rounded-full transition-all duration-300"
                       style={{ width: `${subtasks.length > 0 ? (completedCount / subtasks.length) * 100 : 0}%` }} />
                   </div>
                 </div>
                 <div className="space-y-1">
                   {subtasks.map(sub => (
-                    <div key={sub.id} className="flex items-center gap-2 px-12 py-1.5 hover:bg-white/[0.02] transition-colors group/sub">
+                    <div key={sub.id} className="flex items-center gap-2 px-12 py-1.5 hover:bg-black/[0.04] dark:hover:bg-white/[0.02] transition-colors group/sub">
                       <div className="w-4 shrink-0 flex items-center justify-center">
                         <button
                           onClick={() => toggleSubtask(sub)}
@@ -363,7 +363,7 @@ const TaskRow = ({
                             sub.completed ? 'bg-emerald-500 border-emerald-500' : 'border-slate-600 hover:border-violet-500'
                           }`}
                         >
-                          {sub.completed && <CheckCircle2 size={10} className="text-white" />}
+                          {sub.completed && <CheckCircle2 size={10} className="text-dark-text" />}
                         </button>
                       </div>
                       <span className={`text-xs flex-1 ${sub.completed ? 'text-slate-500 line-through' : 'text-dark-text'}`}>
@@ -466,18 +466,18 @@ const GroupBlock = ({
             ) : (
               <span onDoubleClick={() => { setEditing(true); setEditLabel(group.label); }}>{group.label}</span>
             )}
-            <span className="bg-white/10 px-1.5 py-0.5 rounded-full text-[10px]">{group.tasks.length}</span>
+            <span className="bg-black/5 dark:bg-white/10 px-1.5 py-0.5 rounded-full text-[10px]">{group.tasks.length}</span>
           </div>
           <div className="relative">
             <button onClick={() => setShowMenu(!showMenu)} className="p-1 text-slate-600 hover:text-slate-400 transition-colors">
               <MoreHorizontal size={14} />
             </button>
             {showMenu && (
-              <div className="absolute left-0 top-full mt-1 z-50 w-44 bg-dark-card border border-white/10 rounded-xl shadow-2xl overflow-hidden" onClick={() => setShowMenu(false)}>
-                <button onClick={() => { setEditing(true); setEditLabel(group.label); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-slate-300 hover:bg-white/5">
+              <div className="absolute left-0 top-full mt-1 z-50 w-44 bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl overflow-hidden" onClick={() => setShowMenu(false)}>
+                <button onClick={() => { setEditing(true); setEditLabel(group.label); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-slate-600 dark:text-slate-300 hover:bg-black/5 dark:hover:bg-white/5">
                   <Pencil size={12} /> Renomear
                 </button>
-                <button onClick={() => onDeleteGroup(group.id)} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-red-400 hover:bg-red-500/10 border-t border-white/5">
+                <button onClick={() => onDeleteGroup(group.id)} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-red-400 hover:bg-red-500/10 border-t border-black/10 dark:border-white/5">
                   <Trash2 size={12} /> Excluir grupo
                 </button>
               </div>
@@ -489,7 +489,7 @@ const GroupBlock = ({
         {!collapsed && (
           <>
             {/* Column Header */}
-            <div className="flex items-center gap-3 px-4 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-white/5">
+            <div className="flex items-center gap-3 px-4 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-black/10 dark:border-white/5">
               <div className="w-[14px] shrink-0" />
               <div className="w-4 shrink-0" />
               <div className="w-5 shrink-0" />
@@ -544,7 +544,7 @@ const AddTaskModal = ({ groupId, pageId, onClose, onSaved }: { groupId: string; 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-dark-card border border-white/10 rounded-2xl shadow-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+      <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
         <h3 className="text-sm font-bold text-dark-text mb-4">Adicionar Item</h3>
         <input
           autoFocus
@@ -552,10 +552,10 @@ const AddTaskModal = ({ groupId, pageId, onClose, onSaved }: { groupId: string; 
           onChange={e => setName(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleSave()}
           placeholder="Nome do item..."
-          className="w-full bg-dark-bg border border-white/10 rounded-xl px-4 py-3 text-sm text-dark-text placeholder-slate-500 outline-none focus:border-violet-500/50 mb-4 transition-colors"
+          className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-dark-text placeholder-slate-500 outline-none focus:border-violet-500/50 mb-4 transition-colors"
         />
         <div className="flex justify-end gap-2">
-          <button onClick={onClose} className="px-4 py-2 text-xs font-bold text-slate-400 hover:text-slate-300 transition-colors">
+          <button onClick={onClose} className="px-4 py-2 text-xs font-bold text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 transition-colors">
             Cancelar
           </button>
           <button
@@ -605,10 +605,10 @@ const TagsManagerModal: React.FC<TagsManagerModalProps> = ({ tags, onChange, onC
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-sm bg-dark-bg rounded-3xl border border-white/10 shadow-2xl p-6 space-y-4" onClick={e => e.stopPropagation()}>
+      <div className="w-full max-w-sm bg-dark-bg rounded-3xl border border-black/10 dark:border-white/10 shadow-2xl p-6 space-y-4" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-black text-dark-text">Gerenciar <span className="text-violet-500">Tags</span></h2>
-          <button onClick={onClose} className="w-8 h-8 rounded-xl flex items-center justify-center text-dark-text/40 hover:text-dark-text hover:bg-white/10 transition-all"><X size={16} /></button>
+          <button onClick={onClose} className="w-8 h-8 rounded-xl flex items-center justify-center text-dark-text/40 hover:text-dark-text hover:bg-black/5 dark:hover:bg-white/10 transition-all"><X size={16} /></button>
         </div>
 
         {/* Create new tag */}
@@ -619,7 +619,7 @@ const TagsManagerModal: React.FC<TagsManagerModalProps> = ({ tags, onChange, onC
             onChange={e => setNewName(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && add()}
             placeholder="Nome da tag..."
-            className="w-full bg-dark-card border border-white/10 rounded-xl px-4 py-2.5 text-sm text-dark-text placeholder-slate-500 focus:outline-none focus:border-violet-500/50 transition-all"
+            className="w-full bg-dark-card border border-black/10 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-dark-text placeholder-slate-500 focus:outline-none focus:border-violet-500/50 transition-all"
           />
           <div className="flex flex-wrap gap-2">
             {TAG_COLORS.map(c => (
@@ -653,7 +653,7 @@ const TagsManagerModal: React.FC<TagsManagerModalProps> = ({ tags, onChange, onC
                       value={editName}
                       onChange={e => setEditName(e.target.value)}
                       onKeyDown={e => e.key === 'Enter' && saveEdit()}
-                      className="bg-transparent border-b border-white/20 text-sm text-dark-text focus:outline-none py-0.5"
+                      className="bg-transparent border-b border-black/10 dark:border-white/20 text-sm text-dark-text focus:outline-none py-0.5"
                     />
                     <div className="flex flex-wrap gap-1.5">
                       {TAG_COLORS.map(c => (
@@ -666,17 +666,17 @@ const TagsManagerModal: React.FC<TagsManagerModalProps> = ({ tags, onChange, onC
                     </div>
                     <div className="flex items-center gap-2 mt-1">
                       <button onClick={saveEdit} className="flex-1 py-1 rounded bg-violet-600 hover:bg-violet-500 text-[10px] font-bold text-white uppercase tracking-wider">Salvar</button>
-                      <button onClick={() => setEditId(null)} className="flex-1 py-1 rounded bg-white/5 hover:bg-white/10 text-[10px] font-bold text-dark-text uppercase tracking-wider">Cancelar</button>
+                      <button onClick={() => setEditId(null)} className="flex-1 py-1 rounded bg-black/5 dark:bg-white/5 hover:bg-black/5 dark:hover:bg-white/10 text-[10px] font-bold text-dark-text uppercase tracking-wider">Cancelar</button>
                     </div>
                   </div>
                 ) : (
-                  <div className="flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-white/5 group/tagrow">
+                  <div className="flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 group/tagrow">
                     <div className="flex items-center gap-2 min-w-0">
                       <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: t.color }} />
                       <span className="text-xs text-dark-text truncate">{t.name}</span>
                     </div>
                     <div className="flex items-center gap-1 opacity-0 group-hover/tagrow:opacity-100 transition-opacity">
-                      <button onClick={() => startEdit(t)} className="p-1 text-slate-500 hover:text-white hover:bg-white/5 rounded"><Edit2 size={11} /></button>
+                      <button onClick={() => startEdit(t)} className="p-1 text-slate-500 hover:text-dark-text hover:bg-black/5 dark:hover:bg-white/5 rounded"><Edit2 size={11} /></button>
                       <button onClick={() => remove(t.id)} className="p-1 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded"><Trash2 size={11} /></button>
                     </div>
                   </div>
@@ -1070,7 +1070,7 @@ export default function ListaPage({ activePage, pageLabel }: { activePage: strin
             className={`px-4 py-2 text-[11px] font-bold rounded-xl transition-colors border flex items-center gap-2 ${
               showCompleted
                 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                : 'bg-dark-card text-slate-400 border-black/10 dark:border-white/10 hover:bg-black/20 dark:hover:bg-white/5'
+                : 'bg-dark-card text-slate-400 border-black/10 dark:border-white/10 hover:bg-black/20 dark:hover:bg-black/5 dark:bg-white/5'
             }`}
           >
             <Check size={14} />
@@ -1080,7 +1080,7 @@ export default function ListaPage({ activePage, pageLabel }: { activePage: strin
       </div>
 
       {/* ── Tabs Switcher ── */}
-      <div className="px-8 flex border-b border-white/10 mb-6 shrink-0">
+      <div className="px-8 flex border-b border-black/10 dark:border-white/10 mb-6 shrink-0">
         <button
           onClick={() => setActiveTab('overview')}
           className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 ${
@@ -1133,7 +1133,7 @@ export default function ListaPage({ activePage, pageLabel }: { activePage: strin
               {/* KPI Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {/* Total de Postagens */}
-                <div className="bg-dark-card border border-white/10 rounded-2xl p-5 flex flex-col justify-between transition-colors duration-200">
+                <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-5 flex flex-col justify-between transition-colors duration-200">
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Total de Postagens</span>
                     <div className="w-8 h-8 rounded-lg bg-violet-500/10 flex items-center justify-center">
@@ -1147,7 +1147,7 @@ export default function ListaPage({ activePage, pageLabel }: { activePage: strin
                 </div>
 
                 {/* Fila Concluída */}
-                <div className="bg-dark-card border border-white/10 rounded-2xl p-5 flex flex-col justify-between transition-colors duration-200">
+                <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-5 flex flex-col justify-between transition-colors duration-200">
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Fila Concluída</span>
                     <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
@@ -1155,7 +1155,7 @@ export default function ListaPage({ activePage, pageLabel }: { activePage: strin
                     </div>
                   </div>
                   <p className="text-2xl font-black text-dark-text">{completedTasks.length}</p>
-                  <div className="mt-2 w-full bg-white/5 rounded-full h-1.5 overflow-hidden">
+                  <div className="mt-2 w-full bg-black/5 dark:bg-white/5 rounded-full h-1.5 overflow-hidden">
                     <motion.div
                       initial={{ width: 0 }}
                       animate={{ width: `${completionPct}%` }}
@@ -1168,7 +1168,7 @@ export default function ListaPage({ activePage, pageLabel }: { activePage: strin
 
                 {/* Postagens em Atraso */}
                 <div className={`bg-dark-card border rounded-2xl p-5 flex flex-col justify-between transition-colors duration-200 ${
-                  overdueTasks.length > 0 ? 'border-red-500/30' : 'border-white/10'
+                  overdueTasks.length > 0 ? 'border-red-500/30' : 'border-black/10 dark:border-white/10'
                 }`}>
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Postagens em Atraso</span>
@@ -1187,7 +1187,7 @@ export default function ListaPage({ activePage, pageLabel }: { activePage: strin
                 </div>
 
                 {/* Próximos Prazos */}
-                <div className="bg-dark-card border border-white/10 rounded-2xl p-5 flex flex-col justify-between transition-colors duration-200">
+                <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-5 flex flex-col justify-between transition-colors duration-200">
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Próximos Prazos</span>
                     <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
@@ -1204,7 +1204,7 @@ export default function ListaPage({ activePage, pageLabel }: { activePage: strin
               {/* Main Dashboard Panels */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Fila de Postagens (Pipeline Queue) */}
-                <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200 flex flex-col min-h-[600px]">
+                <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-6 transition-colors duration-200 flex flex-col min-h-[600px]">
                   <h3 className="text-sm font-black text-dark-text uppercase tracking-widest mb-4">Fila de Postagens</h3>
                   <div className="space-y-5 flex-1 overflow-y-auto pr-1">
                     {statusGroups.map(group => {
@@ -1219,7 +1219,7 @@ export default function ListaPage({ activePage, pageLabel }: { activePage: strin
                             </div>
                             <span className="text-[11px]">{groupTasks.length} posts ({Math.round(pct)}%)</span>
                           </div>
-                          <div className="w-full h-2.5 bg-white/5 rounded-full overflow-hidden border border-white/[0.02]">
+                          <div className="w-full h-2.5 bg-black/5 dark:bg-white/5 rounded-full overflow-hidden border border-black/10 dark:border-white/[0.02]">
                             <motion.div
                               initial={{ width: 0 }}
                               animate={{ width: `${pct}%` }}
@@ -1235,7 +1235,7 @@ export default function ListaPage({ activePage, pageLabel }: { activePage: strin
                 </div>
 
                 {/* Próximos Prazos (Calendário) */}
-                <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200 flex flex-col min-h-[600px]">
+                <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-6 transition-colors duration-200 flex flex-col min-h-[600px]">
                   <h3 className="text-sm font-black text-dark-text uppercase tracking-widest mb-4">Próximos Prazos</h3>
                   <div className="space-y-3 flex-1 overflow-y-auto scrollbar-hide">
                     {tasks
@@ -1283,7 +1283,7 @@ export default function ListaPage({ activePage, pageLabel }: { activePage: strin
                             {/* Main Info */}
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
-                                <p className="text-sm font-bold text-white truncate">
+                                <p className="text-sm font-bold text-dark-text truncate">
                                   {t.client_name}
                                 </p>
                                 <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${badgeStyles}`}>
@@ -1321,7 +1321,7 @@ export default function ListaPage({ activePage, pageLabel }: { activePage: strin
           {/* Rich Text Notes */}
           <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Bloco Esquerda */}
-            <div className="bg-dark-card border border-white/10 rounded-2xl p-4 shadow-xl flex flex-col justify-between">
+            <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-4 shadow-xl flex flex-col justify-between">
               <div>
                 <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Anotações - Esquerda</h4>
                 <RichTextEditor
@@ -1349,7 +1349,7 @@ export default function ListaPage({ activePage, pageLabel }: { activePage: strin
             </div>
 
             {/* Bloco Direita */}
-            <div className="bg-dark-card border border-white/10 rounded-2xl p-4 shadow-xl flex flex-col justify-between">
+            <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-4 shadow-xl flex flex-col justify-between">
               <div>
                 <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Anotações - Direita</h4>
                 <RichTextEditor
@@ -1410,11 +1410,11 @@ export default function ListaPage({ activePage, pageLabel }: { activePage: strin
             <DragOverlay dropAnimation={null}>
               {activeDragId && activeDragId.startsWith('group-') ? (
                 <div className="bg-dark-bg/80 border-t-2 border-violet-500 rounded-xl p-4 shadow-2xl">
-                  <p className="text-white text-sm font-bold opacity-80 flex items-center gap-2"><GripVertical size={16} /> Movendo grupo...</p>
+                  <p className="text-dark-text text-sm font-bold opacity-80 flex items-center gap-2"><GripVertical size={16} /> Movendo grupo...</p>
                 </div>
               ) : activeDragId && activeDragId.startsWith('task-') ? (
-                <div className="bg-white/5 border border-violet-500/50 rounded-xl p-4 shadow-2xl backdrop-blur-md">
-                  <p className="text-white text-sm font-bold opacity-80 flex items-center gap-2"><GripVertical size={16} /> Movendo tarefa...</p>
+                <div className="bg-black/5 dark:bg-white/5 border border-violet-500/50 rounded-xl p-4 shadow-2xl backdrop-blur-md">
+                  <p className="text-dark-text text-sm font-bold opacity-80 flex items-center gap-2"><GripVertical size={16} /> Movendo tarefa...</p>
                 </div>
               ) : null}
             </DragOverlay>
@@ -1434,7 +1434,7 @@ export default function ListaPage({ activePage, pageLabel }: { activePage: strin
                 className="bg-transparent border-b border-violet-500/40 text-dark-text text-xs font-bold uppercase tracking-widest outline-none w-64 py-1 placeholder-slate-600"
               />
               <button onClick={handleAddGroup} className="text-[10px] text-violet-400 hover:text-violet-300 font-bold transition-colors">Salvar</button>
-              <button onClick={() => { setAddingNewGroup(false); setNewGroupLabel(''); }} className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors">Cancelar</button>
+              <button onClick={() => { setAddingNewGroup(false); setNewGroupLabel(''); }} className="text-[10px] text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors">Cancelar</button>
             </div>
           ) : (
             <button onClick={() => setAddingNewGroup(true)} className="flex items-center gap-2 text-xs text-slate-600 hover:text-slate-400 transition-colors mt-4 px-4 py-2">

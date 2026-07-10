@@ -1,6 +1,6 @@
 // Portal do Cliente — visão read-only, escopada por projeto.
 // Estética escura reaproveitada da landing/login (glass + violeta + glows).
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ResponsiveContainer } from 'recharts';
 import { useClientSession, ClientSession } from './ClientSessionContext';
@@ -9,7 +9,7 @@ import {
   Home, Activity, MessageSquare, FolderOpen, LogOut,
   DollarSign, Target, BarChart3, ChevronRight, Loader2, CheckCircle2,
   CalendarDays, FileText, Download, MousePointerClick, Eye, MessageCircle, Image as ImageIcon,
-  Sun, Moon, Inbox, Sparkles, Upload,
+  Sun, Moon, Inbox, Sparkles, Upload, ChevronDown, Check,
 } from 'lucide-react';
 
 const V = '#7C3AED';
@@ -601,6 +601,44 @@ const CreativeThumb: React.FC<{ adId: string; url: string | null; name: string }
   );
 };
 
+// Dropdown do portal — segue o tema (claro/escuro) via --pt-rgb; menu inline (herda as vars)
+const PortalSelect: React.FC<{ value: string; options: { value: string; label: string }[]; onChange: (v: string) => void; className?: string; align?: 'left' | 'right' }> = ({ value, options, onChange, className = '', align = 'left' }) => {
+  const theme = usePortalTheme();
+  const light = theme === 'light';
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [open]);
+  const current = options.find(o => o.value === value);
+  return (
+    <div ref={ref} className={`relative ${className}`}>
+      <button type="button" onClick={() => setOpen(v => !v)}
+        className="flex items-center justify-between gap-2 w-full px-3 py-2 rounded-xl text-xs font-bold cursor-pointer text-[color:rgb(var(--pt-rgb))]"
+        style={glass}>
+        <span className="truncate">{current?.label ?? '—'}</span>
+        <ChevronDown size={13} className={`opacity-50 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className={`absolute z-[60] mt-1.5 max-h-72 overflow-y-auto rounded-xl shadow-2xl py-1.5 min-w-full ${align === 'right' ? 'right-0' : 'left-0'}`}
+          style={{ background: light ? '#ffffff' : '#1b0b38', border: '1px solid rgb(var(--pt-rgb) / 0.12)' }}>
+          {options.map(o => (
+            <button key={o.value} type="button" onClick={() => { onChange(o.value); setOpen(false); }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-left transition-colors hover:bg-[color:rgb(var(--pt-rgb)_/_0.06)] text-[color:rgb(var(--pt-rgb)_/_0.8)]"
+              style={o.value === value ? { color: 'rgb(var(--pt-rgb))', fontWeight: 700 } : undefined}>
+              <span className="flex-1 truncate">{o.label}</span>
+              {o.value === value && <Check size={13} style={{ color: V_LIGHT }} className="shrink-0" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const Resultados: React.FC = () => {
   const theme = usePortalTheme();
   const [preset, setPreset] = useState('30d');
@@ -642,12 +680,12 @@ const Resultados: React.FC = () => {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {rep?.accounts?.length > 1 && (
-            <select value={account} onChange={e => setAccount(e.target.value)}
-              className="px-3 py-2 rounded-xl text-xs font-bold outline-none cursor-pointer text-[color:rgb(var(--pt-rgb))]"
-              style={{ ...glass, background: light ? '#ffffff' : '#1a0f33' }} title="Conta de anúncio">
-              <option value="all">Consolidado (todas)</option>
-              {rep.accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
-            </select>
+            <PortalSelect
+              value={account}
+              onChange={setAccount}
+              className="w-[240px]"
+              options={[{ value: 'all', label: 'Consolidado (todas)' }, ...rep.accounts.map((a: any) => ({ value: a.id, label: a.name }))]}
+            />
           )}
           <div className="flex gap-1 p-1 rounded-xl" style={glass}>
             {PRESETS.map(p => (
@@ -744,12 +782,13 @@ const Resultados: React.FC = () => {
                   <p className="text-xs text-[color:rgb(var(--pt-rgb)_/_0.4)]">Desempenho por anúncio</p>
                 </div>
                 {creativeCampaigns.length > 1 && (
-                  <select value={campaignFilter} onChange={e => setCampaignFilter(e.target.value)}
-                    className="px-3 py-2 rounded-xl text-xs font-bold outline-none cursor-pointer text-[color:rgb(var(--pt-rgb))] max-w-[240px]"
-                    style={{ ...glass, background: light ? '#ffffff' : '#1a0f33' }} title="Filtrar por campanha">
-                    <option value="all">Todas as campanhas</option>
-                    {creativeCampaigns.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
+                  <PortalSelect
+                    value={campaignFilter}
+                    onChange={setCampaignFilter}
+                    align="right"
+                    className="w-[240px]"
+                    options={[{ value: 'all', label: 'Todas as campanhas' }, ...creativeCampaigns.map(c => ({ value: c, label: c }))]}
+                  />
                 )}
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">

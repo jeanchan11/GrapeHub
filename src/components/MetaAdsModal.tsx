@@ -6,6 +6,7 @@ import {
   X, DollarSign, MousePointerClick, Eye, Users, Megaphone, Loader2, AlertCircle, Image as ImageIcon, MessageCircle, Calendar, ChevronDown, Download, ArrowUp, ArrowDown, ChevronsUpDown
 } from 'lucide-react';
 import MetaAdsReport, { exportMetaReportPdf } from './MetaAdsReport';
+import ThemedDropdown from './ui/ThemedDropdown';
 
 // ── Helpers (same as MarketingDashboard) ──────────────────────────────────
 function fmtCurrency(val: number | string | null | undefined) {
@@ -31,7 +32,7 @@ function getDay(dateStr: string) {
 function CustomTooltip({ active, payload, label, prefix = '' }: any) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-dark-card border border-white/10 rounded-xl px-3 py-2 shadow-xl text-sm z-50">
+    <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 shadow-xl text-sm z-50">
       <p className="text-slate-400 text-xs mb-1">{label}</p>
       {payload.map((p: any, i: number) => (
         <p key={i} className="font-bold text-dark-text text-sm flex items-center justify-between gap-4">
@@ -49,7 +50,7 @@ function KpiCard({ icon, iconBg, label, value, sub }: {
   value: string; sub?: React.ReactNode;
 }) {
   return (
-    <div className="bg-dark-card border border-white/10 rounded-2xl p-5 flex flex-col gap-2 min-w-0 transition-colors duration-200">
+    <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-5 flex flex-col gap-2 min-w-0 transition-colors duration-200">
       <div className="flex items-center justify-between">
         <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">{label}</span>
         <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${iconBg}`}>{icon}</div>
@@ -148,11 +149,11 @@ function ModalDateRangePicker({ range, onChange }: { range: DateRange; onChange:
         <ChevronDown size={14} className={`text-slate-400 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-2 z-50 bg-dark-card border border-white/10 rounded-2xl shadow-2xl p-4" style={{ minWidth: 320 }}>
+        <div className="absolute right-0 top-full mt-2 z-50 bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl p-4" style={{ minWidth: 320 }}>
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">
             {selecting ? 'Clique na data final' : 'Selecionar Período'}
           </p>
-          <div className="flex flex-wrap gap-1 mb-3 pb-3 border-b border-white/10">
+          <div className="flex flex-wrap gap-1 mb-3 pb-3 border-b border-black/10 dark:border-white/10">
             {preset('Hoje', todayIso, todayIso)}
             {preset('Últ. 7 dias', d7.toISOString().slice(0,10), todayIso)}
             {preset('Últ. 30 dias', d30.toISOString().slice(0,10), todayIso)}
@@ -160,11 +161,11 @@ function ModalDateRangePicker({ range, onChange }: { range: DateRange; onChange:
             {preset('Mês passado', pmStart, pmEnd)}
           </div>
           <div className="flex items-center justify-between mb-3">
-            <button onClick={() => stepMonth(-1)} className="w-7 h-7 rounded-lg hover:bg-white/10 flex items-center justify-center transition-colors">
+            <button onClick={() => stepMonth(-1)} className="w-7 h-7 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center transition-colors">
               <ChevronDown size={13} className="text-slate-400 rotate-90" />
             </button>
             <span className="text-sm font-bold text-dark-text">{MESES_FULL[viewMonth - 1]} {viewYear}</span>
-            <button onClick={() => stepMonth(1)} className="w-7 h-7 rounded-lg hover:bg-white/10 flex items-center justify-center transition-colors">
+            <button onClick={() => stepMonth(1)} className="w-7 h-7 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center transition-colors">
               <ChevronDown size={13} className="text-slate-400 -rotate-90" />
             </button>
           </div>
@@ -182,7 +183,7 @@ function ModalDateRangePicker({ range, onChange }: { range: DateRange; onChange:
                   onMouseEnter={() => selecting && setHovered(iso)}
                   onMouseLeave={() => selecting && setHovered('')}
                   className={`relative h-8 w-full text-xs font-semibold transition-all
-                    ${start || end ? 'text-white z-10' : inRng ? 'text-violet-700 dark:text-violet-200' : 'text-dark-text hover:text-violet-600'}
+                    ${start || end ? 'text-dark-text z-10' : inRng ? 'text-violet-700 dark:text-violet-200' : 'text-dark-text hover:text-violet-600'}
                     ${inRng ? 'bg-violet-500/15' : ''}
                     ${start ? 'rounded-l-full' : ''} ${end ? 'rounded-r-full' : ''}
                     ${!start && !end ? 'rounded-full' : ''}`}>
@@ -196,7 +197,7 @@ function ModalDateRangePicker({ range, onChange }: { range: DateRange; onChange:
             })}
           </div>
           {range.start && range.end && (
-            <div className="mt-3 pt-3 border-t border-white/10 flex items-center justify-between text-xs">
+            <div className="mt-3 pt-3 border-t border-black/10 dark:border-white/10 flex items-center justify-between text-xs">
               <span className="text-slate-500">{formatDateBR(range.start)} → {formatDateBR(range.end)}</span>
               <button onClick={() => { onChange({ start: mStart, end: mEnd }); setSelecting(''); }}
                 className="text-violet-400 hover:text-violet-300 transition-colors">Limpar</button>
@@ -414,7 +415,7 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
       <button
         type="button"
         onClick={() => toggleSort(k)}
-        className={`group flex items-center gap-1 w-full text-[10px] font-bold uppercase tracking-widest transition-colors ${k === 'name' ? '' : 'justify-end'} ${sortKey === k ? 'text-violet-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-300'}`}
+        className={`group flex items-center gap-1 w-full text-[10px] font-bold uppercase tracking-widest transition-colors ${k === 'name' ? '' : 'justify-end'} ${sortKey === k ? 'text-violet-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
         title="Clique para ordenar"
       >
         {label}
@@ -466,13 +467,13 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
 
       <div
         ref={contentRef}
-        className="relative bg-dark-bg rounded-2xl border border-white/10 shadow-2xl w-[1200px] max-w-[96vw] max-h-[92vh] overflow-y-auto"
+        className="relative bg-dark-bg rounded-2xl border border-black/10 dark:border-white/10 shadow-2xl w-[1200px] max-w-[96vw] max-h-[92vh] overflow-y-auto"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="sticky top-0 z-10 bg-dark-bg/95 backdrop-blur-sm border-b border-white/5 px-6 py-4 flex items-center justify-between">
+        <div className="sticky top-0 z-10 bg-dark-bg/95 backdrop-blur-sm border-b border-black/10 dark:border-white/5 px-6 py-4 flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-black text-white">
+            <h2 className="text-lg font-black text-dark-text">
               {partnerName} — <span className="text-violet-400">Meta Ads</span>
             </h2>
             <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-0.5">
@@ -481,26 +482,24 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
           </div>
           <div className="flex items-center gap-3">
             {accounts.length > 1 && (
-              <select
+              <ThemedDropdown
                 value={selectedAccount}
-                onChange={e => setSelectedAccount(e.target.value)}
-                className="px-3 py-2 rounded-xl bg-dark-card border border-white/10 text-sm text-slate-200 outline-none focus:border-violet-500/60 max-w-[220px] cursor-pointer"
+                onChange={setSelectedAccount}
                 title="Conta de anúncio"
-              >
-                <option value="all">Consolidado (todas as contas)</option>
-                {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </select>
+                className="w-[240px]"
+                options={[{ value: 'all', label: 'Consolidado (todas as contas)' }, ...accounts.map(a => ({ value: a.id, label: a.name }))]}
+              />
             )}
             <ModalDateRangePicker range={range} onChange={setRange} />
             <button
               onClick={handleExportPDF}
               disabled={exporting || loading}
-              className="p-2.5 rounded-xl bg-dark-card border border-white/10 hover:border-violet-500/60 text-slate-400 hover:text-violet-400 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              className="p-2.5 rounded-xl bg-dark-card border border-black/10 dark:border-white/10 hover:border-violet-500/60 text-slate-400 hover:text-violet-400 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
               title="Exportar relatório em PDF"
             >
               {exporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
             </button>
-            <button onClick={onClose} className="p-2 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-all">
+            <button onClick={onClose} className="p-2 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 text-slate-400 hover:text-dark-text transition-all">
               <X size={18} />
             </button>
           </div>
@@ -567,7 +566,7 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
                   iconBg="bg-emerald-500/15"
                   label={isPM ? 'Mensagens' : 'Leads'}
                   value={fmtInt(isPM ? kpis.messages : kpis.leads)}
-                  sub={isPM ? <>Leads: <b className="text-slate-300">{fmtInt(kpis.leads)}</b></> : kpis.messages > 0 ? <>Mensagens: <b className="text-slate-300">{fmtInt(kpis.messages)}</b></> : undefined}
+                  sub={isPM ? <>Leads: <b className="text-slate-600 dark:text-slate-300">{fmtInt(kpis.leads)}</b></> : kpis.messages > 0 ? <>Mensagens: <b className="text-slate-600 dark:text-slate-300">{fmtInt(kpis.messages)}</b></> : undefined}
                 />
                 <KpiCard
                   icon={<DollarSign size={16} className="text-pink-400" />}
@@ -580,7 +579,7 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
               {/* Charts */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                 {/* Investimento Diário */}
-                <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200">
+                <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-6 transition-colors duration-200">
                   <h2 className="text-sm font-bold text-dark-text">Investimento Diário</h2>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mb-5 mt-0.5">Gastos em anúncios — {formatDateBR(range.start)} → {formatDateBR(range.end)}</p>
                   {dailyData.length > 0 ? (
@@ -606,7 +605,7 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
                 </div>
 
                 {/* Resultados Diários (dinâmico) */}
-                <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200">
+                <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-6 transition-colors duration-200">
                   <h2 className="text-sm font-bold text-dark-text">{isPM ? 'Mensagens Diárias' : 'Leads Diários'}</h2>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mb-5 mt-0.5">{isPM ? 'Conversas WhatsApp' : 'Capturas'} — {formatDateBR(range.start)} → {formatDateBR(range.end)}</p>
                   {dailyData.length > 0 ? (
@@ -634,7 +633,7 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
               </div>
 
               {/* Campaigns Table */}
-              <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200">
+              <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-6 transition-colors duration-200">
                 <div className="flex items-center justify-between mb-5">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-xl bg-violet-500/15 flex items-center justify-center">
@@ -670,15 +669,15 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
                       </thead>
                       <tbody>
                         {campaigns.map((c, i) => (
-                          <tr key={i} className="border-b hover:bg-white/[0.02] transition-colors" style={{ borderColor: 'rgba(100,100,120,0.1)' }}>
+                          <tr key={i} className="border-b hover:bg-black/[0.04] dark:hover:bg-white/[0.02] transition-colors" style={{ borderColor: 'rgba(100,100,120,0.1)' }}>
                             <td className="py-3 pr-4">
                               <span className="text-dark-text font-medium text-sm">{c.campaign_name}</span>
                             </td>
                             <td className="py-3 px-3 text-right text-emerald-400 font-bold">{fmtInt(isPM ? c.messages : c.leads)}</td>
-                            <td className="py-3 px-3 text-right text-slate-300">{fmtInt(c.clicks)}</td>
-                            <td className="py-3 px-3 text-right text-slate-300">{fmtInt(c.impressions)}</td>
-                            <td className="py-3 px-3 text-right text-slate-300">{fmtPct(c.ctr)}</td>
-                            <td className="py-3 px-3 text-right text-slate-300">{c.cost_per_result != null ? fmtCurrency(c.cost_per_result) : '—'}</td>
+                            <td className="py-3 px-3 text-right text-slate-600 dark:text-slate-300">{fmtInt(c.clicks)}</td>
+                            <td className="py-3 px-3 text-right text-slate-600 dark:text-slate-300">{fmtInt(c.impressions)}</td>
+                            <td className="py-3 px-3 text-right text-slate-600 dark:text-slate-300">{fmtPct(c.ctr)}</td>
+                            <td className="py-3 px-3 text-right text-slate-600 dark:text-slate-300">{c.cost_per_result != null ? fmtCurrency(c.cost_per_result) : '—'}</td>
                             <td className="py-3 pl-3 text-right text-violet-400 font-bold">{fmtCurrency(c.spend)}</td>
                           </tr>
                         ))}
@@ -689,7 +688,7 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
               </div>
 
               {/* ── Criativos ──────────────────────────────────────────── */}
-              <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200">
+              <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-6 transition-colors duration-200">
                 <div className="flex items-center justify-between mb-5">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-xl bg-violet-500/15 flex items-center justify-center">
@@ -702,15 +701,14 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
                   </div>
                   <div className="flex items-center gap-3">
                     {campaignOptions.length > 1 && (
-                      <select
+                      <ThemedDropdown
                         value={campaignFilter}
-                        onChange={e => setCampaignFilter(e.target.value)}
-                        className="px-3 py-1.5 rounded-lg bg-dark-bg border border-white/10 text-xs text-slate-300 outline-none focus:border-violet-500/60 max-w-[240px] cursor-pointer"
+                        onChange={setCampaignFilter}
                         title="Filtrar por campanha"
-                      >
-                        <option value="all">Todas as campanhas</option>
-                        {campaignOptions.map(c => <option key={c} value={c}>{c}</option>)}
-                      </select>
+                        align="right"
+                        className="w-[240px]"
+                        options={[{ value: 'all', label: 'Todas as campanhas' }, ...campaignOptions.map(c => ({ value: c, label: c }))]}
+                      />
                     )}
                     <span className="bg-violet-500/15 text-violet-500 text-[10px] font-bold px-3 py-1 rounded-full whitespace-nowrap">
                       {filteredCreatives.length} Criativo{filteredCreatives.length !== 1 ? 's' : ''}
@@ -722,10 +720,10 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
                   <div className="space-y-3">
                     {[1,2,3].map(i => (
                       <div key={i} className="flex items-center gap-4 animate-pulse">
-                        <div className="w-[80px] h-[80px] rounded-xl bg-white/5" />
+                        <div className="w-[80px] h-[80px] rounded-xl bg-black/5 dark:bg-white/5" />
                         <div className="flex-1 space-y-2">
-                          <div className="h-3 w-48 rounded bg-white/5" />
-                          <div className="h-3 w-32 rounded bg-white/5" />
+                          <div className="h-3 w-48 rounded bg-black/5 dark:bg-white/5" />
+                          <div className="h-3 w-32 rounded bg-black/5 dark:bg-white/5" />
                         </div>
                       </div>
                     ))}
@@ -754,7 +752,7 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
                           const resultVal = isPM ? cr.messages : cr.leads;
                           const costPerResult = resultVal > 0 ? cr.spend / resultVal : null;
                           return (
-                          <tr key={cr.ad_id || i} className="border-b hover:bg-white/[0.02] transition-colors" style={{ borderColor: 'rgba(100,100,120,0.1)' }}>
+                          <tr key={cr.ad_id || i} className="border-b hover:bg-black/[0.04] dark:hover:bg-white/[0.02] transition-colors" style={{ borderColor: 'rgba(100,100,120,0.1)' }}>
                             <td className="py-3 pr-4">
                               {cr.thumbnail_url ? (
                                 <img
@@ -762,10 +760,10 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
                                   alt={cr.ad_name}
                                   loading="lazy"
                                   onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden'); }}
-                                  className="w-[80px] h-[80px] rounded-xl object-cover border border-white/10"
+                                  className="w-[80px] h-[80px] rounded-xl object-cover border border-black/10 dark:border-white/10"
                                 />
                               ) : null}
-                              <div className={`w-[80px] h-[80px] rounded-xl bg-white/5 border border-white/10 flex items-center justify-center ${cr.thumbnail_url ? 'hidden' : ''}`}>
+                              <div className={`w-[80px] h-[80px] rounded-xl bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 flex items-center justify-center ${cr.thumbnail_url ? 'hidden' : ''}`}>
                                 <ImageIcon size={24} className="text-slate-600" />
                               </div>
                             </td>
@@ -778,10 +776,10 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
                             <td className="py-3 px-3 text-right">
                               <span className="text-emerald-400 font-black text-base">{fmtInt(resultVal)}</span>
                             </td>
-                            <td className="py-3 px-3 text-right text-slate-300">{fmtInt(cr.clicks)}</td>
-                            <td className="py-3 px-3 text-right text-slate-300">{fmtInt(cr.impressions)}</td>
-                            <td className="py-3 px-3 text-right text-slate-300">{fmtPct(cr.ctr)}</td>
-                            <td className="py-3 px-3 text-right text-slate-300 font-bold">{costPerResult != null ? fmtCurrency(costPerResult) : '—'}</td>
+                            <td className="py-3 px-3 text-right text-slate-600 dark:text-slate-300">{fmtInt(cr.clicks)}</td>
+                            <td className="py-3 px-3 text-right text-slate-600 dark:text-slate-300">{fmtInt(cr.impressions)}</td>
+                            <td className="py-3 px-3 text-right text-slate-600 dark:text-slate-300">{fmtPct(cr.ctr)}</td>
+                            <td className="py-3 px-3 text-right text-slate-600 dark:text-slate-300 font-bold">{costPerResult != null ? fmtCurrency(costPerResult) : '—'}</td>
                             <td className="py-3 pl-3 text-right text-violet-400 font-bold">{fmtCurrency(cr.spend)}</td>
                           </tr>
                           );

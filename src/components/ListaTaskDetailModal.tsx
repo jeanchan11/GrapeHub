@@ -276,10 +276,10 @@ export default function ListaTaskDetailModal({ task, onClose, onUpdate, onDelete
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95 }}
           transition={{ duration: 0.25 }}
-          className="w-full max-w-4xl mx-4 bg-dark-card border border-white/10 rounded-2xl shadow-2xl flex flex-col max-h-[85vh] overflow-hidden"
+          className="w-full max-w-4xl mx-4 bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl flex flex-col max-h-[85vh] overflow-hidden"
         >
           {/* ── Header ── */}
-          <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between shrink-0">
+          <div className="px-6 py-4 border-b border-black/10 dark:border-white/5 flex items-center justify-between shrink-0">
             <div className="flex-1 min-w-0">
               {editingName ? (
                 <input
@@ -288,11 +288,11 @@ export default function ListaTaskDetailModal({ task, onClose, onUpdate, onDelete
                   onChange={e => setEditNameVal(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') saveTaskName(); if (e.key === 'Escape') setEditingName(false); }}
                   onBlur={saveTaskName}
-                  className="text-lg font-bold text-white bg-transparent border-b-2 border-violet-500 outline-none w-full"
+                  className="text-lg font-bold text-dark-text bg-transparent border-b-2 border-violet-500 outline-none w-full"
                 />
               ) : (
                 <h2
-                  className="text-lg font-bold text-white truncate cursor-pointer hover:text-violet-400 transition-colors"
+                  className="text-lg font-bold text-dark-text truncate cursor-pointer hover:text-violet-400 transition-colors"
                   onClick={() => { setEditingName(true); setEditNameVal(task.client_name); }}
                 >
                   {task.client_name}
@@ -301,7 +301,7 @@ export default function ListaTaskDetailModal({ task, onClose, onUpdate, onDelete
               {Array.isArray(task.tags) && task.tags.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mt-1.5">
                   {task.tags.map(t => (
-                    <span key={t} className="px-2 py-0.5 bg-white/5 border border-white/10 rounded-full text-[9px] text-slate-400 font-bold uppercase tracking-wider">{t}</span>
+                    <span key={t} className="px-2 py-0.5 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-full text-[9px] text-slate-400 font-bold uppercase tracking-wider">{t}</span>
                   ))}
                 </div>
               )}
@@ -316,7 +316,7 @@ export default function ListaTaskDetailModal({ task, onClose, onUpdate, onDelete
               </button>
               <button
                 onClick={onClose}
-                className="p-2 text-slate-500 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                className="p-2 text-slate-500 hover:text-dark-text hover:bg-black/5 dark:hover:bg-white/10 rounded-lg transition-colors"
               >
                 <X size={16} />
               </button>
@@ -326,9 +326,9 @@ export default function ListaTaskDetailModal({ task, onClose, onUpdate, onDelete
           {/* ── Body: Two Columns ── */}
           <div className="flex flex-1 overflow-hidden">
             {/* LEFT: Description + Subtasks */}
-            <div className="flex-1 overflow-y-auto border-r border-white/5 p-6 space-y-6">
+            <div className="flex-1 overflow-y-auto border-r border-black/10 dark:border-white/5 p-6 space-y-6">
               {/* Due Date (Prazo) */}
-              <div className="flex items-center justify-between bg-dark-bg border border-white/5 rounded-xl p-3">
+              <div className="flex items-center justify-between bg-dark-bg border border-black/10 dark:border-white/5 rounded-xl p-3">
                 <div className="flex items-center gap-2">
                   <Calendar size={14} className="text-violet-500" />
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Prazo de Entrega</span>
@@ -348,7 +348,7 @@ export default function ListaTaskDetailModal({ task, onClose, onUpdate, onDelete
                       onUpdate();
                     } catch { /* silent */ }
                   }}
-                  className="bg-transparent border border-white/10 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none focus:border-violet-500/50 [color-scheme:dark]"
+                  className="bg-transparent border border-black/10 dark:border-white/10 rounded-lg px-2.5 py-1 text-xs text-dark-text focus:outline-none focus:border-violet-500/50 [color-scheme:dark]"
                 />
               </div>
 
@@ -375,12 +375,12 @@ export default function ListaTaskDetailModal({ task, onClose, onUpdate, onDelete
                       placeholder="Adicione uma descrição..."
                       rows={5}
                       autoFocus
-                      className="w-full px-4 py-3 rounded-xl bg-dark-bg border border-white/10 text-sm text-white focus:outline-none focus:border-violet-500/50 resize-none placeholder-slate-600"
+                      className="w-full px-4 py-3 rounded-xl bg-dark-bg border border-black/10 dark:border-white/10 text-sm text-dark-text focus:outline-none focus:border-violet-500/50 resize-none placeholder-slate-600"
                     />
                     <div className="flex gap-2 justify-end">
                       <button
                         onClick={() => { setEditingDesc(false); setDescription(task.description || ''); }}
-                        className="text-xs text-slate-500 hover:text-slate-300 px-3 py-1.5 rounded-lg transition-colors"
+                        className="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 px-3 py-1.5 rounded-lg transition-colors"
                       >
                         Cancelar
                       </button>
@@ -397,7 +397,7 @@ export default function ListaTaskDetailModal({ task, onClose, onUpdate, onDelete
                 ) : (
                   <div
                     onClick={() => setEditingDesc(true)}
-                    className="px-4 py-3 rounded-xl bg-dark-bg border border-white/10 text-sm text-slate-400 min-h-[60px] cursor-pointer hover:border-violet-500/30 transition-colors whitespace-pre-wrap"
+                    className="px-4 py-3 rounded-xl bg-dark-bg border border-black/10 dark:border-white/10 text-sm text-slate-400 min-h-[60px] cursor-pointer hover:border-violet-500/30 transition-colors whitespace-pre-wrap"
                   >
                     {description || 'Clique para adicionar uma descrição...'}
                   </div>
@@ -420,14 +420,14 @@ export default function ListaTaskDetailModal({ task, onClose, onUpdate, onDelete
                 ) : (
                   <div className="space-y-1">
                     {subtasks.map(sub => (
-                      <div key={sub.id} className="flex items-center gap-3 group px-3 py-2 rounded-lg hover:bg-white/5 transition-colors">
+                      <div key={sub.id} className="flex items-center gap-3 group px-3 py-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
                         <button
                           onClick={() => toggleSubtask(sub)}
                           className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
                             sub.completed ? 'bg-emerald-500 border-emerald-500' : 'border-slate-600 hover:border-violet-500'
                           }`}
                         >
-                          {sub.completed && <CheckCircle2 size={10} className="text-white" />}
+                          {sub.completed && <CheckCircle2 size={10} className="text-dark-text" />}
                         </button>
                         <span className={`text-xs flex-1 ${sub.completed ? 'text-slate-500 line-through' : 'text-dark-text'}`}>
                           {sub.title}
@@ -451,10 +451,10 @@ export default function ListaTaskDetailModal({ task, onClose, onUpdate, onDelete
                       onChange={e => setNewSubTitle(e.target.value)}
                       onKeyDown={e => { if (e.key === 'Enter') addSubtask(); if (e.key === 'Escape') setAddingSubtask(false); }}
                       placeholder="Título da subtarefa..."
-                      className="flex-1 bg-dark-bg border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-violet-500/50 placeholder-slate-600"
+                      className="flex-1 bg-dark-bg border border-black/10 dark:border-white/10 rounded-lg px-3 py-1.5 text-xs text-dark-text outline-none focus:border-violet-500/50 placeholder-slate-600"
                     />
                     <button onClick={addSubtask} className="text-violet-400 hover:text-violet-300 text-xs font-bold">Salvar</button>
-                    <button onClick={() => setAddingSubtask(false)} className="text-slate-500 hover:text-slate-300"><X size={14} /></button>
+                    <button onClick={() => setAddingSubtask(false)} className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"><X size={14} /></button>
                   </div>
                 ) : (
                   <button
@@ -468,7 +468,7 @@ export default function ListaTaskDetailModal({ task, onClose, onUpdate, onDelete
                 {/* Progress bar */}
                 {totalSubs > 0 && (
                   <div className="mt-3 px-3">
-                    <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                    <div className="h-1.5 bg-black/5 dark:bg-white/5 rounded-full overflow-hidden">
                       <div
                         className="h-full bg-emerald-500 rounded-full transition-all duration-500"
                         style={{ width: `${(completedCount / totalSubs) * 100}%` }}
@@ -481,12 +481,12 @@ export default function ListaTaskDetailModal({ task, onClose, onUpdate, onDelete
             </div>
 
             {/* RIGHT: Activity / Comments */}
-            <div className="w-80 flex flex-col bg-white/[0.01]">
-              <div className="px-4 py-4 border-b border-white/5 shrink-0">
+            <div className="w-80 flex flex-col bg-black/[0.04] dark:bg-white/[0.01]">
+              <div className="px-4 py-4 border-b border-black/10 dark:border-white/5 shrink-0">
                 <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
                   <MessageSquare size={12} className="text-violet-500" />
                   Atividade
-                  <span className="bg-white/10 px-2 py-0.5 rounded-full text-slate-400">{comments.length}</span>
+                  <span className="bg-black/5 dark:bg-white/10 px-2 py-0.5 rounded-full text-slate-400">{comments.length}</span>
                 </h4>
               </div>
 
@@ -517,7 +517,7 @@ export default function ListaTaskDetailModal({ task, onClose, onUpdate, onDelete
                             </button>
                           </div>
                           {c.text && (
-                            <p className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed bg-white/5 rounded-xl rounded-tl-sm px-3 py-2 border border-white/5">
+                            <p className="text-xs text-slate-600 dark:text-slate-300 whitespace-pre-wrap leading-relaxed bg-black/5 dark:bg-white/5 rounded-xl rounded-tl-sm px-3 py-2 border border-black/10 dark:border-white/5">
                               {c.text}
                             </p>
                           )}
@@ -529,13 +529,13 @@ export default function ListaTaskDetailModal({ task, onClose, onUpdate, onDelete
                                     <img
                                       src={f.url}
                                       alt={f.name}
-                                      className="h-24 w-auto rounded-lg object-cover border border-white/10 cursor-pointer hover:border-violet-500/50 transition-colors"
+                                      className="h-24 w-auto rounded-lg object-cover border border-black/10 dark:border-white/10 cursor-pointer hover:border-violet-500/50 transition-colors"
                                       onClick={() => setLightboxUrl(f.url)}
                                     />
                                   ) : (
-                                    <a href={f.url} download={f.name} className="flex items-center gap-1.5 px-3 py-2 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 transition-colors">
+                                    <a href={f.url} download={f.name} className="flex items-center gap-1.5 px-3 py-2 bg-black/5 dark:bg-white/5 rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 transition-colors">
                                       <FileText size={14} className="text-violet-500" />
-                                      <span className="text-[10px] text-slate-300 max-w-[100px] truncate">{f.name}</span>
+                                      <span className="text-[10px] text-slate-600 dark:text-slate-300 max-w-[100px] truncate">{f.name}</span>
                                     </a>
                                   )}
                                 </div>
@@ -550,7 +550,7 @@ export default function ListaTaskDetailModal({ task, onClose, onUpdate, onDelete
               </div>
 
               {/* New Comment */}
-              <div className="p-4 border-t border-white/5 shrink-0">
+              <div className="p-4 border-t border-black/10 dark:border-white/5 shrink-0">
                 {/* Pasted files preview */}
                 {pastedFiles.length > 0 && (
                   <div className="flex flex-wrap gap-2 mb-2">
@@ -561,7 +561,7 @@ export default function ListaTaskDetailModal({ task, onClose, onUpdate, onDelete
                             <img src={f.url} alt={f.name} className="h-16 w-auto rounded-lg object-cover border border-violet-500/30" />
                             <button
                               onClick={() => setPastedFiles(p => p.filter((_, idx) => idx !== i))}
-                              className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center text-white"
+                              className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center text-dark-text"
                             >
                               <X size={8} />
                             </button>
@@ -584,7 +584,7 @@ export default function ListaTaskDetailModal({ task, onClose, onUpdate, onDelete
                   onChange={e => setNewComment(e.target.value)}
                   onPaste={handlePaste}
                   placeholder="Escreva um comentário ou cole um print (Ctrl+V)..."
-                  className="w-full bg-dark-bg border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white placeholder-slate-600 outline-none focus:border-violet-500/50 resize-none h-20 mb-2 transition-colors"
+                  className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2.5 text-xs text-dark-text placeholder-slate-600 outline-none focus:border-violet-500/50 resize-none h-20 mb-2 transition-colors"
                   onKeyDown={e => {
                     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                       sendCommentHandler();
@@ -629,7 +629,7 @@ export default function ListaTaskDetailModal({ task, onClose, onUpdate, onDelete
             onClick={() => setLightboxUrl(null)}
           >
             <button
-              className="absolute top-4 right-4 p-2 bg-white/20 rounded-full text-white hover:bg-white/30 transition-colors"
+              className="absolute top-4 right-4 p-2 bg-black/5 dark:bg-white/20 rounded-full text-dark-text hover:bg-black/5 dark:hover:bg-white/30 transition-colors"
               onClick={() => setLightboxUrl(null)}
             >
               <X size={24} />
