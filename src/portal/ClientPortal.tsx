@@ -43,6 +43,7 @@ const NAV = [
   { key: 'resultados', label: 'Resultados', icon: BarChart3 },
   { key: 'ativas', label: 'Campanhas Ativas', icon: Activity },
   { key: 'solicitacoes', label: 'Solicitações', icon: Inbox },
+  { key: 'formularios', label: 'Formulários', icon: FileText },
   { key: 'reunioes', label: 'Reuniões', icon: MessageSquare },
   { key: 'documentos', label: 'Documentos', icon: FolderOpen },
 ] as const;
@@ -165,6 +166,7 @@ const ClientPortal: React.FC<{ session: ClientSession }> = ({ session }) => {
               {tab === 'resultados' && <Resultados />}
               {tab === 'ativas' && <Ativas data={data} />}
               {tab === 'solicitacoes' && <Solicitacoes />}
+              {tab === 'formularios' && <Formularios />}
               {tab === 'reunioes' && <Reunioes data={data} />}
               {tab === 'documentos' && <Documentos data={data} />}
             </>
@@ -636,6 +638,71 @@ const PortalSelect: React.FC<{ value: string; options: { value: string; label: s
         </div>
       )}
     </div>
+  );
+};
+
+// ── Formulários (preenchimentos — visão do cliente, sem UTM/IP) ──
+const Formularios: React.FC = () => {
+  const [loading, setLoading] = useState(true);
+  const [forms, setForms] = useState<any[]>([]);
+  const [subs, setSubs] = useState<any[]>([]);
+  const [formFilter, setFormFilter] = useState('all');
+
+  useEffect(() => {
+    setLoading(true);
+    const q = formFilter !== 'all' ? `?formId=${encodeURIComponent(formFilter)}` : '';
+    jget(`/api/portal/form-submissions${q}`).then((d: any) => { setForms(d?.forms || []); setSubs(d?.submissions || []); setLoading(false); });
+  }, [formFilter]);
+
+  const columns = React.useMemo(() => {
+    const seen = new Set<string>(); const cols: string[] = [];
+    for (const s of subs) for (const a of (s.answers || [])) if (!seen.has(a.label)) { seen.add(a.label); cols.push(a.label); }
+    return cols;
+  }, [subs]);
+  const valOf = (s: any, label: string) => s.answers?.find((a: any) => a.label === label)?.value ?? '';
+  const fmtD = (s: string) => { try { const d = new Date(s); return `${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`; } catch { return s; } };
+  const totalCount = forms.reduce((a: number, f: any) => a + (f.count || 0), 0);
+  const formOptions = [{ value: 'all', label: `Todos (${totalCount})` }, ...forms.map((f: any) => ({ value: f.form_id, label: `${f.label} (${f.count})` }))];
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
+      <div className="flex items-end justify-between gap-4 flex-wrap mb-6">
+        <div>
+          <h1 className="text-3xl font-black tracking-tight text-[color:rgb(var(--pt-rgb))]">Formulários</h1>
+          <p className="text-[color:rgb(var(--pt-rgb)_/_0.5)] mt-1">Os preenchimentos que seus formulários receberam.</p>
+        </div>
+        {forms.length > 1 && (
+          <PortalSelect value={formFilter} onChange={setFormFilter} align="right" className="w-[260px]" options={formOptions} />
+        )}
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-32"><Loader2 className="animate-spin text-[color:rgb(var(--pt-rgb)_/_0.4)]" size={30} /></div>
+      ) : subs.length === 0 ? (
+        <div className="p-6 rounded-2xl text-[color:rgb(var(--pt-rgb)_/_0.5)] text-sm" style={glass}>Nenhum preenchimento ainda.</div>
+      ) : (
+        <div className="rounded-2xl overflow-hidden" style={glass}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-[color:rgb(var(--pt-rgb)_/_0.1)]">
+                  <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-[color:rgb(var(--pt-rgb)_/_0.45)] whitespace-nowrap">Data</th>
+                  {columns.map(c => <th key={c} className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-[color:rgb(var(--pt-rgb)_/_0.45)] whitespace-nowrap">{c}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {subs.map((s: any) => (
+                  <tr key={s.id} className="border-b border-[color:rgb(var(--pt-rgb)_/_0.05)]">
+                    <td className="px-4 py-3 text-[color:rgb(var(--pt-rgb)_/_0.5)] whitespace-nowrap text-xs">{fmtD(s.submitted_at)}</td>
+                    {columns.map(c => <td key={c} className="px-4 py-3 text-[color:rgb(var(--pt-rgb)_/_0.85)] whitespace-nowrap max-w-[260px] truncate" title={String(valOf(s, c))}>{String(valOf(s, c) || '—')}</td>)}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </motion.div>
   );
 };
 

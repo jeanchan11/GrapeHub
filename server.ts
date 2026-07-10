@@ -255,6 +255,7 @@ const PUBLIC_ROUTES: Array<{ method?: string; pattern: RegExp }> = [
   { pattern: /^\/api\/lista-/ },
   { pattern: /^\/api\/meta-thumb$/, method: 'GET' }, // proxy de thumbnail do Meta (host restrito a fbcdn) — usado na rasterização do relatório PDF
   { pattern: /^\/api\/file-download$/, method: 'GET' }, // proxy de download (host restrito ao Firebase Storage; a URL já carrega o token)
+  { pattern: /^\/api\/forms\/webhook$/, method: 'POST' }, // webhook do app de formulário (autenticado por ?token=)
 ];
 
 function isPublicRoute(method: string, path: string): boolean {
@@ -2009,6 +2010,41 @@ async function startServer() {
     await pool.query(`ALTER TABLE project_tokens ADD COLUMN IF NOT EXISTS last_synced_at TIMESTAMPTZ`).catch(e => console.error('migrate last_synced_at:', e.message));
     await pool.query(`ALTER TABLE project_tokens ADD COLUMN IF NOT EXISTS last_error TEXT`).catch(e => console.error('migrate last_error:', e.message));
     await pool.query(`ALTER TABLE project_tokens ADD COLUMN IF NOT EXISTS account_name TEXT`).catch(e => console.error('migrate account_name:', e.message));
+
+    // ── Formulários (submissions vindas do app de formulário via webhook) ──────
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS form_submissions (
+        id SERIAL PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        form_id TEXT,
+        response_id TEXT,
+        submitted_at TIMESTAMPTZ,
+        answers JSONB DEFAULT '[]'::jsonb,
+        meta JSONB DEFAULT '{}'::jsonb,
+        raw JSONB,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE (project_id, form_id, response_id)
+      )
+    `).catch(e => console.error('create form_submissions:', e.message));
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_form_submissions_project ON form_submissions(project_id, submitted_at DESC)`).catch(() => {});
+    // 1 token por projeto (todos os forms do cliente usam a mesma URL de webhook)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS project_form_tokens (
+        project_id TEXT PRIMARY KEY,
+        token TEXT UNIQUE NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `).catch(e => console.error('create project_form_tokens:', e.message));
+    // Rótulo amigável por form_id (o payload só traz o id numérico)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS project_forms (
+        project_id TEXT NOT NULL,
+        form_id TEXT NOT NULL,
+        label TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        PRIMARY KEY (project_id, form_id)
+      )
+    `).catch(e => console.error('create project_forms:', e.message));
 
     // Marketing schema + meta_insights table
     await pool.query(`CREATE SCHEMA IF NOT EXISTS marketing`).catch(e => console.error('create marketing schema:', e.message));
@@ -18418,6 +18454,124 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
       // Ativas primeiro (status 1), depois por nome
       accounts.sort((a, b) => (a.status === 1 ? 0 : 1) - (b.status === 1 ? 0 : 1) || a.name.localeCompare(b.name, 'pt-BR'));
       res.json({ accounts });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ==========================================
+  // FORMULÁRIOS — webhook do app de formulário + leitura interna e no portal
+  // ==========================================
+  const FORM_META_KEYS = new Set(['ip_address', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content']);
+
+  // Webhook público (autenticado por ?token=). Aceita o formato do n8n (array/{body}) ou o body direto.
+  app.post('/api/forms/webhook', async (req: any, res) => {
+    try {
+      const token = String(req.query.token || '');
+      if (!token) return res.status(401).json({ error: 'token ausente' });
+      const proj = await pool.query(`SELECT project_id FROM project_form_tokens WHERE token = $1`, [token]);
+      if (!proj.rows[0]) return res.status(401).json({ error: 'token inválido' });
+      const projectId = proj.rows[0].project_id;
+
+      let p: any = req.body;
+      if (Array.isArray(p)) p = p[0];
+      const b = (p && typeof p === 'object' && p.body) ? p.body : p;
+      const formId = (b?.form_id ?? '') === '' ? null : String(b.form_id);
+      const responseId = (b?.response_id ?? '') === '' ? null : String(b.response_id);
+      const submittedAt = b?.submitted_at || new Date().toISOString();
+      const data = (b && typeof b.data === 'object' && b.data) ? b.data : {};
+
+      const answers: { label: string; value: any }[] = [];
+      const meta: Record<string, any> = {};
+      for (const [k, v] of Object.entries(data)) {
+        if (FORM_META_KEYS.has(k)) meta[k] = v;
+        else answers.push({ label: k, value: v });
+      }
+
+      await pool.query(
+        `INSERT INTO form_submissions (project_id, form_id, response_id, submitted_at, answers, meta, raw)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
+         ON CONFLICT (project_id, form_id, response_id) DO UPDATE SET
+           submitted_at=EXCLUDED.submitted_at, answers=EXCLUDED.answers, meta=EXCLUDED.meta, raw=EXCLUDED.raw`,
+        [projectId, formId, responseId, submittedAt, JSON.stringify(answers), JSON.stringify(meta), JSON.stringify(req.body)]
+      );
+      if (formId) {
+        await pool.query(`INSERT INTO project_forms (project_id, form_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [projectId, formId]).catch(() => {});
+      }
+      res.json({ ok: true });
+    } catch (e: any) {
+      console.error('[forms-webhook]', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Token do webhook do projeto (cria na primeira leitura)
+  app.get('/api/projects/:projectId/form-token', async (req: any, res) => {
+    try {
+      const { projectId } = req.params;
+      let r = await pool.query(`SELECT token FROM project_form_tokens WHERE project_id=$1`, [projectId]);
+      if (!r.rows[0]) {
+        const token = crypto.randomBytes(24).toString('hex');
+        r = await pool.query(
+          `INSERT INTO project_form_tokens (project_id, token) VALUES ($1,$2)
+           ON CONFLICT (project_id) DO UPDATE SET token=project_form_tokens.token RETURNING token`,
+          [projectId, token]
+        );
+      }
+      res.json({ token: r.rows[0].token });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+  app.post('/api/projects/:projectId/form-token/regenerate', async (req: any, res) => {
+    try {
+      const { projectId } = req.params;
+      const token = crypto.randomBytes(24).toString('hex');
+      await pool.query(`INSERT INTO project_form_tokens (project_id, token) VALUES ($1,$2) ON CONFLICT (project_id) DO UPDATE SET token=EXCLUDED.token`, [projectId, token]);
+      res.json({ token });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  const formsListQuery = `
+    SELECT pf.form_id, COALESCE(NULLIF(pf.label,''), 'Formulário ' || pf.form_id) AS label,
+           (SELECT COUNT(*) FROM form_submissions s WHERE s.project_id=pf.project_id AND s.form_id=pf.form_id)::int AS count
+    FROM project_forms pf WHERE pf.project_id=$1 ORDER BY pf.created_at`;
+
+  // Interno (equipe): completo, com UTM/IP
+  app.get('/api/projects/:projectId/form-submissions', async (req: any, res) => {
+    try {
+      const { projectId } = req.params;
+      const forms = (await pool.query(formsListQuery, [projectId])).rows;
+      const formId = req.query.formId ? String(req.query.formId) : null;
+      const subs = (await pool.query(
+        `SELECT id, form_id, response_id, submitted_at, answers, meta FROM form_submissions
+         WHERE project_id=$1 ${formId ? 'AND form_id=$2' : ''} ORDER BY submitted_at DESC NULLS LAST LIMIT 500`,
+        formId ? [projectId, formId] : [projectId]
+      )).rows;
+      res.json({ forms, submissions: subs });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+  app.patch('/api/projects/:projectId/forms/:formId', async (req: any, res) => {
+    try {
+      const { projectId, formId } = req.params;
+      const { label } = req.body;
+      await pool.query(
+        `INSERT INTO project_forms (project_id, form_id, label) VALUES ($1,$2,$3)
+         ON CONFLICT (project_id, form_id) DO UPDATE SET label=EXCLUDED.label`,
+        [projectId, formId, label || null]
+      );
+      res.json({ ok: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Portal (cliente): só respostas, sem UTM/IP
+  app.get('/api/portal/form-submissions', requirePortalClient, async (req: any, res) => {
+    try {
+      const projectId = req.portalProjectId;
+      const forms = (await pool.query(formsListQuery, [projectId])).rows;
+      const formId = req.query.formId ? String(req.query.formId) : null;
+      const subs = (await pool.query(
+        `SELECT id, form_id, submitted_at, answers FROM form_submissions
+         WHERE project_id=$1 ${formId ? 'AND form_id=$2' : ''} ORDER BY submitted_at DESC NULLS LAST LIMIT 500`,
+        formId ? [projectId, formId] : [projectId]
+      )).rows;
+      res.json({ forms, submissions: subs });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 

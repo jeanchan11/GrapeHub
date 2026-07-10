@@ -31,6 +31,7 @@ import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSo
 import { CSS } from '@dnd-kit/utilities';
 import PortalAccessTab from './portal_admin/PortalAccessTab';
 import SolicitacoesTab from '../components/SolicitacoesTab';
+import FormulariosTab from '../components/FormulariosTab';
 import RichTextEditor from '../components/RichTextEditor';
 import MediaLightbox, { LbFile } from '../components/MediaLightbox';
 
@@ -708,7 +709,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
   const [pageModalProjectId, setPageModalProjectId] = useState<string | null>(null);
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const [activeProductTab, setActiveProductTab] = useState<'resultado' | 'kpis'>('resultado');
-  const [activeProjectTab, setActiveProjectTab] = useState<'resultado' | 'reunioes' | 'arquivos' | 'comentarios' | 'solicitacoes' | 'analise' | 'nps' | 'tokens' | 'churn' | 'acesso'>('resultado');
+  const [activeProjectTab, setActiveProjectTab] = useState<'resultado' | 'reunioes' | 'arquivos' | 'comentarios' | 'solicitacoes' | 'formularios' | 'analise' | 'nps' | 'tokens' | 'churn' | 'acesso'>('resultado');
   // Só gestão gerencia o acesso do cliente ao portal.
   const canManagePortalAccess = ['superadmin', 'gerente-operacional', 'diretor-operacional'].includes((userData?.role || '').toLowerCase());
   const [npsResponses, setNpsResponses] = useState<any[]>([]);
@@ -4500,7 +4501,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
         <div className="flex flex-col min-h-[750px]">
           {/* Tabs */}
           <div className="flex items-center gap-7 mb-6 border-b modal-divider shrink-0">
-            {([...(['resultado', 'reunioes', 'comentarios', 'solicitacoes', 'analise', 'arquivos', 'nps', 'tokens', 'churn'] as const), ...(canManagePortalAccess ? ['acesso'] as const : [])] as const).map((tab) => (
+            {([...(['resultado', 'reunioes', 'comentarios', 'solicitacoes', 'formularios', 'analise', 'arquivos', 'nps', 'tokens', 'churn'] as const), ...(canManagePortalAccess ? ['acesso'] as const : [])] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveProjectTab(tab as any)}
@@ -4510,7 +4511,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     : 'text-slate-500 hover:text-gray-900 dark:hover:text-white'
                 }`}
               >
-                {tab === 'resultado' ? 'Resumo' : tab === 'reunioes' ? 'Reuniões' : tab === 'arquivos' ? 'Arquivos' : tab === 'comentarios' ? 'Comentários' : tab === 'solicitacoes' ? 'Solicitações' : tab === 'nps' ? 'NPS' : tab === 'tokens' ? 'Tokens' : tab === 'churn' ? 'Risco de Churn' : tab === 'acesso' ? 'Portal' : 'Análise de Leads'}
+                {tab === 'resultado' ? 'Resumo' : tab === 'reunioes' ? 'Reuniões' : tab === 'arquivos' ? 'Arquivos' : tab === 'comentarios' ? 'Comentários' : tab === 'solicitacoes' ? 'Solicitações' : tab === 'formularios' ? 'Formulários' : tab === 'nps' ? 'NPS' : tab === 'tokens' ? 'Tokens' : tab === 'churn' ? 'Risco de Churn' : tab === 'acesso' ? 'Portal' : 'Análise de Leads'}
                 {activeProjectTab === tab && (
                   <motion.div
                     layoutId="project-tab-indicator"
@@ -5582,6 +5583,10 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
 
                 {activeProjectTab === 'solicitacoes' && (
                   <SolicitacoesTab projectId={selectedProject.id} authorName={userData?.name} />
+                )}
+
+                {activeProjectTab === 'formularios' && (
+                  <FormulariosTab projectId={selectedProject.id} />
                 )}
 
                 {activeProjectTab === 'acesso' && (
