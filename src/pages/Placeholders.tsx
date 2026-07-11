@@ -3,6 +3,7 @@ import { Bell, Settings, Shield, User, Palette, Globe, Lock, HelpCircle, Mail, M
 import { useAuth } from '../contexts/AuthContext';
 import { useSoftphone } from '../hooks/useSoftphone';
 import SplitHeadline from '../components/SplitHeadline';
+import { toast } from '@/src/lib/toast';
 
 const PageHeader = ({ title, icon: Icon, description }: { title: string, icon: any, description: string }) => {
   const words = title.split(' ');
@@ -182,7 +183,7 @@ export const SettingsPage = ({ onPageChange, isSuperAdmin }: { onPageChange?: (p
         setTimeout(() => setSettingsSaved(false), 3000);
       }
     } catch {
-      alert('Erro ao salvar configurações.');
+      toast.error('Erro ao salvar configurações.');
     } finally {
       setSavingSettings(false);
     }

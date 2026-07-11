@@ -14,6 +14,8 @@ import { Modal } from '../components/ui/Modal';
 import { designSystem } from '../design-system';
 import OptionPicker from '../components/ui/OptionPicker';
 import TaskDetailModal from '../components/TaskDetailModal';
+import { toast } from '@/src/lib/toast';
+import { confirmDialog } from '@/src/lib/confirm';
 
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent, DragOverEvent, DragOverlay, useDroppable, defaultDropAnimationSideEffects, DragStartEvent } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
@@ -568,7 +570,7 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
       } else {
         const errText = await r.text();
         console.error('[TodoPage] handleAddSection failed:', r.status, errText);
-        alert(`Erro ao criar seção: ${errText}`);
+        toast.error(`Erro ao criar seção: ${errText}`);
       }
     } catch (e) {
       console.error('[TodoPage] handleAddSection error:', e);
@@ -657,7 +659,7 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
 
   
   const handleDeleteTask = async (taskId: string) => {
-    if (!window.confirm("Deseja realmente excluir esta tarefa?")) return;
+    if (!(await confirmDialog({ message: "Deseja realmente excluir esta tarefa?", danger: true }))) return;
     try {
       await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
       setTasks(prev => prev.filter(t => t.id !== taskId));
@@ -668,7 +670,7 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
   };
 
   const handleDeleteSection = async (section: TodoSection) => {
-    if (!window.confirm(`Deletar seção "${section.name}"? As tarefas serão mantidas sem seção.`)) return;
+    if (!(await confirmDialog({ message: `Deletar seção "${section.name}"? As tarefas serão mantidas sem seção.`, danger: true }))) return;
     try {
       await fetch(`/api/todo-sections/${section.id}`, { method: 'DELETE' });
       setSectionsMap(prev => ({

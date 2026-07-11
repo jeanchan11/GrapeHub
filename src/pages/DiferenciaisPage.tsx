@@ -5,6 +5,7 @@ import RichTextEditor from '../components/RichTextEditor';
 import SplitHeadline from '../components/SplitHeadline';
 import { useAuth } from '../contexts/AuthContext';
 import LoadingSpinner from '../components/LoadingSpinner';
+import { confirmDialog } from '@/src/lib/confirm';
 
 interface Session {
   id: string;
@@ -115,7 +116,7 @@ export default function DiferenciaisPage({ activePage, pageLabel }: { activePage
   };
 
   const deleteSession = async (id: string) => {
-    if (!confirm('Excluir este registro?')) return;
+    if (!(await confirmDialog({ message: 'Excluir este registro?', danger: true }))) return;
     await fetch(`/api/meeting-notes/${id}`, { method: 'DELETE' });
     setSessions(prev => prev.filter(s => s.id !== id));
     if (expandedId === id) setExpandedId(null);
@@ -418,7 +419,7 @@ function SessionCard({ session, expanded, onToggle, onDelete, onUpdate, currentU
   };
 
   const deleteComment = async (commentId: number) => {
-    if (!confirm('Excluir este comentário?')) return;
+    if (!(await confirmDialog({ message: 'Excluir este comentário?', danger: true }))) return;
     try {
       const r = await fetch(`/api/meeting-notes/${session.id}/comments/${commentId}`, { method: 'DELETE' });
       if (r.ok) {

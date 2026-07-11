@@ -17,6 +17,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Save, Loader2 } from 'lucide-react';
+import { toast } from '@/src/lib/toast';
 
 interface Collaborator {
   id: number;
@@ -149,7 +150,7 @@ export default function Organograma({ collaborators, settings = [] }: { collabor
       });
     } catch (e) {
       console.error(e);
-      alert('Erro ao salvar organograma');
+      toast.error('Erro ao salvar organograma');
     } finally {
       setSaving(false);
     }

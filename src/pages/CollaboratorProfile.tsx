@@ -4,6 +4,7 @@ import { ChevronLeft, Save, Copy, Check, Info, Target, TrendingUp, BrainCircuit,
 import LoadingSpinner from '../components/LoadingSpinner';
 import { useAuth } from '../contexts/AuthContext';
 import SplitHeadline from '../components/SplitHeadline';
+import { toast } from '@/src/lib/toast';
 
 import PdiTab from './collaborator_tabs/PdiTab';
 import FeedbacksTab from './collaborator_tabs/FeedbacksTab';
@@ -98,7 +99,7 @@ export default function CollaboratorProfile({ id, fromMinhaEquipe = false }: { i
   };
 
   const handleSave = async () => {
-    if (!formData.name) return alert('Nome é obrigatório');
+    if (!formData.name) return toast.error('Nome é obrigatório');
     try {
       const res = await fetch(`/api/collaborators/${id}`, {
         method: 'PUT',

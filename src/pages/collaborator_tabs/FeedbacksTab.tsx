@@ -3,6 +3,7 @@ import { Star, MessageSquare, Send, Hand, X, Check, Clock, ThumbsUp, Wrench } fr
 import LoadingSpinner from '../../components/LoadingSpinner';
 import SplitHeadline from '../../components/SplitHeadline';
 import { useAuth } from '../../contexts/AuthContext';
+import { toast } from '@/src/lib/toast';
 
 interface Feedback {
   id: number;
@@ -96,7 +97,7 @@ export default function FeedbacksTab({ collaboratorId, isAdmin, isSelf }: Feedba
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!userData?.email) return alert('Usuário não autenticado.');
+    if (!userData?.email) return toast.error('Usuário não autenticado.');
 
     // Resolve the sender (logged-in user) collaborator ID via API
     let senderId: string;
@@ -104,29 +105,29 @@ export default function FeedbacksTab({ collaboratorId, isAdmin, isSelf }: Feedba
       const senderRes = await fetch(`/api/collaborators/by-email/${encodeURIComponent(userData.email)}`);
       if (!senderRes.ok) {
         const err = await senderRes.json();
-        return alert('Seu usuário não possui um perfil de colaborador vinculado: ' + (err.error || 'Erro desconhecido'));
+        return toast.error('Seu usuário não possui um perfil de colaborador vinculado: ' + (err.error || 'Erro desconhecido'));
       }
       const senderData = await senderRes.json();
       senderId = String(senderData.id);
     } catch (e) {
-      return alert('Erro ao identificar seu perfil de colaborador.');
+      return toast.error('Erro ao identificar seu perfil de colaborador.');
     }
 
     const recipientId = collaboratorId;
 
     try {
       if (modalType === 'dar') {
-        if (formData.nota === 0) return alert('Dê uma nota em estrelas.');
+        if (formData.nota === 0) return toast.error('Dê uma nota em estrelas.');
 
         if (formData.tipo === 'Construtivo') {
           if (!formData.data_ajuste) {
-            return alert('Por favor, informe a data para verificação do ajuste.');
+            return toast.error('Por favor, informe a data para verificação do ajuste.');
           }
           const selectedDate = new Date(formData.data_ajuste + 'T00:00:00');
           const today = new Date();
           today.setHours(0, 0, 0, 0);
           if (selectedDate < today) {
-            return alert('A data de verificação do ajuste não pode ser no passado.');
+            return toast.error('A data de verificação do ajuste não pode ser no passado.');
           }
         }
 
@@ -143,7 +144,7 @@ export default function FeedbacksTab({ collaboratorId, isAdmin, isSelf }: Feedba
         });
         if (!res.ok) {
           const err = await res.json();
-          return alert('Erro ao salvar feedback: ' + (err.error || 'Erro desconhecido'));
+          return toast.error('Erro ao salvar feedback: ' + (err.error || 'Erro desconhecido'));
         }
         setModalType(null);
         fetchData();
@@ -155,7 +156,7 @@ export default function FeedbacksTab({ collaboratorId, isAdmin, isSelf }: Feedba
         });
         if (!res.ok) {
           const err = await res.json();
-          return alert('Erro ao enviar solicitação: ' + (err.error || 'Erro desconhecido'));
+          return toast.error('Erro ao enviar solicitação: ' + (err.error || 'Erro desconhecido'));
         }
         setModalType(null);
         fetchData();

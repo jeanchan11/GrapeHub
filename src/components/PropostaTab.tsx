@@ -1,6 +1,7 @@
 import React, { useState, useRef, useLayoutEffect } from 'react';
 import { Presentation, Download, Loader2, User } from 'lucide-react';
 import PropostaDocument, { exportPropostaPdf, PropostaData } from './PropostaDocument';
+import { toast } from '@/src/lib/toast';
 
 const PropostaTab: React.FC<{ lead: any }> = ({ lead }) => {
   const [clientName, setClientName] = useState(lead?.nome || '');
@@ -30,7 +31,7 @@ const PropostaTab: React.FC<{ lead: any }> = ({ lead }) => {
       await exportPropostaPdf(docRef.current, `Proposta_Grape_Midia_${safe}.pdf`);
     } catch (e) {
       console.error('[proposta] falha ao gerar PDF', e);
-      alert('Falha ao gerar o PDF. Tente novamente.');
+      toast.error('Falha ao gerar o PDF. Tente novamente.');
     } finally {
       setExporting(false);
     }

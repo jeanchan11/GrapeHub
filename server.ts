@@ -1542,6 +1542,9 @@ async function startServer() {
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS nicho TEXT`);
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS tempo_oab TEXT`);
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS faturamento TEXT`);
+    // Cross-funil: uma coluna pode aparecer em outros kanbans (ex: "Reunião Marcada" no Pré-vendas e no Comercial)
+    await pool.query(`ALTER TABLE crm_comercial_columns ADD COLUMN IF NOT EXISTS cross_funnel BOOLEAN DEFAULT false`).catch(() => {});
+    await pool.query(`ALTER TABLE crm_comercial_columns ADD COLUMN IF NOT EXISTS shared_kanban_ids JSONB DEFAULT '[]'::jsonb`).catch(() => {});
     
     // Novas colunas (Editáveis text)
     await pool.query(`ALTER TABLE crm_comercial_leads ADD COLUMN IF NOT EXISTS reunion_date TEXT`);
@@ -8981,8 +8984,18 @@ app.get("/api/todos", async (req, res) => {
       if (!kanban_id) {
         return res.status(400).json({ error: "kanban_id is required" });
       }
-      const result = await pool.query("SELECT * FROM crm_comercial_columns WHERE kanban_id = $1 ORDER BY order_index ASC", [kanban_id]);
-      res.json(result.rows);
+      // Inclui colunas do próprio kanban + colunas cross-funil compartilhadas com ele.
+      const result = await pool.query(
+        `SELECT * FROM crm_comercial_columns
+         WHERE kanban_id = $1 OR (cross_funnel = true AND shared_kanban_ids @> to_jsonb($1::text))
+         ORDER BY order_index ASC`,
+        [kanban_id]
+      );
+      // Colunas "convidadas" (de outro kanban) entram como PRIMEIRA no board.
+      const rows = result.rows
+        .map((c: any) => ({ ...c, order_index: String(c.kanban_id) === String(kanban_id) ? c.order_index : -1 }))
+        .sort((a: any, b: any) => a.order_index - b.order_index);
+      res.json(rows);
     } catch (err) {
       console.error("Error fetching columns:", err);
       res.status(500).json({ error: "Failed to fetch columns" });
@@ -9038,11 +9051,16 @@ app.get("/api/todos", async (req, res) => {
   app.patch("/api/crm-comercial/columns/:id", async (req, res) => {
     try {
       const { id } = req.params;
-      const { title, color, icon, max_days } = req.body;
-      
+      const { title, color, icon, max_days, cross_funnel, shared_kanban_ids } = req.body;
+
       const result = await pool.query(
-        "UPDATE crm_comercial_columns SET title = $1, color = $2, icon = $3, max_days = $4 WHERE id = $5 RETURNING *",
-        [title, color, icon || 'LayoutGrid', max_days || null, id]
+        `UPDATE crm_comercial_columns SET title = $1, color = $2, icon = $3, max_days = $4,
+           cross_funnel = COALESCE($6, cross_funnel),
+           shared_kanban_ids = COALESCE($7::jsonb, shared_kanban_ids)
+         WHERE id = $5 RETURNING *`,
+        [title, color, icon || 'LayoutGrid', max_days || null, id,
+         cross_funnel === undefined ? null : cross_funnel,
+         shared_kanban_ids === undefined ? null : JSON.stringify(shared_kanban_ids)]
       );
       if (result.rows.length === 0) {
         return res.status(404).json({ error: "Column not found" });
@@ -10580,7 +10598,11 @@ app.get("/api/todos", async (req, res) => {
       let paramIdx = 1;
       
       if (kanban_id) {
-        query += ` AND kanban_id = $${paramIdx}`;
+        // Leads do kanban + leads que estão numa coluna cross-funil compartilhada com este kanban.
+        query += ` AND (kanban_id = $${paramIdx} OR coluna IN (
+          SELECT id::text FROM crm_comercial_columns
+          WHERE cross_funnel = true AND shared_kanban_ids @> to_jsonb($${paramIdx}::text)
+        ))`;
         params.push(kanban_id);
         paramIdx++;
       }
@@ -10772,7 +10794,7 @@ app.get("/api/todos", async (req, res) => {
     try {
       const { id } = req.params;
       const { 
-        coluna, valor, responsavel_id, moved_by, kanban_id, previsao, prob_fechamento, lead_score, tags, origem, instagram, nicho, tempo_oab, faturamento,
+        coluna, valor, responsavel_id, moved_by, moved_by_id, kanban_id, previsao, prob_fechamento, lead_score, tags, origem, instagram, nicho, tempo_oab, faturamento,
         reunion_date, office_location, monthly_closings, closing_goal, reunion_link,
         utm_platform, utm_campaign, utm_set, utm_creative, utm_position,
         nome, telefone, email, observacoes,
@@ -10820,6 +10842,24 @@ app.get("/api/todos", async (req, res) => {
         params.push(coluna);
         if (coluna !== currentColuna) {
           updates.push(`etapa_updated_at = NOW()`);
+          // Cross-funil: o kanban do lead segue o kanban DONO da coluna de destino.
+          // Ao puxar de uma coluna compartilhada (ex: "Reunião Marcada") pra uma etapa
+          // de outro funil, o lead migra de funil e quem moveu vira responsável.
+          const colHome = await pool.query("SELECT kanban_id FROM crm_comercial_columns WHERE id::text = $1", [String(coluna)]);
+          const targetKanban = colHome.rows[0]?.kanban_id;
+          const currentKanban = currentResult.rows[0].kanban_id;
+          if (targetKanban && String(targetKanban) !== String(currentKanban)) {
+            updates.push(`kanban_id = $${paramIdx++}`);
+            params.push(targetKanban);
+            if (moved_by_id) {
+              updates.push(`responsavel_id = $${paramIdx++}`);
+              params.push(moved_by_id);
+            }
+            await pool.query(
+              `INSERT INTO crm_comercial_history (lead_id, from_coluna, to_coluna, moved_by) VALUES ($1, $2, $3, $4)`,
+              [id, currentColuna, coluna, moved_by || 'Sistema']
+            ).catch(() => {});
+          }
         }
       }
       if (valor !== undefined) {

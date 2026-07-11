@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, CheckCircle2, Image as ImageIcon, X, RefreshCw, Send, Bot } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../contexts/AuthContext';
+import { toast } from '@/src/lib/toast';
 
 export const COMMENT_TYPES = [
   { id: 'Observação', label: 'Observação', color: 'bg-slate-500' },
@@ -104,7 +105,7 @@ const CrmCommentHistory: React.FC<CrmCommentHistoryProps> = ({ clientId }) => {
 
       // Don't save if no text and all images failed to read
       if (!newComment.trim() && imageDataUrls.length === 0) {
-        alert('Não foi possível carregar as imagens. Tente novamente.');
+        toast.error('Não foi possível carregar as imagens. Tente novamente.');
         return;
       }
 
@@ -128,11 +129,11 @@ const CrmCommentHistory: React.FC<CrmCommentHistoryProps> = ({ clientId }) => {
       } else {
         const errData = await res.json().catch(() => ({}));
         console.error('Erro ao salvar nota:', errData);
-        alert('Erro ao salvar nota: ' + (errData.error || res.status));
+        toast.error('Erro ao salvar nota: ' + (errData.error || res.status));
       }
     } catch (err) {
       console.error("Error adding comment:", err);
-      alert('Erro inesperado ao salvar nota. Verifique o console.');
+      toast.error('Erro inesperado ao salvar nota. Verifique o console.');
     } finally {
       setIsSubmittingComment(false);
     }

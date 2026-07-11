@@ -4,6 +4,7 @@ import { Plus, CheckCircle2, X, Copy, Trash2, Loader2, KeyRound, Edit2 } from 'l
 import { Modal } from '../components/ui/Modal';
 import SplitHeadline from '../components/SplitHeadline';
 import { useAuth } from '../contexts/AuthContext';
+import { confirmDialog } from '@/src/lib/confirm';
 
 interface PasswordItem {
   id: string;
@@ -103,7 +104,7 @@ const SenhasPage: React.FC<{ activePage: string }> = ({ activePage }) => {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Deseja realmente excluir esta senha?')) return;
+    if (!(await confirmDialog({ message: 'Deseja realmente excluir esta senha?', danger: true }))) return;
     try {
       const res = await fetch(`/api/passwords/${id}`, { method: 'DELETE' });
       if (res.ok) {

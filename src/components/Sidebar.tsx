@@ -16,6 +16,7 @@ import {
   MoreHorizontal, Shield, Loader2, Check
 } from 'lucide-react';
 import Cropper from 'react-easy-crop';
+import { toast } from '@/src/lib/toast';
 
 // ─── Page Permissions Modal ───────────────────────────────────────────────────
 
@@ -408,11 +409,11 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
         // Force reload to apply changes quickly
         window.location.reload();
       } else {
-        alert('Erro ao salvar perfil.');
+        toast.error('Erro ao salvar perfil.');
       }
     } catch (error) {
       console.error(error);
-      alert('Erro ao salvar perfil.');
+      toast.error('Erro ao salvar perfil.');
     } finally {
       setIsSavingProfile(false);
     }

@@ -12,6 +12,8 @@ import {
   LayoutGrid, Layers, Eye, EyeOff, Circle, UserPlus
 } from 'lucide-react';
 import LoadingSpinner from '../components/LoadingSpinner';
+import { toast } from '@/src/lib/toast';
+import { confirmDialog } from '@/src/lib/confirm';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -756,7 +758,7 @@ const Automacoes: React.FC = () => {
   };
 
   const handleSave = async (a: Partial<Automation>) => {
-    if (!a.name?.trim()) { alert('Dê um nome à automação.'); return; }
+    if (!a.name?.trim()) { toast.error('Dê um nome à automação.'); return; }
     setSaving(true);
     try {
       const payload = { name: a.name, description: a.description || '', steps: a.steps || [] };
@@ -770,14 +772,14 @@ const Automacoes: React.FC = () => {
       setView('list');
       setTab('minhas');
     } catch (e) {
-      alert('Erro ao salvar automação. Tente novamente.');
+      toast.error('Erro ao salvar automação. Tente novamente.');
     } finally {
       setSaving(false);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Excluir esta automação?')) return;
+    if (!(await confirmDialog({ message: 'Excluir esta automação?', danger: true }))) return;
     await fetch(`/api/automations/${id}`, { method: 'DELETE' });
     setAutomations(prev => prev.filter(a => a.id !== id));
   };

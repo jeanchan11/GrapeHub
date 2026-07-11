@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import OptionPicker from '../components/ui/OptionPicker';
+import DateRangePicker from '../components/ui/DateRangePicker';
 import SplitHeadline from '../components/SplitHeadline';
 import { 
   Phone, PhoneIncoming, PhoneMissed, Clock, 
@@ -534,10 +535,8 @@ export default function CrmLigacoes() {
                   {/* Top Tool Bar */}
                   <div className="p-4 flex flex-col md:flex-row items-center justify-between border-b border-white/10 gap-4">
                      <div className="flex items-center gap-2">
-                        <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)} className="text-sm bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-blue-500/20 outline-none" />
-                        <span className="text-slate-400 text-sm">até</span>
-                        <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} className="text-sm bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-blue-500/20 outline-none" />
-                        
+                        <DateRangePicker range={{ start: customStart, end: customEnd }} onChange={r => { setCustomStart(r.start); setCustomEnd(r.end); }} align="left" placeholder="Selecionar período" />
+
                         <button onClick={handleApplyCustomDates} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ml-2 shadow-sm">Aplicar</button>
                         <button onClick={handleClearCustomDates} className="border border-slate-200 dark:border-white/10 hover:bg-slate-50 dark:hover:bg-white/5 text-slate-600 dark:text-slate-300 px-4 py-1.5 rounded-lg text-sm font-medium transition-colors">Limpar</button>
                      </div>

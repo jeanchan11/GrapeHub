@@ -34,6 +34,7 @@ import { useMenu } from '../context/MenuContext';
 import { DndContext, closestCenter, rectIntersection, closestCorners, KeyboardSensor, PointerSensor, useSensor, useSensors, useDndContext, useDroppable } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { toast } from '@/src/lib/toast';
 
 const availableIcons = [
   // ── Custom ──────────────────────────────────────────────────────
@@ -841,7 +842,7 @@ export const PageManager: React.FC = () => {
 
   const handleCreatePage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!pageData.id || !pageData.label || (!pageData.subsubsession_id && !pageData.subsession_id && !pageData.section_id)) return alert('Preencha todos os campos obrigatórios.');
+    if (!pageData.id || !pageData.label || (!pageData.subsubsession_id && !pageData.subsession_id && !pageData.section_id)) return toast.error('Preencha todos os campos obrigatórios.');
     setIsAdding(true);
     try {
       const payload = {
@@ -852,53 +853,53 @@ export const PageManager: React.FC = () => {
       };
       const res = await fetch('/api/menu/pages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       if (res.ok) {
-        alert('Página criada com sucesso!');
+        toast.success('Página criada com sucesso!');
         await refreshMenu();
         setPageData({ id: '', label: '', icon: 'FileText', icon_color: '#64748b', template: 'blank', subsubsession_id: '', subsession_id: '', section_id: '' });
-      } else alert('Erro ao criar página.');
-    } catch (err) { console.error(err); alert('Erro ao criar página.'); } finally { setIsAdding(false); }
+      } else toast.error('Erro ao criar página.');
+    } catch (err) { console.error(err); toast.error('Erro ao criar página.'); } finally { setIsAdding(false); }
   };
 
   const handleCreateSection = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!sectionData.id || !sectionData.title) return alert('Preencha todos os campos obrigatórios.');
+    if (!sectionData.id || !sectionData.title) return toast.error('Preencha todos os campos obrigatórios.');
     setIsAdding(true);
     try {
       const res = await fetch('/api/menu/sections', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sectionData) });
       if (res.ok) {
-        alert('Seção criada com sucesso!');
+        toast.success('Seção criada com sucesso!');
         await refreshMenu();
         setSectionData({ id: '', title: '', icon: 'Folder', icon_color: '#64748b' });
-      } else alert('Erro ao criar seção.');
-    } catch (err) { console.error(err); alert('Erro ao criar seção.'); } finally { setIsAdding(false); }
+      } else toast.error('Erro ao criar seção.');
+    } catch (err) { console.error(err); toast.error('Erro ao criar seção.'); } finally { setIsAdding(false); }
   };
 
   const handleCreateSub = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!subData.id || !subData.label || !subData.section_id) return alert('Preencha todos os campos obrigatórios.');
+    if (!subData.id || !subData.label || !subData.section_id) return toast.error('Preencha todos os campos obrigatórios.');
     setIsAdding(true);
     try {
       const res = await fetch('/api/menu/subsessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(subData) });
       if (res.ok) {
-        alert('Sub-seção criada com sucesso!');
+        toast.success('Sub-seção criada com sucesso!');
         await refreshMenu();
         setSubData({ id: '', section_id: '', label: '', icon: 'Folder', icon_color: '#64748b' });
-      } else alert('Erro ao criar sub-seção.');
-    } catch (err) { console.error(err); alert('Erro ao criar sub-seção.'); } finally { setIsAdding(false); }
+      } else toast.error('Erro ao criar sub-seção.');
+    } catch (err) { console.error(err); toast.error('Erro ao criar sub-seção.'); } finally { setIsAdding(false); }
   };
 
   const handleCreateSubsub = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!subsubData.id || !subsubData.label || (!subsubData.subsession_id && !subsubData.section_id)) return alert('Preencha todos os campos obrigatórios.');
+    if (!subsubData.id || !subsubData.label || (!subsubData.subsession_id && !subsubData.section_id)) return toast.error('Preencha todos os campos obrigatórios.');
     setIsAdding(true);
     try {
       const res = await fetch('/api/menu/subsubsessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(subsubData) });
       if (res.ok) {
-        alert('Sub-sub-seção criada com sucesso!');
+        toast.success('Sub-sub-seção criada com sucesso!');
         await refreshMenu();
         setSubsubData({ id: '', subsession_id: '', section_id: '', label: '', icon: 'FolderOpen', icon_color: '#64748b' });
-      } else alert('Erro ao criar sub-sub-seção.');
-    } catch (err) { console.error(err); alert('Erro ao criar sub-sub-seção.'); } finally { setIsAdding(false); }
+      } else toast.error('Erro ao criar sub-sub-seção.');
+    } catch (err) { console.error(err); toast.error('Erro ao criar sub-sub-seção.'); } finally { setIsAdding(false); }
   };
 
   const [editingPage, setEditingPage] = useState<string | null>(null);
@@ -928,7 +929,7 @@ export const PageManager: React.FC = () => {
   };
 
   const handleSaveEditPage = async () => {
-    if (!editPageData.label || (!editPageData.subsubsession_id && !editPageData.subsession_id && !editPageData.section_id)) return alert('Preencha os campos obrigatórios.');
+    if (!editPageData.label || (!editPageData.subsubsession_id && !editPageData.subsession_id && !editPageData.section_id)) return toast.error('Preencha os campos obrigatórios.');
     
     // Ensure foreign key integrity
     const payload = {
@@ -951,15 +952,15 @@ export const PageManager: React.FC = () => {
       });
       console.log('Save response status:', res.status);
       if (res.ok) {
-        alert('Página atualizada!');
+        toast.success('Página atualizada!');
         await refreshMenu();
         setEditingPage(null);
       } else {
         const errorText = await res.text();
         console.error('Save error:', errorText);
-        alert(`Erro ao atualizar página: ${errorText}`);
+        toast.error(`Erro ao atualizar página: ${errorText}`);
       }
-    } catch (err) { console.error(err); alert('Erro ao atualizar página.'); }
+    } catch (err) { console.error(err); toast.error('Erro ao atualizar página.'); }
   };
 
   const handleDeletePage = async (id: string) => {
@@ -971,9 +972,9 @@ export const PageManager: React.FC = () => {
         } else {
           const errorText = await res.text();
           console.error('Delete error:', errorText);
-          alert(`Erro ao excluir página: ${errorText}`);
+          toast.error(`Erro ao excluir página: ${errorText}`);
         }
-      } catch (err) { console.error('Delete exception:', err); alert('Erro ao excluir página.'); }
+      } catch (err) { console.error('Delete exception:', err); toast.error('Erro ao excluir página.'); }
     });
   };
 
@@ -983,7 +984,7 @@ export const PageManager: React.FC = () => {
   };
 
   const handleSaveEditSection = async () => {
-    if (!editSectionData.title) return alert('Preencha os campos obrigatórios.');
+    if (!editSectionData.title) return toast.error('Preencha os campos obrigatórios.');
     try {
       const res = await fetch(`/api/menu/sections/${editSectionData.id}`, {
         method: 'PUT',
@@ -991,11 +992,11 @@ export const PageManager: React.FC = () => {
         body: JSON.stringify(editSectionData)
       });
       if (res.ok) {
-        alert('Seção atualizada!');
+        toast.success('Seção atualizada!');
         await refreshMenu();
         setEditingSection(null);
-      } else alert('Erro ao atualizar seção.');
-    } catch (err) { console.error(err); alert('Erro ao atualizar seção.'); }
+      } else toast.error('Erro ao atualizar seção.');
+    } catch (err) { console.error(err); toast.error('Erro ao atualizar seção.'); }
   };
 
   const handleDeleteSection = async (id: string) => {
@@ -1004,8 +1005,8 @@ export const PageManager: React.FC = () => {
         const res = await fetch(`/api/menu/sections/${id}`, { method: 'DELETE' });
         if (res.ok) {
           await refreshMenu();
-        } else alert('Erro ao excluir seção.');
-      } catch (err) { console.error(err); alert('Erro ao excluir seção.'); }
+        } else toast.error('Erro ao excluir seção.');
+      } catch (err) { console.error(err); toast.error('Erro ao excluir seção.'); }
     });
   };
 
@@ -1015,7 +1016,7 @@ export const PageManager: React.FC = () => {
   };
 
   const handleSaveEditSub = async () => {
-    if (!editSubData.label || !editSubData.section_id) return alert('Preencha os campos obrigatórios.');
+    if (!editSubData.label || !editSubData.section_id) return toast.error('Preencha os campos obrigatórios.');
     try {
       const res = await fetch(`/api/menu/subsessions/${editSubData.id}`, {
         method: 'PUT',
@@ -1023,11 +1024,11 @@ export const PageManager: React.FC = () => {
         body: JSON.stringify(editSubData)
       });
       if (res.ok) {
-        alert('Sub-seção atualizada!');
+        toast.success('Sub-seção atualizada!');
         await refreshMenu();
         setEditingSub(null);
-      } else alert('Erro ao atualizar sub-seção.');
-    } catch (err) { console.error(err); alert('Erro ao atualizar sub-seção.'); }
+      } else toast.error('Erro ao atualizar sub-seção.');
+    } catch (err) { console.error(err); toast.error('Erro ao atualizar sub-seção.'); }
   };
 
   const handleDeleteSub = async (id: string) => {
@@ -1036,8 +1037,8 @@ export const PageManager: React.FC = () => {
         const res = await fetch(`/api/menu/subsessions/${id}`, { method: 'DELETE' });
         if (res.ok) {
           await refreshMenu();
-        } else alert('Erro ao excluir sub-seção.');
-      } catch (err) { console.error(err); alert('Erro ao excluir sub-seção.'); }
+        } else toast.error('Erro ao excluir sub-seção.');
+      } catch (err) { console.error(err); toast.error('Erro ao excluir sub-seção.'); }
     });
   };
 
@@ -1054,7 +1055,7 @@ export const PageManager: React.FC = () => {
   };
 
   const handleSaveEditSubsub = async () => {
-    if (!editSubsubData.label || (!editSubsubData.subsession_id && !editSubsubData.section_id)) return alert('Preencha os campos obrigatórios.');
+    if (!editSubsubData.label || (!editSubsubData.subsession_id && !editSubsubData.section_id)) return toast.error('Preencha os campos obrigatórios.');
     try {
       const res = await fetch(`/api/menu/subsubsessions/${editSubsubData.id}`, {
         method: 'PUT',
@@ -1066,11 +1067,11 @@ export const PageManager: React.FC = () => {
         })
       });
       if (res.ok) {
-        alert('Sub-sub-seção atualizada!');
+        toast.success('Sub-sub-seção atualizada!');
         await refreshMenu();
         setEditingSubsub(null);
-      } else alert('Erro ao atualizar sub-sub-seção.');
-    } catch (err) { console.error(err); alert('Erro ao atualizar sub-sub-seção.'); }
+      } else toast.error('Erro ao atualizar sub-sub-seção.');
+    } catch (err) { console.error(err); toast.error('Erro ao atualizar sub-sub-seção.'); }
   };
 
   const handleDeleteSubsub = async (id: string) => {
@@ -1079,8 +1080,8 @@ export const PageManager: React.FC = () => {
         const res = await fetch(`/api/menu/subsubsessions/${id}`, { method: 'DELETE' });
         if (res.ok) {
           await refreshMenu();
-        } else alert('Erro ao excluir sub-sub-seção.');
-      } catch (err) { console.error(err); alert('Erro ao excluir sub-sub-seção.'); }
+        } else toast.error('Erro ao excluir sub-sub-seção.');
+      } catch (err) { console.error(err); toast.error('Erro ao excluir sub-sub-seção.'); }
     });
   };
 
@@ -1142,12 +1143,12 @@ export const PageManager: React.FC = () => {
         body: JSON.stringify({ type: apiType, items: updates })
       });
       if (!res.ok) {
-        alert('Erro ao reordenar. Recarregando...');
+        toast.error('Erro ao reordenar. Recarregando...');
         await refreshMenu();
       }
     } catch (err) {
       console.error(err);
-      alert('Erro ao reordenar. Recarregando...');
+      toast.error('Erro ao reordenar. Recarregando...');
       await refreshMenu();
     }
   };
@@ -1206,12 +1207,12 @@ export const PageManager: React.FC = () => {
       if (res.ok) {
         return true;
       } else {
-        alert('Erro ao mover página.');
+        toast.error('Erro ao mover página.');
         return false;
       }
     } catch (err) { 
       console.error(err); 
-      alert('Erro ao mover página.'); 
+      toast.error('Erro ao mover página.'); 
       return false;
     }
   };

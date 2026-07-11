@@ -5,6 +5,8 @@ import { Modal } from '../components/ui/Modal';
 import { designSystem } from '../design-system';
 import OptionPicker from '../components/ui/OptionPicker';
 import SplitHeadline from '../components/SplitHeadline';
+import { toast } from '@/src/lib/toast';
+import { confirmDialog } from '@/src/lib/confirm';
 
 interface TemplateItem {
   id: number;
@@ -91,26 +93,26 @@ const TaskTemplates = () => {
         setIsModalOpen(false);
         fetchTemplates();
       } else {
-        alert('Erro ao salvar modelo');
+        toast.error('Erro ao salvar modelo');
       }
     } catch (err) {
       console.error('Error saving template:', err);
-      alert('Erro ao salvar modelo');
+      toast.error('Erro ao salvar modelo');
     }
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm('Tem certeza que deseja excluir este modelo?')) return;
+    if (!(await confirmDialog({ message: 'Tem certeza que deseja excluir este modelo?', danger: true }))) return;
     try {
       const res = await fetch(`/api/task-templates/${id}`, { method: 'DELETE' });
       if (res.ok) {
         fetchTemplates();
       } else {
-        alert('Erro ao excluir modelo');
+        toast.error('Erro ao excluir modelo');
       }
     } catch (err) {
       console.error('Error deleting template:', err);
-      alert('Erro ao excluir modelo');
+      toast.error('Erro ao excluir modelo');
     }
   };
 
@@ -130,11 +132,11 @@ const TaskTemplates = () => {
       if (res.ok) {
         fetchTemplates();
       } else {
-        alert('Erro ao duplicar modelo');
+        toast.error('Erro ao duplicar modelo');
       }
     } catch (err) {
       console.error('Error duplicating template:', err);
-      alert('Erro ao duplicar modelo');
+      toast.error('Erro ao duplicar modelo');
     }
   };
 

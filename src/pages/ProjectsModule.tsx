@@ -32,8 +32,11 @@ import { CSS } from '@dnd-kit/utilities';
 import PortalAccessTab from './portal_admin/PortalAccessTab';
 import SolicitacoesTab from '../components/SolicitacoesTab';
 import FormulariosTab from '../components/FormulariosTab';
+import ThemedDropdown from '../components/ui/ThemedDropdown';
 import RichTextEditor from '../components/RichTextEditor';
 import MediaLightbox, { LbFile } from '../components/MediaLightbox';
+import { toast } from '@/src/lib/toast';
+import { confirmDialog } from '@/src/lib/confirm';
 
 // ── Animated KPI Count Up ─────────────────────────────────
 const KpiCountUp = ({ value, className = '' }: { value: string; className?: string }) => {
@@ -1279,7 +1282,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       }
     } catch (err) {
       console.error("Failed to delete project:", err);
-      alert('Erro ao excluir projeto');
+      toast.error('Erro ao excluir projeto');
       setProjectToDelete(null);
     }
   };
@@ -1335,11 +1338,11 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       } else {
         const errorText = await response.text();
         console.error(`[DELETE PRODUCT] Erro: ${response.status} - ${errorText}`);
-        alert('Erro ao excluir produto');
+        toast.error('Erro ao excluir produto');
       }
     } catch (err) {
       console.error('Failed to delete product:', err);
-      alert('Erro ao excluir produto');
+      toast.error('Erro ao excluir produto');
     } finally {
       setProductToDelete(null);
     }
@@ -1611,14 +1614,14 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     const body: any = tokenForm.token.trim()
       ? { token: tokenForm.token.trim() }
       : (editingToken ? { tokenId: editingToken.id } : null);
-    if (!body) { alert('Cole o token de acesso primeiro.'); return; }
+    if (!body) { toast.error('Cole o token de acesso primeiro.'); return; }
     setLoadingMetaAccounts(true);
     try {
       const res = await fetch('/api/meta/list-accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const data = await res.json();
-      if (!res.ok) { alert(data.error || 'Erro ao buscar contas do token.'); setMetaAccounts([]); return; }
+      if (!res.ok) { toast.error(data.error || 'Erro ao buscar contas do token.'); setMetaAccounts([]); return; }
       setMetaAccounts(data.accounts || []);
-    } catch { alert('Erro ao buscar contas do token.'); setMetaAccounts([]); }
+    } catch { toast.error('Erro ao buscar contas do token.'); setMetaAccounts([]); }
     finally { setLoadingMetaAccounts(false); }
   };
 
@@ -1651,7 +1654,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       ? selectedAccounts
       : (tokenForm.account_id.trim() ? [tokenForm.account_id.trim()] : []);
     if (PLATFORMS_REQUIRING_ACCOUNT.includes(tokenForm.platform) && accts.length === 0) {
-      alert('Selecione ou informe ao menos uma conta de anúncio.'); return;
+      toast.error('Selecione ou informe ao menos uma conta de anúncio.'); return;
     }
     if (!editingToken && !tokenForm.token.trim()) return; // new token requires token value
     setIsTokenSubmitting(true);
@@ -1664,7 +1667,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
         const res = await fetch(`/api/project-tokens/${editingToken.id}`, {
           method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
         });
-        if (!res.ok) { const e = await res.json().catch(() => ({})); alert(`Erro ao atualizar token: ${e.error || res.statusText}`); return; }
+        if (!res.ok) { const e = await res.json().catch(() => ({})); toast.error(`Erro ao atualizar token: ${e.error || res.statusText}`); return; }
         // Contas extras (multi-seleção) viram novas linhas com o mesmo token
         const extras = accts.slice(1);
         if (extras.length) {
@@ -1685,7 +1688,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ project_id: selectedProject.id, platform: tokenForm.platform, account_id: a, account_name: nameOf(a), token: tokenForm.token, notes: tokenForm.notes })
           });
-          if (!res.ok) { const e = await res.json().catch(() => ({})); alert(`Erro ao salvar token: ${e.error || res.statusText}`); return; }
+          if (!res.ok) { const e = await res.json().catch(() => ({})); toast.error(`Erro ao salvar token: ${e.error || res.statusText}`); return; }
         }
       }
       // Recarrega a lista (mais robusto que mesclar múltiplas linhas manualmente)
@@ -1694,14 +1697,14 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       setIsTokenModalOpen(false);
     } catch (err) {
       console.error('Error saving token:', err);
-      alert('Erro ao salvar token.');
+      toast.error('Erro ao salvar token.');
     } finally {
       setIsTokenSubmitting(false);
     }
   };
 
   const handleDeleteToken = async (id: string) => {
-    if (!confirm('Deseja realmente excluir este token?')) return;
+    if (!(await confirmDialog({ message: 'Deseja realmente excluir este token?', danger: true }))) return;
     try {
       const res = await fetch(`/api/project-tokens/${id}`, { method: 'DELETE' });
       if (res.ok) {
@@ -2030,9 +2033,9 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     commitProjects(() => updatedProjects as any);
   };
 
-  const handleDeleteNote = (noteId: string) => {
+  const handleDeleteNote = async (noteId: string) => {
     if (!selectedProduct) return;
-    if (!window.confirm("Tem certeza que deseja apagar esta nota?")) return;
+    if (!(await confirmDialog({ message: "Tem certeza que deseja apagar esta nota?", danger: true }))) return;
     
     const updatedProduct = {
       ...selectedProduct,
@@ -2049,7 +2052,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
   };
 
   const handleDeleteMeeting = async (meetingId: string) => {
-    if (!window.confirm("Tem certeza que deseja apagar esta reunião?")) return;
+    if (!(await confirmDialog({ message: "Tem certeza que deseja apagar esta reunião?", danger: true }))) return;
     try {
       const response = await fetch(`/api/meetings/${meetingId}`, { method: 'DELETE' });
       if (response.ok && selectedProject) {
@@ -2364,7 +2367,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     } catch (err) {
       console.error("Error saving optimization:", err);
       const errMsg = err instanceof Error ? err.message : String(err);
-      alert(`Houve um erro ao salvar a nota: ${errMsg}`);
+      toast.error(`Houve um erro ao salvar a nota: ${errMsg}`);
     } finally {
       setIsSavingNote(false);
     }
@@ -3556,7 +3559,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                           if (!res.ok) throw new Error(await res.text());
                         } catch (err) {
                           console.error('Erro ao mudar de página:', err);
-                          alert('Erro ao mudar o projeto de página. Recarregue e tente novamente.');
+                          toast.error('Erro ao mudar o projeto de página. Recarregue e tente novamente.');
                           // Restaura o projeto na página atual
                           projectsRef.current = [...projectsRef.current, proj];
                           setProjects(prev => (prev.some(p => p.id === proj.id) ? prev : [...prev, proj]));
@@ -3836,11 +3839,11 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                 setShowResponsavelDropdown(false);
                               } else {
                                 const data = await res.json();
-                                alert(data.error || 'Erro ao definir gestor da página.');
+                                toast.error(data.error || 'Erro ao definir gestor da página.');
                               }
                             } catch (err) {
                               console.error(err);
-                              alert('Erro ao definir gestor da página.');
+                              toast.error('Erro ao definir gestor da página.');
                             }
                           }}
                           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-50 dark:hover:bg-white/5 text-left transition-colors"
@@ -3873,11 +3876,11 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                               setShowResponsavelDropdown(false);
                             } else {
                               const data = await res.json();
-                              alert(data.error || 'Erro ao remover gestor.');
+                              toast.error(data.error || 'Erro ao remover gestor.');
                             }
                           } catch (err) {
                             console.error(err);
-                            alert('Erro ao remover gestor.');
+                            toast.error('Erro ao remover gestor.');
                           }
                         }}
                         className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-500/10 text-left transition-colors text-rose-500 mt-1"
@@ -5284,7 +5287,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                         <button
                           onClick={() => {
                             navigator.clipboard.writeText(`${window.location.origin}/nps/${selectedProject.id}`);
-                            alert('Link copiado para a área de transferência!');
+                            toast.success('Link copiado para a área de transferência!');
                           }}
                           className="px-5 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-bold transition-all flex items-center gap-2 shrink-0 text-sm"
                         >
@@ -5637,9 +5640,9 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     } catch (err: any) {
                       console.error('Failed to save comment:', err);
                       if (err?.code === 'storage/quota-exceeded') {
-                        alert('O armazenamento do Firebase está cheio (cota excedida) — não é possível enviar imagens até liberar espaço ou fazer upgrade do plano. Comentários só com texto funcionam normalmente.');
+                        toast.error('O armazenamento do Firebase está cheio (cota excedida) — não é possível enviar imagens até liberar espaço ou fazer upgrade do plano. Comentários só com texto funcionam normalmente.');
                       } else {
-                        alert('Não foi possível enviar o comentário: ' + (err?.code || err?.message || err));
+                        toast.error('Não foi possível enviar o comentário: ' + (err?.code || err?.message || err));
                       }
                     } finally {
                       setCommentUploading(false);
@@ -5933,16 +5936,12 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                   <div>
                     <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Plataforma</label>
                     {isTokenEditing ? (
-                      <select
+                      <ThemedDropdown
                         value={tokenForm.platform}
-                        onChange={(e) => setTokenForm(prev => ({ ...prev, platform: e.target.value, account_id: PLATFORMS_REQUIRING_ACCOUNT.includes(e.target.value) ? prev.account_id : '' }))}
-                        className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-light-text dark:text-white focus:border-violet-500 outline-none transition-all appearance-none cursor-pointer"
-                      >
-                        <option value="" disabled>Selecione a plataforma</option>
-                        {PLATFORM_OPTIONS.map(opt => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
-                        ))}
-                      </select>
+                        className="w-full"
+                        options={[{ value: '', label: 'Selecione a plataforma' }, ...PLATFORM_OPTIONS.map(opt => ({ value: opt.value, label: opt.label }))]}
+                        onChange={(v) => setTokenForm(prev => ({ ...prev, platform: v, account_id: PLATFORMS_REQUIRING_ACCOUNT.includes(v) ? prev.account_id : '' }))}
+                      />
                     ) : (
                       <div className="py-2 text-light-text dark:text-white font-medium">
                         {PLATFORM_OPTIONS.find(p => p.value === tokenForm.platform)?.label || tokenForm.platform}

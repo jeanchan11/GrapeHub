@@ -5,6 +5,7 @@ import SplitHeadline from '../components/SplitHeadline';
 import { createPortal } from 'react-dom';
 import { Plus, ChevronDown, ChevronRight, Calendar, Users, Tag, MoreHorizontal, Circle, CheckCircle2, Loader2, X, Trash2, GripVertical, Settings, FileText, Link as LinkIcon, Save, Heading1, Heading2, Heading3, Type, List, ListOrdered, CheckSquare, Check, Paperclip, Upload, MessageCircle, Clock, Image as ImageIcon, Download, Eye, Edit2, Palette, Flag, Ban, Layers, FileVideo, Globe, PlaySquare, FileSignature, MonitorPlay, ShoppingBag } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
+import { confirmDialog } from '@/src/lib/confirm';
 import {
   DndContext,
   closestCorners,
@@ -2605,7 +2606,7 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
   };
 
   const deleteComment = async (commentId: number) => {
-    if (!window.confirm('Excluir este comentário?')) return;
+    if (!(await confirmDialog({ message: 'Excluir este comentário?', danger: true }))) return;
     try {
       const res = await fetch(`/api/onboarding-tasks/${task.id}/comments/${commentId}`, { method: 'DELETE' });
       if (res.ok) setComments(prev => prev.filter(c => c.id !== commentId));

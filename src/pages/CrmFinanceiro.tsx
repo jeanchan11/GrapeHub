@@ -38,6 +38,8 @@ import CrmCommentHistory, { COMMENT_TYPES } from '../components/CrmCommentHistor
 import LoadingSpinner from '../components/LoadingSpinner';
 import CrmChecklist from '../components/CrmChecklist';
 import ArchiveClientModal from '../components/ArchiveClientModal';
+import { toast } from '@/src/lib/toast';
+import { confirmDialog } from '@/src/lib/confirm';
 
 interface Client {
   id: string;
@@ -1086,7 +1088,7 @@ const CrmFinanceiro = () => {
                     <div className="flex justify-end mb-4">
                       <button
                         onClick={async () => {
-                          if (!window.confirm('Tem certeza que deseja arquivar este cliente?')) return;
+                          if (!(await confirmDialog({ message: 'Tem certeza que deseja arquivar este cliente?', danger: false }))) return;
                           try {
                             const updateRes = await fetch(`/api/clients/${selectedClient.id}`, {
                               method: 'PATCH',
@@ -1099,7 +1101,7 @@ const CrmFinanceiro = () => {
                             fetchClients();
                           } catch (err) {
                             console.error('Error archiving client:', err);
-                            alert('Erro ao arquivar cliente');
+                            toast.error('Erro ao arquivar cliente');
                           }
                         }}
                         className="px-5 py-2.5 bg-rose-500 text-white hover:bg-rose-600 rounded-xl text-sm font-bold uppercase tracking-wider transition-all shadow-lg shadow-rose-500/20 flex items-center gap-2"

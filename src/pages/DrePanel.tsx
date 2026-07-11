@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Loader2, ChevronLeft, ChevronRight, FileBarChart, Columns3, Check, Eye } from 'lucide-react';
+import ThemedDropdown from '@/src/components/ui/ThemedDropdown';
 
 const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
@@ -253,13 +254,7 @@ const DrePanel: React.FC = () => {
           {/* Apresentação */}
           <div className="flex flex-col">
             <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">Apresentação</label>
-            <select
-              value={apresentacao}
-              onChange={e => setApresentacao(e.target.value as Apresentacao)}
-              className="bg-dark-bg border border-black/10 dark:border-white/10 rounded-lg px-2.5 py-1.5 text-xs font-bold text-dark-text focus:outline-none focus:border-violet-500/50 cursor-pointer dark:[color-scheme:dark]"
-            >
-              {[...APRESENTACOES].reverse().map(a => <option key={a.key} value={a.key}>{a.label}</option>)}
-            </select>
+            <ThemedDropdown value={apresentacao} options={[...APRESENTACOES].reverse().map(a => ({ value: String(a.key), label: a.label }))} onChange={(v) => setApresentacao(v as Apresentacao)} className="w-auto" />
           </div>
           {/* Ano */}
           <div className="flex flex-col">

@@ -3,6 +3,7 @@ import { FileText, Plus, Trash2, Loader2, Lock, X } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
 import SplitHeadline from '../components/SplitHeadline';
 import { useAuth } from '../contexts/AuthContext';
+import { confirmDialog } from '@/src/lib/confirm';
 
 interface DocPage {
   id: string;
@@ -88,8 +89,8 @@ export default function PlanosDeCarreira({ activePage = 'default' }: PlanosDeCar
   };
 
   // Delete page
-  const deletePage = (pageId: string) => {
-    if (!confirm('Excluir este plano de carreira?')) return;
+  const deletePage = async (pageId: string) => {
+    if (!(await confirmDialog({ message: 'Excluir este plano de carreira?', danger: true }))) return;
     const newPages = docPages.filter(p => p.id !== pageId);
     setDocPages(newPages);
     if (activeDocPageId === pageId) {

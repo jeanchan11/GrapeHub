@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { FileText, Download, Loader2, Building2, User } from 'lucide-react';
 import ContratoDocument, { exportContratoPdf, ContratoData } from './ContratoDocument';
 import { valorPorExtenso, formatBRL } from '../utils/valorExtenso';
+import { toast } from '@/src/lib/toast';
 
 const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
 
@@ -80,7 +81,7 @@ const ContratoTab: React.FC<{ lead: any }> = ({ lead }) => {
       await exportContratoPdf(docRef.current, `Contrato_${safe}.pdf`);
     } catch (e) {
       console.error('[contrato] falha ao gerar PDF', e);
-      alert('Falha ao gerar o PDF. Tente novamente.');
+      toast.error('Falha ao gerar o PDF. Tente novamente.');
     } finally {
       setExporting(false);
     }

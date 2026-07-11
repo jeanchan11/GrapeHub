@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import SplitHeadline from '../components/SplitHeadline';
 import { useAuth } from '../contexts/AuthContext';
 import { Trophy, Target, Settings, Check, Plus, X, Medal, Crown, Gift, Lock, Edit2, Eye } from 'lucide-react';
+import { toast } from '@/src/lib/toast';
+import ThemedDropdown from '@/src/components/ui/ThemedDropdown';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface Jogo {
@@ -606,9 +608,9 @@ const TabAdmin = ({
           inicia_em: new Date(editModal.inicia_em).toISOString(),
         }),
       });
-      if (!r.ok) { const err = await r.json().catch(() => ({} as any)); alert(err.error || 'Erro ao salvar o jogo.'); }
+      if (!r.ok) { const err = await r.json().catch(() => ({} as any)); toast.error(err.error || 'Erro ao salvar o jogo.'); }
       else { setEditModal(null); onRefresh(); }
-    } catch (e) { console.error(e); alert('Erro de rede ao salvar.'); }
+    } catch (e) { console.error(e); toast.error('Erro de rede ao salvar.'); }
     setSavingEdit(false);
   };
 
@@ -620,12 +622,12 @@ const TabAdmin = ({
         method: 'POST',
         body: JSON.stringify({ fase: form.fase, time_casa: form.time_casa.trim(), time_fora: form.time_fora.trim(), inicia_em: new Date(form.inicia_em).toISOString() }),
       });
-      if (!r.ok) { const err = await r.json().catch(() => ({} as any)); alert(err.error || 'Erro ao cadastrar o jogo.'); }
+      if (!r.ok) { const err = await r.json().catch(() => ({} as any)); toast.error(err.error || 'Erro ao cadastrar o jogo.'); }
       else {
         setForm({ fase: 'Quartas', time_casa: '', time_fora: '', inicia_em: '' });
         onRefresh();
       }
-    } catch (e) { console.error(e); alert('Erro de rede ao cadastrar.'); }
+    } catch (e) { console.error(e); toast.error('Erro de rede ao cadastrar.'); }
     setSaving(false);
   };
 
@@ -639,7 +641,7 @@ const TabAdmin = ({
       const r = await apiFetch(`/api/bolao/jogos/${resultModal.jogo.id}/resultado`, {
         method: 'PUT', body: JSON.stringify({ gols_casa: casa, gols_fora: fora }),
       });
-      if (!r.ok) { const err = await r.json(); alert(err.error || 'Erro'); }
+      if (!r.ok) { const err = await r.json(); toast.error(err.error || 'Erro'); }
       else { setResultModal(null); onRefresh(); }
     } catch (e) { console.error(e); }
     setSavingResult(false);
@@ -656,10 +658,7 @@ const TabAdmin = ({
         <div className="grid grid-cols-2 gap-3 mb-3">
           <div>
             <label className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider block mb-1">Fase</label>
-            <select value={form.fase} onChange={e => setForm(f => ({ ...f, fase: e.target.value }))}
-              className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2.5 text-sm text-dark-text focus:outline-none focus:border-violet-500">
-              {FASE_OPTIONS.map(f => <option key={f} value={f}>{f}</option>)}
-            </select>
+            <ThemedDropdown value={form.fase} options={FASE_OPTIONS.map(f => ({ value: f, label: f }))} onChange={(v) => setForm(f => ({ ...f, fase: v }))} className="w-full" />
           </div>
           <div>
             <label className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider block mb-1">Data/Hora</label>
@@ -757,10 +756,7 @@ const TabAdmin = ({
             <div className="grid grid-cols-2 gap-3 mb-4">
               <div>
                 <label className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider block mb-1">Fase</label>
-                <select value={editModal.fase} onChange={e => setEditModal(m => m ? { ...m, fase: e.target.value } : m)}
-                  className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2.5 text-sm text-dark-text focus:outline-none focus:border-violet-500">
-                  {FASE_OPTIONS.map(f => <option key={f} value={f}>{f}</option>)}
-                </select>
+                <ThemedDropdown value={editModal.fase} options={FASE_OPTIONS.map(f => ({ value: f, label: f }))} onChange={(v) => setEditModal(m => m ? { ...m, fase: v } : m)} className="w-full" />
               </div>
               <div>
                 <label className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider block mb-1">Data/Hora</label>
@@ -1077,7 +1073,7 @@ export default function Bolao() {
     });
     if (!r.ok) {
       const err = await r.json();
-      alert(err.error || 'Erro ao salvar palpite');
+      toast.error(err.error || 'Erro ao salvar palpite');
     } else {
       loadJogos();
     }

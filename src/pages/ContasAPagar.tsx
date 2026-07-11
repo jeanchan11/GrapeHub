@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import SplitHeadline from '../components/SplitHeadline';
 import { motion, AnimatePresence, useSpring, useTransform, useInView } from 'motion/react';
+import { confirmDialog } from '@/src/lib/confirm';
+import ThemedDropdown from '@/src/components/ui/ThemedDropdown';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 interface Bill {
@@ -227,10 +229,9 @@ const BillModal: React.FC<BillModalProps> = ({ bill, categories, onSave, onClose
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Categoria</label>
-              <select value={form.category || 'Outros'} onChange={e => set('category', e.target.value)}
-                className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500/50">
-                {allCats.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+              <ThemedDropdown value={form.category || 'Outros'} className="w-full"
+                options={allCats.map(c => ({ value: c, label: c }))}
+                onChange={(v) => set('category', v)} />
               <button onClick={() => setShowNewCat(!showNewCat)} className="text-[10px] text-violet-400 mt-1 hover:underline">+ Nova categoria</button>
               {showNewCat && (
                 <input value={newCat} onChange={e => { setNewCat(e.target.value); set('category', e.target.value); }}
@@ -239,10 +240,9 @@ const BillModal: React.FC<BillModalProps> = ({ bill, categories, onSave, onClose
             </div>
             <div>
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Recorrência</label>
-              <select value={form.recurrence || 'monthly'} onChange={e => set('recurrence', e.target.value as any)}
-                className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500/50">
-                {Object.entries(RECURRENCE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
+              <ThemedDropdown value={form.recurrence || 'monthly'} className="w-full"
+                options={Object.entries(RECURRENCE_LABELS).map(([k, v]) => ({ value: k, label: v }))}
+                onChange={(v) => set('recurrence', v as any)} />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -364,11 +364,9 @@ const SicrediEditModal = ({ item, categories, onSave, onClose }: {
           </div>
           <div>
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Categoria</label>
-            <select value={cat} onChange={e => setCat(e.target.value)}
-              className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-emerald-500/50">
-              <option value="">— Sem categoria —</option>
-              {categories.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
+            <ThemedDropdown value={cat} className="w-full"
+              options={[{ value: '', label: '— Sem categoria —' }, ...categories.map(c => ({ value: c, label: c }))]}
+              onChange={setCat} />
           </div>
           <div>
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Observação</label>
@@ -433,10 +431,9 @@ const EntryEditModal = ({ entry, categories, onSave, onClose }: {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Categoria</label>
-              <select value={cat} onChange={e => setCat(e.target.value)}
-                className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text focus:outline-none focus:border-violet-500/50">
-                {allCats.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+              <ThemedDropdown value={cat} className="w-full"
+                options={allCats.map(c => ({ value: c, label: c }))}
+                onChange={setCat} />
             </div>
             <div>
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Valor (R$)</label>
@@ -569,13 +566,13 @@ export default function ContasAPagar() {
   };
 
   const handleDeleteBill = async (id: number) => {
-    if (!confirm('Remover esta conta recorrente?')) return;
+    if (!(await confirmDialog({ message: 'Remover esta conta recorrente?', danger: true }))) return;
     await fetch(`/api/fin/bills/${id}`, { method: 'DELETE' });
     await fetchBills(); await fetchEntries();
   };
 
   const handleDeleteEntry = async (id: number) => {
-    if (!confirm('Excluir este lançamento do mês? (Esta ação não remove a conta recorrente cadastrada)')) return;
+    if (!(await confirmDialog({ message: 'Excluir este lançamento do mês? (Esta ação não remove a conta recorrente cadastrada)', danger: true }))) return;
     const r = await fetch(`/api/fin/bills/entries/${id}`, { method: 'DELETE' });
     if (r.ok) await fetchEntries();
   };
@@ -702,7 +699,7 @@ export default function ContasAPagar() {
   };
 
   const handleUnlink = async (entryId: number) => {
-    if (!confirm('Desvincular este pagamento?')) return;
+    if (!(await confirmDialog({ message: 'Desvincular este pagamento?', danger: true }))) return;
     try {
       const r = await fetch(`/api/fin/bills/entries/${entryId}/unlink`, { method: 'POST' });
       if (r.ok) await fetchEntries();
@@ -774,11 +771,9 @@ export default function ContasAPagar() {
             </div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <select value={filterCat} onChange={e => setFilterCat(e.target.value)}
-                  className="bg-dark-card border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 text-xs text-dark-text focus:outline-none hover:border-white/20">
-                  <option value="">Todas categorias</option>
-                  {categories.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
+                <ThemedDropdown value={filterCat}
+                  options={[{ value: '', label: 'Todas categorias' }, ...categories.map(c => ({ value: c, label: c }))]}
+                  onChange={setFilterCat} />
                 <button onClick={() => setShowBillsConfig(!showBillsConfig)}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-black/10 dark:border-white/10 bg-dark-card text-xs text-slate-400 hover:text-dark-text hover:border-white/20 transition-colors">
                   <Receipt size={13} /> Contas Cadastradas
@@ -1089,12 +1084,13 @@ export default function ContasAPagar() {
             {/* Filter */}
             {sicrediItems.length > 0 && (
               <div className="flex items-center gap-2">
-                <select value={filterSicrediCat} onChange={e => setFilterSicrediCat(e.target.value)}
-                  className="bg-dark-card border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 text-xs text-dark-text focus:outline-none hover:border-white/20">
-                  <option value="">Todas categorias</option>
-                  {sicrediCats.map(c => <option key={c!} value={c!}>{c}</option>)}
-                  <option value="__uncategorized">Sem categoria</option>
-                </select>
+                <ThemedDropdown value={filterSicrediCat}
+                  options={[
+                    { value: '', label: 'Todas categorias' },
+                    ...sicrediCats.map(c => ({ value: String(c), label: String(c) })),
+                    { value: '__uncategorized', label: 'Sem categoria' },
+                  ]}
+                  onChange={setFilterSicrediCat} />
                 <span className="text-xs text-slate-500">{filteredSicredi.length} lançamentos</span>
               </div>
             )}

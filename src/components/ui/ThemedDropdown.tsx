@@ -26,10 +26,15 @@ const ThemedDropdown: React.FC<Props> = ({ value, options, onChange, className =
   const menuRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
 
-  const isDark = typeof document !== 'undefined' && !document.documentElement.classList.contains('light');
-  const c = isDark
-    ? { menuBg: '#1c0e3a', border: 'rgba(255,255,255,0.14)', text: '#cbd5e1', textSel: '#c4b5fd', hover: 'rgba(255,255,255,0.07)' }
-    : { menuBg: '#ffffff', border: 'rgba(226,232,240,1)', text: '#334155', textSel: '#7c3aed', hover: '#f1f5f9' };
+  // Cores do menu seguem os tokens de tema do app (--dark-card/--dark-text), herdados
+  // do <html> mesmo no portal pro body → batem em claro/escuro/escuro-profundo.
+  const c = {
+    menuBg: 'rgb(var(--dark-card))',
+    border: 'rgb(var(--dark-text) / 0.12)',
+    text: 'rgb(var(--dark-text) / 0.8)',
+    textSel: 'rgb(var(--dark-text))',
+    hover: 'rgb(var(--dark-text) / 0.07)',
+  };
 
   useEffect(() => {
     if (!open) return;

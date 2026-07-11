@@ -8,6 +8,8 @@ import LoadingSpinner from '../../components/LoadingSpinner';
 import SplitHeadline from '../../components/SplitHeadline';
 import { useAuth } from '../../contexts/AuthContext';
 import { auth } from '../../firebase';
+import { toast } from '@/src/lib/toast';
+import { confirmDialog } from '@/src/lib/confirm';
 
 // Helper: fetch autenticado com token Firebase
 async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
@@ -213,7 +215,7 @@ export default function OneOnOnesTab({ collaboratorId, isAdmin }: OneOnOnesTabPr
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
   const handleRemoverAgendamento = async () => {
-    if (!confirm('Remover agendamento do próximo 1:1?')) return;
+    if (!(await confirmDialog({ message: 'Remover agendamento do próximo 1:1?', danger: true }))) return;
     await authFetch(`/api/collaborators/${collaboratorId}/proximo-1on1`, { method: 'DELETE' });
     setProximo1on1(null);
   };
@@ -225,18 +227,18 @@ export default function OneOnOnesTab({ collaboratorId, isAdmin }: OneOnOnesTabPr
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingItem?.data_reuniao) return alert('Data é obrigatória.');
+    if (!editingItem?.data_reuniao) return toast.error('Data é obrigatória.');
 
     setSaving(true);
     try {
       let participanteId: number | undefined = editingItem.participante_id;
 
       if (!participanteId) {
-        if (!userData?.email) { setSaving(false); return alert('Usuário não autenticado.'); }
+        if (!userData?.email) { setSaving(false); return toast.error('Usuário não autenticado.'); }
         const senderRes = await authFetch(`/api/collaborators/by-email/${encodeURIComponent(userData.email)}`);
         if (!senderRes.ok) {
           setSaving(false);
-          return alert('Seu usuário não possui um perfil de colaborador vinculado.');
+          return toast.error('Seu usuário não possui um perfil de colaborador vinculado.');
         }
         const senderData = await senderRes.json();
         participanteId = senderData.id;
@@ -256,7 +258,7 @@ export default function OneOnOnesTab({ collaboratorId, isAdmin }: OneOnOnesTabPr
 
       if (!res.ok) {
         const err = await res.json();
-        return alert('Erro ao salvar: ' + (err.error || 'Erro desconhecido'));
+        return toast.error('Erro ao salvar: ' + (err.error || 'Erro desconhecido'));
       }
       setModalOpen(false);
       fetchAll();
@@ -268,7 +270,7 @@ export default function OneOnOnesTab({ collaboratorId, isAdmin }: OneOnOnesTabPr
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm('Deseja realmente excluir este registro?')) return;
+    if (!(await confirmDialog({ message: 'Deseja realmente excluir este registro?', danger: true }))) return;
     try {
       const res = await authFetch(`/api/collaborators/${collaboratorId}/one-on-ones/${id}`, { method: 'DELETE' });
       if (res.ok) setItems(items.filter(i => i.id !== id));

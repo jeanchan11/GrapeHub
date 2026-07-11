@@ -8,6 +8,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { UserPermissionsModal } from './UserPermissionsModal';
 import { PageManager } from './PageManager';
 import { CargosAvaliacoes } from './CargosAvaliacoes';
+import { toast } from '@/src/lib/toast';
+import { confirmDialog } from '@/src/lib/confirm';
 
 const AdminPanel: React.FC = () => {
   const { userData: currentUser, refreshUserData } = useAuth();
@@ -33,7 +35,7 @@ const AdminPanel: React.FC = () => {
 
   const deleteUser = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm('Tem certeza que deseja excluir este usuário? Esta ação não pode ser desfeita.')) return;
+    if (!(await confirmDialog({ message: 'Tem certeza que deseja excluir este usuário? Esta ação não pode ser desfeita.', danger: true }))) return;
     setOpenMenuId(null);
     try {
       const response = await fetch(`/api/users/${id}`, { method: 'DELETE' });
@@ -41,11 +43,11 @@ const AdminPanel: React.FC = () => {
         setUsers(users.filter(u => u.id !== id));
       } else {
         const errorData = await response.json();
-        alert(`Erro ao excluir: ${errorData.message}`);
+        toast.error(`Erro ao excluir: ${errorData.message}`);
       }
     } catch (error) {
       console.error('Erro ao excluir usuário', error);
-      alert('Erro ao excluir usuário.');
+      toast.error('Erro ao excluir usuário.');
     }
   };
 
@@ -341,7 +343,7 @@ const AdminPanel: React.FC = () => {
     const email = newUserEmail.toLowerCase().trim();
     
     if (users.some(u => u.email.toLowerCase() === email)) {
-      alert('Este usuário já existe.');
+      toast.error('Este usuário já existe.');
       return;
     }
 
@@ -362,11 +364,11 @@ const AdminPanel: React.FC = () => {
         setNewUserEmail('');
       } else {
         const errorData = await response.json();
-        alert(`Erro ao adicionar usuário: ${errorData.message || 'Erro desconhecido'}`);
+        toast.error(`Erro ao adicionar usuário: ${errorData.message || 'Erro desconhecido'}`);
       }
     } catch (error) {
       console.error('Error adding user:', error);
-      alert('Erro ao adicionar usuário. Verifique o console.');
+      toast.error('Erro ao adicionar usuário. Verifique o console.');
     } finally {
       setIsAdding(false);
     }

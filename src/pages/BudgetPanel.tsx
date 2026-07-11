@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Loader2, ChevronLeft, ChevronRight, Save, Copy, Target } from 'lucide-react';
+import ThemedDropdown from '@/src/components/ui/ThemedDropdown';
 
 const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
@@ -110,11 +111,7 @@ const BudgetPanel: React.FC = () => {
         </div>
         <div className="flex items-center gap-3">
           {mode === 'comparar' && (
-            <select value={periodo} onChange={e => setPeriodo(e.target.value)}
-              className="bg-dark-card border border-white/10 rounded-lg px-3 py-1.5 text-xs font-semibold text-dark-text">
-              <option value="ANO">Ano inteiro (acumulado)</option>
-              {months.map((m, i) => <option key={m} value={m}>{MESES[i]}/{year}</option>)}
-            </select>
+            <ThemedDropdown value={periodo} options={[{ value: 'ANO', label: 'Ano inteiro (acumulado)' }, ...months.map((m, i) => ({ value: m, label: `${MESES[i]}/${year}` }))]} onChange={setPeriodo} className="w-auto" />
           )}
           {yearsel}
           {mode === 'planejar' && (

@@ -9,6 +9,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { CandidateDetailModal } from '../components/CandidateDetailModal';
 import OptionPicker from '../components/ui/OptionPicker';
+import { confirmDialog } from '@/src/lib/confirm';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -777,7 +778,7 @@ export default function ContratacaoPage() {
   }
 
   async function handleDeleteFolder(id: number) {
-    if (!confirm('Excluir esta seleção e todos os candidatos?')) return;
+    if (!(await confirmDialog({ message: 'Excluir esta seleção e todos os candidatos?', danger: true }))) return;
     try {
       await fetch(`/api/hiring/folders/${id}`, { method: 'DELETE' });
       setFolders(prev => prev.filter(f => f.id !== id));

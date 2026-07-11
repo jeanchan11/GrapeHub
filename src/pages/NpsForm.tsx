@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ArrowRight, ArrowLeft, CheckCircle2, Star } from 'lucide-react';
+import { toast } from '@/src/lib/toast';
 
 interface FormField {
   key: string;
@@ -112,9 +113,9 @@ export default function NpsForm({ projectId }: { projectId: string }) {
         body: JSON.stringify(payload)
       });
       if (res.ok) setSuccess(true);
-      else alert('Erro ao enviar. Tente novamente.');
+      else toast.error('Erro ao enviar. Tente novamente.');
     } catch {
-      alert('Erro na conexão.');
+      toast.error('Erro na conexão.');
     } finally {
       setSubmitting(false);
     }

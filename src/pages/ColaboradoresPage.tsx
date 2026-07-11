@@ -6,6 +6,8 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import SplitHeadline from '../components/SplitHeadline';
 import Organograma from '../components/Organograma';
 import { useAuth } from '../contexts/AuthContext';
+import { toast } from '@/src/lib/toast';
+import { confirmDialog } from '@/src/lib/confirm';
 
 interface Collaborator {
   id: number;
@@ -182,7 +184,7 @@ export default function ColaboradoresPage() {
   };
 
   const handleSave = async () => {
-    if (!formData.name) return alert('Nome é obrigatório');
+    if (!formData.name) return toast.error('Nome é obrigatório');
     
     try {
       const isEdit = !!editingItem;
@@ -205,7 +207,7 @@ export default function ColaboradoresPage() {
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm('Excluir colaborador?')) return;
+    if (!(await confirmDialog({ message: 'Excluir colaborador?', danger: true }))) return;
     try {
       const res = await fetch(`/api/collaborators/${id}`, { method: 'DELETE' });
       if (res.ok) {
@@ -716,7 +718,7 @@ export default function ColaboradoresPage() {
                             title="Desvincular usuário"
                             onClick={async () => {
                               if (!editingItem?.id) return;
-                              if (!confirm('Desvincular este usuário do colaborador?')) return;
+                              if (!(await confirmDialog({ message: 'Desvincular este usuário do colaborador?', danger: true }))) return;
                               try {
                                 const res = await fetch(`/api/collaborators/${editingItem.id}`, {
                                   method: 'PUT',
@@ -751,7 +753,7 @@ export default function ColaboradoresPage() {
                             <button
                               type="button"
                               onClick={async () => {
-                                if (!confirm('Remover avatar do bolão?')) return;
+                                if (!(await confirmDialog({ message: 'Remover avatar do bolão?', danger: true }))) return;
                                 try {
                                   await fetch(`/api/bolao/avatar/${editingItem.id}`, { method: 'DELETE' });
                                   setFormData({ ...formData, bolao_avatar_url: null });

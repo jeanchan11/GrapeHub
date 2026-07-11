@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import SplitHeadline from '../components/SplitHeadline';
 import ListaTaskDetailModal from '../components/ListaTaskDetailModal';
 import RichTextEditor from '../components/RichTextEditor';
+import { confirmDialog } from '@/src/lib/confirm';
 import { Plus, ChevronDown, ChevronRight, Calendar, Users, Tag, MoreHorizontal, Circle, CheckCircle2, Loader2, X, Trash2, GripVertical, Settings, Check, Edit2, Layers, Pencil, TrendingUp, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -317,7 +318,7 @@ const TaskRow = ({
         </div>
 
         <button
-          onClick={() => { if (confirm('Excluir esta tarefa?')) onDelete(task.id); }}
+          onClick={async () => { if (await confirmDialog({ message: 'Excluir esta tarefa?', danger: true })) onDelete(task.id); }}
           className="opacity-0 group-hover:opacity-100 p-1 text-slate-600 hover:text-red-400 transition-all shrink-0"
         >
           <Trash2 size={14} />

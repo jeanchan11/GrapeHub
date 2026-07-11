@@ -10,6 +10,8 @@ import {
 } from 'lucide-react';
 import { storage } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { toast } from '@/src/lib/toast';
+import { confirmDialog } from '@/src/lib/confirm';
 import {
   DndContext,
   closestCorners,
@@ -397,7 +399,7 @@ const SortableColumn = ({ column, children, setEditColumnData, setIsEditColumnMo
                 <button
                   type="button" role="menuitem"
                   onClick={() => {
-                    setEditColumnData({ id: column.id, title: column.title, color: column.color || 'orange', icon: column.icon || 'LayoutGrid' });
+                    setEditColumnData({ id: column.id, title: column.title, color: column.color || 'orange', icon: column.icon || 'LayoutGrid', max_days: column.max_days ?? '', cross_funnel: !!column.cross_funnel, shared_kanban_ids: Array.isArray(column.shared_kanban_ids) ? column.shared_kanban_ids : [] });
                     setIsEditColumnModalOpen(true);
                   }}
                   className="w-full text-left flex items-center gap-2.5 px-3 py-2 text-sm font-semibold text-gray-600 dark:text-slate-300 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer outline-none transition-colors"
@@ -632,13 +634,13 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
       const res = await fetch(url, { method: 'POST' });
       const data = await res.json();
       if (!res.ok) {
-        alert(data.error || 'Falha ao disparar webhook do WhatsApp');
+        toast.error(data.error || 'Falha ao disparar webhook do WhatsApp');
       } else {
         setShowMoreMenu(false);
       }
     } catch (e) {
       console.error(e);
-      alert('Erro bloqueando tentativa de disparo');
+      toast.error('Erro bloqueando tentativa de disparo');
     } finally {
       setCreatingWhatsapp(false);
     }
@@ -842,7 +844,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
       setChecklistFetched(false);
     } catch (e: any) {
       console.error('Erro ao salvar template:', e);
-      alert(e?.message || 'Erro ao salvar template');
+      toast.error(e?.message || 'Erro ao salvar template');
     } finally {
       setTemplateLoading(false);
     }
@@ -850,9 +852,10 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
 
   const handleReapplyTemplate = async () => {
     if (!lead) return;
-    const confirmed = window.confirm(
-      'Isso vai substituir TODAS as tarefas atuais deste lead pelo modelo padrão atualizado.\n\nTarefas já marcadas como concluídas serão perdidas.\n\nDeseja continuar?'
-    );
+    const confirmed = await confirmDialog({
+      message: 'Isso vai substituir TODAS as tarefas atuais deste lead pelo modelo padrão atualizado.\n\nTarefas já marcadas como concluídas serão perdidas.\n\nDeseja continuar?',
+      danger: false,
+    });
     if (!confirmed) return;
 
     setChecklistLoading(true);
@@ -867,7 +870,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
       setChecklistItems(newItems);
     } catch (e: any) {
       console.error('Erro ao reaplicar template:', e);
-      alert(e?.message || 'Erro ao reaplicar modelo padrão');
+      toast.error(e?.message || 'Erro ao reaplicar modelo padrão');
     } finally {
       setChecklistLoading(false);
     }
@@ -900,7 +903,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
       setFiles(prev => [savedFile, ...prev]);
     } catch (error) {
       console.error('Error uploading file:', error);
-      alert("Erro ao fazer upload do arquivo.");
+      toast.error("Erro ao fazer upload do arquivo.");
     } finally {
       setUploadingFiles(false);
     }
@@ -926,7 +929,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   };
 
   const handleDeleteFile = async (id: number) => {
-    if (!window.confirm('Tem certeza que deseja excluir este arquivo?')) return;
+    if (!(await confirmDialog({ message: 'Tem certeza que deseja excluir este arquivo?', danger: true }))) return;
     try {
       await fetch(`/api/crm-comercial/files/${id}`, { method: 'DELETE' });
       setFiles(prev => prev.filter(f => f.id !== id));
@@ -1297,7 +1300,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                     <button
                       onClick={() => {
                         navigator.clipboard.writeText(`${window.location.origin}/f/${lead.id}`);
-                        alert("Link copiado para a área de transferência!");
+                        toast.success("Link copiado para a área de transferência!");
                         setShowMoreMenu(false);
                       }}
                       className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-violet-50 dark:hover:bg-violet-500/10 text-sm text-gray-700 dark:text-slate-200 transition-colors"
@@ -3253,7 +3256,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                                 className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1"
                                 onClick={async (e) => {
                                   e.stopPropagation();
-                                  if (!window.confirm(`Excluir a etiqueta "${globalTag.name}" globalmente?`)) return;
+                                  if (!(await confirmDialog({ message: `Excluir a etiqueta "${globalTag.name}" globalmente?`, danger: true }))) return;
                                   try {
                                     const res = await fetch(`/api/crm-comercial/tags/${encodeURIComponent(globalTag.name)}`, { method: 'DELETE' });
                                     if (res.ok) {
@@ -4210,7 +4213,7 @@ const CrmComercial = () => {
   });
 
   const [isEditColumnModalOpen, setIsEditColumnModalOpen] = useState(false);
-  const [editColumnData, setEditColumnData] = useState<{ id: string, title: string, color: string, icon: string, max_days?: number | string } | null>(null);
+  const [editColumnData, setEditColumnData] = useState<{ id: string, title: string, color: string, icon: string, max_days?: number | string, cross_funnel?: boolean, shared_kanban_ids?: string[] } | null>(null);
   const [columnToDelete, setColumnToDelete] = useState<string | null>(null);
 
   const handleUpdateColumn = async () => {
@@ -4223,7 +4226,9 @@ const CrmComercial = () => {
           title: editColumnData.title,
           color: editColumnData.color,
           icon: editColumnData.icon,
-          max_days: editColumnData.max_days ? Number(editColumnData.max_days) : null
+          max_days: editColumnData.max_days ? Number(editColumnData.max_days) : null,
+          cross_funnel: !!editColumnData.cross_funnel,
+          shared_kanban_ids: editColumnData.shared_kanban_ids || []
         })
       });
       if (res.ok) {
@@ -4246,7 +4251,7 @@ const CrmComercial = () => {
         setColumns(cols => cols.filter(c => c.id !== id));
         setColumnToDelete(null);
       } else {
-        alert("Erro ao excluir coluna");
+        toast.error("Erro ao excluir coluna");
       }
     } catch (err) {
       console.error('Error deleting column:', err);
@@ -4283,7 +4288,7 @@ const CrmComercial = () => {
   };
 
   const handleDeleteKanban = async (id: string) => {
-    if (!window.confirm("Tem certeza que deseja excluir este Kanban e todos os seus leads?")) return;
+    if (!(await confirmDialog({ message: "Tem certeza que deseja excluir este Kanban e todos os seus leads?", danger: true }))) return;
     try {
       const res = await fetch(`/api/crm-comercial/kanbans/${id}`, {
         method: 'DELETE'
@@ -4296,7 +4301,7 @@ const CrmComercial = () => {
         }
       } else {
         const data = await res.json();
-        alert(data.error || "Erro ao excluir kanban");
+        toast.error(data.error || "Erro ao excluir kanban");
       }
     } catch (err) {
       console.error('Error deleting kanban:', err);
@@ -4657,7 +4662,7 @@ const CrmComercial = () => {
   };
 
   const handleDeleteTemplate = async (id: number) => {
-    if (!window.confirm("Excluir este modelo?")) return;
+    if (!(await confirmDialog({ message: "Excluir este modelo?", danger: true }))) return;
     try {
       const res = await fetch(`/api/crm-comercial/task-templates/${id}`, { method: 'DELETE' });
       if (res.ok) fetchTemplates();
@@ -4896,7 +4901,8 @@ const CrmComercial = () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             coluna: newColumn,
-            moved_by: user?.name || 'Sistema'
+            moved_by: user?.name || 'Sistema',
+            moved_by_id: user?.id || null
           })
         });
 
@@ -4928,7 +4934,8 @@ const CrmComercial = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           coluna: newColumn,
-          moved_by: user?.name || 'Sistema'
+          moved_by: user?.name || 'Sistema',
+          moved_by_id: user?.id || null
         })
       });
       if (!response.ok) {
@@ -5069,16 +5076,16 @@ const CrmComercial = () => {
         setSeqEditId(null);
         setSeqForm({ name: '', description: '', skip_weekends: true, steps: [] });
       } else {
-        alert(`Erro ao salvar sequência: ${data?.error || res.status}`);
+        toast.error(`Erro ao salvar sequência: ${data?.error || res.status}`);
       }
     } catch (e) {
       console.error('[SEQ] Fetch error', e);
-      alert('Erro de rede ao salvar sequência');
+      toast.error('Erro de rede ao salvar sequência');
     }
   };
 
   const handleDeleteSequence = async (id: number) => {
-    if (!confirm('Excluir esta sequência?')) return;
+    if (!(await confirmDialog({ message: 'Excluir esta sequência?', danger: true }))) return;
     await fetch(`/api/crm-comercial/sequences/${id}`, { method: 'DELETE' });
     fetchSequences();
   };
@@ -6270,6 +6277,51 @@ const CrmComercial = () => {
                 ))}
               </div>
             </div>
+
+            {/* Cross-funil: a coluna e seus cards aparecem também em outros funis */}
+            {kanbans.filter(k => String(k.id) !== String(activeKanbanId)).length > 0 && (
+              <div className="pt-2 border-t border-gray-100 dark:border-white/10">
+                <label className="flex items-start gap-3 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={!!editColumnData.cross_funnel}
+                    onChange={e => setEditColumnData(prev => prev ? ({ ...prev, cross_funnel: e.target.checked, shared_kanban_ids: e.target.checked ? (prev.shared_kanban_ids || []) : [] }) : null)}
+                    className="mt-0.5 w-4 h-4 rounded accent-violet-600 shrink-0"
+                  />
+                  <div>
+                    <span className="text-sm font-bold text-gray-800 dark:text-slate-200">Etapa cross-funil</span>
+                    <p className="text-xs text-gray-400 dark:text-slate-500">A coluna e seus cards aparecem também em outros funis selecionados.</p>
+                  </div>
+                </label>
+
+                {editColumnData.cross_funnel && (
+                  <div className="mt-3 pl-7 space-y-2">
+                    <p className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">Compartilhar com</p>
+                    {kanbans.filter(k => String(k.id) !== String(activeKanbanId)).map(k => {
+                      const checked = (editColumnData.shared_kanban_ids || []).map(String).includes(String(k.id));
+                      return (
+                        <label key={k.id} className="flex items-center gap-2.5 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={e => setEditColumnData(prev => {
+                              if (!prev) return null;
+                              const cur = (prev.shared_kanban_ids || []).map(String);
+                              const next = e.target.checked
+                                ? Array.from(new Set([...cur, String(k.id)]))
+                                : cur.filter(id => id !== String(k.id));
+                              return { ...prev, shared_kanban_ids: next };
+                            })}
+                            className="w-4 h-4 rounded accent-violet-600"
+                          />
+                          <span className="text-sm font-medium text-gray-700 dark:text-slate-300">{k.nome}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </Modal>

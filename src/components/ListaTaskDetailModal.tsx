@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
+import { confirmDialog } from '@/src/lib/confirm';
 
 // ─── Types ──────────────────────────────────────────────────
 interface Subtask {
@@ -254,7 +255,7 @@ export default function ListaTaskDetailModal({ task, onClose, onUpdate, onDelete
   };
 
   const deleteCommentHandler = async (commentId: number) => {
-    if (!confirm('Excluir este comentário?')) return;
+    if (!(await confirmDialog({ message: 'Excluir este comentário?', danger: true }))) return;
     try {
       await fetch(`/api/onboarding-tasks/${task.id}/comments/${commentId}`, { method: 'DELETE' });
       setComments(prev => prev.filter(c => c.id !== commentId));

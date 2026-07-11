@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { Modal } from './ui/Modal';
 import { designSystem } from '../design-system';
 import OptionPicker from './ui/OptionPicker';
+import { toast } from '@/src/lib/toast';
 
 interface ArchiveClientModalProps {
   clientId: string;
@@ -43,7 +44,7 @@ const ArchiveClientModal: React.FC<ArchiveClientModalProps> = ({ clientId, onClo
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.how_it_went || formData.exit_reasons.length === 0 || !formData.project_result || !formData.client_relationship) {
-      alert('Por favor, preencha todos os campos obrigatórios.');
+      toast.error('Por favor, preencha todos os campos obrigatórios.');
       return;
     }
 

@@ -3,6 +3,8 @@ import {
   Loader2, Plus, Edit3, Trash2, ChevronDown, ChevronRight, X, Check, Users, ClipboardList,
 } from 'lucide-react';
 import { ICON_NAMES, iconOf, COLORS, chipOf } from './performanceCriteria';
+import { toast } from '@/src/lib/toast';
+import { confirmDialog } from '@/src/lib/confirm';
 
 interface Cargo { cargo: string; total_colaboradores: number; }
 interface Criterio {
@@ -39,7 +41,7 @@ const CriterioModal: React.FC<{
       onSaved();
       onClose();
     } catch (e) {
-      alert('Erro ao salvar critério.');
+      toast.error('Erro ao salvar critério.');
     } finally {
       setSaving(false);
     }
@@ -189,12 +191,12 @@ export const CargosAvaliacoes: React.FC = () => {
   };
 
   const removeCriterio = async (id: number) => {
-    if (!confirm('Excluir este critério de avaliação?')) return;
+    if (!(await confirmDialog({ message: 'Excluir este critério de avaliação?', danger: true }))) return;
     try {
       const res = await fetch(`/api/admin/performance-criteria/${id}`, { method: 'DELETE' });
       if (res.ok) setCriteria(prev => prev.filter(c => c.id !== id));
     } catch (e) {
-      alert('Erro ao excluir critério.');
+      toast.error('Erro ao excluir critério.');
     }
   };
 

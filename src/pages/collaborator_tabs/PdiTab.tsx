@@ -4,6 +4,8 @@ import { Plus, Edit2, Trash2, Book, Activity, Wrench, Brain, Target, X, Check, C
 import LoadingSpinner from '../../components/LoadingSpinner';
 import SplitHeadline from '../../components/SplitHeadline';
 import OptionPicker from '../../components/ui/OptionPicker';
+import { toast } from '@/src/lib/toast';
+import { confirmDialog } from '@/src/lib/confirm';
 
 interface PdiEtapa {
   id?: number;
@@ -80,7 +82,7 @@ export default function PdiTab({ collaboratorId, isAdmin }: PdiTabProps) {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingItem?.titulo || !editingItem?.tipo) return alert('Título e Tipo são obrigatórios.');
+    if (!editingItem?.titulo || !editingItem?.tipo) return toast.error('Título e Tipo são obrigatórios.');
 
     const isEditing = !!editingItem.id;
     const url = isEditing 
@@ -103,7 +105,7 @@ export default function PdiTab({ collaboratorId, isAdmin }: PdiTabProps) {
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm('Deseja realmente excluir esta ação?')) return;
+    if (!(await confirmDialog({ message: 'Deseja realmente excluir esta ação?', danger: true }))) return;
     try {
       const res = await fetch(`/api/collaborators/${collaboratorId}/pdi/${id}`, { method: 'DELETE' });
       if (res.ok) {

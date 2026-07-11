@@ -7,6 +7,8 @@ import {
   MessageCircle, Phone, Mail, Calendar as CalendarIcon, CheckCircle2,
   X
 } from 'lucide-react';
+import { toast } from '@/src/lib/toast';
+import { confirmDialog } from '@/src/lib/confirm';
 
 const SEQ_TYPE_COLOR: any = {
   'WhatsApp': 'text-emerald-600 dark:text-emerald-500',
@@ -48,7 +50,7 @@ const CrmSequencias = () => {
   };
 
   const handleSaveSequence = async () => {
-    if (!seqForm.name) return alert('Dê um nome à sequência.');
+    if (!seqForm.name) return toast.error('Dê um nome à sequência.');
     setSavingSequence(true);
     try {
       const url = seqEditId ? `/api/crm-comercial/sequences/${seqEditId}` : '/api/crm-comercial/sequences';
@@ -64,7 +66,7 @@ const CrmSequencias = () => {
         setSeqEditId(null);
         setSelectedStepIndex(null);
       } else {
-        alert('Erro ao salvar sequência.');
+        toast.error('Erro ao salvar sequência.');
       }
     } catch (e) {
       console.error(e);
@@ -73,7 +75,7 @@ const CrmSequencias = () => {
   };
 
   const handleDeleteSequence = async (id: string) => {
-    if (!confirm('Deseja excluir esta sequência?')) return;
+    if (!(await confirmDialog({ message: 'Deseja excluir esta sequência?', danger: true }))) return;
     try {
       await fetch(`/api/crm-comercial/sequences/${id}`, { method: 'DELETE' });
       fetchSequences();

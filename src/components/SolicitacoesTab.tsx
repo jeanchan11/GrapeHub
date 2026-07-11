@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { Loader2, Plus, Trash2, Check, Clock, Image as ImageIcon, MessageSquare, FileText, Sparkles, Send } from 'lucide-react';
 import MediaLightbox, { LbFile } from './MediaLightbox';
+import { confirmDialog } from '@/src/lib/confirm';
 
 interface Req { id: string; type: string; description: string; status: string; created_by?: string; created_at: string; files?: any[]; comments?: any[]; }
 
@@ -62,7 +63,7 @@ const SolicitacoesTab: React.FC<{ projectId: string; authorName?: string }> = ({
     try { await fetch(`/api/project-requests/${req.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) }); } catch { /* ignore */ }
   };
   const remove = async (req: Req) => {
-    if (!confirm('Remover esta solicitação?')) return;
+    if (!(await confirmDialog({ message: 'Remover esta solicitação?', danger: true }))) return;
     setReqs(prev => prev.filter(x => x.id !== req.id));
     try { await fetch(`/api/project-requests/${req.id}`, { method: 'DELETE' }); } catch { /* ignore */ }
   };

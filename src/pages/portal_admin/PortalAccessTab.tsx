@@ -1,6 +1,7 @@
 // Aba "Acesso do Portal" no modal do projeto — gestão define o login do cliente.
 import React, { useState, useEffect } from 'react';
 import { Loader2, KeyRound, Mail, ShieldCheck, ShieldOff, RefreshCw, Copy, Check, Trash2, ExternalLink } from 'lucide-react';
+import { confirmDialog } from '@/src/lib/confirm';
 
 interface ClientAccount { id: string; email: string; name: string | null; active: boolean; last_login: string | null; created_at: string; }
 
@@ -63,7 +64,7 @@ const PortalAccessTab: React.FC<{ projectId: string; partnerName?: string }> = (
     await load();
   };
   const removeAcc = async (acc: ClientAccount) => {
-    if (!confirm(`Remover o acesso de ${acc.email}? O cliente não conseguirá mais entrar.`)) return;
+    if (!(await confirmDialog({ message: `Remover o acesso de ${acc.email}? O cliente não conseguirá mais entrar.`, danger: true }))) return;
     await fetch(`/api/portal/admin/clients/${acc.id}`, { method: 'DELETE' });
     await load();
   };

@@ -4,7 +4,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ResponsiveContainer } from 'recharts';
 import { useClientSession, ClientSession } from './ClientSessionContext';
+import { toast } from '@/src/lib/toast';
 import MediaLightbox, { LbFile } from '../components/MediaLightbox';
+import DateRangePicker from '../components/ui/DateRangePicker';
 import {
   Home, Activity, MessageSquare, FolderOpen, LogOut,
   DollarSign, Target, BarChart3, ChevronRight, Loader2, CheckCircle2,
@@ -448,8 +450,8 @@ const Solicitacoes: React.FC = () => {
       const res = await fetch(`/api/portal/requests/${r.id}/files`, { method: 'POST', body: fd });
       const d = await res.json().catch(() => ({}));
       if (res.ok) setReqs(prev => (prev || []).map(x => x.id === r.id ? { ...x, files: d.files } : x));
-      else alert(d.error || 'Falha ao enviar arquivos.');
-    } catch { alert('Erro ao enviar arquivos.'); }
+      else toast.error(d.error || 'Falha ao enviar arquivos.');
+    } catch { toast.error('Erro ao enviar arquivos.'); }
     setUploadingId(null);
   };
 
@@ -642,11 +644,19 @@ const PortalSelect: React.FC<{ value: string; options: { value: string; label: s
 };
 
 // ── Formulários (preenchimentos — visão do cliente, sem UTM/IP) ──
+const fmtSubDate = (s: string) => { try { const d = new Date(s); return `${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`; } catch { return s; } };
+const subLocalDate = (s: string) => { try { const d = new Date(s); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; } catch { return ''; } };
+const renderCell = (v: any): string => v == null ? '' : (typeof v === 'object' ? JSON.stringify(v) : String(v));
+
 const Formularios: React.FC = () => {
+  const theme = usePortalTheme();
+  const light = theme === 'light';
   const [loading, setLoading] = useState(true);
   const [forms, setForms] = useState<any[]>([]);
   const [subs, setSubs] = useState<any[]>([]);
   const [formFilter, setFormFilter] = useState('all');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
 
   useEffect(() => {
     setLoading(true);
@@ -654,19 +664,36 @@ const Formularios: React.FC = () => {
     jget(`/api/portal/form-submissions${q}`).then((d: any) => { setForms(d?.forms || []); setSubs(d?.submissions || []); setLoading(false); });
   }, [formFilter]);
 
+  const filtered = React.useMemo(() => subs.filter((s: any) => {
+    const d = subLocalDate(s.submitted_at);
+    return (!dateFrom || d >= dateFrom) && (!dateTo || d <= dateTo);
+  }), [subs, dateFrom, dateTo]);
+
   const columns = React.useMemo(() => {
     const seen = new Set<string>(); const cols: string[] = [];
-    for (const s of subs) for (const a of (s.answers || [])) if (!seen.has(a.label)) { seen.add(a.label); cols.push(a.label); }
+    for (const s of filtered) for (const a of (s.answers || [])) if (!seen.has(a.label)) { seen.add(a.label); cols.push(a.label); }
     return cols;
-  }, [subs]);
-  const valOf = (s: any, label: string) => s.answers?.find((a: any) => a.label === label)?.value ?? '';
-  const fmtD = (s: string) => { try { const d = new Date(s); return `${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`; } catch { return s; } };
+  }, [filtered]);
+  const valOf = (s: any, label: string) => renderCell(s.answers?.find((a: any) => a.label === label)?.value);
   const totalCount = forms.reduce((a: number, f: any) => a + (f.count || 0), 0);
   const formOptions = [{ value: 'all', label: `Todos (${totalCount})` }, ...forms.map((f: any) => ({ value: f.form_id, label: `${f.label} (${f.count})` }))];
+  const currentForm = forms.find((f: any) => f.form_id === formFilter);
+
+  const exportCsv = () => {
+    const esc = (v: string) => `"${String(v).replace(/"/g, '""')}"`;
+    const header = ['Data', ...columns];
+    const rows = filtered.map((s: any) => [fmtSubDate(s.submitted_at), ...columns.map(c => valOf(s, c))]);
+    const csv = [header, ...rows].map(r => r.map(esc).join(',')).join('\r\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `formularios_${(currentForm?.label || 'todos').replace(/\s+/g, '_')}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
-      <div className="flex items-end justify-between gap-4 flex-wrap mb-6">
+      <div className="flex items-end justify-between gap-4 flex-wrap mb-4">
         <div>
           <h1 className="text-3xl font-black tracking-tight text-[color:rgb(var(--pt-rgb))]">Formulários</h1>
           <p className="text-[color:rgb(var(--pt-rgb)_/_0.5)] mt-1">Os preenchimentos que seus formulários receberam.</p>
@@ -676,10 +703,18 @@ const Formularios: React.FC = () => {
         )}
       </div>
 
+      {/* Toolbar: datas + CSV */}
+      <div className="flex items-center gap-2 flex-wrap mb-4">
+        <DateRangePicker range={{ start: dateFrom, end: dateTo }} onChange={r => { setDateFrom(r.start); setDateTo(r.end); }} dark={!light} align="left" placeholder="Todo o período" />
+        <button onClick={exportCsv} disabled={filtered.length === 0} className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold text-white ml-auto disabled:opacity-40 transition-all" style={{ background: V }}>
+          <Download size={13} /> Exportar CSV
+        </button>
+      </div>
+
       {loading ? (
         <div className="flex justify-center py-32"><Loader2 className="animate-spin text-[color:rgb(var(--pt-rgb)_/_0.4)]" size={30} /></div>
-      ) : subs.length === 0 ? (
-        <div className="p-6 rounded-2xl text-[color:rgb(var(--pt-rgb)_/_0.5)] text-sm" style={glass}>Nenhum preenchimento ainda.</div>
+      ) : filtered.length === 0 ? (
+        <div className="p-6 rounded-2xl text-[color:rgb(var(--pt-rgb)_/_0.5)] text-sm" style={glass}>{subs.length === 0 ? 'Nenhum preenchimento ainda.' : 'Nenhum preenchimento no período selecionado.'}</div>
       ) : (
         <div className="rounded-2xl overflow-hidden" style={glass}>
           <div className="overflow-x-auto">
@@ -691,10 +726,10 @@ const Formularios: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {subs.map((s: any) => (
+                {filtered.map((s: any) => (
                   <tr key={s.id} className="border-b border-[color:rgb(var(--pt-rgb)_/_0.05)]">
-                    <td className="px-4 py-3 text-[color:rgb(var(--pt-rgb)_/_0.5)] whitespace-nowrap text-xs">{fmtD(s.submitted_at)}</td>
-                    {columns.map(c => <td key={c} className="px-4 py-3 text-[color:rgb(var(--pt-rgb)_/_0.85)] whitespace-nowrap max-w-[260px] truncate" title={String(valOf(s, c))}>{String(valOf(s, c) || '—')}</td>)}
+                    <td className="px-4 py-3 text-[color:rgb(var(--pt-rgb)_/_0.5)] whitespace-nowrap text-xs">{fmtSubDate(s.submitted_at)}</td>
+                    {columns.map(c => <td key={c} className="px-4 py-3 text-[color:rgb(var(--pt-rgb)_/_0.85)] whitespace-nowrap max-w-[260px] truncate" title={valOf(s, c)}>{valOf(s, c) || '—'}</td>)}
                   </tr>
                 ))}
               </tbody>

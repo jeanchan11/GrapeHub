@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 
 import { PieChart, Pie, Cell, Tooltip as RechartsTooltip } from 'recharts';
 import SplitHeadline from '../components/SplitHeadline';
+import { confirmDialog } from '@/src/lib/confirm';
 import {
   Users, TrendingUp, DollarSign, AlertTriangle,
   CheckCircle, Cpu, RefreshCw, Clock, MessageSquare, X,
@@ -714,7 +715,7 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
   };
 
   const handleDeleteNote = async (projectId: string, productId: string, optId: string) => {
-    if (!window.confirm('Tem certeza que deseja excluir esta nota?')) return;
+    if (!(await confirmDialog({ message: 'Tem certeza que deseja excluir esta nota?', danger: true }))) return;
     const project = projects.find(p => p.id === projectId);
     if (!project) return;
     

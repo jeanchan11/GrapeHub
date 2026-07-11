@@ -6,8 +6,10 @@ import {
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import SplitHeadline from '../../components/SplitHeadline';
+import DateRangePicker from '../../components/ui/DateRangePicker';
 import { auth } from '../../firebase';
 import { iconOf, colorOf, NotaSnapshot } from '../../components/performanceCriteria';
+import { confirmDialog } from '@/src/lib/confirm';
 
 // Helper: fetch autenticado com token Firebase
 async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
@@ -377,26 +379,7 @@ function NovaAvaliacaoModal({ collaboratorId, userEmail, onClose, onSaved }: Mod
           {/* Período */}
           <div>
             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Período avaliado</label>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs text-slate-400 mb-1 block">Início</label>
-                <input
-                  type="date"
-                  value={periodoInicio}
-                  onChange={e => setPeriodoInicio(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-white/[0.05] border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500 transition-colors"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-slate-400 mb-1 block">Fim</label>
-                <input
-                  type="date"
-                  value={periodoFim}
-                  onChange={e => setPeriodoFim(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-white/[0.05] border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500 transition-colors"
-                />
-              </div>
-            </div>
+            <DateRangePicker range={{ start: periodoInicio, end: periodoFim }} onChange={r => { setPeriodoInicio(r.start); setPeriodoFim(r.end); }} align="left" placeholder="Selecionar período" />
           </div>
 
           {/* Critérios */}
@@ -507,7 +490,7 @@ export default function DesempenhoTab({ collaboratorId, isAdmin }: { collaborato
   }, [collaboratorId]);
 
   const handleRemoverAgendamento = async () => {
-    if (!confirm('Remover agendamento da próxima avaliação?')) return;
+    if (!(await confirmDialog({ message: 'Remover agendamento da próxima avaliação?', danger: true }))) return;
     await authFetch(`/api/colaboradores/${collaboratorId}/proxima-avaliacao`, { method: 'DELETE' });
     setProximaAvaliacao(null);
   };
@@ -515,7 +498,7 @@ export default function DesempenhoTab({ collaboratorId, isAdmin }: { collaborato
   useEffect(() => { load(); }, [load]);
 
   const handleDelete = async (cycleId: number) => {
-    if (!confirm('Excluir esta avaliação?')) return;
+    if (!(await confirmDialog({ message: 'Excluir esta avaliação?', danger: true }))) return;
     await authFetch(`/api/desempenho/${cycleId}`, { method: 'DELETE' });
     load();
   };

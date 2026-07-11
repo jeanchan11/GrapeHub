@@ -13,6 +13,7 @@ import {
   Folder as FolderIcon, FolderOpen, FolderPlus, CornerDownLeft
 } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
+import { confirmDialog } from '@/src/lib/confirm';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -2724,9 +2725,9 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
                       >{page.title}</span>
                     )}
                     <button
-                      onClick={(e) => {
+                      onClick={async (e) => {
                         e.stopPropagation();
-                        if (confirm('Excluir esta página?')) {
+                        if (await confirmDialog({ message: 'Excluir esta página?', danger: true })) {
                           const newPages = docPages.filter(p => p.id !== page.id);
                           setDocPages(newPages);
                           if (activeDocPageId === page.id) {
@@ -2933,7 +2934,7 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
                             <Edit3 size={12} />
                           </button>
                           <button
-                            onClick={e => { e.stopPropagation(); if (confirm(`Excluir a pasta "${folder.name}"? As tarefas dela voltam a ficar sem pasta.`)) deleteFolder(folder.id); }}
+                            onClick={async e => { e.stopPropagation(); if (await confirmDialog({ message: `Excluir a pasta "${folder.name}"? As tarefas dela voltam a ficar sem pasta.`, danger: true })) deleteFolder(folder.id); }}
                             className="w-6 h-6 flex items-center justify-center rounded-lg text-dark-text/30 hover:text-red-400 hover:bg-red-500/10 transition-all flex-shrink-0"
                             title="Excluir pasta"
                           >

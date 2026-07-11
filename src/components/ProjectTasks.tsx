@@ -3,6 +3,8 @@ import { Plus, ChevronDown, ChevronRight, CheckCircle2, Circle, Clock, AlertCirc
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../contexts/AuthContext';
 import { TaskHistory } from './TaskHistory';
+import { toast } from '@/src/lib/toast';
+import { confirmDialog } from '@/src/lib/confirm';
 
 interface Subtask {
   id: string;
@@ -157,7 +159,7 @@ export const ProjectTasks: React.FC<{ projectId: string }> = ({ projectId }) => 
   };
 
   const handleApplyTemplate = async (templateId: number, templateName: string, itemsCount: number) => {
-    if (!confirm(`Aplicar modelo "${templateName}"? Isso criará ${itemsCount} tarefas/subtarefas.`)) {
+    if (!(await confirmDialog({ message: `Aplicar modelo "${templateName}"? Isso criará ${itemsCount} tarefas/subtarefas.`, danger: false }))) {
       return;
     }
 
@@ -172,11 +174,11 @@ export const ProjectTasks: React.FC<{ projectId: string }> = ({ projectId }) => 
       if (res.ok) {
         fetchTasks();
       } else {
-        alert('Erro ao aplicar modelo');
+        toast.error('Erro ao aplicar modelo');
       }
     } catch (err) {
       console.error('Error applying template:', err);
-      alert('Erro ao aplicar modelo');
+      toast.error('Erro ao aplicar modelo');
     } finally {
       setIsApplyingTemplate(false);
     }

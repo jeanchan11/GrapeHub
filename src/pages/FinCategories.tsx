@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ChevronRight, ChevronDown, Plus, Pencil, Check, X, FolderTree, Layers, Tag, Search, Loader2 } from 'lucide-react';
 import SplitHeadline from '../components/SplitHeadline';
+import { promptDialog } from '@/src/lib/confirm';
 
 // ── Types ──────────────────────────────────────────────
 interface CategoryNode {
@@ -246,7 +247,7 @@ export default function FinCategories({ onBack }: { onBack: () => void }) {
 
   const handleAddChild = async (parentStructure: string) => {
     const childLabel = parentStructure.split('.').length === 1 ? 'subgrupo' : 'conta';
-    const name = prompt(`Nome do novo ${childLabel}:`);
+    const name = await promptDialog({ message: `Nome do novo ${childLabel}:`, placeholder: 'Digite o nome', confirmText: 'Criar' });
     if (!name?.trim()) return;
 
     try {
