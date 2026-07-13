@@ -705,7 +705,14 @@ const TabAdmin = ({
                 </button>
               )}
               {j.status === 'encerrado'
-                ? <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-lg">{j.gols_casa} × {j.gols_fora} ✓</span>
+                ? <>
+                    <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-lg">{j.gols_casa} × {j.gols_fora} ✓</span>
+                    <button onClick={() => setResultModal({ jogo: j, casa: String(j.gols_casa ?? ''), fora: String(j.gols_fora ?? '') })}
+                      title="Corrigir resultado"
+                      className="text-xs font-bold text-slate-400 hover:text-dark-text bg-black/5 dark:bg-white/5 hover:bg-black/5 dark:hover:bg-white/10 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1">
+                      <Edit2 size={12} /> Corrigir
+                    </button>
+                  </>
                 : j.travado
                 ? <button onClick={() => setResultModal({ jogo: j, casa: '', fora: '' })}
                     className="text-xs font-bold text-violet-400 hover:text-violet-300 bg-violet-500/10 hover:bg-violet-500/20 px-3 py-1.5 rounded-lg transition-colors">
@@ -724,7 +731,7 @@ const TabAdmin = ({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setResultModal(null)}>
           <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-6 w-80 shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-black text-dark-text">Resultado Final</h3>
+              <h3 className="text-sm font-black text-dark-text">{resultModal.jogo.status === 'encerrado' ? 'Corrigir Resultado' : 'Resultado Final'}</h3>
               <button onClick={() => setResultModal(null)} className="text-slate-500 hover:text-dark-text"><X size={16} /></button>
             </div>
             <p className="text-xs text-slate-400 mb-1 text-center font-bold">{resultModal.jogo.fase}</p>
