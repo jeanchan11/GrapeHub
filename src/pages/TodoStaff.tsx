@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import OptionPicker from '../components/ui/OptionPicker';
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragOverlay, useDroppable } from '@dnd-kit/core';
-import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { motion, AnimatePresence } from 'framer-motion';
 import SplitHeadline from '../components/SplitHeadline';
@@ -47,12 +47,22 @@ interface TodoItem {
   createdAt: string;
   doneAt?: string;
   folderId?: string;   // pasta livre (opcional)
+  sectionId?: string;  // subseção dentro da pasta (opcional)
+  orderIndex?: number; // ordem dentro da subseção
 }
 
 interface FolderItem {
   id: string;
   name: string;
   color?: string;
+  sortOrder: number;
+  createdAt: string;
+}
+
+interface StaffSection {
+  id: string;
+  folderId: string;
+  name: string;
   sortOrder: number;
   createdAt: string;
 }
@@ -2022,6 +2032,96 @@ const EmptyCol = ({ onAdd, label }: { onAdd: () => void; label: string }) => (
   </div>
 );
 
+// ─── Subseções (drag&drop dentro das pastas) ───────────────────────────────────
+
+// Zona onde as tarefas de uma subseção podem ser soltas
+const SectionDropZone: React.FC<{ id: string; items: string[]; children: React.ReactNode }> = ({ id, items, children }) => {
+  const { setNodeRef, isOver } = useDroppable({ id });
+  return (
+    <SortableContext id={id} items={items} strategy={verticalListSortingStrategy}>
+      <div ref={setNodeRef} className={`space-y-1 min-h-[36px] rounded-lg transition-colors ${isOver ? 'bg-violet-500/10 ring-1 ring-violet-500/25' : ''}`}>
+        {children}
+      </div>
+    </SortableContext>
+  );
+};
+
+// Linha de tarefa arrastável dentro de uma pasta/subseção
+const SortableFolderTaskRow: React.FC<{
+  task: TodoItem; folderId: string; sectionId: string | null;
+  onToggle: () => void; onOpen: () => void; onRemove: () => void; priorityDot: string;
+}> = ({ task, folderId, sectionId, onToggle, onOpen, onRemove, priorityDot }) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id, data: { type: 'task', folderId, sectionId } });
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 };
+  const done = task.status === 'done';
+  return (
+    <div ref={setNodeRef} style={style} className="group flex items-center gap-1.5 px-2 py-1.5 rounded-lg hover:bg-white/[0.03] transition-colors">
+      <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-dark-text/20 hover:text-violet-400 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0 -ml-0.5" title="Arrastar">
+        <GripVertical size={13} />
+      </div>
+      <button onClick={onToggle} className="flex-shrink-0" title={done ? 'Reabrir' : 'Concluir'}>
+        {done ? <CheckCircle2 size={17} className="text-emerald-500" /> : <Circle size={17} className="text-dark-text/30 hover:text-violet-400 transition-colors" />}
+      </button>
+      <button onClick={onOpen} className={`flex-1 min-w-0 text-left text-sm truncate transition-colors ${done ? 'line-through text-dark-text/35' : 'text-dark-text/85 hover:text-dark-text'}`}>
+        {task.title}
+      </button>
+      {!done && <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${priorityDot}`} />}
+      <button onClick={onRemove} className="w-5 h-5 flex items-center justify-center rounded text-dark-text/25 hover:text-amber-400 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0" title="Remover da pasta">
+        <X size={13} />
+      </button>
+    </div>
+  );
+};
+
+// Bloco de subseção arrastável (cabeçalho com grip + conteúdo)
+const SortableSectionBlock: React.FC<{
+  section: StaffSection; count: number;
+  collapsed: boolean; onToggleCollapse: () => void;
+  isRenaming: boolean; renameValue: string; onRenameChange: (v: string) => void;
+  onRenameCommit: () => void; onRenameCancel: () => void; onStartRename: () => void;
+  onDelete: () => void; children: React.ReactNode;
+}> = ({ section, count, collapsed, onToggleCollapse, isRenaming, renameValue, onRenameChange, onRenameCommit, onRenameCancel, onStartRename, onDelete, children }) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: section.id, data: { type: 'section', folderId: section.folderId } });
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
+  return (
+    <div ref={setNodeRef} style={style} className="rounded-lg">
+      <div className="flex items-center gap-1 mb-1 group/section">
+        <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-dark-text/20 hover:text-violet-400 opacity-0 group-hover/section:opacity-100 transition-all flex-shrink-0" title="Arrastar subseção">
+          <GripVertical size={12} />
+        </div>
+        {isRenaming ? (
+          <input
+            autoFocus value={renameValue}
+            onChange={e => onRenameChange(e.target.value)}
+            onBlur={onRenameCommit}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onRenameCommit(); } if (e.key === 'Escape') onRenameCancel(); }}
+            className="flex-1 text-[10px] font-bold bg-transparent border-b border-violet-500 text-violet-400 uppercase tracking-widest focus:outline-none"
+          />
+        ) : (
+          <>
+            <button onClick={onToggleCollapse} className="text-dark-text/40 hover:text-dark-text/60 p-0.5 rounded transition-colors">
+              <div className={`transform transition-transform duration-200 ${collapsed ? '-rotate-90' : 'rotate-0'}`}><ChevronDown size={12} /></div>
+            </button>
+            <span className="text-[10px] font-bold text-dark-text/50 uppercase tracking-widest flex-1 cursor-pointer truncate" onClick={onToggleCollapse}>{section.name}</span>
+            <span className="text-[9px] bg-dark-text/10 px-1.5 py-0.5 rounded-full text-dark-text/40 font-bold flex-shrink-0">{count}</span>
+            <div className="hidden group-hover/section:flex items-center gap-0.5 flex-shrink-0">
+              <button onClick={onStartRename} className="p-0.5 text-dark-text/30 hover:text-violet-400 transition-colors rounded" title="Renomear subseção"><Edit3 size={10} /></button>
+              <button onClick={onDelete} className="p-0.5 text-dark-text/30 hover:text-red-400 transition-colors rounded" title="Excluir subseção"><Trash2 size={11} /></button>
+            </div>
+          </>
+        )}
+      </div>
+      <AnimatePresence initial={false}>
+        {!collapsed && (
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2, ease: 'easeInOut' }} className="overflow-hidden pl-1">
+            {children}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitle?: string; hideRecurring?: boolean; hideDocument?: boolean; hideIdeas?: boolean; todoLabel?: string; enableColoredTags?: boolean; enableImageUpload?: boolean }> = ({ activePage, pageTitle, pageSubtitle, hideRecurring = false, hideDocument = false, hideIdeas = false, todoLabel, enableColoredTags = false, enableImageUpload = false }) => {
@@ -2038,6 +2138,15 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
   const [folderTaskInput, setFolderTaskInput] = useState<Record<string, string>>({});
   const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
   const [renameFolderInput, setRenameFolderInput] = useState('');
+  // Subseções dentro das pastas
+  const [sections, setSections] = useState<StaffSection[]>([]);
+  const [addingSectionFolder, setAddingSectionFolder] = useState<string | null>(null);
+  const [newSectionInput, setNewSectionInput] = useState('');
+  const [renamingSectionId, setRenamingSectionId] = useState<string | null>(null);
+  const [renameSectionInput, setRenameSectionInput] = useState('');
+  const [sectionTaskInput, setSectionTaskInput] = useState<Record<string, string>>({});
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+  const [activeDragSection, setActiveDragSection] = useState<StaffSection | null>(null);
   const [notesHtml,  setNotesHtml]  = useState<string>('');
   const [notesDirty, setNotesDirty] = useState(false);
   const [notesSaving, setNotesSaving] = useState(false);
@@ -2092,11 +2201,13 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
       fetch(`/api/todo-staff/notes${queryStr}`).then(r => r.ok ? r.json() : { content: '' }).catch(() => ({ content: '' })),
       fetch(`/api/todo-staff/doc-pages${queryStr}`).then(r => r.ok ? r.json() : []).catch(() => []),
       fetch(`/api/todo-staff/folders${queryStr}`).then(r => r.ok ? r.json() : []).catch(() => []),
-    ]).then(([tasks, recs, ideasData, notesData, docPagesData, foldersData]) => {
+      fetch(`/api/todo-staff/sections${queryStr}`).then(r => r.ok ? r.json() : []).catch(() => []),
+    ]).then(([tasks, recs, ideasData, notesData, docPagesData, foldersData, sectionsData]) => {
       setTodos(tasks);
       setRecurring(recs);
       setIdeas(ideasData);
       setFolders(foldersData);
+      setSections(sectionsData);
       setNotesHtml(notesData.content || '');
       setDocPages(docPagesData);
       if (docPagesData.length > 0) setActiveDocPageId(docPagesData[0].id);
@@ -2154,7 +2265,8 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
     id: t.id, title: t.title, description: t.description, priority: t.priority,
     status: t.status, tags: t.tags, assignee: t.assignee, dueDate: t.dueDate,
     subtasks: t.subtasks, comments: t.comments, doneAt: t.doneAt,
-    folderId: t.folderId ?? null, page_id: activePage || 'default'
+    folderId: t.folderId ?? null, sectionId: t.sectionId ?? null,
+    orderIndex: t.orderIndex ?? 0, page_id: activePage || 'default'
   });
 
   // Handlers — todos
@@ -2213,7 +2325,8 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
   const deleteFolder = (id: string) => {
     setFolders(p => p.filter(x => x.id !== id));
     // solta as tarefas da pasta localmente (o backend faz o mesmo)
-    setTodos(p => p.map(t => t.folderId === id ? { ...t, folderId: undefined } : t));
+    setTodos(p => p.map(t => t.folderId === id ? { ...t, folderId: undefined, sectionId: undefined } : t));
+    setSections(p => p.filter(s => s.folderId !== id));
     setExpandedFolders(p => { const n = { ...p }; delete n[id]; return n; });
     apiCall('DELETE', `/api/todo-staff/folders/${id}`);
   };
@@ -2229,13 +2342,63 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
     setTodos(p => [item, ...p]);
     apiCall('POST', '/api/todo-staff/tasks', todoToApi(item));
   };
-  // Move uma tarefa para uma pasta (ou solta: folderId = undefined)
+  // Move uma tarefa para uma pasta (ou solta: folderId = undefined) — tira também da subseção
   const setTaskFolder = (taskId: string, folderId: string | undefined) => {
     const item = todos.find(t => t.id === taskId);
     if (!item) return;
-    const updated = { ...item, folderId };
+    const updated = { ...item, folderId, sectionId: undefined };
     setTodos(p => p.map(t => t.id === taskId ? updated : t));
     apiCall('PUT', `/api/todo-staff/tasks/${taskId}`, todoToApi(updated));
+  };
+
+  // ── Subseções dentro das pastas ─────────────────────────────────────────────
+  const createSection = (folderId: string, name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const siblings = sections.filter(s => s.folderId === folderId);
+    const item: StaffSection = { id: uid(), folderId, name: trimmed, sortOrder: siblings.length, createdAt: new Date().toISOString() };
+    setSections(p => [...p, item]);
+    apiCall('POST', '/api/todo-staff/sections', {
+      id: item.id, folderId, name: trimmed, sortOrder: item.sortOrder, page_id: activePage || 'default',
+    });
+  };
+  const renameSection = (id: string, name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const s = sections.find(x => x.id === id);
+    setSections(p => p.map(x => x.id === id ? { ...x, name: trimmed } : x));
+    apiCall('PUT', `/api/todo-staff/sections/${id}`, { name: trimmed, sortOrder: s?.sortOrder ?? 0 });
+  };
+  const deleteSection = (id: string) => {
+    setSections(p => p.filter(x => x.id !== id));
+    // tarefas da subseção voltam a ficar sem subseção (continuam na pasta)
+    setTodos(p => p.map(t => t.sectionId === id ? { ...t, sectionId: undefined } : t));
+    apiCall('DELETE', `/api/todo-staff/sections/${id}`);
+  };
+  // Cria uma tarefa direto dentro de uma subseção (ou solta na pasta: sectionId = null)
+  const addTaskToSection = (folderId: string, sectionId: string | null, title: string) => {
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    const now = new Date().toISOString();
+    const siblings = todos.filter(t => t.folderId === folderId && (t.sectionId ?? null) === sectionId);
+    const item: TodoItem = {
+      id: uid(), title: trimmed, priority: 'medium', status: 'todo',
+      tags: [], subtasks: [], comments: [], createdAt: now,
+      folderId, sectionId: sectionId ?? undefined, orderIndex: siblings.length,
+    };
+    setTodos(p => [item, ...p]);
+    apiCall('POST', '/api/todo-staff/tasks', todoToApi(item));
+  };
+
+  // Persiste ordem/realocação das tarefas afetadas (drag&drop)
+  const persistTaskReorder = (tasksPayload: Array<{ id: string; sectionId: string | null; orderIndex: number }>) => {
+    if (!tasksPayload.length) return;
+    apiCall('PATCH', '/api/todo-staff/tasks/reorder', { tasks: tasksPayload });
+  };
+  const persistSectionReorder = (ordered: StaffSection[]) => {
+    apiCall('PATCH', '/api/todo-staff/sections/reorder', {
+      sections: ordered.map((s, i) => ({ id: s.id, sortOrder: i })),
+    });
   };
 
   // ── dnd-kit drag-and-drop ──────────────────────────────────────────────────
@@ -2307,6 +2470,94 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
     if (updated) {
       apiCall('PUT', `/api/todo-staff/tasks/${updated.id}`, todoToApi(updated));
     }
+  };
+
+  // ── Drag&drop dentro das pastas (tarefas entre subseções + reordenar subseções) ──
+  const SEC_NONE = '__none__';
+  const parseSectionContainer = (containerId: string): string | null =>
+    containerId === `s:${SEC_NONE}` ? null : (containerId.startsWith('s:') ? containerId.slice(2) : null);
+
+  const folderDragStart = (event: any) => {
+    const { active } = event;
+    if (active.data?.current?.type === 'section') {
+      setActiveDragSection(sections.find(s => s.id === active.id) || null);
+    } else {
+      setActiveDragTask(todos.find(t => t.id === active.id) || null);
+    }
+  };
+
+  const folderDragOver = (event: any) => {
+    const { active, over } = event;
+    if (!over) return;
+    if (active.data?.current?.type === 'section') return; // seções são tratadas no drag end
+    if (active.id === over.id) return;
+    const activeContainer = active.data?.current?.sortable?.containerId;
+    // se soltar em cima do cabeçalho de uma subseção, o alvo é aquela subseção
+    const overContainer = over.data?.current?.type === 'section'
+      ? `s:${over.id}`
+      : (over.data?.current?.sortable?.containerId || over.id);
+    if (!activeContainer || !overContainer || activeContainer === overContainer) return;
+    const newSectionId = parseSectionContainer(String(overContainer));
+    setTodos(prev => {
+      const idx = prev.findIndex(t => t.id === active.id);
+      if (idx === -1) return prev;
+      const moved = { ...prev[idx], sectionId: newSectionId ?? undefined };
+      const arr = [...prev];
+      arr.splice(idx, 1);
+      const insertAt = arr.findIndex(t => t.id === over.id);
+      if (insertAt !== -1) arr.splice(insertAt, 0, moved);
+      else arr.push(moved);
+      return arr;
+    });
+  };
+
+  const folderDragEnd = (folderId: string, event: any) => {
+    const { active, over } = event;
+    const wasSection = active.data?.current?.type === 'section';
+    setActiveDragTask(null);
+    setActiveDragSection(null);
+    if (!over) return;
+
+    if (wasSection) {
+      const folderSecs = sections.filter(s => s.folderId === folderId).sort((a, b) => a.sortOrder - b.sortOrder);
+      const oldIndex = folderSecs.findIndex(s => s.id === active.id);
+      let overId = over.id as string;
+      if (over.data?.current?.type !== 'section') {
+        overId = parseSectionContainer(String(over.data?.current?.sortable?.containerId || over.id)) || overId;
+      }
+      const newIndex = folderSecs.findIndex(s => s.id === overId);
+      if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
+      const reordered = arrayMove(folderSecs, oldIndex, newIndex).map((s, i) => ({ ...s, sortOrder: i }));
+      setSections(prev => [...prev.filter(s => s.folderId !== folderId), ...reordered]);
+      persistSectionReorder(reordered);
+      return;
+    }
+
+    // tarefa: define a subseção destino a partir do container do "over" e finaliza a ordem
+    const overContainer = over.data?.current?.type === 'section'
+      ? `s:${over.id}`
+      : (over.data?.current?.sortable?.containerId || over.id);
+    const targetSection = parseSectionContainer(String(overContainer));
+    setTodos(prev => {
+      let arr = prev.map(t => t.id === active.id ? { ...t, sectionId: targetSection ?? undefined } : t);
+      const activeIdx = arr.findIndex(t => t.id === active.id);
+      const overIdx = arr.findIndex(t => t.id === over.id);
+      if (activeIdx !== -1 && overIdx !== -1 && activeIdx !== overIdx) {
+        arr = arrayMove(arr, activeIdx, overIdx);
+      }
+      // recomputa orderIndex das tarefas do container destino e persiste
+      const payload: Array<{ id: string; sectionId: string | null; orderIndex: number }> = [];
+      let counter = 0;
+      arr = arr.map(t => {
+        if (t.folderId === folderId && (t.sectionId ?? null) === targetSection) {
+          payload.push({ id: t.id, sectionId: targetSection, orderIndex: counter });
+          return { ...t, orderIndex: counter++ };
+        }
+        return t;
+      });
+      persistTaskReorder(payload);
+      return arr;
+    });
   };
 
   const reorderSubtasks = (taskId: string, newSubtasks: Subtask[]) => {
@@ -2890,6 +3141,11 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
                 const folderTasks = todos
                   .filter(t => t.folderId === folder.id)
                   .sort((a, b) => (a.status === 'done' ? 1 : 0) - (b.status === 'done' ? 1 : 0));
+                const folderSections = sections.filter(s => s.folderId === folder.id).sort((a, b) => a.sortOrder - b.sortOrder);
+                const sectionIds = new Set(folderSections.map(s => s.id));
+                const tasksBySection = (sid: string | null) => folderTasks
+                  .filter(t => sid === null ? (!t.sectionId || !sectionIds.has(t.sectionId)) : t.sectionId === sid)
+                  .sort((a, b) => ((a.status === 'done' ? 1 : 0) - (b.status === 'done' ? 1 : 0)) || ((a.orderIndex ?? 0) - (b.orderIndex ?? 0)));
                 const doneCount = folderTasks.filter(t => t.status === 'done').length;
                 const progress = folderTasks.length ? Math.round((doneCount / folderTasks.length) * 100) : 0;
                 const isDone = folderTasks.length > 0 && doneCount === folderTasks.length;
@@ -2959,45 +3215,108 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
                           transition={{ duration: 0.2, ease: 'easeInOut' }}
                           className="overflow-hidden border-t border-white/[0.06] bg-dark-bg/40"
                         >
-                          {/* Lista de tarefas */}
-                          <div className="p-2 space-y-1 min-h-[40px]">
-                            {folderTasks.map(task => {
-                              const done = task.status === 'done';
-                              return (
-                                <div key={task.id} className="group flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/[0.03] transition-colors">
-                                  <button
-                                    onClick={() => changeStatus(task.id, done ? 'todo' : 'done')}
-                                    className="flex-shrink-0"
-                                    title={done ? 'Reabrir' : 'Concluir'}
-                                  >
-                                    {done
-                                      ? <CheckCircle2 size={17} className="text-emerald-500" />
-                                      : <Circle size={17} className="text-dark-text/30 hover:text-violet-400 transition-colors" />}
-                                  </button>
-                                  <button
-                                    onClick={() => setViewingTodo(task)}
-                                    className={`flex-1 min-w-0 text-left text-sm truncate transition-colors ${done ? 'line-through text-dark-text/35' : 'text-dark-text/85 hover:text-dark-text'}`}
-                                  >
-                                    {task.title}
-                                  </button>
-                                  {!done && <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${PRIORITY_CONFIG[task.priority].dot}`} />}
-                                  <button
-                                    onClick={() => setTaskFolder(task.id, undefined)}
-                                    className="w-5 h-5 flex items-center justify-center rounded text-dark-text/25 hover:text-amber-400 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0"
-                                    title="Remover da pasta"
-                                  >
-                                    <X size={13} />
-                                  </button>
-                                </div>
-                              );
-                            })}
-                            {folderTasks.length === 0 && (
-                              <p className="text-[11px] text-dark-text/25 px-2 py-2">Sem tarefas nesta pasta.</p>
-                            )}
-                          </div>
+                          {/* Subseções + tarefas (drag&drop) */}
+                          <DndContext
+                            sensors={dndSensors}
+                            collisionDetection={closestCenter}
+                            onDragStart={folderDragStart}
+                            onDragOver={folderDragOver}
+                            onDragEnd={(e) => folderDragEnd(folder.id, e)}
+                          >
+                            <div className="p-2 space-y-2 min-h-[40px]">
+                              {/* Subseções */}
+                              <SortableContext id={`secs:${folder.id}`} items={folderSections.map(s => s.id)} strategy={verticalListSortingStrategy}>
+                                {folderSections.map(section => {
+                                  const secTasks = tasksBySection(section.id);
+                                  const secKey = `sec-${section.id}`;
+                                  const collapsed = collapsedSections[secKey] ?? false;
+                                  return (
+                                    <SortableSectionBlock
+                                      key={section.id}
+                                      section={section}
+                                      count={secTasks.length}
+                                      collapsed={collapsed}
+                                      onToggleCollapse={() => setCollapsedSections(p => ({ ...p, [secKey]: !(p[secKey] ?? false) }))}
+                                      isRenaming={renamingSectionId === section.id}
+                                      renameValue={renameSectionInput}
+                                      onRenameChange={setRenameSectionInput}
+                                      onRenameCommit={() => { renameSection(section.id, renameSectionInput); setRenamingSectionId(null); }}
+                                      onRenameCancel={() => setRenamingSectionId(null)}
+                                      onStartRename={() => { setRenamingSectionId(section.id); setRenameSectionInput(section.name); }}
+                                      onDelete={async () => { if (await confirmDialog({ message: `Excluir a subseção "${section.name}"? As tarefas voltam para a pasta.`, danger: true })) deleteSection(section.id); }}
+                                    >
+                                      <SectionDropZone id={`s:${section.id}`} items={secTasks.map(t => t.id)}>
+                                        {secTasks.map(task => (
+                                          <SortableFolderTaskRow
+                                            key={task.id} task={task} folderId={folder.id} sectionId={section.id}
+                                            priorityDot={PRIORITY_CONFIG[task.priority].dot}
+                                            onToggle={() => changeStatus(task.id, task.status === 'done' ? 'todo' : 'done')}
+                                            onOpen={() => setViewingTodo(task)}
+                                            onRemove={() => setTaskFolder(task.id, undefined)}
+                                          />
+                                        ))}
+                                        {secTasks.length === 0 && <p className="text-[10px] text-dark-text/20 px-2 py-1.5">Arraste tarefas para cá.</p>}
+                                      </SectionDropZone>
+                                      <div className="relative mt-1">
+                                        <Plus size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-dark-text/25" />
+                                        <input
+                                          value={sectionTaskInput[section.id] || ''}
+                                          onChange={e => setSectionTaskInput(p => ({ ...p, [section.id]: e.target.value }))}
+                                          onKeyDown={e => { if (e.key === 'Enter') { addTaskToSection(folder.id, section.id, sectionTaskInput[section.id] || ''); setSectionTaskInput(p => ({ ...p, [section.id]: '' })); } }}
+                                          placeholder="Adicionar tarefa..."
+                                          className="w-full bg-white/[0.02] border border-white/[0.05] rounded-lg pl-7 pr-3 py-1.5 text-[11px] text-dark-text placeholder:text-dark-text/25 outline-none focus:border-violet-500/40 transition-colors"
+                                        />
+                                      </div>
+                                    </SortableSectionBlock>
+                                  );
+                                })}
+                              </SortableContext>
 
-                          {/* Adicionar tarefa */}
-                          <div className="px-3 py-2.5 border-t border-white/[0.06]">
+                              {/* Tarefas sem subseção */}
+                              {(() => {
+                                const noneTasks = tasksBySection(null);
+                                return (
+                                  <div>
+                                    {folderSections.length > 0 && (
+                                      <div className="flex items-center gap-1.5 mb-1 mt-1 px-1">
+                                        <span className="text-[10px] font-bold text-dark-text/30 uppercase tracking-widest flex-1">Sem subseção</span>
+                                        <span className="text-[9px] bg-dark-text/10 px-1.5 py-0.5 rounded-full text-dark-text/30 font-bold">{noneTasks.length}</span>
+                                      </div>
+                                    )}
+                                    <SectionDropZone id={`s:${SEC_NONE}`} items={noneTasks.map(t => t.id)}>
+                                      {noneTasks.map(task => (
+                                        <SortableFolderTaskRow
+                                          key={task.id} task={task} folderId={folder.id} sectionId={null}
+                                          priorityDot={PRIORITY_CONFIG[task.priority].dot}
+                                          onToggle={() => changeStatus(task.id, task.status === 'done' ? 'todo' : 'done')}
+                                          onOpen={() => setViewingTodo(task)}
+                                          onRemove={() => setTaskFolder(task.id, undefined)}
+                                        />
+                                      ))}
+                                      {noneTasks.length === 0 && folderSections.length === 0 && (
+                                        <p className="text-[11px] text-dark-text/25 px-2 py-2">Sem tarefas nesta pasta.</p>
+                                      )}
+                                    </SectionDropZone>
+                                  </div>
+                                );
+                              })()}
+                            </div>
+
+                            <DragOverlay>
+                              {activeDragTask ? (
+                                <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-dark-card border border-violet-500/40 shadow-xl text-sm text-dark-text">
+                                  <GripVertical size={13} className="text-violet-400" />{activeDragTask.title}
+                                </div>
+                              ) : activeDragSection ? (
+                                <div className="px-2 py-1 rounded-lg bg-dark-card border border-violet-500/40 shadow-xl text-[10px] font-bold uppercase tracking-widest text-violet-400">
+                                  {activeDragSection.name}
+                                </div>
+                              ) : null}
+                            </DragOverlay>
+                          </DndContext>
+
+                          {/* Adicionar tarefa direto na pasta + nova subseção */}
+                          <div className="px-3 py-2.5 border-t border-white/[0.06] space-y-2">
                             <div className="relative">
                               <Plus size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-dark-text/30" />
                               <input
@@ -3016,6 +3335,27 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
                                 <CornerDownLeft size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-dark-text/30" />
                               )}
                             </div>
+                            {addingSectionFolder === folder.id ? (
+                              <div className="relative">
+                                <FolderPlus size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-violet-400/60" />
+                                <input
+                                  autoFocus
+                                  value={newSectionInput}
+                                  onChange={e => setNewSectionInput(e.target.value)}
+                                  onKeyDown={e => { if (e.key === 'Enter') { createSection(folder.id, newSectionInput); setNewSectionInput(''); setAddingSectionFolder(null); } if (e.key === 'Escape') { setAddingSectionFolder(null); setNewSectionInput(''); } }}
+                                  onBlur={() => { if (newSectionInput.trim()) createSection(folder.id, newSectionInput); setNewSectionInput(''); setAddingSectionFolder(null); }}
+                                  placeholder="Nome da subseção..."
+                                  className="w-full bg-violet-500/5 border border-violet-500/30 rounded-lg pl-8 pr-3 py-2 text-xs text-dark-text placeholder:text-dark-text/30 outline-none focus:border-violet-500/50 transition-colors"
+                                />
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => { setAddingSectionFolder(folder.id); setNewSectionInput(''); }}
+                                className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-dashed border-white/[0.08] text-[11px] font-semibold text-dark-text/40 hover:text-violet-400 hover:border-violet-500/30 transition-all"
+                              >
+                                <FolderPlus size={13} /> Nova subseção
+                              </button>
+                            )}
                           </div>
                         </motion.div>
                       )}

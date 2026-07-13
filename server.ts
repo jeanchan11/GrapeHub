@@ -874,12 +874,24 @@ async function startServer() {
         done_at TIMESTAMP
       );
       ALTER TABLE to_do_staff ADD COLUMN IF NOT EXISTS folder_id TEXT;
+      ALTER TABLE to_do_staff ADD COLUMN IF NOT EXISTS section_id TEXT;
+      ALTER TABLE to_do_staff ADD COLUMN IF NOT EXISTS order_index INTEGER DEFAULT 0;
 
       CREATE TABLE IF NOT EXISTS to_do_staff_folders (
         id TEXT PRIMARY KEY,
         page_id TEXT NOT NULL DEFAULT 'default',
         name TEXT NOT NULL,
         color TEXT,
+        sort_order INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+
+      -- Subseções dentro de uma pasta do To Do Staff
+      CREATE TABLE IF NOT EXISTS to_do_staff_sections (
+        id TEXT PRIMARY KEY,
+        folder_id TEXT NOT NULL,
+        page_id TEXT NOT NULL DEFAULT 'default',
+        name TEXT NOT NULL,
         sort_order INTEGER DEFAULT 0,
         created_at TIMESTAMP DEFAULT NOW()
       );
@@ -15854,13 +15866,15 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
   app.get("/api/todo-staff/tasks", async (req, res) => {
     try {
       const pageId = req.query.page_id || 'default';
-      const { rows } = await pool.query("SELECT * FROM to_do_staff WHERE page_id = $1 ORDER BY created_at DESC", [pageId]);
+      const { rows } = await pool.query("SELECT * FROM to_do_staff WHERE page_id = $1 ORDER BY order_index ASC, created_at DESC", [pageId]);
       const items = rows.map(r => ({
         id: r.id, title: r.title, description: r.description || undefined,
         priority: r.priority, status: r.status, tags: r.tags || [],
         assignee: r.assignee || undefined, dueDate: r.due_date || undefined,
         subtasks: r.subtasks || [], comments: r.comments || [],
         folderId: r.folder_id || undefined,
+        sectionId: r.section_id || undefined,
+        orderIndex: r.order_index ?? 0,
         createdAt: r.created_at?.toISOString(), doneAt: r.done_at?.toISOString() || undefined,
       }));
       res.json(items);
@@ -15869,14 +15883,14 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
 
   app.post("/api/todo-staff/tasks", async (req, res) => {
     try {
-      const { id, title, description, priority, status, tags, assignee, dueDate, subtasks, comments, doneAt, folderId, page_id } = req.body;
+      const { id, title, description, priority, status, tags, assignee, dueDate, subtasks, comments, doneAt, folderId, sectionId, orderIndex, page_id } = req.body;
       await pool.query(
-        `INSERT INTO to_do_staff (id, title, description, priority, status, tags, assignee, due_date, subtasks, comments, done_at, folder_id, page_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+        `INSERT INTO to_do_staff (id, title, description, priority, status, tags, assignee, due_date, subtasks, comments, done_at, folder_id, section_id, order_index, page_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
         [id, title, description || null, priority || 'medium', status || 'todo',
          JSON.stringify(tags || []), assignee || null, dueDate || null,
          JSON.stringify(subtasks || []), JSON.stringify(comments || []),
-         doneAt || null, folderId || null, page_id || 'default']
+         doneAt || null, folderId || null, sectionId || null, orderIndex ?? 0, page_id || 'default']
       );
       res.json({ ok: true });
     } catch (err: any) { res.status(500).json({ error: err.message }); }
@@ -15884,15 +15898,32 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
 
   app.put("/api/todo-staff/tasks/:id", async (req, res) => {
     try {
-      const { title, description, priority, status, tags, assignee, dueDate, subtasks, comments, doneAt, folderId } = req.body;
+      const { title, description, priority, status, tags, assignee, dueDate, subtasks, comments, doneAt, folderId, sectionId } = req.body;
+      // section_id só é atualizado quando enviado (evita zerar em updates parciais que não mexem em subseção)
+      const setSection = sectionId !== undefined;
       await pool.query(
         `UPDATE to_do_staff SET title=$1, description=$2, priority=$3, status=$4, tags=$5,
-         assignee=$6, due_date=$7, subtasks=$8, comments=$9, done_at=$10, folder_id=$11 WHERE id=$12`,
+         assignee=$6, due_date=$7, subtasks=$8, comments=$9, done_at=$10, folder_id=$11${setSection ? ', section_id=$13' : ''} WHERE id=$12`,
         [title, description || null, priority, status,
          JSON.stringify(tags || []), assignee || null, dueDate || null,
          JSON.stringify(subtasks || []), JSON.stringify(comments || []),
-         doneAt || null, folderId ?? null, req.params.id]
+         doneAt || null, folderId ?? null, req.params.id,
+         ...(setSection ? [sectionId ?? null] : [])]
       );
+      res.json({ ok: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // Reordena/realoca tarefas (drag&drop entre subseções e ordenação)
+  app.patch("/api/todo-staff/tasks/reorder", async (req, res) => {
+    try {
+      const tasks: Array<{ id: string; sectionId?: string | null; orderIndex?: number }> = req.body.tasks || [];
+      for (const t of tasks) {
+        await pool.query(
+          "UPDATE to_do_staff SET section_id=$1, order_index=$2 WHERE id=$3",
+          [t.sectionId ?? null, t.orderIndex ?? 0, t.id]
+        );
+      }
       res.json({ ok: true });
     } catch (err: any) { res.status(500).json({ error: err.message }); }
   });
@@ -16031,8 +16062,67 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
   // Apaga a pasta e solta as tarefas dela (folder_id → NULL), sem perder tarefas
   app.delete("/api/todo-staff/folders/:id", async (req, res) => {
     try {
-      await pool.query("UPDATE to_do_staff SET folder_id=NULL WHERE folder_id=$1", [req.params.id]);
+      await pool.query("UPDATE to_do_staff SET folder_id=NULL, section_id=NULL WHERE folder_id=$1", [req.params.id]);
+      await pool.query("DELETE FROM to_do_staff_sections WHERE folder_id=$1", [req.params.id]);
       await pool.query("DELETE FROM to_do_staff_folders WHERE id=$1", [req.params.id]);
+      res.json({ ok: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // ── Subseções dentro das pastas ────────────────────────────────────────────
+  app.get("/api/todo-staff/sections", async (req, res) => {
+    try {
+      const pageId = req.query.page_id || 'default';
+      const { rows } = await pool.query(
+        "SELECT * FROM to_do_staff_sections WHERE page_id = $1 ORDER BY sort_order ASC, created_at ASC",
+        [pageId]
+      );
+      const items = rows.map(r => ({
+        id: r.id, folderId: r.folder_id, name: r.name,
+        sortOrder: r.sort_order ?? 0, createdAt: r.created_at?.toISOString(),
+      }));
+      res.json(items);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.post("/api/todo-staff/sections", async (req, res) => {
+    try {
+      const { id, folderId, name, sortOrder, page_id } = req.body;
+      await pool.query(
+        `INSERT INTO to_do_staff_sections (id, folder_id, name, sort_order, page_id) VALUES ($1,$2,$3,$4,$5)`,
+        [id, folderId, name, sortOrder ?? 0, page_id || 'default']
+      );
+      res.json({ ok: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.put("/api/todo-staff/sections/:id", async (req, res) => {
+    try {
+      const { name, sortOrder } = req.body;
+      await pool.query(
+        `UPDATE to_do_staff_sections SET name=$1, sort_order=$2 WHERE id=$3`,
+        [name, sortOrder ?? 0, req.params.id]
+      );
+      res.json({ ok: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // Reordena subseções em lote
+  app.patch("/api/todo-staff/sections/reorder", async (req, res) => {
+    try {
+      const sections: Array<{ id: string; sortOrder?: number }> = req.body.sections || [];
+      for (const s of sections) {
+        await pool.query("UPDATE to_do_staff_sections SET sort_order=$1 WHERE id=$2", [s.sortOrder ?? 0, s.id]);
+      }
+      res.json({ ok: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // Apaga a subseção; as tarefas dela voltam a ficar sem subseção (section_id → NULL)
+  app.delete("/api/todo-staff/sections/:id", async (req, res) => {
+    try {
+      await pool.query("UPDATE to_do_staff SET section_id=NULL WHERE section_id=$1", [req.params.id]);
+      await pool.query("DELETE FROM to_do_staff_sections WHERE id=$1", [req.params.id]);
       res.json({ ok: true });
     } catch (err: any) { res.status(500).json({ error: err.message }); }
   });
