@@ -58,12 +58,22 @@ interface Creative {
   messages: number;
   leads: number;
 }
+interface RegionRow {
+  region: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  leads: number;
+  messages: number;
+}
 export interface MetaReportData {
   partnerName: string;
   range: { start: string; end: string };
   kpis: Kpis | null;
   campaigns: Campaign[];
   creatives?: Creative[];
+  regions?: RegionRow[];
 }
 
 // ── Formatação ──
@@ -274,6 +284,12 @@ const MetaAdsReport = React.forwardRef<HTMLDivElement, { data: MetaReportData }>
     .slice(0, 11);
   const hasCr = creatives.length > 0;
 
+  // Resultados por estado (região) — página 04, condicional
+  const regionsAll = [...(data.regions || [])].sort((a, b) => (b.spend || 0) - (a.spend || 0));
+  const regions = regionsAll.slice(0, 18);
+  const hasRegions = regions.length > 0;
+  const regionHasConv = regions.some(r => ((isPM ? r.messages : r.leads) || 0) > 0);
+
   return (
     <div ref={ref} style={{ position: 'fixed', left: -99999, top: 0, width: 794, background: '#fff' }}>
       {/* ══ PÁGINA 1 — CAPA ══ */}
@@ -452,6 +468,47 @@ const MetaAdsReport = React.forwardRef<HTMLDivElement, { data: MetaReportData }>
           </table>
           {(data.creatives?.length || 0) > creatives.length && (
             <p style={{ fontSize: 10, color: C.faint, marginTop: 12 }}>+ {(data.creatives!.length - creatives.length)} outros criativos com menor volume no período.</p>
+          )}
+          <Footer left={footerLeft} />
+        </Page>
+      )}
+
+      {/* ══ PÁGINA — RESULTADOS POR ESTADO (condicional) ══ */}
+      {hasRegions && (
+        <Page>
+          <SectionHead num={hasCr ? '04' : '03'} title="Resultados por Estado" />
+          <p style={{ fontSize: 12.5, lineHeight: 1.6, color: C.body, marginTop: 20, marginBottom: 16 }}>
+            Distribuição geográfica do investimento no período, ordenada por valor investido.
+          </p>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+            <thead>
+              <tr style={{ background: `linear-gradient(90deg, ${C.purpleD}, ${C.purple})`, color: '#fff' }}>
+                <th style={{ textAlign: 'left', padding: '9px 12px', fontSize: 9.5, borderRadius: '8px 0 0 0' }}>ESTADO</th>
+                {regionHasConv && <th style={{ textAlign: 'right', padding: '9px 8px', fontSize: 9.5 }}>{isPM ? 'CONV.' : 'LEADS'}</th>}
+                <th style={{ textAlign: 'right', padding: '9px 8px', fontSize: 9.5 }}>CLIQUES</th>
+                <th style={{ textAlign: 'right', padding: '9px 8px', fontSize: 9.5 }}>IMPR.</th>
+                <th style={{ textAlign: 'right', padding: '9px 8px', fontSize: 9.5 }}>CTR</th>
+                <th style={{ textAlign: 'right', padding: '9px 12px', fontSize: 9.5, borderRadius: '0 8px 0 0' }}>INVESTIDO</th>
+              </tr>
+            </thead>
+            <tbody>
+              {regions.map((r, i) => {
+                const conv = (isPM ? r.messages : r.leads) || 0;
+                return (
+                  <tr key={i} style={{ borderBottom: `1px solid ${C.line}` }}>
+                    <td style={{ padding: '9px 12px', fontWeight: 700, color: C.ink }}>{r.region}</td>
+                    {regionHasConv && <td style={{ textAlign: 'right', padding: '9px 8px', fontWeight: 700, color: C.ink }}>{int(conv)}</td>}
+                    <td style={{ textAlign: 'right', padding: '9px 8px', color: C.body }}>{int(r.clicks)}</td>
+                    <td style={{ textAlign: 'right', padding: '9px 8px', color: C.body }}>{int(r.impressions)}</td>
+                    <td style={{ textAlign: 'right', padding: '9px 8px', color: C.body }}>{pct(r.ctr)}</td>
+                    <td style={{ textAlign: 'right', padding: '9px 12px', color: C.body }}>{brl(r.spend)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {regionsAll.length > regions.length && (
+            <p style={{ fontSize: 10, color: C.faint, marginTop: 12 }}>+ {regionsAll.length - regions.length} outros estados com menor investimento no período.</p>
           )}
           <Footer left={footerLeft} />
         </Page>

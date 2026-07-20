@@ -832,6 +832,9 @@ async function startServer() {
         average_ticket NUMERIC DEFAULT 0,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+      -- Funil com SDR: no-show e capacidade de agendamento por SDR
+      ALTER TABLE commercial_data ADD COLUMN IF NOT EXISTS no_show_rate NUMERIC DEFAULT 20;
+      ALTER TABLE commercial_data ADD COLUMN IF NOT EXISTS meetings_per_sdr NUMERIC DEFAULT 60;
 
       CREATE TABLE IF NOT EXISTS gestor_data (
         id SERIAL PRIMARY KEY,
@@ -3941,7 +3944,9 @@ async function startServer() {
           leadCost: parseFloat(row.lead_cost),
           leadToMeetingRate: parseFloat(row.lead_to_meeting_rate),
           meetingToClosingRate: parseFloat(row.meeting_to_closing_rate),
-          averageTicket: parseFloat(row.average_ticket)
+          averageTicket: parseFloat(row.average_ticket),
+          noShowRate: row.no_show_rate != null ? parseFloat(row.no_show_rate) : 20,
+          meetingsPerSdr: row.meetings_per_sdr != null ? parseFloat(row.meetings_per_sdr) : 60
         });
       } else {
         // Default values
@@ -3950,7 +3955,9 @@ async function startServer() {
           leadCost: 12,
           leadToMeetingRate: 20,
           meetingToClosingRate: 25,
-          averageTicket: 14000
+          averageTicket: 14000,
+          noShowRate: 20,
+          meetingsPerSdr: 60
         });
       }
     } catch (err) {
@@ -3960,11 +3967,11 @@ async function startServer() {
   });
 
   app.post("/api/comercial-data", async (req, res) => {
-    const { targetSales, leadCost, leadToMeetingRate, meetingToClosingRate, averageTicket } = req.body;
+    const { targetSales, leadCost, leadToMeetingRate, meetingToClosingRate, averageTicket, noShowRate, meetingsPerSdr } = req.body;
     try {
       await pool.query(
-        "INSERT INTO commercial_data (target_sales, lead_cost, lead_to_meeting_rate, meeting_to_closing_rate, average_ticket) VALUES ($1, $2, $3, $4, $5)",
-        [targetSales, leadCost, leadToMeetingRate, meetingToClosingRate, averageTicket]
+        "INSERT INTO commercial_data (target_sales, lead_cost, lead_to_meeting_rate, meeting_to_closing_rate, average_ticket, no_show_rate, meetings_per_sdr) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        [targetSales, leadCost, leadToMeetingRate, meetingToClosingRate, averageTicket, noShowRate ?? 20, meetingsPerSdr ?? 60]
       );
       res.json({ status: "success" });
     } catch (err) {
@@ -9555,6 +9562,72 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
+  // Resultados por estado (região) — o breakdown por região não é sincronizado no banco,
+  // então busca LIVE no Graph API com breakdowns=region, agregando o período inteiro.
+  app.get('/api/partners/:projectId/meta-region', async (req: any, res) => {
+    try {
+      const { projectId } = req.params;
+      const today = new Date();
+      const fallbackStart = new Date(today); fallbackStart.setDate(today.getDate() - 29);
+      const startStr = (req.query.start as string) || fallbackStart.toISOString().slice(0, 10);
+      const endStr = (req.query.end as string) || today.toISOString().slice(0, 10);
+
+      const { target: accountIds } = await resolveMetaAccounts(projectId, req.query.account as string);
+      if (accountIds.length === 0) return res.json({ has_data: false, regions: [] });
+
+      const agg: Record<string, { spend: number; impressions: number; clicks: number; leads: number; messages: number }> = {};
+      for (const accountId of accountIds) {
+        const tk = await pool.query(
+          `SELECT token_encrypted FROM project_tokens WHERE project_id=$1 AND platform='meta_ads' AND account_id=$2 AND token_encrypted IS NOT NULL LIMIT 1`,
+          [projectId, accountId]
+        );
+        if (tk.rows.length === 0) continue;
+        let token: string;
+        try { token = decryptToken(tk.rows[0].token_encrypted); } catch { continue; }
+        const acc = String(accountId).startsWith('act_') ? String(accountId) : 'act_' + accountId;
+        let url: string | null =
+          `https://graph.facebook.com/v21.0/${acc}/insights?level=account&breakdowns=region` +
+          `&fields=${encodeURIComponent('spend,impressions,clicks,actions')}` +
+          `&time_range=${encodeURIComponent(JSON.stringify({ since: startStr, until: endStr }))}` +
+          `&limit=500&access_token=${encodeURIComponent(token)}`;
+        for (let page = 0; page < 10 && url; page++) {
+          const json: any = await graphJson(url);
+          if (!json || json.error) {
+            if (json?.error) console.warn('[partner-meta-region] Graph:', json.error.message);
+            break;
+          }
+          for (const row of (json.data || [])) {
+            const key = (!row.region || row.region === 'Unknown')
+              ? 'Desconhecido'
+              : String(row.region).replace(/\s*\(state\)\s*$/i, '');
+            if (!agg[key]) agg[key] = { spend: 0, impressions: 0, clicks: 0, leads: 0, messages: 0 };
+            agg[key].spend += parseFloat(row.spend || 0);
+            agg[key].impressions += parseInt(row.impressions || 0, 10);
+            agg[key].clicks += parseInt(row.clicks || 0, 10);
+            agg[key].leads += sumActions(row.actions, 'lead');
+            agg[key].messages += sumActions(row.actions, 'messaging_conversation_started');
+          }
+          url = json.paging?.next || null;
+        }
+      }
+
+      const regions = Object.entries(agg).map(([region, v]) => ({
+        region,
+        spend: parseFloat(v.spend.toFixed(2)),
+        impressions: v.impressions,
+        clicks: v.clicks,
+        ctr: v.impressions > 0 ? parseFloat(((v.clicks / v.impressions) * 100).toFixed(2)) : 0,
+        leads: v.leads,
+        messages: v.messages,
+      })).sort((a, b) => b.spend - a.spend);
+
+      res.json({ has_data: regions.length > 0, regions });
+    } catch (e: any) {
+      console.error('[partner-meta-region]', e.message);
+      res.status(500).json({ error: 'Failed to load region breakdown', details: e.message });
+    }
+  });
+
   // ==========================================
   // META CREATIVES PER PARTNER
   // ==========================================
@@ -10125,6 +10198,102 @@ app.get("/api/todos", async (req, res) => {
   app.post('/api/meta-sync/run', async (_req: any, res) => {
     res.json({ started: true }); // responde já; roda em background
     setImmediate(() => runMetaAdsSync());
+  });
+
+  // Sync manual DIRECIONADO — só as contas Meta de um projeto (botão "Atualizar" do relatório).
+  // Síncrono: responde quando termina, para o front refazer o fetch na sequência. Inclui o dia de HOJE
+  // (o sync agendado vai só até ontem).
+  app.post('/api/partners/:projectId/meta-sync', async (req: any, res) => {
+    try {
+      const { projectId } = req.params;
+      const toks = await pool.query(
+        `SELECT id, account_id, token_encrypted FROM project_tokens
+         WHERE project_id=$1 AND platform='meta_ads' AND account_id IS NOT NULL AND token_encrypted IS NOT NULL`,
+        [projectId]
+      );
+      if (toks.rows.length === 0) return res.status(404).json({ error: 'Projeto sem conta Meta configurada.' });
+
+      const now = new Date();
+      const d = (n: number) => { const x = new Date(now); x.setDate(now.getDate() - n); return x.toISOString().slice(0, 10); };
+      // Período: o range visível do relatório (limitado a 90 dias pra trás), até hoje por padrão
+      let since = (req.query.start as string) || d(30);
+      let until = (req.query.end as string) || d(0);
+      const minSince = d(90);
+      if (since < minSince) since = minSince;
+      if (until > d(0)) until = d(0);
+
+      const CAMP_FIELDS = 'campaign_id,campaign_name,spend,impressions,clicks,ctr,actions';
+      const AD_FIELDS = 'ad_id,ad_name,campaign_id,campaign_name,spend,impressions,clicks,ctr,actions';
+      const stats = { insights: 0, creatives: 0, errors: [] as string[] };
+
+      for (const t of toks.rows) {
+        let token: string;
+        try { token = decryptToken(t.token_encrypted); } catch { stats.errors.push(`Conta ${t.account_id}: token inválido`); continue; }
+        const acc = String(t.account_id).startsWith('act_') ? String(t.account_id) : 'act_' + t.account_id;
+
+        // Campanhas → meta_insights
+        try {
+          const rows = await fetchMetaInsights(acc, 'campaign', CAMP_FIELDS, since, until, token);
+          for (const row of rows) {
+            await pool.query(
+              `INSERT INTO marketing.meta_insights (account_id, campaign_id, campaign_name, date, spend, impressions, clicks, ctr, leads, messages)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+               ON CONFLICT (account_id, campaign_id, date) DO UPDATE SET
+                 campaign_name=EXCLUDED.campaign_name, spend=EXCLUDED.spend, impressions=EXCLUDED.impressions,
+                 clicks=EXCLUDED.clicks, ctr=EXCLUDED.ctr, leads=EXCLUDED.leads, messages=EXCLUDED.messages, updated_at=now()`,
+              [t.account_id, row.campaign_id, row.campaign_name, row.date_start,
+               parseFloat(row.spend || 0), parseInt(row.impressions || 0, 10), parseInt(row.clicks || 0, 10),
+               parseFloat(row.ctr || 0), sumActions(row.actions, 'lead'), sumActions(row.actions, 'messaging_conversation_started')]
+            ).catch(() => {});
+            stats.insights++;
+          }
+        } catch (e: any) {
+          stats.errors.push(`Conta ${t.account_id}: ${e.message}`);
+          continue;
+        }
+
+        // Criativos → meta_creatives (thumbnails em lote; lote que falha preserva a thumb já salva)
+        try {
+          const rows = await fetchMetaInsights(acc, 'ad', AD_FIELDS, since, until, token);
+          const uniqueAds = Array.from(new Set(rows.map((r: any) => r.ad_id).filter(Boolean))) as string[];
+          const pickThumb = (cr: any): string | null =>
+            cr?.thumbnail_url || cr?.image_url ||
+            cr?.object_story_spec?.video_data?.image_url ||
+            cr?.object_story_spec?.link_data?.picture || null;
+          const thumbFields = encodeURIComponent('creative{thumbnail_url,image_url,object_story_spec{video_data{image_url},link_data{picture}}}');
+          const thumbs: Record<string, string | null> = {};
+          for (let k = 0; k < uniqueAds.length; k += 50) {
+            const chunk = uniqueAds.slice(k, k + 50);
+            const j: any = await graphJson(`https://graph.facebook.com/v21.0/?ids=${encodeURIComponent(chunk.join(','))}&fields=${thumbFields}&access_token=${encodeURIComponent(token)}`, 30000);
+            if (j && !j.error) {
+              for (const adId of chunk) thumbs[adId] = pickThumb(j[adId]?.creative);
+            }
+          }
+          for (const row of rows) {
+            await pool.query(
+              `INSERT INTO marketing.meta_creatives (account_id, campaign_id, campaign_name, ad_id, ad_name, thumbnail_url, date, spend, impressions, clicks, ctr, messages, leads)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+               ON CONFLICT (account_id, ad_id, date) DO UPDATE SET
+                 campaign_name=EXCLUDED.campaign_name, ad_name=EXCLUDED.ad_name,
+                 thumbnail_url=COALESCE(EXCLUDED.thumbnail_url, meta_creatives.thumbnail_url),
+                 spend=EXCLUDED.spend, impressions=EXCLUDED.impressions, clicks=EXCLUDED.clicks, ctr=EXCLUDED.ctr,
+                 messages=EXCLUDED.messages, leads=EXCLUDED.leads, updated_at=now()`,
+              [t.account_id, row.campaign_id, row.campaign_name, row.ad_id, row.ad_name, thumbs[row.ad_id] || null, row.date_start,
+               parseFloat(row.spend || 0), parseInt(row.impressions || 0, 10), parseInt(row.clicks || 0, 10),
+               parseFloat(row.ctr || 0), sumActions(row.actions, 'messaging_conversation_started'), sumActions(row.actions, 'lead')]
+            ).catch(() => {});
+            stats.creatives++;
+          }
+        } catch (e: any) {
+          stats.errors.push(`Conta ${t.account_id} (criativos): ${e.message}`);
+        }
+      }
+
+      res.json({ ok: true, synced_range: { start: since, end: until }, insights: stats.insights, creatives: stats.creatives, errors: stats.errors });
+    } catch (e: any) {
+      console.error('[partner-meta-sync]', e.message);
+      res.status(500).json({ error: e.message });
+    }
   });
 
   // Agenda diária às 02h (America/Sao_Paulo, UTC-3 ≈ 05h UTC): roda 1×/dia se enabled.

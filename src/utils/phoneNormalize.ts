@@ -25,8 +25,14 @@ export function normalizePhoneBR(raw: string | null | undefined): string | null 
     digits = digits.replace(/^0+/, '');
   }
 
-  // 3/4. Adiciona 55 se não começa com 55
-  if (!digits.startsWith('55')) {
+  // 3/4. Prefixo de país (55).
+  //   Número NACIONAL (DDD + local) tem 10 dígitos (fixo: 2+8) ou 11 (celular: 2+9).
+  //   Nesse caso SEMPRE prefixa 55 — inclusive quando o próprio DDD é 55 (Santa Maria/
+  //   Rosário do Sul-RS). Sem isso, "55996705586" (DDD 55 + celular) era lido como se o
+  //   55 fosse o código do país, sobrava com 11 dígitos e caía como inválido.
+  if (digits.length === 10 || digits.length === 11) {
+    digits = '55' + digits;
+  } else if (!digits.startsWith('55')) {
     digits = '55' + digits;
   }
 

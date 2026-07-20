@@ -3,8 +3,9 @@ import {
   ComposedChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
 import {
-  X, DollarSign, MousePointerClick, Eye, Users, Megaphone, Loader2, AlertCircle, Image as ImageIcon, MessageCircle, Calendar, ChevronDown, Download, ArrowUp, ArrowDown, ChevronsUpDown
+  X, DollarSign, MousePointerClick, Eye, Users, Megaphone, Loader2, AlertCircle, Image as ImageIcon, MessageCircle, Calendar, ChevronDown, Download, ArrowUp, ArrowDown, ChevronsUpDown, MapPin, RefreshCw
 } from 'lucide-react';
+import { toast } from '@/src/lib/toast';
 import MetaAdsReport, { exportMetaReportPdf } from './MetaAdsReport';
 import ThemedDropdown from './ui/ThemedDropdown';
 
@@ -249,6 +250,17 @@ interface Creative {
   leads: number;
 }
 
+// Linha do breakdown por estado (região)
+interface RegionRow {
+  region: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  leads: number;
+  messages: number;
+}
+
 // ── Main Component ────────────────────────────────────────────────────────
 interface MetaAdsModalProps {
   projectId: string;
@@ -268,6 +280,9 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
   const [error, setError] = useState<string | null>(null);
   const [creatives, setCreatives] = useState<Creative[]>([]);
   const [loadingCreatives, setLoadingCreatives] = useState(true);
+  // Resultados por estado (busca live no Graph — carrega em paralelo, sem travar o resto)
+  const [regions, setRegions] = useState<RegionRow[] | null>(null);
+  const [loadingRegions, setLoadingRegions] = useState(true);
   // Contas de anúncio do projeto e a selecionada ('all' = consolidado)
   const [accounts, setAccounts] = useState<{ id: string; name: string }[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<string>('all');
@@ -290,6 +305,7 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
   const contentRef = useRef<HTMLDivElement>(null);
   const reportRef = useRef<HTMLDivElement>(null);
   const thumbsReadyRef = useRef(false);
+  const regionsReadyRef = useRef(false); // por estado carregado (p/ o export esperar)
 
   // Busca uma thumbnail via proxy (com cache por ad_id no backend) e converte em data URL. Null se falhar.
   const fetchThumb = async (adId: string, url: string): Promise<string | null> => {
@@ -343,6 +359,15 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
     setError(null);
     try {
       const accParam = selectedAccount && selectedAccount !== 'all' ? `&account=${encodeURIComponent(selectedAccount)}` : '';
+      // Por estado: chamada live no Graph (mais lenta) — roda em paralelo com loading próprio
+      setLoadingRegions(true);
+      setRegions(null);
+      regionsReadyRef.current = false;
+      fetch(`/api/partners/${projectId}/meta-region?start=${r.start}&end=${r.end}${accParam}`)
+        .then(res => (res.ok ? res.json() : { regions: [] }))
+        .then(j => setRegions(Array.isArray(j?.regions) ? j.regions : []))
+        .catch(() => setRegions([]))
+        .finally(() => { setLoadingRegions(false); regionsReadyRef.current = true; });
       const [insightsRes, creativesRes] = await Promise.all([
         fetch(`/api/partners/${projectId}/meta-insights?start=${r.start}&end=${r.end}${accParam}`),
         fetch(`/api/partners/${projectId}/meta-creatives?start=${r.start}&end=${r.end}${accParam}`),
@@ -429,6 +454,25 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
   // Calc days difference for labels
   const daysDiff = Math.round((+new Date(range.end) - +new Date(range.start)) / 86400000) + 1;
 
+  // Sync manual — puxa os dados do Meta agora (fora do horário do sync agendado)
+  const [syncing, setSyncing] = useState(false);
+  const handleSyncNow = async () => {
+    if (syncing) return;
+    setSyncing(true);
+    try {
+      const r = await fetch(`/api/partners/${projectId}/meta-sync?start=${range.start}&end=${range.end}`, { method: 'POST' });
+      const j = await r.json().catch(() => ({} as any));
+      if (!r.ok) throw new Error(j?.error || 'Falha ao sincronizar com o Meta');
+      await fetchData(range);
+      if (Array.isArray(j?.errors) && j.errors.length > 0) toast.error(`Atualizado com avisos: ${j.errors[0]}`);
+      else toast.success('Dados atualizados direto do Meta!');
+    } catch (e: any) {
+      toast.error(e?.message || 'Falha ao sincronizar com o Meta');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   // PDF Export — relatório profissional de performance (documento A4 dedicado)
   const handleExportPDF = async () => {
     if (!reportRef.current || exporting || !data?.kpis) return;
@@ -436,9 +480,9 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
     try {
       // Garante que o logo e as fontes carregaram antes de rasterizar
       await (document as any).fonts?.ready?.catch?.(() => {});
-      // espera o pré-carregamento das thumbnails terminar (até 7s) antes de rasterizar
+      // espera o pré-carregamento das thumbnails e dos resultados por estado antes de rasterizar
       const t0 = Date.now();
-      while (!thumbsReadyRef.current && Date.now() - t0 < 15000) { await new Promise(r => setTimeout(r, 200)); }
+      while ((!thumbsReadyRef.current || !regionsReadyRef.current) && Date.now() - t0 < 15000) { await new Promise(r => setTimeout(r, 200)); }
       await new Promise(r => setTimeout(r, 300));
       const fileName = `Relatório (${partnerName.replace(/[\\/:*?"<>|]/g, '').trim()}).pdf`;
       await exportMetaReportPdf(reportRef.current, fileName);
@@ -461,6 +505,7 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
             partnerName, range, kpis: data.kpis, campaigns: data.campaigns || [],
             // thumbnail já embutida como data URL (evita fetch externo na rasterização)
             creatives: creatives.map(c => ({ ...c, thumbnail_url: thumbData[c.ad_id] || null })),
+            regions: regions || [],
           }}
         />
       )}
@@ -491,6 +536,14 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
               />
             )}
             <ModalDateRangePicker range={range} onChange={setRange} />
+            <button
+              onClick={handleSyncNow}
+              disabled={syncing || loading}
+              className="p-2.5 rounded-xl bg-dark-card border border-black/10 dark:border-white/10 hover:border-violet-500/60 text-slate-400 hover:text-violet-400 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Atualizar agora — puxa os dados mais recentes do Meta (inclui hoje)"
+            >
+              <RefreshCw size={16} className={syncing ? 'animate-spin' : ''} />
+            </button>
             <button
               onClick={handleExportPDF}
               disabled={exporting || loading}
@@ -686,6 +739,70 @@ export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAd
                   </div>
                 )}
               </div>
+
+              {/* ── Resultados por Estado ─────────────────────────────── */}
+              {(loadingRegions || (regions && regions.length > 0)) && (
+                <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-6 transition-colors duration-200">
+                  <div className="flex items-center justify-between mb-5">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-xl bg-violet-500/15 flex items-center justify-center">
+                        <MapPin size={14} className="text-violet-500" />
+                      </div>
+                      <div>
+                        <h2 className="text-sm font-bold text-dark-text">Resultados por Estado</h2>
+                        <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5">Ordenado por Valor Gasto</p>
+                      </div>
+                    </div>
+                    {regions && regions.length > 0 && (
+                      <span className="bg-violet-500/15 text-violet-500 text-[10px] font-bold px-3 py-1 rounded-full">
+                        {regions.length} Estado{regions.length !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </div>
+
+                  {loadingRegions ? (
+                    <div className="space-y-3 animate-pulse">
+                      {[1, 2, 3].map(i => (
+                        <div key={i} className="h-9 rounded-lg bg-black/5 dark:bg-white/5" />
+                      ))}
+                    </div>
+                  ) : (() => {
+                    // O Meta geralmente não libera mensagens/leads no breakdown por região (privacidade);
+                    // só mostra a coluna de resultado quando realmente vier dado.
+                    const hasResults = (regions || []).some(rg => (isPM ? rg.messages : rg.leads) > 0);
+                    return (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b text-left" style={{ borderColor: 'rgba(100,100,120,0.2)' }}>
+                            <th className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest pb-3 pr-4">Estado</th>
+                            {hasResults && <th className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest pb-3 px-3 text-right">{isPM ? 'Mensagens' : 'Leads'}</th>}
+                            <th className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest pb-3 px-3 text-right">Cliques</th>
+                            <th className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest pb-3 px-3 text-right">Impressões</th>
+                            <th className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest pb-3 px-3 text-right">CTR</th>
+                            <th className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest pb-3 pl-3 text-right">Valor Gasto</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(regions || []).map((rg, i) => (
+                            <tr key={i} className="border-b hover:bg-black/[0.04] dark:hover:bg-white/[0.02] transition-colors" style={{ borderColor: 'rgba(100,100,120,0.1)' }}>
+                              <td className="py-3 pr-4">
+                                <span className="text-dark-text font-medium text-sm">{rg.region}</span>
+                              </td>
+                              {hasResults && <td className="py-3 px-3 text-right text-emerald-400 font-bold">{fmtInt(isPM ? rg.messages : rg.leads)}</td>}
+                              <td className="py-3 px-3 text-right text-slate-600 dark:text-slate-300">{fmtInt(rg.clicks)}</td>
+                              <td className="py-3 px-3 text-right text-slate-600 dark:text-slate-300">{fmtInt(rg.impressions)}</td>
+                              <td className="py-3 px-3 text-right text-slate-600 dark:text-slate-300">{fmtPct(rg.ctr)}</td>
+                              <td className="py-3 pl-3 text-right text-violet-400 font-bold">{fmtCurrency(rg.spend)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    );
+                  })()}
+                </div>
+              )}
 
               {/* ── Criativos ──────────────────────────────────────────── */}
               <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-6 transition-colors duration-200">

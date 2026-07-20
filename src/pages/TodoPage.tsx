@@ -214,7 +214,7 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
   const [templates, setTemplates] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
-  const [viewType, setViewType] = useState<'kanban' | 'list'>('kanban');
+  const [viewType, setViewType] = useState<'kanban' | 'list'>('list');
   const [todoTab, setTodoTab] = useState<'ativos' | 'arquivadas'>('ativos');
 
   const [selectedGroup, setSelectedGroup] = useState<string>('all');
@@ -482,6 +482,34 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
       }
     });
   }, [expandedClients, projects]);
+
+  // Cards com tarefas nascem expandidos por padrão → busca as seções deles 1x
+  // (sem isso, o conteúdo auto-expandido renderizaria sem as seções CAMPANHA/CRM/…)
+  const sectionsAutoFetched = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    projects.forEach(p => {
+      if (p.id === 'no-project') return;
+      if (sectionsAutoFetched.current.has(p.id)) return;
+      if (!tasks.some(t => (t.project_id || 'no-project') === p.id)) return;
+      sectionsAutoFetched.current.add(p.id);
+      if (!sectionsMap[p.id] || sectionsMap[p.id].length === 0) {
+        setSectionsMap(prev => ({
+          ...prev,
+          [p.id]: FIXED_SECTION_NAMES.map((name, i) => ({
+            id: `local-${p.id}-${i}`,
+            project_id: p.id,
+            page_id: activePage,
+            name,
+            is_fixed: true,
+            order_index: i,
+            created_at: new Date().toISOString(),
+          }))
+        }));
+      }
+      fetchSectionsForProject(p.id);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projects, tasks]);
 
 
 
@@ -1005,7 +1033,7 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
 
   const uniqueGroups = Array.from(new Set(projects.map(p => p.group).filter(Boolean)));
 
-  const getProjectIcon = (projectId: string) => {
+  const getProjectIcon = (projectId: string, variant: 'card' | 'dot' = 'card') => {
     const project = projects.find(p => p.id === projectId);
     
     const projectResults = [
@@ -1032,6 +1060,11 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
 
     const resultBg = projectResults.find(r => r.label === project?.projectResult)?.color || 'bg-slate-500';
     const c = colorMap[resultBg] || colorMap['bg-slate-500'];
+
+    // 'dot': bolinha compacta de status (visão lista estilo ClickUp)
+    if (variant === 'dot') {
+      return <span className={`w-2.5 h-2.5 rounded-full ${resultBg} flex-shrink-0`} title={project?.projectResult || '-'} />;
+    }
 
     return (
       <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${c.bg} ${c.text} flex-shrink-0`}>
@@ -1315,7 +1348,9 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
               const projectName = pid === 'no-project'
                 ? 'Tarefas Internas / Sem Parceiro'
                 : (ct[0]?.project_name || projects.find(p => p.id === pid)?.partner || 'Projeto Desconhecido');
-              const isClientExpanded = expandedClients[groupName + pid] || false;
+              // Cards com tarefas já nascem expandidos (dá pra ver que tem tarefa);
+              // recolher manualmente grava false e é respeitado.
+              const isClientExpanded = expandedClients[groupName + pid] ?? ct.length > 0;
 
               const isDone = progress === 100;
 
@@ -1564,8 +1599,10 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
               };
 
               return (
-                <div key={pid} className="flex flex-col rounded-2xl bg-dark-card border border-white/[0.06] hover:border-violet-500/25 transition-all shadow-sm flex-shrink-0">
-                  <div className="p-4 cursor-pointer" onClick={() => {
+                <div key={pid} className={viewType === 'list'
+                  ? 'flex flex-col border-b border-white/[0.06] last:border-0'
+                  : 'flex flex-col rounded-2xl bg-dark-card border border-white/[0.06] hover:border-violet-500/25 transition-all shadow-sm flex-shrink-0'}>
+                  <div className={viewType === 'list' ? 'px-2 py-2 cursor-pointer hover:bg-white/[0.03] transition-colors' : 'p-4 cursor-pointer'} onClick={() => {
                     const newExpanded = !isClientExpanded;
                     setExpandedClients(prev => ({ ...prev, [groupName + pid]: newExpanded }));
                     if (newExpanded && pid !== 'no-project') {
@@ -1588,18 +1625,16 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
                     }
                   }}>
                     {viewType === 'list' ? (
-                      <div className="flex items-start gap-3">
-                        {getProjectIcon(pid)}
-                        <div className="flex-1 min-w-0">
-                          <h4 className="text-sm font-semibold text-dark-text truncate pr-2">{projectName}</h4>
-                          <div className="w-[300px] shrink-0 mt-2">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[10px] font-bold text-dark-text/40">{completedCount}/{ct.length} tarefas</span>
-                              <CountUp value={progress} suffix="%" className="text-[10px] font-bold text-violet-400" />
-                            </div>
-                            <AnimatedBar progress={progress} isDone={isDone} />
-                          </div>
-                        </div>
+                      /* Linha compacta estilo ClickUp: caret + bolinha de status + nome + n/m */
+                      <div className="flex items-center gap-2.5 min-h-[28px]">
+                        {isClientExpanded
+                          ? <ChevronDown size={15} className="text-dark-text/40 flex-shrink-0" />
+                          : <ChevronRight size={15} className="text-dark-text/40 flex-shrink-0" />}
+                        {getProjectIcon(pid, 'dot')}
+                        <h4 className="text-sm font-semibold text-dark-text truncate">{projectName}</h4>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${ct.length > 0
+                          ? 'text-amber-400 bg-amber-500/15'
+                          : 'text-dark-text/45 bg-dark-text/10'}`}>{completedCount}/{ct.length}</span>
                       </div>
                     ) : (
                       <div className="flex items-start gap-3">
@@ -1621,7 +1656,7 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
                         initial={{ height: 0, opacity: 0, overflow: 'hidden' as any }}
                         animate={{ height: 'auto', opacity: 1, transitionEnd: { overflow: 'visible' } }}
                         exit={{ height: 0, opacity: 0, overflow: 'hidden' as any }}
-                        className="border-t border-white/[0.06] bg-dark-bg/50 rounded-b-2xl"
+                        className={viewType === 'list' ? 'bg-dark-bg/30 pl-6' : 'border-t border-white/[0.06] bg-dark-bg/50 rounded-b-2xl'}
                       >
                         {renderExpandedContentForCard()}
                       </motion.div>
@@ -1670,7 +1705,8 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
                       exit={{ height: 0, opacity: 0 }}
                       className="px-4 pb-4"
                     >
-                      <div className="flex flex-col gap-3 pt-2">
+                      {/* Visão lista (ClickUp): linhas coladas com divisórias, sem gap de cards */}
+                      <div className="flex flex-col pt-1">
                         {renderCards()}
                       </div>
                     </motion.div>

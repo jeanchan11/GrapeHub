@@ -664,11 +664,10 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask, dragHandleProps 
         <div className="relative shrink-0" ref={statusRef}>
           <button
             onClick={() => setShowStatusPicker(v => !v)}
-            className="w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all hover:scale-125"
-            style={{ borderColor: circleColor }}
+            className="w-4 h-4 flex items-center justify-center transition-all hover:scale-125"
             title="Alterar status"
           >
-            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: circleColor }} />
+            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: circleColor }} />
           </button>
           {showStatusPicker && (
             <div className="absolute top-6 left-0 z-50 w-56 bg-dark-card border border-black/10 dark:border-white/10 rounded-xl shadow-2xl overflow-hidden">

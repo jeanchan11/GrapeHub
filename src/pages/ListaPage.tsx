@@ -203,8 +203,8 @@ const TaskRow = ({
         <button onClick={() => setExpanded(!expanded)} className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors">
           {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
         </button>
-        <div className="w-5 h-5 rounded-full border-2 border-slate-600 flex items-center justify-center shrink-0">
-          <div className="w-2 h-2 rounded-full bg-slate-500" />
+        <div className="w-5 h-5 flex items-center justify-center shrink-0">
+          <div className="w-2.5 h-2.5 rounded-full bg-slate-500" />
         </div>
         <div className="flex-1 min-w-0 cursor-pointer flex items-center gap-2" onClick={() => onOpenDetail(task)}>
           <span className="text-sm font-medium text-dark-text hover:text-violet-400 transition-colors truncate">{task.client_name}</span>

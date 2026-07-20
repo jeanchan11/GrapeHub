@@ -61,12 +61,15 @@ const InputField = ({ label, value, onChange, prefix, suffix, min = 0, step = 1,
 
 const ComercialGrape: React.FC = () => {
   const reportRef = useRef<HTMLDivElement>(null);
+  // Funil com SDR: a mídia gera LEADS, o SDR converte lead em reunião agendada.
   const [data, setData] = useState({
     targetSales: 168000,
-    meetingCost: 60,          // Custo por reunião (CPR)
-    meetingToClosingRate: 25, // Taxa Reunião → Fechamento
-    averageTicket: 14000,
+    leadCost: 12,             // Custo por lead (CPL) — o que a mídia entrega
+    leadToMeetingRate: 20,    // Taxa Lead → Reunião agendada (trabalho do SDR)
     noShowRate: 20,           // Taxa de No-Show (%)
+    meetingToClosingRate: 25, // Taxa Reunião realizada → Fechamento (closer)
+    averageTicket: 14000,
+    meetingsPerSdr: 60,       // Capacidade: reuniões agendadas por SDR/mês
   });
 
   // Fetch data from Neon DB via API
@@ -76,14 +79,15 @@ const ComercialGrape: React.FC = () => {
         const response = await fetch('/api/comercial-data');
         if (response.ok) {
           const result = await response.json();
-          // Map legacy leadCost → meetingCost if needed
           setData(prev => ({
             ...prev,
             targetSales:          result.targetSales          ?? prev.targetSales,
-            meetingCost:          result.meetingCost          ?? result.leadCost ?? prev.meetingCost,
+            leadCost:             result.leadCost             ?? prev.leadCost,
+            leadToMeetingRate:    result.leadToMeetingRate    ?? prev.leadToMeetingRate,
             meetingToClosingRate: result.meetingToClosingRate ?? prev.meetingToClosingRate,
             averageTicket:        result.averageTicket        ?? prev.averageTicket,
             noShowRate:           result.noShowRate           ?? prev.noShowRate,
+            meetingsPerSdr:       result.meetingsPerSdr       ?? prev.meetingsPerSdr,
           }));
         }
       } catch (err) {
@@ -111,27 +115,39 @@ const ComercialGrape: React.FC = () => {
   }, [data]);
 
   const results = useMemo(() => {
+    // Funil calculado de trás pra frente: meta → contratos → reuniões → agendamentos → leads
     const targetContracts = data.averageTicket > 0 ? Math.ceil(data.targetSales / data.averageTicket) : 0;
-    // Reuniões efetivas necessárias para atingir a meta de contratos
+    // Reuniões REALIZADAS necessárias (trabalho do closer)
     const meetingsNeeded = data.meetingToClosingRate > 0
       ? Math.ceil(targetContracts / (data.meetingToClosingRate / 100))
       : 0;
-    // Agendamentos necessários = reuniões realizadas / (1 - taxa de no-show)
+    // Agendamentos = reuniões realizadas / (1 - no-show)
     const noshowMultiplier = data.noShowRate >= 100 ? 1 : 1 / (1 - data.noShowRate / 100);
     const scheduledMeetings = Math.ceil(meetingsNeeded * noshowMultiplier);
     const noshowCount = scheduledMeetings - meetingsNeeded;
-    // Investimento = custo por reunião × agendamentos necessários (inclui no-shows)
-    const requiredInvestment = scheduledMeetings * data.meetingCost;
+    // Leads = agendamentos / taxa de agendamento do SDR
+    const leadsNeeded = data.leadToMeetingRate > 0
+      ? Math.ceil(scheduledMeetings / (data.leadToMeetingRate / 100))
+      : 0;
+    // Investimento = só mídia (custo por lead × leads). Custo do time de SDR fica de fora.
+    const requiredInvestment = leadsNeeded * data.leadCost;
+    // Capacidade: quantos SDRs para dar conta dos agendamentos
+    const sdrsNeeded = data.meetingsPerSdr > 0 ? Math.ceil(scheduledMeetings / data.meetingsPerSdr) : 0;
 
     const fmr = targetContracts * (data.averageTicket / 4);
     const tcv = targetContracts * data.averageTicket;
     const cac = targetContracts > 0 ? requiredInvestment / targetContracts : 0;
     const roi = requiredInvestment > 0 ? fmr / requiredInvestment : 0;
+    // Custo por reunião agendada vira RESULTADO (antes era entrada)
+    const costPerMeeting = scheduledMeetings > 0 ? requiredInvestment / scheduledMeetings : 0;
 
     return {
+      leadsNeeded,
       meetingsNeeded,
       scheduledMeetings,
       noshowCount,
+      sdrsNeeded,
+      costPerMeeting,
       targetContracts,
       requiredInvestment,
       fmr,
@@ -208,11 +224,27 @@ const ComercialGrape: React.FC = () => {
                 />
 
                 <InputField
-                  label="Custo por Reunião (CPR)"
-                  value={data.meetingCost}
-                  onChange={(v) => setData(p => ({...p, meetingCost: v}))}
+                  label="Custo por Lead (CPL)"
+                  value={data.leadCost}
+                  onChange={(v) => setData(p => ({...p, leadCost: v}))}
                   prefix="R$"
-                  helper="Custo médio de cada reunião qualificada agendada (tráfego + operação)"
+                  helper="Quanto a mídia paga por lead gerado"
+                />
+
+                <InputField
+                  label="Taxa Lead → Reunião (SDR)"
+                  value={data.leadToMeetingRate}
+                  onChange={(v) => setData(p => ({...p, leadToMeetingRate: Math.min(100, Math.max(1, v))}))}
+                  suffix="%"
+                  helper="Dos leads recebidos, quantos o SDR consegue agendar"
+                />
+
+                <InputField
+                  label="Taxa de No-Show"
+                  value={data.noShowRate}
+                  onChange={(v) => setData(p => ({...p, noShowRate: Math.min(99, Math.max(0, v))}))}
+                  suffix="%"
+                  helper="Percentual de agendados que não comparecem à reunião"
                 />
 
                 <InputField
@@ -220,6 +252,7 @@ const ComercialGrape: React.FC = () => {
                   value={data.meetingToClosingRate}
                   onChange={(v) => setData(p => ({...p, meetingToClosingRate: v}))}
                   suffix="%"
+                  helper="Das reuniões realizadas, quantas o closer converte"
                 />
 
                 <InputField
@@ -231,27 +264,32 @@ const ComercialGrape: React.FC = () => {
                 />
 
                 <InputField
-                  label="Taxa de No-Show"
-                  value={data.noShowRate}
-                  onChange={(v) => setData(p => ({...p, noShowRate: Math.min(99, Math.max(0, v))}))}
-                  suffix="%"
-                  helper="Percentual de pessoas agendadas que não comparecem à reunião"
+                  label="Reuniões por SDR / mês"
+                  value={data.meetingsPerSdr}
+                  onChange={(v) => setData(p => ({...p, meetingsPerSdr: Math.max(1, v)}))}
+                  helper="Capacidade de agendamento de 1 SDR — define quantos SDRs são necessários"
                 />
 
                 <div className="p-5 bg-violet-600/5 rounded-2xl border border-violet-500/10">
                   <div className="flex gap-3">
                     <Info size={16} className="text-violet-400 shrink-0 mt-0.5" />
                     <p className="text-[11px] text-slate-400 leading-relaxed">
-                      <span className="text-violet-400 font-bold">Dica Pro:</span> Com {data.noShowRate}% de no-show, você precisa agendar <span className="text-white font-bold">{results.scheduledMeetings}</span> para ter <span className="text-white font-bold">{results.meetingsNeeded}</span> reuniões efetivas.
+                      <span className="text-violet-400 font-bold">Dica Pro:</span> para {results.meetingsNeeded} reuniões realizadas, o SDR precisa agendar <span className="text-light-text dark:text-white font-bold">{results.scheduledMeetings}</span> (no-show de {data.noShowRate}%), o que exige <span className="text-light-text dark:text-white font-bold">{results.leadsNeeded}</span> leads a {data.leadToMeetingRate}% de agendamento.
                     </p>
                   </div>
                 </div>
 
                 <div className="pt-6 border-t border-slate-200 dark:border-white/5 space-y-6">
                   <div>
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Investimento Necessário</p>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Investimento em Mídia</p>
                     <p className="text-3xl font-bold text-light-text dark:text-white">{formatCurrency(results.requiredInvestment)}</p>
-                    <p className="text-[10px] text-slate-500 mt-1 italic">Calculado automaticamente</p>
+                    <p className="text-[10px] text-slate-500 mt-1 italic">{results.leadsNeeded} leads × {formatCurrency(data.leadCost)} · não inclui custo do time</p>
+                  </div>
+
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">SDRs Necessários</p>
+                    <p className="text-3xl font-bold text-blue-600 dark:text-blue-400">{results.sdrsNeeded} <span className="text-xs font-medium text-slate-500 lowercase tracking-normal">{results.sdrsNeeded === 1 ? 'SDR' : 'SDRs'}</span></p>
+                    <p className="text-[10px] text-slate-500 mt-1 italic">{results.scheduledMeetings} agendamentos ÷ {data.meetingsPerSdr} por SDR</p>
                   </div>
 
                   <div>
@@ -274,11 +312,22 @@ const ComercialGrape: React.FC = () => {
           {/* Main Dashboard */}
           <div className="lg:col-span-9 space-y-6">
 
-            {/* Top Cards — 3 cards: Agendamentos, Reuniões e Contratos */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Top Cards — funil com SDR: Leads, Agendamentos, Reuniões e Contratos */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-light-card dark:bg-dark-card p-6 rounded-2xl border border-slate-200 dark:border-white/5 flex items-center gap-5 transition-colors duration-300">
+                <div className="p-3 bg-[#3b82f6] rounded-xl">
+                  <Users size={24} className="text-white" />
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Leads</p>
+                  <h3 className="text-3xl font-bold text-light-text dark:text-white">{results.leadsNeeded}</h3>
+                  <p className="text-[10px] text-slate-500 mt-1">Gerados pela mídia</p>
+                </div>
+              </div>
+
               <div className="bg-light-card dark:bg-dark-card p-6 rounded-2xl border border-slate-200 dark:border-white/5 flex items-center gap-5 transition-colors duration-300">
                 <div className="p-3 bg-[#ef4444] rounded-xl">
-                  <Users size={24} className="text-white" />
+                  <CalendarDays size={24} className="text-white" />
                 </div>
                 <div>
                   <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Agendamentos</p>
@@ -352,12 +401,13 @@ const ComercialGrape: React.FC = () => {
 
                 <div className="relative flex flex-col items-center">
                   <div className="relative w-full max-w-[420px]">
-                    {/* Funil de 3 etapas: Agendamentos → Reuniões → Contratos */}
+                    {/* Funil de 4 etapas: Leads → Agendamentos → Reuniões → Contratos */}
                     <svg viewBox="0 0 400 420" className="w-full h-auto">
                       <defs>
                         <linearGradient id="funnelGradient3" x1="0%" y1="0%" x2="0%" y2="100%">
-                          <stop offset="0%" stopColor="#ef4444" />
-                          <stop offset="50%" stopColor="#f59e0b" />
+                          <stop offset="0%" stopColor="#3b82f6" />
+                          <stop offset="33%" stopColor="#ef4444" />
+                          <stop offset="66%" stopColor="#f59e0b" />
                           <stop offset="100%" stopColor="#8b5cf6" />
                         </linearGradient>
                         <filter id="glow3" x="-20%" y="-20%" width="140%" height="140%">
@@ -366,19 +416,22 @@ const ComercialGrape: React.FC = () => {
                         </filter>
                       </defs>
 
-                      {/* Dashed Lines */}
+                      {/* Dashed Lines — 4 etapas */}
                       <line x1="20" y1="40" x2="380" y2="40" stroke="currentColor" className="text-slate-200 dark:text-white/5" strokeDasharray="4 4" />
-                      <line x1="20" y1="210" x2="380" y2="210" stroke="currentColor" className="text-slate-200 dark:text-white/5" strokeDasharray="4 4" />
+                      <line x1="20" y1="153" x2="380" y2="153" stroke="currentColor" className="text-slate-200 dark:text-white/5" strokeDasharray="4 4" />
+                      <line x1="20" y1="266" x2="380" y2="266" stroke="currentColor" className="text-slate-200 dark:text-white/5" strokeDasharray="4 4" />
                       <line x1="20" y1="380" x2="380" y2="380" stroke="currentColor" className="text-slate-200 dark:text-white/5" strokeDasharray="4 4" />
 
-                      {/* Funnel Shape — 3 stages */}
+                      {/* Funnel Shape — 4 stages */}
                       <path
-                        d="M 70,40
-                           C 70,140 160,170 160,210
-                           L 175,380
-                           L 225,380
-                           L 240,210
-                           C 240,170 330,140 330,40
+                        d="M 60,40
+                           C 60,110 140,120 145,153
+                           C 150,200 165,215 172,266
+                           L 178,380
+                           L 222,380
+                           L 228,266
+                           C 235,215 250,200 255,153
+                           C 260,120 340,110 340,40
                            Z"
                         fill="url(#funnelGradient3)"
                         filter="url(#glow3)"
@@ -386,28 +439,38 @@ const ComercialGrape: React.FC = () => {
                       />
 
                       {/* Labels Left */}
-                      <text x="20" y="30" className="fill-slate-500" fontSize="10" fontWeight="700">AGENDAMENTOS</text>
-                      <text x="20" y="202" className="fill-slate-500" fontSize="10" fontWeight="700">REUNIÕES</text>
+                      <text x="20" y="30" className="fill-slate-500" fontSize="10" fontWeight="700">LEADS</text>
+                      <text x="20" y="145" className="fill-slate-500" fontSize="10" fontWeight="700">AGENDAMENTOS</text>
+                      <text x="20" y="258" className="fill-slate-500" fontSize="10" fontWeight="700">REUNIÕES</text>
                       <text x="20" y="372" className="fill-slate-500" fontSize="10" fontWeight="700">CONTRATOS</text>
 
                       {/* Pills — valores */}
                       <rect x="160" y="25" width="80" height="30" rx="15" className="fill-slate-100 dark:fill-dark-input stroke-slate-200 dark:stroke-white/10" />
-                      <text x="200" y="45" textAnchor="middle" className="fill-light-text dark:fill-white" fontSize="15" fontWeight="bold">{results.scheduledMeetings}</text>
+                      <text x="200" y="45" textAnchor="middle" className="fill-light-text dark:fill-white" fontSize="15" fontWeight="bold">{results.leadsNeeded}</text>
 
-                      <rect x="160" y="195" width="80" height="30" rx="15" className="fill-slate-100 dark:fill-dark-input stroke-slate-200 dark:stroke-white/10" />
-                      <text x="200" y="215" textAnchor="middle" className="fill-light-text dark:fill-white" fontSize="15" fontWeight="bold">{results.meetingsNeeded}</text>
+                      <rect x="160" y="138" width="80" height="30" rx="15" className="fill-slate-100 dark:fill-dark-input stroke-slate-200 dark:stroke-white/10" />
+                      <text x="200" y="158" textAnchor="middle" className="fill-light-text dark:fill-white" fontSize="15" fontWeight="bold">{results.scheduledMeetings}</text>
+
+                      <rect x="160" y="251" width="80" height="30" rx="15" className="fill-slate-100 dark:fill-dark-input stroke-slate-200 dark:stroke-white/10" />
+                      <text x="200" y="271" textAnchor="middle" className="fill-light-text dark:fill-white" fontSize="15" fontWeight="bold">{results.meetingsNeeded}</text>
 
                       <rect x="160" y="365" width="80" height="30" rx="15" className="fill-slate-100 dark:fill-dark-input stroke-slate-200 dark:stroke-white/10" />
                       <text x="200" y="385" textAnchor="middle" className="fill-light-text dark:fill-white" fontSize="15" fontWeight="bold">{results.targetContracts}</text>
 
                       {/* Conversion Circles */}
-                      <g transform="translate(348, 125)">
+                      <g transform="translate(352, 96)">
+                        <circle r="26" className="fill-blue-50 dark:fill-blue-900/20 stroke-blue-200 dark:stroke-blue-500/20" />
+                        <text y="-2" textAnchor="middle" className="fill-blue-600 dark:fill-blue-400" fontSize="11" fontWeight="bold">{data.leadToMeetingRate}%</text>
+                        <text y="11" textAnchor="middle" className="fill-slate-500" fontSize="8" fontWeight="bold">SDR</text>
+                      </g>
+
+                      <g transform="translate(352, 209)">
                         <circle r="26" className="fill-rose-50 dark:fill-rose-900/20 stroke-rose-200 dark:stroke-rose-500/20" />
                         <text y="-2" textAnchor="middle" className="fill-rose-500" fontSize="11" fontWeight="bold">{data.noShowRate}%</text>
                         <text y="11" textAnchor="middle" className="fill-slate-500" fontSize="8" fontWeight="bold">NO-SHOW</text>
                       </g>
 
-                      <g transform="translate(348, 295)">
+                      <g transform="translate(352, 322)">
                         <circle r="26" className="fill-slate-100 dark:fill-dark-input stroke-slate-200 dark:stroke-white/10" />
                         <text y="-2" textAnchor="middle" className="fill-violet-600 dark:fill-violet-400" fontSize="11" fontWeight="bold">{data.meetingToClosingRate}%</text>
                         <text y="11" textAnchor="middle" className="fill-slate-500" fontSize="8" fontWeight="bold">CONV.</text>
@@ -417,6 +480,13 @@ const ComercialGrape: React.FC = () => {
 
                   {/* Summary table below the funnel */}
                   <div className="w-full mt-6 space-y-3">
+                    <div className="flex items-center justify-between p-5 bg-slate-50 dark:bg-dark-input rounded-2xl border border-slate-200 dark:border-white/5">
+                      <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Leads</span>
+                      <div className="flex items-center gap-4">
+                        <span className="text-2xl font-bold text-light-text dark:text-white">{results.leadsNeeded}</span>
+                        <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-500/10 px-3 py-1.5 rounded-lg uppercase tracking-widest">CPL {formatCurrency(data.leadCost)}</span>
+                      </div>
+                    </div>
                     <div className="flex items-center justify-between p-5 bg-slate-50 dark:bg-dark-input rounded-2xl border border-slate-200 dark:border-white/5">
                       <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Agendamentos</span>
                       <div className="flex items-center gap-4">
@@ -428,7 +498,7 @@ const ComercialGrape: React.FC = () => {
                       <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Reuniões</span>
                       <div className="flex items-center gap-4">
                         <span className="text-2xl font-bold text-light-text dark:text-white">{results.meetingsNeeded}</span>
-                        <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-3 py-1.5 rounded-lg uppercase tracking-widest">CPR {formatCurrency(data.meetingCost)}</span>
+                        <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-3 py-1.5 rounded-lg uppercase tracking-widest">{results.sdrsNeeded} {results.sdrsNeeded === 1 ? 'SDR' : 'SDRs'}</span>
                       </div>
                     </div>
                     <div className="flex items-center justify-between p-5 bg-slate-50 dark:bg-dark-input rounded-2xl border border-slate-200 dark:border-white/5">
@@ -453,7 +523,7 @@ const ComercialGrape: React.FC = () => {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="p-5 bg-slate-50 dark:bg-dark-input rounded-2xl border border-slate-200 dark:border-white/5">
                       <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">Custo / Reunião</p>
-                      <p className="text-xl font-bold text-light-text dark:text-white">{formatCurrency(data.meetingCost)}</p>
+                      <p className="text-xl font-bold text-light-text dark:text-white">{formatCurrency(results.costPerMeeting)}</p>
                     </div>
                     <div className="p-5 bg-slate-50 dark:bg-dark-input rounded-2xl border border-slate-200 dark:border-white/5">
                       <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">Taxa Fechamento</p>
@@ -509,7 +579,18 @@ const ComercialGrape: React.FC = () => {
                     <h4 className="text-xs font-bold text-light-text dark:text-white uppercase tracking-widest">Impacto do No-Show</h4>
                   </div>
                   <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
-                    Com {data.noShowRate}% de no-show, você perde <span className="text-rose-500 font-bold">{results.noshowCount} reuniões</span> e gasta <span className="text-rose-500 font-bold">{formatCurrency(results.noshowCount * data.meetingCost)}</span> a mais por ciclo. Reduzir o no-show para 10% economizaria <span className="text-emerald-600 dark:text-emerald-400 font-bold">{formatCurrency(Math.max(0, results.noshowCount - Math.ceil(results.meetingsNeeded / (1 - 0.1))) * data.meetingCost)}</span> em investimento.
+                    {(() => {
+                      // Cenário com no-show em 10%: recalcula agendamentos → leads → investimento
+                      const sched10 = Math.ceil(results.meetingsNeeded / 0.9);
+                      const leads10 = data.leadToMeetingRate > 0 ? Math.ceil(sched10 / (data.leadToMeetingRate / 100)) : 0;
+                      const invest10 = leads10 * data.leadCost;
+                      const economia = Math.max(0, results.requiredInvestment - invest10);
+                      return (
+                        <>
+                          Com {data.noShowRate}% de no-show, você perde <span className="text-rose-500 font-bold">{results.noshowCount} reuniões</span> — o SDR precisa agendar a mais, o que custa <span className="text-rose-500 font-bold">{formatCurrency(results.noshowCount * results.costPerMeeting)}</span> em mídia por ciclo. Reduzir o no-show para 10% economizaria <span className="text-emerald-600 dark:text-emerald-400 font-bold">{formatCurrency(economia)}</span> em investimento.
+                        </>
+                      );
+                    })()}
                   </p>
                 </div>
               </div>

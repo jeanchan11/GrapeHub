@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   X, Trash2, Loader2, Send, Plus, Check, CheckCircle2,
   ChevronDown, ChevronRight, FileText, Paperclip,
-  ImageIcon, MessageSquare, Eye, Calendar
+  ImageIcon, MessageSquare, Eye, Calendar, Download
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
@@ -99,6 +99,29 @@ export default function ListaTaskDetailModal({ task, onClose, onUpdate, onDelete
 
   // Lightbox
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+
+  // Baixa a imagem do lightbox (funciona com data: URI e URLs hospedadas)
+  const downloadImage = async (url: string) => {
+    const filename = `imagem-${Date.now()}.png`;
+    try {
+      if (url.startsWith('data:')) {
+        const a = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click(); a.remove();
+        return;
+      }
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const objUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objUrl; a.download = url.split('/').pop()?.split('?')[0] || filename;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(objUrl);
+    } catch {
+      // fallback: abre em nova aba se o download direto falhar (CORS, etc.)
+      window.open(url, '_blank');
+    }
+  };
 
   // Task name editing
   const [editingName, setEditingName] = useState(false);
@@ -629,12 +652,22 @@ export default function ListaTaskDetailModal({ task, onClose, onUpdate, onDelete
             className="fixed inset-0 z-[60] bg-black/90 flex items-center justify-center p-4"
             onClick={() => setLightboxUrl(null)}
           >
-            <button
-              className="absolute top-4 right-4 p-2 bg-black/5 dark:bg-white/20 rounded-full text-dark-text hover:bg-black/5 dark:hover:bg-white/30 transition-colors"
-              onClick={() => setLightboxUrl(null)}
-            >
-              <X size={24} />
-            </button>
+            <div className="absolute top-4 right-4 flex items-center gap-2">
+              <button
+                className="p-2 bg-black/5 dark:bg-white/20 rounded-full text-dark-text hover:bg-black/5 dark:hover:bg-white/30 transition-colors"
+                onClick={(e) => { e.stopPropagation(); downloadImage(lightboxUrl); }}
+                title="Baixar imagem"
+              >
+                <Download size={22} />
+              </button>
+              <button
+                className="p-2 bg-black/5 dark:bg-white/20 rounded-full text-dark-text hover:bg-black/5 dark:hover:bg-white/30 transition-colors"
+                onClick={() => setLightboxUrl(null)}
+                title="Fechar"
+              >
+                <X size={24} />
+              </button>
+            </div>
             <motion.img
               initial={{ scale: 0.9 }}
               animate={{ scale: 1 }}
