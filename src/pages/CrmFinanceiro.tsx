@@ -7,7 +7,7 @@ import {
   ArrowRight, ArrowLeft, Trash2,
   Filter, Download, Link as LinkIcon,
   CreditCard, RefreshCw, X, Send, Image as ImageIcon, Archive,
-  Calendar, Activity, ShieldCheck
+  Calendar, Activity, ShieldCheck, Pencil, ChevronLeft, ChevronRight, Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import OptionPicker from '../components/ui/OptionPicker';
@@ -94,13 +94,17 @@ interface Task {
   project_name?: string;
 }
 
-const COLUMNS = [
-  { id: 'pedido_finalizacao', title: 'PEDIDO DE FINALIZAÇÃO', emoji: '📋', color: '#f43f5e', colorKey: 'finalizacao' },
-  { id: 'negociacao', title: 'NEGOCIAÇÃO', emoji: '🟡', color: '#34d399', colorKey: 'negociacao' },
-  { id: 'recuperado', title: 'RECUPERADO', emoji: '🏆', color: '#2dd4bf', colorKey: 'recuperado' },
-  { id: 'aviso_30_dias', title: 'AVISO 30 DIAS', emoji: '⚠️', color: '#fb923c', colorKey: 'yellow' },
-  { id: 'processo_saida', title: 'PROCESSO DE SAÍDA', emoji: '🔴', color: '#f87171', colorKey: 'red' },
+interface RetColumn { id: string; title: string; emoji: string; color: string; }
+// Fallback (a fonte real são as colunas vindas de /api/retencao/columns)
+const DEFAULT_COLUMNS: RetColumn[] = [
+  { id: 'pedido_finalizacao', title: 'PEDIDO DE FINALIZAÇÃO', emoji: '📋', color: '#f43f5e' },
+  { id: 'negociacao', title: 'NEGOCIAÇÃO', emoji: '🟡', color: '#34d399' },
+  { id: 'recuperado', title: 'RECUPERADO', emoji: '🏆', color: '#2dd4bf' },
+  { id: 'aviso_30_dias', title: 'AVISO 30 DIAS', emoji: '⚠️', color: '#fb923c' },
+  { id: 'processo_saida', title: 'PROCESSO DE SAÍDA', emoji: '🔴', color: '#f87171' },
 ];
+// Paleta de cores para as colunas customizáveis
+const COLUMN_COLORS = ['#f43f5e', '#fb923c', '#f59e0b', '#34d399', '#2dd4bf', '#38bdf8', '#8b5cf6', '#ec4899', '#64748b'];
 
 const CARD_VALUE_STYLE: Record<string, { bg: string; text: string }> = {
   negociacao:    { bg: '#0d2d1a', text: '#34d399' },
@@ -130,6 +134,7 @@ interface SortableCardProps {
   client: Client;
   onClick: (client: Client) => void;
   onMove: (clientId: string, newStatus: string) => void | Promise<void>;
+  columns: RetColumn[];
 }
 
 const parseLocalDate = (dateString: string) => {
@@ -166,7 +171,8 @@ const isTomorrowDate = (dateString: string) => {
     date.getFullYear() === tomorrow.getFullYear();
 };
 
-const SortableCard: React.FC<SortableCardProps> = ({ client, onClick, onMove }) => {
+const SortableCard: React.FC<SortableCardProps> = ({ client, onClick, onMove, columns }) => {
+  const COLUMNS = columns;
   const [showMenu, setShowMenu] = useState(false);
   const {
     attributes,
@@ -192,7 +198,7 @@ const SortableCard: React.FC<SortableCardProps> = ({ client, onClick, onMove }) 
   };
 
   const col = COLUMNS.find(c => c.id === client.crmStatus || c.id === client.displayColumn);
-  const valueStyle = col ? (CARD_VALUE_STYLE[col.colorKey] || CARD_VALUE_STYLE['red']) : CARD_VALUE_STYLE['red'];
+  const valueStyle = col ? { bg: col.color + '22', text: col.color } : CARD_VALUE_STYLE['red'];
   const avatar = getAvatarColor(client.name);
   const initials = getInitialsFromName(client.name);
 
@@ -336,6 +342,21 @@ const CrmFinanceiro = () => {
   const [clients, setClients] = useState<Client[]>([]);
   const [allClients, setAllClients] = useState<Client[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  // Colunas do kanban (dinâmicas) — carregadas da API
+  const [columns, setColumns] = useState<RetColumn[]>(DEFAULT_COLUMNS);
+  const COLUMNS = columns; // alias: mantém as referências existentes funcionando
+  const [colModal, setColModal] = useState<{ mode: 'new' | 'edit'; id?: string; title: string; emoji: string; color: string } | null>(null);
+  const fetchColumns = async () => {
+    try {
+      const r = await fetch('/api/retencao/columns');
+      if (r.ok) {
+        const data = await r.json();
+        if (Array.isArray(data) && data.length > 0) {
+          setColumns(data.map((c: any) => ({ id: c.id, title: c.title, emoji: c.emoji || '📌', color: c.color || '#8b5cf6' })));
+        }
+      }
+    } catch (e) { console.error('fetchColumns', e); }
+  };
   const [searchQuery, setSearchQuery] = useState('');
   const [squadFilter, setSquadFilter] = useState<string>('Todos');
   const [isAddDropdownOpen, setIsAddDropdownOpen] = useState<string | null>(null);
@@ -418,8 +439,52 @@ const CrmFinanceiro = () => {
 
   // Initial load: only fetch CRM clients + tasks (fast path)
   useEffect(() => {
-    Promise.all([fetchCrmClients(), fetchTasks()]);
+    Promise.all([fetchCrmClients(), fetchTasks(), fetchColumns()]);
   }, []);
+
+  // ── Handlers de colunas (criar / editar / mover / excluir) ──
+  const saveColumn = async () => {
+    if (!colModal || !colModal.title.trim()) return;
+    const body = { title: colModal.title.trim(), emoji: colModal.emoji, color: colModal.color };
+    try {
+      if (colModal.mode === 'new') {
+        const r = await fetch('/api/retencao/columns', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        if (r.ok) { const c = await r.json(); setColumns(prev => [...prev, { id: c.id, title: c.title, emoji: c.emoji, color: c.color }]); }
+      } else if (colModal.id) {
+        await fetch(`/api/retencao/columns/${colModal.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        setColumns(prev => prev.map(c => c.id === colModal.id ? { ...c, ...body } : c));
+      }
+      setColModal(null);
+    } catch (e) { console.error('saveColumn', e); }
+  };
+  const deleteColumn = async (id: string) => {
+    const col = columns.find(c => c.id === id);
+    const n = clients.filter(c => c.crmStatus === id).length;
+    const msg = n > 0
+      ? `Excluir a coluna "${col?.title}"? Os ${n} cliente(s) dela saem do quadro de Retenção (não são apagados).`
+      : `Excluir a coluna "${col?.title}"?`;
+    if (!(await confirmDialog({ message: msg, danger: true }))) return;
+    try {
+      await fetch(`/api/retencao/columns/${id}`, { method: 'DELETE' });
+      setColumns(prev => prev.filter(c => c.id !== id));
+      setClients(prev => prev.map(c => c.crmStatus === id ? { ...c, crmStatus: undefined as any } : c));
+    } catch (e) { console.error('deleteColumn', e); }
+  };
+  const moveColumn = async (id: string, dir: -1 | 1) => {
+    const idx = columns.findIndex(c => c.id === id);
+    const to = idx + dir;
+    if (idx < 0 || to < 0 || to >= columns.length) return;
+    const reordered = [...columns];
+    const [moved] = reordered.splice(idx, 1);
+    reordered.splice(to, 0, moved);
+    setColumns(reordered);
+    try {
+      await fetch('/api/retencao/columns/reorder', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ columns: reordered.map((c, i) => ({ id: c.id, order_index: i })) }),
+      });
+    } catch (e) { console.error('moveColumn', e); }
+  };
 
   // Lazy-load all clients when dropdown is opened
   useEffect(() => {
@@ -641,9 +706,9 @@ const CrmFinanceiro = () => {
   }, [clients, searchQuery, showArchived, squadFilter]);
 
   const availableClients = useMemo(() => {
-    const activeColumns = COLUMNS.map(c => c.id);
+    const activeColumns = columns.map(c => c.id);
     return allClients.filter(c => !c.crmStatus || !activeColumns.includes(c.crmStatus));
-  }, [allClients]);
+  }, [allClients, columns]);
 
   const filteredAvailableClients = useMemo(() => {
     return availableClients.filter(c => 
@@ -751,7 +816,7 @@ const CrmFinanceiro = () => {
           onDragEnd={handleDragEnd}
         >
         <div className="flex overflow-x-auto pb-4 gap-5 items-start snap-x">
-          {COLUMNS.map(column => {
+          {COLUMNS.map((column, colIdx) => {
             const columnClients = filteredClients.filter(c => c.displayColumn === column.id);
             return (
               <div
@@ -759,7 +824,7 @@ const CrmFinanceiro = () => {
                 className="flex flex-col flex-1 min-h-[500px] min-w-[320px] w-[320px] snap-start bg-slate-50/50 dark:bg-white/[0.02] rounded-3xl border border-gray-200 dark:border-white/5 darker:border-white/5 p-2"
               >
                 {/* Column header */}
-                <div className="px-3 pt-3 pb-2 border-b border-gray-200 dark:border-white/5 darker:border-white/5 mb-3">
+                <div className="px-3 pt-3 pb-2 border-b border-gray-200 dark:border-white/5 darker:border-white/5 mb-3 group/col">
                   <div className="flex items-center gap-2 mb-1">
                     <div
                       className="w-7 h-7 rounded-lg flex items-center justify-center text-sm flex-shrink-0"
@@ -767,9 +832,20 @@ const CrmFinanceiro = () => {
                     >
                       {column.emoji}
                     </div>
-                    <span className="text-[12px] font-black uppercase tracking-widest text-gray-900 dark:text-white darker:text-gray-100">
+                    <span className="text-[12px] font-black uppercase tracking-widest text-gray-900 dark:text-white darker:text-gray-100 flex-1 truncate">
                       {column.title}
                     </span>
+                    {/* Controles da coluna (aparecem no hover) */}
+                    <div className="flex items-center gap-0.5 opacity-0 group-hover/col:opacity-100 transition-opacity">
+                      <button onClick={() => moveColumn(column.id, -1)} disabled={colIdx === 0} title="Mover para a esquerda"
+                        className="w-6 h-6 flex items-center justify-center rounded-md text-gray-400 hover:text-violet-500 hover:bg-violet-500/10 disabled:opacity-25 disabled:hover:bg-transparent transition-colors"><ChevronLeft size={14} /></button>
+                      <button onClick={() => moveColumn(column.id, 1)} disabled={colIdx === COLUMNS.length - 1} title="Mover para a direita"
+                        className="w-6 h-6 flex items-center justify-center rounded-md text-gray-400 hover:text-violet-500 hover:bg-violet-500/10 disabled:opacity-25 disabled:hover:bg-transparent transition-colors"><ChevronRight size={14} /></button>
+                      <button onClick={() => setColModal({ mode: 'edit', id: column.id, title: column.title, emoji: column.emoji, color: column.color })} title="Editar coluna"
+                        className="w-6 h-6 flex items-center justify-center rounded-md text-gray-400 hover:text-violet-500 hover:bg-violet-500/10 transition-colors"><Pencil size={12} /></button>
+                      <button onClick={() => deleteColumn(column.id)} title="Excluir coluna"
+                        className="w-6 h-6 flex items-center justify-center rounded-md text-gray-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors"><Trash2 size={13} /></button>
+                    </div>
                   </div>
                   <div className="text-[11px] pl-9 text-gray-500 dark:text-slate-400 darker:text-slate-500">
                     {columnClients.length} cliente{columnClients.length !== 1 ? 's' : ''}
@@ -848,6 +924,7 @@ const CrmFinanceiro = () => {
                             client={client}
                             onClick={setSelectedClient}
                             onMove={handleMoveClient}
+                            columns={columns}
                           />
                         </motion.div>
                       ))}
@@ -857,6 +934,15 @@ const CrmFinanceiro = () => {
               </div>
             );
           })}
+
+          {/* Nova coluna */}
+          <button
+            onClick={() => setColModal({ mode: 'new', title: '', emoji: '📌', color: '#8b5cf6' })}
+            className="flex flex-col items-center justify-center gap-2 min-h-[120px] min-w-[220px] w-[220px] snap-start rounded-3xl border-2 border-dashed border-gray-300 dark:border-white/10 text-gray-400 hover:text-violet-500 hover:border-violet-500/40 hover:bg-violet-500/5 transition-all"
+          >
+            <Plus size={22} />
+            <span className="text-xs font-bold uppercase tracking-widest">Nova coluna</span>
+          </button>
         </div>
 
         <DragOverlay
@@ -870,11 +956,56 @@ const CrmFinanceiro = () => {
                 client={clients.find(c => c.id === activeId)!}
                 onClick={() => {}}
                 onMove={() => {}}
+                columns={columns}
               />
             </div>
           ) : null}
         </DragOverlay>
         </DndContext>
+      )}
+
+      {/* Modal criar/editar coluna */}
+      {colModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" onClick={() => setColModal(null)}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div onClick={e => e.stopPropagation()} className="relative w-full max-w-sm rounded-2xl bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 shadow-2xl p-6">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-base font-black text-gray-900 dark:text-white">{colModal.mode === 'new' ? 'Nova coluna' : 'Editar coluna'}</h3>
+              <button onClick={() => setColModal(null)} className="text-gray-400 hover:text-gray-700 dark:hover:text-white"><X size={18} /></button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest block mb-1.5">Nome</label>
+                <div className="flex items-center gap-2">
+                  <input value={colModal.emoji} onChange={e => setColModal({ ...colModal, emoji: e.target.value.slice(0, 2) })}
+                    className="w-12 text-center text-lg bg-slate-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl py-2 outline-none focus:border-violet-500" title="Emoji" />
+                  <input autoFocus value={colModal.title} onChange={e => setColModal({ ...colModal, title: e.target.value })}
+                    onKeyDown={e => { if (e.key === 'Enter') saveColumn(); }}
+                    placeholder="Ex: EM NEGOCIAÇÃO"
+                    className="flex-1 bg-slate-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-gray-900 dark:text-white outline-none focus:border-violet-500" />
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest block mb-1.5">Cor</label>
+                <div className="flex flex-wrap gap-2">
+                  {COLUMN_COLORS.map(c => (
+                    <button key={c} onClick={() => setColModal({ ...colModal, color: c })}
+                      className={`w-7 h-7 rounded-lg transition-transform hover:scale-110 flex items-center justify-center ${colModal.color === c ? 'ring-2 ring-offset-2 ring-offset-white dark:ring-offset-dark-card ring-gray-400' : ''}`}
+                      style={{ background: c }}>
+                      {colModal.color === c && <Check size={14} className="text-white" />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end mt-6">
+              <button onClick={() => setColModal(null)} className="px-4 py-2 rounded-xl text-sm font-bold text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors">Cancelar</button>
+              <button onClick={saveColumn} disabled={!colModal.title.trim()} className="px-4 py-2 rounded-xl text-sm font-bold text-white bg-violet-600 hover:bg-violet-500 disabled:opacity-40 transition-colors">
+                {colModal.mode === 'new' ? 'Criar' : 'Salvar'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Central Modal Popup */}

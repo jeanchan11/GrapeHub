@@ -715,6 +715,25 @@ async function startServer() {
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS product TEXT;
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS manager_id TEXT;
 
+      -- Colunas do kanban de Retenção (antigo CRM Financeiro). O crm_status do cliente
+      -- referencia o id da coluna. Editáveis/criáveis/reordenáveis pela UI.
+      CREATE TABLE IF NOT EXISTS retencao_columns (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        emoji TEXT,
+        color TEXT DEFAULT '#8b5cf6',
+        order_index INTEGER DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      -- Seed das 5 colunas atuais (mantém os ids para os clientes já classificados).
+      INSERT INTO retencao_columns (id, title, emoji, color, order_index) VALUES
+        ('pedido_finalizacao', 'PEDIDO DE FINALIZAÇÃO', '📋', '#f43f5e', 0),
+        ('negociacao',         'NEGOCIAÇÃO',            '🟡', '#34d399', 1),
+        ('recuperado',         'RECUPERADO',            '🏆', '#2dd4bf', 2),
+        ('aviso_30_dias',      'AVISO 30 DIAS',         '⚠️', '#fb923c', 3),
+        ('processo_saida',     'PROCESSO DE SAÍDA',     '🔴', '#f87171', 4)
+      ON CONFLICT (id) DO NOTHING;
+
       CREATE TABLE IF NOT EXISTS crm_comments (
         id SERIAL PRIMARY KEY,
         client_id TEXT REFERENCES clients(id),
@@ -1248,6 +1267,13 @@ async function startServer() {
       ALTER TABLE todo_sections ADD COLUMN IF NOT EXISTS page_id TEXT;
       ALTER TABLE todo_sections ADD COLUMN IF NOT EXISTS is_default BOOLEAN DEFAULT FALSE;
       ALTER TABLE todo_sections ADD COLUMN IF NOT EXISTS is_fixed BOOLEAN DEFAULT FALSE;
+
+      -- Ordem dos grupos no To Do Gestor (por page_id). Uma linha por página.
+      CREATE TABLE IF NOT EXISTS todo_gestor_group_order (
+        page_id TEXT PRIMARY KEY,
+        order_json JSONB DEFAULT '[]'::jsonb,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
 
       CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
@@ -3532,6 +3558,15 @@ async function startServer() {
     }
   });
 
+  // Páginas de projetos por head (ex.: "Projetos Vitor"). Usado pelo Dashboard Operacional
+  // (modo operação) para atribuir os projetos ao head dono da página, e não ao campo responsible.
+  app.get("/api/head-project-pages", async (_req: any, res: any) => {
+    try {
+      const r = await pool.query("SELECT id, label FROM menu_pages WHERE label ILIKE 'projetos %'");
+      res.json(r.rows);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
   // Projects API
   app.get("/api/projects", async (req: any, res: any) => {
     try {
@@ -5117,6 +5152,27 @@ async function startServer() {
     }
   });
 
+  // ── Ordem dos grupos no To Do Gestor ──
+  app.get("/api/todo-gestor/group-order", async (req, res) => {
+    try {
+      const pageId = (req.query.page_id as string) || 'default';
+      const r = await pool.query("SELECT order_json FROM todo_gestor_group_order WHERE page_id = $1", [pageId]);
+      res.json(r.rows[0]?.order_json || []);
+    } catch (err) { res.status(500).json({ error: "Failed to fetch group order" }); }
+  });
+  app.put("/api/todo-gestor/group-order", async (req, res) => {
+    try {
+      const pageId = (req.query.page_id as string) || req.body.page_id || 'default';
+      const order = Array.isArray(req.body.order) ? req.body.order : [];
+      await pool.query(
+        `INSERT INTO todo_gestor_group_order (page_id, order_json, updated_at) VALUES ($1, $2::jsonb, NOW())
+         ON CONFLICT (page_id) DO UPDATE SET order_json = EXCLUDED.order_json, updated_at = NOW()`,
+        [pageId, JSON.stringify(order)]
+      );
+      res.json({ ok: true });
+    } catch (err) { res.status(500).json({ error: "Failed to save group order" }); }
+  });
+
 
 
 // ═══════════════════════════════════════════════════════════
@@ -5645,7 +5701,11 @@ app.get("/api/todos", async (req, res) => {
         )
         AND (
           c.crm_status IS NULL
-          OR c.crm_status NOT IN ('inadimplente_asaas', 'pedido_finalizacao', 'negociacao', 'aviso_30_dias', 'processo_saida', 'arquivado')
+          OR (
+            -- não sobrescreve quem já está numa coluna manual da Retenção (inclui colunas customizadas)
+            c.crm_status NOT IN (SELECT id FROM retencao_columns)
+            AND c.crm_status NOT IN ('inadimplente_asaas', 'arquivado')
+          )
         )
         RETURNING c.id
       `);
@@ -9094,8 +9154,8 @@ app.get("/api/todos", async (req, res) => {
   app.delete("/api/crm-comercial/columns/:id", async (req, res) => {
     try {
       const { id } = req.params;
-      
-      // Update leads in this column to be orphaned or handled. 
+
+      // Update leads in this column to be orphaned or handled.
       // For simplicity here, we'll just delete the column. Leads without a column will be auto-recovered or disappear.
       await pool.query("DELETE FROM crm_comercial_columns WHERE id = $1", [id]);
       res.status(204).send();
@@ -9103,6 +9163,66 @@ app.get("/api/todos", async (req, res) => {
       console.error("Error deleting column:", err);
       res.status(500).json({ error: "Failed to delete column" });
     }
+  });
+
+  // ── Colunas do kanban de Retenção (editáveis/criáveis/reordenáveis) ──────────
+  app.get("/api/retencao/columns", async (_req, res) => {
+    try {
+      const r = await pool.query("SELECT * FROM retencao_columns ORDER BY order_index ASC, created_at ASC");
+      res.json(r.rows);
+    } catch (err) { res.status(500).json({ error: "Failed to fetch columns" }); }
+  });
+
+  app.post("/api/retencao/columns", async (req, res) => {
+    try {
+      const { title, emoji, color, order_index } = req.body;
+      if (!title || !String(title).trim()) return res.status(400).json({ error: "title obrigatório" });
+      // id gerado a partir de um slug + sufixo aleatório (evita colisão com ids fixos)
+      const id = 'col_' + Math.random().toString(36).slice(2, 10);
+      const ord = order_index ?? (await pool.query("SELECT COALESCE(MAX(order_index),-1)+1 AS n FROM retencao_columns")).rows[0].n;
+      const r = await pool.query(
+        `INSERT INTO retencao_columns (id, title, emoji, color, order_index) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+        [id, String(title).trim(), emoji || '📌', color || '#8b5cf6', ord]
+      );
+      res.status(201).json(r.rows[0]);
+    } catch (err) { res.status(500).json({ error: "Failed to create column" }); }
+  });
+
+  app.put("/api/retencao/columns/:id", async (req, res) => {
+    try {
+      const { title, emoji, color } = req.body;
+      const r = await pool.query(
+        `UPDATE retencao_columns SET title=COALESCE($1,title), emoji=COALESCE($2,emoji), color=COALESCE($3,color) WHERE id=$4 RETURNING *`,
+        [title ? String(title).trim() : null, emoji ?? null, color ?? null, req.params.id]
+      );
+      if (r.rows.length === 0) return res.status(404).json({ error: "Column not found" });
+      res.json(r.rows[0]);
+    } catch (err) { res.status(500).json({ error: "Failed to update column" }); }
+  });
+
+  app.patch("/api/retencao/columns/reorder", async (req, res) => {
+    try {
+      const columns: Array<{ id: string; order_index: number }> = req.body.columns || [];
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        for (const c of columns) {
+          await client.query("UPDATE retencao_columns SET order_index=$1 WHERE id=$2", [c.order_index, c.id]);
+        }
+        await client.query('COMMIT');
+      } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
+      res.json({ ok: true });
+    } catch (err) { res.status(500).json({ error: "Failed to reorder columns" }); }
+  });
+
+  // Exclui a coluna; os clientes dela saem do board (crm_status → NULL).
+  app.delete("/api/retencao/columns/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      await pool.query("UPDATE clients SET crm_status = NULL WHERE crm_status = $1", [id]);
+      await pool.query("DELETE FROM retencao_columns WHERE id = $1", [id]);
+      res.status(204).send();
+    } catch (err) { res.status(500).json({ error: "Failed to delete column" }); }
   });
 
   // ==========================================

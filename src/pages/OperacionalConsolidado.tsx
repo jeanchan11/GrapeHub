@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from 'recharts';
-import { Briefcase, CheckCircle2, AlertTriangle, DollarSign, Users, RefreshCw, ShieldAlert, UserMinus, Layers, TrendingDown, Calendar, UserX, LayoutDashboard } from 'lucide-react';
+import { Briefcase, CheckCircle2, AlertTriangle, DollarSign, Users, RefreshCw, ShieldAlert, UserMinus, TrendingDown, Calendar, UserX, LayoutDashboard } from 'lucide-react';
 import LoadingSpinner from '../components/LoadingSpinner';
 import SplitHeadline from '../components/SplitHeadline';
+import ThemedDropdown from '../components/ui/ThemedDropdown';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface ProjectRow {
@@ -71,23 +72,6 @@ interface SquadStat {
   investment: number;
   results: { label: string; count: number; color: string }[];
 }
-function squadStats(projects: ProjectRow[], squad: string): SquadStat {
-  const list = projects.filter(p => (p.squad || '').toLowerCase() === squad.toLowerCase());
-  const counts: Record<string, number> = {};
-  for (const p of list) { const r = resultOf(p); counts[r] = (counts[r] || 0) + 1; }
-  const results = Object.entries(counts)
-    .map(([label, count]) => ({ label, count, color: getResultColor(label) }))
-    .sort((a, b) => b.count - a.count);
-  return {
-    squad,
-    total: list.length,
-    rodando: list.filter(isRodando).length,
-    gargalo: list.filter(isGargalo).length,
-    ruim: list.filter(p => resultOf(p) === 'resultado ruim').length,
-    investment: list.reduce((a, p) => a + parseCurrency(p.investment), 0),
-    results,
-  };
-}
 
 // ── Small UI bits ─────────────────────────────────────────────────────────────
 const KpiCard = ({ icon, accent, label, value, sub, subColor }: {
@@ -122,57 +106,6 @@ const SQUAD_ACCENT: Record<string, string> = {
   Baker: '#a78bfa',
 };
 
-const SquadCard = ({ s }: { s: SquadStat }) => {
-  const accent = SQUAD_ACCENT[s.squad] || '#64748b';
-  const rodandoPct = s.total > 0 ? Math.round((s.rodando / s.total) * 100) : 0;
-  return (
-    <div className="bg-dark-card border border-white/10 rounded-2xl p-5 flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: `${accent}22`, color: accent }}>
-            <Users size={18} />
-          </div>
-          <div>
-            <p className="text-sm font-black text-dark-text">Squad {s.squad}</p>
-            <p className="text-[11px] text-slate-500">{s.total} projeto{s.total === 1 ? '' : 's'}</p>
-          </div>
-        </div>
-        <div className="text-right">
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Investimento</p>
-          <p className="text-sm font-black text-dark-text">{fmtBRL(s.investment)}</p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-3 gap-2">
-        <div className="bg-white/[0.03] rounded-xl px-2.5 py-2">
-          <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Rodando</p>
-          <p className="text-base font-black text-emerald-400">{s.rodando} <span className="text-[10px] text-slate-500">({rodandoPct}%)</span></p>
-        </div>
-        <div className="bg-white/[0.03] rounded-xl px-2.5 py-2">
-          <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Gargalo</p>
-          <p className={`text-base font-black ${s.gargalo > 0 ? 'text-amber-400' : 'text-dark-text'}`}>{s.gargalo}</p>
-        </div>
-        <div className="bg-white/[0.03] rounded-xl px-2.5 py-2">
-          <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Result. Ruim</p>
-          <p className={`text-base font-black ${s.ruim > 0 ? 'text-rose-400' : 'text-dark-text'}`}>{s.ruim}</p>
-        </div>
-      </div>
-
-      <div>
-        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Resultados</p>
-        <ResultBar results={s.results} total={s.total} />
-        <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2">
-          {s.results.slice(0, 5).map(r => (
-            <span key={r.label} className="flex items-center gap-1.5 text-[10px] text-slate-400">
-              <span className="w-2 h-2 rounded-full" style={{ background: r.color }} />
-              {prettyResult(r.label)} <span className="font-bold text-slate-300">{r.count}</span>
-            </span>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-};
 
 // ── Churn ─────────────────────────────────────────────────────────────────────
 interface ChurnRow {
@@ -222,7 +155,6 @@ const ChurnTab = ({ churns, activeCount }: { churns: ChurnRow[]; activeCount: nu
     });
   }
   const countByMonth: Record<string, number> = {};
-  const bySquad: Record<string, number> = {};
   const byGestor: Record<string, number> = {};
   let ltvSum = 0, ltvCount = 0;
   let evitavel = 0, inevitavel = 0;
@@ -233,10 +165,8 @@ const ChurnTab = ({ churns, activeCount }: { churns: ChurnRow[]; activeCount: nu
   for (const c of churns) {
     const mk = monthKey(c.day_exit);
     countByMonth[mk] = (countByMonth[mk] || 0) + 1;
-    // Squad/Gestor rankings consideram apenas o mês atual
+    // Ranking por gestor considera apenas o mês atual
     if (mk === currentKey) {
-      const sq = c.squad || 'Sem squad';
-      bySquad[sq] = (bySquad[sq] || 0) + 1;
       const g = (c.gestor && c.gestor.trim()) ? c.gestor : 'Sem gestor';
       byGestor[g] = (byGestor[g] || 0) + 1;
     }
@@ -263,8 +193,6 @@ const ChurnTab = ({ churns, activeCount }: { churns: ChurnRow[]; activeCount: nu
   const totalTyped = evitavel + inevitavel;
   const evitavelPct = totalTyped > 0 ? Math.round((evitavel / totalTyped) * 100) : 0;
 
-  const squadItems = Object.entries(bySquad).map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count);
-  const squadMax = Math.max(1, ...squadItems.map(s => s.count));
   const gestorItems = Object.entries(byGestor).map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count).slice(0, 8);
   const gestorMax = Math.max(1, ...gestorItems.map(s => s.count));
 
@@ -301,18 +229,11 @@ const ChurnTab = ({ churns, activeCount }: { churns: ChurnRow[]; activeCount: nu
         </ResponsiveContainer>
       </div>
 
-      {/* By squad + by gestor */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="bg-dark-card border border-white/10 rounded-2xl p-6">
-          <h2 className="text-sm font-bold text-dark-text mb-1">Churn por Squad</h2>
-          <p className="text-xs text-slate-500 mb-4 capitalize">Saídas em {currentMonthLabel}</p>
-          <RankBar items={squadItems} max={squadMax} />
-        </div>
-        <div className="bg-dark-card border border-white/10 rounded-2xl p-6">
-          <h2 className="text-sm font-bold text-dark-text mb-1">Churn por Gestor</h2>
-          <p className="text-xs text-slate-500 mb-4 capitalize">Gestores com saídas em {currentMonthLabel}</p>
-          <RankBar items={gestorItems} max={gestorMax} color="#f74c4c" />
-        </div>
+      {/* Churn por gestor */}
+      <div className="bg-dark-card border border-white/10 rounded-2xl p-6">
+        <h2 className="text-sm font-bold text-dark-text mb-1">Churn por Gestor</h2>
+        <p className="text-xs text-slate-500 mb-4 capitalize">Gestores com saídas em {currentMonthLabel}</p>
+        <RankBar items={gestorItems} max={gestorMax} color="#f74c4c" />
       </div>
 
       {/* Recent churns */}
@@ -324,7 +245,6 @@ const ChurnTab = ({ churns, activeCount }: { churns: ChurnRow[]; activeCount: nu
             <thead>
               <tr className="border-b border-white/5 text-[9px] font-bold text-slate-500 uppercase tracking-widest">
                 <th className="text-left pb-2 pr-2">Cliente</th>
-                <th className="text-left pb-2 pr-2">Squad</th>
                 <th className="text-left pb-2 pr-2">Gestor</th>
                 <th className="text-left pb-2 pr-2">Tipo</th>
                 <th className="text-left pb-2 pr-2">LTV</th>
@@ -333,12 +253,10 @@ const ChurnTab = ({ churns, activeCount }: { churns: ChurnRow[]; activeCount: nu
             </thead>
             <tbody>
               {churns.slice(0, 12).map(c => {
-                const sqColor = SQUAD_ACCENT[c.squad || ''] || '#64748b';
                 const isEvit = (c.tipo || '').toUpperCase().includes('INEVIT') ? false : (c.tipo || '').toUpperCase().includes('EVIT');
                 return (
                   <tr key={c.id} className="border-b border-white/[0.04] hover:bg-white/[0.03] transition-colors">
                     <td className="py-2.5 pr-2 font-bold text-dark-text truncate max-w-[200px]" title={c.cliente}>{c.cliente}</td>
-                    <td className="py-2.5 pr-2"><span className="text-[9px] font-bold px-2 py-0.5 rounded-full" style={{ background: `${sqColor}22`, color: sqColor }}>{c.squad || '—'}</span></td>
                     <td className="py-2.5 pr-2 text-slate-400 truncate max-w-[140px]">{c.gestor || '—'}</td>
                     <td className="py-2.5 pr-2">
                       {c.tipo
@@ -615,6 +533,7 @@ export default function OperacionalConsolidado() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<'geral' | 'churn' | 'risco'>('geral');
+  const [selectedGestor, setSelectedGestor] = useState<string>('all');
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -638,30 +557,44 @@ export default function OperacionalConsolidado() {
   }, []);
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // ── Consolidated metrics (both squads) ──
-  const total = projects.length;
-  const rodando = projects.filter(isRodando).length;
-  const gargalo = projects.filter(isGargalo).length;
-  const investmentTotal = projects.reduce((a, p) => a + parseCurrency(p.investment), 0);
+  // ── Seletor por gestor ──
+  // Opções: "Toda a operação" + cada gestor que tem projeto(s). Ordena por carteira.
+  const gestorNames = Array.from(new Set(projects.map(p => (p.responsible || '').trim()).filter(Boolean)));
+  const gestorCounts = new Map<string, number>();
+  for (const p of projects) { const g = (p.responsible || '').trim(); if (g) gestorCounts.set(g, (gestorCounts.get(g) || 0) + 1); }
+  const gestorOptions = [
+    { value: 'all', label: 'Toda a operação' },
+    ...gestorNames.sort((a, b) => (gestorCounts.get(b)! - gestorCounts.get(a)!) || a.localeCompare(b))
+      .map(n => ({ value: n, label: `${n} · ${gestorCounts.get(n)} cliente${gestorCounts.get(n) === 1 ? '' : 's'}` })),
+  ];
 
-  const able = squadStats(projects, 'Able');
-  const baker = squadStats(projects, 'Baker');
-  const outros = total - able.total - baker.total;
+  // Projetos da visão atual (todos ou filtrados por gestor)
+  const viewProjects = selectedGestor === 'all'
+    ? projects
+    : projects.filter(p => (p.responsible || '').trim() === selectedGestor);
 
-  // Result distribution (all projects)
+  // Métricas da visão atual
+  const total = viewProjects.length;
+  const rodando = viewProjects.filter(isRodando).length;
+  const gargalo = viewProjects.filter(isGargalo).length;
+  const investmentTotal = viewProjects.reduce((a, p) => a + parseCurrency(p.investment), 0);
+  const gestoresCount = gestorNames.length;
+  const semGestor = projects.filter(p => !(p.responsible || '').trim()).length;
+
+  // Distribuição de resultados da visão atual
   const distCounts: Record<string, number> = {};
-  for (const p of projects) { const r = resultOf(p); distCounts[r] = (distCounts[r] || 0) + 1; }
+  for (const p of viewProjects) { const r = resultOf(p); distCounts[r] = (distCounts[r] || 0) + 1; }
   const resultDist = Object.entries(distCounts)
     .map(([label, count]) => ({ label, count, color: getResultColor(label) }))
     .sort((a, b) => b.count - a.count);
 
-  // Client health
+  // Saúde da base (sempre a base completa — churn/retenção são métricas da empresa)
   const cliAtivos = clients.filter(c => c.status === 'Ativo' && !parseTags(c.tags).includes('quarentena'));
   const cliQuarentena = clients.filter(c => c.status === 'Ativo' && parseTags(c.tags).includes('quarentena'));
   const cliChurn = clients.filter(c => c.status === 'Inativo');
 
-  // Attention radar (both squads), ordered by urgency
-  const atencao = projects
+  // Radar de atenção da visão atual, ordenado por urgência
+  const atencao = viewProjects
     .filter(p => isGargalo(p) || resultOf(p) === 'resultado ruim' || resultOf(p) === 'testando')
     .map(p => ({ p, pri: isGargalo(p) ? 0 : resultOf(p) === 'resultado ruim' ? 1 : 2 }))
     .sort((a, b) => a.pri - b.pri);
@@ -692,7 +625,7 @@ export default function OperacionalConsolidado() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <SplitHeadline text="Dashboard " highlight="Operacional" className="text-3xl font-black tracking-tight text-dark-text" />
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Visão consolidada do time — Squads Able + Baker e saúde da base de clientes</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Visão consolidada do time operacional por gestor e saúde da base de clientes</p>
         </div>
         <button onClick={fetchData} className="w-10 h-10 rounded-xl bg-dark-card border border-white/10 hover:border-violet-500/60 flex items-center justify-center text-slate-400 hover:text-violet-400 transition-all">
           <RefreshCw size={16} />
@@ -713,24 +646,30 @@ export default function OperacionalConsolidado() {
 
       {tab === 'geral' && (
       <>
-      {/* Consolidated KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-        <KpiCard icon={<Briefcase size={16} className="text-white" />} accent="bg-violet-600" label="Total Projetos" value={String(total)} sub={`${outros > 0 ? `${outros} fora dos squads · ` : ''}Able + Baker`} subColor="text-violet-400" />
-        <KpiCard icon={<CheckCircle2 size={16} className="text-white" />} accent="bg-emerald-600" label="Rodando" value={String(rodando)} sub={total > 0 ? `${Math.round((rodando / total) * 100)}% do total` : '—'} subColor="text-emerald-400" />
-        <KpiCard icon={<AlertTriangle size={16} className="text-white" />} accent="bg-amber-600" label="Gargalo" value={String(gargalo)} sub={gargalo > 0 ? 'Atenção' : 'Nenhum'} subColor={gargalo > 0 ? 'text-amber-400' : 'text-slate-500'} />
-        <KpiCard icon={<DollarSign size={16} className="text-white" />} accent="bg-blue-600" label="Investimento Total" value={fmtBRL(investmentTotal)} sub="Soma dos squads" subColor="text-blue-400" />
-        <KpiCard icon={<Users size={16} className="text-white" />} accent="bg-teal-600" label="Clientes Ativos" value={String(cliAtivos.length)} sub={`${cliQuarentena.length} em quarentena`} subColor="text-teal-400" />
+      {/* Seletor de visão: toda a operação ou um gestor */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Visão</span>
+        <ThemedDropdown
+          value={selectedGestor}
+          onChange={setSelectedGestor}
+          options={gestorOptions}
+          className="w-[280px]"
+          title="Filtrar por gestor"
+        />
+        {selectedGestor !== 'all' && (
+          <button onClick={() => setSelectedGestor('all')} className="text-[11px] font-semibold text-violet-400 hover:text-violet-300 transition-colors">
+            limpar filtro
+          </button>
+        )}
       </div>
 
-      {/* Squad comparison */}
-      <div>
-        <h2 className="text-sm font-black text-dark-text uppercase tracking-widest mb-3 flex items-center gap-2">
-          <Layers size={14} className="text-violet-400" /> Comparativo por Squad
-        </h2>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <SquadCard s={able} />
-          <SquadCard s={baker} />
-        </div>
+      {/* KPIs (respeitam o seletor) */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+        <KpiCard icon={<Briefcase size={16} className="text-white" />} accent="bg-violet-600" label="Total Projetos" value={String(total)} sub={selectedGestor === 'all' ? `${gestoresCount} gestor${gestoresCount === 1 ? '' : 'es'}${semGestor > 0 ? ` · ${semGestor} sem gestor` : ''}` : selectedGestor} subColor="text-violet-400" />
+        <KpiCard icon={<CheckCircle2 size={16} className="text-white" />} accent="bg-emerald-600" label="Rodando" value={String(rodando)} sub={total > 0 ? `${Math.round((rodando / total) * 100)}% do total` : '—'} subColor="text-emerald-400" />
+        <KpiCard icon={<AlertTriangle size={16} className="text-white" />} accent="bg-amber-600" label="Gargalo" value={String(gargalo)} sub={gargalo > 0 ? 'Atenção' : 'Nenhum'} subColor={gargalo > 0 ? 'text-amber-400' : 'text-slate-500'} />
+        <KpiCard icon={<DollarSign size={16} className="text-white" />} accent="bg-blue-600" label="Investimento" value={fmtBRL(investmentTotal)} sub={selectedGestor === 'all' ? 'Soma da operação' : 'Carteira do gestor'} subColor="text-blue-400" />
+        <KpiCard icon={<Users size={16} className="text-white" />} accent="bg-teal-600" label={selectedGestor === 'all' ? 'Clientes Ativos' : 'Clientes'} value={selectedGestor === 'all' ? String(cliAtivos.length) : String(total)} sub={selectedGestor === 'all' ? `${cliQuarentena.length} em retenção` : 'na carteira'} subColor="text-teal-400" />
       </div>
 
       {/* Result distribution + Client health */}
@@ -738,7 +677,7 @@ export default function OperacionalConsolidado() {
         {/* Donut */}
         <div className="bg-dark-card border border-white/10 rounded-2xl p-6">
           <h2 className="text-sm font-bold text-dark-text mb-1">Distribuição de Resultados</h2>
-          <p className="text-xs text-slate-500 mb-4">Todos os projetos (Able + Baker) por resultado atual</p>
+          <p className="text-xs text-slate-500 mb-4">{selectedGestor === 'all' ? 'Todos os projetos por resultado atual' : `Projetos de ${selectedGestor} por resultado atual`}</p>
           {total === 0 ? (
             <p className="text-sm text-slate-500 text-center py-10">Nenhum projeto encontrado.</p>
           ) : (
@@ -783,7 +722,7 @@ export default function OperacionalConsolidado() {
           <div className="grid grid-cols-3 gap-3 mb-5">
             {[
               { label: 'Ativos', value: cliAtivos.length, color: '#2ecc8f', icon: <CheckCircle2 size={16} /> },
-              { label: 'Quarentena', value: cliQuarentena.length, color: '#f5c842', icon: <ShieldAlert size={16} /> },
+              { label: 'Retenção', value: cliQuarentena.length, color: '#f5c842', icon: <ShieldAlert size={16} /> },
               { label: 'Churn', value: cliChurn.length, color: '#f74c4c', icon: <UserMinus size={16} /> },
             ].map(c => (
               <div key={c.label} className="bg-white/[0.03] border border-white/5 rounded-xl px-3 py-3">
@@ -795,23 +734,25 @@ export default function OperacionalConsolidado() {
               </div>
             ))}
           </div>
-          {/* split by squad */}
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Clientes ativos por squad</p>
+          {/* Carteira por gestor — nº de clientes (projetos) que cada gestor cuida */}
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Carteira por gestor</p>
           <div className="space-y-2">
-            {['Able', 'Baker'].map(sq => {
-              const n = cliAtivos.filter(c => (c.squad || '').toLowerCase() === sq.toLowerCase()).length;
-              const pct = cliAtivos.length > 0 ? (n / cliAtivos.length) * 100 : 0;
-              const accent = SQUAD_ACCENT[sq];
-              return (
-                <div key={sq} className="flex items-center gap-3">
-                  <span className="text-xs font-bold text-slate-400 w-14">{sq}</span>
+            {(() => {
+              const items = Array.from(gestorCounts.entries()).sort((a, b) => b[1] - a[1]);
+              const maxCarteira = Math.max(1, ...items.map(([, n]) => n));
+              if (items.length === 0) return <p className="text-xs text-slate-500 py-1">Sem gestores.</p>;
+              return items.map(([name, n]) => (
+                <button key={name} onClick={() => setSelectedGestor(name)}
+                  className={`w-full flex items-center gap-3 group ${selectedGestor === name ? 'opacity-100' : 'opacity-90 hover:opacity-100'}`}
+                  title={`Ver ${name}`}>
+                  <span className={`text-xs font-bold w-28 shrink-0 truncate text-left ${selectedGestor === name ? 'text-violet-400' : 'text-slate-400 group-hover:text-slate-200'}`}>{name}</span>
                   <div className="flex-1 h-2.5 rounded-full bg-white/5 overflow-hidden">
-                    <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: accent }} />
+                    <div className="h-full rounded-full transition-all bg-violet-500" style={{ width: `${(n / maxCarteira) * 100}%` }} />
                   </div>
                   <span className="text-xs font-bold text-dark-text w-6 text-right">{n}</span>
-                </div>
-              );
-            })}
+                </button>
+              ));
+            })()}
           </div>
         </div>
       </div>
@@ -819,7 +760,7 @@ export default function OperacionalConsolidado() {
       {/* Attention radar */}
       <div className="bg-dark-card border border-white/10 rounded-2xl p-6">
         <h2 className="text-sm font-bold text-dark-text mb-1">Radar de Atenção</h2>
-        <p className="text-xs text-slate-500 mb-4">Projetos críticos dos dois squads, ordenados por urgência</p>
+        <p className="text-xs text-slate-500 mb-4">Projetos críticos do operacional, ordenados por urgência</p>
         {atencao.length === 0 ? (
           <div className="text-center text-slate-500 text-sm py-10">Nenhum projeto crítico 🎉</div>
         ) : (
@@ -828,7 +769,6 @@ export default function OperacionalConsolidado() {
               <thead>
                 <tr className="border-b border-white/5 text-[9px] font-bold text-slate-500 uppercase tracking-widest">
                   <th className="text-left pb-2 pr-2">Parceiro</th>
-                  <th className="text-left pb-2 pr-2">Squad</th>
                   <th className="text-left pb-2 pr-2">Gestor</th>
                   <th className="text-left pb-2 pr-2">Investimento</th>
                   <th className="text-left pb-2">Critério</th>
@@ -845,15 +785,10 @@ export default function OperacionalConsolidado() {
                     'Resultado Ruim': { bg: '#f74c4c22', c: '#f74c4c' },
                     'Testando': { bg: '#4c8ef722', c: '#4c8ef7' },
                   };
-                  const sq = p.squad || '—';
-                  const sqColor = SQUAD_ACCENT[sq] || '#64748b';
                   return (
                     <tr key={p.id} className="border-b border-white/[0.04] hover:bg-white/[0.03] transition-colors">
                       <td className="py-2.5 pr-2 font-bold text-dark-text truncate max-w-[160px]">{p.partner}</td>
-                      <td className="py-2.5 pr-2">
-                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-full" style={{ background: `${sqColor}22`, color: sqColor }}>{sq}</span>
-                      </td>
-                      <td className="py-2.5 pr-2 text-slate-400 truncate max-w-[120px]">{p.responsible || '—'}</td>
+                      <td className="py-2.5 pr-2 text-slate-400 truncate max-w-[140px]">{p.responsible || '—'}</td>
                       <td className="py-2.5 pr-2 text-slate-300 font-medium">{fmtBRL(parseCurrency(p.investment))}</td>
                       <td className="py-2.5">
                         <div className="flex flex-wrap gap-1">

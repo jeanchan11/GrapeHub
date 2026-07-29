@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import OptionPicker from '../components/ui/OptionPicker';
 import { motion } from 'framer-motion';
-import { Plus, Search, ChevronDown, Edit, Trash2, CheckCircle2, Copy, Check, Settings, X, Link, Users } from 'lucide-react';
+import { Plus, Search, ChevronDown, Edit, Trash2, CheckCircle2, Copy, Check, Settings, X, Link, Users, Loader2 } from 'lucide-react';
 import LoadingSpinner from '../components/LoadingSpinner';
 import SplitHeadline from '../components/SplitHeadline';
 import Organograma from '../components/Organograma';
@@ -90,6 +90,62 @@ export default function ColaboradoresPage() {
   const [systemUsers, setSystemUsers] = useState<SystemUser[]>([]);
   const [userSearch, setUserSearch] = useState('');
   const [showUserDropdown, setShowUserDropdown] = useState(false);
+
+  // Líder direto — persistido nos edges do organograma (source=líder, target=liderado)
+  const [leaderId, setLeaderId] = useState<string | null>(null);
+  const [leaderSearch, setLeaderSearch] = useState('');
+  const [showLeaderDropdown, setShowLeaderDropdown] = useState(false);
+  const [leaderSaving, setLeaderSaving] = useState(false);
+
+  // Descobre o líder atual (source do edge cujo target é este colaborador)
+  const loadLeaderFor = async (colabId: number | string) => {
+    setLeaderId(null);
+    try {
+      const res = await fetch('/api/org-chart');
+      const data = await res.json();
+      const edge = (data?.edges || []).find((e: any) => String(e.target) === String(colabId));
+      setLeaderId(edge ? String(edge.source) : null);
+    } catch (e) { console.error('loadLeaderFor', e); }
+  };
+
+  // Define/remove o líder deste colaborador, gravando no organograma
+  const applyLeader = async (newLeaderId: string | null) => {
+    if (!editingItem?.id) return;
+    const subId = String(editingItem.id);
+    if (newLeaderId === subId) { toast.error('Um colaborador não pode ser líder de si mesmo.'); return; }
+    setLeaderSaving(true);
+    try {
+      const cur = await fetch('/api/org-chart').then(r => r.json()).catch(() => ({}));
+      const nodes = cur?.nodes || [];
+      let edges = (cur?.edges || []).filter((e: any) => String(e.target) !== subId);
+      if (newLeaderId) {
+        edges.push({
+          id: `e-${newLeaderId}-${subId}`,
+          source: String(newLeaderId),
+          target: subId,
+          type: 'smoothstep',
+          animated: true,
+          markerEnd: { type: 'arrowclosed', color: '#8b5cf6' },
+          style: { stroke: '#8b5cf6', strokeWidth: 2 },
+        });
+      }
+      const res = await fetch('/api/org-chart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data: { nodes, edges } }),
+      });
+      if (!res.ok) throw new Error('falha ao salvar');
+      setLeaderId(newLeaderId);
+      setLeaderSearch('');
+      setShowLeaderDropdown(false);
+      toast.success(newLeaderId ? 'Líder definido no organograma.' : 'Líder removido.');
+    } catch (e) {
+      console.error('applyLeader', e);
+      toast.error('Não foi possível salvar o líder.');
+    } finally {
+      setLeaderSaving(false);
+    }
+  };
 
   const loadCollaborators = async () => {
     try {
@@ -180,6 +236,9 @@ export default function ColaboradoresPage() {
     setIsEditMode(false);
     setUserSearch('');
     setShowUserDropdown(false);
+    setLeaderSearch('');
+    setShowLeaderDropdown(false);
+    loadLeaderFor(collab.id);
     setIsModalOpen(true);
   };
 
@@ -742,55 +801,86 @@ export default function ColaboradoresPage() {
                     )}
                   </div>
 
-                  {/* Bolão Avatar */}
+                  {/* Líder direto — grava no organograma */}
                   {editingItem?.id && (
-                    <div>
-                      <label className="block text-xs font-bold text-slate-400 uppercase mb-2">⚽ Avatar Bolão</label>
-                      <div className="flex items-center gap-4">
-                        {formData.bolao_avatar_url ? (
-                          <div className="relative group">
-                            <img src={formData.bolao_avatar_url} alt="Bolão Avatar" className="w-16 h-16 rounded-xl object-cover border border-white/10" />
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                if (!(await confirmDialog({ message: 'Remover avatar do bolão?', danger: true }))) return;
-                                try {
-                                  await fetch(`/api/bolao/avatar/${editingItem.id}`, { method: 'DELETE' });
-                                  setFormData({ ...formData, bolao_avatar_url: null });
-                                  await loadCollaborators();
-                                } catch (e) { console.error(e); }
-                              }}
-                              className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-rose-500 rounded-full flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity shadow"
-                            >
-                              <X size={10} />
-                            </button>
+                    <div className="col-span-2">
+                      <label className="text-xs font-bold text-slate-400 uppercase mb-1.5 block">Líder Direto</label>
+                      {(() => {
+                        const leader = leaderId ? collaborators.find(c => String(c.id) === leaderId) : null;
+                        if (isEditMode) {
+                          return (
+                            <div className="relative">
+                              {leader ? (
+                                <div className="flex items-center gap-3 bg-violet-500/10 border border-violet-500/30 rounded-xl px-3 py-2">
+                                  <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 bg-violet-500/20">
+                                    {(leader as any).linked_picture || (leader as any).picture
+                                      ? <img src={(leader as any).linked_picture || (leader as any).picture} className="w-full h-full object-cover" referrerPolicy="no-referrer" alt="" />
+                                      : <div className="w-full h-full flex items-center justify-center text-violet-600 text-xs font-bold">{(leader.name || '?')[0]}</div>}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-sm font-semibold text-slate-800 dark:text-white truncate">{leader.name}</div>
+                                    <div className="text-xs text-slate-500 truncate">{leader.role || 'Sem cargo'}</div>
+                                  </div>
+                                  {leaderSaving
+                                    ? <Loader2 size={16} className="animate-spin text-violet-400" />
+                                    : <button type="button" onClick={() => applyLeader(null)} className="text-slate-400 hover:text-rose-500 transition-colors" title="Remover líder"><X size={16} /></button>}
+                                </div>
+                              ) : (
+                                <div>
+                                  <input
+                                    value={leaderSearch}
+                                    onChange={e => { setLeaderSearch(e.target.value); setShowLeaderDropdown(true); }}
+                                    onFocus={() => setShowLeaderDropdown(true)}
+                                    placeholder="Buscar líder entre os colaboradores..."
+                                    className="w-full bg-slate-50 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-slate-800 dark:text-white focus:outline-none focus:border-violet-500"
+                                  />
+                                  {showLeaderDropdown && (
+                                    <div className="absolute z-50 left-0 right-0 mt-1 bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl shadow-xl max-h-48 overflow-y-auto">
+                                      {collaborators
+                                        .filter(c => String(c.id) !== String(editingItem.id))
+                                        .filter(c => !leaderSearch || c.name?.toLowerCase().includes(leaderSearch.toLowerCase()) || (c.role || '').toLowerCase().includes(leaderSearch.toLowerCase()))
+                                        .map(c => (
+                                          <button key={c.id} type="button" onMouseDown={() => applyLeader(String(c.id))}
+                                            className="w-full flex items-center gap-3 px-3 py-2 hover:bg-violet-500/10 transition-colors text-left">
+                                            <div className="w-7 h-7 rounded-full overflow-hidden shrink-0 bg-violet-500/20">
+                                              {(c as any).linked_picture || (c as any).picture
+                                                ? <img src={(c as any).linked_picture || (c as any).picture} className="w-full h-full object-cover" referrerPolicy="no-referrer" alt="" />
+                                                : <div className="w-full h-full flex items-center justify-center text-violet-600 text-xs font-bold">{(c.name || '?')[0]}</div>}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                              <div className="text-sm font-medium text-slate-800 dark:text-white truncate">{c.name}</div>
+                                              <div className="text-xs text-slate-500 truncate">{c.role || 'Sem cargo'}</div>
+                                            </div>
+                                          </button>
+                                        ))}
+                                      {collaborators.filter(c => String(c.id) !== String(editingItem.id) && (!leaderSearch || c.name?.toLowerCase().includes(leaderSearch.toLowerCase()))).length === 0 && (
+                                        <div className="px-3 py-3 text-sm text-slate-500 text-center">Nenhum colaborador encontrado.</div>
+                                      )}
+                                    </div>
+                                  )}
+                                  <p className="text-[11px] text-slate-400 mt-1.5">Ao definir, a ligação aparece automaticamente no Organograma.</p>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        }
+                        // read-only
+                        return leader ? (
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-full overflow-hidden shrink-0 bg-violet-500/20">
+                              {(leader as any).linked_picture || (leader as any).picture
+                                ? <img src={(leader as any).linked_picture || (leader as any).picture} className="w-full h-full object-cover" referrerPolicy="no-referrer" alt="" />
+                                : <div className="w-full h-full flex items-center justify-center text-violet-600 text-xs font-bold">{(leader.name || '?')[0]}</div>}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-medium text-slate-800 dark:text-white">{leader.name}</div>
+                              <div className="text-xs text-slate-500">{leader.role || 'Sem cargo'}</div>
+                            </div>
                           </div>
                         ) : (
-                          <div className="w-16 h-16 rounded-xl border-2 border-dashed border-white/10 flex items-center justify-center text-slate-600 text-xl">⚽</div>
-                        )}
-                        <label className="cursor-pointer bg-violet-600/20 hover:bg-violet-600/30 text-violet-400 text-xs font-bold px-3 py-2 rounded-lg transition-colors">
-                          {formData.bolao_avatar_url ? 'Trocar imagem' : 'Subir imagem'}
-                          <input
-                            type="file"
-                            accept="image/*"
-                            className="hidden"
-                            onChange={async (e) => {
-                              const file = e.target.files?.[0];
-                              if (!file) return;
-                              const fd = new FormData();
-                              fd.append('file', file);
-                              try {
-                                const res = await fetch(`/api/bolao/avatar/${editingItem.id}`, { method: 'POST', body: fd });
-                                const data = await res.json();
-                                if (data.url) {
-                                  setFormData({ ...formData, bolao_avatar_url: data.url });
-                                  await loadCollaborators();
-                                }
-                              } catch (err) { console.error(err); }
-                            }}
-                          />
-                        </label>
-                      </div>
+                          <div className="text-sm text-slate-400">Nenhum líder definido</div>
+                        );
+                      })()}
                     </div>
                   )}
 

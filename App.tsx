@@ -394,7 +394,7 @@ const AppContent: React.FC = () => {
       case 'dashboard-operacional':
         return <DashboardOperacional key={activePage} activePage={activePage} subsessionId={activeSubsessionId} />;
       case 'operacional-consolidado':
-        return <OperacionalConsolidado key={activePage} />;
+        return <DashboardOperacional key={activePage} activePage={activePage} mode="heads" />;
       case 'todo-staff':
         return <TodoStaff key={activePage} activePage={activePage} />;
       case 'chamados-grapehub':

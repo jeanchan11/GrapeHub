@@ -6,7 +6,7 @@ import { confirmDialog } from '@/src/lib/confirm';
 import {
   Users, TrendingUp, DollarSign, AlertTriangle,
   CheckCircle, Cpu, RefreshCw, Clock, MessageSquare, X,
-  ThumbsUp, Edit2, Trash2, Search
+  ThumbsUp, Edit2, Trash2, Search, ShieldAlert, Calendar
 } from 'lucide-react';
 import { auth } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
@@ -573,11 +573,16 @@ const formatDateShort = (dateStr: string) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // Main Component
 // ─────────────────────────────────────────────────────────────────────────────
-export default function DashboardOperacional({ activePage = '', subsessionId: subsessionIdProp }: { activePage?: string; subsessionId?: string | null }) {
+export default function DashboardOperacional({ activePage = '', subsessionId: subsessionIdProp, mode = 'squad' }: { activePage?: string; subsessionId?: string | null; mode?: 'squad' | 'heads' }) {
   const parts = activePage.split('-');
   const squadNameRaw = parts[parts.length - 1] || 'able';
   const squadName = squadNameRaw.charAt(0).toUpperCase() + squadNameRaw.slice(1).toLowerCase();
+  const isHeadsMode = mode === 'heads';
   const [projects, setProjects] = useState<ProjectRow[]>([]);
+  const [heads, setHeads] = useState<{ name: string; picture: string | null }[]>([]); // Heads de Tráfego ativos (modo operação)
+  const [headPages, setHeadPages] = useState<{ id: string; label: string }[]>([]); // páginas "Projetos X"
+  const [retentionClientIds, setRetentionClientIds] = useState<string[]>([]); // ids de clientes ativos em Retenção
+  const [briefingTasks, setBriefingTasks] = useState<{ responsible_name: string | null }[]>([]); // onboarding em briefing
   const [users, setUsers]       = useState<{name: string, picture: string, email: string}[]>([]);
   const [squadMembers, setSquadMembers] = useState<string[]>([]);
   const [resolvedSubsessionId, setResolvedSubsessionId] = useState<string | null>(subsessionIdProp ?? null);
@@ -773,36 +778,51 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
     setSpinning(true);
     setError(null);
     try {
+      // Modo "heads" (operação inteira): ignora squad/subsessão, carrega TODOS os projetos.
+      const useSubsession = !isHeadsMode && resolvedSubsessionId;
       const fetches: Promise<Response>[] = [
-        // Use subsession-aware endpoint when available, fallback to squad filter
-        resolvedSubsessionId
-          ? fetch(`/api/projects/by-subsession/${encodeURIComponent(resolvedSubsessionId)}`)
+        useSubsession
+          ? fetch(`/api/projects/by-subsession/${encodeURIComponent(resolvedSubsessionId!)}`)
           : fetch('/api/projects'),
         fetch('/api/users'),
       ];
-      // Fetch squad members when we have a resolvedSubsessionId
-      if (resolvedSubsessionId) {
-        fetches.push(fetch(`/api/squad-members/${encodeURIComponent(resolvedSubsessionId)}`));
+      if (useSubsession) {
+        fetches.push(fetch(`/api/squad-members/${encodeURIComponent(resolvedSubsessionId!)}`));
+      } else if (isHeadsMode) {
+        // Colaboradores (heads ativos) + páginas de projetos (atribuição por página)
+        fetches.push(fetch('/api/collaborators'));
+        fetches.push(fetch('/api/head-project-pages'));
       }
 
-      const [resProjects, resUsers, resMembers] = await Promise.all(fetches);
-      
+      const [resProjects, resUsers, resExtra, resPages] = await Promise.all(fetches);
+      if (isHeadsMode && resPages && resPages.ok) {
+        setHeadPages(await resPages.json());
+      }
+
       if (!resProjects.ok) throw new Error('Falha ao buscar projetos');
       const all: ProjectRow[] = await resProjects.json();
-      
+
       if (resUsers.ok) {
         const usersData = await resUsers.json();
         setUsers(usersData);
       }
 
-      if (resMembers && resMembers.ok) {
-        const membersData: string[] = await resMembers.json();
-        setSquadMembers(membersData);
+      if (resExtra && resExtra.ok) {
+        if (useSubsession) {
+          setSquadMembers(await resExtra.json() as string[]);
+        } else if (isHeadsMode) {
+          const collabs: any[] = await resExtra.json();
+          const activeStatuses = ['efetivado', 'ativo'];
+          setHeads(
+            collabs
+              .filter(c => (c.role || '').toLowerCase() === 'head de tráfego' && activeStatuses.includes((c.status || '').toLowerCase()))
+              .map(c => ({ name: c.name, picture: c.linked_picture || c.picture || null }))
+          );
+        }
       }
 
-      // When using by-subsession API, all projects are already filtered.
-      // When using the fallback, filter by squad name.
-      const relevant = resolvedSubsessionId ? all : all.filter(p => p.squad === squadName);
+      // Modo heads: todos os projetos. Squad: por subsessão (já filtrado) ou por nome do squad.
+      const relevant = isHeadsMode ? all : (resolvedSubsessionId ? all : all.filter(p => p.squad === squadName));
 
       setProjects(relevant);
     } catch (e) {
@@ -814,21 +834,87 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
     }
   };
 
-  useEffect(() => { fetchData(); }, [squadName, resolvedSubsessionId]);
+  useEffect(() => { fetchData(); }, [squadName, resolvedSubsessionId, isHeadsMode]);
+
+  // Contagem de clientes em Retenção (base completa) — mesma regra da página Clientes Ativos.
+  useEffect(() => {
+    fetch('/api/clients')
+      .then(r => r.ok ? r.json() : [])
+      .then((cli: any[]) => {
+        const ids = (Array.isArray(cli) ? cli : []).filter(c => {
+          if ((c.status || '') !== 'Ativo') return false;
+          let tags: any = c.tags;
+          try { tags = Array.isArray(tags) ? tags : JSON.parse(tags || '[]'); } catch { tags = []; }
+          return Array.isArray(tags) && tags.includes('quarentena');
+        }).map(c => c.id);
+        setRetentionClientIds(ids);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Onboarding na etapa "Reunião - Briefing" (status_group briefing-realizado).
+  useEffect(() => {
+    fetch('/api/onboarding-tasks')
+      .then(r => r.ok ? r.json() : [])
+      .then((tasks: any[]) => {
+        setBriefingTasks((Array.isArray(tasks) ? tasks : [])
+          .filter(t => t.status_group === 'briefing-realizado')
+          .map(t => ({ responsible_name: t.responsible_name || null })));
+      })
+      .catch(() => {});
+  }, []);
 
   if (loading) return <Spinner />;
 
-  const filteredProjects = selectedGestor 
-    ? projects.filter(p => p.responsible === selectedGestor)
+  const filteredProjects = selectedGestor
+    ? (isHeadsMode
+        ? projects.filter(p => p.page_id === selectedGestor)   // heads: filtra pela página do head
+        : projects.filter(p => p.responsible === selectedGestor))
     : projects;
 
   const kpis     = calcKPIs(filteredProjects);
   const distrib  = groupByResult(filteredProjects);
   const gestoresListAll = groupByResponsible(projects);
-  // Filter to only show actual squad members (from gestor pages) when available
-  const gestoresList = squadMembers.length > 0
-    ? gestoresListAll.filter(g => squadMembers.some(m => m.toLowerCase() === g.name.toLowerCase()))
-    : gestoresListAll;
+  // Casa nomes diferentes (ex.: "José Victor" no projeto vs "José Victor Batista da Silva" no cadastro):
+  // os tokens do nome mais curto devem estar contidos no mais longo, e o primeiro nome bater.
+  // Ignora sufixos (Jr/Junior/Filho…).
+  const SUFFIX = new Set(['jr', 'junior', 'filho', 'neto', 'sobrinho', 'segundo', 'ii', 'iii']);
+  const sigTokens = (n: string) => (n || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .split(/[^a-z0-9]+/).filter(t => t.length > 1 && !SUFFIX.has(t));
+  const namesMatch = (a: string, b: string) => {
+    const ta = sigTokens(a), tb = sigTokens(b);
+    if (!ta.length || !tb.length) return false;
+    const [small, large] = ta.length <= tb.length ? [ta, tb] : [tb, ta];
+    const largeSet = new Set(large);
+    return small[0] === large[0] && small.every(t => largeSet.has(t));
+  };
+  // Modo heads: atribui os projetos pela PÁGINA "Projetos X" (page_id), não pelo responsible.
+  // Casa cada head à sua página pelo rótulo ("Projetos Erick" → head Erick).
+  const pageNameOf = (label: string) => (label || '').replace(/^projetos\s+/i, '').trim();
+  const gestoresList = isHeadsMode
+    ? heads.map(head => {
+        const page = headPages.find(pg => namesMatch(head.name, pageNameOf(pg.label)));
+        const total = page ? projects.filter(p => p.page_id === page.id).length : 0;
+        return { name: page ? page.id : head.name, total, displayName: head.name, picture: head.picture } as any;
+      })
+    : (squadMembers.length > 0
+        ? gestoresListAll.filter(g => squadMembers.some(m => m.toLowerCase() === g.name.toLowerCase()))
+        : gestoresListAll);
+  // Retenção e Onboarding respeitam o head selecionado (modo operação).
+  // Head selecionado → nome (para casar onboarding) e page_id (para casar clientes via projeto).
+  const selectedHeadName = isHeadsMode && selectedGestor
+    ? ((gestoresList.find((g: any) => g.name === selectedGestor) as any)?.displayName || null)
+    : null;
+  const headClientIds = (isHeadsMode && selectedGestor)
+    ? new Set(projects.filter(p => p.page_id === selectedGestor).map(p => (p as any).active_client_id).filter(Boolean))
+    : null;
+  const retentionShown = headClientIds
+    ? retentionClientIds.filter(id => headClientIds.has(id)).length
+    : retentionClientIds.length;
+  const briefingShown = selectedHeadName
+    ? briefingTasks.filter(t => namesMatch(t.responsible_name || '', selectedHeadName)).length
+    : briefingTasks.length;
+
   const gestores = groupByResponsible(filteredProjects);
   const atencao  = getAtencaoList(filteredProjects);
   const criticas = getCriticas(filteredProjects);
@@ -866,7 +952,7 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
         <div>
           <SplitHeadline text="Dashboard " highlight="Operacional" className="text-2xl font-black tracking-tight text-dark-text" />
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">
-            Visão geral de projetos · Squad {squadName}
+            {isHeadsMode ? 'Visão geral de projetos · Operação' : `Visão geral de projetos · Squad ${squadName}`}
           </p>
         </div>
         <button
@@ -897,8 +983,11 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
         </button>
 
         {gestoresList.map(g => {
-          const dbUser = findUser(g.name);
-          
+          const disp = (g as any).displayName || g.name;
+          const firstName = String(disp).trim().split(/\s+/)[0];
+          const dbUser = findUser(disp) || findUser(g.name);
+          const avatar = (g as any).picture || dbUser?.picture || null;
+
           return (
             <button
               key={g.name}
@@ -910,15 +999,15 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
               }`}
             >
               <div className="w-8 h-8 rounded-full border border-slate-200 dark:border-white/10 overflow-hidden bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
-                {dbUser?.picture ? (
-                  <img src={dbUser.picture} alt={g.name} className="w-full h-full object-cover" />
+                {avatar ? (
+                  <img src={avatar} alt={firstName} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                 ) : (
-                  <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${g.name}`} alt={g.name} className="w-full h-full object-cover" />
+                  <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${disp}`} alt={firstName} className="w-full h-full object-cover" />
                 )}
               </div>
               <div className="text-left">
                 <p className={`text-sm font-bold leading-tight ${selectedGestor === g.name ? 'text-violet-600 dark:text-violet-400' : 'text-slate-700 dark:text-white'}`}>
-                  {dbUser?.name || g.name}
+                  {firstName}
                 </p>
                 <p className="text-[10px] text-slate-500 uppercase tracking-widest">{g.total} projetos</p>
               </div>
@@ -944,11 +1033,18 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
             sub={<span><span className="text-violet-400 font-bold">{kpis.totalAtivos}</span> operacionais</span>}
           />
           <KpiCard
+            iconBg="bg-amber-500/15"
+            icon={<ShieldAlert size={17} className="text-amber-500" />}
+            label="Retenção"
+            value={<CountUp value={retentionShown} />}
+            sub={<span className="text-amber-500 font-bold">Clientes em retenção</span>}
+          />
+          <KpiCard
             iconBg="bg-indigo-500/15"
-            icon={<Cpu size={17} className="text-indigo-500" />}
-            label="Produtos"
-            value={<CountUp value={allProducts.length} />}
-            sub={<span>em <span className="text-indigo-400 font-bold">{projects.length}</span> projetos</span>}
+            icon={<Calendar size={17} className="text-indigo-500" />}
+            label="Onboarding"
+            value={<CountUp value={briefingShown} />}
+            sub={<span className="text-indigo-400 font-bold">Em reunião de briefing</span>}
           />
           <KpiCard
             iconBg="bg-red-500/15"
@@ -963,13 +1059,6 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
             label="Investimento Diário"
             value={<CountUp value={kpis.orcamentoTotal / 30} prefix="R$ " format />}
             sub={<span>Mensal: <span className="text-emerald-400 font-bold">{fmtBRL(kpis.orcamentoTotal)}</span></span>}
-          />
-          <KpiCard
-            iconBg="bg-amber-500/15"
-            icon={<Clock size={17} className="text-amber-500" />}
-            label="Sem Update +4d"
-            value={<CountUp value={kpis.atrasados} />}
-            sub={<span className="text-amber-500 font-bold">Projetos parados</span>}
           />
         </div>
 

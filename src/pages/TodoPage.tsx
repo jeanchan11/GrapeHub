@@ -231,6 +231,28 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
   const [isSubmittingBatch, setIsSubmittingBatch] = useState(false);
 
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  // Ordem dos grupos (reordenável e persistida por página)
+  const [groupOrder, setGroupOrder] = useState<string[]>(['Grupo 1', 'Grupo 2', 'Quarentena']);
+  useEffect(() => {
+    fetch(`/api/todo-gestor/group-order?page_id=${encodeURIComponent(activePage)}`)
+      .then(r => r.ok ? r.json() : [])
+      .then(arr => { if (Array.isArray(arr) && arr.length > 0) setGroupOrder(arr); })
+      .catch(() => {});
+  }, [activePage]);
+  const moveGroup = (name: string, dir: -1 | 1) => {
+    setGroupOrder(prev => {
+      const idx = prev.indexOf(name);
+      const to = idx + dir;
+      if (idx < 0 || to < 0 || to >= prev.length) return prev;
+      const next = [...prev];
+      const [m] = next.splice(idx, 1);
+      next.splice(to, 0, m);
+      fetch(`/api/todo-gestor/group-order?page_id=${encodeURIComponent(activePage)}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ order: next }),
+      }).catch(() => {});
+      return next;
+    });
+  };
   const [expandedClients, setExpandedClients] = useState<Record<string, boolean>>({});
   const [expandedTasks, setExpandedTasks] = useState<Record<string, boolean>>({});
   
@@ -985,11 +1007,19 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
     }
   };
 
+  // Ordem efetiva dos grupos: a ordem salva + quaisquer grupos presentes nos dados que não estejam nela
+  const orderedGroups = (() => {
+    const extras = Object.keys(groupedTasks).filter(
+      k => k !== 'Sem Grupo' && !groupOrder.some(g => g.toLowerCase() === k.toLowerCase())
+    );
+    return [...groupOrder, ...extras];
+  })();
+
   let totalOptimized = 0;
   let totalPending = 0;
 
   if (todoTab === 'ativos') {
-    ['Grupo 1', 'Grupo 2', 'Quarentena'].forEach(targetGroup => {
+    orderedGroups.forEach(targetGroup => {
       const actualGroupKey = Object.keys(groupedTasks).find(k => k.toLowerCase() === targetGroup.toLowerCase());
       if (!actualGroupKey) return;
       const clients = groupedTasks[actualGroupKey];
@@ -1315,7 +1345,7 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
         /* ── Ativos: kanban / list view ─────────────────────────── */
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd} onDragCancel={() => setActiveTask(null)}>
           <div className={viewType === 'kanban' ? "flex gap-4 overflow-x-auto pb-6 pt-2 h-[calc(100vh-200px)] items-start custom-scrollbar" : "space-y-6 pb-6 pt-2"}>
-          {['Grupo 1', 'Grupo 2', 'Quarentena'].map(targetGroup => {
+          {orderedGroups.map((targetGroup, groupIdx) => {
             const actualGroupKey = Object.keys(groupedTasks).find(k => k.toLowerCase() === targetGroup.toLowerCase());
             const groupName = actualGroupKey || targetGroup;
             const clients = actualGroupKey ? groupedTasks[actualGroupKey] : {};
@@ -1683,19 +1713,26 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
             }
 
             return (
-              <div key={groupName} className="bg-dark-bg/40 border border-white/[0.06] rounded-3xl overflow-hidden mb-6">
-                <button 
-                  onClick={() => setExpandedGroups(prev => ({ ...prev, [groupName]: !isGroupExpanded }))}
-                  className="w-full flex items-center justify-between p-4 hover:bg-white/[0.02] transition-colors"
-                >
-                  <div className="flex items-center gap-3">
+              <div key={groupName} className="bg-dark-bg/40 border border-white/[0.06] rounded-3xl overflow-hidden mb-6 group/grp">
+                <div className="w-full flex items-center justify-between p-4 hover:bg-white/[0.02] transition-colors">
+                  <button
+                    onClick={() => setExpandedGroups(prev => ({ ...prev, [groupName]: !isGroupExpanded }))}
+                    className="flex items-center gap-3 flex-1 min-w-0"
+                  >
                     {isGroupExpanded ? <ChevronDown size={20} className="text-violet-500" /> : <ChevronRight size={20} className="text-violet-500" />}
                     <h3 className="text-[14px] font-bold text-dark-text uppercase tracking-widest">{groupName}</h3>
                     <span className="text-[10px] bg-dark-text/10 px-2 py-0.5 rounded-full text-dark-text/60 font-bold ml-2">
                       {filteredClients.length} parceiros
                     </span>
+                  </button>
+                  {/* Reordenar grupo */}
+                  <div className="flex items-center gap-0.5 opacity-0 group-hover/grp:opacity-100 transition-opacity">
+                    <button onClick={() => moveGroup(targetGroup, -1)} disabled={groupIdx === 0} title="Mover para cima"
+                      className="w-7 h-7 flex items-center justify-center rounded-lg text-dark-text/40 hover:text-violet-400 hover:bg-violet-500/10 disabled:opacity-20 disabled:hover:bg-transparent transition-colors"><ChevronUp size={16} /></button>
+                    <button onClick={() => moveGroup(targetGroup, 1)} disabled={groupIdx === orderedGroups.length - 1} title="Mover para baixo"
+                      className="w-7 h-7 flex items-center justify-center rounded-lg text-dark-text/40 hover:text-violet-400 hover:bg-violet-500/10 disabled:opacity-20 disabled:hover:bg-transparent transition-colors"><ChevronDown size={16} /></button>
                   </div>
-                </button>
+                </div>
 
                 <AnimatePresence>
                   {isGroupExpanded && (

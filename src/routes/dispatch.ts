@@ -191,18 +191,9 @@ async function runDailyBatchIfNeeded(pool: Pool) {
         AND fcr.is_active = true
         AND dq.message_template IS DISTINCT FROM fcr.message_template
     `);
-    // 2) Cancela itens de clientes no CRM Financeiro
-    await pool.query(`
-      UPDATE fin_dispatch_queue dq
-      SET status = 'CANCELADO', updated_at = NOW()
-      WHERE dq.status = 'AGENDADO'
-        AND EXISTS (
-          SELECT 1 FROM fin_people fp
-          JOIN clients c ON c.id = fp.grapehub_client_id
-          WHERE fp.asaas_id = dq.customer_asaas_id
-            AND c.crm_status IS NOT NULL AND c.crm_status != ''
-        )
-    `);
+    // (removido) A regra antiga cancelava disparos de clientes com crm_status preenchido
+    // (o extinto "CRM Financeiro"). O campo crm_status hoje é usado para outras coisas,
+    // então não deve mais suprimir cobrança automática.
     // 3) Cancela itens de faturas já pagas ou canceladas
     await pool.query(`
       UPDATE fin_dispatch_queue dq
@@ -269,7 +260,7 @@ async function runDailyBatchIfNeeded(pool: Pool) {
         AND fr.due_date::date + fcr.day_offset <= CURRENT_DATE + INTERVAL '15 days'
         -- Cartão de crédito só entra a partir do Contato Humano
         AND NOT (fr.billing_type = 'CREDIT_CARD' AND fcr.day_offset < 10)
-        AND NOT (c.crm_status IS NOT NULL AND c.crm_status != '')
+        -- (removido o filtro por crm_status — CRM Financeiro descontinuado)
         -- Evita duplicar: 1 disparo por FATURA por regra (não apenas por cliente)
         AND NOT EXISTS (
           SELECT 1 FROM fin_dispatch_queue dq
@@ -364,14 +355,16 @@ async function runDailyBatchIfNeeded(pool: Pool) {
           dispatch_id: item.id,
         };
         const resp = await sendViaN8n(cfg.n8n_webhook_url, payload);
+        // Marca ENVIANDO (aguardando callback). O callback do n8n confirma ENVIADO (sucesso)
+        // ou ERRO (falha, ex.: WhatsApp 463). Se o callback não vier, o sweep expira → ERRO.
         await pool.query(
-          `UPDATE fin_dispatch_queue SET status = 'ENVIADO', sent_at = NOW(), updated_at = NOW(),
+          `UPDATE fin_dispatch_queue SET status = 'ENVIANDO', updated_at = NOW(),
            n8n_ticket_id = $2, n8n_contato_id = $3, n8n_contato_novo = $4, n8n_ticket_novo = $5
            WHERE id = $1`,
           [item.id, resp?.ticket_id || null, resp?.contato_id || null, resp?.contato_novo ?? null, resp?.ticket_novo ?? null]
         );
         await saveDispatchComment(pool, item, mensagem, resolvedCanal || item.channel, (resolvedCanal || item.channel || '').toUpperCase() === 'EMAIL' ? (resolvedEmail || '') : (resolvedPhone || item.customer_phone));
-        console.log(`[dispatch-scheduler] ✅ Enviado: ${item.customer_name} (${item.id})`);
+        console.log(`[dispatch-scheduler] ➤ Enviando (aguardando callback): ${item.customer_name} (${item.id})`);
       } catch (err: any) {
         await pool.query(
           `UPDATE fin_dispatch_queue SET status = 'ERRO', error_message = $2, updated_at = NOW() WHERE id = $1`,
@@ -401,6 +394,19 @@ function startScheduler(pool: Pool) {
   // Verifica a cada 5 minutos se é hora de disparar
   const tick = async () => {
     try { await runDailyBatchIfNeeded(pool); } catch (e) { console.error('[dispatch-scheduler]', e); }
+    // Timeout: itens ENVIANDO sem callback há mais de 20min viram ERRO (evita "Enviado" falso
+    // quando o WhatsApp falha e o n8n não retorna o callback de erro).
+    try {
+      const swept = await pool.query(
+        `UPDATE fin_dispatch_queue
+         SET status = 'ERRO',
+             error_message = COALESCE(NULLIF(error_message,''), 'Sem confirmação de entrega (callback do n8n não recebido em 20min)'),
+             updated_at = NOW()
+         WHERE status = 'ENVIANDO' AND updated_at < NOW() - interval '20 minutes'
+         RETURNING id`
+      );
+      if (swept.rowCount) console.log(`[dispatch-scheduler] ⏱️ ${swept.rowCount} disparo(s) sem callback → ERRO`);
+    } catch (e) { console.error('[dispatch-scheduler] sweep:', e); }
     schedulerTimer = setTimeout(tick, 5 * 60_000); // a cada 5 min
   };
   schedulerTimer = setTimeout(tick, 60_000); // primeira verificação após 1min do boot
@@ -529,7 +535,7 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
         await pool.query(`UPDATE fin_dispatch_queue SET message_rendered = $2 WHERE id = $1`, [id, mensagem]);
         const payload = { telefone: resolvedPhone, mensagem, nome: item.customer_name, email: resolvedEmail, metodo: resolvedCanal, dispatch_id: id };
         const resp = await sendViaN8n(cfg.n8n_webhook_url, payload);
-        await pool.query(`UPDATE fin_dispatch_queue SET status = 'ENVIADO', sent_at = NOW(), updated_at = NOW(), n8n_ticket_id = $2, n8n_contato_id = $3, n8n_contato_novo = $4, n8n_ticket_novo = $5 WHERE id = $1`,
+        await pool.query(`UPDATE fin_dispatch_queue SET status = 'ENVIANDO', updated_at = NOW(), n8n_ticket_id = $2, n8n_contato_id = $3, n8n_contato_novo = $4, n8n_ticket_novo = $5 WHERE id = $1`,
           [id, resp?.ticket_id || null, resp?.contato_id || null, resp?.contato_novo ?? null, resp?.ticket_novo ?? null]);
         await saveDispatchComment(pool, item, mensagem, resolvedCanal || item.channel, (resolvedCanal || item.channel || '').toUpperCase() === 'EMAIL' ? (resolvedEmail || '') : (resolvedPhone || item.customer_phone));
       } catch (err: any) {
@@ -671,7 +677,7 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
           await pool.query(`UPDATE fin_dispatch_queue SET message_rendered = $2 WHERE id = $1`, [item.id, mensagem]);
           const payload = { telefone: resolvedPhone, mensagem, nome: item.customer_name, email: resolvedEmail, metodo: resolvedCanal, dispatch_id: item.id };
           const resp = await sendViaN8n(cfg.n8n_webhook_url, payload);
-          await pool.query(`UPDATE fin_dispatch_queue SET status = 'ENVIADO', sent_at = NOW(), updated_at = NOW(), n8n_ticket_id = $2, n8n_contato_id = $3, n8n_contato_novo = $4, n8n_ticket_novo = $5 WHERE id = $1`,
+          await pool.query(`UPDATE fin_dispatch_queue SET status = 'ENVIANDO', updated_at = NOW(), n8n_ticket_id = $2, n8n_contato_id = $3, n8n_contato_novo = $4, n8n_ticket_novo = $5 WHERE id = $1`,
             [item.id, resp?.ticket_id || null, resp?.contato_id || null, resp?.contato_novo ?? null, resp?.ticket_novo ?? null]);
           await saveDispatchComment(pool, item, mensagem, resolvedCanal, resolvedCanal?.toUpperCase() === 'EMAIL' ? resolvedEmail : resolvedPhone);
         } catch (err: any) {
@@ -884,20 +890,7 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
         }
       }
 
-      // Cancela itens AGENDADOS cujo cliente está no CRM Financeiro
-      const cancel = await pool.query(`
-        UPDATE fin_dispatch_queue dq
-        SET status = 'CANCELADO', updated_at = NOW()
-        WHERE dq.status = 'AGENDADO'
-          AND EXISTS (
-            SELECT 1
-            FROM fin_people fp
-            JOIN clients c ON c.id = fp.grapehub_client_id
-            WHERE fp.asaas_id = dq.customer_asaas_id
-              AND c.crm_status IS NOT NULL
-              AND c.crm_status != ''
-          )
-      `);
+      // (removido) cancelamento por crm_status — CRM Financeiro descontinuado.
 
       // Cancela itens AGENDADOS de faturas já pagas ou canceladas
       const cancelPaid = await pool.query(`
@@ -977,10 +970,7 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
           -- Só popula regras cuja data de envio é hoje ou nos próximos 15 dias
           AND fr.due_date::date + fcr.day_offset >= CURRENT_DATE
           AND fr.due_date::date + fcr.day_offset <= CURRENT_DATE + INTERVAL '15 days'
-          -- Exclui clientes que estão no CRM Financeiro (têm crm_status preenchido)
-          AND NOT (
-            c.crm_status IS NOT NULL AND c.crm_status != ''
-          )
+          -- (removido o filtro por crm_status — CRM Financeiro descontinuado)
           -- Cartão de crédito: só entra a partir do Contato Humano (day_offset >= 10)
           AND NOT (
             fr.billing_type = 'CREDIT_CARD' AND fcr.day_offset < 10
@@ -996,7 +986,7 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
         LIMIT 500
         ON CONFLICT DO NOTHING
       `);
-      res.json({ ok: true, inserted: r.rowCount, corrected: fix.rowCount, cancelled_crm: cancel.rowCount });
+      res.json({ ok: true, inserted: r.rowCount, corrected: fix.rowCount });
     } catch (e: any) {
       console.error('[dispatch populate]', e);
       res.status(500).json({ error: e?.message });

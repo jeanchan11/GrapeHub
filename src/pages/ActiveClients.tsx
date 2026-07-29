@@ -624,9 +624,9 @@ const ActiveClients: React.FC = () => {
               <ShieldAlert size={18} className="text-amber-500" />
             </div>
           </div>
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Quarentena</p>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Retenção</p>
           <h3 className="text-3xl font-bold text-light-text dark:text-white">{quarentenaClients.length}</h3>
-          <p className="text-[10px] text-amber-500 mt-1">Clientes em quarentena</p>
+          <p className="text-[10px] text-amber-500 mt-1">Clientes em retenção</p>
         </div>
 
         {/* 4. Entradas do Mês */}
@@ -707,7 +707,7 @@ const ActiveClients: React.FC = () => {
           }`}
         >
           <ShieldAlert size={14} />
-          Quarentena
+          Retenção
           <span className={`min-w-[22px] h-[22px] flex items-center justify-center rounded-full text-[10px] font-black ${
             activeTab === 'quarentena' ? 'bg-white/20 text-white' : 'bg-amber-500/10 text-amber-500'
           }`}>
@@ -773,8 +773,6 @@ const ActiveClients: React.FC = () => {
                 {activeTab === 'churn' && <th className="px-8 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Gestor</th>}
                 {activeTab === 'churn' && <th className="px-8 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">LTV</th>}
                 {activeTab !== 'churn' && <th className="px-8 py-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Local do Escritório</th>}
-                <SortHeader col="squad" label="Squad" />
-                {activeTab !== 'churn' && <SortHeader col="product" label="Produto" />}
                 {activeTab !== 'churn' && isSuperAdmin && <SortHeader col="financial" label="Financeiro" className="text-center" />}
                 {activeTab !== 'churn' && isSuperAdmin && <SortHeader col="subscription" label="Valor" />}
                 {activeTab !== 'churn' && <SortHeader col="project" label="Projeto" className="text-center" />}
@@ -785,7 +783,7 @@ const ActiveClients: React.FC = () => {
             <tbody className="divide-y divide-slate-200 dark:divide-white/5">
               {isLoading ? (
                 <tr>
-                  <td colSpan={11} className="px-8 py-20 text-center">
+                  <td colSpan={9} className="px-8 py-20 text-center">
                     <div className="flex flex-col items-center gap-3">
                       <LoadingSpinner size="md" />
                       <p className="text-slate-500 font-medium">Carregando clientes...</p>
@@ -794,7 +792,7 @@ const ActiveClients: React.FC = () => {
                 </tr>
               ) : filteredClients.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-8 py-20 text-center">
+                  <td colSpan={8} className="px-8 py-20 text-center">
                     <div className="flex flex-col items-center gap-4">
                       <div className="w-16 h-16 bg-slate-100 dark:bg-white/5 rounded-full flex items-center justify-center text-slate-400">
                         <Users size={32} />
@@ -854,28 +852,6 @@ const ActiveClients: React.FC = () => {
                       <p className="text-xs text-slate-500 truncate max-w-[150px]">
                         {client.location || '-'}
                       </p>
-                    </td>
-                    )}
-                    <td className="px-4 py-3">
-                      <div className={`inline-flex items-center px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-widest ${
-                        client.squad === 'Able' ? 'bg-emerald-500/10 text-emerald-500' :
-                        client.squad === 'Baker' ? 'bg-blue-500/10 text-blue-500' :
-                        'bg-violet-500/10 text-violet-500'
-                      }`}>
-                        {client.squad || 'Able'}
-                      </div>
-                    </td>
-                    {activeTab !== 'churn' && (
-                    <td className="px-4 py-3">
-                      {client.product ? (
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-widest ${
-                          client.product === 'TCV' ? 'bg-cyan-500/10 text-cyan-500' : 'bg-violet-500/10 text-violet-500'
-                        }`}>
-                          {client.product === 'Recorrência Mensal' ? 'Mensal' : client.product}
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-slate-400 italic">-</span>
-                      )}
                     </td>
                     )}
                     {activeTab !== 'churn' && isSuperAdmin && (
@@ -1151,7 +1127,7 @@ const ActiveClients: React.FC = () => {
                     className="w-full px-4 py-2.5 text-left text-xs font-medium text-light-text dark:text-white hover:bg-slate-50 dark:hover:bg-white/5 flex items-center gap-2.5 transition-colors"
                   >
                     <ShieldAlert size={13} className="text-amber-500" /> 
-                    {isQuarantine ? 'Remover Quarentena' : 'Adicionar Quarentena'}
+                    {isQuarantine ? 'Remover da Retenção' : 'Adicionar à Retenção'}
                   </button>
                 );
               })()}
