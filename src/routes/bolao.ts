@@ -161,30 +161,11 @@ export async function setupBolaoRoutes(app: Express, pool: Pool) {
   }
 
 
-  // Seed menu page na seção Grape (se ainda não existir)
-  try {
-    const menuCheck = await pool.query(`SELECT id FROM menu_pages WHERE id = 'bolao' LIMIT 1`);
-    if (menuCheck.rowCount === 0) {
-      // Encontrar a seção Grape
-      const grapeSection = await pool.query(
-        `SELECT id FROM menu_sections WHERE LOWER(title) LIKE '%grape%' LIMIT 1`
-      );
-      if (grapeSection.rows.length > 0) {
-        const sectionId = grapeSection.rows[0].id;
-        await pool.query(`
-          INSERT INTO menu_pages (id, section_id, label, icon, icon_color, template, order_index)
-          VALUES ('bolao', $1, 'Bolão', 'Trophy', '#7C3AED', 'bolao',
-            (SELECT COALESCE(MAX(order_index) + 1, 0) FROM menu_pages))
-          ON CONFLICT (id) DO NOTHING
-        `, [sectionId]);
-        console.log('[Bolao] Menu page created in Grape section.');
-      } else {
-        console.log('[Bolao] Seção Grape não encontrada — adicione o Bolão pelo Admin Panel (template: bolao).');
-      }
-    }
-  } catch (e) {
-    console.warn('[Bolao] Não foi possível criar menu page automaticamente:', e);
-  }
+  // Menu page do Bolão NÃO é mais auto-injetado — a Copa acabou e o menu foi
+  // removido definitivamente. Antes, esta rotina recriava a página 'bolao' em
+  // todo boot se ela não existisse, fazendo o item reaparecer após ser apagado.
+  // As rotas /api/bolao continuam ativas caso precise reativar o menu manualmente
+  // pelo Admin Panel (template: bolao).
 
   // ── Helper: admin check ────────────────────────────────────────────────────
   // Identifica o usuário por EMAIL (como o resto do app) ou pelo Firebase UID — o

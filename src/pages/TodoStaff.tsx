@@ -10,7 +10,7 @@ import {
   Trash2, Edit3, MoreHorizontal, Search, RefreshCw, Repeat, Filter, ArrowUpDown,
   Circle, CheckCircle2, Tag, CalendarDays, MessageSquare, ListChecks, Send, GripVertical,
   Lightbulb, Star, Sparkles, LayoutGrid, AlignJustify, FileText, Loader2, Save,
-  Folder as FolderIcon, FolderOpen, FolderPlus, CornerDownLeft
+  Folder as FolderIcon, FolderOpen, FolderPlus, CornerDownLeft, FlaskConical
 } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
 import { confirmDialog } from '@/src/lib/confirm';
@@ -18,7 +18,7 @@ import { confirmDialog } from '@/src/lib/confirm';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Priority = 'low' | 'medium' | 'high' | 'urgent';
-type Status = 'todo' | 'in_progress' | 'done';
+type Status = 'todo' | 'in_progress' | 'teste' | 'done';
 
 interface Subtask {
   id: string;
@@ -2124,7 +2124,7 @@ const SortableSectionBlock: React.FC<{
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitle?: string; hideRecurring?: boolean; hideDocument?: boolean; hideIdeas?: boolean; todoLabel?: string; enableColoredTags?: boolean; enableImageUpload?: boolean }> = ({ activePage, pageTitle, pageSubtitle, hideRecurring = false, hideDocument = false, hideIdeas = false, todoLabel, enableColoredTags = false, enableImageUpload = false }) => {
+const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitle?: string; hideRecurring?: boolean; hideDocument?: boolean; hideIdeas?: boolean; todoLabel?: string; enableColoredTags?: boolean; enableImageUpload?: boolean; enableTestColumn?: boolean }> = ({ activePage, pageTitle, pageSubtitle, hideRecurring = false, hideDocument = false, hideIdeas = false, todoLabel, enableColoredTags = false, enableImageUpload = false, enableTestColumn = false }) => {
   const [todos,      setTodos]      = useState<TodoItem[]>([]);
   const [recurring,  setRecurring]  = useState<RecurringItem[]>([]);
   const [ideas,      setIdeas]      = useState<IdeaItem[]>([]);
@@ -2185,10 +2185,15 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
   const [tagsModal, setTagsModal] = useState(false);
 
   // Coluna "A Fazer" com label customizável via prop todoLabel
-  const derivedColumns = useMemo(() =>
-    COLUMNS.map(c => c.id === 'todo' && todoLabel ? { ...c, label: todoLabel } : c),
-    [todoLabel]
-  );
+  // Coluna "Em Teste" (antes de Concluído) adicionada só quando enableTestColumn=true
+  const derivedColumns = useMemo(() => {
+    const base = COLUMNS.map(c => c.id === 'todo' && todoLabel ? { ...c, label: todoLabel } : c);
+    if (!enableTestColumn) return base;
+    const testCol = { id: 'teste' as Status, label: 'Em Teste', color: 'from-amber-500/20 to-amber-600/10', icon: <FlaskConical size={13} /> };
+    const doneIdx = base.findIndex(c => c.id === 'done');
+    if (doneIdx === -1) return [...base, testCol];
+    return [...base.slice(0, doneIdx), testCol, ...base.slice(doneIdx)];
+  }, [todoLabel, enableTestColumn]);
 
   // ── Load data from API on mount ──
 
@@ -3369,9 +3374,13 @@ const TodoStaff: React.FC<{ activePage?: string; pageTitle?: string; pageSubtitl
       ) : (
         <div className="px-6 md:px-8 pb-10">
           <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragStart={handleDndStart} onDragOver={handleDndOver} onDragEnd={handleDndEnd}>
-          <div className={viewMode === 'kanban' ? "grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4" : "flex flex-col gap-6"}>
+          <div className={viewMode === 'kanban'
+            ? (derivedColumns.length >= 4
+                ? "grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4"
+                : "grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4")
+            : "flex flex-col gap-6"}>
 
-          {/* ── 3 colunas de status ─── */}
+          {/* ── Colunas de status (3, ou 4 com "Em Teste") ─── */}
           {derivedColumns.map(col => {
             let items = byStatus(col.id);
             
