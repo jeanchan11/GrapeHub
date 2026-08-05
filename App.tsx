@@ -99,11 +99,20 @@ const AppContent: React.FC = () => {
     // Fallback to localStorage for backward compatibility
     return localStorage.getItem('activePage') || 'welcome';
   });
-  const [theme, setTheme] = useState<'light' | 'darker'>(() => {
-    const saved = localStorage.getItem('theme');
-    if (saved === 'light') return 'light';
-    return 'darker'; // 'dark' and 'darker' both map to 'darker'
+  // Preferência de tema: 'system' segue o tema do computador (como os apps do macOS).
+  // 'light'/'darker' fixam manualmente e ignoram o sistema.
+  const [themePref, setThemePref] = useState<'system' | 'light' | 'darker'>(() => {
+    const saved = localStorage.getItem('theme-pref');
+    if (saved === 'light' || saved === 'darker' || saved === 'system') return saved;
+    return 'system'; // padrão: acompanhar o sistema
   });
+  // Tema do SO, observado em tempo real
+  const [systemDark, setSystemDark] = useState<boolean>(() => {
+    try { return window.matchMedia('(prefers-color-scheme: dark)').matches; } catch { return true; }
+  });
+  const theme: 'light' | 'darker' = themePref === 'system'
+    ? (systemDark ? 'darker' : 'light')
+    : themePref;
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try { return localStorage.getItem('sidebar-collapsed') === 'true'; } catch { return false; }
   });
@@ -222,6 +231,15 @@ const AppContent: React.FC = () => {
     );
   }
 
+  // Acompanha a troca de tema do sistema enquanto a aba está aberta
+  useEffect(() => {
+    let mq: MediaQueryList;
+    try { mq = window.matchMedia('(prefers-color-scheme: dark)'); } catch { return; }
+    const onChange = (e: MediaQueryListEvent) => setSystemDark(e.matches);
+    mq.addEventListener?.('change', onChange);
+    return () => mq.removeEventListener?.('change', onChange);
+  }, []);
+
   useEffect(() => {
     document.documentElement.classList.remove('light', 'dark', 'darker');
     if (theme === 'darker') {
@@ -229,11 +247,13 @@ const AppContent: React.FC = () => {
     } else {
       document.documentElement.classList.add(theme);
     }
-    localStorage.setItem('theme', theme);
-  }, [theme]);
+    localStorage.setItem('theme', theme);          // compatibilidade com leitores antigos
+    localStorage.setItem('theme-pref', themePref);
+  }, [theme, themePref]);
 
+  // Alterna Sistema → Claro → Escuro → Sistema
   const toggleTheme = () => {
-    setTheme(prev => prev === 'light' ? 'darker' : 'light');
+    setThemePref(prev => prev === 'system' ? 'light' : prev === 'light' ? 'darker' : 'system');
   };
 
   const renderPage = () => {
@@ -393,6 +413,8 @@ const AppContent: React.FC = () => {
         return <PlaybookAcoes />;
       case 'dashboard-operacional':
         return <DashboardOperacional key={activePage} activePage={activePage} subsessionId={activeSubsessionId} />;
+      case 'dashboard-head':
+        return <DashboardOperacional key={activePage} activePage={activePage} subsessionId={activeSubsessionId} mode="head" />;
       case 'operacional-consolidado':
         return <DashboardOperacional key={activePage} activePage={activePage} mode="heads" />;
       case 'todo-staff':
@@ -530,6 +552,7 @@ const AppContent: React.FC = () => {
         user={user}
         userData={userData}
         theme={theme}
+        themePref={themePref}
         toggleTheme={toggleTheme}
         onCollapseChange={setSidebarCollapsed}
       />

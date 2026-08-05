@@ -1,13 +1,16 @@
 import React, { useEffect, useState } from 'react';
 
-import { PieChart, Pie, Cell, Tooltip as RechartsTooltip } from 'recharts';
+import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from 'recharts';
 import SplitHeadline from '../components/SplitHeadline';
 import { confirmDialog } from '@/src/lib/confirm';
 import {
   Users, TrendingUp, DollarSign, AlertTriangle,
   CheckCircle, Cpu, RefreshCw, Clock, MessageSquare, X,
-  ThumbsUp, Edit2, Trash2, Search, ShieldAlert, Calendar
+  ThumbsUp, Edit2, Trash2, Search, ShieldAlert, Calendar,
+  LayoutDashboard, UserX, KeyRound
 } from 'lucide-react';
+// Abas de churn reaproveitadas do Consolidado (mesma implementação, sem duplicar código)
+import { ChurnTab, RiscoDeChurnTab, type ChurnRow } from './OperacionalConsolidado';
 import { auth } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -573,11 +576,14 @@ const formatDateShort = (dateStr: string) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // Main Component
 // ─────────────────────────────────────────────────────────────────────────────
-export default function DashboardOperacional({ activePage = '', subsessionId: subsessionIdProp, mode = 'squad' }: { activePage?: string; subsessionId?: string | null; mode?: 'squad' | 'heads' }) {
+export default function DashboardOperacional({ activePage = '', subsessionId: subsessionIdProp, mode = 'squad' }: { activePage?: string; subsessionId?: string | null; mode?: 'squad' | 'heads' | 'head' }) {
   const parts = activePage.split('-');
   const squadNameRaw = parts[parts.length - 1] || 'able';
   const squadName = squadNameRaw.charAt(0).toUpperCase() + squadNameRaw.slice(1).toLowerCase();
   const isHeadsMode = mode === 'heads';
+  // Modo "head": mesmo dashboard, mas dedicado a um único head — a página já vive
+  // dentro da subseção dele, então não há seletor de gestor.
+  const isSingleHeadMode = mode === 'head';
   const [projects, setProjects] = useState<ProjectRow[]>([]);
   const [heads, setHeads] = useState<{ name: string; picture: string | null }[]>([]); // Heads de Tráfego ativos (modo operação)
   const [headPages, setHeadPages] = useState<{ id: string; label: string }[]>([]); // páginas "Projetos X"
@@ -588,6 +594,15 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
   const [resolvedSubsessionId, setResolvedSubsessionId] = useState<string | null>(subsessionIdProp ?? null);
   const [loading, setLoading]   = useState(true);
   const [spinning, setSpinning] = useState(false);
+  // Abas Visão Geral / Risco de Churn / Churn — só no modo operação (heads)
+  const [tab, setTab] = useState<'geral' | 'risco' | 'churn' | 'tokens'>('geral');
+  const [tokenErrors, setTokenErrors] = useState<any[]>([]);
+  const [churns, setChurns] = useState<ChurnRow[]>([]);
+  const [activeClientsCount, setActiveClientsCount] = useState(0);
+  // ── Dados exclusivos do Dashboard Head ──
+  const [meetSummary, setMeetSummary] = useState<Record<string, { last_date: string | null; last_30d: number }>>({});
+  const [headChurns, setHeadChurns] = useState<any[]>([]);
+  const [history, setHistory] = useState<{ date: string; total: number; bom: number; ok: number; ruim: number; testando: number; investimento: number }[]>([]);
 
   const findUser = (responsibleName: string | undefined | null) => {
     if (!responsibleName) return undefined;
@@ -836,6 +851,70 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
 
   useEffect(() => { fetchData(); }, [squadName, resolvedSubsessionId, isHeadsMode]);
 
+  // Dados da aba "Churn" — carregados só quando a aba é aberta.
+  useEffect(() => {
+    if (tab !== 'churn' || churns.length > 0) return;
+    let alive = true;
+    Promise.all([fetch('/api/churn'), fetch('/api/clients')])
+      .then(async ([chRes, cRes]) => {
+        const ch = chRes.ok ? await chRes.json() : [];
+        const cli = cRes.ok ? await cRes.json() : [];
+        if (!alive) return;
+        setChurns(Array.isArray(ch) ? ch : []);
+        setActiveClientsCount(Array.isArray(cli) ? cli.filter((c: any) => c.status === 'Ativo').length : 0);
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [tab, churns.length]);
+
+  // Erros de token — carregados ao abrir a aba.
+  useEffect(() => {
+    if (tab !== 'tokens') return;
+    let alive = true;
+    fetch('/api/token-errors')
+      .then(r => r.ok ? r.json() : [])
+      .then(rows => { if (alive) setTokenErrors(Array.isArray(rows) ? rows : []); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [tab]);
+
+  // Registra o snapshot de risco do dia (idempotente) ao abrir a aba de risco.
+  useEffect(() => {
+    if (tab === 'risco') { fetch('/api/churn-snapshots/capture', { method: 'POST' }).catch(() => {}); }
+  }, [tab]);
+
+  // ── Dashboard Head: cadência de reuniões, evolução da carteira e churn ──
+  useEffect(() => {
+    if (!isSingleHeadMode || projects.length === 0) return;
+    let alive = true;
+    const ids = projects.map(p => p.id);
+
+    fetch('/api/meetings/by-project-summary')
+      .then(r => r.ok ? r.json() : [])
+      .then((rows: any[]) => {
+        if (!alive) return;
+        const map: Record<string, { last_date: string | null; last_30d: number }> = {};
+        for (const r of rows || []) map[r.project_id] = { last_date: r.last_date, last_30d: Number(r.last_30d) || 0 };
+        setMeetSummary(map);
+      })
+      .catch(() => {});
+
+    fetch('/api/project-history', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectIds: ids, days: 90 }),
+    })
+      .then(r => r.ok ? r.json() : { series: [] })
+      .then(d => { if (alive) setHistory(d.series || []); })
+      .catch(() => {});
+
+    fetch('/api/churn')
+      .then(r => r.ok ? r.json() : [])
+      .then(rows => { if (alive) setHeadChurns(Array.isArray(rows) ? rows : []); })
+      .catch(() => {});
+
+    return () => { alive = false; };
+  }, [isSingleHeadMode, projects]);
+
   // Contagem de clientes em Retenção (base completa) — mesma regra da página Clientes Ativos.
   useEffect(() => {
     fetch('/api/clients')
@@ -938,6 +1017,54 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
     .sort((a, b) => b.count - a.count)
     .slice(0, 8);
 
+  // ══ Dashboard Head — métricas de desempenho ═════════════════════════════════
+  const norm = (s: string) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ]/g, '').trim();
+
+  // Nome do head = responsável mais frequente na carteira da página.
+  const headName = (() => {
+    const c: Record<string, number> = {};
+    for (const p of projects) { const r = (p.responsible || '').trim(); if (r) c[r] = (c[r] || 0) + 1; }
+    return Object.entries(c).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+  })();
+
+  // 1) Cadência de reuniões
+  const DIAS_SEM_REUNIAO = 30;
+  const meetRows = projects.map(p => {
+    const s = meetSummary[p.id];
+    const last = s?.last_date ? new Date(s.last_date + 'T12:00:00') : null;
+    const dias = last ? Math.floor((Date.now() - last.getTime()) / 86400000) : null;
+    return { p, last, dias, last30: s?.last_30d || 0 };
+  });
+  const comReuniao30 = meetRows.filter(r => r.last30 > 0).length;
+  const semReuniao = meetRows
+    .filter(r => r.dias === null || r.dias > DIAS_SEM_REUNIAO)
+    .sort((a, b) => (b.dias ?? 99999) - (a.dias ?? 99999));
+
+  // 2) Evolução da carteira (90 dias)
+  const histFirst = history[0];
+  const histLast = history[history.length - 1];
+  const pctSaudavel = (h?: typeof histFirst) => (h && h.total > 0 ? Math.round(((h.bom + h.ok) / h.total) * 100) : 0);
+  const saudavelHoje = pctSaudavel(histLast);
+  const saudavelAntes = pctSaudavel(histFirst);
+  const saudavelDelta = saudavelHoje - saudavelAntes;
+
+  // 3) Churn atribuído ao head (campo `gestor` da planilha de churn)
+  const churnDoHead = headChurns.filter(c => {
+    if (!c.gestor || !headName) return false;
+    const g = norm(c.gestor), h = norm(headName);
+    return g === h || g.startsWith(h) || h.startsWith(g);
+  });
+  const churn6m = churnDoHead.filter(c => c.day_exit && new Date(c.day_exit) >= new Date(Date.now() - 180 * 86400000));
+  const parseMoney = (v: any) => Number(String(v ?? '').replace(/[^0-9,.-]/g, '').replace(/\./g, '').replace(',', '.')) || 0;
+  const ltvPerdido = churn6m.reduce((s, c) => s + parseMoney(c.ltv), 0);
+  const evitaveis = churn6m.filter(c => norm(c.tipo).includes('evitavel') && !norm(c.tipo).includes('inevitavel')).length;
+  const churnSemGestor = headChurns.filter(c => !c.gestor && c.day_exit && new Date(c.day_exit) >= new Date(Date.now() - 180 * 86400000)).length;
+
+  // 4) Investimento sob gestão vs. início da série
+  const investHoje = histLast?.investimento || 0;
+  const investAntes = histFirst?.investimento || 0;
+  const investDelta = investAntes > 0 ? Math.round(((investHoje - investAntes) / investAntes) * 100) : null;
+
   return (
     <div className="min-h-screen bg-dark-bg transition-colors duration-300">
       <style>{`
@@ -950,9 +1077,11 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-6 md:px-8 pt-8 pb-4">
         <div>
-          <SplitHeadline text="Dashboard " highlight="Operacional" className="text-2xl font-black tracking-tight text-dark-text" />
+          <SplitHeadline text="Dashboard " highlight={isSingleHeadMode ? 'Head' : 'Operacional'} className="text-2xl font-black tracking-tight text-dark-text" />
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">
-            {isHeadsMode ? 'Visão geral de projetos · Operação' : `Visão geral de projetos · Squad ${squadName}`}
+            {isSingleHeadMode
+              ? 'Visão geral de projetos'
+              : isHeadsMode ? 'Visão geral de projetos · Operação' : `Visão geral de projetos · Squad ${squadName}`}
           </p>
         </div>
         <button
@@ -963,6 +1092,28 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
         </button>
       </div>
 
+      {/* ── Abas: Visão Geral / Risco de Churn / Churn (modo operação) ──── */}
+      {isHeadsMode && (
+        <div className="px-6 md:px-8 pb-6 flex flex-wrap gap-1 border-b border-white/5">
+          {([['geral', 'Visão Geral', LayoutDashboard], ['risco', 'Risco de Churn', ShieldAlert], ['churn', 'Churn', UserX], ['tokens', 'Erros de Token', KeyRound]] as const).map(([key, label, Icon]) => (
+            <button
+              key={key}
+              onClick={() => setTab(key)}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-t-xl text-sm font-bold transition-all border-b-2 -mb-px ${
+                tab === key
+                  ? 'border-violet-500 text-violet-600 dark:text-violet-400'
+                  : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-white'
+              }`}
+            >
+              <Icon size={15} />
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Filtro de gestores — oculto no modo "head" (a página já é de um head só) */}
+      {!isSingleHeadMode && tab === 'geral' && (<>
       {/* ── Filtro de Gestores ─────────────────────────────────────────── */}
       <div className="px-6 md:px-8 pb-8 flex flex-wrap gap-3">
         <button
@@ -1015,6 +1166,9 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
           );
         })}
       </div>
+      </>)}
+      {/* Sem o filtro, mantém o respiro entre o cabeçalho e os cards */}
+      {isSingleHeadMode && <div className="pb-4" />}
 
       {error && (
         <div className="mx-6 md:mx-8 mb-4 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-red-400 text-sm">
@@ -1022,7 +1176,109 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
         </div>
       )}
 
-      <div className="px-6 md:px-8 pb-10 space-y-5">
+      {/* Conteúdo das abas de churn (reaproveitadas do Consolidado) */}
+      {isHeadsMode && tab === 'risco' && (
+        <div className="px-6 md:px-8 pb-10 pt-6">
+          <RiscoDeChurnTab
+            projects={projects as any}
+            heads={gestoresList.map((g: any) => ({ id: g.name, name: g.displayName || g.name, picture: g.picture }))}
+          />
+        </div>
+      )}
+      {isHeadsMode && tab === 'churn' && (
+        <div className="px-6 md:px-8 pb-10 pt-6"><ChurnTab churns={churns} activeCount={activeClientsCount} /></div>
+      )}
+
+      {/* ── Erros de Token — centraliza as contas com credencial quebrada ── */}
+      {isHeadsMode && tab === 'tokens' && (
+        <div className="px-6 md:px-8 pb-10 pt-6 space-y-5">
+          {(() => {
+            const comErro = tokenErrors.filter(t => String(t.status) === 'error');
+            const reauth = tokenErrors.filter(t => String(t.status) === 'pending_reauth');
+            const porPlataforma = tokenErrors.reduce((acc: Record<string, number>, t) => {
+              const k = t.platform === 'meta_ads' ? 'Meta Ads' : (t.platform || 'Outro');
+              acc[k] = (acc[k] || 0) + 1; return acc;
+            }, {});
+            return (
+              <>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="bg-dark-card border border-white/5 rounded-2xl p-5">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Com erro</p>
+                    <p className="text-3xl font-black text-rose-400">{comErro.length}</p>
+                  </div>
+                  <div className="bg-dark-card border border-white/5 rounded-2xl p-5">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Reautenticar</p>
+                    <p className="text-3xl font-black text-amber-400">{reauth.length}</p>
+                  </div>
+                  {Object.entries(porPlataforma).slice(0, 2).map(([k, v]) => (
+                    <div key={k} className="bg-dark-card border border-white/5 rounded-2xl p-5">
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">{k}</p>
+                      <p className="text-3xl font-black text-dark-text">{v as number}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="bg-dark-card border border-white/5 rounded-2xl overflow-hidden">
+                  <div className="px-5 py-4 border-b border-white/5">
+                    <h2 className="text-sm font-bold text-dark-text">Tokens com problema</h2>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Contas cujo token parou de funcionar — a coleta de dados está parada nelas.
+                    </p>
+                  </div>
+
+                  {tokenErrors.length === 0 ? (
+                    <p className="text-sm text-emerald-400 text-center py-14">Nenhum token com erro ✅</p>
+                  ) : (
+                    <div className="divide-y divide-white/5">
+                      {tokenErrors.map(t => {
+                        const isErro = String(t.status) === 'error';
+                        const quando = t.last_synced_at
+                          ? new Date(t.last_synced_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+                          : 'sem sincronização';
+                        return (
+                          <div key={t.id} className={`relative flex items-start gap-3 pl-5 pr-5 py-4 ${isErro ? 'bg-rose-500/[0.03]' : ''}`}>
+                            <span className={`absolute left-0 top-0 bottom-0 w-1 ${isErro ? 'bg-rose-500' : 'bg-amber-500'}`} />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="text-sm font-bold text-dark-text truncate">
+                                  {t.partner || t.project_id || '—'}
+                                </p>
+                                <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-400 uppercase">
+                                  {t.platform === 'meta_ads' ? 'Meta Ads' : (t.platform || 'outro')}
+                                </span>
+                                {t.account_name && (
+                                  <span className="text-[10px] text-slate-500 truncate">{t.account_name}</span>
+                                )}
+                              </div>
+                              {t.last_error && (
+                                <p className="text-[11px] text-rose-400/90 mt-1.5 leading-snug line-clamp-2">{t.last_error}</p>
+                              )}
+                              <div className="flex items-center gap-2 mt-1.5 text-[10px] text-slate-500">
+                                {t.responsible && <span>{t.responsible}</span>}
+                                {t.responsible && <span>·</span>}
+                                <span>{quando}</span>
+                              </div>
+                            </div>
+                            <span className={`shrink-0 text-[9px] font-black px-2 py-1 rounded-full border ${
+                              isErro ? 'bg-rose-500/10 text-rose-400 border-rose-500/25'
+                                     : 'bg-amber-500/10 text-amber-400 border-amber-500/25'
+                            }`}>
+                              {isErro ? 'Erro' : 'Reautenticar'}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* Visão Geral — escondida (não desmontada) ao trocar de aba, preservando o estado */}
+      <div className={`px-6 md:px-8 pb-10 space-y-5 ${tab !== 'geral' ? 'hidden' : ''}`}>
         {/* ── KPI Cards ──────────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
           <KpiCard
@@ -1324,6 +1580,8 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
             )}
           </div>
         </div>
+        {/* Radar de Churn + Projetos Sem Update — ocultos no Dashboard Head */}
+        {!isSingleHeadMode && (<>
 
         {/* ── Linha 4 — Dist. Produtos + Tarefas Críticas ───────────────── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -1422,6 +1680,143 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
             )}
           </div>
         </div>
+        </>)}
+
+        {/* ════ Desempenho do Head — blocos exclusivos do Dashboard Head ════ */}
+        {isSingleHeadMode && (
+          <>
+            {/* 1) Cadência de reuniões */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+              <div className="bg-dark-card border border-white/5 rounded-2xl p-5">
+                <h2 className="text-sm font-bold text-dark-text mb-1">Cadência de Reuniões</h2>
+                <p className="text-xs text-slate-500 mb-4">Clientes atendidos nos últimos 30 dias</p>
+                <div className="flex items-end gap-2">
+                  <span className="text-4xl font-black text-dark-text leading-none">{comReuniao30}</span>
+                  <span className="text-lg font-bold text-slate-500 leading-none pb-0.5">/ {projects.length}</span>
+                </div>
+                <div className="mt-4 h-2 rounded-full bg-white/5 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${comReuniao30 / Math.max(projects.length, 1) >= 0.8 ? 'bg-emerald-500' : comReuniao30 / Math.max(projects.length, 1) >= 0.5 ? 'bg-amber-500' : 'bg-rose-500'}`}
+                    style={{ width: `${Math.round((comReuniao30 / Math.max(projects.length, 1)) * 100)}%` }}
+                  />
+                </div>
+                <p className="text-[11px] text-slate-500 mt-2">
+                  {Math.round((comReuniao30 / Math.max(projects.length, 1)) * 100)}% da carteira com reunião no período
+                </p>
+              </div>
+
+              <div className="lg:col-span-2 bg-dark-card border border-white/5 rounded-2xl p-5">
+                <h2 className="text-sm font-bold text-dark-text mb-1">Sem Reunião há mais de {DIAS_SEM_REUNIAO} dias</h2>
+                <p className="text-xs text-slate-500 mb-4">{semReuniao.length} cliente(s) precisando de contato</p>
+                {semReuniao.length === 0 ? (
+                  <p className="text-xs text-emerald-400 py-6 text-center">Toda a carteira teve reunião recente ✅</p>
+                ) : (
+                  <div className="space-y-2 max-h-[280px] overflow-y-auto custom-scrollbar pr-1">
+                    {semReuniao.slice(0, 12).map(({ p, dias }) => (
+                      <div key={p.id} className="flex items-center justify-between gap-3 bg-dark-bg/40 border border-white/5 rounded-xl px-3 py-2.5">
+                        <span className="text-xs font-bold text-dark-text truncate">{p.partner}</span>
+                        <span className={`text-[10px] font-bold px-2 py-1 rounded-full shrink-0 ${dias === null ? 'bg-slate-500/15 text-slate-400' : dias > 60 ? 'bg-rose-500/15 text-rose-400' : 'bg-amber-500/15 text-amber-400'}`}>
+                          {dias === null ? 'sem registro' : `${dias}d`}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 2) Evolução da carteira + 4) Investimento */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+              <div className="lg:col-span-2 bg-dark-card border border-white/5 rounded-2xl p-5">
+                <h2 className="text-sm font-bold text-dark-text mb-1">Evolução da Carteira</h2>
+                <p className="text-xs text-slate-500 mb-4">% de projetos com Resultado Bom ou Ok · últimos 90 dias</p>
+                {history.length < 2 ? (
+                  <p className="text-xs text-slate-500 py-10 text-center">
+                    A série começa a partir de hoje — volte em alguns dias para ver a evolução.
+                  </p>
+                ) : (
+                  <>
+                    <div className="flex items-end gap-3 mb-3">
+                      <span className="text-3xl font-black text-dark-text leading-none">{saudavelHoje}%</span>
+                      {saudavelDelta !== 0 && (
+                        <span className={`text-xs font-bold pb-1 ${saudavelDelta > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {saudavelDelta > 0 ? '↑' : '↓'} {Math.abs(saudavelDelta)} p.p.
+                        </span>
+                      )}
+                    </div>
+                    <ResponsiveContainer width="100%" height={180}>
+                      <AreaChart data={history.map(h => ({ date: h.date.slice(8, 10) + '/' + h.date.slice(5, 7), saudavel: h.total > 0 ? Math.round(((h.bom + h.ok) / h.total) * 100) : 0, ruim: h.total > 0 ? Math.round((h.ruim / h.total) * 100) : 0 }))}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                        <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                        <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} unit="%" />
+                        <RechartsTooltip contentStyle={{ background: '#1a1625', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, fontSize: 12 }} />
+                        <Area type="monotone" dataKey="saudavel" name="Bom + Ok" stroke="#2ecc8f" fill="#2ecc8f" fillOpacity={0.15} strokeWidth={2} />
+                        <Area type="monotone" dataKey="ruim" name="Ruim" stroke="#f74c4c" fill="#f74c4c" fillOpacity={0.12} strokeWidth={2} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </>
+                )}
+              </div>
+
+              <div className="bg-dark-card border border-white/5 rounded-2xl p-5">
+                <h2 className="text-sm font-bold text-dark-text mb-1">Investimento sob Gestão</h2>
+                <p className="text-xs text-slate-500 mb-4">Verba mensal somada da carteira</p>
+                {/* Mesmo número do card "Investimento Diário" acima (lá dividido por 30),
+                    para as duas leituras baterem na tela. */}
+                <p className="text-3xl font-black text-dark-text leading-none">
+                  {fmtBRL(kpis.orcamentoTotal)}
+                </p>
+                {history.length >= 2 && investDelta !== null ? (
+                  <p className={`text-xs font-bold mt-3 ${investDelta > 0 ? 'text-emerald-400' : investDelta < 0 ? 'text-rose-400' : 'text-slate-500'}`}>
+                    {investDelta > 0 ? '↑' : investDelta < 0 ? '↓' : ''} {Math.abs(investDelta)}% vs. início do período
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-slate-500 mt-3">O comparativo aparece conforme a série acumula dias.</p>
+                )}
+              </div>
+            </div>
+
+            {/* 3) Churn */}
+            <div className="bg-dark-card border border-white/5 rounded-2xl p-5">
+              <h2 className="text-sm font-bold text-dark-text mb-1">Churn nos últimos 6 meses</h2>
+              <p className="text-xs text-slate-500 mb-4">
+                Saídas atribuídas a {headName || 'este head'} na planilha de churn
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="bg-dark-bg/40 border border-white/5 rounded-xl p-4">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Clientes perdidos</p>
+                  <p className="text-2xl font-black text-rose-400">{churn6m.length}</p>
+                </div>
+                <div className="bg-dark-bg/40 border border-white/5 rounded-xl p-4">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">LTV perdido</p>
+                  <p className="text-2xl font-black text-dark-text">R$ {ltvPerdido.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</p>
+                </div>
+                <div className="bg-dark-bg/40 border border-white/5 rounded-xl p-4">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Evitáveis</p>
+                  <p className="text-2xl font-black text-amber-400">{evitaveis}<span className="text-sm text-slate-500 font-bold"> de {churn6m.length}</span></p>
+                </div>
+              </div>
+              {churn6m.length > 0 && (
+                <div className="mt-4 space-y-2 max-h-[220px] overflow-y-auto custom-scrollbar pr-1">
+                  {churn6m.map((c: any, i: number) => (
+                    <div key={c.id || i} className="flex items-center justify-between gap-3 bg-dark-bg/40 border border-white/5 rounded-xl px-3 py-2.5">
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-dark-text truncate">{c.cliente}</p>
+                        {c.motivo && <p className="text-[10px] text-slate-500 truncate">{c.motivo}</p>}
+                      </div>
+                      <span className="text-[10px] text-slate-500 shrink-0">{c.day_exit ? new Date(c.day_exit).toLocaleDateString('pt-BR') : ''}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {churnSemGestor > 0 && (
+                <p className="text-[11px] text-amber-400/80 mt-4 border-t border-white/5 pt-3">
+                  ⚠ {churnSemGestor} saída(s) no período estão sem gestor preenchido na planilha e não entram nesta conta.
+                </p>
+              )}
+            </div>
+          </>
+        )}
 
         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center pt-2">
           {projects.length} projetos · {allProducts.length} produtos · Squad {squadName}

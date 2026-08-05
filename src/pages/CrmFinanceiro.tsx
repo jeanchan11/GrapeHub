@@ -748,7 +748,7 @@ const CrmFinanceiro = () => {
       <PageHeader 
         title="" 
         titleAccent="Retenção" 
-        subtitle="Gestão de inadimplência e negociações ativas."
+        subtitle="Acompanhamento de clientes em risco e negociações ativas."
       >
         <button
           onClick={async () => {

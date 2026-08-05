@@ -222,11 +222,11 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
   const [dispatchStats, setDispatchStats] = useState({ disparos_hoje: 0, concluidos_7_dias: 0, agendados_pendentes: 0 });
   const [dispatchConfig, setDispatchConfig] = useState<any>(null);
   const [showConfigModal, setShowConfigModal] = useState(false);
-  const [cfgForm, setCfgForm] = useState({ dispatch_enabled: true, dispatch_time: '09:00', dispatch_interval_seconds: 60, n8n_webhook_url: '' });
+  const [cfgForm, setCfgForm] = useState({ dispatch_enabled: true, dispatch_time: '09:00', dispatch_interval_seconds: 60, n8n_webhook_url: '', uazapi_base_url: '', uazapi_token: '', uazapi_test_number: '' });
+  const [uazTest, setUazTest] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [uazTestMsg, setUazTestMsg] = useState('');
   const [savingCfg, setSavingCfg] = useState(false);
   const [copiedCallback, setCopiedCallback] = useState(false);
-  const [webhookTestWA, setWebhookTestWA] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
-  const [webhookTestWAMsg, setWebhookTestWAMsg] = useState('');
   const [webhookTestEmail, setWebhookTestEmail] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [webhookTestEmailMsg, setWebhookTestEmailMsg] = useState('');
   const callbackUrl = `${window.location.origin}/api/finance/dispatch/callback`;
@@ -242,7 +242,7 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
   const fetchDispatch = async () => {
     try {
       const [qRes, sRes, cRes] = await Promise.all([
-        fetch('/api/finance/dispatch/queue?limit=2000'),
+        fetch('/api/finance/dispatch/queue?limit=2000&cancelled_days=7'),
         fetch('/api/finance/dispatch/queue/stats'),
         fetch('/api/finance/dispatch/config'),
       ]);
@@ -256,6 +256,9 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
           dispatch_time: cfg.dispatch_time?.slice(0,5) || '09:00',
           dispatch_interval_seconds: cfg.dispatch_interval_seconds || 60,
           n8n_webhook_url: cfg.n8n_webhook_url || '',
+          uazapi_base_url: cfg.uazapi_base_url || '',
+          uazapi_token: cfg.uazapi_token || '',
+          uazapi_test_number: cfg.uazapi_test_number || '',
         });
       }
       // Overdue clients (Contato Humano + Suspensão) — all, regardless of CRM status
@@ -974,7 +977,14 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
             agendados.sort((a, b) => new Date(String(a.scheduled_date).slice(0,10) + 'T12:00:00').getTime() - new Date(String(b.scheduled_date).slice(0,10) + 'T12:00:00').getTime());
 
             const enviados    = dispatchItems.filter(i => (i.status === 'ENVIADO' || i.status === 'ENVIANDO') && !!i.sent_at && search(i)).sort((a, b) => new Date(b.sent_at).getTime() - new Date(a.sent_at).getTime());
-            const cancelados  = dispatchItems.filter(i => (i.status === 'CANCELADO' || i.status === 'ERRO')   && search(i));
+            // Suspensos/Erros: apenas os últimos 7 dias (o histórico completo tem
+            // mais de mil registros e polui a visão). Ordena do mais recente.
+            const cancelCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+            const cancelDate = (i: any) => new Date(i.updated_at || i.sent_at || i.scheduled_date).getTime();
+            const cancelados  = dispatchItems
+              .filter(i => (i.status === 'CANCELADO' || i.status === 'ERRO') && search(i))
+              .filter(i => { const t = cancelDate(i); return !Number.isFinite(t) || t >= cancelCutoff; })
+              .sort((a, b) => cancelDate(b) - cancelDate(a));
 
             // Deduplica overdueClients por cliente: pega a fatura com maior atraso por customer_asaas_id
             const overdueSearch = overdueClients.filter(o =>
@@ -1008,7 +1018,7 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
               { key: 'enviados',   label: 'Enviados',         color: 'emerald', items: enviados       },
               { key: 'humano',     label: 'Contato Humano',   color: 'violet',  items: humanoFinal    },
               { key: 'suspensao',  label: 'Suspensão',        color: 'rose',    items: suspensaoFinal },
-              { key: 'cancelados', label: 'Suspensos/Erros',  color: 'slate',   items: cancelados     },
+              { key: 'cancelados', label: 'Suspensos/Erros · 7 dias',  color: 'slate',   items: cancelados     },
             ];
 
             const currentItems = subTabCfg.find(t => t.key === dispatchSubTab)?.items ?? [];
@@ -1287,57 +1297,100 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                 <input type="number" min={10} value={cfgForm.dispatch_interval_seconds} onChange={e => setCfgForm(f => ({ ...f, dispatch_interval_seconds: parseInt(e.target.value) }))}
                   className="w-full bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-violet-500/50" />
               </div>
+              {/* ── UAZAPI — canal principal do WhatsApp (envio direto) ── */}
+              <div className="rounded-xl border border-emerald-300/60 dark:border-emerald-500/20 bg-emerald-50/50 dark:bg-emerald-500/5 p-3">
+                <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-widest mb-0.5">WhatsApp · UAZAPI</p>
+                <p className="text-[10px] text-gray-500 dark:text-slate-500 mb-2.5">
+                  Envio direto, sem passar pelo n8n. A confirmação é imediata.
+                </p>
+
+                <label className="text-[10px] font-bold text-gray-500 dark:text-slate-500 uppercase tracking-widest block mb-1">URL da instância</label>
+                <input
+                  type="text"
+                  value={cfgForm.uazapi_base_url}
+                  onChange={e => { setCfgForm(f => ({ ...f, uazapi_base_url: e.target.value })); setUazTest('idle'); setUazTestMsg(''); }}
+                  placeholder="https://suaempresa.uazapi.com"
+                  className="w-full bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-emerald-500/50"
+                />
+
+                <label className="text-[10px] font-bold text-gray-500 dark:text-slate-500 uppercase tracking-widest block mb-1 mt-2.5">Token</label>
+                <input
+                  type="password"
+                  value={cfgForm.uazapi_token}
+                  onChange={e => { setCfgForm(f => ({ ...f, uazapi_token: e.target.value })); setUazTest('idle'); setUazTestMsg(''); }}
+                  placeholder="token da instância"
+                  autoComplete="off"
+                  className="w-full bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-emerald-500/50"
+                />
+
+                <label className="text-[10px] font-bold text-gray-500 dark:text-slate-500 uppercase tracking-widest block mb-1 mt-2.5">Número de teste</label>
+                <input
+                  type="text"
+                  value={cfgForm.uazapi_test_number}
+                  onChange={e => { setCfgForm(f => ({ ...f, uazapi_test_number: e.target.value })); setUazTest('idle'); setUazTestMsg(''); }}
+                  placeholder="5541999999999 (com DDI + DDD)"
+                  className="w-full bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-emerald-500/50"
+                />
+
+                <button
+                  disabled={!cfgForm.uazapi_base_url || !cfgForm.uazapi_token || uazTest === 'testing'}
+                  onClick={async () => {
+                    setUazTest('testing'); setUazTestMsg('');
+                    try {
+                      const res = await fetch('/api/finance/dispatch/test-uazapi', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ base_url: cfgForm.uazapi_base_url, token: cfgForm.uazapi_token, test_number: cfgForm.uazapi_test_number }),
+                      });
+                      const data = await res.json();
+                      if (data.success) {
+                        setUazTest('success');
+                        setUazTestMsg(data.sent
+                          ? `Mensagem enviada para ${data.number}${data.name ? ` · ${data.name}` : ''}`
+                          : `Conectado${data.name ? ` — ${data.name}` : ''} (sem número de teste)`);
+                      } else {
+                        setUazTest('error');
+                        setUazTestMsg(data.error || `Instância ${data.instance_status || 'indisponível'}`);
+                      }
+                    } catch (err: any) {
+                      setUazTest('error');
+                      setUazTestMsg(err.message || 'Erro');
+                    }
+                  }}
+                  className={`w-full mt-2 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                    uazTest === 'success'
+                      ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-500/30'
+                      : uazTest === 'error'
+                        ? 'bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-300 dark:border-rose-500/30'
+                        : 'bg-emerald-50 dark:bg-emerald-500/5 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-500/20 hover:bg-emerald-100 dark:hover:bg-emerald-500/10'
+                  }`}
+                >
+                  {uazTest === 'testing' ? (
+                    <><div className="w-3 h-3 border-2 border-emerald-400/30 border-t-emerald-500 rounded-full animate-spin" /> Testando...</>
+                  ) : uazTest === 'success' ? (
+                    <><CheckCircle2 size={13} /> Conectado!</>
+                  ) : uazTest === 'error' ? (
+                    <><AlertTriangle size={13} /> Falha</>
+                  ) : (
+                    <><Zap size={13} /> Testar UAZAPI</>
+                  )}
+                </button>
+                {uazTestMsg && (
+                  <p className={`mt-1.5 text-[10px] font-medium ${uazTest === 'success' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                    {uazTestMsg}
+                  </p>
+                )}
+                <p className="text-[10px] text-gray-500 dark:text-slate-500 mt-2">
+                  O teste confere a conexão e envia uma mensagem real ao número acima. Deixe em branco para só verificar o status.
+                </p>
+              </div>
+
               <div>
-                <label className="text-[10px] font-bold text-gray-500 dark:text-slate-500 uppercase tracking-widest block mb-1">URL do Webhook n8n</label>
+                <label className="text-[10px] font-bold text-gray-500 dark:text-slate-500 uppercase tracking-widest block mb-1">URL do Webhook n8n <span className="text-gray-400 dark:text-slate-600 normal-case font-medium">· usado só para e-mail</span></label>
                 <input type="url" value={cfgForm.n8n_webhook_url} onChange={e => { setCfgForm(f => ({ ...f, n8n_webhook_url: e.target.value })); setWebhookTestWA('idle'); setWebhookTestEmail('idle'); }}
                   placeholder="https://n8n.seudominio.com/webhook/..." className="w-full bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-violet-500/50" />
                 {/* Botões Testar Webhook */}
-                <div className="mt-2 grid grid-cols-2 gap-2">
-                  {/* Teste WhatsApp */}
-                  <button
-                    disabled={!cfgForm.n8n_webhook_url || webhookTestWA === 'testing'}
-                    onClick={async () => {
-                      if (!cfgForm.n8n_webhook_url) return;
-                      setWebhookTestWA('testing');
-                      setWebhookTestWAMsg('');
-                      try {
-                        const res = await fetch('/api/finance/dispatch/test-webhook', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ webhook_url: cfgForm.n8n_webhook_url, canal: 'Whatsapp' }),
-                        });
-                        const data = await res.json();
-                        if (res.ok && data.success) {
-                          setWebhookTestWA('success');
-                          setWebhookTestWAMsg(`HTTP ${data.status_code} — OK!`);
-                        } else {
-                          setWebhookTestWA('error');
-                          setWebhookTestWAMsg(data.error || `HTTP ${data.status_code || '?'}`);
-                        }
-                      } catch (err: any) {
-                        setWebhookTestWA('error');
-                        setWebhookTestWAMsg(err.message || 'Erro');
-                      }
-                    }}
-                    className={`flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
-                      webhookTestWA === 'success'
-                        ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-500/30'
-                        : webhookTestWA === 'error'
-                          ? 'bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-300 dark:border-rose-500/30'
-                          : 'bg-emerald-50 dark:bg-emerald-500/5 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-500/20 hover:bg-emerald-100 dark:hover:bg-emerald-500/10'
-                    }`}
-                  >
-                    {webhookTestWA === 'testing' ? (
-                      <><div className="w-3 h-3 border-2 border-emerald-400/30 border-t-emerald-500 rounded-full animate-spin" /> Testando...</>
-                    ) : webhookTestWA === 'success' ? (
-                      <><CheckCircle2 size={13} /> WhatsApp OK!</>
-                    ) : webhookTestWA === 'error' ? (
-                      <><AlertTriangle size={13} /> Falha</>
-                    ) : (
-                      <><Zap size={13} /> Testar WhatsApp</>
-                    )}
-                  </button>
-
+                <div className="mt-2">
                   {/* Teste Email */}
                   <button
                     disabled={!cfgForm.n8n_webhook_url || webhookTestEmail === 'testing'}
@@ -1384,13 +1437,6 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                   </button>
                 </div>
                 {/* Mensagens de resultado */}
-                {webhookTestWAMsg && (
-                  <p className={`mt-1.5 text-[10px] font-medium ${
-                    webhookTestWA === 'success' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
-                  }`}>
-                    WhatsApp: {webhookTestWAMsg}
-                  </p>
-                )}
                 {webhookTestEmailMsg && (
                   <p className={`mt-1 text-[10px] font-medium ${
                     webhookTestEmail === 'success' ? 'text-blue-600 dark:text-blue-400' : 'text-rose-600 dark:text-rose-400'

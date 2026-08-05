@@ -86,6 +86,42 @@ async function saveDispatchComment(
   }
 }
 
+/**
+ * Envia WhatsApp direto pela UAZAPI (POST {base}/send/text, header `token`).
+ *
+ * Diferente do n8n, a resposta é SÍNCRONA: sabemos na hora se entrou ou falhou,
+ * sem depender de callback. Lança em caso de falha para o chamador marcar ERRO.
+ */
+async function sendViaUazapi(baseUrl: string, token: string, phone: string, text: string): Promise<any> {
+  const ctrl = new AbortController();
+  const timeout = setTimeout(() => ctrl.abort(), 30000);
+  try {
+    const url = `${String(baseUrl).replace(/\/+$/, '')}/send/text`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', token },
+      body: JSON.stringify({ number: phone, text }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(timeout);
+    const body: any = await res.json().catch(() => ({}));
+    // A API responde 4xx/5xx com {error} — e mesmo em 200 pode trazer `error`.
+    if (!res.ok || body?.error) {
+      throw new Error(`UAZAPI ${res.status}: ${body?.error || body?.message || 'falha no envio'}`);
+    }
+    return body;
+  } catch (err: any) {
+    clearTimeout(timeout);
+    if (err?.name === 'AbortError') throw new Error('UAZAPI: timeout de 30s');
+    // `fetch failed` do undici é genérico: a causa real (DNS, conexão recusada,
+    // TLS...) fica em err.cause. Sem isso, o erro salvo na fila não ajuda ninguém.
+    const cause = err?.cause;
+    const detail = cause ? ` (${cause.code || cause.name || cause.message || ''})`.replace(' ()', '') : '';
+    console.error('[uazapi] falha no envio:', err?.message, '| causa:', cause?.code || cause?.message || '—');
+    throw new Error(`UAZAPI: ${err?.message || 'falha de rede'}${detail}`);
+  }
+}
+
 async function sendViaN8n(webhookUrl: string, payload: object): Promise<any> {
   const ctrl = new AbortController();
   const timeout = setTimeout(() => ctrl.abort(), 30000);
@@ -117,7 +153,8 @@ async function runDailyBatchIfNeeded(pool: Pool) {
   const cfgRes = await pool.query('SELECT * FROM fin_dispatch_config LIMIT 1');
   const cfg = cfgRes.rows[0];
   if (!cfg || !cfg.dispatch_enabled) return;
-  if (!cfg.n8n_webhook_url) return;
+  // Precisa de pelo menos um caminho de envio: UAZAPI (WhatsApp direto) ou n8n.
+  if (!cfg.n8n_webhook_url && !(cfg.uazapi_base_url && cfg.uazapi_token)) return;
 
   const today = todayBRT();
 
@@ -354,15 +391,28 @@ async function runDailyBatchIfNeeded(pool: Pool) {
           metodo: resolvedCanal,
           dispatch_id: item.id,
         };
-        const resp = await sendViaN8n(cfg.n8n_webhook_url, payload);
-        // Marca ENVIANDO (aguardando callback). O callback do n8n confirma ENVIADO (sucesso)
-        // ou ERRO (falha, ex.: WhatsApp 463). Se o callback não vier, o sweep expira → ERRO.
-        await pool.query(
-          `UPDATE fin_dispatch_queue SET status = 'ENVIANDO', updated_at = NOW(),
-           n8n_ticket_id = $2, n8n_contato_id = $3, n8n_contato_novo = $4, n8n_ticket_novo = $5
-           WHERE id = $1`,
-          [item.id, resp?.ticket_id || null, resp?.contato_id || null, resp?.contato_novo ?? null, resp?.ticket_novo ?? null]
-        );
+        const isWhats = String(resolvedCanal || item.channel || '').toUpperCase() !== 'EMAIL';
+        const useUazapi = isWhats && cfg.uazapi_base_url && cfg.uazapi_token;
+
+        if (useUazapi) {
+          // Envio direto: a confirmação é imediata, então já grava ENVIADO.
+          const resp = await sendViaUazapi(cfg.uazapi_base_url, cfg.uazapi_token, resolvedPhone, mensagem);
+          await pool.query(
+            `UPDATE fin_dispatch_queue SET status = 'ENVIADO', sent_at = NOW(), updated_at = NOW(),
+             error_message = '', n8n_ticket_id = $2 WHERE id = $1`,
+            [item.id, resp?.id || resp?.messageid || resp?.key?.id || 'UAZAPI']
+          );
+        } else {
+          const resp = await sendViaN8n(cfg.n8n_webhook_url, payload);
+          // Marca ENVIANDO (aguardando callback). O callback do n8n confirma ENVIADO (sucesso)
+          // ou ERRO (falha, ex.: WhatsApp 463). Se o callback não vier, o sweep expira → ERRO.
+          await pool.query(
+            `UPDATE fin_dispatch_queue SET status = 'ENVIANDO', updated_at = NOW(),
+             n8n_ticket_id = $2, n8n_contato_id = $3, n8n_contato_novo = $4, n8n_ticket_novo = $5
+             WHERE id = $1`,
+            [item.id, resp?.ticket_id || null, resp?.contato_id || null, resp?.contato_novo ?? null, resp?.ticket_novo ?? null]
+          );
+        }
         await saveDispatchComment(pool, item, mensagem, resolvedCanal || item.channel, (resolvedCanal || item.channel || '').toUpperCase() === 'EMAIL' ? (resolvedEmail || '') : (resolvedPhone || item.customer_phone));
         console.log(`[dispatch-scheduler] ➤ Enviando (aguardando callback): ${item.customer_name} (${item.id})`);
       } catch (err: any) {
@@ -390,6 +440,12 @@ function startScheduler(pool: Pool) {
   // Migração: adiciona last_batch_date se não existir
   pool.query(`ALTER TABLE fin_dispatch_config ADD COLUMN IF NOT EXISTS last_batch_date DATE`)
     .catch(() => {});
+  // Migração: credenciais da UAZAPI (envio de WhatsApp direto, sem passar pelo n8n).
+  // Ficam no banco — nunca no código — junto das demais configs de disparo.
+  pool.query(`ALTER TABLE fin_dispatch_config ADD COLUMN IF NOT EXISTS uazapi_base_url TEXT`).catch(() => {});
+  pool.query(`ALTER TABLE fin_dispatch_config ADD COLUMN IF NOT EXISTS uazapi_token TEXT`).catch(() => {});
+  // Número que recebe a mensagem do botão "Testar UAZAPI".
+  pool.query(`ALTER TABLE fin_dispatch_config ADD COLUMN IF NOT EXISTS uazapi_test_number TEXT`).catch(() => {});
 
   // Verifica a cada 5 minutos se é hora de disparar
   const tick = async () => {
@@ -430,14 +486,21 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
 
   // PUT config
   app.put('/api/finance/dispatch/config', async (req, res) => {
-    const { dispatch_enabled, dispatch_time, dispatch_interval_seconds, n8n_webhook_url } = req.body;
+    const { dispatch_enabled, dispatch_time, dispatch_interval_seconds, n8n_webhook_url,
+            uazapi_base_url, uazapi_token, uazapi_test_number } = req.body;
     try {
+      // COALESCE nos campos da UAZAPI: quem não mandar o campo não apaga o que já está salvo.
       const r = await pool.query(`
         UPDATE fin_dispatch_config
         SET dispatch_enabled = $1, dispatch_time = $2,
-            dispatch_interval_seconds = $3, n8n_webhook_url = $4, updated_at = NOW()
+            dispatch_interval_seconds = $3, n8n_webhook_url = $4,
+            uazapi_base_url    = COALESCE($5, uazapi_base_url),
+            uazapi_token       = COALESCE($6, uazapi_token),
+            uazapi_test_number = COALESCE($7, uazapi_test_number),
+            updated_at = NOW()
         RETURNING *
-      `, [dispatch_enabled, dispatch_time, dispatch_interval_seconds, n8n_webhook_url]);
+      `, [dispatch_enabled, dispatch_time, dispatch_interval_seconds, n8n_webhook_url,
+          uazapi_base_url ?? null, uazapi_token ?? null, uazapi_test_number ?? null]);
       res.json(r.rows[0]);
     } catch (e) {
       res.status(500).json({ error: 'Failed to update config' });
@@ -447,11 +510,19 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
   // GET queue (com filtros)
   app.get('/api/finance/dispatch/queue', async (req, res) => {
     try {
-      const { status, date, limit = '100', offset = '0' } = req.query as Record<string, string>;
+      const { status, date, limit = '100', offset = '0', cancelled_days } = req.query as Record<string, string>;
       const conds: string[] = [];
       const params: any[] = [];
       if (status) { params.push(status); conds.push(`status = $${params.length}`); }
       if (date)   { params.push(date);   conds.push(`scheduled_date = $${params.length}`); }
+      // Janela para CANCELADO/ERRO: esses status acumulam muito histórico e só
+      // interessam recentes. Mantém a fila enxuta e evita que o LIMIT corte os
+      // registros novos (a ordenação é do mais antigo para o mais novo).
+      const cd = parseInt(cancelled_days || '');
+      if (Number.isFinite(cd) && cd > 0) {
+        params.push(String(cd));
+        conds.push(`(status NOT IN ('CANCELADO','ERRO') OR updated_at >= NOW() - ($${params.length} || ' days')::interval)`);
+      }
       const where = conds.length ? 'WHERE ' + conds.join(' AND ') : '';
       params.push(parseInt(limit), parseInt(offset));
       const r = await pool.query(
@@ -497,7 +568,7 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
 
       const cfgRes = await pool.query('SELECT * FROM fin_dispatch_config LIMIT 1');
       const cfg = cfgRes.rows[0];
-      if (!cfg?.n8n_webhook_url) return res.status(400).json({ error: 'Webhook n8n não configurado' });
+      if (!cfg?.n8n_webhook_url && !(cfg?.uazapi_base_url && cfg?.uazapi_token)) return res.status(400).json({ error: 'Nenhum canal de envio configurado (UAZAPI ou webhook n8n)' });
 
       await pool.query(`UPDATE fin_dispatch_queue SET status = 'ENVIANDO', updated_at = NOW() WHERE id = $1`, [id]);
       res.json({ ok: true, status: 'ENVIANDO' }); // responde antes de aguardar
@@ -534,9 +605,17 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
         const mensagem = renderMessage(item.message_template || '', item);
         await pool.query(`UPDATE fin_dispatch_queue SET message_rendered = $2 WHERE id = $1`, [id, mensagem]);
         const payload = { telefone: resolvedPhone, mensagem, nome: item.customer_name, email: resolvedEmail, metodo: resolvedCanal, dispatch_id: id };
-        const resp = await sendViaN8n(cfg.n8n_webhook_url, payload);
-        await pool.query(`UPDATE fin_dispatch_queue SET status = 'ENVIANDO', updated_at = NOW(), n8n_ticket_id = $2, n8n_contato_id = $3, n8n_contato_novo = $4, n8n_ticket_novo = $5 WHERE id = $1`,
-          [id, resp?.ticket_id || null, resp?.contato_id || null, resp?.contato_novo ?? null, resp?.ticket_novo ?? null]);
+        const isWhats = String(resolvedCanal || item.channel || '').toUpperCase() !== 'EMAIL';
+        if (isWhats && cfg.uazapi_base_url && cfg.uazapi_token) {
+          // Envio direto pela UAZAPI — confirmação imediata, sem esperar callback.
+          const resp = await sendViaUazapi(cfg.uazapi_base_url, cfg.uazapi_token, resolvedPhone, mensagem);
+          await pool.query(`UPDATE fin_dispatch_queue SET status = 'ENVIADO', sent_at = NOW(), updated_at = NOW(), error_message = '', n8n_ticket_id = $2 WHERE id = $1`,
+            [id, resp?.id || resp?.messageid || resp?.key?.id || 'UAZAPI']);
+        } else {
+          const resp = await sendViaN8n(cfg.n8n_webhook_url, payload);
+          await pool.query(`UPDATE fin_dispatch_queue SET status = 'ENVIANDO', updated_at = NOW(), n8n_ticket_id = $2, n8n_contato_id = $3, n8n_contato_novo = $4, n8n_ticket_novo = $5 WHERE id = $1`,
+            [id, resp?.ticket_id || null, resp?.contato_id || null, resp?.contato_novo ?? null, resp?.ticket_novo ?? null]);
+        }
         await saveDispatchComment(pool, item, mensagem, resolvedCanal || item.channel, (resolvedCanal || item.channel || '').toUpperCase() === 'EMAIL' ? (resolvedEmail || '') : (resolvedPhone || item.customer_phone));
       } catch (err: any) {
         await pool.query(`UPDATE fin_dispatch_queue SET status = 'ERRO', error_message = $2, updated_at = NOW() WHERE id = $1`, [id, err?.message]);
@@ -614,7 +693,7 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
     try {
       const cfgRes = await pool.query('SELECT * FROM fin_dispatch_config LIMIT 1');
       const cfg = cfgRes.rows[0];
-      if (!cfg?.n8n_webhook_url) return res.status(400).json({ error: 'Webhook n8n não configurado' });
+      if (!cfg?.n8n_webhook_url && !(cfg?.uazapi_base_url && cfg?.uazapi_token)) return res.status(400).json({ error: 'Nenhum canal de envio configurado (UAZAPI ou webhook n8n)' });
 
       const today = nowBRT().toISOString().split('T')[0];
       // 1 disparo por cliente por dia
@@ -676,9 +755,17 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
           const mensagem = renderMessage(item.message_template || '', item);
           await pool.query(`UPDATE fin_dispatch_queue SET message_rendered = $2 WHERE id = $1`, [item.id, mensagem]);
           const payload = { telefone: resolvedPhone, mensagem, nome: item.customer_name, email: resolvedEmail, metodo: resolvedCanal, dispatch_id: item.id };
-          const resp = await sendViaN8n(cfg.n8n_webhook_url, payload);
-          await pool.query(`UPDATE fin_dispatch_queue SET status = 'ENVIANDO', updated_at = NOW(), n8n_ticket_id = $2, n8n_contato_id = $3, n8n_contato_novo = $4, n8n_ticket_novo = $5 WHERE id = $1`,
-            [item.id, resp?.ticket_id || null, resp?.contato_id || null, resp?.contato_novo ?? null, resp?.ticket_novo ?? null]);
+          const isWhats = String(resolvedCanal || item.channel || '').toUpperCase() !== 'EMAIL';
+          if (isWhats && cfg.uazapi_base_url && cfg.uazapi_token) {
+            // Envio direto pela UAZAPI — confirmação imediata, sem esperar callback.
+            const resp = await sendViaUazapi(cfg.uazapi_base_url, cfg.uazapi_token, resolvedPhone, mensagem);
+            await pool.query(`UPDATE fin_dispatch_queue SET status = 'ENVIADO', sent_at = NOW(), updated_at = NOW(), error_message = '', n8n_ticket_id = $2 WHERE id = $1`,
+              [item.id, resp?.id || resp?.messageid || resp?.key?.id || 'UAZAPI']);
+          } else {
+            const resp = await sendViaN8n(cfg.n8n_webhook_url, payload);
+            await pool.query(`UPDATE fin_dispatch_queue SET status = 'ENVIANDO', updated_at = NOW(), n8n_ticket_id = $2, n8n_contato_id = $3, n8n_contato_novo = $4, n8n_ticket_novo = $5 WHERE id = $1`,
+              [item.id, resp?.ticket_id || null, resp?.contato_id || null, resp?.contato_novo ?? null, resp?.ticket_novo ?? null]);
+          }
           await saveDispatchComment(pool, item, mensagem, resolvedCanal, resolvedCanal?.toUpperCase() === 'EMAIL' ? resolvedEmail : resolvedPhone);
         } catch (err: any) {
           await pool.query(`UPDATE fin_dispatch_queue SET status = 'ERRO', error_message = $2, updated_at = NOW() WHERE id = $1`, [item.id, err?.message]);
@@ -750,6 +837,54 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
   });
 
   // POST — test webhook connectivity
+  // Testa a UAZAPI: confere o status da instância e, se houver número de teste,
+  // envia uma mensagem real para ele — validando a ponta a ponta.
+  app.post('/api/finance/dispatch/test-uazapi', async (req, res) => {
+    try {
+      const baseRaw = String(req.body?.base_url || '').trim();
+      const token = String(req.body?.token || '').trim();
+      const testNumber = String(req.body?.test_number || '').replace(/\D/g, '');
+      if (!baseRaw || !token) return res.status(400).json({ error: 'Informe a URL e o token da UAZAPI.' });
+      const base = (baseRaw.startsWith('http') ? baseRaw : `https://${baseRaw}`).replace(/\/+$/, '');
+
+      // 1) Status da instância
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 15000);
+      const r = await fetch(`${base}/instance/status`, { headers: { token }, signal: ctrl.signal });
+      clearTimeout(t);
+      const body: any = await r.json().catch(() => ({}));
+      if (!r.ok || body?.error) {
+        return res.json({ success: false, status_code: r.status, error: body?.error || `HTTP ${r.status}` });
+      }
+      const inst = body?.instance || body || {};
+      const connected = String(inst.status || '').toLowerCase() === 'connected';
+      const name = inst.profileName || inst.name || '';
+      if (!connected) {
+        return res.json({ success: false, instance_status: inst.status || 'desconhecido', name,
+          error: `Instância ${inst.status || 'indisponível'}` });
+      }
+
+      // 2) Sem número de teste: para no status (não envia nada).
+      if (!testNumber) {
+        return res.json({ success: true, instance_status: inst.status, name, sent: false });
+      }
+
+      // 3) Envia a mensagem de teste
+      const quando = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+      await sendViaUazapi(base, token, testNumber,
+        `🤖 *Teste de disparo — GrapeHub*\n\nSe você recebeu esta mensagem, a integração com a UAZAPI está funcionando.\n\n${quando}`);
+      res.json({ success: true, instance_status: inst.status, name, sent: true, number: testNumber });
+    } catch (err: any) {
+      const cause = err?.cause;
+      const detail = cause ? ` (${cause.code || cause.name || cause.message || ''})`.replace(' ()', '') : '';
+      const msg = err?.name === 'AbortError'
+        ? 'Timeout de 15s ao falar com a UAZAPI'
+        : `${err?.message || 'Falha na conexão'}${detail}`;
+      console.error('[test-uazapi] erro:', err?.message, '| causa:', cause?.code || cause?.message || '—');
+      res.json({ success: false, error: msg });
+    }
+  });
+
   app.post('/api/finance/dispatch/test-webhook', async (req, res) => {
     const { webhook_url, canal } = req.body;
     if (!webhook_url) return res.status(400).json({ success: false, error: 'webhook_url é obrigatório' });

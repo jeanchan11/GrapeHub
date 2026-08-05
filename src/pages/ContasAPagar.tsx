@@ -499,6 +499,7 @@ export default function ContasAPagar() {
   // Sicredi state
   const [sicrediItems, setSicrediItems] = useState<SicrediItem[]>([]);
   const [sicrediSummary, setSicrediSummary] = useState<SicrediSummary>({ total: 0, total_items: 0, categorized: 0 });
+  const [sicrediMonths, setSicrediMonths] = useState<{ billing_month: string; itens: number }[]>([]);
   const [sicrediLoading, setSicrediLoading] = useState(false);
   const [sicrediEditItem, setSicrediEditItem] = useState<SicrediItem | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -543,6 +544,7 @@ export default function ContasAPagar() {
         const data = await r.json();
         setSicrediItems(data.items || []);
         setSicrediSummary(data.summary || {});
+        setSicrediMonths(data.available_months || []);
       }
     } finally { setSicrediLoading(false); }
   }, [selectedMonth]);
@@ -612,22 +614,33 @@ export default function ContasAPagar() {
       const r = await fetch('/api/financeiro/extrato/importar-ofx', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ account: 'sicredi', billing_month: selectedMonth, fileName: file.name, fileData }),
+        body: JSON.stringify({
+          account: 'sicredi',
+          billing_month: selectedMonth,
+          // A data de pagamento definida na tela manda no mês da fatura (regime de caixa).
+          payment_date: sicrediSummary.payment_date || null,
+          fileName: file.name,
+          fileData,
+        }),
       });
       if (r.ok) {
         const data = await r.json();
         const ins = data.inserted ?? data.count ?? 0;
         const skip = data.skipped ?? 0;
         const pruned = data.pruned ?? 0;
+        const moved = data.moved ?? 0;
         const bm: string | null = data.billing_month || null;
         const parts = [`${ins} novo(s)`];
         if (skip) parts.push(`${skip} mantido(s)`);
+        if (moved) parts.push(`${moved} movido(s) de outro mês`);
         if (pruned) parts.push(`${pruned} removido(s)`);
         let prefix = '';
-        if (data.month_source === 'vencimento' && bm) {
+        if (bm && (data.month_source === 'vencimento' || data.month_source === 'pagamento')) {
           const [y, m] = bm.split('-');
-          const dd = data.due_date ? `${data.due_date.slice(8, 10)}/${data.due_date.slice(5, 7)}/${data.due_date.slice(0, 4)}` : '';
-          prefix = `Fatura ${m}/${y}${dd ? ` (vence ${dd})` : ''} · `;
+          const ref = data.month_source === 'pagamento' ? data.payment_date : data.due_date;
+          const dd = ref ? `${ref.slice(8, 10)}/${ref.slice(5, 7)}/${ref.slice(0, 4)}` : '';
+          const termo = data.month_source === 'pagamento' ? 'paga em' : 'vence';
+          prefix = `Fatura ${m}/${y}${dd ? ` (${termo} ${dd})` : ''} · `;
         }
         setUploadMsg({ type: 'ok', text: `${prefix}${parts.join(' · ')}.` });
         // A fatura pode cair num mês diferente do selecionado (auto-detecção pelo vencimento):
@@ -1105,6 +1118,27 @@ export default function ContasAPagar() {
                 <CreditCard size={32} className="text-slate-600" />
                 <p className="text-sm text-slate-500">Nenhum lançamento para {monthLabel}.</p>
                 <p className="text-xs text-slate-600">Faça o upload do arquivo OFX ou CSV para importar.</p>
+                {sicrediMonths.length > 0 && (
+                  <div className="flex flex-col items-center gap-2 mt-3 pt-4 border-t border-black/5 dark:border-white/5 w-full max-w-md">
+                    <p className="text-xs text-slate-500">
+                      Faturas já importadas <span className="text-slate-600">(a fatura entra no mês do vencimento)</span>:
+                    </p>
+                    <div className="flex flex-wrap items-center justify-center gap-1.5">
+                      {sicrediMonths.map(m => {
+                        const [my, mm] = m.billing_month.split('-');
+                        return (
+                          <button
+                            key={m.billing_month}
+                            onClick={() => setSelectedMonth(m.billing_month)}
+                            className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 text-xs font-bold transition-colors"
+                          >
+                            {MESES[Number(mm) - 1]} {my} · {m.itens}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl overflow-hidden">

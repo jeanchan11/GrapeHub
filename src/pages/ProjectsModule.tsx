@@ -712,7 +712,9 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
   const [pageModalProjectId, setPageModalProjectId] = useState<string | null>(null);
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const [activeProductTab, setActiveProductTab] = useState<'resultado' | 'kpis'>('resultado');
-  const [activeProjectTab, setActiveProjectTab] = useState<'resultado' | 'reunioes' | 'arquivos' | 'comentarios' | 'solicitacoes' | 'formularios' | 'analise' | 'nps' | 'tokens' | 'churn' | 'acesso'>('resultado');
+  const [activeProjectTab, setActiveProjectTab] = useState<'resultado' | 'reunioes' | 'arquivos' | 'comentarios' | 'solicitacoes' | 'formularios' | 'nps' | 'tokens' | 'churn' | 'acesso'>('resultado');
+  // Menu "..." que agrupa as abas Formulários, Tokens e Portal
+  const [isMoreTabsOpen, setIsMoreTabsOpen] = useState(false);
   // Só gestão gerencia o acesso do cliente ao portal.
   const canManagePortalAccess = ['superadmin', 'gerente-operacional', 'diretor-operacional'].includes((userData?.role || '').toLowerCase());
   const [npsResponses, setNpsResponses] = useState<any[]>([]);
@@ -3472,6 +3474,23 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     {group}
                   </button>
                 ))}
+
+                {/* Remover o grupo — o parceiro passa a aparecer em "Sem Grupo" */}
+                <div className="pt-2 mt-2 border-t border-slate-200 dark:border-white/5">
+                  <button
+                    onClick={() => {
+                      if (!groupModalProjectId) return;
+                      const targetId = groupModalProjectId;
+                      commitProjects(prev => prev.map(p => p.id === targetId ? { ...p, group: '' } : p));
+                      setIsGroupModalOpen(false);
+                      setGroupModalProjectId(null);
+                    }}
+                    className="w-full text-left px-4 py-3 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-500/10 text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors font-medium flex items-center gap-2"
+                  >
+                    <X size={16} />
+                    Sem grupo
+                  </button>
+                </div>
               </div>
             </motion.div>
           </div>
@@ -4503,8 +4522,9 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
         >
         <div className="flex flex-col min-h-[750px]">
           {/* Tabs */}
-          <div className="flex items-center gap-7 mb-6 border-b modal-divider shrink-0">
-            {([...(['resultado', 'reunioes', 'comentarios', 'solicitacoes', 'formularios', 'analise', 'arquivos', 'nps', 'tokens', 'churn'] as const), ...(canManagePortalAccess ? ['acesso'] as const : [])] as const).map((tab) => (
+          {/* Abas distribuídas por toda a largura do modal */}
+          <div className="flex items-center justify-between gap-4 mb-6 px-1 border-b modal-divider shrink-0">
+            {(['resultado', 'reunioes', 'comentarios', 'solicitacoes', 'arquivos', 'nps', 'churn'] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveProjectTab(tab as any)}
@@ -4514,7 +4534,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     : 'text-slate-500 hover:text-gray-900 dark:hover:text-white'
                 }`}
               >
-                {tab === 'resultado' ? 'Resumo' : tab === 'reunioes' ? 'Reuniões' : tab === 'arquivos' ? 'Arquivos' : tab === 'comentarios' ? 'Comentários' : tab === 'solicitacoes' ? 'Solicitações' : tab === 'formularios' ? 'Formulários' : tab === 'nps' ? 'NPS' : tab === 'tokens' ? 'Tokens' : tab === 'churn' ? 'Risco de Churn' : tab === 'acesso' ? 'Portal' : 'Análise de Leads'}
+                {tab === 'resultado' ? 'Resumo' : tab === 'reunioes' ? 'Reuniões' : tab === 'arquivos' ? 'Arquivos' : tab === 'comentarios' ? 'Comentários' : tab === 'solicitacoes' ? 'Solicitações' : tab === 'nps' ? 'NPS' : 'Risco de Churn'}
                 {activeProjectTab === tab && (
                   <motion.div
                     layoutId="project-tab-indicator"
@@ -4523,6 +4543,59 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                 )}
               </button>
             ))}
+
+            {/* Abas agrupadas no menu "..." — Formulários, Tokens e Portal */}
+            {(() => {
+              const moreTabs = [
+                { id: 'formularios' as const, label: 'Formulários' },
+                { id: 'tokens' as const, label: 'Tokens' },
+                ...(canManagePortalAccess ? [{ id: 'acesso' as const, label: 'Portal' }] : []),
+              ];
+              const activeMore = moreTabs.find(t => t.id === activeProjectTab);
+              return (
+                <DropdownMenu.Root open={isMoreTabsOpen} onOpenChange={setIsMoreTabsOpen}>
+                  <DropdownMenu.Trigger asChild>
+                    <button
+                      className={`pb-4 text-sm font-bold transition-all relative whitespace-nowrap flex items-center gap-1.5 outline-none ${
+                        activeMore ? 'modal-tab-active' : 'text-slate-500 hover:text-gray-900 dark:hover:text-white'
+                      }`}
+                      title="Mais abas"
+                    >
+                      {activeMore ? activeMore.label : <MoreHorizontal size={18} />}
+                      {activeMore && <ChevronDown size={13} className="opacity-60" />}
+                      {activeMore && (
+                        <motion.div
+                          layoutId="project-tab-indicator"
+                          className="absolute bottom-0 left-0 right-0 h-0.5 bg-violet-500"
+                        />
+                      )}
+                    </button>
+                  </DropdownMenu.Trigger>
+                  <DropdownMenu.Portal>
+                    <DropdownMenu.Content
+                      className="w-44 bg-white dark:bg-dark-card rounded-xl shadow-2xl border border-slate-200 dark:border-white/10 z-[9999] overflow-hidden p-1"
+                      align="start"
+                      sideOffset={5}
+                    >
+                      {moreTabs.map(t => (
+                        <DropdownMenu.Item asChild key={t.id}>
+                          <button
+                            onClick={() => { setActiveProjectTab(t.id as any); setIsMoreTabsOpen(false); }}
+                            className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer outline-none ${
+                              activeProjectTab === t.id
+                                ? 'bg-violet-500/10 text-violet-600 dark:text-violet-400'
+                                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5'
+                            }`}
+                          >
+                            {t.label}
+                          </button>
+                        </DropdownMenu.Item>
+                      ))}
+                    </DropdownMenu.Content>
+                  </DropdownMenu.Portal>
+                </DropdownMenu.Root>
+              );
+            })()}
           </div>
 
           {/* Content based on active tab */}
@@ -5007,87 +5080,84 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                       </div>
                     </div>
                     
-                    {/* Timeline */}
+                    {/* Histórico de reuniões */}
                     <div className="relative pr-2">
-                      <div className="relative space-y-12 py-4">
-                        {/* Vertical Line */}
-                        <div className="absolute left-1/2 top-0 bottom-0 w-px bg-slate-200 dark:bg-white/10 -translate-x-1/2" />
-
-                        {timelineItems.filter(opt => opt.type === 'meeting').map((opt, idx) => (
-                          <div key={opt.id} className="relative flex items-center justify-center">
-                            {/* Timeline Dot */}
-                            <div className="absolute left-1/2 -translate-x-1/2 z-10">
-                              <div className="w-8 h-8 rounded-full bg-light-card dark:bg-dark-card border border-violet-500/50 flex items-center justify-center shadow-[0_0_15px_rgba(139,92,246,0.3)]">
-                                <Check size={14} className="text-violet-500" />
+                      <div className="relative pl-12">
+                        {/* Linha vertical do histórico */}
+                        <div className="absolute left-4 top-0 bottom-0 w-px bg-slate-200 dark:bg-white/10" />
+                        <div className="space-y-3 py-1">
+                        {timelineItems.filter(opt => opt.type === 'meeting').map((opt) => (
+                          <div key={opt.id} className="relative">
+                            {/* Marcador na linha do tempo — ícone de reunião */}
+                            <div className="absolute -left-12 top-6 z-10">
+                              <div className="w-8 h-8 rounded-full bg-white dark:bg-[#1a1625]">
+                                <div className="w-full h-full rounded-full bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/20 flex items-center justify-center shadow-sm">
+                                  <Users size={15} className="text-violet-500" />
+                                </div>
                               </div>
                             </div>
+                            <div className="p-4 rounded-2xl border border-black/5 dark:border-white/10 bg-white dark:bg-white/5 shadow-sm transition-all hover:border-violet-500/20">
+                                {/* Cabeçalho */}
+                                <div className="flex items-start gap-3">
+                                  <div className="w-11 h-11 rounded-lg flex flex-col items-center justify-center bg-violet-500/10 text-violet-600 dark:text-violet-400 shrink-0 shadow-inner mt-0.5">
+                                    <span className="text-[10px] font-black tracking-widest uppercase">{parseLocalDate(opt.rawDate).toLocaleDateString('pt-BR', { month: 'short' })}</span>
+                                    <span className="text-base font-bold leading-none mt-0.5">{parseLocalDate(opt.rawDate).getDate()}</span>
+                                  </div>
 
-                            {/* Card */}
-                            <div className={`w-[40%] p-5 rounded-2xl border transition-all bg-white dark:bg-white/5 border-slate-200 dark:border-white/5 hover:border-violet-500/20 ${idx % 2 === 0 ? 'mr-auto text-left' : 'ml-auto text-left'}`}>
-                                <div className="flex items-start justify-between mb-4">
-                                  <div className="flex items-center gap-3">
-                                    <div className="w-12 h-12 flex flex-col items-center justify-center bg-violet-50 dark:bg-violet-900/20 rounded-xl border border-violet-100 dark:border-violet-800">
-                                      <span className="text-xs font-bold text-violet-600 dark:text-violet-400 uppercase">{parseLocalDate(opt.rawDate).toLocaleDateString('pt-BR', { month: 'short' })}</span>
-                                      <span className="text-lg font-bold text-violet-800 dark:text-violet-200">{parseLocalDate(opt.rawDate).getDate()}</span>
-                                    </div>
-                                    <div>
-                                      <h4 className="text-sm font-bold text-slate-900 dark:text-white">{opt.title || opt.message?.split('\n')[0]}</h4>
-                                      <div className="flex items-center gap-1 text-xs text-slate-500">
-                                        <Users size={12} />
-                                        <span>{opt.attendees}</span>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-start justify-between gap-2">
+                                      <h4 className="font-bold text-slate-900 dark:text-white text-[15px] leading-tight break-words pr-2">{opt.title || opt.message?.split('\n')[0]}</h4>
+                                      <div className="flex items-center gap-2 shrink-0">
+                                        <p className="text-[10px] text-slate-500 font-medium">{formatDateShort(opt.date)} {opt.time && `às ${opt.time}`}</p>
+                                        {/* Edição/exclusão de reuniões liberada para todos os usuários */}
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setMeetingData({
+                                              id: opt.id,
+                                              title: opt.title || '',
+                                              date: opt.rawDate || '',
+                                              attendees: opt.attendees || '',
+                                              actions: opt.actions || ''
+                                            });
+                                            setIsMeetingModalOpen(true);
+                                          }}
+                                          className="text-slate-400 hover:text-blue-500 transition-colors p-1 rounded-md hover:bg-blue-500/10"
+                                          title="Editar reunião"
+                                        >
+                                          <Edit2 size={12} />
+                                        </button>
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleDeleteMeeting(opt.id);
+                                          }}
+                                          className="text-slate-400 hover:text-rose-500 transition-colors p-1 rounded-md hover:bg-rose-500/10"
+                                          title="Apagar reunião"
+                                        >
+                                          <Trash2 size={12} />
+                                        </button>
                                       </div>
                                     </div>
-                                  </div>
-                                  
-                                  <div className="flex flex-col items-end gap-1">
-                                    <div className="flex items-center gap-2">
-                                      <p className="text-[10px] text-slate-500 font-medium">{formatDateShort(opt.date)} {opt.time && `às ${opt.time}`}</p>
-                                      {/* Edição/exclusão de reuniões liberada para todos os usuários (antes: só superadmin/diretoria) */}
-                                      {true && (
-                                        <>
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              setMeetingData({
-                                                id: opt.id,
-                                                title: opt.title || '',
-                                                date: opt.rawDate || '',
-                                                attendees: opt.attendees || '',
-                                                actions: opt.actions || ''
-                                              });
-                                              setIsMeetingModalOpen(true);
-                                            }}
-                                            className="ml-1 text-slate-400 hover:text-blue-500 transition-colors p-1 rounded-md hover:bg-blue-500/10"
-                                            title="Editar reunião"
-                                          >
-                                            <Edit2 size={12} />
-                                          </button>
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleDeleteMeeting(opt.id);
-                                            }}
-                                            className="text-slate-400 hover:text-rose-500 transition-colors p-1 rounded-md hover:bg-rose-500/10"
-                                            title="Apagar reunião"
-                                          >
-                                            <Trash2 size={12} />
-                                          </button>
-                                        </>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                                <div className="border-t border-slate-100 dark:border-white/5 pt-3">
-                                  <p className="text-xs font-bold text-slate-500 uppercase mb-1">Próximas Ações / Acordos:</p>
-                                  <div className="space-y-1">
-                                    {(opt.actions || '').split(',').map((action: string, i: number) => (
-                                      <div key={i} className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
-                                        <Check size={12} className="text-green-500" />
-                                        {action.trim()}
+                                    {opt.attendees && (
+                                      <div className="flex items-center gap-1.5 mt-1 text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                                        <Users size={12} className="shrink-0" />
+                                        <span className="truncate">{opt.attendees}</span>
                                       </div>
-                                    ))}
+                                    )}
                                   </div>
                                 </div>
+
+                                {/* Anotações — conteúdo vem do editor rico, então é renderizado como HTML */}
+                                {String(opt.actions || '').replace(/<[^>]*>/g, '').trim() && (
+                                  <div className="mt-3 pt-3 border-t border-black/5 dark:border-white/5">
+                                    <h5 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Próximas Ações / Acordos:</h5>
+                                    <div
+                                      className="text-[13px] leading-relaxed text-slate-600 dark:text-slate-300 [&_p]:my-1 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-1 [&_li]:my-0.5 [&_h1]:text-base [&_h1]:font-bold [&_h1]:mt-2 [&_h2]:text-sm [&_h2]:font-bold [&_h2]:mt-2 [&_h3]:font-semibold [&_a]:text-violet-500 [&_a]:underline [&_strong]:font-semibold [&_img]:rounded-xl [&_img]:my-2"
+                                      dangerouslySetInnerHTML={{ __html: opt.actions }}
+                                    />
+                                  </div>
+                                )}
 
                                 {/* Replies Display */}
                                 {opt.replies && opt.replies.length > 0 && (
@@ -5142,7 +5212,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                 )}
 
                                 {/* Action Bar */}
-                                <div className="mt-4 pt-3 border-t border-slate-100 dark:border-white/5 flex items-center justify-between">
+                                <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-white/5 flex items-center justify-between">
                                   <div className="flex items-center gap-2">
                                     <button 
                                       onClick={(e) => { 
@@ -5173,6 +5243,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                             </div>
                           </div>
                         ))}
+                        </div>
                       </div>
                       {timelineItems.filter(opt => opt.type === 'meeting').length === 0 && (
                         <p className="text-xs text-slate-500 italic text-center mt-4">Nenhuma reunião registrada.</p>
@@ -5467,18 +5538,6 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     </div>
                   );
                 })()}
-
-                {activeProjectTab === 'analise' && (
-                  <div className="flex flex-col items-center justify-center py-20 gap-4 text-slate-400">
-                    <div className="w-16 h-16 rounded-2xl bg-violet-500/10 flex items-center justify-center">
-                      <BarChart3 size={32} className="text-violet-500/50" />
-                    </div>
-                    <div className="text-center">
-                      <p className="text-sm font-bold text-slate-500">Análise de Leads</p>
-                      <p className="text-xs text-slate-400 mt-1">Em breve.</p>
-                    </div>
-                  </div>
-                )}
 
                 {activeProjectTab === 'tokens' && (
                   <div className="space-y-4">

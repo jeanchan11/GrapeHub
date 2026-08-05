@@ -298,6 +298,84 @@ function SessaoCard({ icon, iconBg, label, value, sub }: {
   );
 }
 
+// ── VendedorPicker ────────────────────────────────────────────────────────
+type Vendedor = { id: string; name: string; picture?: string | null };
+
+function VendedorPicker({ vendedores, value, onChange }: {
+  vendedores: Vendedor[]; value: string; onChange: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    if (open) document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [open]);
+
+  const selected = vendedores.find(v => v.id === value);
+  const firstName = (n: string) => n.trim().split(/\s+/)[0];
+
+  const Avatar = ({ v, size = 20 }: { v: Vendedor; size?: number }) =>
+    v.picture ? (
+      <img src={v.picture} alt={v.name} className="rounded-full object-cover shrink-0"
+        style={{ width: size, height: size }} />
+    ) : (
+      <div className="rounded-full bg-violet-500/20 flex items-center justify-center text-violet-500 font-bold shrink-0"
+        style={{ width: size, height: size, fontSize: size * 0.45 }}>
+        {v.name.trim().charAt(0).toUpperCase()}
+      </div>
+    );
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className={`flex items-center gap-2.5 bg-dark-card border rounded-xl px-4 py-2.5 transition-all ${
+          value ? 'border-violet-500/60 hover:border-violet-500' : 'border-white/10 hover:border-white/20'
+        }`}
+      >
+        {selected ? <Avatar v={selected} /> : <UserCheck size={14} className="text-violet-500" />}
+        <span className="text-sm font-bold text-dark-text whitespace-nowrap">
+          {selected ? firstName(selected.name) : 'Todos os vendedores'}
+        </span>
+        <ChevronDown size={14} className={`text-slate-400 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-2 z-50 bg-dark-card border border-white/10 rounded-2xl shadow-2xl p-2" style={{ minWidth: 220 }}>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-2 pt-1 pb-2">Vendedor</p>
+          <button
+            onClick={() => { onChange(''); setOpen(false); }}
+            className={`w-full flex items-center gap-2.5 px-2 py-2 rounded-lg text-sm font-medium transition-colors ${
+              !value ? 'bg-violet-600 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-dark-text'
+            }`}
+          >
+            <span className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center shrink-0">
+              <Users size={11} />
+            </span>
+            Todos os vendedores
+          </button>
+          {vendedores.map(v => (
+            <button
+              key={v.id}
+              onClick={() => { onChange(v.id); setOpen(false); }}
+              className={`w-full flex items-center gap-2.5 px-2 py-2 rounded-lg text-sm font-medium transition-colors ${
+                value === v.id ? 'bg-violet-600 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-dark-text'
+              }`}
+            >
+              <Avatar v={v} />
+              <span className="whitespace-nowrap">{v.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Component ────────────────────────────────────────────────────────
 export default function CrmMetricas() {
   const today = new Date();
@@ -314,13 +392,15 @@ export default function CrmMetricas() {
   const [spinning, setSpinning] = useState(false);
   const [error, setError]   = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'pre-vendas' | 'vendas'>('vendas');
+  const [vendedorFilter, setVendedorFilter] = useState<string>('');
 
-  const fetchData = useCallback(async (r: DateRange, silent = false) => {
+  const fetchData = useCallback(async (r: DateRange, vendedor = '', silent = false) => {
     if (!silent) setLoading(true);
     setSpinning(true);
     setError(null);
     try {
-      const res = await fetch(`/api/crm-metricas-dashboard?start=${r.start}&end=${r.end}`);
+      const vendParam = vendedor ? `&vendedor=${encodeURIComponent(vendedor)}` : '';
+      const res = await fetch(`/api/crm-metricas-dashboard?start=${r.start}&end=${r.end}${vendParam}`);
       if (!res.ok) throw new Error((await res.json()).detail || 'Erro ao carregar dados');
       setData(await res.json());
     } catch (e: any) {
@@ -331,7 +411,7 @@ export default function CrmMetricas() {
     }
   }, []);
 
-  useEffect(() => { fetchData(range); }, [range, fetchData]);
+  useEffect(() => { fetchData(range, vendedorFilter); }, [range, vendedorFilter, fetchData]);
 
   const rangeLabel = range.start && range.end
     ? range.start === range.end
@@ -369,6 +449,7 @@ export default function CrmMetricas() {
   const valoresChart      = buildChartData(data?.fechamentos_year || [], 'total_valor');
   const fechamentosList: any[] = data?.fechamentos_list || [];
   const lossReasonsData: { name: string; total: number }[] = data?.loss_reasons_month || [];
+  const vendedores: Vendedor[] = data?.vendedores || [];
   const totalPerdas: number = Number(data?.total_perdas) || 0;
 
   // Mês anterior
@@ -413,9 +494,12 @@ export default function CrmMetricas() {
           <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5">Performance de Vendas</p>
         </div>
         <div className="flex items-center gap-2">
+          {activeTab === 'vendas' && vendedores.length > 0 && (
+            <VendedorPicker vendedores={vendedores} value={vendedorFilter} onChange={setVendedorFilter} />
+          )}
           <DateRangePicker range={range} onChange={setRange} />
           <button
-            onClick={() => fetchData(range, true)}
+            onClick={() => fetchData(range, vendedorFilter, true)}
             className={`w-9 h-9 rounded-xl bg-dark-card border border-white/10 hover:bg-dark-card-hover flex items-center justify-center transition-colors ${spinning ? 'animate-spin' : ''}`}
           >
             <RefreshCw size={14} className="text-slate-400" />
@@ -1140,6 +1224,7 @@ export default function CrmMetricas() {
                       <th className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest pb-3 pr-4">Cliente</th>
                       <th className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest pb-3 pr-4">Data</th>
                       <th className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest pb-3 pr-4">Origem</th>
+                      <th className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest pb-3 pr-4">Vendedor</th>
                       <th className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest pb-3 pr-4">Faturamento</th>
                       <th className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest pb-3 pr-4">Nicho</th>
                       <th className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest pb-3 pr-4">Tempo de Advocacia</th>
@@ -1181,6 +1266,25 @@ export default function CrmMetricas() {
                               <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 px-2 py-1 rounded-full bg-white/5 uppercase tracking-wide">
                                 {f.origem || '—'}
                               </span>
+                            )}
+                          </td>
+                          <td className="py-3 pr-4">
+                            {f.vendedor ? (
+                              <div className="flex items-center gap-2">
+                                {f.vendedor_foto ? (
+                                  <img src={f.vendedor_foto} alt={f.vendedor}
+                                    className="w-6 h-6 rounded-full object-cover shrink-0" />
+                                ) : (
+                                  <div className="w-6 h-6 rounded-full bg-violet-500/20 flex items-center justify-center text-violet-500 text-[10px] font-bold shrink-0">
+                                    {String(f.vendedor).trim().charAt(0).toUpperCase()}
+                                  </div>
+                                )}
+                                <span className="text-dark-text text-sm whitespace-nowrap">
+                                  {String(f.vendedor).trim().split(/\s+/)[0]}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-slate-400 text-sm">—</span>
                             )}
                           </td>
                           <td className="py-3 pr-4 text-slate-400 text-sm whitespace-nowrap">{f.faturamento || '—'}</td>

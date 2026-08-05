@@ -12,7 +12,7 @@ import { useMenu } from '../context/MenuContext';
 import {
   Search, Bell, Settings,
   ChevronRight, ChevronLeft, LogOut,
-  ChevronDown, Sun, Moon, Zap, Folder, Camera, Phone, User as UserIcon, Save, X,
+  ChevronDown, Sun, Moon, Monitor, Zap, Folder, Camera, Phone, User as UserIcon, Save, X,
   MoreHorizontal, Shield, Loader2, Check
 } from 'lucide-react';
 import Cropper from 'react-easy-crop';
@@ -303,13 +303,18 @@ interface SidebarProps {
   user: FirebaseUser;
   userData: UserData | null;
   theme: 'light' | 'darker';
+  themePref?: 'system' | 'light' | 'darker';
   toggleTheme: () => void;
   onCollapseChange?: (collapsed: boolean) => void;
 }
 
 type FlyoutItem = { id: string; label: string; icon: string; icon_color?: string; indent: number };
 
-const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userData, theme, toggleTheme, onCollapseChange }) => {
+const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userData, theme, themePref = 'system', toggleTheme, onCollapseChange }) => {
+  // No modo automático, mostra também qual tema o sistema está aplicando agora.
+  const themeLabel = themePref === 'system'
+    ? `Sistema · ${theme === 'light' ? 'claro' : 'escuro'}`
+    : themePref === 'light' ? 'Claro' : 'Escuro';
   const userRole = userData?.role;
   const canManagePermissionsBase = userRole === 'superadmin' || userRole === 'diretor-operacional';
   const [permissionsPage, setPermissionsPage] = useState<{ id: string; label: string } | null>(null);
@@ -824,25 +829,25 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
             <div className="shrink-0 relative w-5 h-5 flex items-center justify-center">
               <AnimatePresence mode="wait" initial={false}>
                 <motion.span
-                  key={theme}
+                  key={themePref}
                   initial={{ rotate: -90, opacity: 0, scale: 0.4 }}
                   animate={{ rotate: 0, opacity: 1, scale: 1 }}
                   exit={{ rotate: 90, opacity: 0, scale: 0.4 }}
                   transition={{ duration: 0.25, ease: 'easeInOut' }}
                   className="absolute inset-0 flex items-center justify-center"
                 >
-                  {theme === 'light' ? <Sun size={20} /> : <Moon size={20} />}
+                  {themePref === 'system' ? <Monitor size={20} /> : themePref === 'light' ? <Sun size={20} /> : <Moon size={20} />}
                 </motion.span>
               </AnimatePresence>
             </div>
             {!isCollapsed && (
               <span className="text-sm font-medium whitespace-nowrap">
-                {theme === 'light' ? 'Claro' : 'Escuro'}
+                {themeLabel}
               </span>
             )}
             {isCollapsed && (
               <div className="absolute left-full ml-4 px-3 py-2 bg-light-card dark:bg-dark-tooltip text-light-text dark:text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity shadow-xl border border-slate-200 dark:border-violet-500/10 whitespace-nowrap z-[100]">
-                {theme === 'light' ? 'Claro' : 'Escuro'}
+                {themeLabel}
               </div>
             )}
           </button>

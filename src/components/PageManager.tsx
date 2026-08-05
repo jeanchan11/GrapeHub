@@ -436,6 +436,7 @@ const templates = (() => {
     { id: 'gestor-dashboard', label: 'Dashboard Gestor' },
     { id: 'marketing-dashboard', label: 'Dashboard Marketing' },
     { id: 'dashboard-operacional', label: 'Dashboard Operacional' },
+    { id: 'dashboard-head', label: 'Dashboard Head' },
     { id: 'diferenciais', label: 'Diferenciais' },
     { id: 'implementacao-ia', label: 'Implementação IA' },
     { id: 'kpis-squad', label: 'KPIs Squad' },

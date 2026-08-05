@@ -14,6 +14,7 @@ interface ProjectRow {
   projectResult?: string;
   squad?: string;
   responsible: string;
+  page_id?: string;
   churnChecklist?: Record<string, boolean>;
 }
 interface ClientRow {
@@ -108,7 +109,7 @@ const SQUAD_ACCENT: Record<string, string> = {
 
 
 // ── Churn ─────────────────────────────────────────────────────────────────────
-interface ChurnRow {
+export interface ChurnRow {
   id: number;
   cliente: string;
   day_exit: string;
@@ -143,7 +144,7 @@ const RankBar = ({ items, max, color }: { items: { label: string; count: number 
   );
 };
 
-const ChurnTab = ({ churns, activeCount }: { churns: ChurnRow[]; activeCount: number }) => {
+export const ChurnTab = ({ churns, activeCount }: { churns: ChurnRow[]; activeCount: number }) => {
   const now = new Date();
   // last 12 months
   const months: { key: string; label: string }[] = [];
@@ -318,27 +319,30 @@ const churnRisk = (c: number): { label: string; hex: string } =>
 
 interface ChurnSnap { series: { date: string; comSinais: number; emRisco: number; alto: number; totalSinais: number }[]; baseline: Record<string, number>; }
 
-const RiscoDeChurnTab = ({ projects }: { projects: ProjectRow[] }) => {
-  const [squadFilter, setSquadFilter] = useState<'all' | 'Able' | 'Baker'>('all');
+type HeadOption = { id: string; name: string; picture?: string | null };
+
+export const RiscoDeChurnTab = ({ projects, heads = [] }: { projects: ProjectRow[]; heads?: HeadOption[] }) => {
+  // Filtro por Head de Operações. A atribuição é pela página de projetos do head
+  // (page_id) — o mesmo critério usado na Visão Geral.
+  const [headFilter, setHeadFilter] = useState<string>('all');
   const [snap, setSnap] = useState<ChurnSnap | null>(null);
 
-  // Busca a série por squad (reflete no gráfico de evolução e nos deltas).
+  const projectsOf = (headId: string) =>
+    headId === 'all' ? projects : projects.filter(p => p.page_id === headId);
+
+  // Série do gráfico e baseline seguem o head selecionado.
   useEffect(() => {
     let alive = true;
-    const q = squadFilter === 'all' ? '' : `&squad=${squadFilter}`;
+    const ids = headFilter === 'all' ? null : projectsOf(headFilter).map(p => p.id);
+    const q = ids && ids.length > 0 ? `&projects=${encodeURIComponent(ids.join(','))}` : '';
     fetch(`/api/churn-snapshots?days=90${q}`)
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (alive) setSnap(d); })
       .catch(() => {});
     return () => { alive = false; };
-  }, [squadFilter]);
+  }, [headFilter, projects]);
 
-  const fp = squadFilter === 'all' ? projects : projects.filter(p => (p.squad || '') === squadFilter);
-  const squadCounts = {
-    all: projects.length,
-    Able: projects.filter(p => p.squad === 'Able').length,
-    Baker: projects.filter(p => p.squad === 'Baker').length,
-  };
+  const fp = projectsOf(headFilter);
 
   const total = fp.length;
   const rows = fp.map(p => ({ p, count: churnCount(p) })).sort((a, b) => b.count - a.count);
@@ -368,26 +372,28 @@ const RiscoDeChurnTab = ({ projects }: { projects: ProjectRow[] }) => {
 
   const squadPills: { key: 'all' | 'Able' | 'Baker'; label: string; accent: string }[] = [
     { key: 'all', label: 'Todos', accent: '#a78bfa' },
-    { key: 'Able', label: 'Squad Able', accent: SQUAD_ACCENT.Able },
-    { key: 'Baker', label: 'Squad Baker', accent: SQUAD_ACCENT.Baker },
   ];
 
   return (
     <div className="space-y-6">
-      {/* Filtro por squad */}
+      {/* Filtro por Head de Operações */}
       <div className="flex flex-wrap items-center gap-3">
-        {squadPills.map(pill => {
-          const active = squadFilter === pill.key;
+        {[{ id: 'all', name: 'Todos', picture: null as string | null }, ...heads].map(h => {
+          const active = headFilter === h.id;
+          const n = projectsOf(h.id).length;
+          const firstName = h.id === 'all' ? h.name : String(h.name).trim().split(/\s+/)[0];
           return (
-            <button key={pill.key} onClick={() => setSquadFilter(pill.key)}
+            <button key={h.id} onClick={() => setHeadFilter(h.id)}
               className={`flex items-center gap-3 pl-3 pr-5 py-2.5 rounded-2xl border transition-all ${
                 active ? 'bg-violet-600/10 border-violet-500/60' : 'bg-dark-card border-white/10 hover:border-white/25'}`}>
-              <span className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: `${pill.accent}22`, color: pill.accent }}>
-                <Users size={17} />
+              <span className="w-9 h-9 rounded-xl overflow-hidden flex items-center justify-center bg-violet-500/15 text-violet-400 shrink-0">
+                {h.picture
+                  ? <img src={h.picture} alt={firstName} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                  : <Users size={17} />}
               </span>
               <span className="text-left">
-                <span className={`block text-sm font-black leading-tight ${active ? 'text-violet-300' : 'text-dark-text'}`}>{pill.label}</span>
-                <span className="block text-[10px] font-bold uppercase tracking-widest text-slate-500">{squadCounts[pill.key]} parceiros</span>
+                <span className={`block text-sm font-black leading-tight ${active ? 'text-violet-300' : 'text-dark-text'}`}>{firstName}</span>
+                <span className="block text-[10px] font-bold uppercase tracking-widest text-slate-500">{n} parceiros</span>
               </span>
             </button>
           );

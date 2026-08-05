@@ -545,7 +545,23 @@ export function setupBillsRoutes(app: Express, pool: Pool) {
         }
       } catch { /* tabela pode não existir ainda */ }
 
-      res.json({ items: rows, summary: { total, total_items: rows.length, categorized, payment_date: paymentDate } });
+      // Meses que já têm fatura importada — usado para orientar quando o mês
+      // selecionado está vazio (a fatura entra no mês do VENCIMENTO, que pode
+      // ser diferente do mês que o usuário está olhando).
+      const avail = await pool.query(
+        `SELECT billing_month, COUNT(*)::int AS itens
+           FROM fin_movements_asaas
+          WHERE account = 'sicredi' AND billing_month IS NOT NULL
+          GROUP BY billing_month
+          ORDER BY billing_month DESC
+          LIMIT 12`
+      ).catch(() => ({ rows: [] as any[] }));
+
+      res.json({
+        items: rows,
+        summary: { total, total_items: rows.length, categorized, payment_date: paymentDate },
+        available_months: avail.rows,
+      });
     } catch (err) {
       console.error('[fin/bills/sicredi] GET error:', err);
       res.status(500).json({ error: 'Failed to fetch sicredi items' });

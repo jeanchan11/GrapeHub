@@ -599,6 +599,24 @@ async function startServer() {
         UNIQUE (project_id, snapshot_date)
       );
 
+      -- Retrato diário do resultado e do investimento de cada projeto. Tabela própria
+      -- (não mexe em churn_risk_snapshots) para alimentar a evolução da carteira no
+      -- Dashboard Head. A série só existe a partir da 1ª captura.
+      CREATE TABLE IF NOT EXISTS project_result_snapshots (
+        id BIGSERIAL PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        partner TEXT,
+        squad TEXT,
+        responsible TEXT,
+        page_id TEXT,
+        project_result TEXT,
+        investment TEXT,
+        snapshot_date DATE NOT NULL DEFAULT CURRENT_DATE,
+        created_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE (project_id, snapshot_date)
+      );
+      CREATE INDEX IF NOT EXISTS idx_prs_date ON project_result_snapshots (snapshot_date);
+
       -- Marcador do reset semanal do checklist de churn (domingo à noite).
       CREATE TABLE IF NOT EXISTS churn_reset_state (
         id INTEGER PRIMARY KEY DEFAULT 1,
@@ -5684,57 +5702,8 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
-  app.post("/api/crm/sync-inadimplentes", async (req, res) => {
-    try {
-      // ENTRADA: Clientes com fatura em atraso há 6+ dias (por due_date) que não estão em coluna manual
-      const entradaResult = await pool.query(`
-        UPDATE clients c
-        SET crm_status = 'inadimplente_asaas'
-        FROM fin_people fp
-        WHERE fp.grapehub_client_id = c.id
-        AND EXISTS (
-          SELECT 1 FROM fin_receivables r
-          WHERE r.customer_id = fp.asaas_id
-          AND r.status IN ('PENDING', 'OVERDUE')
-          AND r.due_date IS NOT NULL
-          AND (CURRENT_DATE - r.due_date) >= 6
-        )
-        AND (
-          c.crm_status IS NULL
-          OR (
-            -- não sobrescreve quem já está numa coluna manual da Retenção (inclui colunas customizadas)
-            c.crm_status NOT IN (SELECT id FROM retencao_columns)
-            AND c.crm_status NOT IN ('inadimplente_asaas', 'arquivado')
-          )
-        )
-        RETURNING c.id
-      `);
-      const added = entradaResult.rowCount || 0;
-
-      // SAÍDA: Clientes inadimplentes que não têm mais faturas com 6+ dias de atraso
-      const saidaResult = await pool.query(`
-        UPDATE clients c
-        SET crm_status = NULL
-        FROM fin_people fp
-        WHERE fp.grapehub_client_id = c.id
-        AND c.crm_status = 'inadimplente_asaas'
-        AND NOT EXISTS (
-          SELECT 1 FROM fin_receivables r
-          WHERE r.customer_id = fp.asaas_id
-          AND r.status IN ('PENDING', 'OVERDUE')
-          AND r.due_date IS NOT NULL
-          AND (CURRENT_DATE - r.due_date) >= 6
-        )
-        RETURNING c.id
-      `);
-      const removed = saidaResult.rowCount || 0;
-
-      res.json({ added, removed });
-    } catch (err) {
-      console.error("Error syncing inadimplentes:", err);
-      res.status(500).json({ error: "Failed to sync inadimplentes" });
-    }
-  });
+  // (removido) POST /api/crm/sync-inadimplentes — a Retenção não é mais
+  // CRM Financeiro; o quadro não recebe nem perde clientes automaticamente.
 
   app.post("/api/clients", async (req, res) => {
     const clients = req.body;
@@ -6050,6 +6019,90 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
+  // ── Evolução da carteira (Dashboard Head) ───────────────────────────────────
+  // Grava 1 retrato por projeto por dia com resultado + investimento. Idempotente:
+  // reexecutar no mesmo dia apenas atualiza a linha.
+  const INVEST_NUM = `NULLIF(replace(replace(replace(replace(COALESCE(investment,''),'R$',''),' ',''),'.',''),',','.'),'')::numeric`;
+  async function captureProjectResultSnapshot() {
+    try {
+      await pool.query(`
+        INSERT INTO project_result_snapshots (project_id, partner, squad, responsible, page_id, project_result, investment, snapshot_date)
+        SELECT id, partner, squad, responsible, page_id, project_result, investment, CURRENT_DATE
+        FROM projects
+        ON CONFLICT (project_id, snapshot_date) DO UPDATE SET
+          project_result = EXCLUDED.project_result,
+          investment     = EXCLUDED.investment,
+          partner        = EXCLUDED.partner,
+          squad          = EXCLUDED.squad,
+          responsible    = EXCLUDED.responsible,
+          page_id        = EXCLUDED.page_id,
+          created_at     = NOW()
+      `);
+    } catch (e: any) {
+      console.error('[project-result-snapshot] erro:', e.message);
+    }
+  }
+  setTimeout(() => { captureProjectResultSnapshot(); }, 12000);
+  setInterval(() => { captureProjectResultSnapshot(); }, 6 * 60 * 60 * 1000); // 4×/dia
+
+  // Série diária da carteira informada (projectIds). POST porque a lista de ids
+  // pode passar do tamanho confortável de uma query string.
+  app.post("/api/project-history", async (req, res) => {
+    try {
+      const ids: string[] = Array.isArray(req.body?.projectIds) ? req.body.projectIds.map(String) : [];
+      const days = Math.min(Math.max(parseInt(String(req.body?.days || '90'), 10) || 90, 7), 365);
+      if (ids.length === 0) return res.json({ series: [] });
+      await captureProjectResultSnapshot(); // garante o ponto de hoje
+      const r = await pool.query(`
+        SELECT to_char(snapshot_date,'YYYY-MM-DD') AS date,
+               COUNT(*)::int AS total,
+               COUNT(*) FILTER (WHERE UPPER(COALESCE(project_result,'')) LIKE '%BOM%')::int      AS bom,
+               COUNT(*) FILTER (WHERE UPPER(COALESCE(project_result,'')) LIKE '%OK%')::int       AS ok,
+               COUNT(*) FILTER (WHERE UPPER(COALESCE(project_result,'')) LIKE '%RUIM%')::int     AS ruim,
+               COUNT(*) FILTER (WHERE UPPER(COALESCE(project_result,'')) LIKE '%TESTANDO%')::int AS testando,
+               COALESCE(SUM(${INVEST_NUM}), 0) AS investimento
+        FROM project_result_snapshots
+        WHERE project_id = ANY($1) AND snapshot_date >= CURRENT_DATE - ($2::int)
+        GROUP BY snapshot_date ORDER BY snapshot_date ASC
+      `, [ids, days]);
+      res.json({
+        series: r.rows.map((x: any) => ({
+          date: x.date,
+          total: Number(x.total),
+          bom: Number(x.bom),
+          ok: Number(x.ok),
+          ruim: Number(x.ruim),
+          testando: Number(x.testando),
+          investimento: Number(x.investimento) || 0,
+        })),
+      });
+    } catch (err: any) {
+      console.error('[project-history]', err.message);
+      res.status(500).json({ error: 'Failed to fetch project history' });
+    }
+  });
+
+  // ── Cadência de reuniões por projeto (Dashboard Head) ───────────────────────
+  // Última reunião e volume recente de cada projeto. O front cruza com a carteira
+  // do head para apontar quem está sem reunião.
+  app.get("/api/meetings/by-project-summary", async (_req, res) => {
+    try {
+      const r = await pool.query(`
+        SELECT project_id,
+               to_char(MAX(date), 'YYYY-MM-DD') AS last_date,
+               COUNT(*) FILTER (WHERE date >= CURRENT_DATE - 30 AND date <= CURRENT_DATE)::int AS last_30d,
+               COUNT(*) FILTER (WHERE date >= CURRENT_DATE - 90 AND date <= CURRENT_DATE)::int AS last_90d
+        FROM meetings
+        WHERE project_id IS NOT NULL AND date IS NOT NULL
+        GROUP BY project_id
+      `);
+      res.json(r.rows);
+    } catch (err: any) {
+      console.error('[meetings/by-project-summary]', err.message);
+      res.status(500).json({ error: 'Failed to fetch meetings summary' });
+    }
+  });
+
   app.get("/api/churn", async (req, res) => {
     try {
       const result = await pool.query(
@@ -6068,7 +6121,7 @@ app.get("/api/todos", async (req, res) => {
   // Grava (idempotente) 1 registro por projeto por dia, com a contagem de sinais marcados.
   app.post("/api/churn-snapshots/capture", async (_req, res) => {
     try {
-      await maybeResetChurnChecklists(); // reforço: garante o reset semanal ao abrir o dashboard
+      await maybeSnapshotChurnChecklists(); // garante o retrato semanal ao abrir o dashboard
       const { rowCount } = await pool.query(`
         INSERT INTO churn_risk_snapshots (project_id, partner, squad, responsible, investment, checked_count, snapshot_date)
         SELECT p.id, p.partner, p.squad, p.responsible, p.investment,
@@ -6093,6 +6146,13 @@ app.get("/api/todos", async (req, res) => {
     try {
       const days = Math.min(Math.max(parseInt(String(req.query.days || '90'), 10) || 90, 7), 365);
       const squad = req.query.squad ? String(req.query.squad) : null; // 'Able' | 'Baker' | null (todos)
+      // Recorte por lista de projetos — usado pelo filtro de Head de Operações,
+      // já que a atribuição ao head é por página de projetos, não por squad.
+      const ids = req.query.projects
+        ? String(req.query.projects).split(',').map(x => x.trim()).filter(Boolean)
+        : null;
+      const idsParam = ids && ids.length > 0 ? ids : null;
+
       const series = await pool.query(`
         SELECT to_char(snapshot_date, 'YYYY-MM-DD') AS date,
                count(*) FILTER (WHERE checked_count >= 1) AS com_sinais,
@@ -6102,8 +6162,9 @@ app.get("/api/todos", async (req, res) => {
         FROM churn_risk_snapshots
         WHERE snapshot_date >= CURRENT_DATE - ($1::int)
           AND ($2::text IS NULL OR squad = $2)
+          AND ($3::text[] IS NULL OR project_id = ANY($3))
         GROUP BY snapshot_date ORDER BY snapshot_date ASC
-      `, [days, squad]);
+      `, [days, squad, idsParam]);
       // Baseline: para cada projeto, a contagem no snapshot mais recente com pelo menos 7 dias.
       const baselineRows = await pool.query(`
         SELECT DISTINCT ON (project_id) project_id, checked_count,
@@ -6111,8 +6172,9 @@ app.get("/api/todos", async (req, res) => {
         FROM churn_risk_snapshots
         WHERE snapshot_date <= CURRENT_DATE - 7
           AND ($1::text IS NULL OR squad = $1)
+          AND ($2::text[] IS NULL OR project_id = ANY($2))
         ORDER BY project_id, snapshot_date DESC
-      `, [squad]);
+      `, [squad, idsParam]);
       const baseline: Record<string, number> = {};
       for (const r of baselineRows.rows) baseline[r.project_id] = Number(r.checked_count);
       res.json({
@@ -6131,10 +6193,11 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
-  // ── Reset semanal do checklist de churn (domingo 23h America/Sao_Paulo) ──────
-  // Antes de zerar, grava o snapshot final da semana (datado no domingo do boundary),
-  // preservando o histórico/evolução. Na 1ª execução só marca o boundary (não zera).
-  async function maybeResetChurnChecklists() {
+  // ── Snapshot semanal do checklist de churn (domingo 23h America/Sao_Paulo) ───
+  // Grava o retrato final da semana (datado no domingo do boundary) para alimentar a
+  // evolução no Consolidado. O checklist NÃO é mais zerado: os sinais marcados são
+  // permanentes e só mudam quando alguém desmarca na tela.
+  async function maybeSnapshotChurnChecklists() {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -6158,10 +6221,10 @@ app.get("/api/todos", async (req, res) => {
       const { boundary_str, is_first, due } = rows[0];
 
       if (is_first) {
-        // 1ª vez: só ancora o ciclo, sem apagar os dados atuais.
+        // 1ª vez: só ancora o ciclo.
         await client.query(`UPDATE churn_reset_state SET last_boundary = $1::timestamp WHERE id=1`, [boundary_str]);
       } else if (due === true) {
-        // Passou um domingo desde o último reset → snapshot final (datado no domingo) + zera.
+        // Passou um domingo desde o último retrato → grava o snapshot final da semana.
         await client.query(`
           INSERT INTO churn_risk_snapshots (project_id, partner, squad, responsible, investment, checked_count, snapshot_date)
           SELECT p.id, p.partner, p.squad, p.responsible, p.investment,
@@ -6172,21 +6235,20 @@ app.get("/api/todos", async (req, res) => {
             checked_count = EXCLUDED.checked_count, partner = EXCLUDED.partner, squad = EXCLUDED.squad,
             responsible = EXCLUDED.responsible, investment = EXCLUDED.investment, created_at = NOW()
         `, [boundary_str]);
-        const reset = await client.query(`UPDATE projects SET churn_checklist = '{}'::jsonb WHERE churn_checklist IS NOT NULL AND churn_checklist <> '{}'::jsonb`);
         await client.query(`UPDATE churn_reset_state SET last_boundary = $1::timestamp WHERE id=1`, [boundary_str]);
-        console.log(`[churn-reset] Checklist semanal zerado — ${reset.rowCount} parceiro(s). Boundary: ${boundary_str}`);
+        console.log(`[churn-snapshot] Retrato semanal gravado. Boundary: ${boundary_str}`);
       }
       await client.query('COMMIT');
     } catch (e) {
       await client.query('ROLLBACK').catch(() => {});
-      console.error('[churn-reset] erro:', e);
+      console.error('[churn-snapshot] erro:', e);
     } finally {
       client.release();
     }
   }
-  // Checa no boot e a cada 30 min (roda no máximo 1×/semana, após o domingo 23h).
-  setTimeout(() => { maybeResetChurnChecklists(); }, 8000);
-  setInterval(() => { maybeResetChurnChecklists(); }, 30 * 60 * 1000);
+  // Checa no boot e a cada 30 min (grava no máximo 1×/semana, após o domingo 23h).
+  setTimeout(() => { maybeSnapshotChurnChecklists(); }, 8000);
+  setInterval(() => { maybeSnapshotChurnChecklists(); }, 30 * 60 * 1000);
 
   app.get("/api/churn/:clientName", async (req, res) => {
     const { clientName } = req.params;
@@ -7928,9 +7990,15 @@ app.get("/api/todos", async (req, res) => {
     try {
       const account = (req.body.account as string) || 'sicredi';
       const billingMonth = (req.body.billing_month as string) || null;
-      // Mês efetivo da fatura: auto-detectado do vencimento do CSV; senão, cai no dropdown.
-      let effectiveBillingMonth = billingMonth;
+      // Data de PAGAMENTO informada na tela (regime de caixa): é ela que define
+      // o mês da fatura. Tem prioridade sobre o vencimento impresso no arquivo.
+      const paymentDate = typeof req.body.payment_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.body.payment_date)
+        ? req.body.payment_date
+        : null;
+      // Mês efetivo: data de pagamento > vencimento do arquivo > mês selecionado.
+      let effectiveBillingMonth = paymentDate ? paymentDate.slice(0, 7) : billingMonth;
       let detectedDueDate: string | null = null;
+      let monthSource: 'pagamento' | 'vencimento' | 'manual' = paymentDate ? 'pagamento' : 'manual';
 
       // Support base64 file upload via JSON
       let content: string;
@@ -7968,7 +8036,11 @@ app.get("/api/todos", async (req, res) => {
             const m = ln.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/);
             if (m) {
               detectedDueDate = `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
-              effectiveBillingMonth = `${m[3]}-${m[2].padStart(2, '0')}`;
+              // Só define o mês pelo vencimento quando NÃO há data de pagamento na tela.
+              if (!paymentDate) {
+                effectiveBillingMonth = `${m[3]}-${m[2].padStart(2, '0')}`;
+                monthSource = 'vencimento';
+              }
               break;
             }
           }
@@ -8121,6 +8193,20 @@ app.get("/api/todos", async (req, res) => {
       let inserted = 0;
       let skipped = 0;
 
+      // Quantos lançamentos deste arquivo já estão gravados em OUTRO mês.
+      // Como asaas_id é único, importar de novo com outro mês MOVE o item — o
+      // usuário precisa ver isso para não achar que a fatura antiga sumiu.
+      let moved = 0;
+      if (account === 'sicredi' && effectiveBillingMonth) {
+        const mv = await pool.query(
+          `SELECT COUNT(*)::int AS n FROM fin_movements_asaas
+            WHERE account = 'sicredi' AND asaas_id = ANY($1)
+              AND billing_month IS NOT NULL AND billing_month <> $2`,
+          [transactions.map((t) => `${account}_${t.fitid}`), effectiveBillingMonth]
+        ).catch(() => ({ rows: [{ n: 0 }] as any[] }));
+        moved = mv.rows[0]?.n || 0;
+      }
+
       for (const tx of transactions) {
         const asaasId = `${account}_${tx.fitid}`;
         const type = tx.trnamt >= 0 ? 1 : -1;
@@ -8158,6 +8244,16 @@ app.get("/api/todos", async (req, res) => {
       // ── Auto-provision: create/update recurring bill entry for Sicredi card ──
       if (account === 'sicredi' && effectiveBillingMonth) {
         try {
+          // Persiste a data de pagamento no mês em que a fatura caiu, para que ela
+          // apareça ao abrir esse mês e o lançamento no Contas a Pagar seja gerado.
+          if (paymentDate) {
+            await pool.query(
+              `INSERT INTO fin_sicredi_invoice (billing_month, payment_date, updated_at)
+               VALUES ($1, $2, NOW())
+               ON CONFLICT (billing_month) DO UPDATE SET payment_date = EXCLUDED.payment_date, updated_at = NOW()`,
+              [effectiveBillingMonth, paymentDate]
+            ).catch(() => {});
+          }
           // Lança a fatura no Contas a Pagar nativo usando a DATA DE PAGAMENTO da fatura (se já definida).
           // Sem data de pagamento, a fatura só é lançada quando o usuário define a data ("Pagamento da Fatura").
           await syncSicrediBillEntry(pool, effectiveBillingMonth);
@@ -8173,10 +8269,12 @@ app.get("/api/todos", async (req, res) => {
         inserted,
         skipped,
         pruned,
+        moved,
         total: transactions.length,
         billing_month: effectiveBillingMonth,
         due_date: detectedDueDate,
-        month_source: detectedDueDate ? 'vencimento' : 'manual',
+        payment_date: paymentDate,
+        month_source: monthSource,
       });
     } catch (err: any) {
       console.error('Import error:', err.message);
@@ -13564,11 +13662,16 @@ app.get("/api/todos", async (req, res) => {
         [currentMonth]
       );
       const cobRecentesRes = await pool.query(
-        `SELECT id::text as id, customer_name, customer_phone, rule_triggered as rule_label, day_offset, channel, sent_at as triggered_at, sent_at, message_rendered, status
+        // Inclui ERRO e ENVIANDO: um painel que só mostra sucesso esconde justamente
+        // o que precisa de ação. Itens com ERRO não têm sent_at, então a ordenação
+        // cai para updated_at.
+        `SELECT id::text as id, customer_name, customer_phone, rule_triggered as rule_label, day_offset, channel,
+                COALESCE(sent_at, updated_at) as triggered_at, sent_at, message_rendered, status,
+                COALESCE(error_message, '') as error_message
          FROM fin_dispatch_queue
-         WHERE status = 'ENVIADO'
-         ORDER BY sent_at DESC
-         LIMIT 5`
+         WHERE status IN ('ENVIADO', 'ERRO', 'ENVIANDO')
+         ORDER BY COALESCE(sent_at, updated_at) DESC
+         LIMIT 20`
       );
 
       // 2) Contas a Pagar do Dia
@@ -13688,6 +13791,10 @@ app.get("/api/todos", async (req, res) => {
   app.get("/api/crm-metricas-dashboard", async (req, res) => {
     try {
       const { month, start, end } = req.query;
+      // Filtro opcional por vendedor (users.id) — aplicado à aba Vendas
+      const vendedorId = typeof req.query.vendedor === 'string' && req.query.vendedor.trim()
+        ? req.query.vendedor.trim()
+        : '';
       let startDate = '';
       let endDate = '';
       let year = new Date().getFullYear();
@@ -13728,6 +13835,19 @@ app.get("/api/todos", async (req, res) => {
       // Encontrar coluna cidade
       const cidadeCol = colNames.find((c: string) => c.toLowerCase().includes('cidade')) || 'id';
 
+      // Condição de filtro por vendedor para a tabela `fechamentos`.
+      // Resolve o vendedor pelo MESMO critério usado na listagem (lead mais recente
+      // que casa com o fechamento -> responsavel_id), garantindo que o filtro bata
+      // exatamente com o nome exibido na coluna "Vendedor".
+      const vendedorCond = (alias: string, idx: number) => vendedorId ? `
+          AND (
+            SELECT l.responsavel_id FROM crm_comercial_leads l
+            WHERE (COALESCE(${alias}.lead_nome, '') <> '' AND l.nome = ${alias}.lead_nome)
+               OR (COALESCE(${alias}.lead_nome, '') = '' AND (l.form_nome_fantasia = ${alias}."${nomeCol}" OR l.nome = ${alias}."${nomeCol}"))
+            ORDER BY l.id DESC LIMIT 1
+          ) = $${idx}` : '';
+      const vendedorParam = vendedorId ? [vendedorId] : [];
+
       // Garante coluna lead_nome na tabela fechamentos
       await pool.query(`ALTER TABLE fechamentos ADD COLUMN IF NOT EXISTS lead_nome TEXT`).catch(() => {});
 
@@ -13767,11 +13887,22 @@ app.get("/api/todos", async (req, res) => {
                  ),
                  f."${fatCol}",
                  ''
-               ) as faturamento
+               ) as faturamento,
+               v.vendedor_nome as vendedor,
+               v.vendedor_foto as vendedor_foto
         FROM fechamentos f
-        WHERE f.day >= $1 AND f.day <= $2
+        -- Vendedor que fechou: resolvido pelo lead correspondente (responsavel_id -> users)
+        LEFT JOIN LATERAL (
+          SELECT u.name AS vendedor_nome, u.picture AS vendedor_foto
+          FROM crm_comercial_leads l
+          LEFT JOIN users u ON u.id = l.responsavel_id
+          WHERE (COALESCE(f.lead_nome, '') <> '' AND l.nome = f.lead_nome)
+             OR (COALESCE(f.lead_nome, '') = '' AND (l.form_nome_fantasia = f."${nomeCol}" OR l.nome = f."${nomeCol}"))
+          ORDER BY l.id DESC LIMIT 1
+        ) v ON true
+        WHERE f.day >= $1 AND f.day <= $2${vendedorCond('f', 3)}
         ORDER BY f.day DESC
-      `, [startDate, endDate]);
+      `, [startDate, endDate, ...vendedorParam]);
 
       // Fechamentos por mês (ano corrente)
       const fechamentosYear = await pool.query(`
@@ -13779,11 +13910,11 @@ app.get("/api/todos", async (req, res) => {
           EXTRACT(MONTH FROM day) AS mes,
           COUNT(*) AS quantidade,
           SUM(CAST(REPLACE(REPLACE(REPLACE(COALESCE("${valorCol}", '0'), 'R$', ''), ',', '.'), ' ', '') AS NUMERIC)) AS total_valor
-        FROM fechamentos
-        WHERE EXTRACT(YEAR FROM day) = $1
+        FROM fechamentos f
+        WHERE EXTRACT(YEAR FROM day) = $1${vendedorCond('f', 2)}
         GROUP BY EXTRACT(MONTH FROM day)
         ORDER BY mes ASC
-      `, [year]);
+      `, [year, ...vendedorParam]);
 
       // Descobrir nomes reais das colunas de reunioes
       const reunCols = await pool.query(`
@@ -13905,9 +14036,9 @@ app.get("/api/todos", async (req, res) => {
           COALESCE(AVG(CAST(REPLACE(REPLACE(REPLACE(COALESCE("${valorCol}", '0'), 'R$', ''), ',', '.'), ' ', '') AS NUMERIC)), 0) AS ticket_medio,
           COUNT(*) FILTER (WHERE LOWER(COALESCE("${origemCol}",'')) LIKE '%campa%') AS total_campanhas,
           COUNT(*) FILTER (WHERE LOWER(COALESCE("${origemCol}",'')) LIKE '%indica%') AS total_indicacao
-        FROM fechamentos
-        WHERE day >= $1 AND day <= $2
-      `, [prevStart, prevEnd]);
+        FROM fechamentos f
+        WHERE day >= $1 AND day <= $2${vendedorCond('f', 3)}
+      `, [prevStart, prevEnd, ...vendedorParam]);
 
       // KPIs do mês atual
       const kpisMonth = await pool.query(`
@@ -13921,9 +14052,9 @@ app.get("/api/todos", async (req, res) => {
             FILTER (WHERE LOWER(COALESCE("${origemCol}",'')) LIKE '%campa%') AS receita_campanhas,
           SUM(CAST(REPLACE(REPLACE(REPLACE(COALESCE("${valorCol}", '0'), 'R$', ''), ',', '.'), ' ', '') AS NUMERIC))
             FILTER (WHERE LOWER(COALESCE("${origemCol}",'')) LIKE '%indica%') AS receita_indicacao
-        FROM fechamentos
-        WHERE day >= $1 AND day <= $2
-      `, [startDate, endDate]);
+        FROM fechamentos f
+        WHERE day >= $1 AND day <= $2${vendedorCond('f', 3)}
+      `, [startDate, endDate, ...vendedorParam]);
 
       // Motivos de Perda do mês (apenas Vendas/Comercial)
       const comercialKanban = await pool.query(
@@ -13954,9 +14085,10 @@ app.get("/api/todos", async (req, res) => {
             )
           )
           AND cl.updated_at >= $1 AND cl.updated_at <= ($2::date + interval '1 day')
+          ${vendedorId ? 'AND cl.responsavel_id = $5' : ''}
         GROUP BY lr.name
         ORDER BY total DESC
-      `, [startDate, endDate, comercialKanbanId, perdidosKanbanId]) : { rows: [] as any[] };
+      `, [startDate, endDate, comercialKanbanId, perdidosKanbanId, ...vendedorParam]) : { rows: [] as any[] };
 
       // Motivos de Perda — apenas Pré-vendas
 
@@ -14128,6 +14260,15 @@ app.get("/api/todos", async (req, res) => {
 
       const totalPerdas = lossReasonsMonth.rows.reduce((s: number, r: any) => s + Number(r.total), 0);
 
+      // Vendedores disponíveis para o filtro (quem já é responsável por algum lead)
+      const vendedoresList = await pool.query(`
+        SELECT DISTINCT u.id, u.name, u.picture
+        FROM crm_comercial_leads l
+        JOIN users u ON u.id = l.responsavel_id
+        WHERE COALESCE(l.responsavel_id, '') <> ''
+        ORDER BY u.name ASC
+      `).catch(() => ({ rows: [] as any[] }));
+
       res.json({
         month: startDate.slice(0, 7),
         kpis: kpisMonth.rows[0],
@@ -14148,6 +14289,7 @@ app.get("/api/todos", async (req, res) => {
         tentativas_prev: tentativasPrev.rows,
         aging_leads: agingLeads.rows,
         total_perdas: totalPerdas,
+        vendedores: vendedoresList.rows,
         _debug_cols: { fechamentos: colNames, reunioes: rCols },
       });
     } catch (err: any) {
@@ -18707,6 +18849,27 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
   const PLATFORMS_REQUIRING_ACCOUNT = ['meta_ads', 'google_ads'];
 
   // GET — list tokens (masked)
+  // Todos os tokens com problema, de todos os projetos — alimenta a aba
+  // "Erros de Token" do Dashboard Operacional. Nunca expõe o token em si.
+  app.get('/api/token-errors', async (_req, res) => {
+    try {
+      const r = await pool.query(`
+        SELECT t.id, t.project_id, t.platform, t.service_name, t.account_id, t.account_name,
+               t.status, t.last_error, t.last_synced_at,
+               p.partner, p.responsible, p.page_id, p.squad
+        FROM project_tokens t
+        -- JOIN (não LEFT): tokens órfãos, de projetos já excluídos, ficam de fora.
+        JOIN projects p ON p.id = t.project_id
+        WHERE t.status IS DISTINCT FROM 'active'
+        ORDER BY t.last_synced_at DESC NULLS LAST, t.id DESC
+      `);
+      res.json(r.rows);
+    } catch (e: any) {
+      console.error('[token-errors]', e.message);
+      res.status(500).json({ error: 'Failed to fetch token errors' });
+    }
+  });
+
   app.get('/api/project-tokens', async (req, res) => {
     try {
       const { project_id } = req.query;
@@ -19074,54 +19237,9 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
     console.log(`CWD: ${process.cwd()}`);
     console.log(`__dirname: ${__dirname_}`);
 
-    // Sync inadimplentes ao iniciar e a cada 1 hora
-    const syncInadimplentes = async () => {
-      try {
-        const entradaResult = await pool.query(`
-          UPDATE clients c
-          SET crm_status = 'inadimplente_asaas'
-          FROM fin_people fp
-          WHERE fp.grapehub_client_id = c.id
-          AND EXISTS (
-            SELECT 1 FROM fin_receivables r
-            WHERE r.customer_id = fp.asaas_id
-            AND r.status IN ('PENDING', 'OVERDUE')
-            AND r.due_date IS NOT NULL
-            AND (CURRENT_DATE - r.due_date) >= 6
-          )
-          AND (
-            c.crm_status IS NULL
-            OR c.crm_status NOT IN ('inadimplente_asaas', 'pedido_finalizacao', 'negociacao', 'aviso_30_dias', 'processo_saida', 'arquivado')
-          )
-          RETURNING c.id
-        `);
-        const saidaResult = await pool.query(`
-          UPDATE clients c
-          SET crm_status = NULL
-          FROM fin_people fp
-          WHERE fp.grapehub_client_id = c.id
-          AND c.crm_status = 'inadimplente_asaas'
-          AND NOT EXISTS (
-            SELECT 1 FROM fin_receivables r
-            WHERE r.customer_id = fp.asaas_id
-            AND r.status IN ('PENDING', 'OVERDUE')
-            AND r.due_date IS NOT NULL
-            AND (CURRENT_DATE - r.due_date) >= 6
-          )
-          RETURNING c.id
-        `);
-        const added = entradaResult.rowCount || 0;
-        const removed = saidaResult.rowCount || 0;
-        if (added > 0 || removed > 0) {
-          console.log(`[sync-inadimplentes] +${added} adicionados, -${removed} removidos`);
-        }
-      } catch (err) {
-        console.error('[sync-inadimplentes] Erro ao sincronizar:', err);
-      }
-    };
-
-    syncInadimplentes(); // executa imediatamente ao iniciar
-    setInterval(syncInadimplentes, 60 * 60 * 1000); // repete a cada 1 hora
+    // (removido) Rotina automática de inadimplência da Retenção.
+    // O quadro de Retenção deixou de funcionar como CRM Financeiro: nada mais
+    // entra ou sai dele sozinho. A movimentação dos cards é 100% manual.
 
     // Sync Asaas — aguarda 3 minutos após boot, depois a cada 10 minutos
     setTimeout(() => runAsaasSync(pool), 3 * 60 * 1000);
