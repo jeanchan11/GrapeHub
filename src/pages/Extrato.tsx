@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import SplitHeadline from '../components/SplitHeadline';
 import OptionPicker from '../components/ui/OptionPicker';
+import MultiOptionPicker from '../components/ui/MultiOptionPicker';
 import { createPortal } from 'react-dom';
 import { Search, ArrowUp, ArrowDown, FileText, Calendar, ChevronDown, ChevronUp, Check, Tag, AlertTriangle, ShieldAlert, Users, TrendingUp, TrendingDown, X, MessageSquare, Copy, ExternalLink, Pencil, Zap, ToggleLeft, ToggleRight, Trash2, Plus, Loader2, Wand2, Link2, EyeOff, Eye, Upload } from 'lucide-react';
 
@@ -1120,7 +1121,8 @@ export default function Extrato() {
   const [error, setError]       = useState<string | null>(null);
   const [search, setSearch]     = useState('');
   const [typeFilter, setTypeFilter] = useState<'todos'|'entradas'|'saidas'|'realizados'>('todos');
-  const [categoryFilter, setCategoryFilter] = useState<string>('');
+  // Lista vazia = todas as categorias. '__sem_categoria__' representa "sem categoria".
+  const [categoryFilters, setCategoryFilters] = useState<string[]>([]);
   const [hideAnticipation, setHideAnticipation] = useState(true);
   const [anticipationStats, setAnticipationStats] = useState<{ antecipado_bruto: number; taxas_antecipacao: number; liquido: number; count_pares: number } | null>(null);
 
@@ -1284,13 +1286,14 @@ export default function Extrato() {
     if (typeFilter === 'realizados') return item.type_column === 'realizado';
     return true;
   }).filter(item => {
-    if (!categoryFilter) return true;
-    if (categoryFilter === '__sem_categoria__') {
-      // Use raw_grapehub_category: null means no real category in DB (ignores autoCategory fallback)
-      return !item.raw_grapehub_category && !item.custom_category;
-    }
-    const itemCat = getCategory(item).name;
-    return itemCat === categoryFilter;
+    if (categoryFilters.length === 0) return true;
+    // Cada categoria marcada mantém o mesmo critério de quando era seleção única;
+    // o resultado é a união delas.
+    // Sem categoria: raw_grapehub_category nulo = não há categoria real no banco
+    // (ignora o fallback do autoCategory)
+    const semCategoria = !item.raw_grapehub_category && !item.custom_category;
+    if (semCategoria && categoryFilters.includes('__sem_categoria__')) return true;
+    return categoryFilters.includes(getCategory(item).name);
   });
 
   // Categorias únicas presentes no extrato atual (para o dropdown)
@@ -1439,19 +1442,18 @@ export default function Extrato() {
                   {f.charAt(0).toUpperCase() + f.slice(1)}
                 </button>
               ))}
-              {/* Category filter dropdown */}
-              <OptionPicker
-                value={categoryFilter === '__sem_categoria__' ? '⚠️ Sem categoria' : categoryFilter || null}
-                onChange={(val) => {
-                  if (val === '⚠️ Sem categoria') setCategoryFilter('__sem_categoria__');
-                  else setCategoryFilter(val || '');
-                }}
+              {/* Category filter dropdown (seleção múltipla) */}
+              <MultiOptionPicker
+                values={categoryFilters.map(c => c === '__sem_categoria__' ? '⚠️ Sem categoria' : c)}
+                onChange={(vals) => setCategoryFilters(
+                  vals.map(v => v === '⚠️ Sem categoria' ? '__sem_categoria__' : v)
+                )}
                 options={[
                   { label: '⚠️ Sem categoria', color: '#f59e0b' },
                   ...availableCategories.map(cat => ({ label: cat })),
                 ]}
-                emptyLabel="Todas categorias"
-                placeholder="Todas categorias"
+                allLabel="Todas categorias"
+                itemNoun="categorias"
                 compact
               />
               {/* Account filter */}

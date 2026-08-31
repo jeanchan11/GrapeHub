@@ -344,6 +344,34 @@ async function pairReversedTransactions(pool: any): Promise<{ marked: number }> 
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Pareia pagamentos de conta estornados (BILL_PAYMENT + BILL_PAYMENT_CANCELLED) e
+// marca AMBOS com is_reversed_pair=true, tirando-os dos totais e da DRE.
+// Link EXATO pelo billId, que o pagamento e o cancelamento compartilham — mesma
+// abordagem do pareamento de Pix acima, sem chute por valor/data.
+// ─────────────────────────────────────────────────────────────────────────────
+async function pairCancelledBillPayments(pool: any): Promise<{ marked: number }> {
+  try {
+    const r = await pool.query(`
+      UPDATE fin_movements_asaas m
+      SET is_reversed_pair = true
+      WHERE m.is_reversed_pair = false
+        AND m.transaction_type IN ('BILL_PAYMENT', 'BILL_PAYMENT_CANCELLED')
+        AND (m.raw_json->>'billId') IS NOT NULL
+        AND (m.raw_json->>'billId') IN (
+          SELECT raw_json->>'billId'
+          FROM fin_movements_asaas
+          WHERE transaction_type = 'BILL_PAYMENT_CANCELLED'
+            AND (raw_json->>'billId') IS NOT NULL
+        )
+    `);
+    return { marked: r.rowCount || 0 };
+  } catch (e: any) {
+    console.warn('[asaas-sync] pairCancelledBillPayments:', e.message);
+    return { marked: 0 };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Sync 3: Assinaturas → fin_subscriptions
 // Busca todas as ACTIVE (volume pequeno)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -552,6 +580,9 @@ export async function runAsaasSync(pool: any): Promise<void> {
 
     // Pareia estornos de Pix (débito cancelado + devolução) e exclui dos cálculos
     try { const rev = await pairReversedTransactions(pool); if (rev.marked) console.log(`[asaas-sync] estornos pareados: ${rev.marked} movimento(s) excluído(s)`); } catch (e: any) { console.warn('[estornos] pós-sync:', e.message); }
+
+    // Pareia pagamentos de conta cancelados (pagamento + cancelamento) e exclui dos cálculos
+    try { const bill = await pairCancelledBillPayments(pool); if (bill.marked) console.log(`[asaas-sync] pagamentos de conta estornados: ${bill.marked} movimento(s) excluído(s)`); } catch (e: any) { console.warn('[estorno-conta] pós-sync:', e.message); }
 
     // Categoriza movimentos novos no plano de contas (alimenta a DRE ao vivo)
     try { await categorizeMovements(pool); } catch (e: any) { console.warn('[categorizar] pós-sync:', e.message); }

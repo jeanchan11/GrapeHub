@@ -16,6 +16,113 @@ function todayBRT(): string {
 }
 
 /** Substitui variáveis do template e converte \n para quebra de linha real */
+/**
+ * Normaliza o canal de cobrança do cliente.
+ *
+ * `clients.billing_method` é texto livre. O seletor do cadastro grava "Whatsapp",
+ * "E-mail" ou "E-mail e Whatsapp", mas o banco ainda tem grafias legadas
+ * ("Email", "Email/WhatsApp", "WhatsApp"). A comparação antiga era
+ * `canal.toUpperCase() !== 'EMAIL'`, que NÃO reconhecia "E-mail" — justamente o
+ * valor que o seletor escreve — e mandava esses clientes para o WhatsApp.
+ */
+export function resolveCanal(raw: string | null | undefined): { viaEmail: boolean; viaWhats: boolean; label: string } {
+  const t = String(raw || '').trim();
+  // tira hífens e espaços para "E-mail", "E mail" e "Email" caírem no mesmo lugar
+  const norm = t.toUpperCase().replace(/[\s-]/g, '');
+  const viaEmail = norm.includes('EMAIL');
+  const viaWhats = norm.includes('WHATS');
+  // Sem nada reconhecível, mantém o padrão histórico: WhatsApp.
+  if (!viaEmail && !viaWhats) return { viaEmail: false, viaWhats: true, label: t || 'Whatsapp' };
+  return { viaEmail, viaWhats, label: t };
+}
+
+/**
+ * Envia UM item da fila e grava o status resultante.
+ *
+ * Centraliza o que estava replicado em três lugares (batch diário, disparo avulso
+ * e "Disparar Fila"). Trata canal duplo: com "E-mail e Whatsapp" dispara as duas
+ * pernas e só marca ERRO se nenhuma sair.
+ */
+async function enviarItem(
+  pool: Pool,
+  cfg: any,
+  item: Record<string, any>,
+  ctx: { id: string; telefone: string; email: string; canalRaw: string; mensagem: string }
+): Promise<{ status: string; erros: string[] }> {
+  const canal = resolveCanal(ctx.canalRaw);
+  const erros: string[] = [];
+  let aguardandoCallback = false;   // alguma perna foi ao n8n → confirma por callback
+  let enviadoDireto = false;        // alguma perna saiu pela UAZAPI → confirmação imediata
+  let ticketDireto: string | null = null;
+  let respN8n: any = null;
+
+  const base = { mensagem: ctx.mensagem, nome: item.customer_name, dispatch_id: ctx.id };
+
+  // ── Perna WhatsApp ──────────────────────────────────────────────────────
+  if (canal.viaWhats) {
+    if (!ctx.telefone) {
+      erros.push('WhatsApp: cliente sem telefone.');
+    } else if (cfg.uazapi_base_url && cfg.uazapi_token) {
+      try {
+        const resp = await sendViaUazapi(cfg.uazapi_base_url, cfg.uazapi_token, ctx.telefone, ctx.mensagem);
+        ticketDireto = resp?.id || resp?.messageid || resp?.key?.id || 'UAZAPI';
+        enviadoDireto = true;
+      } catch (e: any) { erros.push(`WhatsApp: ${e?.message || 'falha no envio'}`); }
+    } else if (cfg.n8n_webhook_url) {
+      try {
+        // `metodo` identifica a perna para o workflow do n8n escolher o nó de saída.
+        respN8n = await sendViaN8n(cfg.n8n_webhook_url, { ...base, telefone: ctx.telefone, email: '', metodo: 'Whatsapp' });
+        aguardandoCallback = true;
+      } catch (e: any) { erros.push(`WhatsApp: ${e?.message || 'falha no envio'}`); }
+    } else {
+      erros.push('WhatsApp: nenhum canal de envio configurado.');
+    }
+  }
+
+  // ── Perna e-mail ────────────────────────────────────────────────────────
+  if (canal.viaEmail) {
+    if (!ctx.email) {
+      // Sem destinatário o n8n receberia "To Email" vazio, o nó falharia e o
+      // callback ainda marcaria ENVIADO. Barra aqui para não virar falso positivo.
+      erros.push('E-mail: cliente sem e-mail de cobrança cadastrado.');
+    } else if (cfg.n8n_webhook_url) {
+      try {
+        respN8n = await sendViaN8n(cfg.n8n_webhook_url, { ...base, telefone: ctx.telefone, email: ctx.email, metodo: 'E-mail' });
+        aguardandoCallback = true;
+      } catch (e: any) { erros.push(`E-mail: ${e?.message || 'falha no envio'}`); }
+    } else {
+      erros.push('E-mail: webhook do n8n não configurado.');
+    }
+  }
+
+  const msgErro = erros.join(' | ');
+
+  // ENVIANDO tem precedência: o callback do n8n ainda vai confirmar ou reprovar.
+  if (aguardandoCallback) {
+    await pool.query(
+      `UPDATE fin_dispatch_queue SET status = 'ENVIANDO', updated_at = NOW(), error_message = $6,
+       n8n_ticket_id = $2, n8n_contato_id = $3, n8n_contato_novo = $4, n8n_ticket_novo = $5
+       WHERE id = $1`,
+      [ctx.id, respN8n?.ticket_id || ticketDireto || null, respN8n?.contato_id || null,
+       respN8n?.contato_novo ?? null, respN8n?.ticket_novo ?? null, msgErro]
+    );
+    return { status: 'ENVIANDO', erros };
+  }
+  if (enviadoDireto) {
+    await pool.query(
+      `UPDATE fin_dispatch_queue SET status = 'ENVIADO', sent_at = NOW(), updated_at = NOW(),
+       error_message = $3, n8n_ticket_id = $2 WHERE id = $1`,
+      [ctx.id, ticketDireto, msgErro]
+    );
+    return { status: 'ENVIADO', erros };
+  }
+  await pool.query(
+    `UPDATE fin_dispatch_queue SET status = 'ERRO', error_message = $2, updated_at = NOW() WHERE id = $1`,
+    [ctx.id, msgErro || 'Nenhum canal de envio disponível.']
+  );
+  return { status: 'ERRO', erros };
+}
+
 function renderMessage(template: string, item: Record<string, any>): string {
   const hora = nowBRT().getHours();
   const saudacao = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite';
@@ -354,7 +461,7 @@ async function runDailyBatchIfNeeded(pool: Pool) {
         const freshData = await pool.query(`
           SELECT
             COALESCE(NULLIF(c.billing_phone,''), NULLIF(c.phone,''), NULLIF(fp.phone,''), dq.customer_phone) as phone,
-            COALESCE(NULLIF(c.billing_method,''), 'Whatsapp') as canal,
+            NULLIF(c.billing_method,'') as canal,
             COALESCE(NULLIF(c.billing_email,''), NULLIF(c.email,''), '') as email
           FROM fin_dispatch_queue dq
           LEFT JOIN fin_people fp ON fp.asaas_id = dq.customer_asaas_id
@@ -373,7 +480,7 @@ async function runDailyBatchIfNeeded(pool: Pool) {
           console.warn(`[dispatch-scheduler] ⚠️ Telefone inválido: ${item.customer_name} — raw: ${rawPhone}`);
           continue;
         }
-        const resolvedCanal = row?.canal || 'Whatsapp';
+        const resolvedCanal = row?.canal || item.channel || 'Whatsapp';
         const resolvedEmail = row?.email || '';
         // Atualiza o customer_phone na fila com o valor correto
         if (resolvedPhone !== item.customer_phone) {
@@ -383,37 +490,15 @@ async function runDailyBatchIfNeeded(pool: Pool) {
         const mensagem = renderMessage(item.message_template || '', item);
         // Atualiza message_rendered no banco para exibição correta no UI
         await pool.query(`UPDATE fin_dispatch_queue SET message_rendered = $2 WHERE id = $1`, [item.id, mensagem]);
-        const payload = {
-          telefone: resolvedPhone,
-          mensagem,
-          nome: item.customer_name,
-          email: resolvedEmail,
-          metodo: resolvedCanal,
-          dispatch_id: item.id,
-        };
-        const isWhats = String(resolvedCanal || item.channel || '').toUpperCase() !== 'EMAIL';
-        const useUazapi = isWhats && cfg.uazapi_base_url && cfg.uazapi_token;
-
-        if (useUazapi) {
-          // Envio direto: a confirmação é imediata, então já grava ENVIADO.
-          const resp = await sendViaUazapi(cfg.uazapi_base_url, cfg.uazapi_token, resolvedPhone, mensagem);
-          await pool.query(
-            `UPDATE fin_dispatch_queue SET status = 'ENVIADO', sent_at = NOW(), updated_at = NOW(),
-             error_message = '', n8n_ticket_id = $2 WHERE id = $1`,
-            [item.id, resp?.id || resp?.messageid || resp?.key?.id || 'UAZAPI']
-          );
-        } else {
-          const resp = await sendViaN8n(cfg.n8n_webhook_url, payload);
-          // Marca ENVIANDO (aguardando callback). O callback do n8n confirma ENVIADO (sucesso)
-          // ou ERRO (falha, ex.: WhatsApp 463). Se o callback não vier, o sweep expira → ERRO.
-          await pool.query(
-            `UPDATE fin_dispatch_queue SET status = 'ENVIANDO', updated_at = NOW(),
-             n8n_ticket_id = $2, n8n_contato_id = $3, n8n_contato_novo = $4, n8n_ticket_novo = $5
-             WHERE id = $1`,
-            [item.id, resp?.ticket_id || null, resp?.contato_id || null, resp?.contato_novo ?? null, resp?.ticket_novo ?? null]
-          );
+        const r = await enviarItem(pool, cfg, item, {
+          id: item.id, telefone: resolvedPhone, email: resolvedEmail,
+          canalRaw: resolvedCanal, mensagem,
+        });
+        if (r.status === 'ERRO') {
+          console.warn(`[dispatch-scheduler] ❌ ${item.customer_name}: ${r.erros.join(' | ')}`);
+          continue;
         }
-        await saveDispatchComment(pool, item, mensagem, resolvedCanal || item.channel, (resolvedCanal || item.channel || '').toUpperCase() === 'EMAIL' ? (resolvedEmail || '') : (resolvedPhone || item.customer_phone));
+await saveDispatchComment(pool, item, mensagem, resolvedCanal || item.channel, (resolvedCanal || item.channel || '').toUpperCase() === 'EMAIL' ? (resolvedEmail || '') : (resolvedPhone || item.customer_phone));
         console.log(`[dispatch-scheduler] ➤ Enviando (aguardando callback): ${item.customer_name} (${item.id})`);
       } catch (err: any) {
         await pool.query(
@@ -579,7 +664,7 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
         const freshData = await pool.query(`
           SELECT
             COALESCE(NULLIF(c.billing_phone,''), NULLIF(c.phone,''), NULLIF(fp.phone,''), dq.customer_phone) as phone,
-            COALESCE(NULLIF(c.billing_method,''), 'Whatsapp') as canal,
+            NULLIF(c.billing_method,'') as canal,
             COALESCE(NULLIF(c.billing_email,''), NULLIF(c.email,''), '') as email
           FROM fin_dispatch_queue dq
           LEFT JOIN fin_people fp ON fp.asaas_id = dq.customer_asaas_id
@@ -597,26 +682,22 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
           console.warn(`[dispatch] ⚠️ Telefone inválido (manual): ${item.customer_name} — raw: ${rawPhone}`);
           return;
         }
-        const resolvedCanal = row?.canal || 'Whatsapp';
+        const resolvedCanal = row?.canal || item.channel || 'Whatsapp';
         const resolvedEmail = row?.email || '';
         if (resolvedPhone !== item.customer_phone) {
           await pool.query(`UPDATE fin_dispatch_queue SET customer_phone = $2 WHERE id = $1`, [id, resolvedPhone]);
         }
         const mensagem = renderMessage(item.message_template || '', item);
         await pool.query(`UPDATE fin_dispatch_queue SET message_rendered = $2 WHERE id = $1`, [id, mensagem]);
-        const payload = { telefone: resolvedPhone, mensagem, nome: item.customer_name, email: resolvedEmail, metodo: resolvedCanal, dispatch_id: id };
-        const isWhats = String(resolvedCanal || item.channel || '').toUpperCase() !== 'EMAIL';
-        if (isWhats && cfg.uazapi_base_url && cfg.uazapi_token) {
-          // Envio direto pela UAZAPI — confirmação imediata, sem esperar callback.
-          const resp = await sendViaUazapi(cfg.uazapi_base_url, cfg.uazapi_token, resolvedPhone, mensagem);
-          await pool.query(`UPDATE fin_dispatch_queue SET status = 'ENVIADO', sent_at = NOW(), updated_at = NOW(), error_message = '', n8n_ticket_id = $2 WHERE id = $1`,
-            [id, resp?.id || resp?.messageid || resp?.key?.id || 'UAZAPI']);
-        } else {
-          const resp = await sendViaN8n(cfg.n8n_webhook_url, payload);
-          await pool.query(`UPDATE fin_dispatch_queue SET status = 'ENVIANDO', updated_at = NOW(), n8n_ticket_id = $2, n8n_contato_id = $3, n8n_contato_novo = $4, n8n_ticket_novo = $5 WHERE id = $1`,
-            [id, resp?.ticket_id || null, resp?.contato_id || null, resp?.contato_novo ?? null, resp?.ticket_novo ?? null]);
+        const r = await enviarItem(pool, cfg, item, {
+          id: id, telefone: resolvedPhone, email: resolvedEmail,
+          canalRaw: resolvedCanal, mensagem,
+        });
+        if (r.status === 'ERRO') {
+          console.warn(`[dispatch] ❌ ${item.customer_name}: ${r.erros.join(' | ')}`);
+          return;
         }
-        await saveDispatchComment(pool, item, mensagem, resolvedCanal || item.channel, (resolvedCanal || item.channel || '').toUpperCase() === 'EMAIL' ? (resolvedEmail || '') : (resolvedPhone || item.customer_phone));
+await saveDispatchComment(pool, item, mensagem, resolvedCanal || item.channel, (resolvedCanal || item.channel || '').toUpperCase() === 'EMAIL' ? (resolvedEmail || '') : (resolvedPhone || item.customer_phone));
       } catch (err: any) {
         await pool.query(`UPDATE fin_dispatch_queue SET status = 'ERRO', error_message = $2, updated_at = NOW() WHERE id = $1`, [id, err?.message]);
       }
@@ -729,7 +810,7 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
           const freshData = await pool.query(`
             SELECT
               COALESCE(NULLIF(c.billing_phone,''), NULLIF(c.phone,''), NULLIF(fp.phone,''), dq.customer_phone) as phone,
-              COALESCE(NULLIF(c.billing_method,''), 'Whatsapp') as canal,
+              NULLIF(c.billing_method,'') as canal,
               COALESCE(NULLIF(c.billing_email,''), NULLIF(c.email,''), '') as email
             FROM fin_dispatch_queue dq
             LEFT JOIN fin_people fp ON fp.asaas_id = dq.customer_asaas_id
@@ -747,26 +828,22 @@ export function setupDispatchRoutes(app: Express, pool: Pool) {
             console.warn(`[dispatch] ⚠️ Telefone inválido (send-all): ${item.customer_name} — raw: ${rawPhone}`);
             continue;
           }
-          const resolvedCanal = row?.canal || 'Whatsapp';
+          const resolvedCanal = row?.canal || item.channel || 'Whatsapp';
           const resolvedEmail = row?.email || '';
           if (resolvedPhone !== item.customer_phone) {
             await pool.query(`UPDATE fin_dispatch_queue SET customer_phone = $2 WHERE id = $1`, [item.id, resolvedPhone]);
           }
           const mensagem = renderMessage(item.message_template || '', item);
           await pool.query(`UPDATE fin_dispatch_queue SET message_rendered = $2 WHERE id = $1`, [item.id, mensagem]);
-          const payload = { telefone: resolvedPhone, mensagem, nome: item.customer_name, email: resolvedEmail, metodo: resolvedCanal, dispatch_id: item.id };
-          const isWhats = String(resolvedCanal || item.channel || '').toUpperCase() !== 'EMAIL';
-          if (isWhats && cfg.uazapi_base_url && cfg.uazapi_token) {
-            // Envio direto pela UAZAPI — confirmação imediata, sem esperar callback.
-            const resp = await sendViaUazapi(cfg.uazapi_base_url, cfg.uazapi_token, resolvedPhone, mensagem);
-            await pool.query(`UPDATE fin_dispatch_queue SET status = 'ENVIADO', sent_at = NOW(), updated_at = NOW(), error_message = '', n8n_ticket_id = $2 WHERE id = $1`,
-              [item.id, resp?.id || resp?.messageid || resp?.key?.id || 'UAZAPI']);
-          } else {
-            const resp = await sendViaN8n(cfg.n8n_webhook_url, payload);
-            await pool.query(`UPDATE fin_dispatch_queue SET status = 'ENVIANDO', updated_at = NOW(), n8n_ticket_id = $2, n8n_contato_id = $3, n8n_contato_novo = $4, n8n_ticket_novo = $5 WHERE id = $1`,
-              [item.id, resp?.ticket_id || null, resp?.contato_id || null, resp?.contato_novo ?? null, resp?.ticket_novo ?? null]);
+          const r = await enviarItem(pool, cfg, item, {
+            id: item.id, telefone: resolvedPhone, email: resolvedEmail,
+            canalRaw: resolvedCanal, mensagem,
+          });
+          if (r.status === 'ERRO') {
+            console.warn(`[dispatch] ❌ ${item.customer_name}: ${r.erros.join(' | ')}`);
+            continue;
           }
-          await saveDispatchComment(pool, item, mensagem, resolvedCanal, resolvedCanal?.toUpperCase() === 'EMAIL' ? resolvedEmail : resolvedPhone);
+await saveDispatchComment(pool, item, mensagem, resolvedCanal, resolvedCanal?.toUpperCase() === 'EMAIL' ? resolvedEmail : resolvedPhone);
         } catch (err: any) {
           await pool.query(`UPDATE fin_dispatch_queue SET status = 'ERRO', error_message = $2, updated_at = NOW() WHERE id = $1`, [item.id, err?.message]);
         }

@@ -4,20 +4,29 @@
     {
       "name": "grapehub",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 3000
     },
     {
       "name": "fin-dashboard",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "cwd": "/private/tmp/claude-501/-Users-convidado-Desktop-grapehub/631499ed-9377-4758-a033-cd7551b65847/scratchpad/fin",
       "port": 3100
     },
     {
       "name": "mat-assessoria",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "cwd": "/private/tmp/claude-501/-Users-convidado-Desktop-grapehub/631499ed-9377-4758-a033-cd7551b65847/scratchpad/mat",
       "port": 3200
     }

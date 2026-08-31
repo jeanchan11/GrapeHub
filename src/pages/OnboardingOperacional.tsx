@@ -1102,6 +1102,37 @@ const AddTaskModal = ({ groupId, onClose, onSaved }: { groupId: string; onClose:
 };
 
 // ── Template Modal ────────────────────────────────────────
+// Linha do Modelo Padrão — arrastável pela alça, no mesmo padrão @dnd-kit já usado
+// nas subtarefas da página. Substituiu as setinhas de subir/descer.
+const SortableTemplateRow = ({ item, idx, total, onOpen, onRemove }: {
+  item: any; idx: number; total: number; onOpen: () => void; onRemove: () => void;
+}) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: `tpl-${item.id}` });
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 };
+
+  return (
+    <div ref={setNodeRef} style={style}
+      className="flex items-center gap-2 px-3 py-2.5 bg-black/[0.02] dark:bg-white/[0.03] border border-black/5 dark:border-white/5 rounded-xl group hover:border-violet-500/30 dark:hover:border-violet-500/30 transition-colors cursor-pointer"
+      onClick={onOpen}>
+      <div {...attributes} {...listeners}
+        onClick={e => e.stopPropagation()}
+        className="shrink-0 flex justify-center cursor-grab active:cursor-grabbing text-slate-600 hover:text-slate-400 transition-colors"
+        title="Arraste para reordenar">
+        <GripVertical size={13} />
+      </div>
+      <span className="text-[10px] font-bold text-slate-600 w-5 text-center shrink-0">{idx + 1}</span>
+      <span className="flex-1 text-sm text-dark-text truncate">{item.title}</span>
+      {item.internal_doc && (
+        <span className="px-1.5 py-0.5 bg-violet-500/10 text-violet-400 text-[8px] font-bold rounded uppercase tracking-widest shrink-0">Com conteúdo</span>
+      )}
+      <button onClick={(e) => { e.stopPropagation(); onRemove(); }}
+        className="shrink-0 opacity-0 group-hover:opacity-100 text-slate-600 hover:text-rose-400 transition-all p-1 rounded">
+        <Trash2 size={13} />
+      </button>
+    </div>
+  );
+};
+
 const TemplateModal = ({ onClose }: { onClose: () => void }) => {
   const [items, setItems] = useState<TemplateItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1125,14 +1156,17 @@ const TemplateModal = ({ onClose }: { onClose: () => void }) => {
     setItems(prev => prev.filter((_, i) => i !== idx));
   };
 
-  const moveItem = (from: number, dir: -1 | 1) => {
-    const to = from + dir;
-    if (to < 0 || to >= items.length) return;
-    setItems(prev => {
-      const arr = [...prev];
-      [arr[from], arr[to]] = [arr[to], arr[from]];
-      return arr;
-    });
+  // Reordenação por arrasto. A ordem só vai para o banco no "Salvar Modelo",
+  // igual era com as setas — arrastar sozinho não persiste.
+  const templateSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  const handleTemplateDragEnd = (event: any) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = items.findIndex(i => `tpl-${i.id}` === active.id);
+    const newIndex = items.findIndex(i => `tpl-${i.id}` === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+    setItems(prev => arrayMove(prev, oldIndex, newIndex));
   };
 
   const handleSave = async () => {
@@ -1194,32 +1228,22 @@ const TemplateModal = ({ onClose }: { onClose: () => void }) => {
           ) : items.length === 0 ? (
             <p className="text-center text-slate-600 text-sm py-8">Nenhuma subtarefa no modelo ainda.</p>
           ) : (
-            <div className="space-y-1.5">
-              {items.map((item, idx) => (
-                <div key={`${item.id}-${idx}`} className="flex items-center gap-2 px-3 py-2.5 bg-black/[0.02] dark:bg-white/[0.03] border border-black/5 dark:border-white/5 rounded-xl group hover:border-violet-500/30 dark:hover:border-violet-500/30 transition-colors cursor-pointer"
-                  onClick={() => setSelectedItem({ ...item, order_index: idx })}>
-                  <span className="text-[10px] font-bold text-slate-600 w-5 text-center shrink-0">{idx + 1}</span>
-                  <div className="flex flex-col gap-0.5 shrink-0" onClick={e => e.stopPropagation()}>
-                    <button onClick={() => moveItem(idx, -1)} disabled={idx === 0}
-                      className="text-slate-600 hover:text-slate-300 disabled:opacity-20 transition-colors p-0.5">
-                      <ChevronDown size={10} className="rotate-180" />
-                    </button>
-                    <button onClick={() => moveItem(idx, 1)} disabled={idx === items.length - 1}
-                      className="text-slate-600 hover:text-slate-300 disabled:opacity-20 transition-colors p-0.5">
-                      <ChevronDown size={10} />
-                    </button>
-                  </div>
-                  <span className="flex-1 text-sm text-dark-text truncate">{item.title}</span>
-                  {item.internal_doc && (
-                    <span className="px-1.5 py-0.5 bg-violet-500/10 text-violet-400 text-[8px] font-bold rounded uppercase tracking-widest shrink-0">Com conteúdo</span>
-                  )}
-                  <button onClick={(e) => { e.stopPropagation(); removeItem(idx); }}
-                    className="shrink-0 opacity-0 group-hover:opacity-100 text-slate-600 hover:text-rose-400 transition-all p-1 rounded">
-                    <Trash2 size={13} />
-                  </button>
+            <DndContext sensors={templateSensors} collisionDetection={closestCenter} onDragEnd={handleTemplateDragEnd}>
+              <SortableContext items={items.map(i => `tpl-${i.id}`)} strategy={verticalListSortingStrategy}>
+                <div className="space-y-1.5">
+                  {items.map((item, idx) => (
+                    <SortableTemplateRow
+                      key={`${item.id}-${idx}`}
+                      item={item}
+                      idx={idx}
+                      total={items.length}
+                      onOpen={() => setSelectedItem({ ...item, order_index: idx })}
+                      onRemove={() => removeItem(idx)}
+                    />
+                  ))}
                 </div>
-              ))}
-            </div>
+              </SortableContext>
+            </DndContext>
           )}
 
           {/* Add new item */}
@@ -1778,10 +1802,7 @@ POR ISSO PREZAMOS PELOS ALINHAMENTOS INICIAIS COMERCIAIS</p>
 
 const SubtaskDetailModal = ({ subtask, task, onClose, onUpdate }: { subtask: any; task: any; onClose: () => void; onUpdate: () => void }) => {
   const [loading, setLoading] = useState(true);
-  const [comments, setComments] = useState<any[]>([]);
   const [files, setFiles] = useState<any[]>([]);
-  const [newComment, setNewComment] = useState('');
-  const [commenting, setCommenting] = useState(false);
   
   const [description, setDescription] = useState(subtask.description || '');
   const [descSaving, setDescSaving] = useState(false);
@@ -1826,11 +1847,7 @@ const SubtaskDetailModal = ({ subtask, task, onClose, onUpdate }: { subtask: any
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [cRes, fRes] = await Promise.all([
-        fetch(`/api/onboarding-subtasks/${subtask.id}/comments`),
-        fetch(`/api/onboarding-subtasks/${subtask.id}/files`)
-      ]);
-      if (cRes.ok) setComments(await cRes.json());
+      const fRes = await fetch(`/api/onboarding-subtasks/${subtask.id}/files`);
       if (fRes.ok) setFiles(await fRes.json());
     } catch { /* silent */ } finally { setLoading(false); }
   };
@@ -1859,20 +1876,6 @@ const SubtaskDetailModal = ({ subtask, task, onClose, onUpdate }: { subtask: any
       });
       onUpdate();
     } catch { /* silent */ } finally { setInternalDocSaving(false); }
-  };
-
-  const addComment = async () => {
-    if (!newComment.trim()) return;
-    setCommenting(true);
-    try {
-      await fetch(`/api/onboarding-subtasks/${subtask.id}/comments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: newComment, author_name: 'Equipe Grape' })
-      });
-      setNewComment('');
-      fetchData();
-    } catch { /* silent */ } finally { setCommenting(false); }
   };
 
   const addFile = async () => {
@@ -1929,8 +1932,9 @@ const SubtaskDetailModal = ({ subtask, task, onClose, onUpdate }: { subtask: any
         {/* Layout Duplo */}
         <div className="flex flex-1 overflow-hidden">
           
-          {/* Lado Esquerdo: Informações e Arquivos */}
-          <div className="w-[60%] flex flex-col border-r border-black/5 dark:border-white/5 overflow-y-auto">
+          {/* Documento interno e arquivos — ocupa o modal inteiro desde que o painel
+              de comentários saiu daqui. */}
+          <div className="w-full flex flex-col overflow-y-auto">
             <div className="p-6">
               
 
@@ -2017,50 +2021,6 @@ const SubtaskDetailModal = ({ subtask, task, onClose, onUpdate }: { subtask: any
                 )}
               </div>
 
-            </div>
-          </div>
-
-          {/* Lado Direito: Comentários */}
-          <div className="w-[40%] flex flex-col bg-black/[0.01] dark:bg-white/[0.01]">
-            <div className="px-5 py-4 border-b border-black/5 dark:border-white/5 bg-dark-card sticky top-0 z-10 shadow-sm">
-               <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                 Atividade <span className="bg-black/5 dark:bg-white/10 px-2 py-0.5 rounded-full text-slate-400">{comments.length}</span>
-               </h3>
-            </div>
-            
-            <div className="flex-1 overflow-y-auto p-5">
-              {loading ? (
-                <div className="flex items-center justify-center py-10"><Loader2 size={20} className="animate-spin text-slate-500" /></div>
-              ) : comments.length === 0 ? (
-                <div className="py-10 text-center text-slate-600 text-xs">Nenhum comentário.</div>
-              ) : (
-                <div className="space-y-4">
-                  {comments.map(c => (
-                    <div key={c.id} className="bg-dark-card border border-black/5 dark:border-white/5 rounded-xl p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-[10px] font-bold text-dark-text">{c.author_name || 'Usuário'}</span>
-                        <span className="text-[10px] text-slate-600">{new Date(c.created_at).toLocaleDateString('pt-BR', { hour: '2-digit', minute:'2-digit', day: '2-digit', month: '2-digit' })}</span>
-                      </div>
-                      <p className="text-xs text-dark-text whitespace-pre-wrap">{c.text}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="p-5 border-t border-black/5 dark:border-white/5 bg-dark-card shrink-0">
-              <textarea
-                value={newComment}
-                onChange={e => setNewComment(e.target.value)}
-                placeholder="Escreva um comentário..."
-                className="w-full bg-dark-bg border border-black/10 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-dark-text placeholder-slate-500 focus:outline-none focus:border-violet-500/50 resize-none h-24 mb-3 transition-colors"
-              />
-              <div className="flex justify-end">
-                <button onClick={addComment} disabled={!newComment.trim() || commenting} className="px-5 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white text-xs font-bold rounded-xl transition-colors flex items-center gap-2">
-                  {commenting ? <Loader2 size={12} className="animate-spin" /> : null}
-                  Responder
-                </button>
-              </div>
             </div>
           </div>
 

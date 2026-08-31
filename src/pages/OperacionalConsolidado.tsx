@@ -29,7 +29,7 @@ interface ClientRow {
 const RESULT_COLOR_MAP: Record<string, string> = {
   'resultado ok': '#2ecc8f',
   'resultado ruim': '#f74c4c',
-  'resultado bom': '#b84cf7',
+  'resultado bom': '#059669',   // verde fechado — Bom é melhor que Ok, que usa o menta #2ecc8f
   'campanha pausada': '#f5c842',
   'testando': '#4c8ef7',
   'aguardando criativos': '#94a3b8',

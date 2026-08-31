@@ -3,7 +3,7 @@ import {
   X, Paperclip, MessageSquare, Upload, Trash2, Download,
   FileText, Image as ImageIcon, File, Loader2, Send,
   CheckCircle2, Circle, AlertCircle, Clock, Plus, Check,
-  ChevronDown, Eye
+  ChevronDown, Eye, Pencil
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { DatePicker } from './ui/DatePicker';
@@ -130,6 +130,14 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
   const [addingSubtask, setAddingSubtask] = useState(false);
+  // Edição inline do título da tarefa (duplo clique no cabeçalho).
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState('');
+
+  // Edição inline da subtarefa: guarda o id em edição e o texto sendo digitado.
+  const [editingSubtaskId, setEditingSubtaskId] = useState<string | null>(null);
+  const [editingSubtaskTitle, setEditingSubtaskTitle] = useState('');
+  const [savingSubtask, setSavingSubtask] = useState(false);
   const [description, setDescription] = useState('');
   const [editingDesc, setEditingDesc] = useState(false);
 
@@ -261,6 +269,43 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
     setAddingSubtask(false);
   };
 
+  const handleSaveTitle = () => {
+    if (!task) return;
+    const t = titleDraft.trim();
+    setEditingTitle(false);
+    if (!t || t === task.title) return;   // vazio ou sem mudança: não grava
+    onTaskUpdate(task.id, 'title', t);
+  };
+
+  const handleRenameSubtask = async (subtaskId: string) => {
+    const titulo = editingSubtaskTitle.trim();
+    if (!titulo) { setEditingSubtaskId(null); return; }
+    setSavingSubtask(true);
+    try {
+      const res = await fetch(`/api/task-subtasks/${subtaskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: titulo }),
+      });
+      if (!res.ok) throw new Error();
+      setEditingSubtaskId(null);
+      onRefresh();
+    } catch {
+      alert('Não foi possível renomear a subtarefa.');
+    } finally { setSavingSubtask(false); }
+  };
+
+  const handleDeleteSubtask = async (subtaskId: string) => {
+    if (!confirm('Excluir esta subtarefa?')) return;
+    try {
+      const res = await fetch(`/api/task-subtasks/${subtaskId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error();
+      onRefresh();
+    } catch {
+      alert('Não foi possível excluir a subtarefa.');
+    }
+  };
+
   if (!isOpen || !task) return null;
 
   const tabs: { key: TabKey; label: string; icon: React.ReactNode; count?: number }[] = [
@@ -287,7 +332,29 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
         >
           {/* Header */}
           <div className="p-5 border-b modal-divider flex items-center justify-between shrink-0 gap-4">
-            <h2 className="text-lg font-bold modal-title truncate flex-1 leading-none self-center">{task.title}</h2>
+            {editingTitle ? (
+              // Enter salva, Esc cancela, sair do campo salva.
+              <input
+                type="text"
+                value={titleDraft}
+                onChange={(e) => setTitleDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSaveTitle();
+                  if (e.key === 'Escape') setEditingTitle(false);
+                }}
+                onBlur={handleSaveTitle}
+                className="text-lg font-bold modal-title flex-1 leading-none self-center bg-transparent border-b-2 border-purple-500 focus:outline-none py-0.5"
+                autoFocus
+              />
+            ) : (
+              <h2
+                onDoubleClick={() => { setTitleDraft(task.title); setEditingTitle(true); }}
+                title="Clique duas vezes para renomear"
+                className="text-lg font-bold modal-title truncate flex-1 leading-none self-center cursor-text"
+              >
+                {task.title}
+              </h2>
+            )}
             
             <div className="flex items-center gap-2 flex-shrink-0 flex-nowrap overflow-x-auto scrollbar-hide self-center">
               <OptionPicker
@@ -441,13 +508,52 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                         <div key={subtask.id} className="flex items-center gap-3 group px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
                           <button
                             onClick={() => onSubtaskToggle(subtask, task.id)}
-                            className={`w-4.5 h-4.5 rounded border flex items-center justify-center transition-colors ${subtask.completed ? 'bg-green-500 border-green-500 text-white' : 'border-slate-400 dark:border-gray-600 text-transparent group-hover:border-purple-500 bg-white dark:bg-transparent'}`}
+                            className={`w-4.5 h-4.5 rounded border flex items-center justify-center shrink-0 transition-colors ${subtask.completed ? 'bg-green-500 border-green-500 text-white' : 'border-slate-400 dark:border-gray-600 text-transparent group-hover:border-purple-500 bg-white dark:bg-transparent'}`}
                           >
                             <Check size={12} />
                           </button>
-                          <span className={`text-sm flex-1 ${subtask.completed ? 'text-slate-400 dark:text-gray-600 line-through' : 'text-slate-700 dark:text-gray-300'}`}>
-                            {subtask.title}
-                          </span>
+                          {editingSubtaskId === subtask.id ? (
+                            // Enter salva, Esc cancela, sair do campo salva.
+                            <input
+                              type="text"
+                              value={editingSubtaskTitle}
+                              onChange={(e) => setEditingSubtaskTitle(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleRenameSubtask(subtask.id);
+                                if (e.key === 'Escape') setEditingSubtaskId(null);
+                              }}
+                              onBlur={() => handleRenameSubtask(subtask.id)}
+                              disabled={savingSubtask}
+                              className="flex-1 bg-white dark:bg-white/5 border border-purple-500 rounded-lg px-2 py-1 text-sm text-slate-800 dark:text-white focus:outline-none disabled:opacity-50"
+                              autoFocus
+                            />
+                          ) : (
+                            <span
+                              onDoubleClick={() => { setEditingSubtaskId(subtask.id); setEditingSubtaskTitle(subtask.title); }}
+                              title="Clique duas vezes para editar"
+                              className={`text-sm flex-1 cursor-text ${subtask.completed ? 'text-slate-400 dark:text-gray-600 line-through' : 'text-slate-700 dark:text-gray-300'}`}
+                            >
+                              {subtask.title}
+                            </span>
+                          )}
+                          {editingSubtaskId !== subtask.id && (
+                            <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={() => { setEditingSubtaskId(subtask.id); setEditingSubtaskTitle(subtask.title); }}
+                                title="Editar"
+                                className="p-1 rounded text-slate-400 hover:text-purple-500 dark:hover:text-purple-400 transition-colors"
+                              >
+                                <Pencil size={13} />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteSubtask(subtask.id)}
+                                title="Excluir"
+                                className="p-1 rounded text-slate-400 hover:text-rose-500 transition-colors"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          )}
                         </div>
                       ))}
                       {addingSubtask ? (

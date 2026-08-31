@@ -654,6 +654,9 @@ async function startServer() {
       
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS aviso_previo_date TEXT;
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
+      -- Quando o cliente foi arquivado na Retenção, para listar os mais recentes no topo.
+      -- Os arquivados antigos ficam NULL (o dado não existia) e caem para o fim da lista.
+      ALTER TABLE clients ADD COLUMN IF NOT EXISTS crm_archived_at TIMESTAMPTZ;
 
       ALTER TABLE churn ADD COLUMN IF NOT EXISTS comments TEXT;
 
@@ -687,6 +690,73 @@ async function startServer() {
 
       ALTER TABLE products ADD COLUMN IF NOT EXISTS cac_goal TEXT;
       ALTER TABLE products ADD COLUMN IF NOT EXISTS fechamentos_goal TEXT;
+
+      -- Catálogo de ações (produtos) já rodadas, reutilizável no cadastro
+      CREATE TABLE IF NOT EXISTS product_catalog (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        icon TEXT DEFAULT 'Layout',
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      -- Playbook de Ações — a página vivia só em memória (useState com array fixo),
+      -- então toda edição sumia no refresh. Estas tabelas dão persistência real.
+      CREATE TABLE IF NOT EXISTS playbook_acoes (
+        id TEXT PRIMARY KEY,
+        nicho TEXT NOT NULL,
+        nome TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'a_testar',
+        custo_lead_min NUMERIC,
+        custo_lead_max NUMERIC,
+        custo_lead_medio NUMERIC,
+        cac_min NUMERIC,
+        cac_max NUMERIC,
+        contratos_min NUMERIC,
+        contratos_max NUMERIC,
+        observacoes TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      -- Snapshot dos valores ANTERIORES a cada edição, alimentando a aba "Histórico"
+      CREATE TABLE IF NOT EXISTS playbook_acoes_history (
+        id TEXT PRIMARY KEY,
+        acao_id TEXT NOT NULL REFERENCES playbook_acoes(id) ON DELETE CASCADE,
+        date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        status TEXT,
+        custo_lead_min NUMERIC,
+        custo_lead_max NUMERIC,
+        custo_lead_medio NUMERIC,
+        cac_min NUMERIC,
+        cac_max NUMERIC,
+        contratos_min NUMERIC,
+        contratos_max NUMERIC,
+        observacoes TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_playbook_hist_acao ON playbook_acoes_history(acao_id);
+
+      -- Pastas para agrupar as ações do catálogo (ex: Previdenciário, Bancário...)
+      CREATE TABLE IF NOT EXISTS product_catalog_folders (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        color TEXT DEFAULT '#7c3aed',
+        order_index INT DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      ALTER TABLE product_catalog ADD COLUMN IF NOT EXISTS folder_id INT
+        REFERENCES product_catalog_folders(id) ON DELETE SET NULL;
+
+      -- Seed inicial: nomes de produtos já cadastrados. Só roda com o catálogo vazio,
+      -- para que exclusões feitas na UI não voltem a cada restart.
+      INSERT INTO product_catalog (name, icon)
+      SELECT TRIM(name), MIN(COALESCE(NULLIF(icon, ''), 'Layout'))
+      FROM products
+      WHERE name IS NOT NULL AND TRIM(name) <> ''
+        AND NOT EXISTS (SELECT 1 FROM product_catalog)
+      GROUP BY TRIM(name)
+      ON CONFLICT (name) DO NOTHING;
 
       CREATE TABLE IF NOT EXISTS optimizations (
         id TEXT PRIMARY KEY,
@@ -1433,15 +1503,6 @@ async function startServer() {
         SELECT true, '09:00', 60, ''
         WHERE NOT EXISTS (SELECT 1 FROM fin_dispatch_config);
       ALTER TABLE fin_dispatch_config ADD COLUMN IF NOT EXISTS last_batch_date DATE;
-
-      -- Orçamento (Orçado vs Realizado): valor planejado por categoria (plano de contas) x mês
-      CREATE TABLE IF NOT EXISTS fin_budget (
-        ref_month TEXT NOT NULL,
-        structure TEXT NOT NULL,
-        value NUMERIC(14,2) NOT NULL DEFAULT 0,
-        updated_at TIMESTAMPTZ DEFAULT NOW(),
-        PRIMARY KEY (ref_month, structure)
-      );
 
       -- Override por-instância: permite editar a conta LANÇADA (parcela do mês) sem alterar
       -- a conta recorrente cadastrada. Se preenchido, tem prioridade sobre o template.
@@ -3986,6 +4047,443 @@ async function startServer() {
     }
   });
 
+  // ── Pastas do catálogo de ações ──
+  app.get("/api/product-catalog-folders", async (_req, res) => {
+    try {
+      const result = await pool.query(
+        "SELECT id, name, color, order_index FROM product_catalog_folders ORDER BY order_index ASC, name ASC"
+      );
+      res.json(result.rows);
+    } catch (err) {
+      console.error("GET /api/product-catalog-folders error:", err);
+      res.status(500).json({ error: "Erro ao carregar pastas." });
+    }
+  });
+
+  // Cores atribuídas em rodízio para as pastas ficarem distinguíveis na grade
+  // Cor única para todas as pastas do catálogo. Antes havia um rodízio de 8 cores
+  // por order_index, o que deixava a grade multicolorida sem significado nenhum —
+  // a cor não codificava informação, só poluía.
+  const FOLDER_COLOR = "#7c3aed";
+
+  app.post("/api/product-catalog-folders", async (req, res) => {
+    try {
+      const name = String(req.body?.name || "").trim();
+      if (!name) return res.status(400).json({ error: "Nome da pasta é obrigatório." });
+
+      const next = await pool.query("SELECT COALESCE(MAX(order_index), -1) + 1 AS idx FROM product_catalog_folders");
+      const color = FOLDER_COLOR;
+      const result = await pool.query(
+        `INSERT INTO product_catalog_folders (name, color, order_index) VALUES ($1, $2, $3)
+         ON CONFLICT (name) DO UPDATE SET color = EXCLUDED.color
+         RETURNING id, name, color, order_index`,
+        [name, color, next.rows[0].idx]
+      );
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error("POST /api/product-catalog-folders error:", err);
+      res.status(500).json({ error: "Erro ao criar pasta." });
+    }
+  });
+
+  app.put("/api/product-catalog-folders/:id", async (req, res) => {
+    try {
+      const name = String(req.body?.name || "").trim();
+      const color = req.body?.color ? String(req.body.color) : null;
+      if (!name) return res.status(400).json({ error: "Nome da pasta é obrigatório." });
+
+      const result = await pool.query(
+        `UPDATE product_catalog_folders
+         SET name = $1, color = COALESCE($2, color)
+         WHERE id = $3
+         RETURNING id, name, color, order_index`,
+        [name, color, req.params.id]
+      );
+      if (!result.rows.length) return res.status(404).json({ error: "Pasta não encontrada." });
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error("PUT /api/product-catalog-folders error:", err);
+      res.status(500).json({ error: "Erro ao renomear pasta." });
+    }
+  });
+
+  // As ações da pasta não são apagadas — voltam para "Sem pasta" (ON DELETE SET NULL).
+  app.delete("/api/product-catalog-folders/:id", async (req, res) => {
+    try {
+      const result = await pool.query("DELETE FROM product_catalog_folders WHERE id = $1", [req.params.id]);
+      res.json({ success: true, deletedCount: result.rowCount });
+    } catch (err) {
+      console.error("DELETE /api/product-catalog-folders error:", err);
+      res.status(500).json({ error: "Erro ao excluir pasta." });
+    }
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Playbook de Ações — CRUD. Antes a página só guardava em useState, então
+  // "Salvar" fechava o modal e perdia tudo no refresh.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  // Colunas snake_case do banco → camelCase que o front já usa
+  const playbookRow = (r: any) => ({
+    id: r.id,
+    nicho: r.nicho,
+    nome: r.nome,
+    status: r.status,
+    custoLeadMin: r.custo_lead_min === null ? undefined : Number(r.custo_lead_min),
+    custoLeadMax: r.custo_lead_max === null ? undefined : Number(r.custo_lead_max),
+    custoLeadMedio: r.custo_lead_medio === null ? undefined : Number(r.custo_lead_medio),
+    cacMin: r.cac_min === null ? undefined : Number(r.cac_min),
+    cacMax: r.cac_max === null ? undefined : Number(r.cac_max),
+    contratosMin: r.contratos_min === null ? undefined : Number(r.contratos_min),
+    contratosMax: r.contratos_max === null ? undefined : Number(r.contratos_max),
+    observacoes: r.observacoes || undefined,
+    updatedAt: r.updated_at,
+  });
+
+  // Number('') === 0, e '' vira 0 no banco — por isso o vazio precisa virar null
+  const num = (v: any) => (v === undefined || v === null || v === '' ? null : Number(v));
+
+  app.get("/api/playbook-acoes", async (_req, res) => {
+    try {
+      const acoes = await pool.query(`SELECT * FROM playbook_acoes ORDER BY nicho ASC, nome ASC`);
+      const hist = await pool.query(`SELECT * FROM playbook_acoes_history ORDER BY date ASC`);
+      const byAcao = new Map<string, any[]>();
+      for (const h of hist.rows) {
+        if (!byAcao.has(h.acao_id)) byAcao.set(h.acao_id, []);
+        byAcao.get(h.acao_id)!.push({ ...playbookRow(h), id: h.id, date: h.date });
+      }
+      res.json(acoes.rows.map((r: any) => ({ ...playbookRow(r), history: byAcao.get(r.id) || [] })));
+    } catch (err: any) {
+      console.error("GET /api/playbook-acoes error:", err.message);
+      res.status(500).json({ error: "Erro ao carregar o playbook." });
+    }
+  });
+
+  app.post("/api/playbook-acoes", async (req, res) => {
+    try {
+      const a = req.body || {};
+      if (!a.nome || !String(a.nome).trim()) return res.status(400).json({ error: "Nome da ação é obrigatório." });
+      if (!a.nicho) return res.status(400).json({ error: "Nicho é obrigatório." });
+      const id = String(a.id || crypto.randomUUID());
+      const r = await pool.query(
+        `INSERT INTO playbook_acoes
+           (id, nicho, nome, status, custo_lead_min, custo_lead_max, custo_lead_medio,
+            cac_min, cac_max, contratos_min, contratos_max, observacoes, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
+         RETURNING *`,
+        [id, a.nicho, String(a.nome).trim(), a.status || 'a_testar',
+         num(a.custoLeadMin), num(a.custoLeadMax), num(a.custoLeadMedio),
+         num(a.cacMin), num(a.cacMax), num(a.contratosMin), num(a.contratosMax),
+         a.observacoes || null]
+      );
+      res.status(201).json({ ...playbookRow(r.rows[0]), history: [] });
+    } catch (err: any) {
+      console.error("POST /api/playbook-acoes error:", err.message);
+      res.status(500).json({ error: "Erro ao criar a ação." });
+    }
+  });
+
+  app.put("/api/playbook-acoes/:id", async (req, res) => {
+    const client = await pool.connect();
+    try {
+      const { id } = req.params;
+      const a = req.body || {};
+      if (!a.nome || !String(a.nome).trim()) return res.status(400).json({ error: "Nome da ação é obrigatório." });
+
+      await client.query('BEGIN');
+      const atual = await client.query(`SELECT * FROM playbook_acoes WHERE id = $1 FOR UPDATE`, [id]);
+      if (!atual.rows[0]) { await client.query('ROLLBACK'); return res.status(404).json({ error: "Ação não encontrada." }); }
+      const old = atual.rows[0];
+
+      // Snapshot do estado anterior antes de sobrescrever (alimenta a aba Histórico)
+      await client.query(
+        `INSERT INTO playbook_acoes_history
+           (id, acao_id, date, status, custo_lead_min, custo_lead_max, custo_lead_medio,
+            cac_min, cac_max, contratos_min, contratos_max, observacoes)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+        [crypto.randomUUID(), id, old.updated_at || new Date(), old.status,
+         old.custo_lead_min, old.custo_lead_max, old.custo_lead_medio,
+         old.cac_min, old.cac_max, old.contratos_min, old.contratos_max, old.observacoes]
+      );
+
+      const r = await client.query(
+        `UPDATE playbook_acoes SET
+           nicho=$2, nome=$3, status=$4, custo_lead_min=$5, custo_lead_max=$6, custo_lead_medio=$7,
+           cac_min=$8, cac_max=$9, contratos_min=$10, contratos_max=$11, observacoes=$12, updated_at=NOW()
+         WHERE id=$1 RETURNING *`,
+        [id, a.nicho || old.nicho, String(a.nome).trim(), a.status || 'a_testar',
+         num(a.custoLeadMin), num(a.custoLeadMax), num(a.custoLeadMedio),
+         num(a.cacMin), num(a.cacMax), num(a.contratosMin), num(a.contratosMax),
+         a.observacoes || null]
+      );
+      await client.query('COMMIT');
+      res.json(playbookRow(r.rows[0]));
+    } catch (err: any) {
+      await client.query('ROLLBACK').catch(() => {});
+      console.error("PUT /api/playbook-acoes error:", err.message);
+      res.status(500).json({ error: "Erro ao salvar a ação." });
+    } finally { client.release(); }
+  });
+
+  app.delete("/api/playbook-acoes/:id", async (req, res) => {
+    try {
+      await pool.query(`DELETE FROM playbook_acoes WHERE id = $1`, [req.params.id]);
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("DELETE /api/playbook-acoes error:", err.message);
+      res.status(500).json({ error: "Erro ao excluir a ação." });
+    }
+  });
+
+  app.delete("/api/playbook-acoes/:acaoId/history/:historyId", async (req, res) => {
+    try {
+      await pool.query(`DELETE FROM playbook_acoes_history WHERE id = $1 AND acao_id = $2`,
+        [req.params.historyId, req.params.acaoId]);
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("DELETE playbook history error:", err.message);
+      res.status(500).json({ error: "Erro ao excluir o histórico." });
+    }
+  });
+
+  // Carga inicial das ações que hoje moram no front. Só roda com a tabela vazia,
+  // para que exclusões feitas na UI não voltem no próximo carregamento.
+  // ── Operacional: cruza as ações do catálogo (com suas pastas/nichos) contra o
+  // que os parceiros realmente rodam em `products`. Responde volume, qualidade de
+  // resultado e investimento — os três campos que existem preenchidos na base.
+  // CAC e custo por lead ficam de fora de propósito: só 7 de 141 produtos os têm.
+  app.get("/api/playbook-acoes/operacional", async (_req, res) => {
+    try {
+      // "R$ 1.200,50" → 1200.50. Aceita as variações que existem na base.
+      const BUDGET_NUM = `COALESCE(NULLIF(regexp_replace(
+        replace(replace(COALESCE(p.budget,''), 'R$', ''), '.', ''), '[^0-9,]', '', 'g'
+      ), ''), '0')`;
+
+      const { rows } = await pool.query(`
+        SELECT
+          COALESCE(f.name, '__sem_pasta__')            AS nicho,
+          COALESCE(NULLIF(TRIM(pc.name), ''), TRIM(p.name)) AS acao,
+          COUNT(*)::int                                 AS produtos,
+          COUNT(DISTINCT p.project_id)::int             AS parceiros,
+          COALESCE(SUM(replace(${BUDGET_NUM}, ',', '.')::numeric), 0) AS investimento,
+          COUNT(*) FILTER (WHERE UPPER(COALESCE(p.project_result,'')) LIKE '%BOM%')::int  AS bom,
+          COUNT(*) FILTER (WHERE UPPER(COALESCE(p.project_result,'')) LIKE '%OK%')::int   AS ok,
+          COUNT(*) FILTER (WHERE UPPER(COALESCE(p.project_result,'')) LIKE '%RUIM%')::int AS ruim
+        FROM products p
+        LEFT JOIN product_catalog pc ON LOWER(TRIM(pc.name)) = LOWER(TRIM(p.name))
+        LEFT JOIN product_catalog_folders f ON f.id = pc.folder_id
+        WHERE COALESCE(TRIM(p.name), '') <> ''
+          AND COALESCE(p.status, '') <> 'Inativo'
+        GROUP BY 1, 2
+      `);
+
+      // agrupa as ações dentro de cada nicho
+      const porNicho = new Map<string, any>();
+      for (const r of rows) {
+        const chave = r.nicho;
+        if (!porNicho.has(chave)) {
+          porNicho.set(chave, {
+            nicho: chave === '__sem_pasta__' ? 'Sem nicho definido' : chave,
+            semPasta: chave === '__sem_pasta__',
+            produtos: 0, parceiros: 0, investimento: 0, bom: 0, ok: 0, ruim: 0, acoes: [],
+          });
+        }
+        const n = porNicho.get(chave);
+        const acao = {
+          nome: r.acao,
+          produtos: Number(r.produtos),
+          parceiros: Number(r.parceiros),
+          investimento: Number(r.investimento),
+          bom: Number(r.bom), ok: Number(r.ok), ruim: Number(r.ruim),
+        };
+        n.acoes.push(acao);
+        n.produtos += acao.produtos;
+        n.investimento += acao.investimento;
+        n.bom += acao.bom; n.ok += acao.ok; n.ruim += acao.ruim;
+      }
+
+      // Clientes por ação — o drill-down do terceiro nível. São ~141 linhas no total,
+      // então vão junto no payload em vez de virar uma segunda requisição por clique.
+      const cli = await pool.query(`
+        SELECT
+          COALESCE(f.name, '__sem_pasta__') AS nicho,
+          COALESCE(NULLIF(TRIM(pc.name), ''), TRIM(p.name)) AS acao,
+          pr.id           AS project_id,
+          pr.partner      AS parceiro,
+          pr.squad,
+          pr.responsible  AS responsavel,
+          p.budget,
+          p.platform      AS plataforma,
+          p.project_result AS resultado,
+          p.status
+        FROM products p
+        LEFT JOIN projects pr ON pr.id = p.project_id
+        LEFT JOIN product_catalog pc ON LOWER(TRIM(pc.name)) = LOWER(TRIM(p.name))
+        LEFT JOIN product_catalog_folders f ON f.id = pc.folder_id
+        WHERE COALESCE(TRIM(p.name), '') <> ''
+          AND COALESCE(p.status, '') <> 'Inativo'
+        ORDER BY pr.partner ASC
+      `);
+      const clientesPorAcao = new Map<string, any[]>();
+      for (const r of cli.rows) {
+        const chave = `${r.nicho}||${r.acao}`;
+        if (!clientesPorAcao.has(chave)) clientesPorAcao.set(chave, []);
+        clientesPorAcao.get(chave)!.push({
+          projectId: r.project_id,
+          parceiro: r.parceiro || '(parceiro removido)',
+          squad: r.squad || null,
+          responsavel: r.responsavel || null,
+          investimento: r.budget || null,
+          plataforma: r.plataforma || null,
+          resultado: r.resultado || null,
+          status: r.status || null,
+        });
+      }
+      for (const [chave, n] of porNicho) {
+        for (const a of n.acoes) a.clientes = clientesPorAcao.get(`${chave}||${a.nome}`) || [];
+      }
+
+      // parceiros distintos por nicho: somar por ação contaria duas vezes quem roda
+      // duas ações do mesmo nicho, então conta direto no banco.
+      const parc = await pool.query(`
+        SELECT COALESCE(f.name, '__sem_pasta__') AS nicho, COUNT(DISTINCT p.project_id)::int AS parceiros
+        FROM products p
+        LEFT JOIN product_catalog pc ON LOWER(TRIM(pc.name)) = LOWER(TRIM(p.name))
+        LEFT JOIN product_catalog_folders f ON f.id = pc.folder_id
+        WHERE COALESCE(TRIM(p.name), '') <> ''
+          AND COALESCE(p.status, '') <> 'Inativo'
+        GROUP BY 1
+      `);
+      for (const r of parc.rows) {
+        const n = porNicho.get(r.nicho);
+        if (n) n.parceiros = Number(r.parceiros);
+      }
+
+      const julgados = (x: any) => x.bom + x.ok + x.ruim;
+      const enriquecer = (x: any) => ({
+        ...x,
+        julgados: julgados(x),
+        pctPositivo: julgados(x) > 0 ? Math.round(((x.bom + x.ok) / julgados(x)) * 100) : null,
+        ticketMedio: x.produtos > 0 ? Math.round(x.investimento / x.produtos) : 0,
+      });
+
+      const nichos = [...porNicho.values()]
+        .map(n => ({ ...enriquecer(n), acoes: n.acoes.map(enriquecer).sort((a: any, b: any) => b.produtos - a.produtos) }))
+        // nichos com pasta primeiro, por volume; "Sem nicho definido" sempre no fim
+        .sort((a, b) => Number(a.semPasta) - Number(b.semPasta) || b.produtos - a.produtos);
+
+      const totais = nichos.reduce((acc, n) => ({
+        produtos: acc.produtos + n.produtos,
+        investimento: acc.investimento + n.investimento,
+        bom: acc.bom + n.bom, ok: acc.ok + n.ok, ruim: acc.ruim + n.ruim,
+      }), { produtos: 0, investimento: 0, bom: 0, ok: 0, ruim: 0 });
+
+      const parcTotal = await pool.query(
+        `SELECT COUNT(DISTINCT project_id)::int n FROM products
+         WHERE COALESCE(TRIM(name),'') <> '' AND COALESCE(status,'') <> 'Inativo'`
+      );
+
+      res.json({
+        nichos,
+        totais: { ...enriquecer(totais), parceiros: Number(parcTotal.rows[0].n) },
+      });
+    } catch (err: any) {
+      console.error("GET /api/playbook-acoes/operacional error:", err.message);
+      res.status(500).json({ error: "Erro ao calcular o operacional." });
+    }
+  });
+
+  app.post("/api/playbook-acoes/seed", async (req, res) => {
+    try {
+      const { rows } = await pool.query(`SELECT COUNT(*)::int AS n FROM playbook_acoes`);
+      if (rows[0].n > 0) return res.json({ seeded: 0, alreadyPopulated: true });
+
+      const lista: any[] = Array.isArray(req.body?.acoes) ? req.body.acoes : [];
+      if (lista.length === 0) return res.json({ seeded: 0 });
+
+      let n = 0;
+      for (const a of lista) {
+        if (!a?.nome || !a?.nicho) continue;
+        await pool.query(
+          `INSERT INTO playbook_acoes
+             (id, nicho, nome, status, custo_lead_min, custo_lead_max, custo_lead_medio,
+              cac_min, cac_max, contratos_min, contratos_max, observacoes, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
+           ON CONFLICT (id) DO NOTHING`,
+          [String(a.id || crypto.randomUUID()), a.nicho, String(a.nome).trim(), a.status || 'a_testar',
+           num(a.custoLeadMin), num(a.custoLeadMax), num(a.custoLeadMedio),
+           num(a.cacMin), num(a.cacMax), num(a.contratosMin), num(a.contratosMax),
+           a.observacoes || null]
+        );
+        n++;
+      }
+      console.log(`[playbook-acoes] seed inicial: ${n} ações`);
+      res.json({ seeded: n });
+    } catch (err: any) {
+      console.error("POST /api/playbook-acoes/seed error:", err.message);
+      res.status(500).json({ error: "Erro ao popular o playbook." });
+    }
+  });
+
+  // ── Catálogo de Ações (produtos reutilizáveis no cadastro) ──
+  app.get("/api/product-catalog", async (_req, res) => {
+    try {
+      const result = await pool.query("SELECT id, name, icon, folder_id FROM product_catalog ORDER BY name ASC");
+      res.json(result.rows);
+    } catch (err) {
+      console.error("GET /api/product-catalog error:", err);
+      res.status(500).json({ error: "Erro ao carregar catálogo de ações." });
+    }
+  });
+
+  // Move uma ação de pasta (folder_id null = sem pasta)
+  app.put("/api/product-catalog/:id", async (req, res) => {
+    try {
+      const rawFolder = req.body?.folder_id;
+      const folderId = rawFolder === null || rawFolder === undefined || rawFolder === '' ? null : Number(rawFolder);
+      const result = await pool.query(
+        `UPDATE product_catalog SET folder_id = $1 WHERE id = $2 RETURNING id, name, icon, folder_id`,
+        [folderId, req.params.id]
+      );
+      if (!result.rows.length) return res.status(404).json({ error: "Ação não encontrada." });
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error("PUT /api/product-catalog error:", err);
+      res.status(500).json({ error: "Erro ao mover ação." });
+    }
+  });
+
+  app.post("/api/product-catalog", async (req, res) => {
+    try {
+      const name = String(req.body?.name || "").trim();
+      const icon = String(req.body?.icon || "Layout");
+      const rawFolder = req.body?.folder_id;
+      const folderId = rawFolder === null || rawFolder === undefined || rawFolder === '' ? null : Number(rawFolder);
+      if (!name) return res.status(400).json({ error: "Nome é obrigatório." });
+
+      const result = await pool.query(
+        `INSERT INTO product_catalog (name, icon, folder_id) VALUES ($1, $2, $3)
+         ON CONFLICT (name) DO UPDATE SET icon = EXCLUDED.icon, folder_id = COALESCE(EXCLUDED.folder_id, product_catalog.folder_id)
+         RETURNING id, name, icon, folder_id`,
+        [name, icon, folderId]
+      );
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error("POST /api/product-catalog error:", err);
+      res.status(500).json({ error: "Erro ao salvar ação no catálogo." });
+    }
+  });
+
+  app.delete("/api/product-catalog/:id", async (req, res) => {
+    try {
+      const result = await pool.query("DELETE FROM product_catalog WHERE id = $1", [req.params.id]);
+      res.json({ success: true, deletedCount: result.rowCount });
+    } catch (err) {
+      console.error("DELETE /api/product-catalog error:", err);
+      res.status(500).json({ error: "Erro ao remover ação do catálogo." });
+    }
+  });
+
   // Comercial Data API
   app.get("/api/comercial-data", async (req, res) => {
     try {
@@ -4607,7 +5105,10 @@ async function startServer() {
         query += ` AND t.status = $${params.length}`;
       }
       
-      query += ` ORDER BY t.order_index ASC, t.created_at DESC`;
+      // created_at ASC (não DESC): 717 das 824 tarefas têm order_index = 0, então o
+      // desempate é quem manda. Com DESC a tarefa recém-criada pulava para o topo,
+      // longe do "+ Adicionar Tarefa" que fica no fim da seção.
+      query += ` ORDER BY t.order_index ASC, t.created_at ASC`;
       
       const result = await pool.query(query, params);
       
@@ -4723,9 +5224,17 @@ async function startServer() {
     try {
       const taskId = id || Date.now().toString();
       const finalProjectId = project_id === "" ? null : project_id;
+      // Entra no fim da seção. Sem isso o order_index nascia 0 e a ordenação caía
+      // toda no created_at, colocando a tarefa nova fora do lugar.
+      const ordRes = await pool.query(
+        `SELECT COALESCE(MAX(order_index), -1) + 1 AS prox FROM todos
+         WHERE COALESCE(section_id,'') = COALESCE($1,'') AND COALESCE(project_id,'') = COALESCE($2,'')`,
+        [section_id || null, finalProjectId || null]
+      );
+      const proximoIndice = Number(ordRes.rows[0]?.prox) || 0;
       await pool.query(
-        `INSERT INTO todos (id, title, description, status, created_by, assigned_to, due_date, project_id, priority, subtasks, page_id, tags, section_id) 
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        `INSERT INTO todos (id, title, description, status, created_by, assigned_to, due_date, project_id, priority, subtasks, page_id, tags, section_id, order_index) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
          ON CONFLICT (id) DO UPDATE SET 
            title = EXCLUDED.title, 
            description = EXCLUDED.description, 
@@ -4738,7 +5247,7 @@ async function startServer() {
            page_id = EXCLUDED.page_id,
            tags = EXCLUDED.tags,
            section_id = EXCLUDED.section_id`,
-        [taskId, title, description, status || 'pending', createdBy, assignedTo, dueDate, finalProjectId, priority || 'Média', JSON.stringify(subtasks || []), page_id, JSON.stringify(tags || []), section_id || null]
+        [taskId, title, description, status || 'pending', createdBy, assignedTo, dueDate, finalProjectId, priority || 'Média', JSON.stringify(subtasks || []), page_id, JSON.stringify(tags || []), section_id || null, proximoIndice]
       );
       
       // Add history if it's a new task (we can check if id was provided, but for simplicity we just log creation if id wasn't provided)
@@ -4749,7 +5258,25 @@ async function startServer() {
         );
       }
       
-      res.json({ success: true, id: taskId });
+      // Devolve a tarefa já no mesmo formato do GET /api/daily-tasks (com o JOIN de
+      // projeto e subtasks_list). Assim o front insere direto no estado, em vez de
+      // refazer o fetch da página inteira só para ver a linha nova.
+      const criada = await pool.query(
+        `SELECT t.*, p.partner as project_name, p.group as project_group
+         FROM todos t LEFT JOIN projects p ON t.project_id = p.id
+         WHERE t.id = $1`,
+        [taskId]
+      );
+      const row = criada.rows[0];
+      res.json(row ? {
+        ...row,
+        subtasks_list: [],
+        dueDate: row.due_date,
+        createdAt: row.created_at,
+        createdBy: row.created_by,
+        assignedTo: row.assigned_to,
+        success: true,
+      } : { success: true, id: taskId });
     } catch (err) {
       console.error("Error saving task:", err);
       res.status(500).json({ error: "Failed to save task" });
@@ -4891,24 +5418,55 @@ async function startServer() {
     }
   });
 
+  // Aceita `completed` e/ou `title`. Antes só tratava `completed`, então a
+  // subtarefa não tinha como ser renomeada depois de criada.
   app.patch("/api/task-subtasks/:id", async (req, res) => {
     const { id } = req.params;
-    const { completed } = req.body;
+    const { completed, title } = req.body;
     const authenticatedUid = (req as any).user?.uid;
     try {
+      const sets: string[] = [];
+      const vals: any[] = [];
+      if (completed !== undefined) {
+        vals.push(completed);
+        sets.push(`completed = $${vals.length}`);
+        sets.push(`completed_at = CASE WHEN $${vals.length} = true THEN NOW() ELSE NULL END`);
+      }
+      if (title !== undefined) {
+        const t = String(title).trim();
+        if (!t) return res.status(400).json({ error: "Título não pode ficar vazio." });
+        vals.push(t);
+        sets.push(`title = $${vals.length}`);
+      }
+      if (sets.length === 0) return res.status(400).json({ error: "Nada para atualizar." });
+
+      vals.push(id);
       const result = await pool.query(
-        `UPDATE task_subtasks SET completed = $1, completed_at = CASE WHEN $1 = true THEN NOW() ELSE NULL END WHERE id = $2 RETURNING *`,
-        [completed, id]
+        `UPDATE task_subtasks SET ${sets.join(', ')} WHERE id = $${vals.length} RETURNING *`,
+        vals
       );
-      
+      if (!result.rows[0]) return res.status(404).json({ error: "Subtarefa não encontrada." });
+
       if (authenticatedUid && completed) {
         await pool.query(`INSERT INTO task_history (task_id, user_id, action, new_value) VALUES ($1, $2, $3, $4)`, [result.rows[0].task_id, authenticatedUid, 'Subtarefa concluída', result.rows[0].title]);
       }
-      
+
       res.json(result.rows[0]);
     } catch (err) {
       console.error("Error updating subtask:", err);
       res.status(500).json({ error: "Failed to update subtask" });
+    }
+  });
+
+  app.delete("/api/task-subtasks/:id", async (req, res) => {
+    const { id } = req.params;
+    try {
+      const r = await pool.query(`DELETE FROM task_subtasks WHERE id = $1 RETURNING id`, [id]);
+      if (!r.rows[0]) return res.status(404).json({ error: "Subtarefa não encontrada." });
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Error deleting subtask:", err);
+      res.status(500).json({ error: "Failed to delete subtask" });
     }
   });
 
@@ -5484,7 +6042,7 @@ app.get("/api/todos", async (req, res) => {
         )
         SELECT
           c.id, c.name, c.email, c.phone, c.status, c.created_at, c.start_date, c.location, c.squad, c.tags,
-          c.fin_people_guid, c.cnpjcpf, c.crm_status, c.aviso_previo_date, c.product, c.fin_subscription_id,
+          c.fin_people_guid, c.cnpjcpf, c.crm_status, c.crm_archived_at, c.aviso_previo_date, c.product, c.fin_subscription_id,
           c.manager_id, c.sort_order, c.billing_name, c.billing_email, c.billing_phone, c.billing_method, c.billing_notes,
           -- Contratos SEM o conteúdo do arquivo (url base64): a listagem só precisa do nome/contagem.
           -- O arquivo completo é carregado sob demanda via GET /api/clients/:id/contracts.
@@ -5545,6 +6103,7 @@ app.get("/api/todos", async (req, res) => {
           hasProjectLink: row.has_project_link,
           projectName: row.project_name,
           crmStatus: row.crm_status,
+          crmArchivedAt: row.crm_archived_at,
           product: row.product,
           billingName: row.billing_name,
           billingEmail: row.billing_email,
@@ -5823,6 +6382,13 @@ app.get("/api/todos", async (req, res) => {
       if (crm_status !== undefined) {
         updates.push(`crm_status = $${i++}`);
         values.push(crm_status);
+        // Carimba quando entra em 'arquivado' e limpa ao sair — é o que permite
+        // ordenar os arquivados pelos mais recentes (antes não havia esse dado).
+        if (crm_status === 'arquivado') {
+          updates.push(`crm_archived_at = NOW()`);
+        } else {
+          updates.push(`crm_archived_at = NULL`);
+        }
       }
       if (status !== undefined) {
         updates.push(`status = $${i++}`);
@@ -6760,93 +7326,6 @@ app.get("/api/todos", async (req, res) => {
     }
   });
 
-  // ── Orçado vs Realizado ──
-  // GET: retorna categorias nível-2, o orçado (fin_budget) e o realizado (mesma lógica da DRE:
-  // histórico Marvee p/ meses fechados, cálculo ao vivo p/ meses correntes). Realizado em magnitude.
-  app.get("/api/financeiro/orcamento", async (req, res) => {
-    try {
-      const year = (req.query.year as string) || String(new Date().getFullYear());
-      const months = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`);
-
-      // Categorias nível-2 (18) + pai + tipo (receita/despesa)
-      const catRes = await pool.query(
-        `SELECT c.structure, c.description, left(c.structure,2) AS parent, p.description AS parent_desc
-         FROM fin_categories c
-         LEFT JOIN fin_categories p ON p.structure = left(c.structure,2)
-         WHERE c.structure ~ '^[0-9][0-9]\\.[0-9][0-9]$'
-         ORDER BY c.structure`
-      );
-      const categorias = catRes.rows.map((r: any) => ({
-        structure: r.structure, description: r.description,
-        parent: r.parent, parentDesc: r.parent_desc,
-        tipo: (r.parent === '01' || r.parent === '03') ? 'receita' : 'despesa',
-      }));
-
-      // Orçado
-      const budRes = await pool.query(`SELECT ref_month, structure, value FROM fin_budget WHERE ref_month LIKE $1`, [`${year}-%`]);
-      const budget: Record<string, Record<string, number>> = {};
-      for (const r of budRes.rows) { (budget[r.structure] ||= {})[r.ref_month] = parseFloat(r.value); }
-
-      // Realizado — histórico x ao vivo (idêntico à DRE)
-      const histRes = await pool.query(`SELECT ref_month, structure, value FROM fin_dfc_historico WHERE ref_month LIKE $1`, [`${year}-%`]);
-      const hist: Record<string, number> = {}; const histMonths = new Set<string>();
-      for (const r of histRes.rows) { hist[`${r.ref_month}|${r.structure}`] = parseFloat(r.value); if (/^[0-9]/.test(r.structure)) histMonths.add(r.ref_month); }
-
-      const live: Record<string, number> = {};
-      for (const month of months) {
-        if (histMonths.has(month)) continue;
-        const mv = await pool.query(
-          `SELECT c.structure AS structure, SUM(m.value::numeric * m.type) AS val
-           FROM fin_movements_asaas m JOIN fin_categories c ON c.id = m.custom_category_id
-           WHERE m.is_anticipation_pair = false AND m.is_reversed_pair = false
-             AND ((m.account='asaas' AND to_char(m.transaction_date,'YYYY-MM') = $1)
-               OR (m.account='sicredi' AND m.billing_month = $1))
-           GROUP BY c.structure`, [month]
-        );
-        for (const row of mv.rows) {
-          const parts = String(row.structure || '').split('.'); const val = parseFloat(row.val) || 0;
-          for (let i = 1; i <= parts.length; i++) { const anc = parts.slice(0, i).join('.'); live[`${month}|${anc}`] = (live[`${month}|${anc}`] || 0) + val; }
-        }
-      }
-
-      const realizado: Record<string, Record<string, number>> = {};
-      for (const cat of categorias) {
-        realizado[cat.structure] = {};
-        for (const month of months) {
-          const v = histMonths.has(month) ? (hist[`${month}|${cat.structure}`] ?? 0) : (live[`${month}|${cat.structure}`] ?? 0);
-          realizado[cat.structure][month] = Math.abs(v);
-        }
-      }
-
-      res.json({ year, months, categorias, budget, realizado, historicalMonths: [...histMonths].sort() });
-    } catch (err) {
-      console.error("Error building orçamento:", err);
-      res.status(500).json({ error: "Failed to build orçamento" });
-    }
-  });
-
-  // PUT: salva o orçado em lote. Body: { items: [{ ref_month, structure, value }] }
-  app.put("/api/financeiro/orcamento", async (req, res) => {
-    try {
-      const items = (req.body?.items || []) as { ref_month: string; structure: string; value: number }[];
-      if (!Array.isArray(items)) return res.status(400).json({ error: 'items inválido' });
-      let saved = 0;
-      for (const it of items) {
-        if (!it.ref_month || !it.structure) continue;
-        await pool.query(
-          `INSERT INTO fin_budget (ref_month, structure, value, updated_at)
-           VALUES ($1,$2,$3,NOW())
-           ON CONFLICT (ref_month, structure) DO UPDATE SET value=EXCLUDED.value, updated_at=NOW()`,
-          [it.ref_month, it.structure, Number(it.value) || 0]
-        );
-        saved++;
-      }
-      res.json({ saved });
-    } catch (err) {
-      console.error("Error saving orçamento:", err);
-      res.status(500).json({ error: "Failed to save orçamento" });
-    }
-  });
 
   // Indicadores executivos (Painel do Diretor): MRR, ticket, inadimplência %, LTV, CAC, payback, margem, runway.
   app.get("/api/financeiro/indicadores", async (req, res) => {
@@ -19026,7 +19505,15 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
       while (url && pages < 10) {
         const resp = await fetch(url);
         const j: any = await resp.json();
-        if (j.error) return res.status(400).json({ error: j.error.message || 'Erro ao consultar o Meta.', code: j.error.code });
+        // Devolve code/subcode/type: a mensagem sozinha ("API access blocked.") não
+        // diz se o bloqueio é do token, do app ou do Business Manager.
+        if (j.error) return res.status(400).json({
+          error: j.error.message || 'Erro ao consultar o Meta.',
+          code: j.error.code,
+          subcode: j.error.error_subcode,
+          type: j.error.type,
+          trace: j.error.fbtrace_id,
+        });
         for (const a of (j.data || [])) {
           accounts.push({ id: String(a.account_id), name: a.name || `Conta ${a.account_id}`, status: Number(a.account_status) });
         }

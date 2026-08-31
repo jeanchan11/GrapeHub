@@ -7,14 +7,14 @@ import {
   Users, TrendingUp, DollarSign, AlertTriangle,
   CheckCircle, Cpu, RefreshCw, Clock, MessageSquare, X,
   ThumbsUp, Edit2, Trash2, Search, ShieldAlert, Calendar,
-  LayoutDashboard, UserX, KeyRound
+  LayoutDashboard, UserX, KeyRound, Layers
 } from 'lucide-react';
 // Abas de churn reaproveitadas do Consolidado (mesma implementação, sem duplicar código)
 import { ChurnTab, RiscoDeChurnTab, type ChurnRow } from './OperacionalConsolidado';
+import OperacionalAcoesTab from './OperacionalAcoesTab';
 import { auth } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import LoadingSpinner from '../components/LoadingSpinner';
-import { ChurnRiskCircle, churnCheckedCount, CHURN_TOTAL } from './ProjectsModule';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types  (matching real API response shape)
@@ -54,7 +54,7 @@ interface ProjectRow {
 const RESULT_COLOR_MAP: Record<string, string> = {
   'resultado ok':           '#2ecc8f',
   'resultado ruim':         '#f74c4c',
-  'resultado bom':          '#b84cf7',
+  'resultado bom':          '#059669',   // verde fechado — Bom é melhor que Ok, que usa o menta #2ecc8f
   'campanha pausada':       '#f5c842',
   'testando':               '#4c8ef7',
   'aguardando criativos':   '#94a3b8',
@@ -77,6 +77,16 @@ const RESULT_COLORS: Record<string, string> = new Proxy({}, {
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
+
+// Recorte da carteira pelo head selecionado nos botões do topo.
+// Extraído para que o fetch da série histórica use exatamente o mesmo critério da tela.
+function filterByGestor(projects: ProjectRow[], selectedGestor: string | null, isHeadsMode: boolean): ProjectRow[] {
+  if (!selectedGestor) return projects;
+  return isHeadsMode
+    ? projects.filter(p => p.page_id === selectedGestor)   // heads: filtra pela página do head
+    : projects.filter(p => p.responsible === selectedGestor);
+}
+
 function daysSince(p: ProjectRow): number {
   let maxTime = 0;
 
@@ -215,32 +225,6 @@ function groupByResponsible(projects: ProjectRow[]) {
       map[r].results[res] = (map[r].results[res] || 0) + 1;
     }
   return Object.values(map).sort((a, b) => b.total - a.total);
-}
-
-function getAtencaoList(projects: ProjectRow[]) {
-  const isGargalo     = (p: ProjectRow) => (p.status || '').toLowerCase() === 'gargalo'      || (p.projectResult || '').toLowerCase() === 'gargalo';
-  const isResultRuim  = (p: ProjectRow) => (p.projectResult || '').toLowerCase() === 'resultado ruim';
-  const isTestando    = (p: ProjectRow) => (p.projectResult || '').toLowerCase() === 'testando';
-
-  return projects
-    .filter(p => isGargalo(p) || isResultRuim(p) || isTestando(p))
-    .map(p => {
-      let priority = 99;
-      const alertas: string[] = [];
-      if (isGargalo(p))    { priority = Math.min(priority, 0); alertas.push('Gargalo'); }
-      if (isResultRuim(p)) { priority = Math.min(priority, 1); alertas.push('Resultado Ruim'); }
-      if (isTestando(p))   { priority = Math.min(priority, 2); alertas.push('Testando'); }
-      return { ...p, diasSemUpdate: 0, alerta: alertas.join(' · '), _priority: priority };
-    })
-    .sort((a, b) => (a as any)._priority - (b as any)._priority);
-}
-
-function getCriticas(projects: ProjectRow[]) {
-  return projects
-    .filter(p => daysSince(p) > 4)
-    .map(p => ({ ...p, diasSemUpdate: daysSince(p) }))
-    .sort((a, b) => b.diasSemUpdate - a.diasSemUpdate)
-    .slice(0, 15);
 }
 
 function getRecentComments(projects: ProjectRow[]) {
@@ -499,7 +483,7 @@ function DonutChart({ data, onClick }: { data: { label: string; count: number; c
       </div>
 
       {/* Legend */}
-      <div className="space-y-3 flex-1 min-w-0 h-full overflow-y-auto pr-1">
+      <div className="space-y-3 flex-1 min-w-0 h-full overflow-y-auto custom-scrollbar pr-1">
         {data.map((d, i) => (
           <div
             key={d.label}
@@ -595,7 +579,7 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
   const [loading, setLoading]   = useState(true);
   const [spinning, setSpinning] = useState(false);
   // Abas Visão Geral / Risco de Churn / Churn — só no modo operação (heads)
-  const [tab, setTab] = useState<'geral' | 'risco' | 'churn' | 'tokens'>('geral');
+  const [tab, setTab] = useState<'geral' | 'acoes' | 'risco' | 'churn' | 'tokens'>('geral');
   const [tokenErrors, setTokenErrors] = useState<any[]>([]);
   const [churns, setChurns] = useState<ChurnRow[]>([]);
   const [activeClientsCount, setActiveClientsCount] = useState(0);
@@ -883,11 +867,16 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
     if (tab === 'risco') { fetch('/api/churn-snapshots/capture', { method: 'POST' }).catch(() => {}); }
   }, [tab]);
 
-  // ── Dashboard Head: cadência de reuniões, evolução da carteira e churn ──
+  // ── Evolução da carteira, investimento e churn ──
+  // Usado tanto no Dashboard Head quanto no Operacional. A série histórica é pedida
+  // para a carteira JÁ recortada pelo head selecionado nos botões do topo, para o
+  // gráfico acompanhar o filtro como o resto da página.
   useEffect(() => {
-    if (!isSingleHeadMode || projects.length === 0) return;
+    if (projects.length === 0) return;
     let alive = true;
-    const ids = projects.map(p => p.id);
+    const escopo = filterByGestor(projects, selectedGestor, isHeadsMode);
+    const ids = escopo.map(p => p.id);
+    if (ids.length === 0) { setHistory([]); return; }
 
     fetch('/api/meetings/by-project-summary')
       .then(r => r.ok ? r.json() : [])
@@ -913,7 +902,7 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
       .catch(() => {});
 
     return () => { alive = false; };
-  }, [isSingleHeadMode, projects]);
+  }, [projects, selectedGestor, isHeadsMode]);
 
   // Contagem de clientes em Retenção (base completa) — mesma regra da página Clientes Ativos.
   useEffect(() => {
@@ -945,11 +934,7 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
 
   if (loading) return <Spinner />;
 
-  const filteredProjects = selectedGestor
-    ? (isHeadsMode
-        ? projects.filter(p => p.page_id === selectedGestor)   // heads: filtra pela página do head
-        : projects.filter(p => p.responsible === selectedGestor))
-    : projects;
+  const filteredProjects = filterByGestor(projects, selectedGestor, isHeadsMode);
 
   const kpis     = calcKPIs(filteredProjects);
   const distrib  = groupByResult(filteredProjects);
@@ -995,8 +980,6 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
     : briefingTasks.length;
 
   const gestores = groupByResponsible(filteredProjects);
-  const atencao  = getAtencaoList(filteredProjects);
-  const criticas = getCriticas(filteredProjects);
   const recentComments = getRecentComments(filteredProjects);
   const commentQuery = commentSearch.trim().toLowerCase();
   const filteredComments = commentQuery
@@ -1009,13 +992,6 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
 
   // Product summary
   const allProducts = filteredProjects.flatMap(p => p.products || []);
-
-  // Radar de Churn — projetos com sinais marcados, do maior risco para o menor.
-  const churnRadar = filteredProjects
-    .map(p => ({ p, count: churnCheckedCount(p) }))
-    .filter(x => x.count > 0)
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 8);
 
   // ══ Dashboard Head — métricas de desempenho ═════════════════════════════════
   const norm = (s: string) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ]/g, '').trim();
@@ -1048,22 +1024,363 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
   const saudavelAntes = pctSaudavel(histFirst);
   const saudavelDelta = saudavelHoje - saudavelAntes;
 
-  // 3) Churn atribuído ao head (campo `gestor` da planilha de churn)
-  const churnDoHead = headChurns.filter(c => {
-    if (!c.gestor || !headName) return false;
-    const g = norm(c.gestor), h = norm(headName);
-    return g === h || g.startsWith(h) || h.startsWith(g);
-  });
+  // 3) Churn (campo `gestor` da planilha de churn)
+  // Dashboard Head → sempre o head da página. Dashboard Operacional → o head selecionado
+  // nos botões do topo; sem seleção ("Todos"), conta as saídas de toda a operação.
+  const churnScopeName = isSingleHeadMode ? headName : selectedHeadName;
+  const churnDoHead = churnScopeName
+    ? headChurns.filter(c => {
+        if (!c.gestor) return false;
+        const g = norm(c.gestor), h = norm(churnScopeName);
+        return g === h || g.startsWith(h) || h.startsWith(g);
+      })
+    : headChurns;
   const churn6m = churnDoHead.filter(c => c.day_exit && new Date(c.day_exit) >= new Date(Date.now() - 180 * 86400000));
   const parseMoney = (v: any) => Number(String(v ?? '').replace(/[^0-9,.-]/g, '').replace(/\./g, '').replace(',', '.')) || 0;
-  const ltvPerdido = churn6m.reduce((s, c) => s + parseMoney(c.ltv), 0);
   const evitaveis = churn6m.filter(c => norm(c.tipo).includes('evitavel') && !norm(c.tipo).includes('inevitavel')).length;
-  const churnSemGestor = headChurns.filter(c => !c.gestor && c.day_exit && new Date(c.day_exit) >= new Date(Date.now() - 180 * 86400000)).length;
+  // Só é ressalva quando há recorte por head — em "Todos" essas saídas já entram na conta.
+  const churnSemGestor = churnScopeName
+    ? headChurns.filter(c => !c.gestor && c.day_exit && new Date(c.day_exit) >= new Date(Date.now() - 180 * 86400000)).length
+    : 0;
 
   // 4) Investimento sob gestão vs. início da série
   const investHoje = histLast?.investimento || 0;
   const investAntes = histFirst?.investimento || 0;
   const investDelta = investAntes > 0 ? Math.round(((investHoje - investAntes) / investAntes) * 100) : null;
+
+  // Cards de carteira (evolução, investimento e churn). Renderizados no Dashboard Head
+  // e também no Operacional — em ambos os casos já recortados pelo head selecionado.
+  const renderCardsCarteira = () => (
+    <>
+      {/* 2) Evolução da carteira + 4) Distribuição de resultados */}
+      <div className="grid grid-cols-1 lg:grid-cols-11 gap-5">
+        <div className="lg:col-span-6 bg-dark-card border border-white/5 rounded-2xl p-5 flex flex-col">
+          <h2 className="text-sm font-bold text-dark-text mb-1 shrink-0">Evolução da Carteira</h2>
+          <p className="text-xs text-slate-500 mb-4 shrink-0">% de projetos com Resultado Bom ou Ok · últimos 90 dias</p>
+          {history.length < 2 ? (
+            <p className="text-xs text-slate-500 py-10 text-center">
+              A série começa a partir de hoje — volte em alguns dias para ver a evolução.
+            </p>
+          ) : (
+            <div className="flex-1 min-h-0 flex flex-col">
+              <div className="flex items-end gap-3 mb-3 shrink-0">
+                <span className="text-3xl font-black text-dark-text leading-none">{saudavelHoje}%</span>
+                {saudavelDelta !== 0 && (
+                  <span className={`text-xs font-bold pb-1 ${saudavelDelta > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {saudavelDelta > 0 ? '↑' : '↓'} {Math.abs(saudavelDelta)} p.p.
+                  </span>
+                )}
+              </div>
+              {/* flex-1 + height="100%": o gráfico estica para o card acompanhar a
+                  altura da linha, definida pelo card de distribuição ao lado. */}
+              <div className="flex-1 min-h-[180px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={history.map(h => {
+                  // "Outros" = tudo que não é Bom, Ok nem Ruim (Testando, Sem Resultado,
+                  // Campanha Pausada, Aguardando...). Calculado por resto para que as três
+                  // séries sempre fechem 100% da carteira.
+                  const outrosQtd = Math.max(0, h.total - h.bom - h.ok - h.ruim);
+                  return {
+                    date: h.date.slice(8, 10) + '/' + h.date.slice(5, 7),
+                    saudavel: h.total > 0 ? Math.round(((h.bom + h.ok) / h.total) * 100) : 0,
+                    ruim: h.total > 0 ? Math.round((h.ruim / h.total) * 100) : 0,
+                    outros: h.total > 0 ? Math.round((outrosQtd / h.total) * 100) : 0,
+                    // guardados para o tooltip mostrar o valor absoluto junto do percentual
+                    _saudavelQtd: h.bom + h.ok,
+                    _ruimQtd: h.ruim,
+                    _outrosQtd: outrosQtd,
+                    _total: h.total,
+                  };
+                })}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} unit="%" />
+                  <RechartsTooltip
+                    contentStyle={{ background: '#1a1625', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, fontSize: 12 }}
+                    formatter={(v: any, nome: any, item: any) => {
+                      const p = item?.payload || {};
+                      const qtd = nome === 'Ruim' ? p._ruimQtd : nome === 'Outros' ? p._outrosQtd : p._saudavelQtd;
+                      return [`${v}% (${qtd} de ${p._total})`, nome];
+                    }}
+                  />
+                  <Area type="monotone" dataKey="saudavel" name="Bom + Ok" stroke="#2ecc8f" fill="#2ecc8f" fillOpacity={0.15} strokeWidth={2} />
+                  <Area type="monotone" dataKey="ruim" name="Ruim" stroke="#f74c4c" fill="#f74c4c" fillOpacity={0.12} strokeWidth={2} />
+                  <Area type="monotone" dataKey="outros" name="Outros" stroke="#94a3b8" fill="#94a3b8" fillOpacity={0.10} strokeWidth={2} />
+                </AreaChart>
+              </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="lg:col-span-5 bg-dark-card border border-white/5 rounded-2xl p-5 flex flex-col min-h-[384px]">
+          <h2 className="text-sm font-bold text-dark-text mb-1 shrink-0">Distribuição de Resultados</h2>
+          <p className="text-xs text-slate-500 mb-4 shrink-0">Todos os projetos por resultado atual</p>
+          <div className="flex-1 min-h-0">
+            <DonutChart data={distrib} onClick={setSelectedResultCategory} />
+          </div>
+        </div>
+      </div>
+
+      {/* 3) Churn — só no Dashboard Head; retirado do Operacional */}
+      {isSingleHeadMode && (
+        <div className="bg-dark-card border border-white/5 rounded-2xl p-5">
+          <h2 className="text-sm font-bold text-dark-text mb-1">Churn nos últimos 6 meses</h2>
+          <p className="text-xs text-slate-500 mb-4">
+            {churnScopeName
+              ? `Saídas atribuídas a ${churnScopeName} na planilha de churn`
+              : 'Saídas de toda a operação na planilha de churn'}
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="bg-dark-bg/40 border border-white/5 rounded-xl p-4">
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Clientes perdidos</p>
+              <p className="text-2xl font-black text-rose-400">{churn6m.length}</p>
+            </div>
+            <div className="bg-dark-bg/40 border border-white/5 rounded-xl p-4">
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Evitáveis</p>
+              <p className="text-2xl font-black text-amber-400">{evitaveis}<span className="text-sm text-slate-500 font-bold"> de {churn6m.length}</span></p>
+            </div>
+          </div>
+          {churn6m.length > 0 && (
+            <div className="mt-4 space-y-2 max-h-[220px] overflow-y-auto custom-scrollbar pr-1">
+              {churn6m.map((c: any, i: number) => (
+                <div key={c.id || i} className="flex items-center justify-between gap-3 bg-dark-bg/40 border border-white/5 rounded-xl px-3 py-2.5">
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-dark-text truncate">{c.cliente}</p>
+                    {c.motivo && <p className="text-[10px] text-slate-500 truncate">{c.motivo}</p>}
+                  </div>
+                  <span className="text-[10px] text-slate-500 shrink-0">{c.day_exit ? new Date(c.day_exit).toLocaleDateString('pt-BR') : ''}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {churnSemGestor > 0 && (
+            <p className="text-[11px] text-amber-400/80 mt-4 border-t border-white/5 pt-3">
+              ⚠ {churnSemGestor} saída(s) no período estão sem gestor preenchido na planilha e não entram nesta conta.
+            </p>
+          )}
+        </div>
+      )}
+    </>
+  );
+
+  // Comentários + investimento. Extraído para poder trocar de posição: no
+  // Operacional fica logo abaixo da carteira; no Dashboard Head vai para o fim,
+  // depois da cadência, evolução e churn do head.
+  const renderComentariosEInvestimento = () => (
+    <>
+    {/* ── Comentários (+ investimento, fora do Head) ───────────────────────────────── */}
+    <div className={`grid grid-cols-1 gap-5 ${isSingleHeadMode ? '' : 'lg:grid-cols-2'}`}>
+
+      {/* Histórico de Comentários */}
+      <div className={`bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200 flex flex-col h-[380px] lg:h-[780px] ${isSingleHeadMode ? '' : 'lg:row-span-2'}`}>
+        <h2 className="text-sm font-bold text-dark-text mb-1">Últimos Comentários</h2>
+        <p className="text-xs text-slate-500 mb-3 shrink-0">
+          Histórico consolidado dos projetos
+        </p>
+        {/* Busca dentro do histórico de comentários */}
+        <div className="relative mb-4 shrink-0">
+          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+          <input
+            value={commentSearch}
+            onChange={e => setCommentSearch(e.target.value)}
+            placeholder="Buscar por parceiro, otimização, autor..."
+            className="w-full bg-dark-bg border border-white/10 rounded-xl pl-9 pr-8 py-2 text-xs text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500/50 transition-colors"
+          />
+          {commentSearch && (
+            <button onClick={() => setCommentSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-dark-text transition-colors" title="Limpar busca">
+              <X size={13} />
+            </button>
+          )}
+        </div>
+        {filteredComments.length === 0 ? (
+          <div className="text-center text-slate-500 text-sm py-6">{commentQuery ? 'Nenhum comentário encontrado 🔍' : 'Nenhum comentário registrado 📝'}</div>
+        ) : (
+          <div className="space-y-3 flex-1 overflow-y-auto pr-1 min-h-0">
+            {(commentQuery ? filteredComments : filteredComments.slice(0, 40)).map((c, idx) => {
+              const dbUser = findUser(c.opt.author);
+              return (
+                <div 
+                  key={c.id} 
+                  className="p-3 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5 hover:border-slate-300 dark:hover:border-white/10 transition-colors"
+                  style={{ animation: 'rowFadeIn 0.3s ease both', animationDelay: `${idx * 0.04}s` }}
+                >
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-full overflow-hidden bg-slate-200 dark:bg-slate-800 shrink-0 border border-slate-300 dark:border-white/10">
+                        {c.opt.authorPhoto ? (
+                          <img src={c.opt.authorPhoto} alt={c.opt.author || ''} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        ) : dbUser?.picture ? (
+                          <img src={dbUser.picture} alt={c.opt.author || ''} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        ) : (
+                          <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${c.opt.author}`} alt={c.opt.author || ''} className="w-full h-full object-cover" />
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-dark-text leading-tight">{c.opt.author}</p>
+                        <p className="text-[10px] text-slate-500">{c.project.partner} · {c.productName}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <p className="text-[10px] font-bold text-slate-400">{formatDateShort(c.opt.date)}</p>
+                        {c.opt.time && <p className="text-[9px] text-slate-500">{c.opt.time}</p>}
+                      </div>
+                      {(auth.currentUser?.email === c.opt.authorEmail || (userData?.name && c.opt.author?.toLowerCase() === userData?.name?.toLowerCase()) || (c.opt.author && auth.currentUser?.displayName && c.opt.author.toLowerCase() === auth.currentUser.displayName.toLowerCase()) || (userData?.role as string) === 'Admin') && (
+                        <div className="flex items-center gap-2">
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); setEditingNoteId(c.opt.id); setEditingNoteMessage(c.opt.message.replace(/\n\n\(Editado em.*?\)/g, '')); }}
+                            className="text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors"
+                          >
+                            <Edit2 size={12} />
+                          </button>
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); handleDeleteNote(c.project.id, c.productId, c.opt.id); }}
+                            className="text-slate-400 hover:text-rose-500 transition-colors"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {editingNoteId === c.opt.id ? (
+                    <div className="flex flex-col gap-2 mt-2">
+                      <textarea
+                        value={editingNoteMessage}
+                        onChange={(e) => setEditingNoteMessage(e.target.value)}
+                        className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white outline-none resize-none"
+                        rows={3}
+                        autoFocus
+                      />
+                      <div className="flex gap-2 justify-end">
+                        <button
+                          onClick={() => { setEditingNoteId(null); setEditingNoteMessage(''); }}
+                          className="px-3 py-1.5 text-xs font-bold text-slate-500 hover:text-slate-700 dark:hover:text-white transition-colors"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          onClick={() => handleSaveEdit(c.project.id, c.productId, c.opt.id)}
+                          className="px-3 py-1.5 text-xs font-bold text-white bg-violet-500 hover:bg-violet-600 rounded-lg transition-colors"
+                        >
+                          Salvar
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed bg-white dark:bg-black/20 p-2.5 rounded-lg border border-slate-200 dark:border-white/5 whitespace-pre-wrap shadow-sm dark:shadow-none">
+                      {c.opt.message}
+                    </p>
+                  )}
+
+                  {/* Replies */}
+                  {c.opt.replies && c.opt.replies.length > 0 && (
+                    <div className="mt-4 space-y-3">
+                      {c.opt.replies.map((reply: any) => (
+                        <div key={reply.id} className="flex items-start gap-3 pl-4 border-l-2 border-slate-100 dark:border-white/5">
+                          {reply.authorPhoto ? (
+                            <img src={reply.authorPhoto} alt={reply.author} className="w-5 h-5 rounded-full object-cover mt-0.5" referrerPolicy="no-referrer" />
+                          ) : (
+                            <div className="w-5 h-5 rounded-full bg-slate-200 dark:bg-white/10 flex items-center justify-center text-slate-500 text-[10px] font-bold mt-0.5">
+                              {reply.author.charAt(0).toUpperCase()}
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-baseline gap-2 mb-0.5">
+                              <p className="text-xs font-bold text-slate-900 dark:text-white">{reply.author}</p>
+                              <p className="text-[10px] text-slate-500">{formatDateShort(reply.date)} às {reply.time}</p>
+                            </div>
+                            <p className="text-xs text-slate-600 dark:text-slate-400 whitespace-pre-line">{reply.message}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {replyingNoteId === c.opt.id && (
+                    <div className="mt-4 flex flex-col gap-2">
+                      <textarea
+                        value={replyMessage}
+                        onChange={(e) => setReplyMessage(e.target.value)}
+                        placeholder="Escreva sua resposta..."
+                        className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white outline-none resize-none"
+                        rows={2}
+                        autoFocus
+                      />
+                      <div className="flex gap-2 justify-end">
+                        <button
+                          onClick={() => { setReplyingNoteId(null); setReplyMessage(''); }}
+                          className="px-3 py-1.5 text-xs font-bold text-slate-500 hover:text-slate-700 dark:hover:text-white transition-colors"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          onClick={() => handleSaveReply(c.project.id, c.productId, c.opt.id)}
+                          className="px-3 py-1.5 text-xs font-bold text-white bg-violet-500 hover:bg-violet-600 rounded-lg transition-colors"
+                        >
+                          Responder
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Action Bar */}
+                  <div className="mt-4 pt-3 border-t border-slate-100 dark:border-white/5 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); handleToggleLike(c.project.id, c.productId, c.opt.id); }}
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold transition-colors border ${
+                          c.opt.likes?.includes(auth.currentUser?.email || userData?.name || 'user')
+                            ? 'bg-slate-100 dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-700 dark:text-white'
+                            : 'text-slate-400 border-transparent hover:bg-slate-100 dark:hover:bg-white/5'
+                        }`}
+                      >
+                        {c.opt.likes?.includes(auth.currentUser?.email || userData?.name || 'user') ? (
+                          <span>👍</span>
+                        ) : (
+                          <ThumbsUp size={14} />
+                        )}
+                        {(c.opt.likes?.length || 0) > 0 && <span>{c.opt.likes?.length}</span>}
+                      </button>
+                    </div>
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); setReplyingNoteId(c.opt.id); }}
+                      className="text-xs font-bold text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors"
+                    >
+                      Responder
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Investimento sob Gestão — no Head ele vira KPI no topo da página */}
+      {!isSingleHeadMode && (
+      <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200 flex flex-col justify-center h-[380px]">
+        <h2 className="text-sm font-bold text-dark-text mb-1">Investimento sob Gestão</h2>
+        <p className="text-xs text-slate-500 mb-6">Verba mensal somada da carteira</p>
+        {/* Mesmo número do card "Investimento Diário" acima (lá dividido por 30),
+            para as duas leituras baterem na tela. */}
+        <p className="text-5xl font-black text-dark-text leading-none">
+          {fmtBRL(kpis.orcamentoTotal)}
+        </p>
+        {history.length >= 2 && investDelta !== null ? (
+          <p className={`text-sm font-bold mt-4 ${investDelta > 0 ? 'text-emerald-400' : investDelta < 0 ? 'text-rose-400' : 'text-slate-500'}`}>
+            {investDelta > 0 ? '↑' : investDelta < 0 ? '↓' : ''} {Math.abs(investDelta)}% vs. início do período
+          </p>
+        ) : (
+          <p className="text-[11px] text-slate-500 mt-4">O comparativo aparece conforme a série acumula dias.</p>
+        )}
+      </div>
+      )}
+    </div>
+    </>
+  );
 
   return (
     <div className="min-h-screen bg-dark-bg transition-colors duration-300">
@@ -1095,7 +1412,7 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
       {/* ── Abas: Visão Geral / Risco de Churn / Churn (modo operação) ──── */}
       {isHeadsMode && (
         <div className="px-6 md:px-8 pb-6 flex flex-wrap gap-1 border-b border-white/5">
-          {([['geral', 'Visão Geral', LayoutDashboard], ['risco', 'Risco de Churn', ShieldAlert], ['churn', 'Churn', UserX], ['tokens', 'Erros de Token', KeyRound]] as const).map(([key, label, Icon]) => (
+          {([['geral', 'Visão Geral', LayoutDashboard], ['acoes', 'Ações e Nichos', Layers], ['risco', 'Risco de Churn', ShieldAlert], ['churn', 'Churn', UserX], ['tokens', 'Erros de Token', KeyRound]] as const).map(([key, label, Icon]) => (
             <button
               key={key}
               onClick={() => setTab(key)}
@@ -1189,6 +1506,13 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
         <div className="px-6 md:px-8 pb-10 pt-6"><ChurnTab churns={churns} activeCount={activeClientsCount} /></div>
       )}
 
+      {/* ── Ações e Nichos — cruza o catálogo de ações com o que os parceiros rodam ── */}
+      {isHeadsMode && tab === 'acoes' && (
+        <div className="px-6 md:px-8 pb-10 pt-6">
+          <OperacionalAcoesTab />
+        </div>
+      )}
+
       {/* ── Erros de Token — centraliza as contas com credencial quebrada ── */}
       {isHeadsMode && tab === 'tokens' && (
         <div className="px-6 md:px-8 pb-10 pt-6 space-y-5">
@@ -1280,7 +1604,7 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
       {/* Visão Geral — escondida (não desmontada) ao trocar de aba, preservando o estado */}
       <div className={`px-6 md:px-8 pb-10 space-y-5 ${tab !== 'geral' ? 'hidden' : ''}`}>
         {/* ── KPI Cards ──────────────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+        <div className={`grid grid-cols-2 lg:grid-cols-3 gap-4 ${isSingleHeadMode ? 'xl:grid-cols-4' : 'xl:grid-cols-5'}`}>
           <KpiCard
             iconBg="bg-violet-500/15"
             icon={<Users size={17} className="text-violet-500" />}
@@ -1288,20 +1612,25 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
             value={<CountUp value={filteredProjects.length} />}
             sub={<span><span className="text-violet-400 font-bold">{kpis.totalAtivos}</span> operacionais</span>}
           />
-          <KpiCard
-            iconBg="bg-amber-500/15"
-            icon={<ShieldAlert size={17} className="text-amber-500" />}
-            label="Retenção"
-            value={<CountUp value={retentionShown} />}
-            sub={<span className="text-amber-500 font-bold">Clientes em retenção</span>}
-          />
-          <KpiCard
-            iconBg="bg-indigo-500/15"
-            icon={<Calendar size={17} className="text-indigo-500" />}
-            label="Onboarding"
-            value={<CountUp value={briefingShown} />}
-            sub={<span className="text-indigo-400 font-bold">Em reunião de briefing</span>}
-          />
+          {/* Retenção e Onboarding são leituras da operação inteira — fora do Dashboard Head */}
+          {!isSingleHeadMode && (
+            <>
+              <KpiCard
+                iconBg="bg-amber-500/15"
+                icon={<ShieldAlert size={17} className="text-amber-500" />}
+                label="Retenção"
+                value={<CountUp value={retentionShown} />}
+                sub={<span className="text-amber-500 font-bold">Clientes em retenção</span>}
+              />
+              <KpiCard
+                iconBg="bg-indigo-500/15"
+                icon={<Calendar size={17} className="text-indigo-500" />}
+                label="Onboarding"
+                value={<CountUp value={briefingShown} />}
+                sub={<span className="text-indigo-400 font-bold">Em reunião de briefing</span>}
+              />
+            </>
+          )}
           <KpiCard
             iconBg="bg-red-500/15"
             icon={<AlertTriangle size={17} className="text-red-500" />}
@@ -1316,371 +1645,29 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
             value={<CountUp value={kpis.orcamentoTotal / 30} prefix="R$ " format />}
             sub={<span>Mensal: <span className="text-emerald-400 font-bold">{fmtBRL(kpis.orcamentoTotal)}</span></span>}
           />
+          {/* No Head o investimento sob gestão vira KPI. O sub carrega a variação do
+              período — a única informação que o card "Investimento Diário" não mostra. */}
+          {isSingleHeadMode && (
+            <KpiCard
+              iconBg="bg-teal-500/15"
+              icon={<TrendingUp size={17} className="text-teal-500" />}
+              label="Investimento sob Gestão"
+              value={<CountUp value={kpis.orcamentoTotal} prefix="R$ " format />}
+              sub={history.length >= 2 && investDelta !== null
+                ? <span className={investDelta > 0 ? 'text-emerald-400 font-bold' : investDelta < 0 ? 'text-rose-400 font-bold' : 'text-slate-500'}>
+                    {investDelta > 0 ? '↑' : investDelta < 0 ? '↓' : ''} {Math.abs(investDelta)}% vs. início do período
+                  </span>
+                : <span>Verba mensal somada da carteira</span>}
+            />
+          )}
         </div>
 
-        {/* ── Linha 2 & 3 — Comentários, Distribuição e Radar ──────────────────────────── */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        {/* ── Carteira: evolução e investimento ─────────────────────────────────────────
+             Só no Operacional — no Dashboard Head estes cards já vêm no bloco próprio
+             do head, mais abaixo, junto da cadência de reuniões. */}
+        {!isSingleHeadMode && renderCardsCarteira()}
 
-          {/* Histórico de Comentários */}
-          <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200 flex flex-col lg:row-span-2 lg:h-[780px] h-[380px]">
-            <h2 className="text-sm font-bold text-dark-text mb-1">Últimos Comentários</h2>
-            <p className="text-xs text-slate-500 mb-3 shrink-0">
-              Histórico consolidado dos projetos
-            </p>
-            {/* Busca dentro do histórico de comentários */}
-            <div className="relative mb-4 shrink-0">
-              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
-              <input
-                value={commentSearch}
-                onChange={e => setCommentSearch(e.target.value)}
-                placeholder="Buscar por parceiro, otimização, autor..."
-                className="w-full bg-dark-bg border border-white/10 rounded-xl pl-9 pr-8 py-2 text-xs text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500/50 transition-colors"
-              />
-              {commentSearch && (
-                <button onClick={() => setCommentSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-dark-text transition-colors" title="Limpar busca">
-                  <X size={13} />
-                </button>
-              )}
-            </div>
-            {filteredComments.length === 0 ? (
-              <div className="text-center text-slate-500 text-sm py-6">{commentQuery ? 'Nenhum comentário encontrado 🔍' : 'Nenhum comentário registrado 📝'}</div>
-            ) : (
-              <div className="space-y-3 flex-1 overflow-y-auto pr-1 min-h-0">
-                {(commentQuery ? filteredComments : filteredComments.slice(0, 40)).map((c, idx) => {
-                  const dbUser = findUser(c.opt.author);
-                  return (
-                    <div 
-                      key={c.id} 
-                      className="p-3 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5 hover:border-slate-300 dark:hover:border-white/10 transition-colors"
-                      style={{ animation: 'rowFadeIn 0.3s ease both', animationDelay: `${idx * 0.04}s` }}
-                    >
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-full overflow-hidden bg-slate-200 dark:bg-slate-800 shrink-0 border border-slate-300 dark:border-white/10">
-                            {c.opt.authorPhoto ? (
-                              <img src={c.opt.authorPhoto} alt={c.opt.author || ''} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                            ) : dbUser?.picture ? (
-                              <img src={dbUser.picture} alt={c.opt.author || ''} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                            ) : (
-                              <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${c.opt.author}`} alt={c.opt.author || ''} className="w-full h-full object-cover" />
-                            )}
-                          </div>
-                          <div>
-                            <p className="text-xs font-bold text-dark-text leading-tight">{c.opt.author}</p>
-                            <p className="text-[10px] text-slate-500">{c.project.partner} · {c.productName}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <div className="text-right">
-                            <p className="text-[10px] font-bold text-slate-400">{formatDateShort(c.opt.date)}</p>
-                            {c.opt.time && <p className="text-[9px] text-slate-500">{c.opt.time}</p>}
-                          </div>
-                          {(auth.currentUser?.email === c.opt.authorEmail || (userData?.name && c.opt.author?.toLowerCase() === userData?.name?.toLowerCase()) || (c.opt.author && auth.currentUser?.displayName && c.opt.author.toLowerCase() === auth.currentUser.displayName.toLowerCase()) || (userData?.role as string) === 'Admin') && (
-                            <div className="flex items-center gap-2">
-                              <button 
-                                onClick={(e) => { e.stopPropagation(); setEditingNoteId(c.opt.id); setEditingNoteMessage(c.opt.message.replace(/\n\n\(Editado em.*?\)/g, '')); }}
-                                className="text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors"
-                              >
-                                <Edit2 size={12} />
-                              </button>
-                              <button 
-                                onClick={(e) => { e.stopPropagation(); handleDeleteNote(c.project.id, c.productId, c.opt.id); }}
-                                className="text-slate-400 hover:text-rose-500 transition-colors"
-                              >
-                                <Trash2 size={12} />
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {editingNoteId === c.opt.id ? (
-                        <div className="flex flex-col gap-2 mt-2">
-                          <textarea
-                            value={editingNoteMessage}
-                            onChange={(e) => setEditingNoteMessage(e.target.value)}
-                            className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white outline-none resize-none"
-                            rows={3}
-                            autoFocus
-                          />
-                          <div className="flex gap-2 justify-end">
-                            <button
-                              onClick={() => { setEditingNoteId(null); setEditingNoteMessage(''); }}
-                              className="px-3 py-1.5 text-xs font-bold text-slate-500 hover:text-slate-700 dark:hover:text-white transition-colors"
-                            >
-                              Cancelar
-                            </button>
-                            <button
-                              onClick={() => handleSaveEdit(c.project.id, c.productId, c.opt.id)}
-                              className="px-3 py-1.5 text-xs font-bold text-white bg-violet-500 hover:bg-violet-600 rounded-lg transition-colors"
-                            >
-                              Salvar
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed bg-white dark:bg-black/20 p-2.5 rounded-lg border border-slate-200 dark:border-white/5 whitespace-pre-wrap shadow-sm dark:shadow-none">
-                          {c.opt.message}
-                        </p>
-                      )}
-
-                      {/* Replies */}
-                      {c.opt.replies && c.opt.replies.length > 0 && (
-                        <div className="mt-4 space-y-3">
-                          {c.opt.replies.map((reply: any) => (
-                            <div key={reply.id} className="flex items-start gap-3 pl-4 border-l-2 border-slate-100 dark:border-white/5">
-                              {reply.authorPhoto ? (
-                                <img src={reply.authorPhoto} alt={reply.author} className="w-5 h-5 rounded-full object-cover mt-0.5" referrerPolicy="no-referrer" />
-                              ) : (
-                                <div className="w-5 h-5 rounded-full bg-slate-200 dark:bg-white/10 flex items-center justify-center text-slate-500 text-[10px] font-bold mt-0.5">
-                                  {reply.author.charAt(0).toUpperCase()}
-                                </div>
-                              )}
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-baseline gap-2 mb-0.5">
-                                  <p className="text-xs font-bold text-slate-900 dark:text-white">{reply.author}</p>
-                                  <p className="text-[10px] text-slate-500">{formatDateShort(reply.date)} às {reply.time}</p>
-                                </div>
-                                <p className="text-xs text-slate-600 dark:text-slate-400 whitespace-pre-line">{reply.message}</p>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {replyingNoteId === c.opt.id && (
-                        <div className="mt-4 flex flex-col gap-2">
-                          <textarea
-                            value={replyMessage}
-                            onChange={(e) => setReplyMessage(e.target.value)}
-                            placeholder="Escreva sua resposta..."
-                            className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-sm text-slate-900 dark:text-white outline-none resize-none"
-                            rows={2}
-                            autoFocus
-                          />
-                          <div className="flex gap-2 justify-end">
-                            <button
-                              onClick={() => { setReplyingNoteId(null); setReplyMessage(''); }}
-                              className="px-3 py-1.5 text-xs font-bold text-slate-500 hover:text-slate-700 dark:hover:text-white transition-colors"
-                            >
-                              Cancelar
-                            </button>
-                            <button
-                              onClick={() => handleSaveReply(c.project.id, c.productId, c.opt.id)}
-                              className="px-3 py-1.5 text-xs font-bold text-white bg-violet-500 hover:bg-violet-600 rounded-lg transition-colors"
-                            >
-                              Responder
-                            </button>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Action Bar */}
-                      <div className="mt-4 pt-3 border-t border-slate-100 dark:border-white/5 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); handleToggleLike(c.project.id, c.productId, c.opt.id); }}
-                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold transition-colors border ${
-                              c.opt.likes?.includes(auth.currentUser?.email || userData?.name || 'user')
-                                ? 'bg-slate-100 dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-700 dark:text-white'
-                                : 'text-slate-400 border-transparent hover:bg-slate-100 dark:hover:bg-white/5'
-                            }`}
-                          >
-                            {c.opt.likes?.includes(auth.currentUser?.email || userData?.name || 'user') ? (
-                              <span>👍</span>
-                            ) : (
-                              <ThumbsUp size={14} />
-                            )}
-                            {(c.opt.likes?.length || 0) > 0 && <span>{c.opt.likes?.length}</span>}
-                          </button>
-                        </div>
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); setReplyingNoteId(c.opt.id); }}
-                          className="text-xs font-bold text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors"
-                        >
-                          Responder
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Distribuição de Resultados */}
-          <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200 flex flex-col h-[380px]">
-            <h2 className="text-sm font-bold text-dark-text mb-1 shrink-0">Distribuição de Resultados</h2>
-            <p className="text-xs text-slate-500 mb-4 shrink-0">Todos os projetos por resultado atual</p>
-            <div className="flex-1 min-h-0">
-              <DonutChart data={distrib} onClick={setSelectedResultCategory} />
-            </div>
-          </div>
-          {/* Radar de Atenção */}
-          <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200 flex flex-col h-[380px]">
-            <h2 className="text-sm font-bold text-dark-text mb-1 shrink-0">Radar de Atenção</h2>
-            <p className="text-xs text-slate-500 mb-4 shrink-0">Projetos críticos ordenados por urgência</p>
-            {atencao.length === 0 ? (
-              <div className="text-center text-slate-500 text-sm py-10">Nenhum projeto crítico 🎉</div>
-            ) : (
-              <div className="flex-1 overflow-auto pr-1 min-h-0">
-                <table className="w-full text-xs">
-                  <thead className="sticky top-0 bg-dark-card z-10">
-                    <tr className="border-b" style={{ borderColor: 'rgba(100,100,120,0.15)' }}>
-                      {['Cliente', 'Gestor', 'Critério'].map(h => (
-                        <th key={h} className="text-[9px] font-bold text-slate-500 uppercase tracking-widest pb-2 pr-2 text-left">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {atencao.map((a, idx) => {
-                      const dbUser = findUser(a.responsible);
-                      return (
-                      <tr 
-                        key={a.id} 
-                        className="border-b transition-colors hover:bg-slate-50 dark:hover:bg-white/5" 
-                        style={{ borderColor: 'rgba(100,100,120,0.08)', animation: 'rowFadeIn 0.3s ease both', animationDelay: `${idx * 0.04}s` }}
-                      >
-                        <td className="py-2.5 pr-2 font-bold text-dark-text truncate max-w-[110px]">{a.partner}</td>
-                        <td className="py-2.5 pr-2">
-                          <div className="flex items-center gap-1.5">
-                            <div className="w-4 h-4 rounded-full overflow-hidden bg-slate-200 dark:bg-slate-800 shrink-0 border border-slate-300 dark:border-white/10">
-                              {dbUser?.picture ? (
-                                <img src={dbUser.picture} alt={a.responsible || ''} className="w-full h-full object-cover" />
-                              ) : (
-                                <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${a.responsible}`} alt={a.responsible || ''} className="w-full h-full object-cover" />
-                              )}
-                            </div>
-                            <span className="text-slate-400 truncate max-w-[80px] text-xs">{a.responsible}</span>
-                          </div>
-                        </td>
-                        <td className="py-2.5 pr-2">
-                          <div className="flex flex-wrap gap-1">
-                            {(a.alerta || '').split(' · ').filter(Boolean).map(b => {
-                              const colors: Record<string, { bg: string; color: string }> = {
-                                'Gargalo':        { bg: '#f59e0b22', color: '#f59e0b' },
-                                'Resultado Ruim': { bg: '#f74c4c22', color: '#f74c4c' },
-                                'Testando':       { bg: '#4c8ef722', color: '#4c8ef7' },
-                              };
-                              const c = colors[b] || { bg: '#64748b22', color: '#94a3b8' };
-                              return (
-                                <span key={b} className="text-[9px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap" style={{ background: c.bg, color: c.color }}>
-                                  {b}
-                                </span>
-                              );
-                            })}
-                          </div>
-                        </td>
-                      </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
-        {/* Radar de Churn + Projetos Sem Update — ocultos no Dashboard Head */}
-        {!isSingleHeadMode && (<>
-
-        {/* ── Linha 4 — Dist. Produtos + Tarefas Críticas ───────────────── */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-
-          {/* Radar de Churn — projetos com maior probabilidade de churn */}
-          <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200">
-            <h2 className="text-sm font-bold text-dark-text mb-1">Radar de Churn</h2>
-            <p className="text-xs text-slate-500 mb-4">Projetos com maior probabilidade de churn</p>
-            {churnRadar.length === 0 ? (
-              <div className="text-center text-slate-500 text-sm py-10">Nenhum sinal de churn marcado ✅</div>
-            ) : (
-              <div className="space-y-2">
-                {churnRadar.map(({ p, count }, idx) => {
-                  const dbUser = findUser(p.responsible);
-                  return (
-                    <div
-                      key={p.id}
-                      className="flex items-center justify-between gap-3 p-3 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5 hover:border-slate-300 dark:hover:border-white/10 transition-colors"
-                      style={{ animation: 'rowFadeIn 0.3s ease both', animationDelay: `${idx * 0.04}s` }}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold text-dark-text truncate">{p.partner}</p>
-                        <div className="flex items-center gap-1.5 mt-1">
-                          <div className="w-4 h-4 rounded-full overflow-hidden bg-slate-200 dark:bg-slate-800 shrink-0 border border-slate-300 dark:border-white/10">
-                            {dbUser?.picture ? (
-                              <img src={dbUser.picture} alt={p.responsible || ''} className="w-full h-full object-cover" />
-                            ) : (
-                              <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${p.responsible}`} alt={p.responsible || ''} className="w-full h-full object-cover" />
-                            )}
-                          </div>
-                          <p className="text-xs text-slate-500 truncate">{p.responsible || '—'}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-[10px] font-bold text-slate-400 whitespace-nowrap">{count}/{CHURN_TOTAL}</span>
-                        <ChurnRiskCircle project={p} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Tarefas Críticas */}
-          <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200">
-            <h2 className="text-sm font-bold text-dark-text mb-1">Projetos Sem Update</h2>
-            <p className="text-xs text-slate-500 mb-4">Mais de 4 dias sem atualização</p>
-            {criticas.length === 0 ? (
-              <div className="text-center text-slate-500 text-sm py-10">Todos atualizados ✅</div>
-            ) : (
-              <div className="space-y-2">
-                {criticas.map((c, idx) => {
-                  const dbUser = findUser(c.responsible);
-                  return (
-                  <div 
-                    key={c.id} 
-                    className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5 hover:border-slate-300 dark:hover:border-white/10 transition-colors"
-                    style={{ animation: 'rowFadeIn 0.3s ease both', animationDelay: `${idx * 0.04}s` }}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-dark-text truncate">{c.partner}</p>
-                      <div className="flex items-center gap-1.5 mt-1">
-                        <div className="w-4 h-4 rounded-full overflow-hidden bg-slate-200 dark:bg-slate-800 shrink-0 border border-slate-300 dark:border-white/10">
-                          {dbUser?.picture ? (
-                            <img src={dbUser.picture} alt={c.responsible || ''} className="w-full h-full object-cover" />
-                          ) : (
-                            <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${c.responsible}`} alt={c.responsible || ''} className="w-full h-full object-cover" />
-                          )}
-                        </div>
-                        <p className="text-xs text-slate-500 truncate">{c.responsible}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 ml-3">
-                      {c.projectResult && c.projectResult !== '-' && (
-                        <span
-                          className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
-                          style={{
-                            background: (getResultColor(c.projectResult) || '#64748b') + '22',
-                            color: getResultColor(c.projectResult) || '#94a3b8',
-                          }}
-                        >
-                          {c.projectResult}
-                        </span>
-                      )}
-                      <span className={`flex-shrink-0 text-[11px] font-black px-2.5 py-1 rounded-full ${
-                        c.diasSemUpdate > 14 ? 'bg-red-500/15 text-red-400' : 'bg-amber-500/15 text-amber-400'
-                      }`}>
-                        {c.diasSemUpdate === 999 ? 'Sem histórico' : `${c.diasSemUpdate}d`}
-                      </span>
-                    </div>
-                  </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-        </>)}
+        {!isSingleHeadMode && renderComentariosEInvestimento()}
 
         {/* ════ Desempenho do Head — blocos exclusivos do Dashboard Head ════ */}
         {isSingleHeadMode && (
@@ -1725,96 +1712,10 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
               </div>
             </div>
 
-            {/* 2) Evolução da carteira + 4) Investimento */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-              <div className="lg:col-span-2 bg-dark-card border border-white/5 rounded-2xl p-5">
-                <h2 className="text-sm font-bold text-dark-text mb-1">Evolução da Carteira</h2>
-                <p className="text-xs text-slate-500 mb-4">% de projetos com Resultado Bom ou Ok · últimos 90 dias</p>
-                {history.length < 2 ? (
-                  <p className="text-xs text-slate-500 py-10 text-center">
-                    A série começa a partir de hoje — volte em alguns dias para ver a evolução.
-                  </p>
-                ) : (
-                  <>
-                    <div className="flex items-end gap-3 mb-3">
-                      <span className="text-3xl font-black text-dark-text leading-none">{saudavelHoje}%</span>
-                      {saudavelDelta !== 0 && (
-                        <span className={`text-xs font-bold pb-1 ${saudavelDelta > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                          {saudavelDelta > 0 ? '↑' : '↓'} {Math.abs(saudavelDelta)} p.p.
-                        </span>
-                      )}
-                    </div>
-                    <ResponsiveContainer width="100%" height={180}>
-                      <AreaChart data={history.map(h => ({ date: h.date.slice(8, 10) + '/' + h.date.slice(5, 7), saudavel: h.total > 0 ? Math.round(((h.bom + h.ok) / h.total) * 100) : 0, ruim: h.total > 0 ? Math.round((h.ruim / h.total) * 100) : 0 }))}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                        <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                        <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} unit="%" />
-                        <RechartsTooltip contentStyle={{ background: '#1a1625', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, fontSize: 12 }} />
-                        <Area type="monotone" dataKey="saudavel" name="Bom + Ok" stroke="#2ecc8f" fill="#2ecc8f" fillOpacity={0.15} strokeWidth={2} />
-                        <Area type="monotone" dataKey="ruim" name="Ruim" stroke="#f74c4c" fill="#f74c4c" fillOpacity={0.12} strokeWidth={2} />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </>
-                )}
-              </div>
+            {renderCardsCarteira()}
 
-              <div className="bg-dark-card border border-white/5 rounded-2xl p-5">
-                <h2 className="text-sm font-bold text-dark-text mb-1">Investimento sob Gestão</h2>
-                <p className="text-xs text-slate-500 mb-4">Verba mensal somada da carteira</p>
-                {/* Mesmo número do card "Investimento Diário" acima (lá dividido por 30),
-                    para as duas leituras baterem na tela. */}
-                <p className="text-3xl font-black text-dark-text leading-none">
-                  {fmtBRL(kpis.orcamentoTotal)}
-                </p>
-                {history.length >= 2 && investDelta !== null ? (
-                  <p className={`text-xs font-bold mt-3 ${investDelta > 0 ? 'text-emerald-400' : investDelta < 0 ? 'text-rose-400' : 'text-slate-500'}`}>
-                    {investDelta > 0 ? '↑' : investDelta < 0 ? '↓' : ''} {Math.abs(investDelta)}% vs. início do período
-                  </p>
-                ) : (
-                  <p className="text-[11px] text-slate-500 mt-3">O comparativo aparece conforme a série acumula dias.</p>
-                )}
-              </div>
-            </div>
-
-            {/* 3) Churn */}
-            <div className="bg-dark-card border border-white/5 rounded-2xl p-5">
-              <h2 className="text-sm font-bold text-dark-text mb-1">Churn nos últimos 6 meses</h2>
-              <p className="text-xs text-slate-500 mb-4">
-                Saídas atribuídas a {headName || 'este head'} na planilha de churn
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="bg-dark-bg/40 border border-white/5 rounded-xl p-4">
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Clientes perdidos</p>
-                  <p className="text-2xl font-black text-rose-400">{churn6m.length}</p>
-                </div>
-                <div className="bg-dark-bg/40 border border-white/5 rounded-xl p-4">
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">LTV perdido</p>
-                  <p className="text-2xl font-black text-dark-text">R$ {ltvPerdido.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</p>
-                </div>
-                <div className="bg-dark-bg/40 border border-white/5 rounded-xl p-4">
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Evitáveis</p>
-                  <p className="text-2xl font-black text-amber-400">{evitaveis}<span className="text-sm text-slate-500 font-bold"> de {churn6m.length}</span></p>
-                </div>
-              </div>
-              {churn6m.length > 0 && (
-                <div className="mt-4 space-y-2 max-h-[220px] overflow-y-auto custom-scrollbar pr-1">
-                  {churn6m.map((c: any, i: number) => (
-                    <div key={c.id || i} className="flex items-center justify-between gap-3 bg-dark-bg/40 border border-white/5 rounded-xl px-3 py-2.5">
-                      <div className="min-w-0">
-                        <p className="text-xs font-bold text-dark-text truncate">{c.cliente}</p>
-                        {c.motivo && <p className="text-[10px] text-slate-500 truncate">{c.motivo}</p>}
-                      </div>
-                      <span className="text-[10px] text-slate-500 shrink-0">{c.day_exit ? new Date(c.day_exit).toLocaleDateString('pt-BR') : ''}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {churnSemGestor > 0 && (
-                <p className="text-[11px] text-amber-400/80 mt-4 border-t border-white/5 pt-3">
-                  ⚠ {churnSemGestor} saída(s) no período estão sem gestor preenchido na planilha e não entram nesta conta.
-                </p>
-              )}
-            </div>
+            {/* Comentários e investimento fecham o Dashboard Head, abaixo dos cards do head */}
+            {renderComentariosEInvestimento()}
           </>
         )}
 

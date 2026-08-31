@@ -1,6 +1,7 @@
-import React, { useState, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import SplitHeadline from '../components/SplitHeadline';
+import { toast } from '@/src/lib/toast';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid
 } from 'recharts';
@@ -673,9 +674,10 @@ interface EditModalProps {
   onSave: (acao: Acao) => void;
   onDelete?: (id: string) => void;
   onClose: () => void;
+  saving?: boolean;
 }
 
-const EditModal = ({ acao, nichoAtual, onSave, onDelete, onClose }: EditModalProps) => {
+const EditModal = ({ acao, nichoAtual, onSave, onDelete, onClose, saving = false }: EditModalProps) => {
   const isNew = !acao?.id;
   const [form, setForm] = useState<Partial<Acao>>({
     nicho: nichoAtual,
@@ -818,10 +820,10 @@ const EditModal = ({ acao, nichoAtual, onSave, onDelete, onClose }: EditModalPro
           </button>
           <button
             onClick={handleSave}
-            disabled={!form.nome?.trim()}
+            disabled={!form.nome?.trim() || saving}
             className="px-5 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-violet-600/20"
           >
-            {isNew ? 'Criar Ação' : 'Salvar'}
+            {saving ? 'Salvando...' : isNew ? 'Criar Ação' : 'Salvar'}
           </button>
         </div>
       </div>
@@ -1413,7 +1415,11 @@ const NichoCard = ({ nicho, acoes, onClick, cardRef }: NichoCardProps) => {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function PlaybookAcoes() {
-  const [acoes, setAcoes] = useState<Acao[]>(INITIAL_ACOES);
+  // A lista vem do banco. INITIAL_ACOES virou só a carga inicial: é enviada uma
+  // única vez, quando a tabela ainda está vazia.
+  const [acoes, setAcoes] = useState<Acao[]>([]);
+  const [carregando, setCarregando] = useState(true);
+  const [salvando, setSalvando] = useState(false);
   const [nichoAtual, setNichoAtual] = useState<string | null>(null);
   const [editando, setEditando] = useState<Partial<Acao> | null | 'new'>(null);
   const [selecionadas, setSelecionadas] = useState<string[]>([]);
@@ -1466,48 +1472,90 @@ export default function PlaybookAcoes() {
       .sort((a, b) => STATUS_CONFIG[a.status].order - STATUS_CONFIG[b.status].order);
   }, [acoes, nichoAtual, busca, filtroStatus]);
 
-  const handleSave = (acao: Acao) => {
-    setAcoes(prev => {
-      const idx = prev.findIndex(a => a.id === acao.id);
-      if (idx >= 0) {
-        const oldAcao = prev[idx];
-        // Create a history snapshot of the OLD values before overwriting
-        const snapshot: AcaoHistoryEntry = {
-          id: `h-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          date: oldAcao.updatedAt || new Date().toISOString(),
-          status: oldAcao.status,
-          custoLeadMin: oldAcao.custoLeadMin,
-          custoLeadMax: oldAcao.custoLeadMax,
-          custoLeadMedio: oldAcao.custoLeadMedio,
-          cacMin: oldAcao.cacMin,
-          cacMax: oldAcao.cacMax,
-          contratosMin: oldAcao.contratosMin,
-          contratosMax: oldAcao.contratosMax,
-          observacoes: oldAcao.observacoes,
-        };
-        const next = [...prev];
-        next[idx] = {
-          ...acao,
-          updatedAt: new Date().toISOString(),
-          history: [...(oldAcao.history || []), snapshot],
-        };
-        return next;
+  // Recarrega a lista inteira depois de cada gravação — o snapshot de histórico é
+  // montado no servidor, então reler é mais confiável do que espelhar o estado aqui.
+  const carregarAcoes = useCallback(async () => {
+    const res = await fetch('/api/playbook-acoes');
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Falha ao carregar');
+    return (await res.json()) as Acao[];
+  }, []);
+
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      try {
+        let lista = await carregarAcoes();
+        // Primeira execução: a tabela está vazia, manda a carga inicial do arquivo.
+        if (lista.length === 0) {
+          const seed = await fetch('/api/playbook-acoes/seed', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ acoes: INITIAL_ACOES }),
+          });
+          if (seed.ok) lista = await carregarAcoes();
+        }
+        if (vivo) setAcoes(lista);
+      } catch (e: any) {
+        if (vivo) toast.error(e.message || 'Não foi possível carregar o playbook.');
+      } finally {
+        if (vivo) setCarregando(false);
       }
-      return [...prev, { ...acao, updatedAt: new Date().toISOString() }];
-    });
-    setEditando(null);
+    })();
+    return () => { vivo = false; };
+  }, [carregarAcoes]);
+
+  const handleSave = async (acao: Acao) => {
+    const existe = acoes.some(a => a.id === acao.id);
+    setSalvando(true);
+    try {
+      const res = await fetch(
+        existe ? `/api/playbook-acoes/${encodeURIComponent(acao.id)}` : '/api/playbook-acoes',
+        {
+          method: existe ? 'PUT' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(acao),
+        }
+      );
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Erro ao salvar a ação.');
+      setAcoes(await carregarAcoes());
+      setEditando(null);
+      toast.success(existe ? 'Ação salva.' : 'Ação criada.');
+    } catch (e: any) {
+      toast.error(e.message || 'Erro ao salvar a ação.');
+    } finally {
+      setSalvando(false);
+    }
   };
 
-  const handleDeleteHistory = (acaoId: string, historyId: string) => {
-    setAcoes(prev => prev.map(a => {
-      if (a.id !== acaoId) return a;
-      return { ...a, history: (a.history || []).filter(h => h.id !== historyId) };
-    }));
+  const handleDeleteHistory = async (acaoId: string, historyId: string) => {
+    const antes = acoes;
+    setAcoes(prev => prev.map(a => (
+      a.id !== acaoId ? a : { ...a, history: (a.history || []).filter(h => h.id !== historyId) }
+    )));
+    try {
+      const res = await fetch(
+        `/api/playbook-acoes/${encodeURIComponent(acaoId)}/history/${encodeURIComponent(historyId)}`,
+        { method: 'DELETE' }
+      );
+      if (!res.ok) throw new Error();
+    } catch {
+      setAcoes(antes);
+      toast.error('Erro ao excluir o histórico.');
+    }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
+    const antes = acoes;
     setAcoes(prev => prev.filter(a => a.id !== id));
     setSelecionadas(prev => prev.filter(sid => sid !== id));
+    try {
+      const res = await fetch(`/api/playbook-acoes/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error();
+      toast.success('Ação excluída.');
+    } catch {
+      setAcoes(antes);
+      toast.error('Erro ao excluir a ação.');
+    }
   };
 
   const toggleSelect = (id: string) => {
@@ -1772,6 +1820,7 @@ export default function PlaybookAcoes() {
           acao={editandoAcao as Partial<Acao>}
           nichoAtual={nichoAtual || ''}
           onSave={handleSave}
+          saving={salvando}
           onDelete={editando !== 'new' ? handleDelete : undefined}
           onClose={() => setEditando(null)}
         />

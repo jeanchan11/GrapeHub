@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   Plus, X, Star, ChevronDown,
-  Trash2, Award, BarChart3, CalendarClock, Clock, Trash, Loader2
+  Trash2, Award, BarChart3, CalendarClock, Clock, Trash, Loader2, Check
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import SplitHeadline from '../../components/SplitHeadline';
@@ -10,6 +10,8 @@ import DateRangePicker from '../../components/ui/DateRangePicker';
 import { auth } from '../../firebase';
 import { iconOf, colorOf, NotaSnapshot } from '../../components/performanceCriteria';
 import { confirmDialog } from '@/src/lib/confirm';
+import { toast } from '@/src/lib/toast';
+import AgendarProximoInline, { ProximoAgendamento } from './AgendarProximoInline';
 
 // Helper: fetch autenticado com token Firebase
 async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
@@ -269,9 +271,13 @@ interface ModalProps {
   userEmail: string | undefined;
   onClose: () => void;
   onSaved: () => void;
+  /** Fluxo "Realizar": mostra o agendamento da próxima e encerra o compromisso atual. */
+  realizando?: boolean;
+  horarioSugerido?: string;
 }
 
-function NovaAvaliacaoModal({ collaboratorId, userEmail, onClose, onSaved }: ModalProps) {
+function NovaAvaliacaoModal({ collaboratorId, userEmail, onClose, onSaved, realizando, horarioSugerido }: ModalProps) {
+  const [proximoForm, setProximoForm] = useState<ProximoAgendamento>({ data: '', horario: horarioSugerido || '09:00', observacao: '' });
   const [periodoInicio, setPeriodoInicio] = useState('');
   const [periodoFim, setPeriodoFim] = useState('');
   const [criterios, setCriterios] = useState<Criterio[]>([]);
@@ -340,6 +346,30 @@ function NovaAvaliacaoModal({ collaboratorId, userEmail, onClose, onSaved }: Mod
         const err = await res.json();
         throw new Error(err.error || 'Erro ao salvar');
       }
+
+      // Fluxo "Realizar": encerra o compromisso agendado. Com data preenchida o POST
+      // substitui o agendamento antigo; sem data, o antigo é removido.
+      if (realizando) {
+        if (proximoForm.data) {
+          await authFetch(`/api/colaboradores/${collaboratorId}/proxima-avaliacao`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(userEmail ? { 'x-user-email': userEmail } : {}),
+            },
+            body: JSON.stringify({
+              data: proximoForm.data,
+              horario: proximoForm.horario,
+              observacao: proximoForm.observacao,
+            }),
+          });
+          toast.success('Avaliação registrada e próxima agendada.');
+        } else {
+          await authFetch(`/api/colaboradores/${collaboratorId}/proxima-avaliacao`, { method: 'DELETE' });
+          toast.success('Avaliação registrada. Nenhuma próxima agendada.');
+        }
+      }
+
       onSaved();
       onClose();
     } catch (e: any) {
@@ -363,7 +393,7 @@ function NovaAvaliacaoModal({ collaboratorId, userEmail, onClose, onSaved }: Mod
               <BarChart3 size={18} className="text-violet-400" />
             </div>
             <div>
-              <h2 className="font-black text-slate-800 dark:text-white text-base">Registrar Avaliação Quinzenal</h2>
+              <h2 className="font-black text-slate-800 dark:text-white text-base">{realizando ? 'Realizar Avaliação Quinzenal' : 'Registrar Avaliação Quinzenal'}</h2>
               <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-0.5">
                 {cargo ? `Desempenho — ${cargo}` : 'Desempenho do colaborador'}
               </p>
@@ -425,6 +455,16 @@ function NovaAvaliacaoModal({ collaboratorId, userEmail, onClose, onSaved }: Mod
             />
           </div>
 
+          {realizando && (
+            <AgendarProximoInline
+              titulo="Agendar próxima avaliação"
+              legenda="Já deixe o próximo ciclo marcado"
+              valor={proximoForm}
+              onChange={setProximoForm}
+              placeholderObs="Ponto de atenção para o próximo ciclo..."
+            />
+          )}
+
           {error && (
             <div className="bg-rose-500/10 border border-rose-500/20 rounded-xl px-4 py-2.5 text-sm text-rose-400">{error}</div>
           )}
@@ -444,7 +484,7 @@ function NovaAvaliacaoModal({ collaboratorId, userEmail, onClose, onSaved }: Mod
             className="px-5 py-2 rounded-xl text-sm font-bold bg-violet-600 hover:bg-violet-700 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
             {saving && <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
-            Salvar avaliação
+            {realizando ? 'Concluir avaliação' : 'Salvar avaliação'}
           </button>
         </div>
       </div>
@@ -458,6 +498,8 @@ export default function DesempenhoTab({ collaboratorId, isAdmin }: { collaborato
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [showAgendarModal, setShowAgendarModal] = useState(false);
+  // Fluxo "Realizar": avalia o ciclo do compromisso agendado e já remarca o próximo
+  const [realizandoAvaliacao, setRealizandoAvaliacao] = useState(false);
   const [expandedCycle, setExpandedCycle] = useState<number | null>(null);
   const [proximaAvaliacao, setProximaAvaliacao] = useState<ProximaAvaliacao | null>(null);
 
@@ -550,7 +592,7 @@ export default function DesempenhoTab({ collaboratorId, isAdmin }: { collaborato
               <CalendarClock size={15} /> Agendar próxima
             </button>
             <button
-              onClick={() => setShowModal(true)}
+              onClick={() => { setRealizandoAvaliacao(false); setShowModal(true); }}
               className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-xl text-sm font-bold transition-colors"
             >
               <Plus size={15} /> Nova avaliação
@@ -619,6 +661,12 @@ export default function DesempenhoTab({ collaboratorId, isAdmin }: { collaborato
             {/* Actions */}
             {isAdmin && (
               <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => { setRealizandoAvaliacao(true); setShowModal(true); }}
+                  className="flex items-center gap-1.5 text-xs font-bold bg-violet-600 hover:bg-violet-700 text-white px-3.5 py-2 rounded-xl transition-colors shadow-sm"
+                >
+                  <Check size={13} /> Realizar
+                </button>
                 <button
                   onClick={() => setShowAgendarModal(true)}
                   className="text-xs text-violet-400 hover:text-violet-300 font-bold px-3 py-1.5 rounded-lg hover:bg-violet-500/10 transition-colors"
@@ -859,7 +907,9 @@ export default function DesempenhoTab({ collaboratorId, isAdmin }: { collaborato
         <NovaAvaliacaoModal
           collaboratorId={collaboratorId}
           userEmail={userData?.email}
-          onClose={() => setShowModal(false)}
+          realizando={realizandoAvaliacao}
+          horarioSugerido={proximaAvaliacao?.horario ? proximaAvaliacao.horario.slice(0, 5) : undefined}
+          onClose={() => { setRealizandoAvaliacao(false); setShowModal(false); }}
           onSaved={load}
         />
       )}

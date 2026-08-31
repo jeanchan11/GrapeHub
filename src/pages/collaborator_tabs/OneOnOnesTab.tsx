@@ -10,6 +10,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { auth } from '../../firebase';
 import { toast } from '@/src/lib/toast';
 import { confirmDialog } from '@/src/lib/confirm';
+import AgendarProximoInline, { ProximoAgendamento } from './AgendarProximoInline';
 
 // Helper: fetch autenticado com token Firebase
 async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
@@ -190,6 +191,9 @@ export default function OneOnOnesTab({ collaboratorId, isAdmin }: OneOnOnesTabPr
   const [editingItem, setEditingItem] = useState<Partial<OneOnOne> | null>(null);
   const [saving, setSaving] = useState(false);
   const [proximo1on1, setProximo1on1] = useState<Proximo1on1 | null>(null);
+  // Fluxo "Realizar": registra o 1:1 do compromisso agendado e já remarca o próximo
+  const [realizando, setRealizando] = useState(false);
+  const [proximoForm, setProximoForm] = useState<ProximoAgendamento>({ data: '', horario: '09:00', observacao: '' });
 
   const { userData } = useAuth();
 
@@ -220,7 +224,17 @@ export default function OneOnOnesTab({ collaboratorId, isAdmin }: OneOnOnesTabPr
     setProximo1on1(null);
   };
 
+  const openRealizarModal = () => {
+    if (!proximo1on1) return;
+    const dataAgendada = (proximo1on1.data || '').split('T')[0];
+    setEditingItem({ data_reuniao: dataAgendada || new Date().toISOString().split('T')[0] });
+    setProximoForm({ data: '', horario: proximo1on1.horario ? proximo1on1.horario.slice(0, 5) : '09:00', observacao: '' });
+    setRealizando(true);
+    setModalOpen(true);
+  };
+
   const openNewModal = () => {
+    setRealizando(false);
     setEditingItem({ data_reuniao: new Date().toISOString().split('T')[0] });
     setModalOpen(true);
   };
@@ -260,6 +274,31 @@ export default function OneOnOnesTab({ collaboratorId, isAdmin }: OneOnOnesTabPr
         const err = await res.json();
         return toast.error('Erro ao salvar: ' + (err.error || 'Erro desconhecido'));
       }
+
+      // Fluxo "Realizar": o compromisso agendado se encerra aqui. Com data preenchida,
+      // o POST substitui o agendamento antigo pelo novo; sem data, o antigo é removido.
+      if (realizando) {
+        if (proximoForm.data) {
+          await authFetch(`/api/collaborators/${collaboratorId}/proximo-1on1`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(userData?.email ? { 'x-user-email': userData.email } : {}),
+            },
+            body: JSON.stringify({
+              data: proximoForm.data,
+              horario: proximoForm.horario,
+              observacao: proximoForm.observacao,
+            }),
+          });
+          toast.success('1:1 registrado e próximo agendado.');
+        } else {
+          await authFetch(`/api/collaborators/${collaboratorId}/proximo-1on1`, { method: 'DELETE' });
+          toast.success('1:1 registrado. Nenhum próximo agendado.');
+        }
+      }
+
+      setRealizando(false);
       setModalOpen(false);
       fetchAll();
     } catch (e) {
@@ -372,6 +411,12 @@ export default function OneOnOnesTab({ collaboratorId, isAdmin }: OneOnOnesTabPr
             {isAdmin && (
               <div className="flex items-center gap-2 shrink-0">
                 <button
+                  onClick={openRealizarModal}
+                  className="flex items-center gap-1.5 text-xs font-bold bg-violet-600 hover:bg-violet-700 text-white px-3.5 py-2 rounded-xl transition-colors shadow-sm"
+                >
+                  <Check size={13} /> Realizar
+                </button>
+                <button
                   onClick={() => setShowAgendarModal(true)}
                   className="text-xs text-violet-400 hover:text-violet-300 font-bold px-3 py-1.5 rounded-lg hover:bg-violet-500/10 transition-colors"
                 >
@@ -459,7 +504,7 @@ export default function OneOnOnesTab({ collaboratorId, isAdmin }: OneOnOnesTabPr
           <div className="bg-white dark:bg-[#0D0D0D] w-full max-w-xl rounded-3xl shadow-2xl flex flex-col border border-slate-200 dark:border-[#2A2A2A] overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-[#2A2A2A]">
               <h2 className="text-lg font-bold text-slate-800 dark:text-white">
-                {editingItem.id ? 'Editar 1:1' : 'Registrar 1:1'}
+                {editingItem.id ? 'Editar 1:1' : realizando ? 'Realizar 1:1' : 'Registrar 1:1'}
               </h2>
               <button onClick={() => setModalOpen(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/5 rounded-xl text-slate-500 transition-colors">
                 <X size={20} />
@@ -504,13 +549,23 @@ export default function OneOnOnesTab({ collaboratorId, isAdmin }: OneOnOnesTabPr
                 />
               </div>
 
+              {realizando && (
+                <AgendarProximoInline
+                  titulo="Agendar próximo 1:1"
+                  legenda="Já deixe a próxima conversa marcada"
+                  valor={proximoForm}
+                  onChange={setProximoForm}
+                  placeholderObs="Pauta ou ponto a preparar para o próximo 1:1..."
+                />
+              )}
+
               <div className="pt-4 flex justify-end gap-3">
-                <button type="button" onClick={() => setModalOpen(false)} className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition-colors">
+                <button type="button" onClick={() => { setRealizando(false); setModalOpen(false); }} className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition-colors">
                   Cancelar
                 </button>
                 <button type="submit" disabled={saving} className="bg-violet-600 hover:bg-violet-700 disabled:opacity-60 text-white px-6 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors">
                   {saving ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Check size={16} />}
-                  Salvar 1:1
+                  {realizando ? 'Concluir 1:1' : 'Salvar 1:1'}
                 </button>
               </div>
             </form>

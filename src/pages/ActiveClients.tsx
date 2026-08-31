@@ -295,22 +295,16 @@ const ActiveClients: React.FC = () => {
         // Process stats
         setStats(statsRes);
 
-        // Process managers
+        // Process managers — só heads na ativa. O filtro antigo pegava role "gestor",
+        // que hoje só existe em quem já saiu ("Gestor de Tráfego" + Desligamento/Turnover),
+        // e deixava de fora os heads de verdade, cujo role é "Head de Tráfego".
         const gestores = collabRes
-          .filter((c: any) => c.role && c.role.toLowerCase().includes('gestor'))
-          .map((c: any) => ({
-            id: c.id,
-            name: c.name,
-            status: c.status || 'Outros'
-          }));
-        
-        gestores.sort((a: any, b: any) => {
-          const aIsActive = a.status === 'Efetivado';
-          const bIsActive = b.status === 'Efetivado';
-          if (aIsActive && !bIsActive) return -1;
-          if (!aIsActive && bIsActive) return 1;
-          return a.name.localeCompare(b.name);
-        });
+          .filter((c: any) =>
+            c.role && c.role.toLowerCase().includes('head') && c.status === 'Efetivado'
+          )
+          .map((c: any) => ({ id: c.id, name: c.name, status: c.status }));
+
+        gestores.sort((a: any, b: any) => a.name.localeCompare(b.name));
 
         setManagers(gestores);
       } catch (err) {
@@ -1375,12 +1369,12 @@ const ActiveClients: React.FC = () => {
                     Gestor Responsável
                   </label>
                   <OptionPicker
-                    value={managers.find((m: any) => String(m.id) === churnManagerId) ? `${managers.find((m: any) => String(m.id) === churnManagerId).name}${managers.find((m: any) => String(m.id) === churnManagerId).status !== 'Efetivado' ? ` (${managers.find((m: any) => String(m.id) === churnManagerId).status})` : ''}` : null}
-                    options={managers.map((m: any) => ({ label: `${m.name}${m.status !== 'Efetivado' ? ` (${m.status})` : ''}` }))}
+                    value={managers.find((m: any) => String(m.id) === churnManagerId)?.name || null}
+                    options={managers.map((m: any) => ({ label: m.name }))}
                     placeholder="Selecionar gestor..."
                     emptyLabel="Selecionar gestor..."
                     onChange={(val) => {
-                      const found = managers.find((m: any) => `${m.name}${m.status !== 'Efetivado' ? ` (${m.status})` : ''}` === val);
+                      const found = managers.find((m: any) => m.name === val);
                       setChurnManagerId(found ? String(found.id) : '');
                     }}
                   />

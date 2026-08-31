@@ -1,24 +1,24 @@
 import React, { useState } from 'react';
 import { PageHeader } from '../components/ui/PageHeader';
 import DrePanel from './DrePanel';
-import BudgetPanel from './BudgetPanel';
+import DreDashboard from './DreDashboard';
 
-// Página independente do Fluxo de Caixa — reúne as abas DRE e Orçamento.
+// Página independente do Fluxo de Caixa — reúne a tabela do DRE e o dashboard.
 export default function Dre() {
-  const [activeTab, setActiveTab] = useState<'dre' | 'orcamento'>('dre');
+  const [activeTab, setActiveTab] = useState<'dre' | 'dashboard'>('dre');
 
   return (
     <div className="min-h-screen bg-dark-bg p-8 font-sans text-dark-text transition-colors duration-300">
       <div className="max-w-[1600px] mx-auto space-y-6">
         <PageHeader
-          title="DRE &"
-          titleAccent="Orçamento"
-          subtitle="Demonstrativo de resultados e orçado vs realizado"
+          title="DRE /"
+          titleAccent="Fluxo de Caixa"
+          subtitle="Demonstrativo de resultados"
         />
 
         {/* Abas */}
         <div className="flex items-center gap-1 border-b border-white/10">
-          {([['dre', 'DRE / Fluxo de Caixa'], ['orcamento', 'Orçamento']] as const).map(([key, label]) => (
+          {([['dre', 'DRE / Fluxo de Caixa'], ['dashboard', 'Dashboard']] as const).map(([key, label]) => (
             <button
               key={key}
               onClick={() => setActiveTab(key)}
@@ -30,7 +30,7 @@ export default function Dre() {
         </div>
 
         {activeTab === 'dre' && <DrePanel />}
-        {activeTab === 'orcamento' && <BudgetPanel />}
+        {activeTab === 'dashboard' && <DreDashboard />}
       </div>
     </div>
   );

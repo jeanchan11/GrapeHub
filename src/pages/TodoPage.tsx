@@ -443,7 +443,7 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ task_id: taskId, title, assignee: null, due_date: null })
       });
-      if (res.ok) fetchData();
+      if (res.ok) inserirSubtarefaCriada(taskId, await res.json().catch(() => null));
     } catch (e) { console.error(e); }
   };
 
@@ -732,6 +732,24 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
     } catch (e) { console.error(e); }
   };
 
+  // Anexa a subtarefa criada à tarefa correspondente, sem recarregar a página.
+  const inserirSubtarefaCriada = (taskId: string, criada: any) => {
+    if (!criada?.id) return;
+    setTasks(prev => prev.map(t => (
+      t.id !== taskId ? t : { ...t, subtasks_list: [...((t as any).subtasks_list || []), criada] }
+    )));
+  };
+
+  // Insere a tarefa recém-criada direto no estado. Antes chamávamos fetchData(),
+  // que liga o loading e remonta a página inteira — perdendo scroll e o que estava
+  // expandido. O POST /api/tasks já devolve a linha pronta.
+  const inserirTarefaCriada = (criada: any, fallback: any) => {
+    const nova = criada && criada.id
+      ? { ...criada, subtasks_list: criada.subtasks_list || [] }
+      : { ...fallback, subtasks_list: [] };
+    setTasks(prev => (prev.some(t => t.id === nova.id) ? prev : [...prev, nova]));
+  };
+
   const handleAddTaskToSection = async (projectId: string, sectionId: string | null) => {
     if (!addingTaskSectionTitle.trim()) return;
     try {
@@ -787,9 +805,14 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
         })
       });
       if (r.ok) {
+        const criada = await r.json().catch(() => null);
+        inserirTarefaCriada(criada, {
+          id: taskId, title: addingTaskSectionTitle.trim(), description: '', status: 'pending',
+          priority: 'Média', project_id: projectId, section_id: realSectionId, page_id: activePage,
+          due_date: new Date().toISOString().split('T')[0],
+        });
         setAddingTaskSectionTitle('');
         setAddingTaskToSection(null);
-        fetchData();
       }
     } catch (e) { console.error(e); }
   };
@@ -916,9 +939,14 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
         })
       });
       if (res.ok) {
+        const criada = await res.json().catch(() => null);
+        inserirTarefaCriada(criada, {
+          id: taskId, title: newTaskTitle, description: '', status: 'pending',
+          priority: 'Média', project_id: projectId, section_id: null, page_id: activePage,
+          due_date: new Date().toISOString().split('T')[0],
+        });
         setNewTaskTitle('');
         setAddingTaskToClient(null);
-        fetchData();
       }
     } catch (e) {
       console.error(e);
@@ -939,9 +967,9 @@ const TodoPage: React.FC<{ activePage: string; onPageChange?: (page: string) => 
         })
       });
       if (res.ok) {
+        inserirSubtarefaCriada(taskId, await res.json().catch(() => null));
         setNewSubtaskTitle('');
         setAddingSubtaskToTask(null);
-        fetchData();
       }
     } catch (e) {
       console.error(e);

@@ -689,6 +689,7 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
                       options={[
                         { label: 'Whatsapp' },
                         { label: 'E-mail' },
+                        { label: 'E-mail e Whatsapp' },
                       ]}
                       placeholder="Selecionar..."
                       emptyLabel="Selecionar..."

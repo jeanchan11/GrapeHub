@@ -4,6 +4,7 @@ import ReactDOM from 'react-dom';
 import { auth, storage } from '../firebase';
 import { Modal } from '../components/ui/Modal';
 import OptionPicker from '../components/ui/OptionPicker';
+import ActionPicker, { CatalogAction, CatalogFolder } from '../components/ui/ActionPicker';
 import SplitHeadline from '../components/SplitHeadline';
 import MetaAdsModal from '../components/MetaAdsModal';
 import { useAuth } from '../contexts/AuthContext';
@@ -1621,7 +1622,14 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     try {
       const res = await fetch('/api/meta/list-accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const data = await res.json();
-      if (!res.ok) { toast.error(data.error || 'Erro ao buscar contas do token.'); setMetaAccounts([]); return; }
+      if (!res.ok) {
+        // Anexa o código do erro da Meta — sem ele a mensagem não permite diagnosticar
+        const det = [data.code && `código ${data.code}`, data.subcode && `subcódigo ${data.subcode}`].filter(Boolean).join(', ');
+        toast.error(`${data.error || 'Erro ao buscar contas do token.'}${det ? ` (${det})` : ''}`);
+        if (data.code) console.error('[meta/list-accounts]', data);
+        setMetaAccounts([]);
+        return;
+      }
       setMetaAccounts(data.accounts || []);
     } catch { toast.error('Erro ao buscar contas do token.'); setMetaAccounts([]); }
     finally { setLoadingMetaAccounts(false); }
@@ -1787,8 +1795,139 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     setIsAddProductModalOpen(true);
   };
 
+  // ── Catálogo de ações já rodadas (reutilizável no cadastro de produtos) ──
+  const [productCatalog, setProductCatalog] = useState<CatalogAction[]>([]);
+  const [catalogFolders, setCatalogFolders] = useState<CatalogFolder[]>([]);
+
+  useEffect(() => {
+    fetch('/api/product-catalog')
+      .then(res => res.ok ? res.json() : [])
+      .then(data => setProductCatalog(Array.isArray(data) ? data : []))
+      .catch(err => console.error('Failed to load product catalog:', err));
+
+    fetch('/api/product-catalog-folders')
+      .then(res => res.ok ? res.json() : [])
+      .then(data => setCatalogFolders(Array.isArray(data) ? data : []))
+      .catch(err => console.error('Failed to load catalog folders:', err));
+  }, []);
+
+  const handleCreateCatalogAction = async (
+    name: string,
+    folderId: number | null,
+    icon?: string
+  ): Promise<CatalogAction | null> => {
+    try {
+      const res = await fetch('/api/product-catalog', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, icon: icon || 'Layout', folder_id: folderId })
+      });
+      if (!res.ok) throw new Error('request failed');
+      const created: CatalogAction = await res.json();
+      setProductCatalog(prev => {
+        const rest = prev.filter(a => a.id !== created.id);
+        return [...rest, created].sort((a, b) => a.name.localeCompare(b.name));
+      });
+      return created;
+    } catch (err) {
+      console.error('Failed to create catalog action:', err);
+      toast.error('Erro ao adicionar ação');
+      return null;
+    }
+  };
+
+  const handleDeleteCatalogAction = async (action: CatalogAction) => {
+    const previous = productCatalog;
+    setProductCatalog(prev => prev.filter(a => a.id !== action.id));
+    try {
+      const res = await fetch(`/api/product-catalog/${action.id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('request failed');
+    } catch (err) {
+      console.error('Failed to delete catalog action:', err);
+      setProductCatalog(previous);
+      toast.error('Erro ao remover ação');
+    }
+  };
+
+  const handleMoveCatalogAction = async (action: CatalogAction, folderId: number | null) => {
+    const previous = productCatalog;
+    setProductCatalog(prev => prev.map(a => a.id === action.id ? { ...a, folder_id: folderId } : a));
+    try {
+      const res = await fetch(`/api/product-catalog/${action.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folder_id: folderId })
+      });
+      if (!res.ok) throw new Error('request failed');
+    } catch (err) {
+      console.error('Failed to move catalog action:', err);
+      setProductCatalog(previous);
+      toast.error('Erro ao mover ação');
+    }
+  };
+
+  const handleCreateCatalogFolder = async (name: string): Promise<CatalogFolder | null> => {
+    try {
+      const res = await fetch('/api/product-catalog-folders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      });
+      if (!res.ok) throw new Error('request failed');
+      const created: CatalogFolder = await res.json();
+      setCatalogFolders(prev => {
+        const rest = prev.filter(f => f.id !== created.id);
+        return [...rest, created].sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
+      });
+      return created;
+    } catch (err) {
+      console.error('Failed to create catalog folder:', err);
+      toast.error('Erro ao criar pasta');
+      return null;
+    }
+  };
+
+  const handleRenameCatalogFolder = async (folder: CatalogFolder, name: string) => {
+    const previous = catalogFolders;
+    setCatalogFolders(prev => prev.map(f => f.id === folder.id ? { ...f, name } : f));
+    try {
+      const res = await fetch(`/api/product-catalog-folders/${folder.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      });
+      if (!res.ok) throw new Error('request failed');
+    } catch (err) {
+      console.error('Failed to rename catalog folder:', err);
+      setCatalogFolders(previous);
+      toast.error('Erro ao renomear pasta');
+    }
+  };
+
+  const handleDeleteCatalogFolder = async (folder: CatalogFolder) => {
+    const previousFolders = catalogFolders;
+    const previousCatalog = productCatalog;
+    setCatalogFolders(prev => prev.filter(f => f.id !== folder.id));
+    // As ações não somem: o backend devolve elas para "Sem pasta"
+    setProductCatalog(prev => prev.map(a => a.folder_id === folder.id ? { ...a, folder_id: null } : a));
+    try {
+      const res = await fetch(`/api/product-catalog-folders/${folder.id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('request failed');
+    } catch (err) {
+      console.error('Failed to delete catalog folder:', err);
+      setCatalogFolders(previousFolders);
+      setProductCatalog(previousCatalog);
+      toast.error('Erro ao excluir pasta');
+    }
+  };
+
   const handleSaveNewProduct = () => {
     if (!activeProjectId || !newProductData.name) return;
+
+    // Mantém o catálogo em dia com o que foi realmente cadastrado
+    if (!productCatalog.some(a => a.name.toLowerCase() === newProductData.name!.trim().toLowerCase())) {
+      handleCreateCatalogAction(newProductData.name.trim(), null, newProductData.icon);
+    }
 
     const newProduct: Product = {
       id: Math.random().toString(36).substr(2, 9),
@@ -3267,7 +3406,9 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-2xl modal-container overflow-hidden my-auto transition-colors duration-300"
+              // sem overflow-hidden: o seletor de ação abre ancorado no campo e
+              // precisa poder ultrapassar a borda do card sem ser recortado
+              className="relative w-full max-w-2xl modal-container my-auto transition-colors duration-300"
             >
               <div className="p-8 border-b border-slate-200 dark:border-white/10 flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -3287,7 +3428,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
               <div className="p-8 space-y-6">
                 <div className="grid grid-cols-2 gap-6">
                   <div className="col-span-2">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Nome do Produto</label>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Ação / Produto</label>
                     <div className="flex gap-3">
                       <div className="relative z-50 shrink-0 w-[50px] h-[50px]">
                         <button 
@@ -3323,13 +3464,26 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                           </>
                         )}
                       </div>
-                      <input 
-                        type="text" 
-                        placeholder="Ex: Google Ads Search"
-                        value={newProductData.name || ''}
-                        onChange={(e) => setNewProductData({ ...newProductData, name: e.target.value })}
-                        className="flex-1 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-slate-900 dark:text-white placeholder:text-slate-400 focus:border-violet-500 outline-none transition-all"
-                      />
+                      <div className="flex-1">
+                        <ActionPicker
+                          value={newProductData.name || ''}
+                          options={productCatalog}
+                          folders={catalogFolders}
+                          placeholder="Selecione a ação... (ex: Salário Maternidade)"
+                          renderIcon={getProductIcon}
+                          onChange={(name, icon) => setNewProductData({
+                            ...newProductData,
+                            name,
+                            icon: icon || newProductData.icon || 'Layout'
+                          })}
+                          onCreate={(name, folderId) => handleCreateCatalogAction(name, folderId, newProductData.icon)}
+                          onDelete={handleDeleteCatalogAction}
+                          onMove={handleMoveCatalogAction}
+                          onCreateFolder={handleCreateCatalogFolder}
+                          onRenameFolder={handleRenameCatalogFolder}
+                          onDeleteFolder={handleDeleteCatalogFolder}
+                        />
+                      </div>
                     </div>
                   </div>
 
@@ -4513,7 +4667,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                 {(selectedProject.partner || 'P').charAt(0).toUpperCase()}
               </div>
               {selectedProject.product && (
-                <span className="text-[10px] text-slate-500 font-bold px-2 py-1 bg-slate-100 dark:bg-white/5 rounded-md border border-slate-200 dark:border-white/10">{selectedProject.product}</span>
+                <span className="text-[10px] text-slate-500 dark:text-slate-300 font-bold px-2 py-1 bg-slate-100 dark:bg-white/5 rounded-md border border-slate-200 dark:border-white/10">{selectedProject.product}</span>
               )}
             </div>
           }
@@ -4531,7 +4685,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                 className={`pb-4 text-sm font-bold transition-all relative whitespace-nowrap ${
                   activeProjectTab === tab
                     ? 'modal-tab-active'
-                    : 'text-slate-500 hover:text-gray-900 dark:hover:text-white'
+                    : 'text-slate-500 dark:text-slate-300 hover:text-gray-900 dark:hover:text-white'
                 }`}
               >
                 {tab === 'resultado' ? 'Resumo' : tab === 'reunioes' ? 'Reuniões' : tab === 'arquivos' ? 'Arquivos' : tab === 'comentarios' ? 'Comentários' : tab === 'solicitacoes' ? 'Solicitações' : tab === 'nps' ? 'NPS' : 'Risco de Churn'}
@@ -4557,7 +4711,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                   <DropdownMenu.Trigger asChild>
                     <button
                       className={`pb-4 text-sm font-bold transition-all relative whitespace-nowrap flex items-center gap-1.5 outline-none ${
-                        activeMore ? 'modal-tab-active' : 'text-slate-500 hover:text-gray-900 dark:hover:text-white'
+                        activeMore ? 'modal-tab-active' : 'text-slate-500 dark:text-slate-300 hover:text-gray-900 dark:hover:text-white'
                       }`}
                       title="Mais abas"
                     >
@@ -4613,12 +4767,12 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     {/* KPIs Dashboard */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-2 items-start">
                       <div className="p-4 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm">
-                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Status do Projeto</p>
+                        <p className="text-[10px] font-bold text-slate-500 dark:text-slate-300 uppercase tracking-widest mb-2">Status do Projeto</p>
                         {getStatusBadge(selectedProject.status)}
                       </div>
                       
                       <div className="p-4 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm">
-                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Resultado</p>
+                        <p className="text-[10px] font-bold text-slate-500 dark:text-slate-300 uppercase tracking-widest mb-2">Resultado</p>
                         <div className="flex items-center gap-2 mt-1 relative">
                           <button 
                             onClick={() => setIsProjectResultDropdownOpen(!isProjectResultDropdownOpen)}
@@ -4643,7 +4797,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                   <button
                                     onClick={() => handleUpdateProjectResult('')}
                                     className={`w-full px-4 py-3 flex items-center justify-between text-left text-xs font-bold transition-all hover:bg-slate-50 dark:hover:bg-white/5 ${
-                                      !selectedProject.projectResult ? 'bg-violet-500/10 text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400'
+                                      !selectedProject.projectResult ? 'bg-violet-500/10 text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-200'
                                     }`}
                                   >
                                     <div className="flex items-center gap-3 pr-4">
@@ -4657,7 +4811,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                       key={res.label}
                                       onClick={() => handleUpdateProjectResult(res.label)}
                                       className={`w-full px-4 py-3 flex items-center justify-between text-left text-xs font-bold transition-all hover:bg-slate-50 dark:hover:bg-white/5 ${
-                                        selectedProject.projectResult === res.label ? 'bg-violet-500/10 text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400'
+                                        selectedProject.projectResult === res.label ? 'bg-violet-500/10 text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-200'
                                       }`}
                                     >
                                       <div className="flex items-center gap-3 pr-4">
@@ -4675,12 +4829,12 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                       </div>
 
                       <div className="p-4 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm">
-                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Investimento</p>
+                        <p className="text-[10px] font-bold text-slate-500 dark:text-slate-300 uppercase tracking-widest mb-2">Investimento</p>
                         <span className="text-sm font-bold text-slate-900 dark:text-white">{selectedProject.investment}</span>
                       </div>
 
                       <div className="p-4 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm">
-                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Última Reunião</p>
+                        <p className="text-[10px] font-bold text-slate-500 dark:text-slate-300 uppercase tracking-widest mb-2">Última Reunião</p>
                         {selectedProject.lastMeetingDate ? (
                           <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold whitespace-nowrap ${meetingBadgeClasses(selectedProject.lastMeetingDate)}`}>
                             <Calendar size={12} className="shrink-0" />
@@ -4720,11 +4874,11 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     {isEditing ? (
                       <div className="grid grid-cols-2 gap-4">
                         <div className="p-4 bg-slate-100 dark:bg-dark-input rounded-xl border border-slate-200 dark:border-white/5">
-                          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Status Atual</p>
+                          <p className="text-[10px] font-bold text-slate-500 dark:text-slate-300 uppercase tracking-widest mb-1">Status Atual</p>
                           {getStatusBadge(selectedProject.status)}
                         </div>
                         <div className="p-4 bg-slate-100 dark:bg-dark-input rounded-xl border border-slate-200 dark:border-white/5 relative">
-                          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Resultado do Projeto</p>
+                          <p className="text-[10px] font-bold text-slate-500 dark:text-slate-300 uppercase tracking-widest mb-1">Resultado do Projeto</p>
                           <button 
                             onClick={() => setIsProjectResultDropdownOpen(!isProjectResultDropdownOpen)}
                             className="flex items-center justify-between w-full px-4 py-2 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-bold text-light-text dark:text-white hover:bg-slate-200 dark:hover:bg-white/10 transition-all"
@@ -4733,7 +4887,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                               <div className={`w-2 h-2 rounded-full ${projectResults.find(r => r.label === selectedProject.projectResult)?.color || 'bg-slate-500'}`} />
                               {selectedProject.projectResult || 'Selecionar Resultado'}
                             </div>
-                            <ChevronDown size={16} className={`text-slate-500 transition-transform ${isProjectResultDropdownOpen ? 'rotate-180' : ''}`} />
+                            <ChevronDown size={16} className={`text-slate-500 dark:text-slate-300 transition-transform ${isProjectResultDropdownOpen ? 'rotate-180' : ''}`} />
                           </button>
 
                           <AnimatePresence>
@@ -4748,7 +4902,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                   <button
                                     onClick={() => handleUpdateProjectResult('')}
                                     className={`w-full px-4 py-3 flex items-center justify-between text-left text-xs font-bold transition-all hover:bg-slate-50 dark:hover:bg-white/5 ${
-                                      !selectedProject.projectResult ? 'bg-violet-500/10 text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400'
+                                      !selectedProject.projectResult ? 'bg-violet-500/10 text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-200'
                                     }`}
                                   >
                                     <div className="flex items-center gap-3 pr-4">
@@ -4762,7 +4916,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                       key={res.label}
                                       onClick={() => handleUpdateProjectResult(res.label)}
                                       className={`w-full px-4 py-3 flex items-center justify-between text-left text-xs font-bold transition-all hover:bg-slate-50 dark:hover:bg-white/5 ${
-                                        selectedProject.projectResult === res.label ? 'bg-violet-500/10 text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400'
+                                        selectedProject.projectResult === res.label ? 'bg-violet-500/10 text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-200'
                                       }`}
                                     >
                                       <div className="flex items-center gap-3 pr-4">
@@ -4787,7 +4941,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                 {activeProjectTab === 'resultado' && (
                   <div className="space-y-4 mt-8">
                     <div className="flex items-center justify-between mb-4">
-                      <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Histórico Consolidado</h4>
+                      <h4 className="text-xs font-bold text-slate-500 dark:text-slate-300 uppercase tracking-widest">Histórico Consolidado</h4>
                       <OptionPicker
                         value={timelineFilter === 'Todos' ? null : timelineFilter}
                         options={[
@@ -4838,7 +4992,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                       </div>
                                       <div>
                                         <h4 className="text-sm font-bold text-slate-900 dark:text-white">{opt.title || opt.message?.split('\n')[0]}</h4>
-                                        <div className="flex items-center gap-1 text-xs text-slate-500">
+                                        <div className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-300">
                                           <Users size={12} />
                                           <span>{opt.attendees}</span>
                                         </div>
@@ -4847,7 +5001,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                     
                                     <div className="flex flex-col items-end gap-1">
                                       <div className="flex items-center gap-2">
-                                        <p className="text-[10px] text-slate-500 font-medium">{formatDateShort(opt.date)} {opt.time && `às ${opt.time}`}</p>
+                                        <p className="text-[10px] text-slate-500 dark:text-slate-300 font-medium">{formatDateShort(opt.date)} {opt.time && `às ${opt.time}`}</p>
                                         {/* Edição/exclusão de reuniões liberada para todos os usuários (antes: só superadmin/diretoria) */}
                                         {true && (
                                           <>
@@ -4863,7 +5017,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                                 });
                                                 setIsMeetingModalOpen(true);
                                               }}
-                                              className="ml-1 text-slate-400 hover:text-blue-500 transition-colors p-1 rounded-md hover:bg-blue-500/10"
+                                              className="ml-1 text-slate-400 dark:text-slate-300 hover:text-blue-500 transition-colors p-1 rounded-md hover:bg-blue-500/10"
                                               title="Editar reunião"
                                             >
                                               <Edit2 size={12} />
@@ -4873,7 +5027,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                                 e.stopPropagation();
                                                 handleDeleteMeeting(opt.id);
                                               }}
-                                              className="text-slate-400 hover:text-rose-500 transition-colors p-1 rounded-md hover:bg-rose-500/10"
+                                              className="text-slate-400 dark:text-slate-300 hover:text-rose-500 transition-colors p-1 rounded-md hover:bg-rose-500/10"
                                               title="Apagar reunião"
                                             >
                                               <Trash2 size={12} />
@@ -4884,15 +5038,15 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                     </div>
                                   </div>
                                   <div className="border-t border-slate-100 dark:border-white/5 pt-3">
-                                    <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Próximas ações / acordos</p>
+                                    <p className="text-[11px] font-bold text-slate-400 dark:text-slate-300 uppercase tracking-wider mb-2">Próximas ações / acordos</p>
                                     {(() => {
                                       const raw = (opt.actions || '').trim();
-                                      if (!raw) return <p className="text-xs text-slate-400 italic">Sem ações registradas.</p>;
+                                      if (!raw) return <p className="text-xs text-slate-400 dark:text-slate-300 italic">Sem ações registradas.</p>;
                                       const isHtml = /<\/?[a-z][\s\S]*>/i.test(raw);
                                       return (
                                         <div className="rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-100 dark:border-white/5 px-4 py-3">
                                           {isHtml ? (
-                                            <div className="text-[13px] leading-relaxed text-slate-600 dark:text-slate-300 [&_p]:my-1 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-1 [&_li]:my-0.5 [&_h1]:text-base [&_h1]:font-bold [&_h1]:mt-2 [&_h2]:text-sm [&_h2]:font-bold [&_h2]:mt-2 [&_h3]:font-semibold [&_a]:text-violet-500 [&_a]:underline [&_strong]:font-semibold" dangerouslySetInnerHTML={{ __html: raw }} />
+                                            <div className="text-[13px] leading-relaxed text-slate-700 dark:text-white [&_p]:my-1 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-1 [&_li]:my-0.5 [&_h1]:text-base [&_h1]:font-bold [&_h1]:mt-2 [&_h2]:text-sm [&_h2]:font-bold [&_h2]:mt-2 [&_h3]:font-semibold [&_a]:text-violet-500 [&_a]:underline [&_strong]:font-semibold" dangerouslySetInnerHTML={{ __html: raw }} />
                                           ) : (
                                             <div className="space-y-2.5">
                                               {raw.split(/\n\s*\n/).map((para: string, i: number) => {
@@ -4900,12 +5054,12 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                                 if (!text) return null;
                                                 const isBullet = /^\s*[-•*✓·]\s+/.test(para.trim());
                                                 return isBullet ? (
-                                                  <div key={i} className="flex items-start gap-2 text-[13px] leading-relaxed text-slate-600 dark:text-slate-300">
+                                                  <div key={i} className="flex items-start gap-2 text-[13px] leading-relaxed text-slate-700 dark:text-white">
                                                     <Check size={14} className="text-emerald-500 shrink-0 mt-0.5" />
                                                     <span>{text.replace(/^\s*[-•*✓·]\s+/, '')}</span>
                                                   </div>
                                                 ) : (
-                                                  <p key={i} className="text-[13px] leading-relaxed text-slate-600 dark:text-slate-300">{text}</p>
+                                                  <p key={i} className="text-[13px] leading-relaxed text-slate-700 dark:text-white">{text}</p>
                                                 );
                                               })}
                                             </div>
@@ -4931,7 +5085,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                       </p>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                      <p className="text-[10px] text-slate-500 font-medium">{formatDateShort(opt.date)} {opt.time && `às ${opt.time}`}</p>
+                                      <p className="text-[10px] text-slate-500 dark:text-slate-300 font-medium">{formatDateShort(opt.date)} {opt.time && `às ${opt.time}`}</p>
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-2 mb-2">
@@ -4944,7 +5098,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                       <span className="px-2 py-0.5 text-[10px] font-bold rounded-full uppercase whitespace-nowrap text-blue-700 bg-blue-100 dark:bg-blue-900/30">Métricas</span>
                                     )}
                                   </div>
-                                  <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed whitespace-pre-line">
+                                  <p className="text-xs text-slate-700 dark:text-white leading-relaxed whitespace-pre-line">
                                     {opt.message}
                                   </p>
                                 </>
@@ -4973,16 +5127,16 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                       {reply.authorPhoto ? (
                                         <img src={reply.authorPhoto} alt={reply.author} className="w-5 h-5 rounded-full object-cover mt-0.5" referrerPolicy="no-referrer" />
                                       ) : (
-                                        <div className="w-5 h-5 rounded-full bg-slate-200 dark:bg-white/10 flex items-center justify-center text-slate-500 text-[10px] font-bold mt-0.5">
+                                        <div className="w-5 h-5 rounded-full bg-slate-200 dark:bg-white/10 flex items-center justify-center text-slate-500 dark:text-slate-300 text-[10px] font-bold mt-0.5">
                                           {(reply.author || '?').charAt(0).toUpperCase()}
                                         </div>
                                       )}
                                       <div className="flex-1 min-w-0">
                                         <div className="flex items-baseline gap-2 mb-0.5">
                                           <p className="text-xs font-bold text-slate-900 dark:text-white">{reply.author}</p>
-                                          <p className="text-[10px] text-slate-500">{formatDateShort(reply.date)} às {reply.time}</p>
+                                          <p className="text-[10px] text-slate-500 dark:text-slate-300">{formatDateShort(reply.date)} às {reply.time}</p>
                                         </div>
-                                        <p className="text-xs text-slate-600 dark:text-slate-400 whitespace-pre-line">{reply.message}</p>
+                                        <p className="text-xs text-slate-700 dark:text-white whitespace-pre-line">{reply.message}</p>
                                       </div>
                                     </div>
                                   ))}
@@ -5002,7 +5156,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                   <div className="flex gap-2 justify-end">
                                     <button
                                       onClick={() => { setReplyingNoteId(null); setReplyMessage(''); }}
-                                      className="px-3 py-1.5 text-xs font-bold text-slate-500 hover:text-slate-700 dark:hover:text-white transition-colors"
+                                      className="px-3 py-1.5 text-xs font-bold text-slate-500 dark:text-slate-300 hover:text-slate-700 dark:hover:text-white transition-colors"
                                     >
                                       Cancelar
                                     </button>
@@ -5037,7 +5191,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                     className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold transition-colors border ${
                                       opt.likes?.includes(auth.currentUser?.email || userData?.name || 'user')
                                         ? 'bg-slate-100 dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-700 dark:text-white'
-                                        : 'text-slate-400 border-transparent hover:bg-slate-100 dark:hover:bg-white/5'
+                                        : 'text-slate-400 dark:text-slate-300 border-transparent hover:bg-slate-100 dark:hover:bg-white/5'
                                     }`}
                                   >
                                     {opt.likes?.includes(auth.currentUser?.email || userData?.name || 'user') ? (
@@ -5050,7 +5204,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                 </div>
                                 <button 
                                   onClick={(e) => { e.stopPropagation(); setReplyingNoteId(opt.id); }}
-                                  className="text-xs font-bold text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors"
+                                  className="text-xs font-bold text-slate-400 dark:text-slate-300 hover:text-slate-600 dark:hover:text-white transition-colors"
                                 >
                                   Responder
                                 </button>
@@ -5060,7 +5214,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                         ))}
                       </div>
                       {(!selectedProject.products || selectedProject.products.flatMap(p => p.optimizations || []).length === 0) && (
-                        <p className="text-xs text-slate-500 italic text-center mt-4">Nenhum histórico disponível.</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-300 italic text-center mt-4">Nenhum histórico disponível.</p>
                       )}
                     </div>
                   </div>
@@ -5069,7 +5223,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                 {activeProjectTab === 'reunioes' && (
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
-                      <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Reuniões</h4>
+                      <h4 className="text-xs font-bold text-slate-500 dark:text-slate-300 uppercase tracking-widest">Reuniões</h4>
                       <div className="flex gap-2">
                         <button
                           onClick={() => setIsMeetingModalOpen(true)}
@@ -5108,7 +5262,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                     <div className="flex items-start justify-between gap-2">
                                       <h4 className="font-bold text-slate-900 dark:text-white text-[15px] leading-tight break-words pr-2">{opt.title || opt.message?.split('\n')[0]}</h4>
                                       <div className="flex items-center gap-2 shrink-0">
-                                        <p className="text-[10px] text-slate-500 font-medium">{formatDateShort(opt.date)} {opt.time && `às ${opt.time}`}</p>
+                                        <p className="text-[10px] text-slate-500 dark:text-slate-300 font-medium">{formatDateShort(opt.date)} {opt.time && `às ${opt.time}`}</p>
                                         {/* Edição/exclusão de reuniões liberada para todos os usuários */}
                                         <button
                                           onClick={(e) => {
@@ -5122,7 +5276,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                             });
                                             setIsMeetingModalOpen(true);
                                           }}
-                                          className="text-slate-400 hover:text-blue-500 transition-colors p-1 rounded-md hover:bg-blue-500/10"
+                                          className="text-slate-400 dark:text-slate-300 hover:text-blue-500 transition-colors p-1 rounded-md hover:bg-blue-500/10"
                                           title="Editar reunião"
                                         >
                                           <Edit2 size={12} />
@@ -5132,7 +5286,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                             e.stopPropagation();
                                             handleDeleteMeeting(opt.id);
                                           }}
-                                          className="text-slate-400 hover:text-rose-500 transition-colors p-1 rounded-md hover:bg-rose-500/10"
+                                          className="text-slate-400 dark:text-slate-300 hover:text-rose-500 transition-colors p-1 rounded-md hover:bg-rose-500/10"
                                           title="Apagar reunião"
                                         >
                                           <Trash2 size={12} />
@@ -5140,7 +5294,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                       </div>
                                     </div>
                                     {opt.attendees && (
-                                      <div className="flex items-center gap-1.5 mt-1 text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                                      <div className="flex items-center gap-1.5 mt-1 text-[11px] text-slate-500 dark:text-slate-300 font-medium">
                                         <Users size={12} className="shrink-0" />
                                         <span className="truncate">{opt.attendees}</span>
                                       </div>
@@ -5151,9 +5305,9 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                 {/* Anotações — conteúdo vem do editor rico, então é renderizado como HTML */}
                                 {String(opt.actions || '').replace(/<[^>]*>/g, '').trim() && (
                                   <div className="mt-3 pt-3 border-t border-black/5 dark:border-white/5">
-                                    <h5 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Próximas Ações / Acordos:</h5>
+                                    <h5 className="text-[10px] font-bold text-slate-500 dark:text-slate-300 uppercase tracking-widest mb-2">Próximas Ações / Acordos:</h5>
                                     <div
-                                      className="text-[13px] leading-relaxed text-slate-600 dark:text-slate-300 [&_p]:my-1 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-1 [&_li]:my-0.5 [&_h1]:text-base [&_h1]:font-bold [&_h1]:mt-2 [&_h2]:text-sm [&_h2]:font-bold [&_h2]:mt-2 [&_h3]:font-semibold [&_a]:text-violet-500 [&_a]:underline [&_strong]:font-semibold [&_img]:rounded-xl [&_img]:my-2"
+                                      className="text-[13px] leading-relaxed text-slate-700 dark:text-white [&_p]:my-1 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-1 [&_li]:my-0.5 [&_h1]:text-base [&_h1]:font-bold [&_h1]:mt-2 [&_h2]:text-sm [&_h2]:font-bold [&_h2]:mt-2 [&_h3]:font-semibold [&_a]:text-violet-500 [&_a]:underline [&_strong]:font-semibold [&_img]:rounded-xl [&_img]:my-2"
                                       dangerouslySetInnerHTML={{ __html: opt.actions }}
                                     />
                                   </div>
@@ -5167,16 +5321,16 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                         {reply.authorPhoto ? (
                                           <img src={reply.authorPhoto} alt={reply.author} className="w-5 h-5 rounded-full object-cover mt-0.5" referrerPolicy="no-referrer" />
                                         ) : (
-                                          <div className="w-5 h-5 rounded-full bg-slate-200 dark:bg-white/10 flex items-center justify-center text-slate-500 text-[10px] font-bold mt-0.5">
+                                          <div className="w-5 h-5 rounded-full bg-slate-200 dark:bg-white/10 flex items-center justify-center text-slate-500 dark:text-slate-300 text-[10px] font-bold mt-0.5">
                                             {(reply.author || '?').charAt(0).toUpperCase()}
                                           </div>
                                         )}
                                         <div className="flex-1 min-w-0">
                                           <div className="flex items-baseline gap-2 mb-0.5">
                                             <p className="text-xs font-bold text-slate-900 dark:text-white">{reply.author}</p>
-                                            <p className="text-[10px] text-slate-500">{formatDateShort(reply.date)} às {reply.time}</p>
+                                            <p className="text-[10px] text-slate-500 dark:text-slate-300">{formatDateShort(reply.date)} às {reply.time}</p>
                                           </div>
-                                          <p className="text-xs text-slate-600 dark:text-slate-400 whitespace-pre-line">{reply.message}</p>
+                                          <p className="text-xs text-slate-700 dark:text-white whitespace-pre-line">{reply.message}</p>
                                         </div>
                                       </div>
                                     ))}
@@ -5197,7 +5351,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                     <div className="flex gap-2 justify-end">
                                       <button
                                         onClick={() => { setReplyingNoteId(null); setReplyMessage(''); }}
-                                        className="px-3 py-1.5 text-xs font-bold text-slate-500 hover:text-slate-700 dark:hover:text-white transition-colors"
+                                        className="px-3 py-1.5 text-xs font-bold text-slate-500 dark:text-slate-300 hover:text-slate-700 dark:hover:text-white transition-colors"
                                       >
                                         Cancelar
                                       </button>
@@ -5222,7 +5376,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                       className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold transition-colors border ${
                                         opt.likes?.includes(auth.currentUser?.email || userData?.name || 'user')
                                           ? 'bg-slate-100 dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-700 dark:text-white'
-                                          : 'text-slate-400 border-transparent hover:bg-slate-100 dark:hover:bg-white/5'
+                                          : 'text-slate-400 dark:text-slate-300 border-transparent hover:bg-slate-100 dark:hover:bg-white/5'
                                       }`}
                                     >
                                       {opt.likes?.includes(auth.currentUser?.email || userData?.name || 'user') ? (
@@ -5235,7 +5389,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                   </div>
                                   <button 
                                     onClick={(e) => { e.stopPropagation(); setReplyingNoteId(opt.id); }}
-                                    className="text-xs font-bold text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors"
+                                    className="text-xs font-bold text-slate-400 dark:text-slate-300 hover:text-slate-600 dark:hover:text-white transition-colors"
                                   >
                                     Responder
                                   </button>
@@ -5246,7 +5400,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                         </div>
                       </div>
                       {timelineItems.filter(opt => opt.type === 'meeting').length === 0 && (
-                        <p className="text-xs text-slate-500 italic text-center mt-4">Nenhuma reunião registrada.</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-300 italic text-center mt-4">Nenhuma reunião registrada.</p>
                       )}
                     </div>
                   </div>
@@ -5279,18 +5433,18 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     >
                       <div className="flex flex-col items-center gap-3">
                         <div className="p-3 bg-white/5 rounded-full border border-white/10">
-                          <Folder size={24} className="text-slate-400" />
+                          <Folder size={24} className="text-slate-400 dark:text-slate-300" />
                         </div>
                         <div>
                           <p className="text-sm font-bold text-light-text dark:text-white">Clique ou arraste arquivos para cá</p>
-                          <p className="text-xs text-slate-500">Suporta PDF, DOCX, XLSX, imagens e vídeos (Máx 50MB)</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-300">Suporta PDF, DOCX, XLSX, imagens e vídeos (Máx 50MB)</p>
                         </div>
                       </div>
                     </div>
 
                     <div className="bg-slate-50 dark:bg-white/5 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-white/10 overflow-hidden relative overflow-hidden before:absolute before:inset-0 before:bg-gradient-to-br before:from-white/10 before:to-transparent before:opacity-50 before:pointer-events-none">
                       <table className="w-full text-left text-xs">
-                        <thead className="bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest">
+                        <thead className="bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-300 font-bold uppercase tracking-widest">
                           <tr>
                             <th className="px-6 py-4">Nome do Arquivo</th>
                             <th className="px-6 py-4">Data</th>
@@ -5306,14 +5460,14 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                 <File size={16} className="text-purple-500" />
                                 {file.name}
                               </td>
-                              <td className="px-6 py-4 text-slate-400">{file.date}</td>
-                              <td className="px-6 py-4 text-slate-400">{file.size}</td>
+                              <td className="px-6 py-4 text-slate-400 dark:text-slate-300">{file.date}</td>
+                              <td className="px-6 py-4 text-slate-400 dark:text-slate-300">{file.size}</td>
                               <td className="px-6 py-4">
                                 <span className={`px-2 py-1 rounded-lg font-bold ${file.sender === 'Agência' ? 'bg-violet-500/10 text-violet-500' : 'bg-emerald-500/10 text-emerald-500'}`}>
                                   {file.sender}
                                 </span>
                               </td>
-                              <td className="px-6 py-4 text-right flex items-center justify-end gap-2 text-slate-500">
+                              <td className="px-6 py-4 text-right flex items-center justify-end gap-2 text-slate-500 dark:text-slate-300">
                                 <button onClick={() => setFileLightbox({ files: (selectedProject.files || []) as LbFile[], index })} className="hover:text-violet-500" title="Visualizar"><Eye size={16} /></button>
                                 <button onClick={() => {
                                   const a = document.createElement('a');
@@ -5347,13 +5501,13 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                         <Star size={22} className="text-violet-500" />
                       </div>
                       <h3 className="text-xl font-bold text-slate-800 dark:text-white">Pesquisa de qualidade</h3>
-                      <p className="text-sm text-slate-500 text-center max-w-sm">Copie o link abaixo e envie para o cliente avaliar o projeto e a parceria.</p>
+                      <p className="text-sm text-slate-500 dark:text-slate-300 text-center max-w-sm">Copie o link abaixo e envie para o cliente avaliar o projeto e a parceria.</p>
                       <div className="flex items-center gap-2 mt-2 w-full max-w-lg">
                         <input
                           type="text"
                           readOnly
                           value={`${window.location.origin}/nps/${selectedProject.id}`}
-                          className="flex-1 px-4 py-2.5 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-sm text-slate-500 outline-none"
+                          className="flex-1 px-4 py-2.5 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-sm text-slate-500 dark:text-slate-300 outline-none"
                         />
                         <button
                           onClick={() => {
@@ -5378,7 +5532,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                       {isNpsLoading ? (
                         <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 text-violet-500 animate-spin" /></div>
                       ) : npsResponses.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-16 text-slate-400 bg-slate-50 dark:bg-white/[0.02] rounded-2xl border border-slate-200 dark:border-white/5">
+                        <div className="flex flex-col items-center justify-center py-16 text-slate-400 dark:text-slate-300 bg-slate-50 dark:bg-white/[0.02] rounded-2xl border border-slate-200 dark:border-white/5">
                           <Star size={32} className="mb-3 opacity-30" />
                           <p className="text-sm font-medium">Nenhuma avaliação recebida ainda.</p>
                         </div>
@@ -5409,12 +5563,12 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                     </div>
                                     <div>
                                       <h5 className="font-bold text-slate-800 dark:text-white text-base leading-tight">{res.office}</h5>
-                                      <p className="text-xs text-slate-400 mt-0.5">{new Date(res.created_at).toLocaleString('pt-BR')}</p>
+                                      <p className="text-xs text-slate-400 dark:text-slate-300 mt-0.5">{new Date(res.created_at).toLocaleString('pt-BR')}</p>
                                     </div>
                                   </div>
                                   {/* Satisfaction overall */}
                                   <div className="flex flex-col items-end gap-1.5">
-                                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Satisfação geral</span>
+                                    <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-300 uppercase tracking-wider">Satisfação geral</span>
                                     <div className="flex items-center gap-1">
                                       {[1,2,3,4,5].map(star => (
                                         <Star key={star} size={18} className={res.grape_satisfaction >= star ? 'text-violet-500 fill-violet-500' : 'text-slate-200 dark:text-white/10 fill-slate-200 dark:fill-white/10'} />
@@ -5444,7 +5598,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                           <span className="text-sm font-black text-slate-800 dark:text-white">{m.score}</span>
                                         </div>
                                       </div>
-                                      <p className="text-[11px] text-slate-500 dark:text-slate-400 text-center leading-tight">{m.label}</p>
+                                      <p className="text-[11px] text-slate-500 dark:text-slate-300 text-center leading-tight">{m.label}</p>
                                     </div>
                                   ))}
                                 </div>
@@ -5492,12 +5646,12 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                       <div className="p-5 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-200 dark:border-white/5">
                         <div className="flex items-center justify-between mb-3">
                           <div>
-                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Nível de risco de churn</p>
+                            <p className="text-[10px] font-bold text-slate-500 dark:text-slate-300 uppercase tracking-widest mb-1">Nível de risco de churn</p>
                             <p className={`text-2xl font-black ${risk.color}`}>{risk.label}</p>
                           </div>
                           <div className="text-right">
-                            <p className={`text-2xl font-black ${risk.color}`}>{checkedCount}<span className="text-slate-400 text-base font-bold">/{CHURN_TOTAL}</span></p>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">sinais marcados</p>
+                            <p className={`text-2xl font-black ${risk.color}`}>{checkedCount}<span className="text-slate-400 dark:text-slate-300 text-base font-bold">/{CHURN_TOTAL}</span></p>
+                            <p className="text-[10px] text-slate-400 dark:text-slate-300 font-bold uppercase tracking-widest">sinais marcados</p>
                           </div>
                         </div>
                         <div className="h-2 rounded-full bg-slate-200 dark:bg-white/10 overflow-hidden">
@@ -5512,7 +5666,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                           <div key={group.group} className="rounded-2xl border border-slate-200 dark:border-white/5 overflow-hidden">
                             <div className="flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-800/30 border-b border-slate-200 dark:border-white/5">
                               <p className="text-xs font-bold text-slate-700 dark:text-white uppercase tracking-wider">{group.group}</p>
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${gChecked > 0 ? 'bg-rose-500/10 text-rose-500' : 'bg-slate-500/10 text-slate-400'}`}>{gChecked}/{group.items.length}</span>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${gChecked > 0 ? 'bg-rose-500/10 text-rose-500' : 'bg-slate-500/10 text-slate-400 dark:text-slate-300'}`}>{gChecked}/{group.items.length}</span>
                             </div>
                             <div className="p-2 space-y-1">
                               {group.items.map(it => {
@@ -5527,7 +5681,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                     <span className={`shrink-0 w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${on ? 'bg-rose-500 border-rose-500' : 'border-slate-300 dark:border-white/20'}`}>
                                       {on && <Check size={13} className="text-white" />}
                                     </span>
-                                    <span className={`text-sm ${on ? 'text-slate-800 dark:text-white font-medium' : 'text-slate-600 dark:text-slate-300'}`}>{it.label}</span>
+                                    <span className={`text-sm ${on ? 'text-slate-800 dark:text-white font-medium' : 'text-slate-600 dark:text-slate-200'}`}>{it.label}</span>
                                   </button>
                                 );
                               })}
@@ -5542,7 +5696,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                 {activeProjectTab === 'tokens' && (
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
-                      <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Tokens de Acesso</h4>
+                      <h4 className="text-xs font-bold text-slate-500 dark:text-slate-300 uppercase tracking-widest">Tokens de Acesso</h4>
                     </div>
 
                     {tokensLoading ? (
@@ -5596,14 +5750,14 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                         {platformLabel}
                                       </span>
                                       {token.account_id && (
-                                        <span className="text-xs text-slate-400 dark:text-gray-500 font-mono">
+                                        <span className="text-xs text-slate-400 dark:text-slate-300 dark:text-gray-500 font-mono">
                                           ID: {token.account_id}
                                         </span>
                                       )}
                                     </div>
                                     <div className="flex items-center gap-2 mt-0.5">
                                       {token.token_masked && (
-                                        <span className="text-xs text-slate-400 dark:text-gray-600 font-mono">
+                                        <span className="text-xs text-slate-400 dark:text-slate-300 dark:text-gray-600 font-mono">
                                           {token.token_masked}
                                         </span>
                                       )}
@@ -5615,7 +5769,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                     {sCfg.label}
                                   </span>
 
-                                  <button className="text-xs text-slate-400 dark:text-gray-500 hover:text-violet-500 transition-colors">
+                                  <button className="text-xs text-slate-400 dark:text-slate-300 dark:text-gray-500 hover:text-violet-500 transition-colors">
                                     Ver dados
                                   </button>
                                 </div>
@@ -5624,7 +5778,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                           })}
 
                           {projectTokens.length === 0 && (
-                            <div className="p-8 text-center text-slate-500 text-sm">
+                            <div className="p-8 text-center text-slate-500 dark:text-slate-300 text-sm">
                               Nenhum token cadastrado ainda.
                             </div>
                           )}
@@ -5632,7 +5786,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                           <div className="p-3 mt-2">
                             <button
                               onClick={openNewToken}
-                              className="text-sm text-slate-500 dark:text-gray-500 hover:text-violet-600 dark:hover:text-violet-400 flex items-center gap-2 font-medium transition-colors"
+                              className="text-sm text-slate-500 dark:text-slate-300 dark:text-gray-500 hover:text-violet-600 dark:hover:text-violet-400 flex items-center gap-2 font-medium transition-colors"
                             >
                               <Plus size={16} /> ADICIONAR TOKEN
                             </button>
@@ -5714,7 +5868,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <div className="w-1.5 h-5 bg-violet-600 rounded-full" />
-                          <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Comentários</h4>
+                          <h4 className="text-xs font-bold text-slate-500 dark:text-slate-300 uppercase tracking-widest">Comentários</h4>
                           {allComments.length > 0 && (
                             <span className="px-2 py-0.5 rounded-md bg-violet-500/10 text-violet-500 text-[10px] font-bold">{allComments.length}</span>
                           )}
@@ -5728,7 +5882,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                               className={`px-3 py-1 text-[10px] font-bold rounded-lg transition-all ${
                                 commentFilter === f
                                   ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm'
-                                  : 'text-slate-400 hover:text-slate-600 dark:hover:text-white'
+                                  : 'text-slate-400 dark:text-slate-300 hover:text-slate-600 dark:hover:text-white'
                               }`}
                             >
                               {f === 'all' ? 'Todos' : f === 'comment' ? 'Comentários' : '🔒 Internas'}
@@ -5740,9 +5894,9 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                       {/* Feed */}
                       <div className="space-y-3 order-2">
                         {filteredComments.length === 0 && (
-                          <div className="flex flex-col items-center gap-3 py-10 text-slate-400">
+                          <div className="flex flex-col items-center gap-3 py-10 text-slate-400 dark:text-slate-300">
                             <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-white/5 flex items-center justify-center">
-                              <MessageSquare size={22} className="text-slate-400" />
+                              <MessageSquare size={22} className="text-slate-400 dark:text-slate-300" />
                             </div>
                             <p className="text-sm">
                               {commentFilter === 'internal' ? 'Nenhuma nota interna.' : commentFilter === 'comment' ? 'Nenhum comentário.' : 'Nenhum comentário ainda.'}
@@ -5772,14 +5926,14 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-1">
                                 <span className={`text-sm font-bold ${c.isInternal ? 'text-amber-400' : 'text-slate-900 dark:text-white'}`}>{c.author}</span>
-                                <span className="text-[10px] text-slate-400">
+                                <span className="text-[10px] text-slate-400 dark:text-slate-300">
                                   {new Date(c.createdAt).toLocaleDateString('pt-BR')} às {new Date(c.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                                 </span>
                               </div>
                               {c.isInternal && (
                                 <span className="inline-block mb-2 text-[10px] font-bold text-amber-400 uppercase tracking-wider">🔒 Nota Interna</span>
                               )}
-                              {c.text && <p className={`text-sm leading-relaxed whitespace-pre-wrap ${c.isInternal ? 'text-amber-100/80' : 'text-slate-600 dark:text-slate-300'}`}>{c.text}</p>}
+                              {c.text && <p className={`text-sm leading-relaxed whitespace-pre-wrap ${c.isInternal ? 'text-amber-100/80' : 'text-slate-700 dark:text-white'}`}>{c.text}</p>}
                               {Array.isArray(c.images) && c.images.length > 0 && (
                                 <div className="flex flex-wrap gap-2 mt-2">
                                   {c.images.map((url: string, i: number) => (
@@ -5796,7 +5950,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                 setProjectComments(prev => ({ ...prev, [selectedProject.id]: allComments.filter(x => x.id !== c.id) }));
                                 try { await fetch(`/api/project-comments/${c.id}`, { method: 'DELETE' }); } catch(e) {}
                               }}
-                              className="flex-shrink-0 text-slate-400 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100 self-start mt-0.5"
+                              className="flex-shrink-0 text-slate-400 dark:text-slate-300 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100 self-start mt-0.5"
                             >
                               <Trash2 size={14} />
                             </button>
@@ -5862,7 +6016,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                           <button
                             onClick={() => setIsInternalNote(!isInternalNote)}
                             className={`flex items-center gap-2 text-xs font-bold transition-all ${
-                              isInternalNote ? 'text-amber-400' : 'text-slate-400 hover:text-slate-600 dark:hover:text-white'
+                              isInternalNote ? 'text-amber-400' : 'text-slate-400 dark:text-slate-300 hover:text-slate-600 dark:hover:text-white'
                             }`}
                           >
                             <div className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-all ${
@@ -5875,7 +6029,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                           <div className="flex items-center gap-2">
                             <button
                               onClick={() => commentFileRef.current?.click()}
-                              className="p-2 text-slate-400 hover:text-violet-500 transition-colors"
+                              className="p-2 text-slate-400 dark:text-slate-300 hover:text-violet-500 transition-colors"
                               title="Anexar imagem"
                             >
                               <ImageIcon size={18} />

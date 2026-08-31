@@ -4,11 +4,12 @@ import {
   Search, Plus, MoreHorizontal, 
   CheckCircle2, AlertCircle, Clock, 
   DollarSign, Users, ChevronDown,
-  ArrowRight, ArrowLeft, Trash2,
+  Trash2,
   Filter, Download, Link as LinkIcon,
-  CreditCard, RefreshCw, X, Send, Image as ImageIcon, Archive,
+  CreditCard, RefreshCw, X, Send, Image as ImageIcon, Archive, ArchiveRestore,
   Calendar, Activity, ShieldCheck, Pencil, ChevronLeft, ChevronRight, Check
 } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import OptionPicker from '../components/ui/OptionPicker';
 import { 
@@ -60,6 +61,7 @@ interface Client {
   paymentStatus?: string;
   displayColumn?: string;
   isArchived?: boolean;
+  crmArchivedAt?: string | null;
   aviso_previo_date?: string;
   finPeopleGuid?: string;
   hasActiveSubscription?: boolean;
@@ -174,6 +176,45 @@ const isTomorrowDate = (dateString: string) => {
 const SortableCard: React.FC<SortableCardProps> = ({ client, onClick, onMove, columns }) => {
   const COLUMNS = columns;
   const [showMenu, setShowMenu] = useState(false);
+  // O card tem `overflow-hidden` (para arredondar as bordas), o que recortava o menu
+  // por completo — z-index não resolve, o corte acontece antes do empilhamento.
+  // Solução: renderizar em portal no body, com posição fixa calculada pelo botão.
+  const menuBtnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+
+  const abrirMenu = () => {
+    const r = menuBtnRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const LARGURA = 192; // w-48
+    const ALTURA = 92;   // 2 itens (Arquivar e Excluir)
+    const cabeAbaixo = window.innerHeight - r.bottom > ALTURA + 8;
+    setMenuPos({
+      top: cabeAbaixo ? r.bottom + 4 : Math.max(8, r.top - ALTURA - 4),
+      left: Math.min(Math.max(8, r.right - LARGURA), window.innerWidth - LARGURA - 8),
+    });
+    setShowMenu(true);
+  };
+
+  // Fecha ao clicar fora, rolar ou redimensionar — com posição fixa o menu não
+  // acompanha o scroll, então fechar é mais correto do que reposicionar.
+  useEffect(() => {
+    if (!showMenu) return;
+    const fora = (e: MouseEvent) => {
+      if (menuRef.current?.contains(e.target as Node)) return;
+      if (menuBtnRef.current?.contains(e.target as Node)) return;
+      setShowMenu(false);
+    };
+    const fechar = () => setShowMenu(false);
+    document.addEventListener('mousedown', fora);
+    window.addEventListener('scroll', fechar, true);
+    window.addEventListener('resize', fechar);
+    return () => {
+      document.removeEventListener('mousedown', fora);
+      window.removeEventListener('scroll', fechar, true);
+      window.removeEventListener('resize', fechar);
+    };
+  }, [showMenu]);
   const {
     attributes,
     listeners,
@@ -212,12 +253,14 @@ const SortableCard: React.FC<SortableCardProps> = ({ client, onClick, onMove, co
       {...attributes}
       {...listeners}
       onClick={() => onClick(client)}
-      className={`relative cursor-grab active:cursor-grabbing rounded-xl border transition-all ${cardBorderClass} ${client.isArchived ? 'opacity-50 grayscale' : ''} overflow-hidden bg-white dark:bg-dark-card`}
+      className={`relative cursor-grab active:cursor-grabbing rounded-xl border transition-all ${cardBorderClass} ${client.isArchived ? 'opacity-50 grayscale' : ''} bg-white dark:bg-dark-card`}
       style={{ ...style, marginBottom: 12 }}
     >
       <div className="p-3">
+      {/* O card tinha `overflow-hidden` e recortava este selo pela metade. Com o
+          menu agora em portal, nada precisa do clipping — o selo volta inteiro. */}
       {client.isArchived && (
-        <div className="absolute -top-2 -right-2 bg-slate-800 text-white text-[9px] font-bold uppercase tracking-widest px-2 py-1 rounded-lg shadow-lg z-10">
+        <div className="absolute -top-2 -right-2 bg-slate-800 text-white text-[9px] font-bold uppercase tracking-widest px-2 py-1 rounded-lg shadow-lg z-10 pointer-events-none">
           Arquivado
         </div>
       )}
@@ -233,66 +276,83 @@ const SortableCard: React.FC<SortableCardProps> = ({ client, onClick, onMove, co
           <div>
             <div className="text-[13px] font-medium leading-tight text-gray-900 dark:text-white darker:text-gray-100">{client.name}</div>
             <div className="text-[11px] mt-0.5 text-gray-500 dark:text-slate-400 darker:text-slate-500">{client.squad}</div>
+            {/* Aviso prévio visível sem abrir o card. Só aparece quando a data existe. */}
+            {client.aviso_previo_date && (() => {
+              const d = new Date(client.aviso_previo_date + 'T00:00:00');
+              if (isNaN(d.getTime())) return null;
+              const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+              const dias = Math.round((d.getTime() - hoje.getTime()) / 86400000);
+              // vermelho quando venceu, âmbar na última semana, neutro no resto
+              const cor = dias < 0
+                ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
+                : dias <= 7
+                  ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                  : 'bg-slate-500/10 text-slate-600 dark:text-slate-400';
+              const legenda = dias < 0 ? `há ${Math.abs(dias)}d` : dias === 0 ? 'hoje' : `em ${dias}d`;
+              return (
+                <div className={`inline-flex items-center gap-1 mt-1.5 px-1.5 py-0.5 rounded-md text-[10px] font-semibold ${cor}`}>
+                  <Calendar size={10} />
+                  {d.toLocaleDateString('pt-BR')}
+                  <span className="opacity-70 font-normal">· {legenda}</span>
+                </div>
+              );
+            })()}
           </div>
         </div>
 
         <div className="relative">
           <button
+            ref={menuBtnRef}
             onClick={(e) => {
               e.stopPropagation();
-              setShowMenu(!showMenu);
+              showMenu ? setShowMenu(false) : abrirMenu();
             }}
+            onPointerDown={(e) => e.stopPropagation()}
             className="text-gray-500 dark:text-slate-400 darker:text-slate-500 hover:text-gray-900 dark:hover:text-white transition-colors p-1 rounded"
           >
             <MoreHorizontal size={16} />
           </button>
 
-          <AnimatePresence>
-            {showMenu && (
+          {showMenu && menuPos && createPortal(
+            // O posicionamento fica num wrapper comum: passar top/left no style do
+            // motion.div fazia o motion ANIMAR essas propriedades, e o menu aparecia
+            // deslizando de fora da tela.
+            <div ref={menuRef} style={{ position: 'fixed', top: menuPos.top, left: menuPos.left, zIndex: 200 }}>
               <motion.div
                 initial={{ opacity: 0, scale: 0.95, y: -8 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, y: -8 }}
                 transition={{ duration: 0.12 }}
-                className="absolute right-0 top-full mt-1 w-48 rounded-xl shadow-xl overflow-hidden z-50 border border-gray-200 dark:border-white/10 darker:border-white/5 bg-white dark:bg-dark-card"
+                className="w-48 rounded-xl shadow-xl overflow-hidden border border-gray-200 dark:border-white/10 darker:border-white/5 bg-white dark:bg-dark-card"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="p-1 flex flex-col">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const currentIndex = COLUMNS.findIndex(c => c.id === client.crmStatus);
-                      if (currentIndex > 0) onMove(client.id, COLUMNS[currentIndex - 1].id);
-                      setShowMenu(false);
-                    }}
-                    disabled={COLUMNS.findIndex(c => c.id === client.crmStatus) === 0}
-                    className="flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-lg disabled:opacity-40 text-left transition-colors hover:bg-gray-100 dark:hover:bg-white/5 text-gray-700 dark:text-slate-300"
-                  >
-                    <ArrowLeft size={14} /> Mover para anterior
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const currentIndex = COLUMNS.findIndex(c => c.id === client.crmStatus);
-                      if (currentIndex < COLUMNS.length - 1) onMove(client.id, COLUMNS[currentIndex + 1].id);
-                      setShowMenu(false);
-                    }}
-                    disabled={COLUMNS.findIndex(c => c.id === client.crmStatus) === COLUMNS.length - 1}
-                    className="flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-lg disabled:opacity-40 text-left transition-colors hover:bg-gray-100 dark:hover:bg-white/5 text-gray-700 dark:text-slate-300"
-                  >
-                    <ArrowRight size={14} /> Mover para próxima
-                  </button>
-                  <div className="h-px bg-gray-200 dark:bg-white/10 my-1" />
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onMove(client.id, 'arquivado');
-                      setShowMenu(false);
-                    }}
-                    className="flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-lg text-left transition-colors hover:bg-gray-100 dark:hover:bg-white/5 text-gray-700 dark:text-slate-300"
-                  >
-                    <Archive size={14} /> Arquivar
-                  </button>
+                  {/* "Mover para anterior/próxima" saíram: mover é por arrasto do card. */}
+                  {client.isArchived ? (
+                    // Arquivar grava crm_status='arquivado', o que apaga a coluna de
+                    // origem. Desarquivar devolve para "Processo de Saída", que é onde
+                    // o card já aparece enquanto arquivado.
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onMove(client.id, 'processo_saida');
+                        setShowMenu(false);
+                      }}
+                      className="flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-lg text-left transition-colors hover:bg-gray-100 dark:hover:bg-white/5 text-emerald-600 dark:text-emerald-400"
+                    >
+                      <ArchiveRestore size={14} /> Desarquivar
+                    </button>
+                  ) : (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onMove(client.id, 'arquivado');
+                        setShowMenu(false);
+                      }}
+                      className="flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-lg text-left transition-colors hover:bg-gray-100 dark:hover:bg-white/5 text-gray-700 dark:text-slate-300"
+                    >
+                      <Archive size={14} /> Arquivar
+                    </button>
+                  )}
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -305,8 +365,9 @@ const SortableCard: React.FC<SortableCardProps> = ({ client, onClick, onMove, co
                   </button>
                 </div>
               </motion.div>
-            )}
-          </AnimatePresence>
+            </div>,
+            document.body
+          )}
         </div>
       </div>
 
@@ -817,7 +878,18 @@ const CrmFinanceiro = () => {
         >
         <div className="flex overflow-x-auto pb-4 gap-5 items-start snap-x">
           {COLUMNS.map((column, colIdx) => {
-            const columnClients = filteredClients.filter(c => c.displayColumn === column.id);
+            // Arquivados vêm dos mais recentes para os mais antigos; os que já estavam
+            // arquivados antes de existir o carimbo (crmArchivedAt nulo) vão para o fim.
+            // Os não-arquivados mantêm a ordem original da lista.
+            const columnClients = filteredClients
+              .filter(c => c.displayColumn === column.id)
+              .sort((a, b) => {
+                if (!a.isArchived && !b.isArchived) return 0;
+                if (a.isArchived !== b.isArchived) return a.isArchived ? 1 : -1;
+                const ta = a.crmArchivedAt ? new Date(a.crmArchivedAt).getTime() : -Infinity;
+                const tb = b.crmArchivedAt ? new Date(b.crmArchivedAt).getTime() : -Infinity;
+                return tb - ta;
+              });
             return (
               <div
                 key={column.id}

@@ -80,8 +80,10 @@ const DrePanel: React.FC = () => {
   const showAllMonths = () => setHiddenMonths(new Set());
   const visibleCount = months.filter(m => !hiddenMonths.has(m)).length;
 
-  // Nível máximo visível por apresentação
-  const maxLevel = apresentacao === 'detalhado' ? 99 : apresentacao === 'agrupado' ? 2 : apresentacao === 'totalizadores' ? 1 : 0;
+  // Nível máximo visível por apresentação.
+  // "Agrupado" usa o mesmo limite do detalhado: o que define o que aparece é o
+  // estado recolhido (abaixo), assim os grupos mantêm a seta e podem ser abertos.
+  const maxLevel = apresentacao === 'detalhado' || apresentacao === 'agrupado' ? 99 : apresentacao === 'totalizadores' ? 1 : 0;
   const treeMode = apresentacao === 'detalhado' || apresentacao === 'agrupado';
 
   // ── Árvore recolhível (só nos modos com hierarquia) ──
@@ -93,6 +95,21 @@ const DrePanel: React.FC = () => {
     return false;
   };
   const toggle = (s: string) => setCollapsed(prev => { const n = new Set(prev); n.has(s) ? n.delete(s) : n.add(s); return n; });
+
+  // Estado inicial da árvore ao trocar de apresentação:
+  // "Agrupado" abre com os grupos recolhidos (mostrando até o nível 2) e
+  // "Detalhado" abre com tudo expandido. A partir daí o usuário controla pelas setas.
+  useEffect(() => {
+    if (apresentacao === 'agrupado') {
+      setCollapsed(new Set(
+        dreRows
+          .filter(r => r.level >= 2 && dreRows.some(x => x.structure.startsWith(r.structure + '.')))
+          .map(r => r.structure)
+      ));
+    } else if (apresentacao === 'detalhado') {
+      setCollapsed(new Set());
+    }
+  }, [apresentacao, dreRows]);
 
   // ── Oculta linhas/categorias sem nada lançado no ano (todos os meses zerados) ──
   const rowHasValue = (r: DreRow) => r.total !== 0 || months.some(m => (r.values[m] || 0) !== 0);
