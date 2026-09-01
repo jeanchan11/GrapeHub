@@ -2380,6 +2380,19 @@ async function startServer() {
       `);
 
       await pool.query(`
+        -- Âncora da base de clientes: ponto de partida conhecido para o cálculo
+        -- automático do "Realizado". A base não é recuperável antes disso porque a
+        -- tabela churn tem 318 saídas desde 2023 contra ~120 clientes no cadastro —
+        -- quem saiu foi apagado, não arquivado. De junho/2026 em diante os dados fecham.
+        CREATE TABLE IF NOT EXISTS growth_base_anchor (
+          id SERIAL PRIMARY KEY,
+          year INTEGER NOT NULL,
+          month INTEGER NOT NULL,
+          base INTEGER NOT NULL,
+          updated_at TIMESTAMPTZ DEFAULT NOW(),
+          UNIQUE(year, month)
+        );
+
         CREATE TABLE IF NOT EXISTS growth_realized (
           id SERIAL PRIMARY KEY,
           year INTEGER NOT NULL,
@@ -2394,6 +2407,12 @@ async function startServer() {
           updated_at TIMESTAMPTZ DEFAULT NOW(),
           UNIQUE(year, month)
         );
+      `);
+
+      // Âncora: 67 clientes em 01/06/2026 (valor conferido contra o preenchimento manual)
+      await pool.query(`
+        INSERT INTO growth_base_anchor (year, month, base) VALUES (2026, 6, 67)
+        ON CONFLICT (year, month) DO NOTHING
       `);
 
       // Seed Projections for 2026 based on baseline planning parameters
@@ -3891,7 +3910,7 @@ async function startServer() {
                      cac_goal = EXCLUDED.cac_goal,
                      fechamentos_goal = EXCLUDED.fechamentos_goal`,
                   [
-                    prod.id, p.id, prod.name, prod.icon, prod.cac, prod.results, prod.kpis, prod.budget, 
+                    prod.id, p.id, await nomeCanonicoDaAcao(prod.name), prod.icon, prod.cac, prod.results, prod.kpis, prod.budget, 
                     prod.platform, prod.status, prod.delivery, prod.aiService, prod.aiKeyword,
                     prod.bottleneck, prod.history, prod.balance, prod.paymentMethod, prod.projectResult, 
                     prod.cpaGoal, prod.leadsGoal, prod.cacGoal, prod.fechamentosGoal
@@ -4065,6 +4084,35 @@ async function startServer() {
   // por order_index, o que deixava a grade multicolorida sem significado nenhum —
   // a cor não codificava informação, só poluía.
   const FOLDER_COLOR = "#7c3aed";
+
+  /**
+   * Normaliza o nome de um produto contra o catálogo de ações.
+   *
+   * O campo é texto livre, então variantes nasciam o tempo todo ("Auxílio doença ",
+   * "Auxilio Doença", "Salario Maternidade") e fragmentavam o histórico da tese.
+   * Aqui o nome é aparado e comparado sem acento/caixa/pontuação: se bater com uma
+   * ação já cadastrada, grava-se a grafia canônica do catálogo. Se não bater,
+   * mantém o que o usuário escreveu (apenas aparado) — tese nova continua livre.
+   */
+  const chaveAcao = (s: string) => String(s || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+  let catalogoCache: { em: number; mapa: Map<string, string> } = { em: 0, mapa: new Map() };
+  async function nomeCanonicoDaAcao(nome: string | null | undefined): Promise<string | null> {
+    const bruto = String(nome ?? '').trim();
+    if (!bruto) return nome ?? null;
+    // cache de 60s: o batch salva vários produtos seguidos
+    if (Date.now() - catalogoCache.em > 60_000) {
+      try {
+        const { rows } = await pool.query(`SELECT name FROM product_catalog`);
+        const mapa = new Map<string, string>();
+        for (const r of rows) mapa.set(chaveAcao(r.name), String(r.name).trim());
+        catalogoCache = { em: Date.now(), mapa };
+      } catch { /* sem catálogo: segue com o nome aparado */ }
+    }
+    return catalogoCache.mapa.get(chaveAcao(bruto)) || bruto;
+  }
 
   app.post("/api/product-catalog-folders", async (req, res) => {
     try {
@@ -7907,9 +7955,83 @@ app.get("/api/todos", async (req, res) => {
   });
 
   // ── GROWTH PLANNING ENDPOINTS ───────────────────────────────────────
+
+  /**
+   * Recalcula o "Realizado" a partir dos dados reais, mês a mês.
+   *
+   *   base(mês)     = base(mês anterior) + novos(anterior) − saídas(anterior)
+   *   novos(mês)    = clientes com start_date dentro do mês
+   *   saídas(mês)   = registros de churn com day_exit dentro do mês
+   *   churn %(mês)  = saídas ÷ base do início do mês
+   *
+   * Parte de uma âncora (growth_base_anchor) porque a base não é reconstruível
+   * antes dela. A cadeia atravessa a virada de ano: janeiro herda o fechamento
+   * de dezembro, então 2027 em diante continua sozinho.
+   *
+   * Só toca nos 4 campos derivados. traffic_budget e cac continuam manuais —
+   * esses números não existem na base.
+   */
+  async function recalcularRealizado(anoAlvo: number) {
+    const anc = await pool.query(
+      `SELECT year, month, base FROM growth_base_anchor ORDER BY year ASC, month ASC LIMIT 1`
+    );
+    if (!anc.rows[0]) return;
+    const { year: aYear, month: aMonth, base: aBase } = anc.rows[0];
+    if (anoAlvo < aYear) return;   // antes da âncora não há como calcular
+
+    // Vai da âncora até dezembro do ano pedido ou até o mês corrente — o que for maior.
+    const { rows } = await pool.query(`
+      WITH meses AS (
+        SELECT generate_series(
+          make_date($1::int, $2::int, 1),
+          GREATEST(make_date($3::int, 12, 1), date_trunc('month', CURRENT_DATE)::date),
+          '1 month'
+        )::date AS m
+      )
+      SELECT
+        EXTRACT(YEAR  FROM m)::int AS ano,
+        EXTRACT(MONTH FROM m)::int AS mes,
+        (SELECT COUNT(*)::int FROM clients c
+           WHERE c.start_date ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+             AND date_trunc('month', c.start_date::date) = m) AS novos,
+        (SELECT COUNT(*)::int FROM churn ch
+           WHERE ch.day_exit IS NOT NULL
+             AND date_trunc('month', ch.day_exit::date) = m) AS saidas
+      FROM meses ORDER BY m
+    `, [aYear, aMonth, anoAlvo]);
+
+    // Mês futuro não tem realizado: gravar zeros ali viraria dado falso na tela.
+    const hoje = new Date();
+    const anoAtual = hoje.getFullYear(), mesAtual = hoje.getMonth() + 1;
+
+    let base = Number(aBase);
+    for (const r of rows) {
+      const novos = Number(r.novos), saidas = Number(r.saidas);
+      const churnPct = base > 0 ? Number(((saidas / base) * 100).toFixed(2)) : 0;
+      const jaComecou = Number(r.ano) < anoAtual
+        || (Number(r.ano) === anoAtual && Number(r.mes) <= mesAtual);
+      if (Number(r.ano) === anoAlvo && jaComecou) {
+        await pool.query(`
+          INSERT INTO growth_realized (year, month, initial_clients, churn_rate, churn_count, new_clients, updated_at)
+          VALUES ($1, $2, $3, $4, $5, $6, NOW())
+          ON CONFLICT (year, month) DO UPDATE SET
+            initial_clients = EXCLUDED.initial_clients,
+            churn_rate      = EXCLUDED.churn_rate,
+            churn_count     = EXCLUDED.churn_count,
+            new_clients     = EXCLUDED.new_clients,
+            updated_at      = NOW()
+        `, [anoAlvo, Number(r.mes), base, churnPct, saidas, novos]);
+      }
+      base = base + novos - saidas;   // fechamento do mês vira a base do próximo
+    }
+  }
+
   app.get("/api/growth-planning", async (req, res) => {
     try {
       const year = parseInt(req.query.year as string, 10) || 2026;
+
+      // Mantém o Realizado sempre em dia com churn e cadastro de clientes.
+      await recalcularRealizado(year).catch(e => console.error('[growth] recálculo:', e.message));
 
       const projResult = await pool.query(
         "SELECT * FROM growth_projections WHERE year = $1 ORDER BY month ASC",
@@ -19810,7 +19932,15 @@ function setupStaticServing(app: any) {
   // because the explicit "/" handler above takes priority
   app.use(express.static(distPath, { index: false }));
 
-  // SPA fallback: any other non-API route gets the injected index.html
+  // Rota /api/ que não casou com nada: responde 404 em JSON.
+  // Sem isso ela caía no fallback abaixo e recebia o index.html, e o front
+  // quebrava com "Unexpected token '<', \"<!DOCTYPE\"" — erro que não diz
+  // nada sobre a causa real (backend desatualizado ou rota inexistente).
+  app.all("/api/*rest", (req: any, res: any) => {
+    res.status(404).json({ error: `Rota não encontrada: ${req.method} ${req.path}` });
+  });
+
+  // SPA fallback: qualquer outra rota recebe o index.html injetado
   app.get("*all", (req: any, res: any) => {
     const html = getInjectedHtml();
     if (html) {
