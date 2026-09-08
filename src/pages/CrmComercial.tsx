@@ -4591,8 +4591,12 @@ const CrmComercial = () => {
     };
     const baseDate = new Date();
     try {
+      // day_offset é o INTERVALO desde o passo anterior, não a distância até hoje.
+      // Sem acumular, "Ligação 1" (0 dias depois do WPP 3, que é dia 1) caía em dia 0.
+      let diasAcumulados = 0;
       for (const step of sequence.steps) {
-        const due = addDays(baseDate, step.day_offset ?? 1, sequence.skip_weekends ?? true);
+        diasAcumulados += step.day_offset ?? 0;
+        const due = addDays(baseDate, diasAcumulados, sequence.skip_weekends ?? true);
         const dueStr = due.toISOString().split('T')[0];
         await fetch(`/api/crm-comercial/leads/${leadId}/tasks`, {
           method: 'POST',

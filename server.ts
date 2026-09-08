@@ -3327,9 +3327,13 @@ async function startServer() {
                   `SELECT * FROM crm_sequence_steps WHERE sequence_id = $1 ORDER BY order_index ASC`,
                   [cfg.sequence_id]
                 );
+                // Mesmo cálculo do botão "Sequência" no CRM: day_offset é o intervalo
+                // desde o passo anterior. O `|| 1` antigo ainda transformava dia 0 em dia 1.
+                let diasAcumulados = 0;
                 for (const step of seqSteps.rows) {
+                  diasAcumulados += Number(step.day_offset ?? 0);
                   const dueDate = new Date();
-                  dueDate.setDate(dueDate.getDate() + (step.day_offset || 1));
+                  dueDate.setDate(dueDate.getDate() + diasAcumulados);
                   await pool.query(
                     `INSERT INTO crm_comercial_tasks (lead_id, title, type, due_date, observations)
                      VALUES ($1, $2, $3, $4, $5)`,
