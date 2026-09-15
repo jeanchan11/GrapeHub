@@ -108,7 +108,7 @@ const CrmSequencias = () => {
 
   const addStep = (index: number) => {
     const s = [...seqForm.steps];
-    s.splice(index, 0, { day_offset: 1, type: 'WhatsApp', title: 'Nova atividade', observations: '' });
+    s.splice(index, 0, { day_offset: 1, time_of_day: '09:00', type: 'WhatsApp', title: 'Nova atividade', observations: '' });
     setSeqForm(prev => ({ ...prev, steps: s }));
     setSelectedStepIndex(index); // Auto select the new step
   };
@@ -275,7 +275,7 @@ const CrmSequencias = () => {
                         <span className="text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest bg-gray-200/50 dark:bg-white/10 px-2 py-0.5 rounded">Dia {cumDays}</span>
                         <div className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-500 dark:text-gray-400">
                           <span>⌛</span>
-                          <span>{step.day_offset} {step.day_offset === 1 ? 'dia' : 'dias'}</span>
+                          <span>{step.day_offset} {step.day_offset === 1 ? 'dia' : 'dias'} · {step.time_of_day || '09:00'}</span>
                         </div>
                       </div>
 
@@ -379,6 +379,26 @@ const CrmSequencias = () => {
                           className="w-14 bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-lg px-2 py-1.5 text-sm font-bold text-center text-gray-900 dark:text-white focus:outline-none focus:border-violet-500" 
                         />
                         <span className="text-xs font-semibold text-gray-500">dia(s) após o anterior</span>
+                      </div>
+                    </div>
+
+                    {/* Horário do toque. Sem ele, todos os passos do mesmo dia caíam às 09:00
+                        juntos. O follow-up fora de 8h–21h é bloqueio garantido no WhatsApp. */}
+                    <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-dark-bg rounded-xl border border-gray-200 dark:border-white/10">
+                      <span className="text-[11px] font-bold text-gray-500 uppercase tracking-widest shrink-0">Horário</span>
+                      <div className="flex items-center gap-2 flex-1">
+                        <input
+                          type="time"
+                          value={seqForm.steps[selectedStepIndex].time_of_day || '09:00'}
+                          onChange={e => handleSeqAction(selectedStepIndex, 'time_of_day', e.target.value)}
+                          className="w-28 bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-lg px-2 py-1.5 text-sm font-bold text-center text-gray-900 dark:text-white focus:outline-none focus:border-violet-500"
+                        />
+                        {(() => {
+                          const h = parseInt((seqForm.steps[selectedStepIndex].time_of_day || '09:00').slice(0, 2), 10);
+                          return (h < 8 || h >= 21)
+                            ? <span className="text-xs font-semibold text-amber-600 dark:text-amber-400">fora de 8h–21h · risco de bloqueio</span>
+                            : <span className="text-xs font-semibold text-gray-500">do dia do toque</span>;
+                        })()}
                       </div>
                     </div>
 

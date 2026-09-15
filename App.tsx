@@ -38,6 +38,7 @@ import TodoStaff from './src/pages/TodoStaff';
 import ChamadosGrapehub from './src/pages/ChamadosGrapehub';
 import IdeaisCriativos from './src/pages/IdeaisCriativos';
 import OnboardingOperacional from './src/pages/OnboardingOperacional';
+import Cursos from './src/pages/Cursos';
 import ImplementacaoIA from './src/pages/ImplementacaoIA';
 import VisualHub from './src/pages/VisualHub';
 import Bolao from './src/pages/Bolao';
@@ -425,6 +426,8 @@ const AppContent: React.FC = () => {
         return <IdeaisCriativos key={activePage} activePage={activePage} />;
       case 'onboarding-operacional':
         return <OnboardingOperacional />;
+      case 'cursos':
+        return <Cursos />;
       case 'implementacao-ia':
         return <ImplementacaoIA />;
       case 'visual-hub':

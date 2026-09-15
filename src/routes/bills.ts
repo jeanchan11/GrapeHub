@@ -7,6 +7,22 @@ export const DEFAULT_CATEGORIES = [
   'Serviços', 'Fornecedores', 'Utilidades', 'Equipamentos', 'Outros',
 ];
 
+// ── Contas de cartão de crédito ─────────────────────────────────────────────
+// Fatura fechada: os lançamentos pertencem ao mês em que a fatura é PAGA
+// (billing_month), não à data da compra. Vale para todo cartão importado.
+export const CARD_ACCOUNTS = ['sicredi', 'asaas_cartao'] as const;
+export type CardAccount = typeof CARD_ACCOUNTS[number];
+
+export const CARD_META: Record<string, { label: string; billName: string; dueDay: number }> = {
+  sicredi:      { label: 'Sicredi', billName: 'Cartão Sicredi', dueDay: 18 },
+  asaas_cartao: { label: 'Asaas',   billName: 'Cartão Asaas',   dueDay: 10 },
+};
+
+export function normalizeCardAccount(v: any): string {
+  const a = String(v || '').trim().toLowerCase();
+  return (CARD_ACCOUNTS as readonly string[]).includes(a) ? a : 'sicredi';
+}
+
 // ── Palavras-chave para categorização automática do Sicredi ─────────────────
 const SICREDI_AUTO_CATEGORIES: { keywords: string[]; category: string }[] = [
   { keywords: ['google', 'gsuite', 'workspace'], category: 'Software' },
@@ -35,13 +51,15 @@ function autoCategory(description: string): string | null {
 // Lança/move a fatura do cartão Sicredi no Contas a Pagar (fin_bill_entries) usando a
 // DATA DE PAGAMENTO definida para aquela competência. Sem data de pagamento, não lança.
 // A parcela é identificada pela nota "Competência MM/AAAA" para poder ser movida/atualizada.
-export async function syncSicrediBillEntry(pool: Pool, billingMonth: string): Promise<void> {
+export async function syncSicrediBillEntry(pool: Pool, billingMonth: string, account: string = 'sicredi'): Promise<void> {
   if (!billingMonth) return;
+  const acc = normalizeCardAccount(account);
+  const meta = CARD_META[acc];
   try {
-    let billRes = await pool.query(`SELECT id FROM fin_bills WHERE LOWER(name) LIKE '%sicredi%' AND LOWER(name) LIKE '%cart%' LIMIT 1`);
+    let billRes = await pool.query(`SELECT id FROM fin_bills WHERE LOWER(name) = LOWER($1) LIMIT 1`, [meta.billName]);
     let billId: number;
     if (billRes.rows.length === 0) {
-      const nb = await pool.query(`INSERT INTO fin_bills (name, category, value, recurrence, due_day, is_active) VALUES ('Cartão Sicredi','Cartão de Crédito',NULL,'monthly',18,false) RETURNING id`);
+      const nb = await pool.query(`INSERT INTO fin_bills (name, category, value, recurrence, due_day, is_active) VALUES ($1,'Cartão de Crédito',NULL,'monthly',$2,false) RETURNING id`, [meta.billName, meta.dueDay]);
       billId = nb.rows[0].id;
     } else billId = billRes.rows[0].id;
 
@@ -51,13 +69,13 @@ export async function syncSicrediBillEntry(pool: Pool, billingMonth: string): Pr
     // Remove a parcela anterior desta fatura (em qualquer mês), exceto se já paga/cancelada
     await pool.query(`DELETE FROM fin_bill_entries WHERE bill_id=$1 AND notes=$2 AND status NOT IN ('paid','cancelled')`, [billId, noteTag]);
 
-    const pd = await pool.query(`SELECT payment_date FROM fin_sicredi_invoice WHERE billing_month=$1`, [billingMonth]);
+    const pd = await pool.query(`SELECT payment_date FROM fin_sicredi_invoice WHERE billing_month=$1 AND account=$2`, [billingMonth, acc]);
     const payDate = pd.rows[0]?.payment_date;
     if (!payDate) return; // sem data de pagamento -> ainda não lança
 
     const payIso = new Date(payDate).toISOString().slice(0, 10);
     const refMonth = payIso.slice(0, 7);
-    const totalRes = await pool.query(`SELECT COALESCE(SUM(value::numeric),0) AS total FROM fin_movements_asaas WHERE account='sicredi' AND billing_month=$1 AND type=-1`, [billingMonth]);
+    const totalRes = await pool.query(`SELECT COALESCE(SUM(value::numeric),0) AS total FROM fin_movements_asaas WHERE account=$2 AND billing_month=$1 AND type=-1`, [billingMonth, acc]);
     const total = parseFloat(totalRes.rows[0].total) || 0;
 
     await pool.query(
@@ -69,7 +87,7 @@ export async function syncSicrediBillEntry(pool: Pool, billingMonth: string): Pr
       [billId, refMonth, payIso, total, noteTag]
     );
   } catch (e: any) {
-    console.warn('[sicredi] syncSicrediBillEntry:', e.message);
+    console.warn(`[${acc}] syncSicrediBillEntry:`, e.message);
   }
 }
 
@@ -119,7 +137,7 @@ export async function categorizeMovements(pool: Pool, opts: { month?: string } =
     return null;
   };
 
-  const where = opts.month ? `AND ((account='asaas' AND to_char(transaction_date,'YYYY-MM')=$1) OR (account='sicredi' AND billing_month=$1))` : '';
+  const where = opts.month ? `AND ((account='asaas' AND to_char(transaction_date,'YYYY-MM')=$1) OR (account = ANY('{${CARD_ACCOUNTS.join(',')}}') AND billing_month=$1))` : '';
   const params: any[] = opts.month ? [opts.month] : [];
   const mv = (await pool.query(
     `SELECT id, COALESCE(NULLIF(custom_description,''),description) AS desc FROM fin_movements_asaas
@@ -503,14 +521,15 @@ export function setupBillsRoutes(app: Express, pool: Pool) {
   // GET /api/fin/bills/sicredi?month=YYYY-MM — lançamentos do cartão Sicredi
   app.get('/api/fin/bills/sicredi', async (req, res) => {
     const month = (req.query.month as string) || new Date().toISOString().slice(0, 7);
+    const account = normalizeCardAccount(req.query.account);
     try {
       const result = await pool.query(
         `SELECT id, asaas_id, description, custom_description, value, transaction_date,
                 type, grapehub_category, custom_category, user_comment, sicredi_status, billing_month
          FROM fin_movements_asaas
-         WHERE account = 'sicredi' AND billing_month = $1
+         WHERE account = $2 AND billing_month = $1
          ORDER BY transaction_date ASC`,
-        [month]
+        [month, account]
       );
 
       const rows = result.rows;
@@ -539,7 +558,7 @@ export function setupBillsRoutes(app: Express, pool: Pool) {
       // Data de pagamento da fatura (uma por mês de competência)
       let paymentDate: string | null = null;
       try {
-        const pd = await pool.query(`SELECT payment_date FROM fin_sicredi_invoice WHERE billing_month = $1`, [month]);
+        const pd = await pool.query(`SELECT payment_date FROM fin_sicredi_invoice WHERE billing_month = $1 AND account = $2`, [month, account]);
         if (pd.rows.length > 0 && pd.rows[0].payment_date) {
           paymentDate = new Date(pd.rows[0].payment_date).toISOString().slice(0, 10);
         }
@@ -551,16 +570,17 @@ export function setupBillsRoutes(app: Express, pool: Pool) {
       const avail = await pool.query(
         `SELECT billing_month, COUNT(*)::int AS itens
            FROM fin_movements_asaas
-          WHERE account = 'sicredi' AND billing_month IS NOT NULL
+          WHERE account = $1 AND billing_month IS NOT NULL
           GROUP BY billing_month
           ORDER BY billing_month DESC
-          LIMIT 12`
+          LIMIT 12`, [account]
       ).catch(() => ({ rows: [] as any[] }));
 
       res.json({
         items: rows,
         summary: { total, total_items: rows.length, categorized, payment_date: paymentDate },
         available_months: avail.rows,
+        account,
       });
     } catch (err) {
       console.error('[fin/bills/sicredi] GET error:', err);
@@ -573,14 +593,15 @@ export function setupBillsRoutes(app: Express, pool: Pool) {
     try {
       const { month, payment_date } = req.body;
       if (!month) return res.status(400).json({ error: 'month obrigatório' });
+      const account = normalizeCardAccount(req.body.account ?? req.query.account);
       await pool.query(
-        `INSERT INTO fin_sicredi_invoice (billing_month, payment_date, updated_at)
-         VALUES ($1, $2, NOW())
-         ON CONFLICT (billing_month) DO UPDATE SET payment_date = EXCLUDED.payment_date, updated_at = NOW()`,
-        [month, payment_date || null]
+        `INSERT INTO fin_sicredi_invoice (billing_month, account, payment_date, updated_at)
+         VALUES ($1, $3, $2, NOW())
+         ON CONFLICT (billing_month, account) DO UPDATE SET payment_date = EXCLUDED.payment_date, updated_at = NOW()`,
+        [month, payment_date || null, account]
       );
       // Lança/move a fatura no Contas a Pagar para o mês da data de pagamento
-      await syncSicrediBillEntry(pool, month);
+      await syncSicrediBillEntry(pool, month, account);
       res.json({ ok: true });
     } catch (err) {
       console.error('[fin/bills/sicredi] payment-date error:', err);
@@ -599,7 +620,7 @@ export function setupBillsRoutes(app: Express, pool: Pool) {
              custom_category=COALESCE($2, custom_category),
              user_comment=COALESCE($3, user_comment),
              edited_at=NOW()
-         WHERE id=$4 AND account='sicredi' RETURNING *`,
+         WHERE id=$4 AND account = ANY('{${CARD_ACCOUNTS.join(',')}}') RETURNING *`,
         [custom_description, custom_category, user_comment, id]
       );
       if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });

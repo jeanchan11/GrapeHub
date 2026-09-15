@@ -501,6 +501,8 @@ export default function ContasAPagar() {
   const [sicrediSummary, setSicrediSummary] = useState<SicrediSummary>({ total: 0, total_items: 0, categorized: 0 });
   const [sicrediMonths, setSicrediMonths] = useState<{ billing_month: string; itens: number }[]>([]);
   const [sicrediLoading, setSicrediLoading] = useState(false);
+  // Qual cartão está sendo visto/importado. Sicredi exporta OFX/CSV; Asaas só PDF.
+  const [cardAccount, setCardAccount] = useState<'sicredi' | 'asaas_cartao'>('sicredi');
   const [sicrediEditItem, setSicrediEditItem] = useState<SicrediItem | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
@@ -539,7 +541,7 @@ export default function ContasAPagar() {
   const fetchSicredi = useCallback(async () => {
     setSicrediLoading(true);
     try {
-      const r = await fetch(`/api/fin/bills/sicredi?month=${selectedMonth}`);
+      const r = await fetch(`/api/fin/bills/sicredi?month=${selectedMonth}&account=${cardAccount}`);
       if (r.ok) {
         const data = await r.json();
         setSicrediItems(data.items || []);
@@ -547,7 +549,7 @@ export default function ContasAPagar() {
         setSicrediMonths(data.available_months || []);
       }
     } finally { setSicrediLoading(false); }
-  }, [selectedMonth]);
+  }, [selectedMonth, cardAccount]);
 
   useEffect(() => {
     fetchCats();
@@ -557,7 +559,7 @@ export default function ContasAPagar() {
   useEffect(() => {
     if (activeTab === 'contas') fetchEntries();
     else fetchSicredi();
-  }, [activeTab, selectedMonth]);
+  }, [activeTab, selectedMonth, cardAccount]);
 
   // ── CRUD Handlers ──
   const handleSaveBill = async (data: Partial<Bill>) => {
@@ -594,7 +596,7 @@ export default function ContasAPagar() {
     if (r.ok) await fetchSicredi();
   };
 
-  // ── Upload Fatura (OFX ou CSV da Sicredi) ──
+  // ── Upload Fatura (OFX/CSV da Sicredi, PDF do Asaas) ──
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -615,7 +617,7 @@ export default function ContasAPagar() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          account: 'sicredi',
+          account: cardAccount,
           billing_month: selectedMonth,
           // A data de pagamento definida na tela manda no mês da fatura (regime de caixa).
           payment_date: sicrediSummary.payment_date || null,
@@ -662,7 +664,7 @@ export default function ContasAPagar() {
       await fetch('/api/fin/bills/sicredi/payment-date', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ month: selectedMonth, payment_date: date || null }),
+        body: JSON.stringify({ month: selectedMonth, payment_date: date || null, account: cardAccount }),
       });
     } catch { /* silencioso */ }
   };
@@ -728,7 +730,7 @@ export default function ContasAPagar() {
           <div className="flex items-center gap-4 mt-1 flex-wrap">
             {/* Tabs */}
             <div className="flex items-center gap-1">
-              {([['contas', 'Contas a Pagar', 'violet'], ['sicredi', 'Sicredi', 'emerald']] as const).map(([key, label, color]) => (
+              {([['contas', 'Contas a Pagar', 'violet'], ['sicredi', 'Cartões', 'emerald']] as const).map(([key, label, color]) => (
                 <button key={key} onClick={() => setActiveTab(key)}
                   className={`px-3 py-1.5 text-sm font-bold border-b-2 transition-all ${activeTab === key ? `border-${color}-400 text-${color}-400` : 'border-transparent text-slate-500 hover:text-dark-text'}`}>
                   {label}
@@ -1047,6 +1049,20 @@ export default function ContasAPagar() {
         {/* ══════════════════════════════════════════════════════════════════ */}
         {activeTab === 'sicredi' && (
           <>
+            {/* Seletor de cartão */}
+            <div className="flex items-center gap-1.5">
+              {([['sicredi', 'Sicredi'], ['asaas_cartao', 'Asaas']] as const).map(([key, label]) => (
+                <button key={key} onClick={() => { setCardAccount(key); setUploadMsg(null); setFilterSicrediCat(''); }}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold border transition-colors ${
+                    cardAccount === key
+                      ? 'bg-emerald-600 border-emerald-600 text-white'
+                      : 'bg-dark-card border-black/10 dark:border-white/10 text-slate-500 hover:text-dark-text'
+                  }`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+
             {/* KPI Cards */}
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               <KpiCard icon={<CreditCard size={16} className="text-white" />} accent="bg-emerald-600"
@@ -1063,8 +1079,14 @@ export default function ContasAPagar() {
             {/* Upload area */}
             <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-5 flex flex-col sm:flex-row items-center gap-4">
               <div className="flex-1">
-                <p className="text-sm font-bold text-dark-text mb-0.5">Importar Fatura (OFX ou CSV)</p>
-                <p className="text-xs text-slate-500">Faça upload do arquivo .ofx ou .csv da fatura exportada pelo Sicredi Internet Banking</p>
+                <p className="text-sm font-bold text-dark-text mb-0.5">
+                  {cardAccount === 'asaas_cartao' ? 'Importar Fatura (PDF)' : 'Importar Fatura (OFX, CSV ou PDF)'}
+                </p>
+                <p className="text-xs text-slate-500">
+                  {cardAccount === 'asaas_cartao'
+                    ? 'O Asaas só exporta a fatura em PDF. Anexe o PDF e os lançamentos são lidos e categorizados automaticamente.'
+                    : 'Faça upload do arquivo .ofx ou .csv da fatura exportada pelo Sicredi Internet Banking (PDF também funciona).'}
+                </p>
                 {uploadMsg && (
                   <p className={`text-xs mt-2 font-semibold ${uploadMsg.type === 'ok' ? 'text-emerald-400' : 'text-rose-400'}`}>{uploadMsg.text}</p>
                 )}
@@ -1082,11 +1104,11 @@ export default function ContasAPagar() {
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                <input ref={fileRef} type="file" accept=".ofx,.OFX,.csv,.CSV" className="hidden" onChange={handleUpload} />
+                <input ref={fileRef} type="file" accept=".ofx,.OFX,.csv,.CSV,.pdf,.PDF" className="hidden" onChange={handleUpload} />
                 <button onClick={() => fileRef.current?.click()} disabled={uploading}
                   className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-bold transition-colors">
                   {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                  {uploading ? 'Importando...' : 'Upload OFX / CSV'}
+                  {uploading ? 'Lendo fatura...' : cardAccount === 'asaas_cartao' ? 'Upload PDF' : 'Upload OFX / CSV / PDF'}
                 </button>
                 <button onClick={fetchSicredi} className="p-2.5 rounded-xl border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 text-slate-400 hover:text-dark-text transition-colors">
                   <RefreshCw size={14} className={sicrediLoading ? 'animate-spin' : ''} />

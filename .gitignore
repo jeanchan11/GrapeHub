@@ -31,3 +31,10 @@ firebase-applet-config.json
 *.db
 crm.db
 database.sqlite
+
+# credencial de leitura do Alfred (MCP) — nunca versionar
+.env.alfred
+
+# notas de sessão e guias locais — não versionar
+ACESSO-LEITURA-ALFRED.md
+NOTA-2026-09-15-precos-da-proposta.md

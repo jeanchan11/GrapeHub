@@ -13,8 +13,10 @@ import admin from "firebase-admin";
 import { setupCollectionRoutes } from "./src/routes/collection";
 import { setupDispatchRoutes } from "./src/routes/dispatch";
 import { setupAsaasSyncRoutes, runAsaasSync } from "./src/routes/asaas-sync";
-import { setupBillsRoutes, syncSicrediBillEntry, categorizeMovements } from "./src/routes/bills";
+import { setupBillsRoutes, syncSicrediBillEntry, categorizeMovements, CARD_ACCOUNTS } from "./src/routes/bills";
 import { setupBolaoRoutes } from "./src/routes/bolao";
+import { extrairFaturaPDF } from "./src/routes/fatura-pdf";
+import { setupCursosRoutes, migrateCursos } from "./src/routes/cursos";
 import { normalizePhoneBR } from './src/utils/phoneNormalize';
 import rateLimit from 'express-rate-limit';
 import cors from 'cors';
@@ -1766,6 +1768,11 @@ async function startServer() {
         day_offset INTEGER NOT NULL DEFAULT 1
       );
     `);
+    // Horário do toque. Sem isso todos os passos do mesmo dia caíam às 09:00 juntos —
+    // dois WhatsApps no mesmo minuto. O cofre exige controle de hora: follow-up fora
+    // de 8h–21h é bloqueio garantido (ver cadencia-followup-mql-formulario).
+    await pool.query(`ALTER TABLE crm_sequence_steps ADD COLUMN IF NOT EXISTS time_of_day TEXT DEFAULT '09:00'`)
+      .catch(e => console.error('migrate time_of_day:', e.message));
     // ── Fim Sequências ─────────────────────────────────────────────────────
 
     // ── Automações ──────────────────────────────────────────────────────────
@@ -3335,9 +3342,10 @@ async function startServer() {
                   const dueDate = new Date();
                   dueDate.setDate(dueDate.getDate() + diasAcumulados);
                   await pool.query(
-                    `INSERT INTO crm_comercial_tasks (lead_id, title, type, due_date, observations)
-                     VALUES ($1, $2, $3, $4, $5)`,
-                    [leadId, step.title || '', step.type || 'Tarefa', dueDate.toISOString().slice(0, 10), step.observations || null]
+                    `INSERT INTO crm_comercial_tasks (lead_id, title, type, due_date, start_time, observations)
+                     VALUES ($1, $2, $3, $4, $5, $6)`,
+                    [leadId, step.title || '', step.type || 'Tarefa', dueDate.toISOString().slice(0, 10),
+                     step.time_of_day || '09:00', step.observations || null]
                   );
                 }
               }
@@ -7261,10 +7269,17 @@ app.get("/api/todos", async (req, res) => {
            SELECT structure, MAX(description) AS description, MIN(sort_order) AS sort_order
            FROM fin_dfc_historico GROUP BY structure
          ), extra AS (
+           -- Ancorar no PAI, não no maior irmão. Com MAX(irmãos) as categorias que só
+           -- existem em fin_categories recebiam um sort igual ao do PRÓXIMO grupo e eram
+           -- desenhadas fora do seu: "Honorários Advogado" (02.06.04, +1.800) aparecia
+           -- embaixo de Despesas Financeiras, e a soma de Despesas Administrativas não fechava.
            SELECT c.structure, c.description,
-             (SELECT MAX(h.sort_order) FROM fin_dfc_historico h
-                WHERE h.structure LIKE left(c.structure, length(c.structure) - 2) || '%')
-             + right(c.structure, 2)::numeric * 0.001 AS sort_order
+             COALESCE(
+               (SELECT MIN(h.sort_order) FROM fin_dfc_historico h
+                  WHERE h.structure = regexp_replace(c.structure, '[.][^.]+$', '')),
+               (SELECT MAX(h.sort_order) FROM fin_dfc_historico h
+                  WHERE h.structure LIKE left(c.structure, length(c.structure) - 2) || '%')
+             ) + right(c.structure, 2)::numeric * 0.001 AS sort_order
            FROM fin_categories c
            WHERE c.structure ~ '^[0-9]' AND c.structure LIKE '%.%'
              AND c.structure NOT IN (SELECT structure FROM hist)
@@ -7294,7 +7309,7 @@ app.get("/api/todos", async (req, res) => {
            FROM fin_movements_asaas m JOIN fin_categories c ON c.id = m.custom_category_id
            WHERE m.is_anticipation_pair = false AND m.is_reversed_pair = false
              AND ((m.account='asaas' AND to_char(m.transaction_date,'YYYY-MM') = $1)
-               OR (m.account='sicredi' AND m.billing_month = $1))
+               OR (m.account = ANY('{${CARD_ACCOUNTS.join(',')}}') AND m.billing_month = $1))
            GROUP BY c.structure`, [month]
         );
         for (const row of mv.rows) {
@@ -7309,7 +7324,7 @@ app.get("/api/todos", async (req, res) => {
           `SELECT COALESCE(SUM(m.value::numeric * m.type),0) AS val FROM fin_movements_asaas m
            WHERE m.is_anticipation_pair = false AND m.is_reversed_pair = false AND m.custom_category_id IS NULL
              AND ((m.account='asaas' AND to_char(m.transaction_date,'YYYY-MM') = $1)
-               OR (m.account='sicredi' AND m.billing_month = $1))`, [month]
+               OR (m.account = ANY('{${CARD_ACCOUNTS.join(',')}}') AND m.billing_month = $1))`, [month]
         );
         liveSemCat[month] = parseFloat(semcat.rows[0].val) || 0;
       }
@@ -7317,7 +7332,39 @@ app.get("/api/todos", async (req, res) => {
       const isCat = (s: string) => /^[0-9]+(\.[0-9]+)*$/.test(s);
       const isLvl1 = (s: string) => /^[0-9]+$/.test(s);
 
-      const catRows = rowsRes.rows.filter((r: any) => isCat(r.structure)).map((r: any) => {
+      // Reordena hierarquicamente: cada linha vai logo abaixo do seu pai.
+      //
+      // O sort_order sozinho não garante isso — ele vem do histórico e, para categorias
+      // que só existem em fin_categories, é calculado por aritmética. Colisões faziam
+      // filhos serem desenhados dentro de OUTRO grupo, e aí a soma do grupo não fechava
+      // na tela (ex.: "Honorários Advogado" 02.06.04, +1.800, aparecia sob Despesas
+      // Financeiras). A ordem relativa entre grupos e entre irmãos é preservada — só a
+      // aninhagem é forçada.
+      const ordenarHierarquico = (linhas: any[]) => {
+        const filhosDe = new Map<string, any[]>();
+        const existe = new Set(linhas.map(l => String(l.structure)));
+        const raizes: any[] = [];
+        for (const l of linhas) {
+          const st = String(l.structure);
+          const corte = st.lastIndexOf('.');
+          const pai = corte > 0 ? st.slice(0, corte) : null;
+          if (pai && existe.has(pai)) {
+            if (!filhosDe.has(pai)) filhosDe.set(pai, []);
+            filhosDe.get(pai)!.push(l);
+          } else {
+            raizes.push(l);   // sem pai na lista: mantém no nível de topo, não some
+          }
+        }
+        const saida: any[] = [];
+        const visitar = (l: any) => {
+          saida.push(l);
+          for (const f of (filhosDe.get(String(l.structure)) || [])) visitar(f);
+        };
+        for (const r of raizes) visitar(r);
+        return saida;
+      };
+
+      const catRows = ordenarHierarquico(rowsRes.rows.filter((r: any) => isCat(r.structure))).map((r: any) => {
         const values: Record<string, number> = {}; let total = 0;
         for (const month of months) {
           const v = histMonths.has(month) ? (hist[`${month}|${r.structure}`] ?? 0) : (live[`${month}|${r.structure}`] ?? 0);
@@ -8594,6 +8641,9 @@ app.get("/api/todos", async (req, res) => {
   app.post("/api/financeiro/extrato/importar-ofx", express.json({ limit: '15mb' }), async (req: any, res) => {
     try {
       const account = (req.body.account as string) || 'sicredi';
+      // Faturas de cartão (Sicredi, Asaas) compartilham o mesmo tratamento:
+      // competência por billing_month, prune do mês e lançamento no Contas a Pagar.
+      const isCard = (CARD_ACCOUNTS as readonly string[]).includes(account);
       const billingMonth = (req.body.billing_month as string) || null;
       // Data de PAGAMENTO informada na tela (regime de caixa): é ela que define
       // o mês da fatura. Tem prioridade sobre o vencimento impresso no arquivo.
@@ -8608,9 +8658,10 @@ app.get("/api/todos", async (req, res) => {
       // Support base64 file upload via JSON
       let content: string;
       let fileName: string;
+      let fileBuf: Buffer | null = null;
       if (req.body.fileData) {
-        const buf = Buffer.from(req.body.fileData, 'base64');
-        content = buf.toString('utf-8');
+        fileBuf = Buffer.from(req.body.fileData, 'base64');
+        content = fileBuf.toString('utf-8');
         fileName = (req.body.fileName || 'import.ofx').toLowerCase();
       } else if (req.body.content) {
         content = req.body.content;
@@ -8619,11 +8670,45 @@ app.get("/api/todos", async (req, res) => {
         return res.status(400).json({ error: 'No file uploaded' });
       }
 
-      const isCSV = fileName.endsWith('.csv') || (!fileName.endsWith('.ofx') && content.includes(';'));
+      // PDF é reconhecido pela assinatura do arquivo, não só pela extensão.
+      const isPDF = fileName.endsWith('.pdf') || (fileBuf ? fileBuf.subarray(0, 5).toString('latin1') === '%PDF-' : false);
+      const isCSV = !isPDF && (fileName.endsWith('.csv') || (!fileName.endsWith('.ofx') && content.includes(';')));
 
       const transactions: { fitid: string; trntype: string; trnamt: number; dtposted: string; memo: string; card?: string }[] = [];
 
-      if (isCSV) {
+      if (isPDF) {
+        // ── Fatura em PDF (cartão Asaas e afins) ──
+        // Sem CSV/OFX disponível, o PDF é lido pelo Claude e devolve os mesmos
+        // campos do parser de CSV. Daqui pra frente o fluxo é idêntico.
+        if (!fileBuf) return res.status(400).json({ error: 'PDF precisa ser enviado em base64 (fileData).' });
+        const fatura = await extrairFaturaPDF(fileBuf, { billingMonth, fileName: req.body.fileName || '' });
+
+        if (fatura.due_date) {
+          detectedDueDate = fatura.due_date;
+          if (!paymentDate) { effectiveBillingMonth = fatura.due_date.slice(0, 7); monthSource = 'vencimento'; }
+        }
+
+        for (const it of fatura.items) {
+          const isCredito = it.amount < 0; // estorno/crédito na fatura
+          transactions.push({
+            fitid: '',
+            trntype: isCredito ? 'CREDIT' : 'DEBIT',
+            trnamt: isCredito ? Math.abs(it.amount) : -Math.abs(it.amount), // despesa = negativo
+            dtposted: it.date,
+            memo: it.installment ? `${it.description} ${it.installment}` : it.description,
+            card: it.card || undefined,
+          });
+        }
+
+        // Mesma impressão digital estável do CSV: reenviar a fatura atualiza, não duplica.
+        const occPdf = new Map<string, number>();
+        for (const t of transactions) {
+          const key = `${t.dtposted}_${t.memo}_${t.trnamt.toFixed(2)}_${t.card || ''}`;
+          const n = occPdf.get(key) || 0;
+          occPdf.set(key, n + 1);
+          t.fitid = crypto.createHash('md5').update(`${key}_${n}`).digest('hex').slice(0, 16);
+        }
+      } else if (isCSV) {
         // ── CSV Parser — Sicredi credit card statement format ──
         // The file has metadata at the top, then one or more card sections.
         // Each card section starts with a "Cartão" row, then a header row:
@@ -8802,12 +8887,12 @@ app.get("/api/todos", async (req, res) => {
       // Como asaas_id é único, importar de novo com outro mês MOVE o item — o
       // usuário precisa ver isso para não achar que a fatura antiga sumiu.
       let moved = 0;
-      if (account === 'sicredi' && effectiveBillingMonth) {
+      if (isCard && effectiveBillingMonth) {
         const mv = await pool.query(
           `SELECT COUNT(*)::int AS n FROM fin_movements_asaas
-            WHERE account = 'sicredi' AND asaas_id = ANY($1)
+            WHERE account = $3 AND asaas_id = ANY($1)
               AND billing_month IS NOT NULL AND billing_month <> $2`,
-          [transactions.map((t) => `${account}_${t.fitid}`), effectiveBillingMonth]
+          [transactions.map((t) => `${account}_${t.fitid}`), effectiveBillingMonth, account]
         ).catch(() => ({ rows: [{ n: 0 }] as any[] }));
         moved = mv.rows[0]?.n || 0;
       }
@@ -8823,7 +8908,7 @@ app.get("/api/todos", async (req, res) => {
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
            ON CONFLICT (asaas_id) DO UPDATE SET billing_month = COALESCE(EXCLUDED.billing_month, fin_movements_asaas.billing_month)
            RETURNING id, (xmax = 0) AS was_inserted`,
-          [asaasId, type, txType, value, tx.dtposted, tx.memo, account, account === 'sicredi' ? 'pendente' : 'realizado', effectiveBillingMonth]
+          [asaasId, type, txType, value, tx.dtposted, tx.memo, account, isCard ? 'pendente' : 'realizado', effectiveBillingMonth]
         );
         if (r.rows.length > 0 && r.rows[0].was_inserted) inserted++;
         else skipped++;
@@ -8835,35 +8920,35 @@ app.get("/api/todos", async (req, res) => {
       // atualiza o que mudou, adiciona o novo, remove o que saiu. Categorias manuais dos
       // itens que permanecem são preservadas (ON CONFLICT não mexe em custom_category_id).
       let pruned = 0;
-      if (account === 'sicredi' && effectiveBillingMonth) {
+      if (isCard && effectiveBillingMonth) {
         const currentIds = transactions.map((t) => `${account}_${t.fitid}`);
         const pr = await pool.query(
           `DELETE FROM fin_movements_asaas
-             WHERE account = 'sicredi' AND billing_month = $1 AND asaas_id <> ALL($2)
+             WHERE account = $3 AND billing_month = $1 AND asaas_id <> ALL($2)
            RETURNING id`,
-          [effectiveBillingMonth, currentIds]
+          [effectiveBillingMonth, currentIds, account]
         );
         pruned = pr.rowCount || 0;
       }
 
       // ── Auto-provision: create/update recurring bill entry for Sicredi card ──
-      if (account === 'sicredi' && effectiveBillingMonth) {
+      if (isCard && effectiveBillingMonth) {
         try {
           // Persiste a data de pagamento no mês em que a fatura caiu, para que ela
           // apareça ao abrir esse mês e o lançamento no Contas a Pagar seja gerado.
           if (paymentDate) {
             await pool.query(
-              `INSERT INTO fin_sicredi_invoice (billing_month, payment_date, updated_at)
-               VALUES ($1, $2, NOW())
-               ON CONFLICT (billing_month) DO UPDATE SET payment_date = EXCLUDED.payment_date, updated_at = NOW()`,
-              [effectiveBillingMonth, paymentDate]
+              `INSERT INTO fin_sicredi_invoice (billing_month, account, payment_date, updated_at)
+               VALUES ($1, $3, $2, NOW())
+               ON CONFLICT (billing_month, account) DO UPDATE SET payment_date = EXCLUDED.payment_date, updated_at = NOW()`,
+              [effectiveBillingMonth, paymentDate, account]
             ).catch(() => {});
           }
           // Lança a fatura no Contas a Pagar nativo usando a DATA DE PAGAMENTO da fatura (se já definida).
           // Sem data de pagamento, a fatura só é lançada quando o usuário define a data ("Pagamento da Fatura").
-          await syncSicrediBillEntry(pool, effectiveBillingMonth);
+          await syncSicrediBillEntry(pool, effectiveBillingMonth, account);
         } catch (provErr: any) {
-          console.error('Auto-provision Sicredi error (non-fatal):', provErr.message);
+          console.error(`Auto-provision ${account} error (non-fatal):`, provErr.message);
         }
       }
 
@@ -12493,9 +12578,9 @@ app.get("/api/todos", async (req, res) => {
         for (let i = 0; i < steps.length; i++) {
           const s = steps[i];
           await pool.query(
-            `INSERT INTO crm_sequence_steps (sequence_id, order_index, type, title, observations, day_offset)
-             VALUES ($1,$2,$3,$4,$5,$6)`,
-            [seq.id, i, s.type, s.title || '', s.observations || '', s.day_offset ?? 1]
+            `INSERT INTO crm_sequence_steps (sequence_id, order_index, type, title, observations, day_offset, time_of_day)
+             VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+            [seq.id, i, s.type, s.title || '', s.observations || '', s.day_offset ?? 1, s.time_of_day || '09:00']
           );
         }
       }
@@ -12518,9 +12603,9 @@ app.get("/api/todos", async (req, res) => {
         for (let i = 0; i < steps.length; i++) {
           const s = steps[i];
           await pool.query(
-            `INSERT INTO crm_sequence_steps (sequence_id, order_index, type, title, observations, day_offset)
-             VALUES ($1,$2,$3,$4,$5,$6)`,
-            [id, i, s.type, s.title || '', s.observations || '', s.day_offset ?? 1]
+            `INSERT INTO crm_sequence_steps (sequence_id, order_index, type, title, observations, day_offset, time_of_day)
+             VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+            [id, i, s.type, s.title || '', s.observations || '', s.day_offset ?? 1, s.time_of_day || '09:00']
           );
         }
       }
@@ -19291,6 +19376,8 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
   setupDispatchRoutes(app, pool);
   setupAsaasSyncRoutes(app, pool);
   setupBillsRoutes(app, pool);
+  await migrateCursos(pool).catch((e: any) => console.warn('[cursos] migrate:', e.message));
+  setupCursosRoutes(app, pool);
 
   // ── Bolão da Copa Routes ───────────────────────────────────────────────────
   await setupBolaoRoutes(app, pool);

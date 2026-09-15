@@ -4137,7 +4137,7 @@ const CrmComercial = () => {
   const [seqEditId, setSeqEditId] = useState<number | null>(null);
   const [seqForm, setSeqForm] = useState<{
     name: string; description: string; skip_weekends: boolean;
-    steps: { type: string; title: string; observations: string; day_offset: number }[];
+    steps: { type: string; title: string; observations: string; day_offset: number; time_of_day?: string }[];
   }>({ name: '', description: '', skip_weekends: true, steps: [] });
   const SEQ_TYPES = ['Ligação', 'Reunião', 'Videochamada', 'Email', 'WhatsApp', 'Instagram', 'LinkedIn', 'Outros'];
   const SEQ_TYPE_COLOR: Record<string, string> = {
@@ -4606,8 +4606,8 @@ const CrmComercial = () => {
             type: step.type,
             priority: 'Normal',
             due_date: dueStr,
-            start_time: '09:00',
-            end_time: '10:00',
+            start_time: step.time_of_day || '09:00',
+            end_time: '',
             observations: step.observations || '',
             responsible_id: user?.id || '',
           })

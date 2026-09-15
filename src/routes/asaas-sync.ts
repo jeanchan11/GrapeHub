@@ -697,6 +697,23 @@ export function setupAsaasSyncRoutes(app: any, pool: any) {
     );
   `).catch((e: any) => console.warn('[sicredi] migrate invoice table:', e.message));
 
+  // A data de pagamento passou a ser por CARTÃO + mês (Sicredi e Asaas convivem).
+  // A PK antiga era só billing_month; troca para (billing_month, account).
+  pool.query(`
+    DO $$
+    BEGIN
+      ALTER TABLE fin_sicredi_invoice ADD COLUMN IF NOT EXISTS account TEXT NOT NULL DEFAULT 'sicredi';
+      IF EXISTS (
+        SELECT 1 FROM pg_constraint
+         WHERE conrelid = 'fin_sicredi_invoice'::regclass AND contype = 'p'
+           AND (SELECT COUNT(*) FROM unnest(conkey)) = 1
+      ) THEN
+        ALTER TABLE fin_sicredi_invoice DROP CONSTRAINT fin_sicredi_invoice_pkey;
+        ALTER TABLE fin_sicredi_invoice ADD PRIMARY KEY (billing_month, account);
+      END IF;
+    END $$;
+  `).catch((e: any) => console.warn('[cartao] migrate invoice account:', e.message));
+
   // Alterações na tabela fin_movements_asaas (independentes)
   pool.query(`
     ALTER TABLE fin_movements_asaas ADD COLUMN IF NOT EXISTS custom_description TEXT;
