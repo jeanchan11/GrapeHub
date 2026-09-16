@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, Save, Copy, Check, Info, Target, TrendingUp, BrainCircuit, MessageSquare, Users, Briefcase, FileText, X, Download, ClipboardList } from 'lucide-react';
+import { ChevronLeft, Save, Copy, Check, Info, TrendingUp, BrainCircuit, MessageSquare, Users, Briefcase, FileText, X, Download, ClipboardList } from 'lucide-react';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { useAuth } from '../contexts/AuthContext';
 import SplitHeadline from '../components/SplitHeadline';
@@ -123,7 +123,6 @@ export default function CollaboratorProfile({ id, fromMinhaEquipe = false }: { i
     { id: 'geral', label: 'Visão Geral', icon: Info },
     { id: 'desempenho', label: 'Desempenho', icon: TrendingUp },
     { id: '1-1s', label: '1:1s', icon: Users },
-    { id: 'metas', label: 'Metas', icon: Target },
     { id: 'feedbacks', label: 'Feedbacks', icon: MessageSquare },
     { id: 'pdi', label: 'PDI', icon: BrainCircuit },
     ...(isAdmin && !fromMinhaEquipe ? [{ id: 'informacoes', label: 'Informações', icon: ClipboardList }] : []),
@@ -397,25 +396,6 @@ export default function CollaboratorProfile({ id, fromMinhaEquipe = false }: { i
         {activeTab === 'feedbacks' && <FeedbacksTab collaboratorId={id} isAdmin={isAdmin} isSelf={isSelf} />}
         {activeTab === '1-1s' && <OneOnOnesTab collaboratorId={id} isAdmin={isAdmin} />}
         {activeTab === 'desempenho' && <DesempenhoTab collaboratorId={id} isAdmin={isAdmin} />}
-
-            {/* Empty States for other unbuilt tabs */}
-            {['metas'].includes(activeTab) && (
-              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                <div>
-                  <SplitHeadline text="Metas & " highlight="Objetivos" className="text-xl font-black text-slate-800 dark:text-white" />
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">
-                    Acompanhamento de OKRs
-                  </p>
-                </div>
-                <div className="flex flex-col justify-center items-center h-64 text-slate-500 dark:text-slate-400">
-                  <Target size={48} className="mb-4 opacity-50" />
-                  <h3 className="text-xl font-bold mb-2">Aba em Desenvolvimento</h3>
-                  <p className="text-sm max-w-md text-center">
-                    Esta seção do perfil do colaborador ({activeTab}) ainda será implementada nas próximas fases.
-                  </p>
-                </div>
-              </div>
-            )}
           </motion.div>
         </AnimatePresence>
       </div>

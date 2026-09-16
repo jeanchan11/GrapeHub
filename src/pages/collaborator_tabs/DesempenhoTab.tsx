@@ -9,6 +9,7 @@ import SplitHeadline from '../../components/SplitHeadline';
 import DateRangePicker from '../../components/ui/DateRangePicker';
 import { auth } from '../../firebase';
 import { iconOf, colorOf, NotaSnapshot } from '../../components/performanceCriteria';
+import StarRow from '../../components/StarRow';
 import { confirmDialog } from '@/src/lib/confirm';
 import { toast } from '@/src/lib/toast';
 import AgendarProximoInline, { ProximoAgendamento } from './AgendarProximoInline';
@@ -67,20 +68,6 @@ interface CriterioResumo extends NotaSnapshot {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const critKey = (n: { criterio_id: number; label: string }) =>
   n.criterio_id && n.criterio_id !== 0 ? `id:${n.criterio_id}` : `label:${n.label}`;
-
-function StarRow({ value, max = 5, size = 14 }: { value: number; max?: number; size?: number }) {
-  return (
-    <div className="flex gap-0.5">
-      {Array.from({ length: max }).map((_, i) => (
-        <Star
-          key={i}
-          size={size}
-          className={i < Math.round(value) ? 'fill-amber-400 text-amber-400' : 'text-slate-300 dark:text-white/15'}
-        />
-      ))}
-    </div>
-  );
-}
 
 function TrendBadge({ trend, diff }: { trend: 'subiu' | 'caiu' | 'estavel' | null; diff: number }) {
   if (!trend) return <span className="text-[10px] text-slate-500">—</span>;

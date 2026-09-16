@@ -815,14 +815,18 @@ async function startServer() {
         order_index INTEGER DEFAULT 0,
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
-      -- Seed das 5 colunas atuais (mantém os ids para os clientes já classificados).
-      INSERT INTO retencao_columns (id, title, emoji, color, order_index) VALUES
+      -- Seed inicial, aplicado SÓ quando o quadro está vazio (primeira subida).
+      -- Antes era um INSERT ... ON CONFLICT DO NOTHING a cada boot, então coluna
+      -- apagada pela UI voltava sozinha no próximo restart do servidor.
+      INSERT INTO retencao_columns (id, title, emoji, color, order_index)
+      SELECT * FROM (VALUES
         ('pedido_finalizacao', 'PEDIDO DE FINALIZAÇÃO', '📋', '#f43f5e', 0),
         ('negociacao',         'NEGOCIAÇÃO',            '🟡', '#34d399', 1),
         ('recuperado',         'RECUPERADO',            '🏆', '#2dd4bf', 2),
         ('aviso_30_dias',      'AVISO 30 DIAS',         '⚠️', '#fb923c', 3),
         ('processo_saida',     'PROCESSO DE SAÍDA',     '🔴', '#f87171', 4)
-      ON CONFLICT (id) DO NOTHING;
+      ) AS v(id, title, emoji, color, order_index)
+      WHERE NOT EXISTS (SELECT 1 FROM retencao_columns);
 
       CREATE TABLE IF NOT EXISTS crm_comments (
         id SERIAL PRIMARY KEY,
@@ -950,6 +954,14 @@ async function startServer() {
         data JSONB NOT NULL,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+
+      CREATE TABLE IF NOT EXISTS head_data (
+        id SERIAL PRIMARY KEY,
+        page_id TEXT NOT NULL DEFAULT 'calculadora-head-operacao',
+        data JSONB NOT NULL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      ALTER TABLE head_data ADD COLUMN IF NOT EXISTS page_id TEXT NOT NULL DEFAULT 'calculadora-head-operacao';
 
       CREATE TABLE IF NOT EXISTS closer_data (
         id SERIAL PRIMARY KEY,
@@ -3777,6 +3789,9 @@ async function startServer() {
         activeClientId: row.active_client_id,
         page_id: row.page_id,
         page_manager_id: row.page_manager_id,
+        // Dono da página (menu_pages.manager_id). É o responsável padrão de um
+        // parceiro novo criado nessa página.
+        page_manager_name: row.page_manager_name,
         group: row.group,
         projectResult: row.project_result,
         squad: row.squad,
@@ -4611,6 +4626,47 @@ async function startServer() {
     } catch (err) {
       console.error("Error fetching gestor data:", err);
       res.status(500).json({ error: "Failed to fetch gestor data" });
+    }
+  });
+
+  // ── Calculadora do Head de Operação ──
+  const HEAD_DATA_PADRAO = {
+    baseSalary: 4000,
+    maxBonus: 2000,
+    totalProjetos: 0,
+    projetosOkBom: 0,
+    churnNoPeriodo: 0,
+    metaChurn: 2,
+    falhaGrapehub: false,
+    falhaRelacionamento: false,
+  };
+
+  // Os dados são isolados por page_id: o template pode virar uma página por head
+  // (como já acontece com projects e dashboard-head), e cada uma tem seus números.
+  const headPageId = (req: any): string =>
+    String(req.query?.page_id || req.body?.page_id || 'calculadora-head-operacao');
+
+  app.get("/api/head-data", async (req, res) => {
+    try {
+      const result = await pool.query(
+        "SELECT data FROM head_data WHERE page_id = $1 ORDER BY updated_at DESC LIMIT 1",
+        [headPageId(req)]
+      );
+      res.json(result.rows.length > 0 ? result.rows[0].data : HEAD_DATA_PADRAO);
+    } catch (err) {
+      console.error("Error fetching head data:", err);
+      res.status(500).json({ error: "Failed to fetch head data" });
+    }
+  });
+
+  app.post("/api/head-data", async (req, res) => {
+    try {
+      const { page_id, ...data } = req.body || {};
+      await pool.query("INSERT INTO head_data (page_id, data) VALUES ($1, $2)", [headPageId(req), data]);
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Error saving head data:", err);
+      res.status(500).json({ error: "Failed to save head data" });
     }
   });
 
@@ -18374,8 +18430,25 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
         WHERE c.collaborator_id = $1
         ORDER BY c.periodo_inicio DESC
       `, [req.params.id]);
+
+      // O nome do critério vem da configuração ATUAL do cargo, não do snapshot
+      // gravado no ciclo. Assim, renomear um critério (ex.: "TMR / Grupos" ->
+      // "Relacionamento") reflete em todo o histórico, em vez de conviverem os
+      // dois nomes. A nota nunca é tocada — só rótulo, descrição, ícone e cor.
+      // O snapshot continua valendo como fallback para critério apagado ou
+      // avaliação legada (criterio_id negativo), que não existe na tabela.
+      const { rows: critRows } = await pool.query(
+        `SELECT id, label, descricao, icon, cor FROM performance_criteria`
+      );
+      const critAtual = new Map<number, any>(critRows.map((c: any) => [Number(c.id), c]));
+
       const result = rows.map((r: any) => {
-        const notas = buildNotas(r);
+        const notas = buildNotas(r).map((n: any) => {
+          const atual = critAtual.get(Number(n.criterio_id));
+          return atual
+            ? { ...n, label: atual.label, descricao: atual.descricao, icon: atual.icon, cor: atual.cor }
+            : n;
+        });
         const media = notas.length
           ? Math.round((notas.reduce((a: number, n: any) => a + Number(n.nota), 0) / notas.length) * 100) / 100
           : 0;

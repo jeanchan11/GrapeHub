@@ -4,15 +4,17 @@ import TodoStaff from './TodoStaff';
 /**
  * ChamadosGrapehub
  *
- * Template independente para a página "Chamados Grapehub".
- * Usa o mesmo motor do TodoStaff mas com cabeçalho e subtítulo próprios.
+ * Template de quadro de chamados. Mais de uma página do menu usa este template
+ * ("Chamados Grapehub" e "Chamados CRM"), por isso o título vem do rótulo da
+ * página (pageLabel) e não fica fixo no componente — senão todas as páginas que
+ * usam o template exibem o mesmo nome.
  * Os dados são completamente isolados pelo page_id (activePage).
  */
-const ChamadosGrapehub: React.FC<{ activePage?: string }> = ({ activePage }) => {
+const ChamadosGrapehub: React.FC<{ activePage?: string; pageLabel?: string }> = ({ activePage, pageLabel }) => {
   return (
     <TodoStaff
       activePage={activePage}
-      pageTitle="Chamados Grapehub"
+      pageTitle={pageLabel?.trim() || 'Chamados Grapehub'}
       pageSubtitle="Gestão de chamados internos · seção grape"
       hideRecurring
       hideDocument

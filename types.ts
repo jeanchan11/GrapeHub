@@ -43,6 +43,35 @@ export interface TrafficManagerData {
   okResultClients: number;
 }
 
+// Calculadora de bonificação do Head de Operação.
+// Quatro critérios com peso igual (25% cada): resultado de projetos e churn são
+// medidos por número; GrapeHub e Relacionamento são liga/desliga, e marcar zera
+// a fatia daquele critério — mesmo comportamento dos toggles do gestor.
+export interface HeadOperacaoData {
+  baseSalary: number;
+  maxBonus: number;
+  // Resultado de projetos
+  totalProjetos: number;
+  projetosOkBom: number;
+  // Churn
+  churnNoPeriodo: number;
+  metaChurn: number;
+  // Processo (toggles: true = falhou, perde a fatia)
+  falhaGrapehub: boolean;
+  falhaRelacionamento: boolean;
+}
+
+export interface HeadOperacaoResults {
+  bonusResultado: number;
+  bonusChurn: number;
+  bonusGrapehub: number;
+  bonusRelacionamento: number;
+  totalBonus: number;
+  totalEarnings: number;
+  scoreResultado: number;   // 0-100
+  scoreChurn: number;       // 0-100
+}
+
 export interface TrafficManagerResults {
   meetingBonus: number;
   reportBonus: number;

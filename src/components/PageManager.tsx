@@ -443,6 +443,7 @@ const templates = (() => {
     { id: 'lista', label: 'Lista' },
     { id: 'task-templates', label: 'Modelos de Tarefas' },
     { id: 'meeting-notes', label: 'Notas de Reunião' },
+    { id: 'head-operacao', label: 'Calculadora Head de Operação' },
     { id: 'cursos', label: 'Central de Treinamentos' },
     { id: 'onboarding-operacional', label: 'Onboarding Operacional' },
     { id: 'parceiros-squad', label: 'Parceiros Squad' },

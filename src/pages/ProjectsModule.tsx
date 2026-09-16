@@ -483,6 +483,7 @@ interface Project {
   products?: Product[];
   activeClientId?: string;
   page_id?: string;
+  page_manager_name?: string | null;
   group?: string;
   projectResult?: string;
   sortOrder?: number;
@@ -552,146 +553,12 @@ const parseCurrency = (val: string) => {
   return parseFloat((val || '').replace(/[^\d,]/g, '').replace('.', '').replace(',', '.')) || 0;
 };
 
-const initialProjects: Project[] = [
-  { 
-    id: '1', 
-    partner: 'Advocacia Silva', 
-    product: 'Google Ads High Ticket', 
-    status: 'Operacional', 
-    roi: '4.5x', 
-    investment: 'R$ 12.500', 
-    responsible: 'Lucas Lima',
-    lastUpdate: '2h atrás',
-    group: 'Grupo 1',
-    products: [
-      {
-        id: 'p1',
-        name: 'Google Ads Search',
-        icon: 'Scale',
-        investmentMonthly: 'R$ 5.000',
-        leads: '15',
-        contracts: '12',
-        cac: 'R$ 45,00',
-        cpa: 'R$ 50,00',
-        kpis: 'CTR 4.5% | CPC R$ 2.10',
-        budget: 'R$ 5.000',
-        platform: 'Google Ads',
-        status: 'Rodando',
-        delivery: 'Full Time',
-        aiService: 'Ativado',
-        bottleneck: 'Nenhum',
-        history: '3 alterações',
-        balance: 'Limite Disponível',
-        paymentMethod: 'Automático',
-        projectResult: 'RESULTADO BOM',
-        cpaGoal: 'R$ 50,00',
-        leadsGoal: '15',
-        optimizations: [
-          {
-            id: 'o1',
-            author: 'João',
-            role: 'Gestor',
-            date: '28/03/2026',
-            message: 'Pausamos o conjunto de anúncios 02 (público frio) devido ao CPA alto. Realocamos verba para o conjunto de remarketing.'
-          },
-          {
-            id: 'o2',
-            author: 'João',
-            role: 'Gestor',
-            date: '25/03/2026',
-            message: 'Subimos 3 novos criativos em vídeo testando a dor de "falta de produtividade".'
-          }
-        ]
-      }
-    ]
-  },
-  { 
-    id: '2', 
-    partner: 'Clínica Sorriso', 
-    product: 'Meta Ads Local', 
-    status: 'Gargalo', 
-    roi: '1.8x', 
-    investment: 'R$ 8.200', 
-    responsible: 'Ana Souza',
-    lastUpdate: '1h atrás',
-    products: [
-      {
-        id: 'p2',
-        name: 'Meta Ads Instagram',
-        icon: 'HeartPulse',
-        investmentMonthly: 'R$ 4.000',
-        leads: '4',
-        contracts: '4',
-        cac: 'R$ 85,00',
-        cpa: 'R$ 90,00',
-        kpis: 'CTR 1.2% | CPC R$ 3.50',
-        budget: 'R$ 4.000',
-        platform: 'Meta Ads',
-        status: 'Falta de saldo',
-        delivery: 'Local (SP)',
-        aiService: 'Desativado',
-        bottleneck: 'Criativos saturados',
-        history: '12 alterações',
-        balance: 'R$ 450',
-        paymentMethod: 'Manual',
-        projectResult: 'RESULTADO RUIM'
-      }
-    ]
-  },
-  { 
-    id: '3', 
-    partner: 'E-commerce Fashion', 
-    product: 'Performance Full Stack', 
-    status: 'Pausado', 
-    roi: '0.0x', 
-    investment: 'R$ 0', 
-    responsible: 'Pedro Rocha',
-    lastUpdate: '1 dia atrás',
-    products: []
-  },
-  { 
-    id: '4', 
-    partner: 'Imobiliária Prime', 
-    product: 'Lead Gen Premium', 
-    status: 'Operacional', 
-    roi: '5.2x', 
-    investment: 'R$ 15.000', 
-    responsible: 'Lucas Lima',
-    lastUpdate: '5h atrás',
-    products: [
-      {
-        id: 'p3',
-        name: 'Landing Page + Ads',
-        investmentMonthly: 'R$ 10.000',
-        leads: '8',
-        contracts: '8',
-        cac: 'R$ 120,00',
-        cpa: 'R$ 130,00',
-        kpis: 'Conv. 8.5%',
-        budget: 'R$ 10.000',
-        platform: 'Google/Meta',
-        status: 'Ativo',
-        delivery: 'Nacional',
-        aiService: 'Ativado',
-        bottleneck: 'Nenhum',
-        history: '5 alterações',
-        balance: 'R$ 3.400',
-        paymentMethod: 'Manual'
-      }
-    ]
-  },
-  { 
-    id: '5', 
-    partner: 'Tech Solutions', 
-    product: 'B2B LinkedIn Ads', 
-    status: 'Gargalo', 
-    roi: '2.1x', 
-    investment: 'R$ 22.000', 
-    responsible: 'Mariana Costa',
-    lastUpdate: '30min atrás',
-    products: []
-  },
-];
+// Os 5 projetos de exemplo que viviam aqui (Advocacia Silva, Clínica Sorriso,
+// E-commerce Fashion, Imobiliária Prime, Tech Solutions) eram usados como fallback
+// quando a API falhava — e acabavam gravados no banco como clientes de verdade,
+// com responsáveis fictícios (Lucas Lima, Ana Souza, Pedro Rocha, Mariana Costa).
+// Falha de carregamento agora mostra lista vazia, sem inventar dado.
+const initialProjects: Project[] = [];
 
 interface Props {
   activePage: string;
@@ -1372,7 +1239,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
   const [newPartnerData, setNewPartnerData] = useState<Partial<Project>>({
     partner: '',
     status: 'Operacional',
-    responsible: 'Lucas Lima',
+    responsible: '',
     investment: 'R$ 0',
     roi: '0.0x',
     activeClientId: ''
@@ -1960,6 +1827,17 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     setActiveProjectId(null);
   };
 
+  // Dono da página, vindo de menu_pages.manager_id (a API devolve em page_manager_name).
+  // Todo projeto da mesma página compartilha o dono, então basta o primeiro.
+  const responsavelPadrao =
+    projects.find(p => p.page_manager_name)?.page_manager_name || userData?.name || '';
+
+  // Opções do seletor: quem já é responsável por algum projeto desta página, mais o
+  // dono. Evita texto livre, que foi o que deixou nome errado entrar no banco.
+  const opcoesResponsavel = Array.from(new Set(
+    [responsavelPadrao, ...projects.map(p => p.responsible)].filter((n): n is string => !!n && !!n.trim())
+  )).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+
   const handleSaveNewPartner = () => {
     if (!newPartnerData.partner) return;
 
@@ -1970,7 +1848,10 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       status: newPartnerData.status as Project['status'] || 'Rodando',
       roi: newPartnerData.roi || '0.0x',
       investment: newPartnerData.investment || 'R$ 0',
-      responsible: newPartnerData.responsible || 'Lucas Lima',
+      // Sem responsável escolhido, herda o dono da página (menu_pages.manager_id).
+      // Antes caía num nome de projeto-modelo ("Lucas Lima"), que acabou gravado
+      // em 7 clientes reais porque o modal nem oferecia o campo.
+      responsible: newPartnerData.responsible || responsavelPadrao,
       lastUpdate: 'Agora',
       products: [],
       activeClientId: newPartnerData.activeClientId,
@@ -1983,7 +1864,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     setNewPartnerData({
       partner: '',
       status: 'Rodando',
-      responsible: 'Lucas Lima',
+      responsible: '',
       investment: 'R$ 0',
       roi: '0.0x',
       activeClientId: ''
@@ -3905,7 +3786,19 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                       />
                     </div>
                   </div>
-                  
+
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Responsável</label>
+                    <OptionPicker
+                      value={newPartnerData.responsible || null}
+                      options={opcoesResponsavel.map(nome => ({ label: nome }))}
+                      placeholder={responsavelPadrao ? `${responsavelPadrao} (dono da página)` : 'Selecione...'}
+                      emptyLabel={responsavelPadrao ? `${responsavelPadrao} (dono da página)` : 'Selecione...'}
+                      onChange={(val) => setNewPartnerData({ ...newPartnerData, responsible: val || '' })}
+                    />
+                    <p className="mt-2 text-[10px] text-slate-500 italic">* Em branco, assume o dono da página.</p>
+                  </div>
+
                   <div className="flex gap-3 pt-4">
                     <button 
                       onClick={() => setIsAddPartnerModalOpen(false)}

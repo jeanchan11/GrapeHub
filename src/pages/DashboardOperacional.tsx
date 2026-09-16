@@ -1012,6 +1012,13 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
     return { p, last, dias, last30: s?.last_30d || 0 };
   });
   const comReuniao30 = meetRows.filter(r => r.last30 > 0).length;
+  // Projetos parados: mais de 4 dias sem nenhuma otimização registrada.
+  // daysSince devolve 999 quando o projeto não tem histórico nenhum.
+  const semUpdate = filteredProjects
+    .map(p => ({ p, dias: daysSince(p) }))
+    .filter(({ dias }) => dias > 4)
+    .sort((a, b) => b.dias - a.dias);
+
   const semReuniao = meetRows
     .filter(r => r.dias === null || r.dias > DIAS_SEM_REUNIAO)
     .sort((a, b) => (b.dias ?? 99999) - (a.dias ?? 99999));
@@ -1167,13 +1174,76 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
   // Comentários + investimento. Extraído para poder trocar de posição: no
   // Operacional fica logo abaixo da carteira; no Dashboard Head vai para o fim,
   // depois da cadência, evolução e churn do head.
+  // Card "Parceiros Sem Atualização", sempre ao lado dos Últimos Comentários.
+  // No Head ocupa a coluna inteira e cresce com o conteúdo; no Operacional entra
+  // com a mesma altura dos comentários no Operacional. A lista rola por dentro.
+  const renderSemUpdate = (altura: string) => (
+    <div className={`bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200 flex flex-col ${altura}`}>
+      <h2 className="text-sm font-bold text-dark-text mb-1 shrink-0">Parceiros Sem Atualização</h2>
+      <p className="text-xs text-slate-500 mb-4 shrink-0">
+        {semUpdate.length === 0
+          ? 'Mais de 4 dias sem otimização registrada'
+          : `${semUpdate.length} projeto(s) há mais de 4 dias sem otimização`}
+      </p>
+      {semUpdate.length === 0 ? (
+        <p className="text-xs text-emerald-400 py-6 text-center">Toda a carteira atualizada ✅</p>
+      ) : (
+        <div className="space-y-2 flex-1 overflow-y-auto pr-1 min-h-0">
+          {semUpdate.map(({ p, dias }) => {
+            const dbUser = findUser(p.responsible);
+            return (
+              <div key={p.id} className="flex items-center justify-between gap-3 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-xl px-3 py-2.5 hover:border-slate-300 dark:hover:border-white/10 transition-colors">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-dark-text truncate">{p.partner}</p>
+                  {p.responsible && (
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <div className="w-4 h-4 rounded-full overflow-hidden bg-white/5 shrink-0 border border-white/10">
+                        <img
+                          src={dbUser?.picture || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(p.responsible)}`}
+                          alt={p.responsible}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <p className="text-[11px] text-slate-500 truncate">{p.responsible}</p>
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {p.projectResult && p.projectResult !== '-' && (
+                    <span
+                      className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+                      style={{
+                        background: (getResultColor(p.projectResult) || '#64748b') + '22',
+                        color: getResultColor(p.projectResult) || '#94a3b8',
+                      }}
+                    >
+                      {p.projectResult}
+                    </span>
+                  )}
+                  <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${
+                    dias === 999 ? 'bg-slate-500/15 text-slate-400' : dias > 14 ? 'bg-rose-500/15 text-rose-400' : 'bg-amber-500/15 text-amber-400'
+                  }`}>
+                    {dias === 999 ? 'sem histórico' : `${dias}d`}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+
   const renderComentariosEInvestimento = () => (
     <>
-    {/* ── Comentários (+ investimento, fora do Head) ───────────────────────────────── */}
-    <div className={`grid grid-cols-1 gap-5 ${isSingleHeadMode ? '' : 'lg:grid-cols-2'}`}>
+    {/* ── Últimos Comentários + Parceiros Sem Atualização, lado a lado ─────────────── */}
+    <div className={`grid grid-cols-1 lg:grid-cols-2 gap-5 ${isSingleHeadMode ? 'lg:items-start' : ''}`}>
+
+      {/* No Head, "Parceiros Sem Atualização" ocupa a coluna da esquerda */}
+      {isSingleHeadMode && renderSemUpdate('max-h-[380px] lg:max-h-[780px]')}
 
       {/* Histórico de Comentários */}
-      <div className={`bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200 flex flex-col h-[380px] lg:h-[780px] ${isSingleHeadMode ? '' : 'lg:row-span-2'}`}>
+      <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200 flex flex-col h-[380px] lg:h-[780px]">
         <h2 className="text-sm font-bold text-dark-text mb-1">Últimos Comentários</h2>
         <p className="text-xs text-slate-500 mb-3 shrink-0">
           Histórico consolidado dos projetos
@@ -1359,25 +1429,9 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
         )}
       </div>
 
-      {/* Investimento sob Gestão — no Head ele vira KPI no topo da página */}
-      {!isSingleHeadMode && (
-      <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200 flex flex-col justify-center h-[380px]">
-        <h2 className="text-sm font-bold text-dark-text mb-1">Investimento sob Gestão</h2>
-        <p className="text-xs text-slate-500 mb-6">Verba mensal somada da carteira</p>
-        {/* Mesmo número do card "Investimento Diário" acima (lá dividido por 30),
-            para as duas leituras baterem na tela. */}
-        <p className="text-5xl font-black text-dark-text leading-none">
-          {fmtBRL(kpis.orcamentoTotal)}
-        </p>
-        {history.length >= 2 && investDelta !== null ? (
-          <p className={`text-sm font-bold mt-4 ${investDelta > 0 ? 'text-emerald-400' : investDelta < 0 ? 'text-rose-400' : 'text-slate-500'}`}>
-            {investDelta > 0 ? '↑' : investDelta < 0 ? '↓' : ''} {Math.abs(investDelta)}% vs. início do período
-          </p>
-        ) : (
-          <p className="text-[11px] text-slate-500 mt-4">O comparativo aparece conforme a série acumula dias.</p>
-        )}
-      </div>
-      )}
+      {/* Operacional: o card ocupa a coluna inteira, com a mesma altura dos comentários.
+          O Investimento sob Gestão virou KPI no topo e não disputa mais este espaço. */}
+      {!isSingleHeadMode && renderSemUpdate('h-[380px] lg:h-[780px]')}
     </div>
     </>
   );
@@ -1604,7 +1658,7 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
       {/* Visão Geral — escondida (não desmontada) ao trocar de aba, preservando o estado */}
       <div className={`px-6 md:px-8 pb-10 space-y-5 ${tab !== 'geral' ? 'hidden' : ''}`}>
         {/* ── KPI Cards ──────────────────────────────────────────────────── */}
-        <div className={`grid grid-cols-2 lg:grid-cols-3 gap-4 ${isSingleHeadMode ? 'xl:grid-cols-4' : 'xl:grid-cols-5'}`}>
+        <div className={`grid grid-cols-2 lg:grid-cols-3 gap-4 ${isSingleHeadMode ? 'xl:grid-cols-4' : 'xl:grid-cols-6'}`}>
           <KpiCard
             iconBg="bg-violet-500/15"
             icon={<Users size={17} className="text-violet-500" />}
@@ -1645,21 +1699,19 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
             value={<CountUp value={kpis.orcamentoTotal / 30} prefix="R$ " format />}
             sub={<span>Mensal: <span className="text-emerald-400 font-bold">{fmtBRL(kpis.orcamentoTotal)}</span></span>}
           />
-          {/* No Head o investimento sob gestão vira KPI. O sub carrega a variação do
-              período — a única informação que o card "Investimento Diário" não mostra. */}
-          {isSingleHeadMode && (
-            <KpiCard
-              iconBg="bg-teal-500/15"
-              icon={<TrendingUp size={17} className="text-teal-500" />}
-              label="Investimento sob Gestão"
-              value={<CountUp value={kpis.orcamentoTotal} prefix="R$ " format />}
-              sub={history.length >= 2 && investDelta !== null
-                ? <span className={investDelta > 0 ? 'text-emerald-400 font-bold' : investDelta < 0 ? 'text-rose-400 font-bold' : 'text-slate-500'}>
-                    {investDelta > 0 ? '↑' : investDelta < 0 ? '↓' : ''} {Math.abs(investDelta)}% vs. início do período
-                  </span>
-                : <span>Verba mensal somada da carteira</span>}
-            />
-          )}
+          {/* Investimento sob Gestão é KPI nos dois dashboards. O sub carrega a variação
+              do período — a única informação que o "Investimento Diário" não mostra. */}
+          <KpiCard
+            iconBg="bg-teal-500/15"
+            icon={<TrendingUp size={17} className="text-teal-500" />}
+            label="Investimento sob Gestão"
+            value={<CountUp value={kpis.orcamentoTotal} prefix="R$ " format />}
+            sub={history.length >= 2 && investDelta !== null
+              ? <span className={investDelta > 0 ? 'text-emerald-400 font-bold' : investDelta < 0 ? 'text-rose-400 font-bold' : 'text-slate-500'}>
+                  {investDelta > 0 ? '↑' : investDelta < 0 ? '↓' : ''} {Math.abs(investDelta)}% vs. início do período
+                </span>
+              : <span>Verba mensal somada da carteira</span>}
+          />
         </div>
 
         {/* ── Carteira: evolução e investimento ─────────────────────────────────────────

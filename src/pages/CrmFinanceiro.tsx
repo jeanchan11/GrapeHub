@@ -97,14 +97,8 @@ interface Task {
 }
 
 interface RetColumn { id: string; title: string; emoji: string; color: string; }
-// Fallback (a fonte real são as colunas vindas de /api/retencao/columns)
-const DEFAULT_COLUMNS: RetColumn[] = [
-  { id: 'pedido_finalizacao', title: 'PEDIDO DE FINALIZAÇÃO', emoji: '📋', color: '#f43f5e' },
-  { id: 'negociacao', title: 'NEGOCIAÇÃO', emoji: '🟡', color: '#34d399' },
-  { id: 'recuperado', title: 'RECUPERADO', emoji: '🏆', color: '#2dd4bf' },
-  { id: 'aviso_30_dias', title: 'AVISO 30 DIAS', emoji: '⚠️', color: '#fb923c' },
-  { id: 'processo_saida', title: 'PROCESSO DE SAÍDA', emoji: '🔴', color: '#f87171' },
-];
+// As colunas vêm de /api/retencao/columns. Não existe lista fixa no front: uma
+// cópia local ressuscitaria visualmente a coluna que o usuário acabou de apagar.
 // Paleta de cores para as colunas customizáveis
 const COLUMN_COLORS = ['#f43f5e', '#fb923c', '#f59e0b', '#34d399', '#2dd4bf', '#38bdf8', '#8b5cf6', '#ec4899', '#64748b'];
 
@@ -404,7 +398,7 @@ const CrmFinanceiro = () => {
   const [allClients, setAllClients] = useState<Client[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   // Colunas do kanban (dinâmicas) — carregadas da API
-  const [columns, setColumns] = useState<RetColumn[]>(DEFAULT_COLUMNS);
+  const [columns, setColumns] = useState<RetColumn[]>([]);
   const COLUMNS = columns; // alias: mantém as referências existentes funcionando
   const [colModal, setColModal] = useState<{ mode: 'new' | 'edit'; id?: string; title: string; emoji: string; color: string } | null>(null);
   const fetchColumns = async () => {

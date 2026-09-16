@@ -74,6 +74,9 @@ function formatDateBR(iso: string) {
 function isoDate(y: number, m: number, d: number) {
   return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
 }
+// Data no fuso LOCAL. `toISOString()` devolve UTC: no Brasil (UTC-3), a partir
+// das 21h ele já aponta para o dia seguinte e os períodos saem um dia à frente.
+function localIso(d: Date) { return isoDate(d.getFullYear(), d.getMonth() + 1, d.getDate()); }
 function daysInMonth(y: number, m: number) { return new Date(y, m, 0).getDate(); }
 function firstDayOfMonth(y: number, m: number) { return new Date(y, m - 1, 1).getDay(); }
 
@@ -133,13 +136,17 @@ function ModalDateRangePicker({ range, onChange }: { range: DateRange; onChange:
     );
   }
 
-  const todayIso = today.toISOString().slice(0, 10);
-  const d7 = new Date(today); d7.setDate(today.getDate() - 6);
-  const d30 = new Date(today); d30.setDate(today.getDate() - 29);
+  const todayIso = localIso(today);
+  // Os períodos móveis terminam ONTEM: o dia corrente ainda está rodando e a Meta
+  // devolve um dia parcial, que derruba CTR e custo por mensagem sem motivo.
+  const ontem = new Date(today); ontem.setDate(today.getDate() - 1);
+  const ontemIso = localIso(ontem);
+  const d7 = new Date(ontem); d7.setDate(ontem.getDate() - 6);
+  const d30 = new Date(ontem); d30.setDate(ontem.getDate() - 29);
   const mStart = isoDate(today.getFullYear(), today.getMonth() + 1, 1);
   const mEnd = isoDate(today.getFullYear(), today.getMonth() + 1, daysInMonth(today.getFullYear(), today.getMonth() + 1));
   const pmStart = (() => { const d = new Date(today.getFullYear(), today.getMonth() - 1, 1); return isoDate(d.getFullYear(), d.getMonth() + 1, 1); })();
-  const pmEnd = (() => { const d = new Date(today.getFullYear(), today.getMonth(), 0); return d.toISOString().slice(0,10); })();
+  const pmEnd = (() => { const d = new Date(today.getFullYear(), today.getMonth(), 0); return localIso(d); })();
 
   return (
     <div ref={ref} className="relative">
@@ -156,8 +163,8 @@ function ModalDateRangePicker({ range, onChange }: { range: DateRange; onChange:
           </p>
           <div className="flex flex-wrap gap-1 mb-3 pb-3 border-b border-black/10 dark:border-white/10">
             {preset('Hoje', todayIso, todayIso)}
-            {preset('Últ. 7 dias', d7.toISOString().slice(0,10), todayIso)}
-            {preset('Últ. 30 dias', d30.toISOString().slice(0,10), todayIso)}
+            {preset('Últ. 7 dias', localIso(d7), ontemIso)}
+            {preset('Últ. 30 dias', localIso(d30), ontemIso)}
             {preset('Este mês', mStart, mEnd)}
             {preset('Mês passado', pmStart, pmEnd)}
           </div>
@@ -270,9 +277,10 @@ interface MetaAdsModalProps {
 
 export default function MetaAdsModal({ projectId, partnerName, onClose }: MetaAdsModalProps) {
   const defaultRange = (): DateRange => {
-    const today = new Date();
-    const d30 = new Date(today); d30.setDate(today.getDate() - 29);
-    return { start: d30.toISOString().slice(0, 10), end: today.toISOString().slice(0, 10) };
+    // Mesma regra dos presets: 30 dias terminando ontem.
+    const ontem = new Date(); ontem.setDate(ontem.getDate() - 1);
+    const d30 = new Date(ontem); d30.setDate(ontem.getDate() - 29);
+    return { start: localIso(d30), end: localIso(ontem) };
   };
   const [range, setRange] = useState<DateRange>(defaultRange);
   const [loading, setLoading] = useState(true);

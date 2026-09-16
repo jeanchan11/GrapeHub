@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import {
-  CalendarClock, TrendingUp, Users, MessageSquare, Target,
+  CalendarClock, TrendingUp, Users, MessageSquare,
   BrainCircuit, Smile, Frown, Meh, SmilePlus, Calendar, Clock,
   ChevronRight, Info, Award, CheckCircle2, AlertCircle
 } from 'lucide-react';
@@ -10,6 +10,7 @@ import {
   ResponsiveContainer
 } from 'recharts';
 import LoadingSpinner from '../../components/LoadingSpinner';
+import StarRow from '../../components/StarRow';
 import { auth } from '../../firebase';
 
 // Helper: fetch autenticado com token Firebase
@@ -43,20 +44,6 @@ interface ProximaAvaliacao {
 
 interface DesempenhoResumo {
   media_geral: number;
-  media_campanhas: number;
-  media_grapehub: number;
-  media_reunioes: number;
-  media_tmr: number;
-}
-
-interface Meta {
-  id: number;
-  nome: string;
-  responsavel_id: string | null;
-  alvo: number;
-  valor_atual: number;
-  percentual: number;
-  periodo: string;
 }
 
 interface Feedback {
@@ -136,7 +123,6 @@ export default function GeralTab({ collaboratorId, isAdmin, isSelf, collaborator
   const [proximaAvaliacao, setProximaAvaliacao] = useState<ProximaAvaliacao | null>(null);
   const [resumoDesempenho, setResumoDesempenho] = useState<DesempenhoResumo | null>(null);
   const [total1on1s, setTotal1on1s] = useState<number>(0);
-  const [metasInfo, setMetasInfo] = useState<{ concluidas: number; total: number; progressoMede: number }>({ concluidas: 0, total: 0, progressoMede: 0 });
   const [totalFeedbacks, setTotalFeedbacks] = useState<number>(0);
   const [pdiInfo, setPdiInfo] = useState<{ ativos: number; total: number }>({ ativos: 0, total: 0 });
   const [pulseHistory, setPulseHistory] = useState<PulseRecord[]>([]);
@@ -151,16 +137,14 @@ export default function GeralTab({ collaboratorId, isAdmin, isSelf, collaborator
         proxAvalRes,
         resumoDesRes,
         onesRes,
-        metasRes,
         feedbacksRes,
         pdiRes,
         pulseRes
       ] = await Promise.all([
         authFetch(`/api/collaborators/${collaboratorId}/proximo-1on1`),
         authFetch(`/api/colaboradores/${collaboratorId}/proxima-avaliacao`),
-        authFetch(`/api/colaboradores/${collaboratorId}/desempenho/resumo`),
+        authFetch(`/api/colaboradores/${collaboratorId}/desempenho`),
         authFetch(`/api/collaborators/${collaboratorId}/one-on-ones`),
-        authFetch(`/api/crm-metas`),
         authFetch(`/api/collaborators/${collaboratorId}/feedbacks`),
         authFetch(`/api/collaborators/${collaboratorId}/pdi`),
         authFetch(`/api/colaboradores/${collaboratorId}/pulso-diario/historico?dias=30`)
@@ -174,26 +158,20 @@ export default function GeralTab({ collaboratorId, isAdmin, isSelf, collaborator
       if (proxAvalRes.ok) setProximaAvaliacao(await proxAvalRes.json());
       else setProximaAvaliacao(null);
 
-      // 3. Resumo Desempenho
-      if (resumoDesRes.ok) setResumoDesempenho(await resumoDesRes.json());
-      else setResumoDesempenho(null);
+      // 3. Desempenho — média do ciclo mais recente.
+      // Não usa /desempenho/resumo: aquele endpoint soma as colunas legadas
+      // (nota_campanhas, nota_tmr…), nulas desde que os critérios viraram
+      // dinâmicos por cargo, e devolvia sempre vazio.
+      if (resumoDesRes.ok) {
+        const ciclos = await resumoDesRes.json();
+        const ultimo = Array.isArray(ciclos) && ciclos.length ? ciclos[0] : null;
+        setResumoDesempenho(ultimo ? { media_geral: Number(ultimo.media_geral) || 0 } : null);
+      } else setResumoDesempenho(null);
 
       // 4. One-on-Ones count
       if (onesRes.ok) {
         const list = await onesRes.json();
         setTotal1on1s(Array.isArray(list) ? list.length : 0);
-      }
-
-      // 5. Metas filter
-      if (metasRes.ok && collaboratorEmail) {
-        const list: Meta[] = await metasRes.json();
-        const userMetas = list.filter(m => m.responsavel_id === collaboratorEmail);
-        const concluidas = userMetas.filter(m => m.percentual >= 100).length;
-        const total = userMetas.length;
-        const progressoMede = total > 0 
-          ? Math.round(userMetas.reduce((acc, m) => acc + Math.min(m.percentual, 100), 0) / total)
-          : 0;
-        setMetasInfo({ concluidas, total, progressoMede });
       }
 
       // 6. Feedbacks count
@@ -274,6 +252,9 @@ export default function GeralTab({ collaboratorId, isAdmin, isSelf, collaborator
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     return diffDays;
   };
+
+  // Média do último ciclo avaliado — 0 quando o colaborador ainda não tem ciclo.
+  const media = Number(resumoDesempenho?.media_geral) || 0;
 
   if (loading) {
     return (
@@ -431,21 +412,25 @@ export default function GeralTab({ collaboratorId, isAdmin, isSelf, collaborator
         <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3">
           Resumo das Categorias
         </p>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           
-          {/* KPI 1: Desempenho */}
-          <div className="bg-slate-50 dark:bg-dark-bg/40 border border-slate-200 dark:border-white/10 rounded-2xl p-5 flex flex-col gap-2 transition-all hover:border-violet-500/20">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Desempenho</span>
-              <div className="w-8 h-8 rounded-lg bg-violet-500/10 flex items-center justify-center text-violet-500"><Award size={16} /></div>
+          {/* KPI 1: Desempenho — mesmo desenho do bloco "Média Geral" da aba Desempenho */}
+          <div className="bg-slate-50 dark:bg-dark-bg/40 border border-slate-200 dark:border-white/10 rounded-2xl p-5 flex flex-col items-center justify-center text-center gap-3 transition-all hover:border-violet-500/20">
+            <div className="flex items-center gap-2">
+              <div className="bg-violet-500/20 p-1.5 rounded-lg">
+                <Award size={14} className="text-violet-500" />
+              </div>
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Média Geral</span>
             </div>
-            <div className="text-2xl font-black text-slate-800 dark:text-white leading-tight">
-              {resumoDesempenho && resumoDesempenho.media_geral > 0
-                ? `${Number(resumoDesempenho.media_geral).toFixed(1)} / 5.0`
-                : '—'}
+
+            <div className="text-4xl font-black text-slate-800 dark:text-white leading-none">
+              {media > 0 ? media.toFixed(1) : '—'}
             </div>
-            <div className="text-[10px] text-slate-400 dark:text-slate-500">
-              Média do último ciclo
+
+            <StarRow value={media} size={15} />
+
+            <div className="text-[10px] font-medium text-slate-500 bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/5 px-3 py-1.5 rounded-full leading-tight">
+              {media > 0 ? 'Referente ao último ciclo avaliado' : 'Nenhum ciclo avaliado'}
             </div>
           </div>
 
@@ -460,20 +445,6 @@ export default function GeralTab({ collaboratorId, isAdmin, isSelf, collaborator
             </div>
             <div className="text-[10px] text-slate-400 dark:text-slate-500">
               Reuniões registradas
-            </div>
-          </div>
-
-          {/* KPI 3: Metas */}
-          <div className="bg-slate-50 dark:bg-dark-bg/40 border border-slate-200 dark:border-white/10 rounded-2xl p-5 flex flex-col gap-2 transition-all hover:border-violet-500/20">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Metas CRM</span>
-              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-500"><Target size={16} /></div>
-            </div>
-            <div className="text-2xl font-black text-slate-800 dark:text-white leading-tight">
-              {metasInfo.total > 0 ? `${metasInfo.concluidas} / ${metasInfo.total}` : '0 / 0'}
-            </div>
-            <div className="text-[10px] text-slate-400 dark:text-slate-500">
-              {metasInfo.total > 0 ? `${metasInfo.progressoMede}% progresso médio` : 'Sem metas ativas'}
             </div>
           </div>
 

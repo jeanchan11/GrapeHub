@@ -6,6 +6,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import Sidebar from './src/components/Sidebar';
 import PageTransition from './src/components/PageTransition';
 import GestorCalculator from './src/pages/GestorCalculator';
+import HeadCalculator from './src/pages/HeadCalculator';
 import CloserCalculator from './src/pages/CloserCalculator';
 import ComercialGrape from './src/pages/ComercialGrape';
 import ProjectsModule from './src/pages/ProjectsModule';
@@ -85,6 +86,26 @@ import { AuthProvider, useAuth } from './src/contexts/AuthContext';
 import { MenuProvider, useMenu } from './src/context/MenuContext';
 import ActivityToastStack from './src/components/ActivityToastStack';
 import { MoodPopup } from './src/components/MoodPopup';
+
+// Vários templates são reaproveitados por mais de uma página do menu (7 páginas usam
+// "meeting-notes", 4 usam "projects", 2 usam "chamados-grapehub"…). O título mostrado
+// tem que vir do rótulo da página do menu, senão todas exibem o nome do template.
+const findPageLabel = (menu: any[], pageId?: string): string => {
+  if (!Array.isArray(menu) || !pageId) return '';
+  for (const sec of menu) {
+    for (const ss of sec.subSessions || []) {
+      for (const p of ss.pages || []) if (p.id === pageId) return p.label;
+      for (const sss of ss.subSubSessions || []) {
+        for (const p of sss.pages || []) if (p.id === pageId) return p.label;
+      }
+    }
+    for (const sss of sec.subSubSessions || []) {
+      for (const p of sss.pages || []) if (p.id === pageId) return p.label;
+    }
+    for (const p of sec.pages || []) if (p.id === pageId) return p.label;
+  }
+  return '';
+};
 
 const AppContent: React.FC = () => {
   const { user, userData, loading, refreshUserData } = useAuth();
@@ -351,6 +372,8 @@ const AppContent: React.FC = () => {
         return <CloserCalculator />;
       case 'gestor':
         return <GestorCalculator />;
+      case 'head-operacao':
+        return <HeadCalculator key={activePage} activePage={activePage} />;
       case 'sdr':
         return <SDRCalculator />;
       case 'gerente-operacional':
@@ -372,18 +395,7 @@ const AppContent: React.FC = () => {
       case 'parceiros-squad':
         return <ParceirosSquad activePage={activePage} onPageChange={navigateTo} />;
       case 'lista': {
-        let pageLabel = '';
-        if (Array.isArray(menu)) {
-          outer: for (const sec of menu) {
-            for (const ss of sec.subSessions || []) {
-              for (const p of ss.pages || []) { if (p.id === activePage) { pageLabel = p.label; break outer; } }
-              for (const sss of ss.subSubSessions || []) {
-                for (const p of sss.pages || []) { if (p.id === activePage) { pageLabel = p.label; break outer; } }
-              }
-            }
-            for (const p of sec.pages || []) { if (p.id === activePage) { pageLabel = p.label; break outer; } }
-          }
-        }
+        const pageLabel = findPageLabel(menu, activePage);
         return <ListaPage key={activePage} activePage={activePage} pageLabel={pageLabel} />;
       }
       case 'blank':
@@ -421,7 +433,7 @@ const AppContent: React.FC = () => {
       case 'todo-staff':
         return <TodoStaff key={activePage} activePage={activePage} />;
       case 'chamados-grapehub':
-        return <ChamadosGrapehub key={activePage} activePage={activePage} />;
+        return <ChamadosGrapehub key={activePage} activePage={activePage} pageLabel={findPageLabel(menu, activePage)} />;
       case 'ideais-criativos':
         return <IdeaisCriativos key={activePage} activePage={activePage} />;
       case 'onboarding-operacional':
@@ -465,34 +477,12 @@ const AppContent: React.FC = () => {
         return <PlanosDeCarreira key={activePage} activePage={activePage} />;
 
       case 'diferenciais': {
-        let pageLabel = '';
-        if (Array.isArray(menu)) {
-          outer: for (const sec of menu) {
-            for (const ss of sec.subSessions || []) {
-              for (const p of ss.pages || []) { if (p.id === activePage) { pageLabel = p.label; break outer; } }
-              for (const sss of ss.subSubSessions || []) {
-                for (const p of sss.pages || []) { if (p.id === activePage) { pageLabel = p.label; break outer; } }
-              }
-            }
-            for (const p of sec.pages || []) { if (p.id === activePage) { pageLabel = p.label; break outer; } }
-          }
-        }
+        const pageLabel = findPageLabel(menu, activePage);
         return <DiferenciaisPage key={activePage} activePage={activePage} pageLabel={pageLabel} />;
       }
       case 'meeting-notes': {
         // Find the page label from menu for the title
-        let pageLabel = '';
-        if (Array.isArray(menu)) {
-          outer: for (const sec of menu) {
-            for (const ss of sec.subSessions || []) {
-              for (const p of ss.pages || []) { if (p.id === activePage) { pageLabel = p.label; break outer; } }
-              for (const sss of ss.subSubSessions || []) {
-                for (const p of sss.pages || []) { if (p.id === activePage) { pageLabel = p.label; break outer; } }
-              }
-            }
-            for (const p of sec.pages || []) { if (p.id === activePage) { pageLabel = p.label; break outer; } }
-          }
-        }
+        const pageLabel = findPageLabel(menu, activePage);
         return <MeetingNotes key={activePage} activePage={activePage} pageLabel={pageLabel} />;
       }
       case 'welcome':
