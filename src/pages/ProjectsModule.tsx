@@ -22,7 +22,7 @@ import {
   Gavel, Scale, HeartPulse, ShieldCheck, 
   Hammer, Landmark, Banknote, ShoppingCart, 
   Home, Stethoscope, Building2, Image as ImageIcon,
-  Folder, File, Eye, EyeOff, Download, Trash2, Upload, FileText, GripVertical, Copy, Loader2, Star, Lock, LockOpen, Bot, Edit2, ThumbsUp, SmilePlus, KeyRound
+  Folder, File, Film, Eye, EyeOff, Download, Trash2, Upload, FileText, GripVertical, Copy, Loader2, Star, Lock, LockOpen, Bot, Edit2, ThumbsUp, SmilePlus, KeyRound
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
@@ -30,8 +30,6 @@ import confetti from 'canvas-confetti';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import PortalAccessTab from './portal_admin/PortalAccessTab';
-import SolicitacoesTab from '../components/SolicitacoesTab';
 import FormulariosTab from '../components/FormulariosTab';
 import ThemedDropdown from '../components/ui/ThemedDropdown';
 import RichTextEditor from '../components/RichTextEditor';
@@ -580,11 +578,10 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
   const [pageModalProjectId, setPageModalProjectId] = useState<string | null>(null);
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const [activeProductTab, setActiveProductTab] = useState<'resultado' | 'kpis'>('resultado');
-  const [activeProjectTab, setActiveProjectTab] = useState<'resultado' | 'reunioes' | 'arquivos' | 'comentarios' | 'solicitacoes' | 'formularios' | 'nps' | 'tokens' | 'churn' | 'acesso'>('resultado');
+  const [activeProjectTab, setActiveProjectTab] = useState<'resultado' | 'reunioes' | 'criativos' | 'comentarios' | 'formularios' | 'nps' | 'tokens' | 'churn'>('resultado');
   // Menu "..." que agrupa as abas Formulários, Tokens e Portal
   const [isMoreTabsOpen, setIsMoreTabsOpen] = useState(false);
   // Só gestão gerencia o acesso do cliente ao portal.
-  const canManagePortalAccess = ['superadmin', 'gerente-operacional', 'diretor-operacional'].includes((userData?.role || '').toLowerCase());
   const [npsResponses, setNpsResponses] = useState<any[]>([]);
   const [isNpsLoading, setIsNpsLoading] = useState(false);
   const [timelineFilter, setTimelineFilter] = useState('Todos');
@@ -4571,7 +4568,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
           {/* Tabs */}
           {/* Abas distribuídas por toda a largura do modal */}
           <div className="flex items-center justify-between gap-4 mb-6 px-1 border-b modal-divider shrink-0">
-            {(['resultado', 'reunioes', 'comentarios', 'solicitacoes', 'arquivos', 'nps', 'churn'] as const).map((tab) => (
+            {(['resultado', 'reunioes', 'comentarios', 'criativos', 'nps', 'churn'] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveProjectTab(tab as any)}
@@ -4581,7 +4578,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     : 'text-slate-500 dark:text-slate-300 hover:text-gray-900 dark:hover:text-white'
                 }`}
               >
-                {tab === 'resultado' ? 'Resumo' : tab === 'reunioes' ? 'Reuniões' : tab === 'arquivos' ? 'Arquivos' : tab === 'comentarios' ? 'Comentários' : tab === 'solicitacoes' ? 'Solicitações' : tab === 'nps' ? 'NPS' : 'Risco de Churn'}
+                {tab === 'resultado' ? 'Resumo' : tab === 'reunioes' ? 'Reuniões' : tab === 'criativos' ? 'Criativos' : tab === 'comentarios' ? 'Comentários' : tab === 'nps' ? 'NPS' : 'Risco de Churn'}
                 {activeProjectTab === tab && (
                   <motion.div
                     layoutId="project-tab-indicator"
@@ -4591,12 +4588,11 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
               </button>
             ))}
 
-            {/* Abas agrupadas no menu "..." — Formulários, Tokens e Portal */}
+            {/* Abas agrupadas no menu "..." — Formulários e Tokens */}
             {(() => {
               const moreTabs = [
                 { id: 'formularios' as const, label: 'Formulários' },
                 { id: 'tokens' as const, label: 'Tokens' },
-                ...(canManagePortalAccess ? [{ id: 'acesso' as const, label: 'Portal' }] : []),
               ];
               const activeMore = moreTabs.find(t => t.id === activeProjectTab);
               return (
@@ -5299,92 +5295,111 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                   </div>
                 )}
                 
-                {activeProjectTab === 'arquivos' && (
-                  <div className="space-y-6">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-lg font-bold text-light-text dark:text-white">Documentos e Arquivos</h3>
-                      <button 
-                        onClick={() => fileInputRef.current?.click()}
-                        className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 border border-slate-200 dark:border-white/10 text-light-text dark:text-white rounded-xl text-sm font-bold transition-all"
-                      >
-                        <Upload size={16} />
-                        Fazer Upload
-                      </button>
-                      <input 
-                        type="file" 
-                        ref={fileInputRef} 
-                        onChange={handleFileChange} 
-                        className="hidden" 
-                      />
-                    </div>
+                {activeProjectTab === 'criativos' && (() => {
+                  // Biblioteca de criativos do projeto. Hoje alimentada por upload
+                  // manual; o Estúdio de Vídeo passa a depositar aqui os vídeos
+                  // gerados, marcados com origem "Estúdio IA".
+                  const criativos = (selectedProject.files || []) as any[];
+                  const ehVideo = (f: any) => /\.(mp4|mov|webm|m4v)$/i.test(f.name || '') || /video/i.test(f.type || '');
+                  const ehImagem = (f: any) => /\.(png|jpe?g|gif|webp|avif)$/i.test(f.name || '') || /image/i.test(f.type || '');
 
-                    <div 
-                      onDragOver={handleDragOver}
-                      onDrop={handleDrop}
-                      onClick={() => fileInputRef.current?.click()}
-                      className="border-2 border-dashed border-slate-300 dark:border-white/10 rounded-2xl p-8 text-center bg-slate-50 dark:bg-white/5 backdrop-blur-md cursor-pointer hover:border-purple-500 transition-all relative overflow-hidden before:absolute before:inset-0 before:bg-gradient-to-br before:from-white/10 before:to-transparent before:opacity-50 before:pointer-events-none"
-                    >
-                      <div className="flex flex-col items-center gap-3">
-                        <div className="p-3 bg-white/5 rounded-full border border-white/10">
-                          <Folder size={24} className="text-slate-400 dark:text-slate-300" />
-                        </div>
+                  return (
+                    <div className="space-y-6">
+                      <div className="flex items-center justify-between gap-4 flex-wrap">
                         <div>
-                          <p className="text-sm font-bold text-light-text dark:text-white">Clique ou arraste arquivos para cá</p>
-                          <p className="text-xs text-slate-500 dark:text-slate-300">Suporta PDF, DOCX, XLSX, imagens e vídeos (Máx 50MB)</p>
+                          <h3 className="text-lg font-bold text-light-text dark:text-white">Criativos</h3>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                            {criativos.length === 0 ? 'Nenhum criativo neste projeto' : `${criativos.length} criativo(s)`}
+                          </p>
                         </div>
+                        <button
+                          onClick={() => fileInputRef.current?.click()}
+                          className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 border border-slate-200 dark:border-white/10 text-light-text dark:text-white rounded-xl text-sm font-bold transition-all"
+                        >
+                          <Upload size={16} /> Enviar criativo
+                        </button>
+                        <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
                       </div>
-                    </div>
 
-                    <div className="bg-slate-50 dark:bg-white/5 backdrop-blur-md rounded-2xl border border-slate-200 dark:border-white/10 overflow-hidden relative overflow-hidden before:absolute before:inset-0 before:bg-gradient-to-br before:from-white/10 before:to-transparent before:opacity-50 before:pointer-events-none">
-                      <table className="w-full text-left text-xs">
-                        <thead className="bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-300 font-bold uppercase tracking-widest">
-                          <tr>
-                            <th className="px-6 py-4">Nome do Arquivo</th>
-                            <th className="px-6 py-4">Data</th>
-                            <th className="px-6 py-4">Tamanho</th>
-                            <th className="px-6 py-4">Enviado por</th>
-                            <th className="px-6 py-4 text-right">Ações</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-200 dark:divide-white/10 text-light-text dark:text-white">
-                          {(selectedProject.files || []).map((file: any, index: number) => (
-                            <tr key={index}>
-                              <td className="px-6 py-4 flex items-center gap-3 font-bold">
-                                <File size={16} className="text-purple-500" />
-                                {file.name}
-                              </td>
-                              <td className="px-6 py-4 text-slate-400 dark:text-slate-300">{file.date}</td>
-                              <td className="px-6 py-4 text-slate-400 dark:text-slate-300">{file.size}</td>
-                              <td className="px-6 py-4">
-                                <span className={`px-2 py-1 rounded-lg font-bold ${file.sender === 'Agência' ? 'bg-violet-500/10 text-violet-500' : 'bg-emerald-500/10 text-emerald-500'}`}>
-                                  {file.sender}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4 text-right flex items-center justify-end gap-2 text-slate-500 dark:text-slate-300">
-                                <button onClick={() => setFileLightbox({ files: (selectedProject.files || []) as LbFile[], index })} className="hover:text-violet-500" title="Visualizar"><Eye size={16} /></button>
-                                <button onClick={() => {
-                                  const a = document.createElement('a');
-                                  a.href = `/api/file-download?url=${encodeURIComponent(file.url)}&name=${encodeURIComponent(file.name || 'arquivo')}`;
-                                  a.click();
-                                }} className="hover:text-violet-500" title="Baixar"><Download size={16} /></button>
-                                <button onClick={() => {
-                                  commitProjects(prev => prev.map(p =>
-                                    p.id === selectedProject.id
-                                      ? { ...p, files: p.files?.filter((_, i) => i !== index) }
-                                      : p
-                                  ));
-                                }} className="hover:text-rose-500"><Trash2 size={16} /></button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                      {criativos.length === 0 ? (
+                        <div
+                          onDragOver={handleDragOver}
+                          onDrop={handleDrop}
+                          onClick={() => fileInputRef.current?.click()}
+                          className="border-2 border-dashed border-slate-300 dark:border-white/10 rounded-2xl p-10 text-center bg-slate-50 dark:bg-white/5 cursor-pointer hover:border-violet-500 transition-all"
+                        >
+                          <div className="flex flex-col items-center gap-3">
+                            <div className="p-3 bg-white/5 rounded-full border border-white/10">
+                              <Film size={24} className="text-slate-400 dark:text-slate-300" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-bold text-light-text dark:text-white">Arraste um criativo para cá</p>
+                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                Vídeos gerados no Estúdio também aparecem aqui automaticamente.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                          {criativos.map((file: any, index: number) => {
+                            const doEstudio = file.origem === 'estudio';
+                            return (
+                              <div key={index} className="group rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 overflow-hidden hover:border-violet-500/40 transition-colors">
+                                <button
+                                  onClick={() => setFileLightbox({ files: criativos as LbFile[], index })}
+                                  className="block w-full aspect-[4/5] relative bg-black/5 dark:bg-black/30"
+                                >
+                                  {ehImagem(file) ? (
+                                    <img src={file.url} alt={file.name} className="w-full h-full object-cover" />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center">
+                                      {ehVideo(file)
+                                        ? <Film size={26} className="text-violet-400" />
+                                        : <File size={26} className="text-slate-400" />}
+                                    </div>
+                                  )}
+                                  <span className={`absolute top-2 left-2 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                                    doEstudio ? 'bg-violet-500/90 text-white' : 'bg-black/60 text-white/80'}`}>
+                                    {doEstudio ? 'Estúdio IA' : 'Upload'}
+                                  </span>
+                                </button>
+                                <div className="p-2.5">
+                                  <p className="text-[11px] font-bold text-light-text dark:text-white truncate" title={file.name}>{file.name}</p>
+                                  <div className="flex items-center justify-between gap-2 mt-1">
+                                    <span className="text-[10px] text-slate-400 dark:text-slate-500 truncate">{file.date}</span>
+                                    <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                                      <button
+                                        onClick={() => {
+                                          const a = document.createElement('a');
+                                          a.href = `/api/file-download?url=${encodeURIComponent(file.url)}&name=${encodeURIComponent(file.name || 'criativo')}`;
+                                          a.click();
+                                        }}
+                                        className="p-1 text-slate-500 hover:text-violet-500" title="Baixar"><Download size={13} /></button>
+                                      <button
+                                        onClick={() => {
+                                          commitProjects(prev => prev.map(p =>
+                                            p.id === selectedProject.id
+                                              ? { ...p, files: p.files?.filter((_, i) => i !== index) }
+                                              : p
+                                          ));
+                                        }}
+                                        className="p-1 text-slate-500 hover:text-rose-500" title="Excluir"><Trash2 size={13} /></button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {fileLightbox && (
+                        <MediaLightbox files={fileLightbox.files} index={fileLightbox.index} onClose={() => setFileLightbox(null)} onIndex={i => setFileLightbox(l => l && { ...l, index: i })} />
+                      )}
                     </div>
-                    {fileLightbox && (
-                      <MediaLightbox files={fileLightbox.files} index={fileLightbox.index} onClose={() => setFileLightbox(null)} onIndex={i => setFileLightbox(l => l && { ...l, index: i })} />
-                    )}
-                  </div>
-                )}
+                  );
+                })()}
 
                 {activeProjectTab === 'nps' && (
                   <div className="flex flex-col py-8 px-4">
@@ -5690,16 +5705,8 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                   </div>
                 )}
 
-                {activeProjectTab === 'solicitacoes' && (
-                  <SolicitacoesTab projectId={selectedProject.id} authorName={userData?.name} />
-                )}
-
                 {activeProjectTab === 'formularios' && (
                   <FormulariosTab projectId={selectedProject.id} />
-                )}
-
-                {activeProjectTab === 'acesso' && (
-                  <PortalAccessTab projectId={selectedProject.id} partnerName={selectedProject.partner} />
                 )}
 
                 {activeProjectTab === 'comentarios' && (() => {

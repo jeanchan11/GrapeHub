@@ -167,6 +167,58 @@ Não há CI. O processo é manual e tem uma pegadinha:
   as médias de liderados em Minha Equipe e no motor de alertas (`server.ts`, buscar
   `nota_tmr`). Calcule a partir de `notas` (JSONB).
 
+- **Som ambiente do Estúdio** (`src/routes/estudio-mix.ts`): a MiniMax **não gera
+  ambiência**. O `/v1/t2a_v2` só tem `voice_modify.sound_effects`
+  (`spacious_echo`, `auditorium_echo`, `lofi_telephone`, `robotic`), que é efeito
+  aplicado **na voz** e sem controle de volume — nada de trânsito, pássaro ou
+  gente ao fundo. A cama de som é arquivo do catálogo (`estudio.ambiences`,
+  subido pelo superadmin em `estudio/ambiencias/`) e a mixagem é nossa, por
+  ffmpeg. Duas regras que custaram medição:
+  1. **`normalize=0` no `amix` é obrigatório** — sem ele o filtro divide o ganho
+     pelo número de entradas e a voz sai pela metade. Medido: voz limpa
+     −21,5 dB → mixada −21,7 dB (pico sobe de −18,9 para −14,2 dB a 0,25).
+  2. **A ambiência entra DEPOIS do HeyGen**, sobre o mp4 pronto (`-c:v copy`,
+     ~30 ms). O HeyGen tira o lip sync do áudio que recebe, então ele recebe a
+     **voz limpa**; o `mix_url` do `audio_job` é só o que a pessoa ouve e baixa.
+     Mixar antes obrigaria a re-renderizar — e gastar crédito — a cada ajuste de
+     volume.
+  O binário é resolvido por `FFMPEG_PATH` → `node_modules/ffmpeg-static/ffmpeg`
+  → PATH. **Não use `require('ffmpeg-static')`**: o servidor é empacotado pelo
+  esbuild e o require some conforme o formato de saída.
+
+- **Crédito saiu do Estúdio; o que conta é dinheiro.** O `plan_credit: 85` do
+  HeyGen não tem relação com a cobrança da API, que sai de uma **carteira em
+  dólar** por minuto de render. Cada vídeo grava `video_jobs.custo_usd`
+  **congelado na criação** (duração do áudio × preço do minuto da engine): preço
+  e câmbio mudam, e um relatório que se recalcula sozinho reescreveria o
+  passado. `GET /api/estudio/gastos?de=&ate=` devolve o gasto do período em US$
+  e R$, a quebra por pessoa e a `pct` do teto — **`pct` só vem quando o período
+  é um mês inteiro**, porque o teto é mensal e comparar 10 dias com ele mentiria.
+  Preço/minuto por engine, câmbio e teto ficam em `estudio.settings`
+  (Configurações › Gastos). Medição que ancora tudo: **US$ 2,33/min no Avatar
+  IV** — um vídeo de 30 s custou US$ 1,17 na carteira, e o cálculo do backfill
+  devolveu US$ 1,1687 para esse mesmo vídeo. **III e V nunca foram medidos** e
+  herdaram o número do IV. A cota por head virou `modo='valor'` (reais) —
+  ninguém tinha limite em crédito configurado, todos em zero.
+  **Os dois tetos barram de verdade**, conferidos em `POST /api/estudio/videos`
+  ANTES de subir o asset: o da conta (`teto_mensal_brl`) vale para todo mundo,
+  superadmin incluído, e o de cada head vale por cima. A checagem soma o custo
+  do vídeo que está para ser gerado, porque o HeyGen **cobra no envio** — barrar
+  depois seria barrar com o dinheiro já gasto.
+
+- **Quem decide que o vídeo do Estúdio ficou pronto é o polling, não o webhook.**
+  Sem `PUBLIC_BASE_URL` o `callback_url` do HeyGen não tem para onde chegar, e
+  mesmo com ele o aviso pode se perder. A varredura roda a cada **20 s** e a
+  lista (`GET /api/estudio/videos`) cutuca os pendentes sem esperar o resultado —
+  `concluirVideo` baixa o mp4, mixa a ambiência e sobe para o Storage, e segurar
+  a resposta HTTP nisso travaria a tela por dezenas de segundos. Havia uma
+  **carência de 3 minutos** antes da primeira consulta somada a um intervalo de
+  2 min: os quatro primeiros vídeos gerados levaram 233, 267, 270 e 281 s entre
+  criação e conclusão — regularidade que era a nossa espera, não o tempo de
+  render (um vídeo de 8 s fica pronto no HeyGen em menos de um minuto). Ao mexer
+  aqui, mantenha as duas travas: `conferindo` (um job por vez) e a janela mínima
+  de 8 s por job, senão varredura e tela concluem o mesmo vídeo em paralelo.
+
 - **Central de Treinamentos** (`src/pages/Cursos.tsx`, `src/routes/cursos.ts`): curso → módulos
   → aulas em vídeo, com progresso por colaborador. O progresso é gravado pelo **e-mail do
   token**, nunca pelo corpo da requisição, e só conta avanço contínuo de reprodução (arrastar a

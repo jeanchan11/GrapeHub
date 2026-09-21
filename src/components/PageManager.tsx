@@ -412,6 +412,7 @@ const templates = (() => {
   const list = [
     { id: 'automacoes', label: 'Automações' },
     { id: 'closer', label: 'Calculadora Closer' },
+    { id: 'contratos', label: 'Calculadora por Contratos' },
     { id: 'comercial-grape', label: 'Calculadora Comercial' },
     { id: 'gestor', label: 'Calculadora Gestor' },
     { id: 'gerente-operacional', label: 'Calculadora Gerente Operacional' },
@@ -445,6 +446,7 @@ const templates = (() => {
     { id: 'meeting-notes', label: 'Notas de Reunião' },
     { id: 'head-operacao', label: 'Calculadora Head de Operação' },
     { id: 'cursos', label: 'Central de Treinamentos' },
+    { id: 'estudio', label: 'Estúdio de Vídeo' },
     { id: 'onboarding-operacional', label: 'Onboarding Operacional' },
     { id: 'parceiros-squad', label: 'Parceiros Squad' },
     { id: 'planejamento-crescimento', label: 'Planejamento de Crescimento' },

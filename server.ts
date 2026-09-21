@@ -17,6 +17,8 @@ import { setupBillsRoutes, syncSicrediBillEntry, categorizeMovements, CARD_ACCOU
 import { setupBolaoRoutes } from "./src/routes/bolao";
 import { extrairFaturaPDF } from "./src/routes/fatura-pdf";
 import { setupCursosRoutes, migrateCursos } from "./src/routes/cursos";
+import { setupEstudioRoutes, migrateEstudio } from "./src/routes/estudio";
+import { setupCalculadoraContratosRoutes, migrateCalculadoraContratos } from "./src/routes/calculadora-contratos";
 import { normalizePhoneBR } from './src/utils/phoneNormalize';
 import rateLimit from 'express-rate-limit';
 import cors from 'cors';
@@ -245,6 +247,8 @@ const PUBLIC_ROUTES: Array<{ method?: string; pattern: RegExp }> = [
   { pattern: /^\/api\/onboarding\/submit$/, method: 'POST' },
   { pattern: /^\/api\/portal\/auth\/login$/, method: 'POST' }, // login do cliente (sem token ainda)
   { pattern: /^\/api\/finance\/dispatch\/callback$/, method: 'POST' },
+  // Webhook do HeyGen: chega sem token do Firebase. A proteção é o callback_id.
+  { pattern: /^\/api\/estudio\/webhooks\/heygen$/, method: 'POST' },
   { pattern: /^\/api\/briefings\/public\// },
   { pattern: /^\/api\/ia-status-groups/ },
   { pattern: /^\/api\/onboarding-tasks/ },
@@ -19451,6 +19455,12 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
   setupBillsRoutes(app, pool);
   await migrateCursos(pool).catch((e: any) => console.warn('[cursos] migrate:', e.message));
   setupCursosRoutes(app, pool);
+  await migrateEstudio(pool).catch((e: any) => console.warn('[estudio] migrate:', e.message));
+  setupEstudioRoutes(app, pool);
+
+  await migrateCalculadoraContratos(pool)
+    .catch((e: any) => console.warn('[calculadora-contratos] migrate:', e.message));
+  setupCalculadoraContratosRoutes(app, pool);
 
   // ── Bolão da Copa Routes ───────────────────────────────────────────────────
   await setupBolaoRoutes(app, pool);

@@ -563,7 +563,7 @@ const Cursos: React.FC = () => {
     return (
       <div className="min-h-screen bg-dark-bg">
         <div className="px-6 pt-6 pb-4 flex items-start justify-between gap-4 flex-wrap">
-          <SplitHeadline text="Central de" highlight="Treinamentos"
+          <SplitHeadline text="Central de " highlight="Treinamentos"
             subtitle="Trilhas de formação da equipe"
             subtitleClassName="text-sm text-gray-500 dark:text-gray-400 mt-1" />
           {isAdmin && (

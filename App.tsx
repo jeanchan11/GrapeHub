@@ -7,7 +7,9 @@ import Sidebar from './src/components/Sidebar';
 import PageTransition from './src/components/PageTransition';
 import GestorCalculator from './src/pages/GestorCalculator';
 import HeadCalculator from './src/pages/HeadCalculator';
+import Estudio from './src/pages/Estudio';
 import CloserCalculator from './src/pages/CloserCalculator';
+import ContratosCalculator from './src/pages/ContratosCalculator';
 import ComercialGrape from './src/pages/ComercialGrape';
 import ProjectsModule from './src/pages/ProjectsModule';
 import TodoPage from './src/pages/TodoPage';
@@ -370,6 +372,8 @@ const AppContent: React.FC = () => {
         return <GestorDashboard />;
       case 'closer':
         return <CloserCalculator />;
+      case 'contratos':
+        return <ContratosCalculator />;
       case 'gestor':
         return <GestorCalculator />;
       case 'head-operacao':
@@ -440,6 +444,8 @@ const AppContent: React.FC = () => {
         return <OnboardingOperacional />;
       case 'cursos':
         return <Cursos />;
+      case 'estudio':
+        return <Estudio />;
       case 'implementacao-ia':
         return <ImplementacaoIA />;
       case 'visual-hub':
