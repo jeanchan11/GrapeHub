@@ -219,6 +219,65 @@ Não há CI. O processo é manual e tem uma pegadinha:
   aqui, mantenha as duas travas: `conferindo` (um job por vez) e a janela mínima
   de 8 s por job, senão varredura e tela concluem o mesmo vídeo em paralelo.
 
+- **Contrato assinado pelo ZapSign** (`src/routes/zapsign.ts`, `ContratoTab.tsx`):
+  o PDF é montado **no navegador** (`contratoPdfBase64` em `ContratoDocument.tsx`)
+  e vai em base64 para o servidor, que chama `POST api.zapsign.com.br/api/v1/docs/`
+  com `Authorization: Bearer $ZAPSIGN_API_TOKEN`. O token nunca vai ao front.
+  Decisões tomadas em 23/09/2026, com a base na mão (375 leads: 374 com
+  telefone, 313 com e-mail):
+  - **Dois signatários, em ordem** (`signature_order_active`): cliente primeiro,
+    Grape depois — o link da Grape só vale após o cliente assinar. A Grape sai
+    de `ZAPSIGN_SIGNER_EMAIL`/`_NAME`; sem essas variáveis, volta a UM
+    signatário e nada quebra. **`ZAPSIGN_USER_TOKEN` é outra coisa**: só com ele
+    a Grape assina SOZINHA, via `POST /sign/`, e isso exige o **add-on de
+    assinatura em lote** no plano — quando não está contratado, a opção
+    "assinar via API" nem aparece no perfil do usuário no ZapSign. O código da
+    assinatura automática está pronto e inerte até a variável ser preenchida.
+  - **Nada de disparo automático** (`send_automatic_whatsapp/email: false`,
+    `disable_signer_emails: true`): a tela devolve o `sign_url` e o closer manda
+    no WhatsApp junto da mensagem dele.
+  - `auth_mode: 'assinaturaTela-tokenWhatsapp'` — assina na tela E confirma com
+    código no WhatsApp. Por isso `phone_country`/`phone_number` são
+    **obrigatórios**, e o telefone é normalizado no servidor (tira o 55 e o zero
+    de operadora; aceita 10 ou 11 dígitos).
+  - O `base64_pdf` vai **sem** o prefixo `data:application/pdf;base64,` — a API
+    recusa se ele vier junto.
+  - `blank_email: true` no cliente: sem isso o ZapSign **exige e-mail** na tela
+    de identidade, o que travaria os 62 de 375 leads sem e-mail. `lock_phone`
+    impede o signatário de trocar o número para onde vai o código.
+  - **Posicionar a assinatura**: o PDF é rasterizado (páginas viram imagem), então
+    texto-âncora (`<<signer1>>`) não funciona — é `POST /docs/{token}/place-signatures/`
+    com coordenadas **relativas** (0–100, a partir do canto inferior esquerdo,
+    página começando em 0). As duas rubricas vão na MESMA chamada: o endpoint
+    substitui o conjunto inteiro. Não é retroativo — só vale para quem assinar
+    depois. O front mede a **linha** de assinatura (`[data-assinatura-cliente]`
+    / `[data-assinatura-grape]`) e converte para %, o que dispensa DPI.
+    **Armadilha que custou um contrato assinado errado**: `ContratoDocument`
+    renderiza tudo DUAS vezes — há um container de medição fora da tela para
+    calcular a paginação. `querySelector` pegava a cópia escondida, que não
+    pertence a página nenhuma, a medição virava `null` em silêncio e nenhuma
+    coordenada era enviada. Filtre sempre pelas que estão dentro de
+    `[data-contrato-page]`.
+  Status: enquanto não houver webhook, quem descobre que o cliente assinou é o
+  botão "Atualizar status", que consulta `GET /docs/{token}/`. O `signed_file` e
+  os links de arquivo do ZapSign **expiram em 60 min** — reconsulte, não guarde.
+  O formulário do ZapSign que o cliente preenchia (CLIENTE/TIPO/CNPJ/VALOR/data)
+  deixa de ser necessário: quem preenche é o closer, no CRM.
+
+- **Telefonia foi REMOVIDA do GrapeHub** (24/09/2026). Saíram: a página Ligações
+  (`CrmLigacoes.tsx`), o softphone WebRTC (`useSoftphone.ts`, JsSIP), o botão
+  "Ligar" e a aba Ligações do card do lead, a seção Integrações das
+  Configurações e as 11 rotas da Api4Com (`/api/api4com/*` e
+  `/api/crm-comercial/call-status`). **O que ficou de propósito**: o tipo de
+  tarefa **"Ligação"** no CRM — é tarefa, não telefonia.
+  Dois detalhes que evitariam retrabalho: o `server.ts` tinha um seed de boot com
+  `INSERT ... ON CONFLICT (id) DO UPDATE` que **ressuscitava a página no menu a
+  cada restart** (a armadilha de seed já documentada aqui), e o id semeado
+  (`crm-ligacoes`) **não era o da linha real** (`ligacoes`) — apagar pelo id do
+  seed não removia nada. Os dados não foram destruídos:
+  `crm_api4com_settings` e `crm_comercial_call_status` viraram
+  `*_backup_20260924`. Para reverter de vez, é só dropá-las.
+
 - **Central de Treinamentos** (`src/pages/Cursos.tsx`, `src/routes/cursos.ts`): curso → módulos
   → aulas em vídeo, com progresso por colaborador. O progresso é gravado pelo **e-mail do
   token**, nunca pelo corpo da requisição, e só conta avanço contínuo de reprodução (arrastar a

@@ -5,6 +5,7 @@ import { Chart } from 'react-chartjs-2';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend as RechartsLegend, ResponsiveContainer, PieChart, Pie, Cell, ComposedChart, Line, Area } from 'recharts';
 import { MoreVertical, DollarSign, TrendingUp, TrendingDown, AlertCircle, Wallet, Calendar, AlertTriangle, ArrowUpRight, ShieldAlert, Users, ChevronDown, ChevronUp, X, ArrowUp, ArrowDown } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
+import BotaoSincronizar from '../components/BotaoSincronizar';
 import { designSystem } from '../design-system';
 import { AIChat } from '../components/AIChat/AIChat';
 import { useAuth } from '../contexts/AuthContext';
@@ -245,6 +246,9 @@ export default function FinanceiroDashboard() {
   const [dayLoading, setDayLoading] = useState(false);
   const [chartAnimKey, setChartAnimKey] = useState(0);
   const [activeTab, setActiveTab] = useState<'visao' | 'dre' | 'orcamento'>('visao');
+  // Entra na lista de dependências do fetch: mudar este número refaz a busca,
+  // sem precisar extrair a função do efeito.
+  const [versaoSync, setVersaoSync] = useState(0);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -276,7 +280,7 @@ export default function FinanceiroDashboard() {
     };
 
     fetchData();
-  }, [selectedMonth]);
+  }, [selectedMonth, versaoSync]);
 
   const formatCurrency = (value: string | number) => {
     const num = typeof value === 'string' ? parseFloat(value) : value;
@@ -495,6 +499,7 @@ export default function FinanceiroDashboard() {
           subtitle="Gestão integrada de caixa e indicadores de saúde do negócio"
         >
           <div className="flex items-center gap-2">
+            <BotaoSincronizar onDone={() => setVersaoSync(v => v + 1)} />
             {/* Botão Fred IA */}
             <button
               onClick={() => setShowAI(o => !o)}

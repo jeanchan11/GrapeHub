@@ -21,11 +21,15 @@ const PAD_BOTTOM = 118; // limpa o rodapé do timbrado
 const PAD_X = 74; // margem lateral do texto no documento
 const CONTENT_W = PAGE_W - PAD_X * 2;
 const CONTENT_H = PAGE_H - PAD_TOP - PAD_BOTTOM - 6; // -6 de folga
+// Espaço em branco reservado acima da linha, onde a assinatura é desenhada.
+const ASSINATURA_ESPACO_PX = 72;
 
-// Exporta cada página A4 (com timbrado) para o PDF, rasterizando página a página.
-export async function exportContratoPdf(container: HTMLElement, fileName: string) {
+// Monta o PDF rasterizando página a página (cada A4 com o timbrado).
+// Separado do salvamento porque o mesmo PDF vai para dois destinos: download no
+// navegador e envio ao ZapSign em base64.
+async function montarContratoPdf(container: HTMLElement) {
   const pages = Array.from(container.querySelectorAll<HTMLElement>('[data-contrato-page]'));
-  if (pages.length === 0) return;
+  if (pages.length === 0) return null;
   const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
   const W = 210, H = 297;
   let added = 0;
@@ -37,14 +41,94 @@ export async function exportContratoPdf(container: HTMLElement, fileName: string
     pdf.addImage(dataUrl, 'JPEG', 0, 0, W, H);
     added++;
   }
-  pdf.save(fileName);
+  return pdf;
+}
+
+// Exporta cada página A4 (com timbrado) para o PDF, rasterizando página a página.
+export async function exportContratoPdf(container: HTMLElement, fileName: string) {
+  const pdf = await montarContratoPdf(container);
+  if (pdf) pdf.save(fileName);
+}
+
+/** Onde a assinatura do cliente deve entrar, em % da página (padrão do ZapSign). */
+export interface PosicaoAssinatura {
+  page: number;      // índice da página, começando em 0
+  left: number;      // distância da borda esquerda, 0–100
+  bottom: number;    // distância da borda inferior, 0–100
+  width: number;
+  height: number;
+}
+
+/**
+ * Mede a linha de assinatura do cliente dentro da página em que ela caiu.
+ *
+ * Trabalha com PROPORÇÕES, não pixels: a prévia é exibida com `transform:
+ * scale(0.6)` e o `getBoundingClientRect` devolve o tamanho já escalado — como
+ * linha e página encolhem juntas, a razão entre as duas não muda.
+ *
+ * A caixa é ancorada NA linha e cresce para cima, que é onde a assinatura
+ * desenhada deve ficar.
+ */
+export function medirAssinaturas(container: HTMLElement): { cliente: PosicaoAssinatura | null; grape: PosicaoAssinatura | null } {
+  return {
+    cliente: medirAssinatura(container, 'data-assinatura-cliente'),
+    grape: medirAssinatura(container, 'data-assinatura-grape'),
+  };
+}
+
+/** Compatibilidade: continua servindo quem só precisa da linha do cliente. */
+export function medirAssinaturaCliente(container: HTMLElement): PosicaoAssinatura | null {
+  return medirAssinatura(container, 'data-assinatura-cliente');
+}
+
+function medirAssinatura(container: HTMLElement, marcador: string): PosicaoAssinatura | null {
+  // ATENÇÃO: existem DUAS cópias de cada bloco no DOM. A primeira está no
+  // container de medição (fora da tela, usado para calcular a paginação) e não
+  // pertence a página nenhuma. Pegar o primeiro `querySelector` devolvia essa
+  // cópia e a medição inteira virava null, em silêncio. Só vale a que está
+  // dentro de uma página real.
+  const paginas = Array.from(container.querySelectorAll<HTMLElement>('[data-contrato-page]'));
+  const alvo = Array.from(container.querySelectorAll<HTMLElement>(`[${marcador}]`))
+    .find(el => paginas.some(p => p.contains(el)));
+  if (!alvo) return null;
+  const pagina = paginas.find(p => p.contains(alvo));
+  if (!pagina) return null;
+
+  const pr = pagina.getBoundingClientRect();
+  const ar = alvo.getBoundingClientRect();
+  if (!pr.width || !pr.height) return null;
+
+  // `alvo` é a própria linha. A assinatura senta EM CIMA dela, então a âncora é
+  // o topo da linha e a caixa cresce para cima.
+  const bottom = ((pr.bottom - ar.top) / pr.height) * 100;
+  const largura = (ar.width / pr.width) * 100;
+
+  return {
+    page: paginas.indexOf(pagina),
+    left: Math.max(0, Math.min(100, ((ar.left - pr.left) / pr.width) * 100)),
+    bottom: Math.max(0, Math.min(100, bottom)),
+    width: Math.max(5, Math.min(70, largura)),
+    height: 8,
+  };
+}
+
+/**
+ * Mesmo PDF, devolvido em base64 PURO — sem o prefixo `data:application/pdf;base64,`,
+ * que a API do ZapSign rejeita se vier junto.
+ */
+export async function contratoPdfBase64(container: HTMLElement): Promise<string | null> {
+  const pdf = await montarContratoPdf(container);
+  if (!pdf) return null;
+  const uri = pdf.output('datauristring');
+  const virgula = uri.indexOf(',');
+  return virgula >= 0 ? uri.slice(virgula + 1) : uri;
 }
 
 // ── Blocos do contrato (dados) ─────────────────────────────────────────────────
 type Block =
   | { kind: 'title'; node: React.ReactNode }
   | { kind: 'sec'; text: string }
-  | { kind: 'p'; node: React.ReactNode; bold?: boolean; indent?: boolean; center?: boolean }
+  | { kind: 'p'; node: React.ReactNode; bold?: boolean; indent?: boolean; center?: boolean; bullet?: boolean }
   | { kind: 'sign'; data: ContratoData };
 
 function buildBlocks(d: ContratoData): Block[] {
@@ -90,7 +174,7 @@ function buildBlocks(d: ContratoData): Block[] {
   B.push({ kind: 'p', node: '1.1. O presente contrato tem por objeto a prestação de serviços de consultoria em vendas e assessoria em propaganda e publicidade, de forma totalmente autônoma, com foco em tráfego pago e marketing jurídico. Os serviços compreendem a utilização de ferramentas de comunicação paga essenciais à consecução dos objetivos publicitários, incluindo o desenvolvimento e a implementação da identidade de marca, a promoção de produtos e a divulgação dos serviços do CONTRATANTE dentro do seu mercado de atuação.' });
   B.push({ kind: 'p', bold: true, node: '1.2. O serviço será executado com base no material fornecido pelo CONTRATANTE à CONTRATADA, incluindo orientações sobre as funções essenciais e os relacionamentos operacionais necessários, bem como fotos, imagens e logotipos. Fica expressamente proibida a interferência de terceiros no desempenho das atividades da CONTRATADA.' });
   B.push({ kind: 'p', bold: true, node: '1.3. A CONTRATADA desempenhará suas atividades com base no serviço selecionado pelo CONTRATANTE no formulário de contratação. A prestação de serviços compreenderá, exemplificativamente, as seguintes atividades:' });
-  itens1_3.forEach(t => B.push({ kind: 'p', indent: true, node: t }));
+  itens1_3.forEach(t => B.push({ kind: 'p', indent: true, bullet: true, node: t }));
 
   B.push({ kind: 'sec', text: '2 - DAS OBRIGAÇÕES DA CONTRATADA' });
   B.push({ kind: 'p', bold: true, node: '2.1. Além das demais obrigações previstas neste contrato, a CONTRATADA se compromete a:' });
@@ -186,24 +270,46 @@ function renderBlock(b: Block, key: React.Key): React.ReactNode {
     const nome = d.nome?.trim() || 'CLIENTE';
     const doc = d.documento?.trim() || '000.000.000-00';
     // Espaço amplo acima das linhas para o assinador automático posicionar a assinatura.
-    const ASSINATURA_ESPACO = 72;
+    const ASSINATURA_ESPACO = ASSINATURA_ESPACO_PX;
+    // As duas assinaturas ficam EMPILHADAS, não lado a lado. Em duas colunas
+    // cada caixa tem ~38% da largura da página, e assinatura desenhada é quase
+    // sempre mais larga que isso: o desenho encolhia ou passava por cima do
+    // bloco vizinho. Empilhado, cada uma ocupa a largura útil inteira.
+    const bloco = (marcador: 'cliente' | 'grape', titulo: string, subtitulo: string, primeiro: boolean) => (
+      <div style={{ marginTop: primeiro ? 0 : 34, textAlign: 'center' }}>
+        <div style={{ height: ASSINATURA_ESPACO }} />
+        {/* O marcador fica na LINHA, não no bloco: é a linha que define onde a
+            assinatura entra, e ela é estreita e centralizada. */}
+        <div
+          {...(marcador === 'cliente' ? { 'data-assinatura-cliente': true } : { 'data-assinatura-grape': true })}
+          style={{ borderTop: '1px solid #111', margin: '0 auto 5px', paddingTop: 5, width: '62%' }}
+        />
+        <p style={{ margin: 0, fontWeight: 700 }}>{titulo}</p>
+        <p style={{ margin: 0, fontWeight: 700 }}>{subtitulo}</p>
+      </div>
+    );
+
     return (
-      <div key={key} style={{ marginTop: 80, display: 'flex', justifyContent: 'space-around', textAlign: 'center', gap: 24 }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ height: ASSINATURA_ESPACO }} />
-          <div style={{ borderTop: '1px solid #111', margin: '0 6px 5px', paddingTop: 5 }} />
-          <p style={{ margin: 0, fontWeight: 700 }}>{nome}</p>
-          <p style={{ margin: 0, fontWeight: 700 }}>{docLabel} nº: {doc}</p>
-        </div>
-        <div style={{ flex: 1 }}>
-          <div style={{ height: ASSINATURA_ESPACO }} />
-          <div style={{ borderTop: '1px solid #111', margin: '0 6px 5px', paddingTop: 5 }} />
-          <p style={{ margin: 0, fontWeight: 700 }}>Grape Mídia LTDA</p>
-          <p style={{ margin: 0, fontWeight: 700 }}>CNPJ nº 50.684.938/0001-46</p>
-        </div>
+      // `data-assinatura-*` é lido na hora de gerar o link: o front mede onde
+      // cada linha caiu e manda a coordenada ao ZapSign. O PDF é rasterizado,
+      // então texto-âncora (<<signer1>>) não teria o que encontrar.
+      <div key={key} style={{ marginTop: 56 }}>
+        {bloco('cliente', nome, `${docLabel} nº: ${doc}`, true)}
+        {bloco('grape', 'Grape Mídia LTDA', 'CNPJ nº 50.684.938/0001-46', false)}
       </div>
     );
   }
+  // item de lista com marcador — flex em vez de `list-style` para dar recuo
+  // pendurado: a segunda linha alinha com o texto, não embaixo do ponto.
+  if (b.bullet) {
+    return (
+      <div key={key} style={{ display: 'flex', gap: 8, margin: '4px 0 0 0', paddingLeft: 18, lineHeight: 1.5 }}>
+        <span style={{ flexShrink: 0, lineHeight: 1.5 }}>•</span>
+        <p style={{ margin: 0, flex: 1, textAlign: 'justify', fontWeight: b.bold ? 700 : 400, lineHeight: 1.5 }}>{b.node}</p>
+      </div>
+    );
+  }
+
   // parágrafo
   return (
     <p key={key} style={{

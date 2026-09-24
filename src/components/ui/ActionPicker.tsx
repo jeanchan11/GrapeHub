@@ -303,7 +303,7 @@ const ActionPicker: React.FC<ActionPickerProps> = ({
         {open && (
           <div
             ref={menuRef}
-            className={`absolute left-0 right-0 z-[1300] bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl overflow-hidden overscroll-contain flex flex-col ${
+            className={`absolute left-0 right-0 z-[100000] bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl overflow-hidden overscroll-contain flex flex-col ${
               placement.up ? 'bottom-full mb-1' : 'top-full mt-1'
             }`}
             /* position inline: o index.html tem uma regra global

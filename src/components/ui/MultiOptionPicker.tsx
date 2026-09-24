@@ -149,7 +149,7 @@ const MultiOptionPicker: React.FC<MultiOptionPickerProps> = ({
       {open && pos && createPortal(
         <div
           ref={menuRef}
-          className="fixed z-[1300] bg-dark-card border border-white/10 rounded-xl shadow-2xl overflow-hidden flex flex-col animate-in fade-in slide-in-from-top-1 duration-150"
+          className="fixed z-[100000] bg-dark-card border border-white/10 rounded-xl shadow-2xl overflow-hidden flex flex-col animate-in fade-in slide-in-from-top-1 duration-150"
           style={{ position: 'fixed', top: pos.top, left: pos.left, minWidth: pos.minWidth, maxHeight: pos.maxHeight }}
         >
           {showSearch && (

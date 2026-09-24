@@ -8,7 +8,15 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
-dist
+# `dist/*` e não `dist`: o git NÃO reinclui arquivo de dentro de uma pasta
+# excluída por inteiro, então a exceção abaixo só funciona assim.
+dist/*
+# Exceção: o bundle do servidor VAI junto com o commit.
+# A produção builda o front sozinha, mas não builda o servidor — sem este
+# arquivo no repositório, todo deploy vira upload manual (e foi assim que a
+# 4.1.9 subiu com o servidor de 8 de setembro ainda rodando).
+# É seguro versionar: nenhum segredo entra no bundle, tudo vem de process.env.
+!dist/server.js
 dist_old
 dist-ssr
 *.local

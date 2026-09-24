@@ -20,6 +20,11 @@ interface OptionPickerProps {
 }
 
 /**
+ * z-index do menu: ele é montado em portal na raiz do documento, então precisa
+ * ficar acima de QUALQUER modal — os do projeto chegam a z-[99999]. Com o valor
+ * antigo (1300) a lista abria ATRÁS do modal, e o campo parecia não responder ao
+ * clique. O teto é 100001, do diálogo de confirmação, que deve cobrir tudo.
+ *
  * Custom dropdown component that replaces native <select> elements.
  * Matches the GrapeHub design system with dark theme support,
  * color-coded pills, checkmarks, and click-outside-to-close behavior.
@@ -107,7 +112,7 @@ const OptionPicker: React.FC<OptionPickerProps> = ({
       {open && pos && createPortal(
         <div
           ref={menuRef}
-          className="fixed z-[1300] bg-dark-card border border-white/10 rounded-xl shadow-2xl py-1.5 max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-1 duration-150"
+          className="fixed z-[100000] bg-dark-card border border-white/10 rounded-xl shadow-2xl py-1.5 max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-1 duration-150"
           style={{ top: pos.top, left: pos.left, minWidth: pos.minWidth }}
         >
           {emptyLabel !== undefined && (

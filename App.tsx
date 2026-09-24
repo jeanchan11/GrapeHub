@@ -23,7 +23,6 @@ import Dre from './src/pages/Dre';
 import Extrato from './src/pages/Extrato';
 import TaskTemplates from './src/pages/TaskTemplates';
 import Atividades from './src/pages/Atividades';
-import CrmLigacoes from './src/pages/CrmLigacoes';
 import CrmPessoas from './src/pages/CrmPessoas';
 import CrmEmpresas from './src/pages/CrmEmpresas';
 import CrmLeads from './src/pages/CrmLeads';
@@ -418,8 +417,6 @@ const AppContent: React.FC = () => {
         return <CrmMetricas />;
       case 'crm-sequencias':
         return <CrmSequencias />;
-      case 'ligacoes-dashboard':
-        return <CrmLigacoes />;
       case 'automacoes':
         return <Automacoes />;
       case 'marketing-dashboard':

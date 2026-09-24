@@ -41,7 +41,6 @@ import { NovaAtividadeModal } from './Atividades';
 import { designSystem } from '../design-system';
 import { useAuth } from '../contexts/AuthContext';
 import confetti from 'canvas-confetti';
-import { useSoftphone, formatCallTime } from '../hooks/useSoftphone';
 import { AIChat } from '../components/AIChat/AIChat';
 import fredImg from '../assets/fred.png';
 import MetasPopup from '../components/MetasPopup';
@@ -155,9 +154,8 @@ const formatDuration = (start: string, end: string) => {
   return `${minutes}min`;
 };
 
-// Format call timestamp from Api4Com.
-// Api4Com incorrectly labels BRT (UTC-3) timestamps with Z (UTC), so times are 3h behind.
-// Fix: ALWAYS add 3h to the returned timestamp to get the real BRT→UTC reference.
+// Tempo relativo ("há 2 h") para os itens do Histórico.
+// O +3h corrige carimbos BRT rotulados como UTC vindos de integrações antigas.
 const formatCallRelativeTime = (dateStr: string): string => {
   if (!dateStr) return '';
   // Parse the date as-is (with or without Z), then add 3h to correct BRT mislabeled as UTC
@@ -339,9 +337,6 @@ interface LeadDetailModalProps {
   onManageTemplates: () => void;
   onRefreshTasks: () => void;
   currentKanbanId: string | null;
-  api4comSettings: { configured: boolean } | null;
-  callingLeadId: string | null;
-  onCallLead: (leadId: string, phone: string, leadName?: string) => void;
   onUpdateLeadField: (leadId: string, field: string, value: any) => void;
   tags: any[];
   onRefreshTags: () => void;
@@ -586,14 +581,10 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   setNewComment, onClose, onAddComment, onDeleteComment,
   onMove, onDelete, onWin, onLose, onReopen, onMoveToKanban,
   onAddTask, onUpdateTask, onDeleteTask, onApplyTemplate, onManageTemplates,
-  onRefreshTasks, currentKanbanId, api4comSettings, callingLeadId, onCallLead, onUpdateLeadField,
+  onRefreshTasks, currentKanbanId, onUpdateLeadField,
   tags, onRefreshTags, currentUserEmail, currentUserName, currentUserAvatar, lossReasons, sequences, onApplySequence
 }) => {
-  const [activeTab, setActiveTab] = useState<'atividades' | 'histórico' | 'notas' | 'ligações' | 'arquivos' | 'checklist' | 'contrato' | 'proposta'>('atividades');
-  const [callLogs, setCallLogs] = useState<any[]>([]);
-  const [callStatuses, setCallStatuses] = useState<Record<string, boolean>>({});
-  const [callLogsLoading, setCallLogsLoading] = useState(false);
-  const [callLogsFetched, setCallLogsFetched] = useState(false);
+  const [activeTab, setActiveTab] = useState<'atividades' | 'histórico' | 'notas' | 'reuniões' | 'arquivos' | 'checklist' | 'contrato' | 'proposta'>('atividades');
   const [showMoveMenu, setShowMoveMenu] = useState(false);
   const [showKanbanMenu, setShowKanbanMenu] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -692,8 +683,6 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
     return () => document.removeEventListener('mousedown', handler);
   }, []);  // Reset state when lead changes
   useEffect(() => {
-    setCallLogs([]);
-    setCallLogsFetched(false);
     setMeetings([]);
     setMeetingsFetched(false);
     setNotes([]);
@@ -701,40 +690,6 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
     setChecklistItems([]);
     setChecklistFetched(false);
   }, [lead?.id]);
-
-  // Fetch call history when ligações tab is active
-  useEffect(() => {
-    if ((activeTab !== 'ligações' && activeTab !== 'histórico') || !lead || callLogsFetched) return;
-    setCallLogsLoading(true);
-    const phone = encodeURIComponent(lead.telefone || '');
-    const userId = encodeURIComponent(currentUserEmail || '');
-    fetch(`/api/api4com/calls?user_id=${userId}&phone=${phone}&page=1`)
-      .then(r => r.json())
-      .then(async data => {
-        const logs = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
-        setCallLogs(logs);
-        
-        // Buscar status (atendida/não atendida) para essas ligações
-        if (logs.length > 0) {
-          const callIds = logs.map((c: any) => c.id).join(',');
-          try {
-            const statusRes = await fetch(`/api/crm-comercial/call-status?callIds=${callIds}`);
-            if (statusRes.ok) {
-              const statusData = await statusRes.json();
-              const newStatuses: Record<string, boolean> = {};
-              statusData.forEach((s: any) => { newStatuses[s.call_id] = s.is_attended; });
-              setCallStatuses(newStatuses);
-            }
-          } catch (e) {
-            console.error("Failed to fetch call statuses", e);
-          }
-        }
-        
-        setCallLogsFetched(true);
-      })
-      .catch(() => setCallLogs([]))
-      .finally(() => setCallLogsLoading(false));
-  }, [activeTab, lead?.id, callLogsFetched]);
 
   // Fetch meetings when reuniões tab is active
   useEffect(() => {
@@ -1081,7 +1036,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
 
   const responsavel = users.find(u => u.id === lead.responsavel_id);
   const currentColumn = columns.find(c => c.id === lead.coluna);
-  const tabs = ['Atividades', 'Histórico', 'Notas', 'Reuniões', 'Ligações', 'Checklist', 'Contrato', 'Proposta'];
+  const tabs = ['Atividades', 'Histórico', 'Notas', 'Reuniões', 'Checklist', 'Contrato', 'Proposta'];
 
   return (
     <>
@@ -1119,22 +1074,6 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                 </div>
               </div>
 
-              {/* Botão de Ligação (Api4Com) */}
-              <button
-                title={api4comSettings?.configured && lead.telefone ? 'Ligar para contato' : !lead.telefone ? 'Sem telefone cadastrado' : 'Configure a telefonia primeiro'}
-                disabled={!api4comSettings?.configured || !lead.telefone || callingLeadId === lead.id}
-                onClick={(e) => { e.stopPropagation(); onCallLead(lead.id, lead.telefone!, lead.nome); }}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all shadow-lg flex-shrink-0 ${api4comSettings?.configured && lead.telefone
-                    ? 'bg-violet-600 hover:bg-violet-700 text-white shadow-violet-500/20 active:scale-95'
-                    : 'bg-gray-100 dark:bg-white/5 text-gray-400 dark:text-gray-600 shadow-none cursor-not-allowed'
-                  }`}
-              >
-                {callingLeadId === lead.id
-                  ? <Loader2 size={15} className="animate-spin" />
-                  : <PhoneCall size={15} />
-                }
-                Ligar
-              </button>
             </div>
 
             <div className="flex items-center gap-2">
@@ -1396,7 +1335,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                 {activeTab === 'histórico' && (
                   <div className="p-6 space-y-4 flex-1">
                     <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-2">Histórico</h3>
-                    {history.length === 0 && comments.length === 0 && callLogs.length === 0 ? (
+                    {history.length === 0 && comments.length === 0 ? (
                       <p className="text-sm text-gray-500 dark:text-slate-500 text-center py-8">Nenhuma atividade registrada.</p>
                     ) : (
                       (() => {
@@ -1419,8 +1358,7 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                           ...history
                             .filter(item => item.action_type !== 'call_initiated' && item.action_type !== 'call_completed')
                             .map(item => ({ ...item, _rawType: 'history', _date: parseDateSafe(item.created_at) })),
-                          ...comments.map(c => ({ ...c, _rawType: 'comment', _date: parseDateSafe(c.created_at) })),
-                          ...callLogs.map(call => ({ ...call, _rawType: 'call', _date: parseDateSafe(call.started_at || call.created_at) }))
+                          ...comments.map(c => ({ ...c, _rawType: 'comment', _date: parseDateSafe(c.created_at) }))
                         ].sort((a, b) => b._date - a._date);
 
                         const unifiedItems: any[] = [];
@@ -2566,119 +2504,6 @@ const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                     </div>
                   </div>
                 )}
-                {activeTab === 'ligações' && (() => {
-                  const formatCallDuration = (secs: number) => {
-                    if (!secs) return '0:00';
-                    const m = Math.floor(secs / 60);
-                    const s = secs % 60;
-                    return `${m}:${String(s).padStart(2, '0')}`;
-                  };
-                  const formatRelativeTime = formatCallRelativeTime;
-                  const isSuccess = (call: any) => call.hangup_cause === 'NORMAL_CLEARING';
-
-                  return (
-                    <div className="p-4 space-y-3 flex-1 overflow-y-auto">
-                      <div className="flex items-center justify-between mb-2">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500">Histórico de ligações</p>
-                        <button onClick={() => setCallLogsFetched(false)} className="text-xs text-purple-500 hover:text-purple-400 flex items-center gap-1 transition-colors">
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 4v6h-6M1 20v-6h6" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" /></svg>
-                          Atualizar
-                        </button>
-                      </div>
-                      {callLogsLoading && (
-                        <div className="flex flex-col items-center justify-center py-12 text-gray-400">
-                          <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mb-3" />
-                          <p className="text-sm">Carregando ligações...</p>
-                        </div>
-                      )}
-                      {!callLogsLoading && callLogsFetched && callLogs.length === 0 && (
-                        <div className="flex flex-col items-center justify-center py-12 text-gray-400 dark:text-slate-500">
-                          <Phone size={36} className="mb-3 opacity-30" />
-                          <p className="text-sm font-medium">Nenhuma ligação encontrada</p>
-                          <p className="text-xs mt-1 opacity-60">As ligações aparecerão aqui após serem realizadas</p>
-                        </div>
-                      )}
-                      {!callLogsLoading && callLogs.map((call: any, index: number) => {
-                        const success = isSuccess(call);
-                        const dotColor = success ? 'bg-emerald-500' : 'bg-red-500';
-                        const isAttended = callStatuses[call.id] === true;
-
-                        const handleToggleAttended = async () => {
-                          const newStatus = !isAttended;
-                          setCallStatuses(prev => ({ ...prev, [call.id]: newStatus }));
-                          try {
-                            await fetch('/api/crm-comercial/call-status', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ call_id: String(call.id), is_attended: newStatus })
-                            });
-                          } catch (err) {
-                            console.error('Failed to update call status', err);
-                            setCallStatuses(prev => ({ ...prev, [call.id]: isAttended }));
-                          }
-                        };
-
-                        return (
-                          <div key={call.id} className="relative pl-6 pb-6 last:pb-0">
-                            {/* Timeline Line */}
-                            {index !== callLogs.length - 1 && (
-                              <div className="absolute left-[7px] top-[14px] w-[2px] h-full bg-gray-100 dark:bg-white/5" />
-                            )}
-
-                            {/* Timeline Dot */}
-                            <div className={`absolute left-0 top-1 w-[16px] h-[16px] rounded-full border-4 border-white dark:border-[#1A1625] shadow-sm z-10 flex items-center justify-center ${dotColor}`} />
-
-                            <div className={`border rounded-2xl p-4 shadow-sm transition-all hover:shadow-md ${isAttended ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/20' : 'bg-white/50 dark:bg-white/5 border-gray-100 dark:border-white/10'}`}>
-                              <div className="flex items-start gap-3">
-                                <button 
-                                  onClick={handleToggleAttended}
-                                  className={`flex-shrink-0 w-10 h-10 rounded-2xl flex items-center justify-center transition-colors border ${isAttended ? 'bg-emerald-500 border-emerald-600 text-white shadow-lg shadow-emerald-500/20' : 'bg-white dark:bg-white/5 border-gray-200 dark:border-white/10 hover:border-emerald-500/50 hover:bg-emerald-50 dark:hover:bg-emerald-500/10'}`}
-                                  title={isAttended ? 'Marcar como não atendida' : 'Marcar como atendida'}
-                                >
-                                  {isAttended ? <Check size={18} /> : <Phone size={18} className="text-gray-400 dark:text-slate-500" />}
-                                </button>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 flex-wrap mb-1">
-                                    <span className="font-semibold text-[13px] text-gray-800 dark:text-slate-100">Ligação {isAttended && <span className="text-emerald-500 font-bold ml-1">(Atendida)</span>}</span>
-                                    <span className="text-[10px] px-2 py-0.5 rounded-full font-medium"
-                                      style={{ background: success ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', color: success ? '#059669' : '#dc2626' }}>
-                                      {success ? '✓' : '✕'} {getCallTypeLabel(call)}
-                                    </span>
-                                  </div>
-                                  <p className="text-[11px]" style={{ color: '#9ca3af' }}>ORIGEM: GrapeHub CRM</p>
-
-                                  {call.duration > 0 && (
-                                    <div className="mt-2 text-[11px] text-gray-400 dark:text-slate-500">
-                                      ⏱ Duração: <strong className="text-gray-600 dark:text-slate-400">{formatCallDuration(call.duration)}</strong>
-                                    </div>
-                                  )}
-
-                                  {call.record_url && (
-                                    <div className="mt-2.5 rounded-lg p-1.5 flex items-center gap-2 max-w-[350px] bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10">
-                                      <audio controls src={call.record_url} className="w-full h-7" style={{ minWidth: 0, flex: 1 }} preload="none" />
-                                      <a href={call.record_url} target="_blank" rel="noopener noreferrer" className={`flex-shrink-0 p-1 rounded transition-colors ${isAttended ? 'text-emerald-600 hover:bg-emerald-500/20' : 'text-purple-600 hover:bg-purple-500/20'}`} title="Abrir gravação">
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>
-                                      </a>
-                                    </div>
-                                  )}
-
-                                  <div className="flex items-center gap-1.5 mt-2.5">
-                                    <Clock size={11} className="text-gray-400" />
-                                    <span className="text-[11px]" style={{ color: '#9ca3af' }}>
-                                      {formatRelativeTime(call.started_at)}
-                                      {(call.first_name || call.last_name) && <> por <strong className="font-medium text-gray-600 dark:text-slate-400">{[call.first_name, call.last_name].filter(Boolean).join(' ')}</strong></>}
-                                    </span>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-
-                    </div>
-                  );
-                })()}
                 {activeTab === 'checklist' && (
                 <div className="flex-1 overflow-y-auto p-5">
                   {checklistLoading ? (
@@ -4117,8 +3942,7 @@ const CrmComercial = () => {
   const kanbanBoardRef = useRef<HTMLDivElement>(null);
   const [celebrationDetails, setCelebrationDetails] = useState<{ gif: string, value: number, name: string } | null>(null);
 
-  // --- Api4Com + Softphone state ---
-  const [api4comSettings, setApi4comSettings] = useState<{ configured: boolean, sip_extension?: string } | null>(null);
+  // --- Configurações do CRM (webhooks, sequências, motivos de perda) ---
   const [isTelefonySettingsOpen, setIsTelefonySettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<'webhook' | 'sequencias' | 'motivos-perda'>('webhook');
   const [crmWebhookSettings, setCrmWebhookSettings] = useState<any>({ form_webhook_url: '', whatsapp_webhook_url: '', inbound_token: '', inbound_kanban_id: '', inbound_coluna: '', inbound_responsavel_id: '', inbound_valor: 0 });
@@ -4147,15 +3971,6 @@ const CrmComercial = () => {
     'LinkedIn': 'bg-sky-500/20 text-sky-400', 'Outros': 'bg-slate-500/20 text-slate-400',
   };
 
-  const [callingLeadId, setCallingLeadId] = useState<string | null>(null);
-  const [softphoneCall, setSoftphoneCall] = useState<{ leadId: string, leadName: string, phone: string, status: 'connecting' | 'active' | 'error', errorMsg?: string, startedAt?: number } | null>(null);
-  const [callElapsed, setCallElapsed] = useState(0);
-  // JsSIP Softphone hook
-  const softphone = useSoftphone();
-  const [phoneShowDialpad, setPhoneShowDialpad] = useState(false);
-  const [phoneShowVolume, setPhoneShowVolume] = useState(false);
-  const [phoneSpeakerVol, setPhoneSpeakerVol] = useState(1);
-  // --- End Api4Com state ---
 
   const [leads, setLeads] = useState<Lead[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -4446,38 +4261,11 @@ const CrmComercial = () => {
         .then(data => setCrmWebhookSettings(data))
         .catch(e => console.error(e));
 
-      // Fetch Api4Com settings when user is known (just check if configured)
-      fetch(`/api/api4com/settings?user_id=${encodeURIComponent(user.email)}`)
-        .then(r => r.json())
-        .then(data => {
-          setApi4comSettings({ configured: !!(data.configured || data.api4com_token), sip_extension: data.sip_extension });
-        })
-        .catch(() => setApi4comSettings({ configured: false }));
-
       // Metas ATIVAS para exibir no header (recarrega ao abrir/fechar o popup de Metas)
       fetchHeaderMetas();
     }
   }, [user?.email, activeKanbanId]);
 
-  // SIP registration is handled by useSoftphone auto-connect from localStorage cache
-  // (configured in Configurações > Integrações)
-
-  // Elapsed call timer
-  useEffect(() => {
-    if (softphoneCall?.status === 'active' && softphoneCall.startedAt) {
-      setCallElapsed(0);
-      const interval = setInterval(() => {
-        setCallElapsed(Math.floor((Date.now() - softphoneCall.startedAt!) / 1000));
-      }, 1000);
-      return () => clearInterval(interval);
-    }
-  }, [softphoneCall?.status, softphoneCall?.startedAt]);
-
-  const formatCallTime = (secs: number) => {
-    const m = Math.floor(secs / 60).toString().padStart(2, '0');
-    const s = (secs % 60).toString().padStart(2, '0');
-    return `${m}:${s}`;
-  };
   useEffect(() => {
     if (selectedLeadForDetails) {
       fetchComments(selectedLeadForDetails.id);
@@ -5014,20 +4802,6 @@ const CrmComercial = () => {
     processLeadWin(leadId, lead);
   };
 
-  const handleCallLead = async (leadId: string, phone: string, leadName?: string) => {
-    if (!user?.email) return;
-    setCallingLeadId(leadId);
-
-    console.log('[CRM] handleCallLead chamado:', { phone, leadName, leadId, userId: user.email, sipStatus: softphone.sipStatus });
-
-    // Usa o fluxo correto da Api4Com:
-    // 1. Chamamos a REST API do Dialer
-    // 2. Api4Com liga para nosso ramal via SIP (com X-Api4comintegratedcall: true)
-    // 3. O browser auto-atende via WebRTC
-    // 4. Api4Com conecta ao cliente
-    softphone.initiateDialerCall(phone, leadName || phone, leadId, user.email);
-    setCallingLeadId(null);
-  };
 
   const handleSaveWebhookSettings = async () => {
     if (!user?.email) return;
@@ -5462,33 +5236,6 @@ const CrmComercial = () => {
                   <span className="text-xs font-bold text-gray-800 dark:text-white">Configurações</span>
                 </button>
 
-                {/* Ramal / Telefonia */}
-                <button
-                  type="button" role="menuitem"
-                  onClick={() => { setTestResult(null); setSettingsTab('telefonia'); fetchLossReasons(); setIsTelefonySettingsOpen(true); }}
-                  className="w-full text-left flex items-center gap-3 p-2.5 rounded-lg cursor-pointer outline-none hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
-                >
-                  <div className="relative flex items-center justify-center w-7 h-7 rounded-lg bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-slate-400">
-                    <Phone size={15} />
-                    <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full border border-white dark:border-[#1A1625]" style={{
-                      background: softphone.sipStatus === 'registered' ? '#22c55e' :
-                        softphone.sipStatus === 'connecting' ? '#f59e0b' :
-                          softphone.sipStatus === 'error' ? '#ef4444' : '#374151'
-                    }} />
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-xs font-bold text-gray-800 dark:text-white">Telefonia</span>
-                    <span className="text-[10px]" style={{
-                      color: softphone.sipStatus === 'registered' ? '#22c55e' :
-                        softphone.sipStatus === 'connecting' ? '#f59e0b' :
-                          softphone.sipStatus === 'error' ? '#ef4444' : '#9ca3af',
-                    }}>
-                      {softphone.sipStatus === 'registered' ? 'Ramal ativo' :
-                        softphone.sipStatus === 'connecting' ? 'Conectando...' :
-                          softphone.sipStatus === 'error' ? 'Falha' : 'Ramal offline'}
-                    </span>
-                  </div>
-                </button>
           </PlainMenu>
 
         </div>
@@ -5728,12 +5475,9 @@ const CrmComercial = () => {
           onApplyTemplate={handleApplyTemplate}
           onManageTemplates={() => setIsManageTemplatesOpen(true)}
           currentKanbanId={activeKanbanId}
-          api4comSettings={api4comSettings}
           currentUserEmail={user?.email}
           currentUserName={user?.name || user?.displayName}
           currentUserAvatar={user?.photoURL}
-          callingLeadId={callingLeadId}
-          onCallLead={handleCallLead}
           onUpdateLeadField={handleUpdateLeadField}
         />
       )}
@@ -6414,335 +6158,6 @@ const CrmComercial = () => {
         </div>
       </Modal>
 
-      {/* ━━━━━━ SOFTPHONE POPUP (WebRTC + Dialer Hybrid) ━━━━━━ */}
-      <AnimatePresence>
-        {/* === WAITING / ERROR state — from the hook's currentCall (pre-answer) === */}
-        {softphone.currentCall && (softphone.currentCall.status === 'calling' || softphone.currentCall.status === 'failed') && !softphone.currentCall.startedAt && (() => {
-          const call = softphone.currentCall!;
-          const isError = call.status === 'failed';
-          const initials = (call.leadName || '?').split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2);
-          const accentColor = isError ? '#ef4444' : '#a78bfa';
-
-          return (
-            <motion.div
-              key="softphone-waiting"
-              initial={{ opacity: 0, y: 30, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 30, scale: 0.95 }}
-              transition={{ type: 'spring', damping: 22, stiffness: 300 }}
-              className="fixed bottom-6 right-6 z-[100000] w-72 rounded-3xl overflow-hidden"
-              style={{
-                background: isError
-                  ? 'linear-gradient(135deg, #1c0a0a 0%, #0d0b14 60%)'
-                  : 'linear-gradient(135deg, #1a1230 0%, #0d0b14 60%)',
-                border: `1px solid ${accentColor}22`,
-                boxShadow: `0 32px 80px rgba(0,0,0,0.7), 0 0 0 1px ${accentColor}15`
-              }}
-            >
-              <div className="relative flex flex-col items-center pt-8 pb-4 px-6">
-                {/* Pulsing rings while calling */}
-                {!isError && (
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ top: '20px' }}>
-                    <span className="absolute w-24 h-24 rounded-full animate-ping" style={{ background: `${accentColor}15`, animationDuration: '1.5s' }} />
-                    <span className="absolute w-32 h-32 rounded-full animate-ping" style={{ background: `${accentColor}08`, animationDuration: '1.5s', animationDelay: '0.5s' }} />
-                  </div>
-                )}
-                <div className="relative w-20 h-20 rounded-full flex items-center justify-center text-2xl font-black mb-3 z-10"
-                  style={{
-                    background: `linear-gradient(135deg, ${accentColor}40, ${accentColor}20)`,
-                    border: `2px solid ${accentColor}60`,
-                    boxShadow: `0 0 30px ${accentColor}30`
-                  }}
-                >
-                  <span className="text-2xl font-bold" style={{ color: accentColor }}>{initials}</span>
-                </div>
-                <p className="text-white font-bold text-lg text-center truncate w-full">{call.leadName}</p>
-                <p className="text-sm font-mono mt-0.5 mb-3" style={{ color: '#6b7280' }}>{call.phone}</p>
-
-                {!isError && (
-                  <div className="flex flex-col items-center gap-1.5 mb-2 w-full">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: accentColor }} />
-                      <p className="text-sm font-semibold" style={{ color: accentColor }}>
-                        {call.status === 'calling' ? 'Chamando via Api4Com...' : 'Aguardando atender...'}
-                      </p>
-                    </div>
-                    <p className="text-xs text-center" style={{ color: '#4b5563' }}>
-                      {call.status === 'calling'
-                        ? 'Api4Com vai ligar para o seu browser em instantes'
-                        : 'Telefone do cliente está tocando'}
-                    </p>
-                  </div>
-                )}
-
-                {isError && (
-                  <div className="rounded-xl px-3 py-2.5 w-full" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.15)' }}>
-                    <p className="text-xs text-red-400 font-semibold">✗ {call.errorMsg || 'Falha na chamada'}</p>
-                  </div>
-                )}
-              </div>
-
-              <div className="flex items-center justify-center gap-4 pb-8 px-6">
-                {isError ? (
-                  <>
-                    <button
-                      onClick={() => call.phone && handleCallLead('retry', call.phone, call.leadName)}
-                      className="flex-1 py-3 rounded-2xl text-sm font-bold transition-all"
-                      style={{ background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(124,58,237,0.3)', color: '#a78bfa' }}
-                    >
-                      Tentar novamente
-                    </button>
-                    <button
-                      onClick={() => softphone.hangUp()}
-                      className="flex-1 py-3 rounded-2xl text-sm font-bold transition-all"
-                      style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#6b7280' }}
-                    >
-                      Fechar
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    onClick={() => softphone.hangUp()}
-                    title="Cancelar"
-                    className="w-16 h-16 rounded-full flex items-center justify-center transition-all active:scale-90"
-                    style={{ background: 'linear-gradient(135deg,#dc2626,#b91c1c)', boxShadow: '0 8px 30px rgba(220,38,38,0.5)', color: '#fff' }}
-                  >
-                    <Phone size={24} style={{ transform: 'rotate(135deg)' }} />
-                  </button>
-                )}
-              </div>
-              <p className="text-center pb-4 text-xs" style={{ color: '#374151' }}>
-                🎙 Ramal {softphone.extension} · WebRTC
-              </p>
-            </motion.div>
-          );
-        })()}
-
-        {/* === ACTIVE JSSIP SOFTPHONE — only when past the pre-dial waiting state === */}
-        {softphone.currentCall && !(
-          (softphone.currentCall.status === 'calling' || softphone.currentCall.status === 'failed') &&
-          !softphone.currentCall.startedAt
-        ) && (() => {
-          const call = softphone.currentCall;
-          const status = call.status;
-          const initials = call.leadName.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
-
-          const isLive = status === 'active';
-          const isCalling = status === 'calling' || status === 'ringing';
-          const isDone = status === 'ended' || status === 'failed';
-
-          const accentColor = isLive ? '#22c55e' : status === 'ringing' ? '#f59e0b' : isCalling ? '#7c3aed' : isDone ? '#6b7280' : '#ef4444';
-          const bgGradient = isLive
-            ? 'linear-gradient(135deg, #064e3b 0%, #0d0b14 60%)'
-            : isCalling
-              ? 'linear-gradient(135deg, #1e1b4b 0%, #0d0b14 60%)'
-              : 'linear-gradient(135deg, #1c1917 0%, #0d0b14 60%)';
-
-          return (
-            <motion.div
-              key="softphone-jssip"
-              initial={{ opacity: 0, y: 40, scale: 0.9 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 40, scale: 0.9 }}
-              transition={{ type: 'spring', damping: 20, stiffness: 280 }}
-              className="fixed bottom-6 right-6 z-[100000] w-72 rounded-3xl overflow-hidden"
-              style={{ background: bgGradient, border: `1px solid ${accentColor}22`, boxShadow: `0 32px 80px rgba(0,0,0,0.7), 0 0 0 1px ${accentColor}15` }}
-            >
-              {/* Avatar section */}
-              <div className="relative flex flex-col items-center pt-8 pb-4 px-6">
-                {/* Pulsing rings for calling state */}
-                {isCalling && (
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ top: '20px' }}>
-                    <span className="absolute w-24 h-24 rounded-full animate-ping" style={{ background: `${accentColor}20`, animationDuration: '1.5s' }} />
-                    <span className="absolute w-32 h-32 rounded-full animate-ping" style={{ background: `${accentColor}10`, animationDuration: '1.5s', animationDelay: '0.4s' }} />
-                    <span className="absolute w-40 h-40 rounded-full animate-ping" style={{ background: `${accentColor}08`, animationDuration: '1.5s', animationDelay: '0.8s' }} />
-                  </div>
-                )}
-
-                {/* Avatar */}
-                <div className="relative w-20 h-20 rounded-full flex items-center justify-center text-2xl font-black mb-3 z-10"
-                  style={{ background: `linear-gradient(135deg, ${accentColor}40, ${accentColor}20)`, border: `2px solid ${accentColor}60`, boxShadow: `0 0 30px ${accentColor}30` }}
-                >
-                  {initials || <Phone size={28} style={{ color: accentColor }} />}
-                  <span className="absolute text-2xl font-bold" style={{ color: accentColor }}>{initials}</span>
-                  {isLive && <span className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 flex items-center justify-center" style={{ background: '#22c55e', borderColor: '#0d0b14' }}>
-                    <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
-                  </span>}
-                </div>
-
-                {/* Name */}
-                <p className="text-white font-bold text-lg text-center truncate w-full leading-tight">{call.leadName}</p>
-                <p className="text-sm font-mono mt-0.5 mb-2" style={{ color: '#6b7280' }}>{call.phone}</p>
-
-                {/* Status text */}
-                <div className="flex items-center gap-2 mb-1">
-                  {isCalling && <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: accentColor }} />}
-                  <p className="text-sm font-semibold" style={{ color: accentColor }}>
-                    {status === 'calling' ? 'Chamando...' :
-                      status === 'ringing' ? 'Aguardando atender...' :
-                        status === 'active' ? 'Em chamada' :
-                          status === 'ended' ? 'Chamada encerrada' :
-                            call.errorMsg || 'Falha na chamada'}
-                  </p>
-                </div>
-
-                {/* Timer */}
-                {isLive && (
-                  <p className="text-4xl font-mono font-black tabular-nums tracking-widest mt-1 mb-1" style={{ color: '#fff', textShadow: '0 0 20px rgba(34,197,94,0.4)' }}>
-                    {formatCallTime(softphone.callElapsed)}
-                  </p>
-                )}
-
-                {/* Sound wave animation when active */}
-                {isLive && (
-                  <div className="flex items-center gap-1 mt-2 mb-1" style={{ height: '24px' }}>
-                    {[0.4, 1, 0.6, 1.2, 0.5, 0.9, 0.3, 1.1, 0.7, 0.4].map((h, i) => (
-                      <span key={i} className="rounded-full" style={{
-                        width: '3px',
-                        height: `${h * 20}px`,
-                        background: '#22c55e',
-                        opacity: softphone.isMuted ? 0.2 : 0.85,
-                        animation: softphone.isMuted ? 'none' : `soundWave 0.8s ease-in-out ${i * 0.08}s infinite alternate`,
-                      }} />
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* ── Controls ── */}
-              {!isDone && (
-                <div className="px-5 pb-2">
-                  {/* Top row: Dialpad | Mute | Volume */}
-                  <div className="flex items-center justify-between mb-3">
-                    {/* Dialpad toggle */}
-                    <button
-                      onClick={() => { setPhoneShowDialpad(v => !v); setPhoneShowVolume(false); }}
-                      title="Teclado"
-                      className="w-12 h-12 rounded-full flex items-center justify-center transition-all active:scale-90"
-                      style={{
-                        background: phoneShowDialpad ? 'rgba(124,58,237,0.25)' : 'rgba(255,255,255,0.1)',
-                        border: `1px solid ${phoneShowDialpad ? 'rgba(124,58,237,0.5)' : 'rgba(255,255,255,0.15)'}`,
-                        color: phoneShowDialpad ? '#a78bfa' : '#fff'
-                      }}
-                    >
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                        <circle cx="5" cy="5" r="2" /><circle cx="12" cy="5" r="2" /><circle cx="19" cy="5" r="2" />
-                        <circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" />
-                        <circle cx="5" cy="19" r="2" /><circle cx="12" cy="19" r="2" /><circle cx="19" cy="19" r="2" />
-                      </svg>
-                    </button>
-
-                    {/* Hang up — centered */}
-                    <button
-                      onClick={softphone.hangUp}
-                      title="Encerrar chamada"
-                      className="w-16 h-16 rounded-full flex items-center justify-center transition-all active:scale-90"
-                      style={{ background: 'linear-gradient(135deg,#dc2626,#b91c1c)', boxShadow: '0 8px 30px rgba(220,38,38,0.5)', color: '#fff' }}
-                    >
-                      <Phone size={24} style={{ transform: 'rotate(135deg)' }} />
-                    </button>
-
-                    {/* Volume toggle */}
-                    <button
-                      onClick={() => { setPhoneShowVolume(v => !v); setPhoneShowDialpad(false); }}
-                      title="Volume"
-                      className="w-12 h-12 rounded-full flex items-center justify-center transition-all active:scale-90"
-                      style={{
-                        background: phoneShowVolume ? 'rgba(34,197,94,0.2)' : 'rgba(255,255,255,0.1)',
-                        border: `1px solid ${phoneShowVolume ? 'rgba(34,197,94,0.4)' : 'rgba(255,255,255,0.15)'}`,
-                        color: phoneShowVolume ? '#4ade80' : '#fff'
-                      }}
-                    >
-                      {phoneSpeakerVol === 0
-                        ? <VolumeX size={18} />
-                        : phoneSpeakerVol < 0.5
-                          ? <Volume1 size={18} />
-                          : <Volume2 size={18} />}
-                    </button>
-                  </div>
-
-                  {/* Mute row */}
-                  <div className="flex justify-center mb-3">
-                    <button
-                      onClick={softphone.toggleMute}
-                      title={softphone.isMuted ? 'Ativar microfone' : 'Silenciar microfone'}
-                      className="flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold transition-all active:scale-95"
-                      style={{
-                        background: softphone.isMuted ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.08)',
-                        border: `1px solid ${softphone.isMuted ? 'rgba(245,158,11,0.4)' : 'rgba(255,255,255,0.12)'}`,
-                        color: softphone.isMuted ? '#fbbf24' : '#9ca3af'
-                      }}
-                    >
-                      {softphone.isMuted ? <MicOff size={14} /> : <Mic size={14} />}
-                      {softphone.isMuted ? 'Microfone mudo' : 'Microfone ativo'}
-                    </button>
-                  </div>
-
-                  {/* Volume slider panel */}
-                  {phoneShowVolume && (
-                    <div className="rounded-2xl p-3 mb-3" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
-                      <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-2 text-center">Volume do Alto-falante</p>
-                      <div className="flex items-center gap-3">
-                        <VolumeX size={14} className="text-slate-500 shrink-0" />
-                        <input
-                          type="range" min="0" max="1" step="0.05"
-                          value={phoneSpeakerVol}
-                          onChange={e => {
-                            const v = parseFloat(e.target.value);
-                            setPhoneSpeakerVol(v);
-                            softphone.setSpeakerVolume(v);
-                          }}
-                          className="flex-1 h-1.5 rounded-full appearance-none cursor-pointer"
-                          style={{ accentColor: '#22c55e' }}
-                        />
-                        <Volume2 size={14} className="text-slate-500 shrink-0" />
-                      </div>
-                      <p className="text-center text-xs text-slate-400 mt-1">{Math.round(phoneSpeakerVol * 100)}%</p>
-                    </div>
-                  )}
-
-                  {/* Dialpad panel */}
-                  {phoneShowDialpad && (
-                    <div className="rounded-2xl p-3 mb-3" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
-                      <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-3 text-center">Teclado</p>
-                      <div className="grid grid-cols-3 gap-2">
-                        {['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'].map(d => (
-                          <button
-                            key={d}
-                            onClick={() => softphone.sendDTMF(d)}
-                            className="py-2.5 rounded-xl text-sm font-bold transition-all active:scale-90 hover:brightness-125"
-                            style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
-                          >
-                            {d}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Done state */}
-              {isDone && (
-                <div className="pb-6 px-6">
-                  <button
-                    onClick={() => { softphone.hangUp(); setSoftphoneCall(null); }}
-                    className="w-full py-3 rounded-2xl text-sm font-bold transition-all"
-                    style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)', color: '#9ca3af' }}
-                  >
-                    Fechar
-                  </button>
-                </div>
-              )}
-
-              {/* Ramal label */}
-              <p className="text-center pb-4 text-xs" style={{ color: '#374151' }}>
-                🎙 Ramal {softphone.extension} · WebRTC
-              </p>
-            </motion.div>
-          );
-        })()}
-      </AnimatePresence>
 
       {/* Sound wave keyframes */}
       <style>{`
@@ -6755,7 +6170,7 @@ const CrmComercial = () => {
 
 
 
-      {/* ━━━━━━ TELEPHONY SETTINGS MODAL (Api4Com) ━━━━━━ */}
+      {/* ━━━━━━ CONFIGURAÇÕES DO CRM ━━━━━━ */}
       <AnimatePresence>
         {isTelefonySettingsOpen && (
           <motion.div

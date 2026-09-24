@@ -433,7 +433,6 @@ const templates = (() => {
     { id: 'crm-metas', label: 'CRM Metas' },
     { id: 'crm-pessoas', label: 'CRM Pessoas' },
     { id: 'crm-sequencias', label: 'CRM Sequências' },
-    { id: 'ligacoes-dashboard', label: 'Dashboard de Ligações' },
     { id: 'gestor-dashboard', label: 'Dashboard Gestor' },
     { id: 'marketing-dashboard', label: 'Dashboard Marketing' },
     { id: 'dashboard-operacional', label: 'Dashboard Operacional' },

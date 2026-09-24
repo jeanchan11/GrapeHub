@@ -3,6 +3,7 @@ import SplitHeadline from '../components/SplitHeadline';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, useSpring, useTransform, useInView } from 'motion/react';
 import { Calendar, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Clock, CreditCard, Zap, FileText, ExternalLink, Settings, AlertTriangle, Pause, Play, Check, X, ShieldAlert, Activity, CheckCircle2, Send, Settings2, Search, TrendingUp, Banknote, BarChart2, MessageCircle, MessageSquare, Copy, Phone, Mail, Users, DollarSign, Filter, RefreshCw, MoreHorizontal, RotateCcw } from 'lucide-react';
+import BotaoSincronizar from '../components/BotaoSincronizar';
 
 // ── Types ──────────────────────────────────────────────
 interface InvoiceItem {
@@ -387,22 +388,6 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
     }
   };
 
-  const [isSyncing, setIsSyncing] = useState(false);
-  const handleSyncAsaas = async () => {
-    setIsSyncing(true);
-    try {
-      await fetch('/api/fin/sync/run', { method: 'POST' });
-      // Aguarda o sync processar (roda em background no servidor)
-      await new Promise(r => setTimeout(r, 4000));
-      // Popula a fila com os dados novos
-      await fetch('/api/finance/dispatch/queue/populate', { method: 'POST' });
-      await fetchDispatch();
-      setTimeout(fetchDispatch, 1000);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
   const handleSaveConfig = async () => {
     setSavingCfg(true);
     try {
@@ -662,10 +647,13 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar..." className="pl-9 pr-3 py-1.5 bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-white/10 rounded-lg text-xs text-gray-900 dark:text-white focus:outline-none focus:border-violet-500/50" />
         </div>
-        <button onClick={handleSyncAsaas} disabled={isSyncing} className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-lg text-xs font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 disabled:opacity-50 transition-colors" title="Sincroniza faturas, assinaturas e clientes do Asaas">
-          <RefreshCw size={13} className={isSyncing ? 'animate-spin' : ''} />
-          {isSyncing ? 'Sincronizando...' : 'Sincronizar Asaas'}
-        </button>
+        {/* Depois do sync, esta tela ainda repopula a fila de cobrança — é o
+            único lugar que faz isso, por isso vai no onDone e não no botão. */}
+        <BotaoSincronizar onDone={async () => {
+          await fetch('/api/finance/dispatch/queue/populate', { method: 'POST' });
+          await fetchDispatch();
+          setTimeout(fetchDispatch, 1000);
+        }} />
         <button onClick={handlePopulateQueue} disabled={isPopulating} className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-lg text-xs font-medium text-gray-600 dark:text-slate-300 hover:bg-gray-100 disabled:opacity-50 transition-colors">
           <RefreshCw size={13} className={isPopulating ? 'animate-spin' : ''} />
           {isPopulating ? 'Atualizando...' : 'Atualizar Fila'}

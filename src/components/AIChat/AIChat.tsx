@@ -28,7 +28,6 @@ const PAGE_SECTION_MAP: Record<string, string> = {
   'crm-atividades':       'atividades',
   'crm-pessoas':          'atividades',
   'crm-empresas':         'atividades',
-  'ligacoes-dashboard':   'atividades',
   'marketing-dashboard':  'marketing',
   'marketing-acoes':      'marketing',
   'gestor-dashboard':     'operacional',

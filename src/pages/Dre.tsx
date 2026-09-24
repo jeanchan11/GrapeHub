@@ -1,11 +1,16 @@
 import React, { useState } from 'react';
 import { PageHeader } from '../components/ui/PageHeader';
+import BotaoSincronizar from '../components/BotaoSincronizar';
 import DrePanel from './DrePanel';
 import DreDashboard from './DreDashboard';
 
 // Página independente do Fluxo de Caixa — reúne a tabela do DRE e o dashboard.
 export default function Dre() {
   const [activeTab, setActiveTab] = useState<'dre' | 'dashboard'>('dre');
+  // Os painéis buscam os próprios dados no mount. Trocar a `key` depois do sync
+  // os remonta, que é o jeito mais simples de recarregar sem levantar o estado
+  // dos dois para cá.
+  const [versaoSync, setVersaoSync] = useState(0);
 
   return (
     <div className="min-h-screen bg-dark-bg p-8 font-sans text-dark-text transition-colors duration-300">
@@ -14,7 +19,9 @@ export default function Dre() {
           title="DRE /"
           titleAccent="Fluxo de Caixa"
           subtitle="Demonstrativo de resultados"
-        />
+        >
+          <BotaoSincronizar onDone={() => setVersaoSync(v => v + 1)} />
+        </PageHeader>
 
         {/* Abas */}
         <div className="flex items-center gap-1 border-b border-white/10">
@@ -29,8 +36,8 @@ export default function Dre() {
           ))}
         </div>
 
-        {activeTab === 'dre' && <DrePanel />}
-        {activeTab === 'dashboard' && <DreDashboard />}
+        {activeTab === 'dre' && <DrePanel key={`dre-${versaoSync}`} />}
+        {activeTab === 'dashboard' && <DreDashboard key={`dash-${versaoSync}`} />}
       </div>
     </div>
   );

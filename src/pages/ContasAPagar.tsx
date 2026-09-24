@@ -6,6 +6,7 @@ import {
   Home, Laptop, Truck, Megaphone, Users, Wrench, Code, Zap
 } from 'lucide-react';
 import SplitHeadline from '../components/SplitHeadline';
+import BotaoSincronizar from '../components/BotaoSincronizar';
 import { motion, AnimatePresence, useSpring, useTransform, useInView } from 'motion/react';
 import { confirmDialog } from '@/src/lib/confirm';
 import ThemedDropdown from '@/src/components/ui/ThemedDropdown';
@@ -728,6 +729,7 @@ export default function ContasAPagar() {
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <SplitHeadline text="Contas a" highlight="Pagar" subtitle={`Referência: ${monthLabel}`} subtitleClassName="text-sm text-gray-500 dark:text-gray-400 mt-1" />
           <div className="flex items-center gap-4 mt-1 flex-wrap">
+            <BotaoSincronizar onDone={async () => { await Promise.all([fetchEntries(), fetchBills(), fetchSicredi()]); }} />
             {/* Tabs */}
             <div className="flex items-center gap-1">
               {([['contas', 'Contas a Pagar', 'violet'], ['sicredi', 'Cartões', 'emerald']] as const).map(([key, label, color]) => (

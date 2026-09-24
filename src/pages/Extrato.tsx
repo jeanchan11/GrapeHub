@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import SplitHeadline from '../components/SplitHeadline';
+import BotaoSincronizar from '../components/BotaoSincronizar';
 import OptionPicker from '../components/ui/OptionPicker';
 import MultiOptionPicker from '../components/ui/MultiOptionPicker';
 import { createPortal } from 'react-dom';
@@ -1153,6 +1154,8 @@ export default function Extrato() {
   const [previsto, setPrevisto]           = useState<Previsto | null>(null);
   const [resumo, setResumo]               = useState<Resumo | null>(null);
   const [tabLoading, setTabLoading]       = useState(false);
+  // Refaz a busca do extrato depois do sync (entra nas deps do efeito abaixo).
+  const [versaoSync, setVersaoSync]       = useState(0);
 
   // ── Fetch extrato ──
   useEffect(() => {
@@ -1176,7 +1179,7 @@ export default function Extrato() {
     };
     fetchData();
     fetchAnticipationStats();
-  }, [range, accountFilter]);
+  }, [range, accountFilter, versaoSync]);
 
   // ── Fetch last import date for sicredi ──
   useEffect(() => {
@@ -1341,6 +1344,7 @@ export default function Extrato() {
 
         {/* Switcher de data por aba + Rules button */}
         <div className="flex items-center gap-3">
+        <BotaoSincronizar onDone={() => setVersaoSync(v => v + 1)} />
         {activeTab === 'Extrato' ? (
           <DateRangePicker range={range} onChange={setRange} />
         ) : (
