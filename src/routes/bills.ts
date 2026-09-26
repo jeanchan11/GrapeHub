@@ -1,5 +1,7 @@
 import { Express } from 'express';
 import { Pool } from 'pg';
+import { herdarCategoriaNoLancamento, herdarCategoriaDaConta } from './bill-category';
+import { foraDeMesFechado, mesFechadoDoLancamento, msgMesFechado } from './fechamento';
 
 // ── Categorias fixas padrão ──────────────────────────────────────────────────
 export const DEFAULT_CATEGORIES = [
@@ -98,14 +100,19 @@ const DRE_RULES: { re: RegExp; s: string }[] = [
   { re: /cobranca recebida/, s: '01.01.01' },
   { re: /taxa.*pix/, s: '02.07.04' }, { re: /taxa.*boleto/, s: '02.07.03' }, { re: /taxa.*cart/, s: '02.07.05' },
   { re: /baixa da antecip/, s: '02.07.07' }, { re: /taxa de antecip/, s: '02.07.06' },
-  { re: /tarifa|taxa.*notificac|taxa.*mensageria|taxa.*whatsapp/, s: '02.07.08' }, { re: /\biof\b/, s: '02.07.99' },
+  { re: /tarifa|taxa.*notificac|taxa.*mensageria|taxa.*whatsapp/, s: '02.07.08' },
+  // IOF só aparece no cartão, cobrado sobre compra internacional — que aqui é
+  // sempre ferramenta (Atlassian, Hostinger, Gather…). Decisão do Jean em 25/09/2026.
+  { re: /\biof\b/, s: '02.02.100' },
   { re: /simples nacional/, s: '02.01.01' }, { re: /\bdarf\b|\birpj\b|\bcsll\b/, s: '02.01.05' }, { re: /\biss\b/, s: '02.01.06' },
   { re: /\binss\b/, s: '02.03.99' }, { re: /\bfgts\b/, s: '02.03.07' },
   { re: /seguro/, s: '02.06.14' }, { re: /aluguel|condominio|iptu/, s: '02.06.05' },
   { re: /energia|cpfl|enel|\bagua\b|sabesp/, s: '02.06.06' }, { re: /internet|telefone|\btim\b|\bvivo\b|\bclaro\b/, s: '02.06.07' },
   { re: /contabil|contador/, s: '02.06.03' }, { re: /marvee|assessoria financeira/, s: '02.06.01' }, { re: /honorario|advogad|juridic/, s: '02.06.04' },
   { re: /facebk|facebook|meta ads|instagram ads/, s: '02.05.08' },
-  { re: /openai|anthropic|elevenlabs|\bclaude\b/, s: '02.02.10' },
+  // Google Cloud é API de IA (Gemini etc.), não ferramenta — e tem de vir ANTES
+  // da regra genérica de "google", que casaria primeiro. Decisão de 25/09/2026.
+  { re: /openai|anthropic|elevenlabs|\bclaude\b|google\s*cloud/, s: '02.02.10' },
   { re: /hostinger|neon|atlassian|clickup|1password|capcut|canva|myhubi|uazapi|pichau|apple\.com|google|gsuite|workspace|dominio|\bvps\b/, s: '02.02.06' },
   { re: /wellhub|gympass/, s: '02.03.09' },
 ];
@@ -126,7 +133,18 @@ export async function categorizeMovements(pool: Pool, opts: { month?: string } =
   const colab = (await pool.query("SELECT DISTINCT name FROM collaborators")).rows.map((r: any) => r.name).filter(Boolean);
   const employees = colab.map((n: string) => { const t = norm(n).split(/\s+/).filter(Boolean); return { first: t[0], second: (t[1] || '').slice(0, 3) }; });
 
-  const classify = (desc: string): string | null => {
+  // Tipo da transação no Asaas manda ANTES do texto. O texto carrega o nome do
+  // cliente, e os clientes são escritórios de advocacia: "…Advogados Associados"
+  // casava com a regra de honorários e jogava ANTECIPAÇÃO DE FATURA (receita) na
+  // despesa 02.06.04. Medido em 25/09/2026: 10 antecipações (R$ 13.229,60) e 7
+  // taxas de nota fiscal nessa conta. O tipo não depende de quem é o cliente.
+  const POR_TIPO: Record<string, string> = {
+    RECEIVABLE_ANTICIPATION_GROSS_CREDIT: '01.01.01', // antecipação de fatura = receita recorrente
+    INVOICE_FEE: '02.07.100',                          // taxa de emissão de nota fiscal
+  };
+
+  const classify = (desc: string, tipoAsaas?: string): string | null => {
+    if (tipoAsaas && POR_TIPO[tipoAsaas]) return POR_TIPO[tipoAsaas];
     const d = norm(desc);
     if (/pix.*para|transferencia/.test(d)) {
       if (d.includes('grape midia')) return '_T';
@@ -140,13 +158,27 @@ export async function categorizeMovements(pool: Pool, opts: { month?: string } =
   const where = opts.month ? `AND ((account='asaas' AND to_char(transaction_date,'YYYY-MM')=$1) OR (account = ANY('{${CARD_ACCOUNTS.join(',')}}') AND billing_month=$1))` : '';
   const params: any[] = opts.month ? [opts.month] : [];
   const mv = (await pool.query(
-    `SELECT id, COALESCE(NULLIF(custom_description,''),description) AS desc FROM fin_movements_asaas
-     WHERE is_anticipation_pair = false AND is_reversed_pair = false AND (custom_category_id IS NULL OR edited_by IN ('regra-auto','motor-auto')) ${where}`, params
+    `SELECT id, transaction_type, type, COALESCE(NULLIF(custom_description,''),description) AS desc FROM fin_movements_asaas
+     WHERE is_anticipation_pair = false AND is_reversed_pair = false AND (custom_category_id IS NULL OR edited_by IN ('regra-auto','motor-auto')) ${where}
+       AND ${foraDeMesFechado()}`, params
   )).rows;
 
   let categorized = 0, transfers = 0, uncategorized = 0;
+  // Trava de natureza: nenhuma regra de palavra-chave pode pôr dinheiro que
+  // ENTROU numa conta de despesa (02, 04, 05), nem dinheiro que SAIU numa de
+  // receita (01, 03). Se o texto sugerir isso, o lançamento fica sem categoria e
+  // vai para a conciliação manual — errar para "revisar" é melhor que errar
+  // calado dentro do DRE.
+  const naturezaBate = (estrutura: string, direcao: number) => {
+    const g = estrutura.slice(0, 2);
+    if (['02', '04', '05'].includes(g)) return direcao === -1;
+    if (['01', '03'].includes(g)) return direcao === 1;
+    return true;   // 99 (transferência) vale para os dois lados
+  };
+
   for (const m of mv) {
-    const s = classify(m.desc);
+    let s = classify(m.desc, m.transaction_type);
+    if (s && s !== '_T' && !naturezaBate(s, Number(m.type))) s = null;
     if (s === '_T') {
       if (transferId) { await pool.query("UPDATE fin_movements_asaas SET custom_category_id=$1, custom_category='Transferência', grapehub_category='Transferência', edited_by='motor-auto' WHERE id=$2", [transferId, m.id]); transfers++; }
       continue;
@@ -198,13 +230,13 @@ export function setupBillsRoutes(app: Express, pool: Pool) {
 
   // POST /api/fin/bills — cria nova conta recorrente
   app.post('/api/fin/bills', async (req, res) => {
-    const { name, category, value, recurrence, due_day, due_date, notes } = req.body;
+    const { name, category, category_id, value, recurrence, due_day, due_date, notes } = req.body;
     if (!name) return res.status(400).json({ error: 'name is required' });
     try {
       const result = await pool.query(
-        `INSERT INTO fin_bills (name, category, value, recurrence, due_day, due_date, notes)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-        [name, category || 'Outros', value || null, recurrence || 'monthly', due_day || null, due_date || null, notes || null]
+        `INSERT INTO fin_bills (name, category, category_id, value, recurrence, due_day, due_date, notes)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+        [name, category || 'Outros', category_id || null, value || null, recurrence || 'monthly', due_day || null, due_date || null, notes || null]
       );
       res.json(result.rows[0]);
     } catch (err) {
@@ -215,14 +247,28 @@ export function setupBillsRoutes(app: Express, pool: Pool) {
   // PUT /api/fin/bills/:id — edita conta recorrente
   app.put('/api/fin/bills/:id', async (req, res) => {
     const { id } = req.params;
-    const { name, category, value, recurrence, due_day, due_date, notes } = req.body;
+    const { name, category, category_id, value, recurrence, due_day, due_date, notes } = req.body;
     try {
+      const antes = await pool.query(`SELECT category_id FROM fin_bills WHERE id=$1`, [id]);
       const result = await pool.query(
-        `UPDATE fin_bills SET name=$1, category=$2, value=$3, recurrence=$4, due_day=$5, due_date=$6, notes=$7, updated_at=NOW()
+        `UPDATE fin_bills SET name=$1, category=$2, value=$3, recurrence=$4, due_day=$5, due_date=$6, notes=$7,
+                category_id = CASE WHEN $9::boolean THEN $10::int ELSE category_id END,
+                updated_at=NOW()
          WHERE id=$8 RETURNING *`,
-        [name, category, value || null, recurrence || 'monthly', due_day || null, due_date || null, notes || null, id]
+        // `category_id` só muda se veio no corpo: uma tela antiga que não conhece
+        // o campo não pode zerar o mapeamento que outra pessoa configurou.
+        [name, category, value || null, recurrence || 'monthly', due_day || null, due_date || null, notes || null, id,
+         category_id !== undefined, category_id || null]
       );
       if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
+
+      // Categoria do DRE definida ou trocada: os pagamentos já conciliados desta
+      // conta herdam agora. É o que torna o cadastro retroativo.
+      let herdados = 0;
+      const novo = result.rows[0].category_id;
+      if (novo && novo !== antes.rows[0]?.category_id) {
+        herdados = await herdarCategoriaDaConta(pool, Number(id));
+      }
 
       // Propaga a mudança para as parcelas do mês CORRENTE em diante — só as que estão
       // pendentes e NÃO foram editadas à mão (manual_override=false). Nome/categoria já
@@ -252,7 +298,7 @@ export function setupBillsRoutes(app: Express, pool: Pool) {
         );
       }
 
-      res.json({ ...result.rows[0], propagated: affected.rows.length });
+      res.json({ ...result.rows[0], propagated: affected.rows.length, categoria_herdada: herdados });
     } catch (err) {
       res.status(500).json({ error: 'Failed to update bill' });
     }
@@ -441,7 +487,11 @@ export function setupBillsRoutes(app: Express, pool: Pool) {
         UPDATE fin_movements_asaas SET linked_bill_entry_id = $1 WHERE id = $2
       `, [id, m.id]);
 
-      res.json({ ok: true, linked: { movement_id: m.id, value: m.value, description: m.description } });
+      // O lançamento herda a categoria do DRE da conta (se ela tiver uma e se
+      // ninguém tiver categorizado o lançamento à mão).
+      const herdou = await herdarCategoriaNoLancamento(pool, m.id);
+
+      res.json({ ok: true, herdou_categoria: herdou, linked: { movement_id: m.id, value: m.value, description: m.description } });
     } catch (err) {
       console.error('[fin/bills/link] error:', err);
       res.status(500).json({ error: 'Failed to link' });
@@ -525,7 +575,7 @@ export function setupBillsRoutes(app: Express, pool: Pool) {
     try {
       const result = await pool.query(
         `SELECT id, asaas_id, description, custom_description, value, transaction_date,
-                type, grapehub_category, custom_category, user_comment, sicredi_status, billing_month
+                type, grapehub_category, custom_category, custom_category_id, user_comment, sicredi_status, billing_month
          FROM fin_movements_asaas
          WHERE account = $2 AND billing_month = $1
          ORDER BY transaction_date ASC`,
@@ -612,16 +662,47 @@ export function setupBillsRoutes(app: Express, pool: Pool) {
   // PATCH /api/fin/bills/sicredi/:id — edita descrição e categoria de um lançamento
   app.patch('/api/fin/bills/sicredi/:id', async (req, res) => {
     const { id } = req.params;
-    const { custom_description, custom_category, user_comment } = req.body;
+    const { custom_description, custom_category, custom_category_id, user_comment } = req.body;
     try {
+      // Mês fechado: categoria/valor travados (o gatilho do banco também barra,
+      // mas em silêncio — aqui a pessoa recebe o motivo).
+      if (custom_category_id !== undefined || custom_category !== undefined) {
+        const fechado = await mesFechadoDoLancamento(pool, id);
+        if (fechado) return res.status(423).json({ error: msgMesFechado(fechado), mes_fechado: fechado });
+      }
+      // A categoria do DRE é o ID (`custom_category_id`) — é por ele que o DRE
+      // agrupa. Antes este endpoint gravava só o TEXTO: a categoria aparecia na
+      // tela e ficava fora do DRE (12 lançamentos de cartão, R$ 2.463,15, até
+      // 25/09/2026). O nome vem do plano de contas, não do corpo da requisição.
+      let catId: number | null | undefined = undefined;   // undefined = não mexe
+      let catNome: string | null = null;
+      if (custom_category_id !== undefined) {
+        catId = custom_category_id ? Number(custom_category_id) : null;
+      } else if (custom_category) {
+        // Cliente antigo mandando só o nome: resolve pelo nome exato, se existir.
+        const r = await pool.query(`SELECT id FROM fin_categories WHERE description = $1 LIMIT 1`, [custom_category]);
+        catId = r.rows[0]?.id ?? undefined;
+      }
+      if (catId) {
+        const c = await pool.query(`SELECT description FROM fin_categories WHERE id = $1`, [catId]);
+        if (!c.rows[0]) return res.status(400).json({ error: 'Categoria não encontrada no plano de contas.' });
+        catNome = c.rows[0].description;
+      }
+      const email = (req as any).user?.email || null;
+
       const result = await pool.query(
         `UPDATE fin_movements_asaas
          SET custom_description=COALESCE($1, custom_description),
-             custom_category=COALESCE($2, custom_category),
              user_comment=COALESCE($3, user_comment),
+             custom_category    = CASE WHEN $5::boolean THEN $6::text ELSE COALESCE($2, custom_category) END,
+             grapehub_category  = CASE WHEN $5::boolean THEN $6::text ELSE grapehub_category END,
+             custom_category_id = CASE WHEN $5::boolean THEN $7::int  ELSE custom_category_id END,
+             -- Escolha de uma pessoa: os motores automáticos não reprocessam mais.
+             edited_by = CASE WHEN $5::boolean THEN COALESCE($8, 'edicao-manual') ELSE edited_by END,
              edited_at=NOW()
          WHERE id=$4 AND account = ANY('{${CARD_ACCOUNTS.join(',')}}') RETURNING *`,
-        [custom_description, custom_category, user_comment, id]
+        [custom_description, custom_category, user_comment, id,
+         catId !== undefined, catNome, catId ?? null, email]
       );
       if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
       res.json(result.rows[0]);

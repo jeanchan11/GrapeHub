@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import {
+import { RotateCcw,
   Plus, Pencil, Trash2, CheckCircle2, Clock, AlertTriangle, X, Upload,
   RefreshCw, ChevronDown, ChevronLeft, ChevronRight, BarChart2, CreditCard,
   Receipt, Tag, Calendar, DollarSign, FileText, Check, Loader2,
   Home, Laptop, Truck, Megaphone, Users, Wrench, Code, Zap
 } from 'lucide-react';
 import SplitHeadline from '../components/SplitHeadline';
+import { toast } from '@/src/lib/toast';
+import { SeletorCategoria, CategoriaDreInline, usePlanoDeContas } from '../components/SeletorCategoriaDRE';
 import BotaoSincronizar from '../components/BotaoSincronizar';
 import { motion, AnimatePresence, useSpring, useTransform, useInView } from 'motion/react';
 import { confirmDialog } from '@/src/lib/confirm';
@@ -16,6 +18,8 @@ interface Bill {
   id: number;
   name: string;
   category: string;
+  /** Categoria do PLANO DE CONTAS (DRE). O pagamento conciliado herda esta. */
+  category_id?: number | null;
   value: string | null;
   recurrence: 'monthly' | 'yearly' | 'once' | 'weekly';
   due_day: number | null;
@@ -63,6 +67,8 @@ interface SicrediItem {
   type: number;
   grapehub_category: string | null;
   custom_category: string | null;
+  /** Categoria do plano de contas — é por ela que o DRE agrupa. */
+  custom_category_id?: number | null;
   user_comment: string | null;
   sicredi_status: string;
 }
@@ -199,6 +205,8 @@ interface BillModalProps {
 const BillModal: React.FC<BillModalProps> = ({ bill, categories, onSave, onClose }) => {
   const [form, setForm] = useState<Partial<Bill>>(bill || { recurrence: 'monthly', category: 'Outros' });
   const [saving, setSaving] = useState(false);
+  const { folhas } = usePlanoDeContas();
+  const categoriaDre = folhas.find(f => f.id === form.category_id) || null;
   const [newCat, setNewCat] = useState('');
   const [showNewCat, setShowNewCat] = useState(false);
 
@@ -245,6 +253,24 @@ const BillModal: React.FC<BillModalProps> = ({ bill, categories, onSave, onClose
                 options={Object.entries(RECURRENCE_LABELS).map(([k, v]) => ({ value: k, label: v }))}
                 onChange={(v) => set('recurrence', v as any)} />
             </div>
+          </div>
+
+          {/* Categoria do DRE: a "Categoria" acima é a lista própria desta tela
+              (Utilidades, Impostos…) e não existe no plano de contas. Esta é a
+              que o pagamento herda ao ser conciliado — e que faz ele entrar no DFC. */}
+          <div>
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Categoria no DFC</label>
+            <SeletorCategoria
+              folhas={folhas}
+              valor={categoriaDre}
+              aoEscolher={f => set('category_id', f.id)}
+              sugestaoNatureza="saida"
+            />
+            <p className="mt-1 text-[10px] text-slate-500">
+              {categoriaDre
+                ? 'Todo pagamento desta conta, ao ser conciliado, entra no DFC com esta categoria.'
+                : 'Sem ela, o pagamento conciliado fica sem categoria e fora do DFC.'}
+            </p>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -338,13 +364,26 @@ const SicrediEditModal = ({ item, categories, onSave, onClose }: {
   onSave: (id: number, data: any) => Promise<void>; onClose: () => void;
 }) => {
   const [desc, setDesc] = useState(item.custom_description || item.description || '');
-  const [cat, setCat] = useState(item.custom_category || item.grapehub_category || '');
+  // Categoria do PLANO DE CONTAS (o que o DRE usa), não a lista própria desta
+  // tela — aquela gravava só texto e o lançamento ficava fora do DRE.
+  const { folhas } = usePlanoDeContas();
+  const [catId, setCatId] = useState<number | null>(item.custom_category_id ?? null);
+  const categoria = folhas.find(f => f.id === catId) || null;
   const [comment, setComment] = useState(item.user_comment || '');
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
     setSaving(true);
-    try { await onSave(item.id, { custom_description: desc, custom_category: cat, user_comment: comment }); onClose(); }
+    try {
+      await onSave(item.id, {
+        custom_description: desc,
+        user_comment: comment,
+        // Só manda a categoria se ela mudou: não marca como "edição manual" um
+        // lançamento em que a pessoa só corrigiu a descrição.
+        ...(catId !== (item.custom_category_id ?? null) ? { custom_category_id: catId } : {}),
+      });
+      onClose();
+    }
     finally { setSaving(false); }
   };
 
@@ -365,9 +404,8 @@ const SicrediEditModal = ({ item, categories, onSave, onClose }: {
           </div>
           <div>
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Categoria</label>
-            <ThemedDropdown value={cat} className="w-full"
-              options={[{ value: '', label: '— Sem categoria —' }, ...categories.map(c => ({ value: c, label: c }))]}
-              onChange={setCat} />
+            <SeletorCategoria folhas={folhas} valor={categoria}
+              aoEscolher={f => setCatId(f.id)} sugestaoNatureza={item.type === 1 ? 'entrada' : 'saida'} />
           </div>
           <div>
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Observação</label>
@@ -490,6 +528,8 @@ export default function ContasAPagar() {
   const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [billModal, setBillModal] = useState<Partial<Bill> | null | undefined>(undefined); // undefined = closed
+  // Para mostrar a Categoria no DRE de cada conta na lista de Contas Cadastradas.
+  const { folhas: planoDeContas } = usePlanoDeContas();
   const [payModal, setPayModal] = useState<Entry | null>(null);
   const [editEntry, setEditEntry] = useState<Entry | null>(null);
   const [filterCat, setFilterCat] = useState('');
@@ -527,8 +567,9 @@ export default function ContasAPagar() {
     if (r.ok) setBills(await r.json());
   }, []);
 
-  const fetchEntries = useCallback(async () => {
-    setLoading(true);
+  const fetchEntries = useCallback(async (opts?: { silencioso?: boolean }) => {
+    const silencioso = !!opts?.silencioso;
+    if (!silencioso) setLoading(true);
     try {
       const r = await fetch(`/api/fin/bills/entries?month=${selectedMonth}`);
       if (r.ok) {
@@ -536,11 +577,15 @@ export default function ContasAPagar() {
         setEntries(data.entries || []);
         setEntrySummary(data.summary || {});
       }
-    } finally { setLoading(false); }
+    } finally { if (!silencioso) setLoading(false); }
   }, [selectedMonth]);
 
-  const fetchSicredi = useCallback(async () => {
-    setSicrediLoading(true);
+  // `silencioso`: busca sem ligar o "carregando". Ligado, a tabela vira spinner,
+  // é desmontada e volta do topo com a animação de entrada — quem estava
+  // categorizando no meio da fatura perdia o lugar a cada clique.
+  const fetchSicredi = useCallback(async (opts?: { silencioso?: boolean }) => {
+    const silencioso = !!opts?.silencioso;
+    if (!silencioso) setSicrediLoading(true);
     try {
       const r = await fetch(`/api/fin/bills/sicredi?month=${selectedMonth}&account=${cardAccount}`);
       if (r.ok) {
@@ -549,8 +594,42 @@ export default function ContasAPagar() {
         setSicrediSummary(data.summary || {});
         setSicrediMonths(data.available_months || []);
       }
-    } finally { setSicrediLoading(false); }
+    } finally { if (!silencioso) setSicrediLoading(false); }
   }, [selectedMonth, cardAccount]);
+
+  // ── Histórico de importações da fatura (cartão + mês) ──
+  // Toda importação guarda uma foto do mês antes de gravar; a mais recente pode
+  // ser desfeita, devolvendo lançamentos, categorias e data de pagamento.
+  const [importacoes, setImportacoes] = useState<any[]>([]);
+  const [desfazendo, setDesfazendo] = useState(false);
+  const carregarImportacoes = useCallback(async () => {
+    try {
+      const r = await fetch(`/api/fin/cartao/importacoes?account=${cardAccount}&month=${selectedMonth}`);
+      setImportacoes(r.ok ? ((await r.json()).importacoes || []) : []);
+    } catch { setImportacoes([]); }
+  }, [selectedMonth, cardAccount]);
+  useEffect(() => { if (activeTab === 'sicredi') carregarImportacoes(); }, [activeTab, carregarImportacoes]);
+
+  const desfazerImportacao = async (imp: any) => {
+    const perde = imp.edicoes_depois > 0
+      ? ` ${imp.edicoes_depois} lançamento(s) foram editados depois dela (categoria/descrição) — essas edições voltam ao que eram antes.`
+      : '';
+    const ok = await confirmDialog({
+      title: 'Desfazer importação',
+      message: `O mês volta a ficar exatamente como estava antes da importação de ${new Date(imp.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}: lançamentos apagados voltam, os novos saem e a data de pagamento é restaurada.${perde}`,
+      confirmText: 'Desfazer',
+      danger: true,
+    });
+    if (!ok) return;
+    setDesfazendo(true);
+    try {
+      const r = await fetch(`/api/fin/cartao/importacoes/${imp.id}/desfazer`, { method: 'POST' });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { setUploadMsg({ type: 'err', text: d.error || 'Falha ao desfazer.' }); return; }
+      setUploadMsg({ type: 'ok', text: `Importação desfeita: ${d.restauradas} lançamento(s) restaurado(s), ${d.removidas} removido(s).` });
+      await Promise.all([fetchSicredi(), carregarImportacoes()]);
+    } finally { setDesfazendo(false); }
+  };
 
   useEffect(() => {
     fetchCats();
@@ -567,7 +646,17 @@ export default function ContasAPagar() {
     const method = data.id ? 'PUT' : 'POST';
     const url = data.id ? `/api/fin/bills/${data.id}` : '/api/fin/bills';
     const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
-    if (r.ok) { await fetchBills(); await fetchEntries(); await fetchCats(); }
+    if (r.ok) {
+      // Trocar a categoria do DRE é retroativo: os pagamentos já conciliados
+      // desta conta herdam na hora. Vale avisar — mexeu no DRE de meses passados.
+      const d = await r.json().catch(() => ({}));
+      if (d.categoria_herdada > 0) {
+        toast.success(`${d.categoria_herdada} pagamento${d.categoria_herdada > 1 ? 's' : ''} já conciliado${d.categoria_herdada > 1 ? 's' : ''} entr${d.categoria_herdada > 1 ? 'aram' : 'ou'} no DFC com esta categoria.`);
+      }
+      // Silencioso: editar uma conta não pode sumir com a tabela e jogar a
+      // rolagem para o topo (mesmo motivo do fetchSicredi).
+      await fetchBills(); await fetchEntries({ silencioso: true }); await fetchCats();
+    }
   };
 
   const handleDeleteBill = async (id: number) => {
@@ -594,13 +683,56 @@ export default function ContasAPagar() {
 
   const handleSicrediEdit = async (id: number, data: any) => {
     const r = await fetch(`/api/fin/bills/sicredi/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
-    if (r.ok) await fetchSicredi();
+    if (!r.ok) {
+      const e = await r.json().catch(() => ({}));
+      toast.error(e.error || 'Não foi possível salvar.');   // 423 = mês fechado
+      return;
+    }
+    // Atualiza SÓ a linha editada, com o que o servidor gravou (nome da categoria
+    // incluso) — a tabela fica montada, no mesmo lugar da rolagem.
+    const salvo = await r.json().catch(() => null);
+    if (salvo) setSicrediItems(prev => prev.map(it => (it.id === id ? { ...it, ...salvo } : it)));
+    // O resto (percentual de categorizados, total) sincroniza em segundo plano.
+    await fetchSicredi({ silencioso: true });
   };
 
   // ── Upload Fatura (OFX/CSV da Sicredi, PDF do Asaas) ──
+  // Extensões aceitas por conta: o Asaas só exporta PDF; o Sicredi exporta OFX e
+  // CSV (e o PDF também é lido). O botão já filtra pelo `accept`, mas quem arrasta
+  // pode soltar qualquer coisa — a checagem precisa existir aqui também.
+  const extensoesAceitas = cardAccount === 'asaas_cartao' ? ['pdf'] : ['ofx', 'csv', 'pdf'];
+
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    if (file) await enviarFatura(file);
+  };
+
+  const [arrastando, setArrastando] = useState(false);
+  // dragenter/dragleave disparam em cada filho do card; o contador evita que o
+  // destaque pisque ao passar o arquivo por cima do texto ou do botão.
+  const profundidadeArraste = useRef(0);
+
+  const aoSoltar = async (e: React.DragEvent) => {
+    e.preventDefault();
+    profundidadeArraste.current = 0;
+    setArrastando(false);
+    if (uploading) return;
+    const file = e.dataTransfer.files?.[0];
     if (!file) return;
+    await enviarFatura(file);
+  };
+
+  const enviarFatura = async (file: File) => {
+    const ext = (file.name.split('.').pop() || '').toLowerCase();
+    if (!extensoesAceitas.includes(ext)) {
+      setUploadMsg({
+        type: 'err',
+        text: cardAccount === 'asaas_cartao'
+          ? `"${file.name}" não é PDF. O Asaas exporta a fatura só em PDF.`
+          : `"${file.name}" não é OFX, CSV nem PDF.`,
+      });
+      return;
+    }
     setUploading(true);
     setUploadMsg(null);
     try {
@@ -614,7 +746,7 @@ export default function ContasAPagar() {
         reader.onerror = reject;
         reader.readAsDataURL(file);
       });
-      const r = await fetch('/api/financeiro/extrato/importar-ofx', {
+      const postar = (forcar: boolean) => fetch('/api/financeiro/extrato/importar-ofx', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -624,8 +756,27 @@ export default function ContasAPagar() {
           payment_date: sicrediSummary.payment_date || null,
           fileName: file.name,
           fileData,
+          forcar_conferencia: forcar,
         }),
       });
+      let r = await postar(false);
+      // Conferência do PDF: a soma dos itens lidos não bateu com o total impresso.
+      // Nada foi gravado; a pessoa vê a diferença e decide.
+      if (r.status === 409) {
+        const d = await r.json().catch(() => ({}));
+        const c = d.conferencia;
+        if (c) {
+          const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+          const seguir = await confirmDialog({
+            title: 'A fatura não fechou',
+            message: `A soma dos ${c.itens} lançamentos lidos dá ${brl(c.soma)}, mas o total impresso na fatura é ${brl(c.total_impresso)} (diferença de ${brl(Math.abs(c.diferenca))}). Pode ter faltado uma linha na leitura. Importar mesmo assim?`,
+            confirmText: 'Importar mesmo assim',
+            danger: true,
+          });
+          if (!seguir) { setUploadMsg({ type: 'err', text: `Importação cancelada: soma ${brl(c.soma)} ≠ total ${brl(c.total_impresso)}. Nada foi gravado.` }); return; }
+          r = await postar(true);
+        }
+      }
       if (r.ok) {
         const data = await r.json();
         const ins = data.inserted ?? data.count ?? 0;
@@ -645,7 +796,14 @@ export default function ContasAPagar() {
           const termo = data.month_source === 'pagamento' ? 'paga em' : 'vence';
           prefix = `Fatura ${m}/${y}${dd ? ` (${termo} ${dd})` : ''} · `;
         }
-        setUploadMsg({ type: 'ok', text: `${prefix}${parts.join(' · ')}.` });
+        const conf = data.conferencia;
+        const brlC = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        const sufixo = !conf ? ''
+          : conf.status === 'ok' ? ` · ✓ conferida com o total (${brlC(conf.total_impresso)})`
+          : conf.status === 'divergente' ? ` · ⚠ importada com diferença de ${brlC(Math.abs(conf.diferenca))} do total`
+          : conf.status === 'sem_total' ? ' · total não encontrado no PDF, sem conferência' : '';
+        setUploadMsg({ type: conf?.status === 'divergente' ? 'err' : 'ok', text: `${prefix}${parts.join(' · ')}${sufixo}.` });
+        carregarImportacoes();
         // A fatura pode cair num mês diferente do selecionado (auto-detecção pelo vencimento):
         // pula para o mês em que ela foi lançada para o usuário vê-la.
         if (bm && bm !== selectedMonth) setSelectedMonth(bm);
@@ -807,12 +965,21 @@ export default function ContasAPagar() {
               {showBillsConfig && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={e => e.target === e.currentTarget && setShowBillsConfig(false)}>
                 <motion.div initial={{ opacity: 0, scale: 0.96, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96, y: 10 }}
-                  className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl overflow-hidden w-full max-w-3xl max-h-[80vh] flex flex-col shadow-2xl">
+                  className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl overflow-hidden w-full max-w-4xl max-h-[80vh] flex flex-col shadow-2xl">
                   <div className="px-5 py-3 border-b border-black/5 dark:border-white/5 flex items-center justify-between shrink-0">
                     <div className="flex items-center gap-2">
                       <Receipt size={15} className="text-violet-400" />
                       <p className="text-sm font-bold text-dark-text">Contas Cadastradas</p>
                       <span className="text-[10px] text-slate-500">{bills.filter(b => b.recurrence !== 'once').length} contas</span>
+                      {(() => {
+                        const semDre = bills.filter(b => b.recurrence !== 'once' && !b.category_id).length;
+                        return semDre > 0 ? (
+                          <span className="ml-1 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-500 text-[10px] font-bold"
+                            title="Pagamento destas contas, ao ser conciliado, fica sem categoria e fora do DFC">
+                            {semDre} sem categoria no DFC
+                          </span>
+                        ) : null;
+                      })()}
                     </div>
                     <button onClick={() => setShowBillsConfig(false)} className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-slate-400 hover:text-dark-text transition-colors"><X size={16} /></button>
                   </div>
@@ -823,6 +990,7 @@ export default function ContasAPagar() {
                       {/* Column header */}
                       <div className="flex items-center px-5 py-2 bg-dark-bg/30 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
                         <span className="flex-1">Nome</span>
+                        <span className="w-56 shrink-0">Categoria no DFC</span>
                         <span className="w-32 shrink-0">Vencimento</span>
                         <span className="w-36 shrink-0">Valor</span>
                         <span className="w-20 shrink-0"></span>
@@ -835,6 +1003,16 @@ export default function ContasAPagar() {
                               <p className="text-[10px] text-slate-500">
                                 <CatDot cat={b.category} />{b.category} · {RECURRENCE_LABELS[b.recurrence] || b.recurrence}
                               </p>
+                            </div>
+                            <div className="w-56 shrink-0 pr-3">
+                              {/* Clique troca direto. Salva a conta inteira com a categoria nova —
+                                  o PUT exige todos os campos — e a troca é retroativa: os
+                                  pagamentos já conciliados herdam na hora (o aviso diz quantos). */}
+                              <CategoriaDreInline
+                                folhas={planoDeContas}
+                                valorId={b.category_id}
+                                aoEscolher={f => handleSaveBill({ ...b, category_id: f.id })}
+                              />
                             </div>
                             <div className="w-32 shrink-0">
                               {b.recurrence === 'monthly' && b.due_day ? (
@@ -1078,19 +1256,64 @@ export default function ContasAPagar() {
                 label="Período" value={monthLabel} sub="Fatura do cartão" subColor="text-blue-400" />
             </div>
 
-            {/* Upload area */}
-            <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-5 flex flex-col sm:flex-row items-center gap-4">
+            {/* Upload area — aceita também arrastar e soltar o arquivo da fatura */}
+            <div
+              onDragEnter={e => { e.preventDefault(); profundidadeArraste.current++; setArrastando(true); }}
+              onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
+              onDragLeave={e => { e.preventDefault(); if (--profundidadeArraste.current <= 0) { profundidadeArraste.current = 0; setArrastando(false); } }}
+              onDrop={aoSoltar}
+              className={`relative bg-dark-card border rounded-2xl p-5 flex flex-col sm:flex-row items-center gap-4 transition-colors ${
+                arrastando
+                  ? 'border-2 border-dashed border-emerald-500 bg-emerald-500/5'
+                  : 'border-black/10 dark:border-white/10'}`}>
+              {arrastando && (
+                <div className="absolute inset-0 z-10 rounded-2xl flex flex-col items-center justify-center gap-1.5 bg-dark-card/90 pointer-events-none">
+                  <Upload size={22} className="text-emerald-500" />
+                  <p className="text-sm font-bold text-emerald-500">Solte a fatura aqui</p>
+                  <p className="text-[11px] text-slate-500">
+                    {cardAccount === 'asaas_cartao' ? 'PDF da fatura do Asaas' : 'OFX, CSV ou PDF da fatura'}
+                  </p>
+                </div>
+              )}
               <div className="flex-1">
                 <p className="text-sm font-bold text-dark-text mb-0.5">
                   {cardAccount === 'asaas_cartao' ? 'Importar Fatura (PDF)' : 'Importar Fatura (OFX, CSV ou PDF)'}
                 </p>
                 <p className="text-xs text-slate-500">
                   {cardAccount === 'asaas_cartao'
-                    ? 'O Asaas só exporta a fatura em PDF. Anexe o PDF e os lançamentos são lidos e categorizados automaticamente.'
-                    : 'Faça upload do arquivo .ofx ou .csv da fatura exportada pelo Sicredi Internet Banking (PDF também funciona).'}
+                    ? 'O Asaas só exporta a fatura em PDF. Arraste o PDF para cá ou use o botão — os lançamentos são lidos e categorizados automaticamente.'
+                    : 'Arraste o arquivo .ofx ou .csv da fatura exportada pelo Sicredi Internet Banking para cá, ou use o botão (PDF também funciona).'}
                 </p>
                 {uploadMsg && (
                   <p className={`text-xs mt-2 font-semibold ${uploadMsg.type === 'ok' ? 'text-emerald-400' : 'text-rose-400'}`}>{uploadMsg.text}</p>
+                )}
+                {/* Histórico de importações deste cartão/mês */}
+                {importacoes.length > 0 && (
+                  <div className="mt-3 space-y-1">
+                    {importacoes.slice(0, 3).map((imp: any) => {
+                      const brlI = (v: any) => Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                      const conf = imp.conferencia === 'ok' ? { t: `✓ conferida (${brlI(imp.total_impresso)})`, c: 'text-emerald-400' }
+                        : imp.conferencia === 'divergente' ? { t: `⚠ soma ${brlI(imp.soma)} ≠ total ${brlI(imp.total_impresso)}`, c: 'text-amber-400' }
+                        : imp.conferencia === 'sem_total' ? { t: 'sem total no PDF', c: 'text-slate-500' }
+                        : null;
+                      return (
+                        <div key={imp.id} className={`flex items-center gap-2 text-[11px] ${imp.undone_at ? 'text-slate-600 line-through' : 'text-slate-400'}`}>
+                          <span>{new Date(imp.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                          <span className="uppercase text-[9px] font-bold px-1.5 py-0.5 rounded bg-white/5">{imp.formato}</span>
+                          <span>{imp.itens} itens</span>
+                          {imp.created_by && <span className="truncate max-w-[160px]">· {String(imp.created_by).split('@')[0]}</span>}
+                          {conf && !imp.undone_at && <span className={`font-semibold ${conf.c}`}>· {conf.t}</span>}
+                          {imp.undone_at && <span className="no-underline">· desfeita</span>}
+                          {imp.pode_desfazer && (
+                            <button onClick={() => desfazerImportacao(imp)} disabled={desfazendo}
+                              className="ml-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border border-white/10 text-slate-300 hover:text-rose-300 hover:border-rose-500/40 disabled:opacity-40 transition-colors">
+                              <RotateCcw size={10} /> Desfazer
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
               <div className="flex flex-col shrink-0">
@@ -1112,7 +1335,7 @@ export default function ContasAPagar() {
                   {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
                   {uploading ? 'Lendo fatura...' : cardAccount === 'asaas_cartao' ? 'Upload PDF' : 'Upload OFX / CSV / PDF'}
                 </button>
-                <button onClick={fetchSicredi} className="p-2.5 rounded-xl border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 text-slate-400 hover:text-dark-text transition-colors">
+                <button onClick={() => fetchSicredi()} className="p-2.5 rounded-xl border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 text-slate-400 hover:text-dark-text transition-colors">
                   <RefreshCw size={14} className={sicrediLoading ? 'animate-spin' : ''} />
                 </button>
               </div>
@@ -1141,7 +1364,11 @@ export default function ContasAPagar() {
               <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl py-16 flex flex-col items-center gap-3">
                 <CreditCard size={32} className="text-slate-600" />
                 <p className="text-sm text-slate-500">Nenhum lançamento para {monthLabel}.</p>
-                <p className="text-xs text-slate-600">Faça o upload do arquivo OFX ou CSV para importar.</p>
+                <p className="text-xs text-slate-600">
+                  {cardAccount === 'asaas_cartao'
+                    ? 'Arraste o PDF da fatura para a área de importação acima.'
+                    : 'Arraste o arquivo OFX ou CSV para a área de importação acima.'}
+                </p>
                 {sicrediMonths.length > 0 && (
                   <div className="flex flex-col items-center gap-2 mt-3 pt-4 border-t border-black/5 dark:border-white/5 w-full max-w-md">
                     <p className="text-xs text-slate-500">
@@ -1189,14 +1416,15 @@ export default function ContasAPagar() {
                           <p className="text-sm text-dark-text truncate">{desc}</p>
                           {item.user_comment && <p className="text-[10px] text-slate-500 truncate">{item.user_comment}</p>}
                         </div>
-                        <div className="col-span-3">
-                          {cat ? (
-                            <span className="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full bg-black/5 dark:bg-white/5 text-slate-600 dark:text-slate-300">
-                              <CatDot cat={cat} />{cat}
-                            </span>
-                          ) : (
-                            <span className="text-[10px] text-slate-600 italic">Sem categoria</span>
-                          )}
+                        <div className="col-span-3 min-w-0">
+                          {/* Clique na categoria troca direto, sem abrir o modal. */}
+                          <CategoriaDreInline
+                            folhas={planoDeContas}
+                            valorId={item.custom_category_id}
+                            sugestaoNatureza={isDebit ? 'saida' : 'entrada'}
+                            vazio="Sem categoria"
+                            aoEscolher={f => handleSicrediEdit(item.id, { custom_category_id: f.id })}
+                          />
                         </div>
                         <div className="col-span-2">
                           <span className="text-xs text-slate-400">{fmtDate(item.transaction_date)}</span>

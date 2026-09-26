@@ -189,41 +189,50 @@ const CustomTooltip = ({ active, payload, label }: any) => {
     const saidasRealizadas = data.saidas_realizadas || 0;
     const saidasPrevistas = data.saidas_previstas || 0;
     
-    const totalEntradas = entradasRealizadas + entradasPrevistas;
-    const totalSaidas = saidasRealizadas + saidasPrevistas;
-    const saldo = totalEntradas - totalSaidas;
-    
+    // "Saldo do dia" é só o que CAIU. O que venceu e não entrou (cliente que não
+    // pagou) fica à parte, em "em aberto", e só entra no "Saldo esperado".
+    const saldoDia = entradasRealizadas - saidasRealizadas;
+    const temPrevisto = entradasPrevistas > 0 || saidasPrevistas > 0;
+    const temRealizado = entradasRealizadas > 0 || saidasRealizadas > 0;
+    const saldoEsperado = saldoDia + entradasPrevistas - saidasPrevistas;
+
     const formatCurrency = (val: number) => 'R$ ' + val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    
+    const Linha = ({ rotulo, valor, cls = 'text-slate-800 dark:text-slate-200' }: { rotulo: string; valor: number; cls?: string }) => (
+      <div className="flex justify-between items-center gap-4 mb-1">
+        <span className="text-slate-600 dark:text-slate-400">{rotulo}</span>
+        <span className={`font-medium ${cls}`}>{formatCurrency(valor)}</span>
+      </div>
+    );
+    const Saldo = ({ rotulo, valor, fraco }: { rotulo: string; valor: number; fraco?: boolean }) => (
+      <div className={`flex justify-between items-center gap-4 font-bold ${fraco ? 'text-xs mt-1' : ''}`}>
+        <span className={fraco ? 'text-slate-500' : 'text-slate-700 dark:text-slate-300'}>{rotulo}</span>
+        <span className={`${valor >= 0 ? 'text-emerald-500' : 'text-red-500'} ${fraco ? 'opacity-80' : ''}`}>
+          {valor < 0 ? '- ' : ''}{formatCurrency(Math.abs(valor))}
+        </span>
+      </div>
+    );
+
     return (
-      <div className="bg-white dark:bg-dark-card rounded-[8px] shadow-[0_4px_12px_rgba(0,0,0,0.15)] p-3 border border-slate-100 dark:border-white/10 font-sans text-[13px] min-w-[220px]">
+      <div className="bg-white dark:bg-dark-card rounded-[8px] shadow-[0_4px_12px_rgba(0,0,0,0.15)] p-3 border border-slate-100 dark:border-white/10 font-sans text-[13px] min-w-[240px]">
         <div className="font-bold text-slate-700 dark:text-white mb-2">{label}</div>
         <hr className="border-slate-200 dark:border-white/5 mb-2" />
-        
-        <div className="flex justify-between items-center mb-1">
-          <span className="text-slate-600 dark:text-slate-400">↑ Entradas:</span>
-          <span className="font-medium text-slate-800 dark:text-slate-200">
-            {formatCurrency(totalEntradas)}
-            {entradasPrevistas > 0 && <span className="text-slate-400 dark:text-slate-500 ml-1 text-xs">(previsto)</span>}
-          </span>
-        </div>
-        
-        <div className="flex justify-between items-center mb-2">
-          <span className="text-slate-600 dark:text-slate-400">↓ Saídas:</span>
-          <span className="font-medium text-slate-800 dark:text-slate-200">
-            {formatCurrency(totalSaidas)}
-            {saidasPrevistas > 0 && <span className="text-slate-400 dark:text-slate-500 ml-1 text-xs">(previsto)</span>}
-          </span>
-        </div>
-        
+
+        {(temRealizado || !temPrevisto) && (
+          <>
+            <Linha rotulo="↑ Entradas" valor={entradasRealizadas} />
+            <Linha rotulo="↓ Saídas" valor={saidasRealizadas} />
+          </>
+        )}
+        {temPrevisto && (
+          <div className={temRealizado ? 'mt-2 pt-2 border-t border-dashed border-slate-200 dark:border-white/10' : ''}>
+            {entradasPrevistas > 0 && <Linha rotulo="↑ A receber (em aberto)" valor={entradasPrevistas} cls="text-amber-500" />}
+            {saidasPrevistas > 0 && <Linha rotulo="↓ A pagar (em aberto)" valor={saidasPrevistas} cls="text-amber-500" />}
+          </div>
+        )}
+
         <hr className="border-slate-200 dark:border-white/5 my-2" />
-        
-        <div className="flex justify-between items-center font-bold">
-          <span className="text-slate-700 dark:text-slate-300">Saldo do dia:</span>
-          <span className={saldo >= 0 ? 'text-emerald-500' : 'text-red-500'}>
-            {saldo < 0 ? '- ' : ''}{formatCurrency(Math.abs(saldo))}
-          </span>
-        </div>
+        {(temRealizado || !temPrevisto) && <Saldo rotulo="Saldo do dia:" valor={saldoDia} />}
+        {temPrevisto && <Saldo rotulo={temRealizado ? 'Saldo esperado:' : 'Saldo previsto:'} valor={saldoEsperado} fraco={temRealizado} />}
       </div>
     );
   }
@@ -325,6 +334,8 @@ export default function FinanceiroDashboard() {
       entradas_realizadas: fluxoDoDia ? parseFloat(fluxoDoDia.entradas_realizadas) : 0,
       entradas_previstas: fluxoDoDia ? parseFloat(fluxoDoDia.entradas_previstas) : 0,
       saidas_realizadas: fluxoDoDia ? parseFloat(fluxoDoDia.saidas_realizadas) : 0,
+      // Transferência entre contas próprias: não vira barra, mas mexe no saldo.
+      transferencias: fluxoDoDia ? parseFloat((fluxoDoDia as any).transferencias || 0) : 0,
       saidas_previstas: fluxoDoDia ? parseFloat(fluxoDoDia.saidas_previstas) : 0,
       tem_realizado: fluxoDoDia ? fluxoDoDia.tem_realizado : false
     };
@@ -375,7 +386,7 @@ export default function FinanceiroDashboard() {
     if (i <= ultimoIndiceRealizado) {
       const entradasDoDia = f.entradas_realizadas;
       const saidasDoDia = f.saidas_realizadas;
-      saldoRealizadoAtual += (entradasDoDia - saidasDoDia);
+      saldoRealizadoAtual += (entradasDoDia - saidasDoDia + f.transferencias);
       saldoRealizadoData.push(saldoRealizadoAtual);
       // acumula o que venceu (ou vence hoje) e ainda está pendente — vai bater no caixa em breve
       previstasPendentes += (f.entradas_previstas - f.saidas_previstas);
@@ -863,24 +874,38 @@ export default function FinanceiroDashboard() {
 
             {/* summary cards */}
             {!dayLoading && dayPopup.items.length > 0 && (() => {
-              const ent = dayPopup.items.filter((i: any) => i.type === 1).reduce((s: number, i: any) => s + parseFloat(i.value || i.movement_value || '0'), 0);
-              const sai = dayPopup.items.filter((i: any) => i.type === -1).reduce((s: number, i: any) => s + parseFloat(i.value || i.movement_value || '0'), 0);
+              // Realizado = o que caiu na conta (sem pares estornados/antecipação, como no
+              // gráfico). Em aberto = venceu neste dia e não foi pago/recebido.
+              const soma = (f: (i: any) => boolean) => dayPopup.items.filter(f)
+                .reduce((s: number, i: any) => s + Math.abs(parseFloat(i.value || i.movement_value || '0')), 0);
+              const real = (i: any) => i.type_column === 'realizado' && !i.is_reversed_pair && !i.is_anticipation_pair;
+              const aberto = (i: any) => i.type_column !== 'realizado';
               const isPrev = (dayPopup as any).isPrevisto;
+              const ent = soma(i => i.type === 1 && (isPrev || real(i)));
+              const sai = soma(i => i.type === -1 && (isPrev || real(i)));
+              const entAb = isPrev ? 0 : soma(i => i.type === 1 && aberto(i));
+              const saiAb = isPrev ? 0 : soma(i => i.type === -1 && aberto(i));
+              const saldo = ent - sai;
+              const esperado = saldo + entAb - saiAb;
+              const sinal = (v: number) => `${v >= 0 ? '+' : '-'}${formatCurrency(Math.abs(v))}`;
               return (
                 <div className="grid grid-cols-3 gap-3 px-6 py-4 border-b border-slate-100 dark:border-white/10">
                   <div>
                     <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">{isPrev ? '↑ A Receber' : '↑ Entradas'}</p>
                     <p className="text-base font-black text-emerald-500">{formatCurrency(ent)}</p>
+                    {entAb > 0 && <p className="text-[11px] font-bold text-amber-500 mt-0.5">+ {formatCurrency(entAb)} em aberto</p>}
                   </div>
                   <div>
                     <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">{isPrev ? '↓ A Pagar' : '↓ Saídas'}</p>
                     <p className="text-base font-black text-rose-500">{formatCurrency(sai)}</p>
+                    {saiAb > 0 && <p className="text-[11px] font-bold text-amber-500 mt-0.5">+ {formatCurrency(saiAb)} em aberto</p>}
                   </div>
                   <div>
-                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Saldo previsto</p>
-                    <p className={`text-base font-black ${ent - sai >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                      {ent - sai >= 0 ? '+' : ''}{formatCurrency(ent - sai)}
-                    </p>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">{isPrev ? 'Saldo previsto' : 'Saldo do dia'}</p>
+                    <p className={`text-base font-black ${saldo >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>{sinal(saldo)}</p>
+                    {(entAb > 0 || saiAb > 0) && (
+                      <p className="text-[11px] font-bold text-slate-400 mt-0.5">Esperado: <span className={esperado >= 0 ? 'text-emerald-500' : 'text-rose-500'}>{sinal(esperado)}</span></p>
+                    )}
                   </div>
                 </div>
               );
@@ -962,7 +987,7 @@ export default function FinanceiroDashboard() {
                         </div>
                         <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold shrink-0 ${
                           isReal ? 'bg-violet-500/10 text-violet-500' : 'bg-amber-500/10 text-amber-500'
-                        }`}>{isReal ? 'Realizado' : 'Atrasado'}</span>
+                        }`}>{isReal ? 'Realizado' : dayPopup.iso === new Date().toLocaleDateString('sv-SE') ? 'Pendente' : 'Atrasado'}</span>
                         <span className={`text-sm font-bold shrink-0 ${isEntrada ? 'text-emerald-500' : 'text-rose-500'}`}>
                           {isEntrada ? '+' : '-'}{formatCurrency(Math.abs(valor))}
                         </span>

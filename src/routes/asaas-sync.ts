@@ -1,5 +1,7 @@
 import https from 'https';
 import { categorizeMovements } from './bills';
+import { herdarCategoriaNoLancamento } from './bill-category';
+import { foraDeMesFechado } from './fechamento';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Asaas Sync Engine
@@ -328,6 +330,7 @@ async function pairReversedTransactions(pool: any): Promise<{ marked: number }> 
       SET is_reversed_pair = true
       WHERE m.account = 'asaas'
         AND m.is_reversed_pair = false
+        AND ${foraDeMesFechado('m.')}
         AND (m.raw_json->>'pixTransactionId') IS NOT NULL
         AND (m.raw_json->>'pixTransactionId') IN (
           SELECT raw_json->>'pixTransactionId'
@@ -355,6 +358,7 @@ async function pairCancelledBillPayments(pool: any): Promise<{ marked: number }>
       UPDATE fin_movements_asaas m
       SET is_reversed_pair = true
       WHERE m.is_reversed_pair = false
+        AND ${foraDeMesFechado('m.')}
         AND m.transaction_type IN ('BILL_PAYMENT', 'BILL_PAYMENT_CANCELLED')
         AND (m.raw_json->>'billId') IS NOT NULL
         AND (m.raw_json->>'billId') IN (
@@ -533,6 +537,10 @@ export async function reconcileBills(pool: any): Promise<{ matched: number }> {
           SET linked_bill_entry_id = $1
           WHERE id = $2
         `, [entry.id, m.id]);
+
+        // Mesma herança do vínculo manual: o pagamento entra no DRE com a
+        // categoria configurada na conta.
+        await herdarCategoriaNoLancamento(pool, m.id);
 
         matched++;
       }

@@ -99,14 +99,14 @@ const DreDashboard: React.FC = () => {
   );
 
   if (loading) return <div className="py-20 text-center text-sm text-slate-500">Carregando…</div>;
-  if (!data) return <div className="py-20 text-center text-sm text-slate-500">Não foi possível carregar o DRE.</div>;
+  if (!data) return <div className="py-20 text-center text-sm text-slate-500">Não foi possível carregar o DFC.</div>;
 
   return (
     <div className="space-y-5">
       {/* Cabeçalho + seletor de ano */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h2 className="text-sm font-bold text-dark-text">Dashboard do DRE</h2>
+          <h2 className="text-sm font-bold text-dark-text">Dashboard do DFC</h2>
           <p className="text-xs text-slate-500">
             Faturamento e custos por mês · <span className="text-amber-400">meses em destaque</span> = calculado pelo GrapeHub
           </p>

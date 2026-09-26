@@ -90,6 +90,11 @@ nunca cores fixas. A preferência fica em `App.tsx` (`'system' | 'light' | 'dark
   zero linhas, silenciosamente. Use classes explícitas: `'^[0-9]{4}'`.
 - Comentário JSX dentro de `{cond && (` quebra o build (TS1005) — ponha acima da condicional.
 - Drag and drop: o padrão do projeto é **`@dnd-kit`** (core/sortable/utilities).
+- **Recarregar depois de editar uma linha não pode ligar o `loading`.** Nas tabelas que trocam
+  o conteúdo por spinner, isso desmonta as linhas, refaz a animação de entrada e joga a rolagem
+  para o topo — em Contas a Pagar, categorizar a fatura linha a linha virava "refresh" a cada
+  clique. Atualize a linha com o que o PATCH devolveu e refaça o fetch com `{ silencioso: true }`
+  (`fetchSicredi`, `fetchEntries`). `loading` só para troca de mês/conta e upload.
 
 ## Git — o `git` do shell está quebrado para rede
 
@@ -150,6 +155,26 @@ Não há CI. O processo é manual e tem uma pegadinha:
   normalizados. Daí em diante usa o **mesmo** pipeline do CSV/OFX da Sicredi — impressão
   digital estável, prune do mês, categorização, DRE. OFX e CSV continuam em parser
   determinístico; **só PDF passa por IA**.
+  **Aba errada apaga dado**: a importação faz *prune* — remove do mês/conta tudo que
+  não está no arquivo novo (`DELETE … WHERE account=$3 AND billing_month=$1 AND
+  asaas_id <> ALL(...)`). Em 25/09/2026 a fatura do Asaas foi importada na aba
+  Sicredi; a próxima fatura real do Sicredi do mês teria apagado os 11 itens em
+  silêncio. Hoje a extração devolve `emissor` (asaas/sicredi/outro) e o servidor
+  **recusa** o PDF antes de gravar quando o emissor não bate com a aba ('outro' não
+  bloqueia). Para mover lançamentos de cartão entre contas, troque `account` **e** o
+  prefixo do `asaas_id` (`${account}_${fitid}`); o `fitid` do PDF é
+  md5(data+descrição+valor+cartão) e **não** inclui a conta, então o resultado fica
+  idêntico a uma importação feita na aba certa.
+- **Fatura: conferência e importação reversível** (`src/routes/fatura-versoes.ts`, 26/09/2026).
+  (1) PDF: a soma dos itens lidos tem de bater com o total impresso (tolerância R$ 0,05);
+  divergiu → 409, nada gravado, e a tela pergunta "importar mesmo assim" — o reenvio usa a
+  extração em cache por 30 min (não paga outra leitura). (2) Toda importação de cartão
+  (PDF, CSV, OFX) grava antes uma FOTO em `fin_card_imports` (linhas do mês + linhas do
+  arquivo em qualquer mês + data de pagamento). Só a mais recente de cada cartão/mês pode
+  ser desfeita. Restauração é **upsert pelo id**, nunca delete+insert: 50 linhas de
+  `fin_recurring_bill_entries` apontam para lançamentos (FK sem cascade). Testado em
+  transação com rollback: o mês volta idêntico (hash de todas as colunas igual).
+
 - **Contas de cartão** são um conjunto (`CARD_ACCOUNTS` em `src/routes/bills.ts`):
   `sicredi` e `asaas_cartao`. Ao mexer em query de DRE, categorização ou fatura, trate o
   conjunto, não a string `'sicredi'`.
@@ -263,6 +288,146 @@ Não há CI. O processo é manual e tem uma pegadinha:
   os links de arquivo do ZapSign **expiram em 60 min** — reconsulte, não guarde.
   O formulário do ZapSign que o cliente preenchia (CLIENTE/TIPO/CNPJ/VALOR/data)
   deixa de ser necessário: quem preenche é o closer, no CRM.
+
+- **Extrato: `grapehub_category` mente, `raw_grapehub_category` não.** A API do
+  extrato (`server.ts`, `TRANSACTION_LABELS`) preenche `grapehub_category` com um
+  rótulo derivado do **tipo da transação no Asaas** quando o lançamento não tem
+  categoria: `TRANSFER` → "Transferência", e o que não está no mapa sai cru
+  (`INVOICE_FEE`). Na tela parecia classificado; no banco estava sem categoria e
+  **fora do DRE**. Medido em setembro/2026: 38 lançamentos, R$ 5.721,34 (11 Pix a
+  terceiros como "Transferência", R$ 1.813,88). Para saber se há categoria de
+  verdade, use `raw_grapehub_category`/`custom_category` — é o que a pílula e a
+  aba **Conciliar** do Extrato usam. O `ASAAS_CARD_BILL_PAYMENT` (pagamento da
+  fatura do cartão) também cai lá, e é correto ficar fora do DRE como despesa: os
+  gastos já entram pela fatura, contar o pagamento duplicaria.
+  **Conciliação manual** (`src/components/ModalConciliacao.tsx`): grava descrição
+  e categoria numa só chamada (`PATCH /api/financeiro/extrato/:id`) com
+  `custom_category_id` e `edited_by` = e-mail da pessoa. É o que a protege dos
+  motores automáticos: o de `bills.ts` só reprocessa `custom_category_id IS NULL`
+  ou `edited_by IN ('regra-auto','motor-auto')`, e o `autoApplyReconciliationRules`
+  só toca `custom_category IS NULL`. **Exceção**: o botão manual de aplicar regras
+  (`POST /api/fin-reconciliation-rules/apply`) casa pela descrição **sem guarda
+  nenhuma** e sobrescreve o que a pessoa conciliou — uma regra larga demais
+  apaga conciliação manual.
+  **Pares estornados não entram na conciliação.** O sync casa Pix devolvido
+  (`PIX_TRANSACTION_DEBIT_REFUND`, pelo `pixTransactionId`) e pagamento de conta
+  cancelado (`BILL_PAYMENT_CANCELLED`, pelo `billId`) com o débito original e marca
+  os DOIS `is_reversed_pair=true`; o DRE e o Fluxo ignoram o par. O Conciliar listava
+  esses créditos como pendentes (7 dos 10 em 25/09/2026) — agora filtra
+  `is_reversed_pair` e `is_anticipation_pair`. Categoria posta num lado do par não muda
+  número nenhum.
+
+- **Extrato traz os cartões pelo mês da fatura** (decisão do Jean, 25/09/2026). Com
+  `account=all` (o que a página pede), `/api/financeiro/extrato` devolve a conta Asaas
+  por `transaction_date` **e** os itens de `CARD_ACCOUNTS` por `billing_month` — mesmo
+  critério do DRE, para o filtro de categorias (árvore do plano,
+  `FiltroCategoriasDRE.tsx`) bater com ele. Conferido em setembro: 02.02 = −10.285,51 e
+  02.03 = −32.340,19 nos dois. Sem `account`, a rota segue só Asaas (o Dashboard usa
+  assim). Com cartão na tela, o **pagamento da fatura** (`ASAAS_CARD_BILL_PAYMENT`) sai
+  dos totais e das somas por categoria — senão o mesmo gasto conta duas vezes. Idem
+  para **toda categoria 99**: a fatura do Sicredi é paga com Pix da conta Asaas para a
+  conta Sicredi (R$ 24.750 em 18/09/2026, mesmo dia do `payment_date` da fatura).
+  **Pagamento de fatura e Pix entre contas vão na 99**, nunca em conta 04: em 25/09/2026
+  havia uma categoria criada à mão, 04.04.100 "transferencia entre contas", que fazia o
+  DRE de setembro contar R$ 28.644,72 de despesa a mais. Os dois lançamentos foram para a
+  99 e a categoria foi apagada (backups `*_backup_20260925_transf`).
+
+- **Motor de categorização (`categorizeMovements`, `bills.ts`): tipo antes do
+  texto, e trava de natureza.** As regras são regex sobre a descrição, e a
+  descrição carrega o **nome do cliente** — que aqui é escritório de advocacia.
+  `/honorario|advogad|juridic/` jogou 10 antecipações de fatura (R$ 13.229,60 de
+  receita, jan–set/2026) e 7 taxas de NF na despesa **02.06.04 Honorários
+  Advogado**, que aparecia VERDE no DRE. Agora: (1) `transaction_type` decide
+  primeiro — `RECEIVABLE_ANTICIPATION_GROSS_CREDIT` → 01.01.01,
+  `INVOICE_FEE` → 02.07.100; (2) regra nenhuma põe entrada (`type=1`) em conta
+  02/04/05 nem saída (`type=-1`) em 01/03 — nesses casos o lançamento fica sem
+  categoria e vai para Conciliar. **Direção é a coluna `type`**; `value` é sempre
+  positivo. Exceção legítima que a trava deixa para a conciliação manual:
+  **estorno** de despesa (ex.: crédito do Google de R$ 46,87 em 02.02.06), que é
+  entrada numa conta de despesa e está certo. Os 17 foram corrigidos com backup em
+  `fin_movements_asaas_backup_20260925` e marcados `edited_by='correcao-20260925'`
+  — marca que nenhum motor reprocessa; com `motor-auto`, o motor antigo da
+  produção os devolveria para Honorários no próximo sync, antes do deploy.
+  **Regras fixas por decisão do Jean (25/09/2026)**: IOF → **02.02.100 IOF
+  ferramentas** (antes 02.07.99 Outras Despesas Financeiras) e Google Cloud →
+  **02.02.10 Custos de IA** (antes caía na regra genérica de `google`, 02.02.06 —
+  por isso a regra de Google Cloud fica na linha de IA, antes da de ferramentas).
+  Histórico corrigido: 64 IOF (R$ 382,02) e 8 Google Cloud (R$ 2.205,13), backup em
+  `fin_movements_asaas_backup_20260925_iof`, mesma marca `correcao-20260925`.
+
+- **Categoria só em texto não entra no DRE.** O DRE agrupa por
+  `custom_category_id`; o texto (`custom_category`/`grapehub_category`) é só
+  exibição. O "Editar Lançamento" do cartão (`PATCH /api/fin/bills/sicredi/:id`)
+  gravava só o texto, de uma lista própria da tela (Aluguel, Marketing…) que nem
+  existe no plano — 12 lançamentos de abril/2026 (R$ 2.463,15) apareciam
+  categorizados e ficavam fora do DRE (corrigidos; backup em
+  `fin_movements_asaas_backup_20260925_catcartao`). Hoje o endpoint recebe
+  `custom_category_id`, busca o nome no plano (não confia no texto da tela) e
+  marca `edited_by` com o e-mail. **Toda tela que categoriza precisa gravar o id** —
+  use `SeletorCategoria` (formulário) ou `CategoriaDreInline` (pílula clicável em
+  tabela, menu em portal), ambos em `src/components/SeletorCategoriaDRE.tsx`.
+
+- **Fechamento do mês com trava** (`src/routes/fechamento.ts`, aba Fechamento do DFC, 26/09/2026).
+  Conferências que **bloqueiam**: lançamento sem categoria; pagamento de fatura fora da 99;
+  saldo do Asaas não fecha com os lançamentos (cadeia pela coluna `balance`: início = "antes"
+  que não é "depois" de ninguém, fim = o inverso); fatura do cartão Asaas paga e não
+  importada. **Avisam**: conferência de PDF divergente, natureza invertida, contas a pagar do
+  mês em aberto. Só superadmin fecha/reabre (reabrir exige motivo; tudo em
+  `fin_month_closing_log`). Os totais do DFC ficam congelados em `fin_month_closings.totais`.
+  **A trava é um gatilho** (`trg_fin_trava_mes_fechado` em `fin_movements_asaas`) que
+  **desfaz em silêncio** mudança de categoria/valor/tipo/data/mês da fatura/conta/pares num
+  mês fechado e registra em `fin_month_lock_log` — não dá erro de propósito: a produção roda
+  código antigo e a rotina de antecipações zera e remarca os pares de TODOS os meses a cada
+  5 min; com erro ela quebraria. As rotas de edição conferem antes e devolvem **423** com o
+  motivo; as rotinas em lote usam `foraDeMesFechado()`. Livre em mês fechado: descrição,
+  comentário, vínculo com conta a pagar, dados do sync, e lançamento NOVO da conta Asaas
+  (banco é a verdade — a tela conta "+N depois"). Cartão novo em mês fechado não entra.
+  Achado ao testar: **junho/2026 não fecha o saldo — faltam R$ 2.396,02 de movimentação**
+  gravada (jul–set fecham no centavo).
+
+- **A página "DRE" virou "DFC"** (26/09/2026, `menu_pages.label`): o relatório é regime de
+  caixa. Ids internos ficaram (`financeiro-dre`, `/api/financeiro/dre`, `Dre*.tsx`).
+- **Alerta de custo subindo** (`src/lib/alertasCusto.ts`, aba Despesas do DFC + contador na
+  aba): categoria folha do grupo em foco, mês × média dos até 3 anteriores; alerta quando sobe
+  ≥ 25% **e** ≥ R$ 300 (ou custo novo ≥ R$ 300). Sai das linhas do `/api/financeiro/dre`.
+  Setembro/2026 contra jun–ago: 7 alertas, +R$ 9.111 (Material de Escritório +R$ 2.784,
+  Custos de IA +R$ 2.131…). **O sino de Notificações da Sidebar é falso**: `badge: 12`
+  fixo no código, sem fonte — não serve para alertas até ganhar backend.
+
+- **Fluxo de Caixa: a linha de saldo é o banco, não o DRE** (`/api/financeiro/fluxo-diario`).
+  O saldo inicial do mês é calculado de trás para frente a partir do saldo real do Asaas
+  (`/finance/balance`), então **todo** movimento da conta tem de entrar nessa conta —
+  inclusive transferência entre contas. O filtro por `custom_category = 'transferencia entre
+  contas'` estava ali e, quando o pagamento da fatura (R$ 3.894,72) e um Pix para a própria
+  Grape (R$ 24.750) foram classificados assim em 25/09/2026, a curva de setembro caiu
+  R$ 28.644,72 e mostrou caixa negativo (mínimo real do mês: R$ 1.432,90 intradiário,
+  R$ 7.885,95 no fechamento de 08/09). Hoje: transferência entre contas sai das **barras** e
+  volta pelo campo `transferencias` na linha; o **pagamento da fatura do cartão**
+  (`ASAAS_CARD_BILL_PAYMENT`) conta como **saída** no fluxo — no DRE fica fora, porque os
+  itens da fatura já entram. Conferência: a coluna `balance` de cada movimento é o saldo do
+  Asaas depois dele; a curva tem de bater com ela dia a dia.
+
+- **Aba Despesas do DRE** (`DreDespesas.tsx` → `DespesasPorCategoria.tsx`; grupos 02/04/05): os valores dos
+  níveis (02 → 02.xx → 02.xx.yy) saem das linhas do próprio `/api/financeiro/dre`, então
+  batem com a tabela inclusive nos meses do Marvee. O popup de lançamentos usa
+  `GET /api/financeiro/dre/lancamentos?structure=&de=&ate=` (`src/routes/dre-lancamentos.ts`),
+  com o mesmo critério do DRE ao vivo — conferido: 02.02 set/26 = −10.285,51 e 02 jul–set =
+  −212.695,16 nos dois. Em mês histórico o DRE usa o número importado e a lista pode não
+  fechar; o popup avisa.
+
+- **Conta a pagar conciliada leva a categoria para o extrato** (`src/routes/bill-category.ts`).
+  Antes, conciliar em Contas a Pagar só marcava a conta como paga e ligava ao
+  lançamento: o lançamento ficava SEM categoria e fora do DRE (medido: 13 de 120
+  vinculados, R$ 1.891,80). Não dava para copiar `fin_bills.category`, porque é
+  uma lista própria da tela ("Utilidades", "Impostos", "Serviços") e nenhum nome
+  existia no plano de contas. Agora `fin_bills.category_id` aponta para
+  `fin_categories`, e os três caminhos que ligam conta a lançamento herdam essa
+  categoria: a conciliação automática (`reconcileBills`), o vínculo manual
+  (`/entries/:id/link`, **mantido**) e a edição da conta, que é **retroativa**
+  (definiu a categoria, os pagamentos antigos entram no DRE). A herança
+  sobrescreve lançamento sem categoria, de regra (`regra-auto`) e de motor
+  (`motor-auto`) — a conta é um mapeamento específico, a regra é palavra-chave —,
+  mas **nunca** a categoria escolhida por uma pessoa.
 
 - **Telefonia foi REMOVIDA do GrapeHub** (24/09/2026). Saíram: a página Ligações
   (`CrmLigacoes.tsx`), o softphone WebRTC (`useSoftphone.ts`, JsSIP), o botão

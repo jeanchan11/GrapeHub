@@ -19,10 +19,386 @@ var __copyProps = (to, from, except, desc) => {
 };
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
+// src/routes/fechamento.ts
+async function mesFechado(pool, mes) {
+  if (!mes) return false;
+  const r = await pool.query(`SELECT 1 FROM fin_month_closings WHERE month = $1 AND status = 'fechado'`, [mes]);
+  return r.rows.length > 0;
+}
+async function mesFechadoDoLancamento(pool, id) {
+  const r = await pool.query(
+    `SELECT fc.month FROM fin_movements_asaas m
+       JOIN fin_month_closings fc ON fc.status = 'fechado' AND fc.month = ${competenciaSql("m.")}
+      WHERE m.id = $1`,
+    [id]
+  );
+  return r.rows[0]?.month || null;
+}
+async function migrateFechamento(pool) {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fin_month_closings (
+      month TEXT PRIMARY KEY,
+      status TEXT NOT NULL,                 -- 'fechado' | 'reaberto'
+      closed_at TIMESTAMPTZ, closed_by TEXT,
+      checks JSONB, totais JSONB,
+      max_movement_id INT,                  -- para contar o que entrou depois
+      reopened_at TIMESTAMPTZ, reopened_by TEXT, reopen_reason TEXT
+    )`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fin_month_closing_log (
+      id SERIAL PRIMARY KEY, month TEXT NOT NULL, acao TEXT NOT NULL,
+      por TEXT, em TIMESTAMPTZ NOT NULL DEFAULT NOW(), motivo TEXT, checks JSONB, totais JSONB
+    )`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fin_month_lock_log (
+      month TEXT NOT NULL, movement_id INT NOT NULL, operacao TEXT NOT NULL,
+      vezes INT NOT NULL DEFAULT 1, primeira TIMESTAMPTZ NOT NULL DEFAULT NOW(), ultima TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (month, movement_id, operacao)
+    )`);
+  await pool.query(`
+    CREATE OR REPLACE FUNCTION fin_trava_mes_fechado() RETURNS trigger LANGUAGE plpgsql AS $f$
+    DECLARE
+      m_old TEXT; m_new TEXT; mes TEXT;
+    BEGIN
+      IF TG_OP IN ('UPDATE', 'DELETE') THEN
+        m_old := CASE WHEN OLD.account = 'asaas' THEN to_char(OLD.transaction_date, 'YYYY-MM') ELSE OLD.billing_month END;
+      END IF;
+      IF TG_OP IN ('UPDATE', 'INSERT') THEN
+        m_new := CASE WHEN NEW.account = 'asaas' THEN to_char(NEW.transaction_date, 'YYYY-MM') ELSE NEW.billing_month END;
+      END IF;
+      SELECT month INTO mes FROM fin_month_closings WHERE status = 'fechado' AND month IN (m_old, m_new) LIMIT 1;
+      IF mes IS NULL THEN RETURN COALESCE(NEW, OLD); END IF;
+
+      IF TG_OP = 'DELETE' THEN
+        INSERT INTO fin_month_lock_log (month, movement_id, operacao) VALUES (mes, OLD.id, 'excluir')
+          ON CONFLICT (month, movement_id, operacao) DO UPDATE SET vezes = fin_month_lock_log.vezes + 1, ultima = NOW();
+        RETURN NULL;
+      END IF;
+
+      IF TG_OP = 'INSERT' THEN
+        IF NEW.account = 'asaas' THEN RETURN NEW; END IF;   -- banco \xE9 a verdade
+        RETURN NULL;                                        -- cart\xE3o em m\xEAs fechado: n\xE3o entra
+      END IF;
+
+      IF (NEW.custom_category_id, NEW.type, NEW.value, NEW.transaction_date, NEW.billing_month,
+          NEW.account, NEW.is_anticipation_pair, NEW.is_reversed_pair)
+         IS DISTINCT FROM
+         (OLD.custom_category_id, OLD.type, OLD.value, OLD.transaction_date, OLD.billing_month,
+          OLD.account, OLD.is_anticipation_pair, OLD.is_reversed_pair) THEN
+        INSERT INTO fin_month_lock_log (month, movement_id, operacao) VALUES (mes, OLD.id, 'alterar')
+          ON CONFLICT (month, movement_id, operacao) DO UPDATE SET vezes = fin_month_lock_log.vezes + 1, ultima = NOW();
+        NEW.custom_category_id := OLD.custom_category_id;
+        NEW.custom_category := OLD.custom_category;
+        NEW.grapehub_category := OLD.grapehub_category;
+        NEW.type := OLD.type;
+        NEW.value := OLD.value;
+        NEW.transaction_date := OLD.transaction_date;
+        NEW.billing_month := OLD.billing_month;
+        NEW.account := OLD.account;
+        NEW.is_anticipation_pair := OLD.is_anticipation_pair;
+        NEW.is_reversed_pair := OLD.is_reversed_pair;
+        NEW.edited_at := OLD.edited_at;
+        NEW.edited_by := OLD.edited_by;
+      END IF;
+      RETURN NEW;
+    END $f$`);
+  await pool.query(`DROP TRIGGER IF EXISTS trg_fin_trava_mes_fechado ON fin_movements_asaas`);
+  await pool.query(`
+    CREATE TRIGGER trg_fin_trava_mes_fechado
+      BEFORE INSERT OR UPDATE OR DELETE ON fin_movements_asaas
+      FOR EACH ROW EXECUTE FUNCTION fin_trava_mes_fechado()`);
+}
+async function saldoDoMes(pool, mes) {
+  const r = await pool.query(`
+    WITH t AS (SELECT balance::numeric depois, balance::numeric - type * value::numeric antes, type * value::numeric v
+                 FROM fin_movements_asaas
+                WHERE account = 'asaas' AND to_char(transaction_date, 'YYYY-MM') = $1 AND balance IS NOT NULL)
+    SELECT (SELECT COUNT(*) FROM t)::int n,
+           (SELECT COALESCE(SUM(v), 0) FROM t) soma,
+           (SELECT array_agg(antes) FROM t WHERE antes NOT IN (SELECT depois FROM t)) inicios,
+           (SELECT array_agg(depois) FROM t WHERE depois NOT IN (SELECT antes FROM t)) fins,
+           (SELECT COUNT(*)::int FROM fin_movements_asaas
+             WHERE account = 'asaas' AND to_char(transaction_date, 'YYYY-MM') = $1 AND balance IS NULL) sem_balance`, [mes]);
+  return r.rows[0];
+}
+async function conferirMes(pool, mes) {
+  const checks = [];
+  const semCat = await pool.query(`
+    SELECT m.id, m.account, m.transaction_date::date AS data, m.type, m.value::numeric AS valor,
+           COALESCE(NULLIF(m.custom_description, ''), m.description) AS descricao
+      FROM fin_movements_asaas m
+     WHERE ${DO_MES("m.")} AND ${SEM_PARES("m.")} AND m.custom_category_id IS NULL
+     ORDER BY m.value::numeric DESC`, [mes]);
+  const somaSemCat = semCat.rows.reduce((s2, x) => s2 + Number(x.valor), 0);
+  checks.push({
+    id: "sem_categoria",
+    titulo: "Todo lan\xE7amento tem categoria",
+    status: semCat.rows.length ? "bloqueia" : "ok",
+    detalhe: semCat.rows.length ? `${semCat.rows.length} lan\xE7amento(s) sem categoria, ${brl(somaSemCat)} fora do DFC. Concilie no Extrato.` : "Nenhum lan\xE7amento fora do DFC.",
+    itens: semCat.rows.slice(0, 30)
+  });
+  const fat = await pool.query(`
+    SELECT m.id, m.transaction_date::date AS data, m.value::numeric AS valor, c.structure, c.description AS categoria,
+           COALESCE(NULLIF(m.custom_description, ''), m.description) AS descricao
+      FROM fin_movements_asaas m LEFT JOIN fin_categories c ON c.id = m.custom_category_id
+     WHERE ${DO_MES("m.")} AND ${SEM_PARES("m.")} AND m.account = 'asaas'
+       AND m.transaction_type = 'ASAAS_CARD_BILL_PAYMENT' AND COALESCE(c.structure, '') <> '99'`, [mes]);
+  checks.push({
+    id: "fatura_na_99",
+    titulo: "Pagamento de fatura de cart\xE3o est\xE1 na 99",
+    status: fat.rows.length ? "bloqueia" : "ok",
+    detalhe: fat.rows.length ? `${fat.rows.length} pagamento(s) de fatura fora da 99 \u2014 a despesa j\xE1 entra item a item pela fatura, e conta duas vezes.` : "Nenhum pagamento de fatura contando como despesa.",
+    itens: fat.rows
+  });
+  const s = await saldoDoMes(pool, mes);
+  const unico = s.inicios?.length === 1 && s.fins?.length === 1;
+  const dif = unico ? Math.round((Number(s.fins[0]) - Number(s.inicios[0]) - Number(s.soma)) * 100) / 100 : null;
+  checks.push({
+    id: "saldo",
+    titulo: "Saldo do Asaas bate com os lan\xE7amentos",
+    status: s.n === 0 ? "info" : !unico ? "atencao" : Math.abs(dif) > 0.01 ? "bloqueia" : "ok",
+    detalhe: s.n === 0 ? "Sem movimenta\xE7\xE3o na conta Asaas no m\xEAs." : !unico ? `N\xE3o foi poss\xEDvel montar a sequ\xEAncia de saldos (${s.inicios?.length || 0} in\xEDcio(s), ${s.fins?.length || 0} fim(ns)) \u2014 confira o extrato do banco.` : Math.abs(dif) > 0.01 ? `O banco foi de ${brl(s.inicios[0])} a ${brl(s.fins[0])}, mas os lan\xE7amentos gravados somam ${brl(s.soma)}: diferen\xE7a de ${brl(dif)}. Falta ou sobra lan\xE7amento \u2014 sincronize.` : `De ${brl(s.inicios[0])} a ${brl(s.fins[0])}, fechando no centavo com ${s.n} lan\xE7amentos.`
+  });
+  const cartoes = await pool.query(`
+    SELECT a.account,
+      (SELECT COUNT(*)::int FROM fin_movements_asaas WHERE account = a.account AND billing_month = $1) AS itens,
+      (SELECT COUNT(*)::int FROM fin_movements_asaas WHERE account = a.account
+         AND billing_month = to_char(to_date($1 || '-01', 'YYYY-MM-DD') - INTERVAL '1 month', 'YYYY-MM')) AS itens_mes_anterior,
+      (SELECT COALESCE(SUM(value::numeric), 0) FROM fin_movements_asaas WHERE account = 'asaas'
+         AND to_char(transaction_date, 'YYYY-MM') = $1 AND transaction_type = 'ASAAS_CARD_BILL_PAYMENT' AND a.account = 'asaas_cartao') AS pago_asaas
+    FROM unnest($2::text[]) AS a(account)`, [mes, [...CARD_ACCOUNTS]]);
+  const faltando = [];
+  const talvez = [];
+  for (const c of cartoes.rows) {
+    const nome = c.account === "sicredi" ? "Sicredi" : "Asaas";
+    if (c.itens === 0 && Number(c.pago_asaas) > 0) faltando.push(`Asaas (fatura de ${brl(c.pago_asaas)} paga no m\xEAs)`);
+    else if (c.itens === 0 && c.itens_mes_anterior > 0) talvez.push(nome);
+  }
+  checks.push({
+    id: "faturas",
+    titulo: "Faturas dos cart\xF5es importadas",
+    status: faltando.length ? "bloqueia" : talvez.length ? "atencao" : "ok",
+    detalhe: faltando.length ? `Fatura n\xE3o importada: ${faltando.join(", ")}. Os gastos do cart\xE3o ficam fora do DFC.` : talvez.length ? `Nenhum item de ${talvez.join(" e ")} neste m\xEAs, embora houvesse no m\xEAs anterior. Confira se a fatura foi importada.` : cartoes.rows.map((c) => `${c.account === "sicredi" ? "Sicredi" : "Asaas"}: ${c.itens} itens`).join(" \xB7 ")
+  });
+  const div = await pool.query(`
+    SELECT DISTINCT ON (account) account, soma, total_impresso, conferencia FROM fin_card_imports
+     WHERE billing_month = $1 AND undone_at IS NULL ORDER BY account, id DESC`, [mes]).catch(() => ({ rows: [] }));
+  const divergentes = div.rows.filter((x) => x.conferencia === "divergente");
+  checks.push({
+    id: "conferencia_pdf",
+    titulo: "Faturas em PDF fecharam com o total impresso",
+    status: divergentes.length ? "atencao" : "ok",
+    detalhe: divergentes.length ? divergentes.map((x) => `${x.account === "sicredi" ? "Sicredi" : "Asaas"}: soma ${brl(x.soma)} \u2260 total ${brl(x.total_impresso)}`).join(" \xB7 ") : "Nenhuma importa\xE7\xE3o com diferen\xE7a."
+  });
+  const inv = await pool.query(`
+    SELECT m.id, m.transaction_date::date AS data, m.type, m.value::numeric AS valor, c.structure, c.description AS categoria,
+           COALESCE(NULLIF(m.custom_description, ''), m.description) AS descricao
+      FROM fin_movements_asaas m JOIN fin_categories c ON c.id = m.custom_category_id
+     WHERE ${DO_MES("m.")} AND ${SEM_PARES("m.")}
+       AND ((m.type = 1 AND left(c.structure, 2) IN ('02', '04', '05')) OR (m.type = -1 AND left(c.structure, 2) IN ('01', '03')))
+     ORDER BY m.value::numeric DESC`, [mes]);
+  checks.push({
+    id: "natureza",
+    titulo: "Entradas e sa\xEDdas na natureza certa",
+    status: inv.rows.length ? "atencao" : "ok",
+    detalhe: inv.rows.length ? `${inv.rows.length} lan\xE7amento(s) com a dire\xE7\xE3o oposta \xE0 da categoria. Estorno de despesa \xE9 leg\xEDtimo; o resto \xE9 erro de classifica\xE7\xE3o.` : "Nenhuma entrada em conta de despesa nem sa\xEDda em conta de receita.",
+    itens: inv.rows
+  });
+  const cp = await pool.query(`
+    SELECT e.id, b.name AS conta, e.due_date::date AS vencimento, e.expected_value::numeric AS valor
+      FROM fin_bill_entries e JOIN fin_bills b ON b.id = e.bill_id
+     WHERE to_char(e.due_date, 'YYYY-MM') = $1 AND e.status NOT IN ('paid', 'cancelled')
+     ORDER BY e.due_date`, [mes]);
+  checks.push({
+    id: "contas_a_pagar",
+    titulo: "Contas a pagar do m\xEAs baixadas",
+    status: cp.rows.length ? "atencao" : "ok",
+    detalhe: cp.rows.length ? `${cp.rows.length} conta(s) vencida(s) no m\xEAs ainda em aberto (${brl(cp.rows.reduce((s2, x) => s2 + Number(x.valor || 0), 0))}). Se foram pagas, vincule o pagamento.` : "Todas as contas do m\xEAs est\xE3o pagas ou canceladas.",
+    itens: cp.rows
+  });
+  const inad = await pool.query(`
+    SELECT COUNT(*)::int n, COALESCE(SUM(value), 0) v FROM fin_receivables
+     WHERE to_char(due_date, 'YYYY-MM') = $1 AND status IN ('Pendente', 'PENDING', 'OVERDUE')
+       AND due_date < CURRENT_DATE   -- s\xF3 o que j\xE1 venceu
+       AND COALESCE((raw_json->>'anticipated')::boolean, false) = false`, [mes]);
+  checks.push({
+    id: "inadimplencia",
+    titulo: "Recebimentos do m\xEAs",
+    status: "info",
+    detalhe: inad.rows[0].n ? `${inad.rows[0].n} cobran\xE7a(s) vencida(s) no m\xEAs sem pagamento: ${brl(inad.rows[0].v)}.` : "Tudo o que venceu no m\xEAs foi recebido."
+  });
+  const tot = await pool.query(`
+    SELECT left(c.structure, 2) AS grupo, SUM(m.value::numeric * m.type) AS valor
+      FROM fin_movements_asaas m JOIN fin_categories c ON c.id = m.custom_category_id
+     WHERE ${DO_MES("m.")} AND ${SEM_PARES("m.")}
+     GROUP BY 1 ORDER BY 1`, [mes]);
+  const grupos = {};
+  for (const r of tot.rows) grupos[r.grupo] = Math.round(Number(r.valor) * 100) / 100;
+  const geracao = Object.entries(grupos).filter(([g]) => g !== "99").reduce((s2, [, v]) => s2 + v, 0);
+  return {
+    checks,
+    totais: {
+      grupos,
+      geracao: Math.round(geracao * 100) / 100,
+      saldo_inicial: unico ? Number(s.inicios[0]) : null,
+      saldo_final: unico ? Number(s.fins[0]) : null
+    }
+  };
+}
+async function ehSuperadmin(pool, email) {
+  if (!email) return false;
+  const r = await pool.query(`SELECT role FROM users WHERE LOWER(email) = LOWER($1)`, [email]);
+  return r.rows[0]?.role === "superadmin";
+}
+function setupFechamentoRoutes(app, pool) {
+  migrateFechamento(pool).catch((e) => console.error("[fechamento] migrate:", e.message));
+  app.get("/api/financeiro/fechamento", async (req, res) => {
+    const ano = String(req.query.ano || (/* @__PURE__ */ new Date()).getFullYear());
+    try {
+      const r = await pool.query(`
+        SELECT f.*, (SELECT COUNT(*)::int FROM fin_movements_asaas m
+                      WHERE f.max_movement_id IS NOT NULL AND m.id > f.max_movement_id AND ${competenciaSql("m.")} = f.month) AS entraram_depois,
+                    (SELECT COALESCE(SUM(vezes), 0)::int FROM fin_month_lock_log l WHERE l.month = f.month) AS bloqueios
+          FROM fin_month_closings f WHERE f.month LIKE $1 ORDER BY f.month`, [`${ano}-%`]);
+      res.json({ ano, meses: r.rows.map((x) => ({ ...x, checks: void 0 })), pode_fechar: await ehSuperadmin(pool, req.user?.email) });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+  app.get("/api/financeiro/fechamento/:mes", async (req, res) => {
+    const mes = String(req.params.mes);
+    if (!/^[0-9]{4}-[0-9]{2}$/.test(mes)) return res.status(400).json({ error: "m\xEAs inv\xE1lido" });
+    try {
+      const atual = await conferirMes(pool, mes);
+      const f = (await pool.query(`SELECT * FROM fin_month_closings WHERE month = $1`, [mes])).rows[0] || null;
+      const log = await pool.query(`SELECT acao, por, em, motivo FROM fin_month_closing_log WHERE month = $1 ORDER BY id DESC LIMIT 10`, [mes]);
+      res.json({ mes, fechamento: f, ...atual, historico: log.rows, pode_fechar: await ehSuperadmin(pool, req.user?.email) });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+  app.post("/api/financeiro/fechamento/:mes/fechar", async (req, res) => {
+    const mes = String(req.params.mes);
+    const quem = req.user?.email || null;
+    if (!/^[0-9]{4}-[0-9]{2}$/.test(mes)) return res.status(400).json({ error: "m\xEAs inv\xE1lido" });
+    if (!await ehSuperadmin(pool, quem)) return res.status(403).json({ error: "S\xF3 o superadmin fecha o m\xEAs." });
+    const hoje = new Date(Date.now() - (/* @__PURE__ */ new Date()).getTimezoneOffset() * 6e4).toISOString().slice(0, 7);
+    if (mes >= hoje) return res.status(400).json({ error: "S\xF3 d\xE1 para fechar um m\xEAs que j\xE1 terminou." });
+    try {
+      if (await mesFechado(pool, mes)) return res.status(409).json({ error: "Este m\xEAs j\xE1 est\xE1 fechado." });
+      const { checks, totais } = await conferirMes(pool, mes);
+      const bloqueios = checks.filter((c) => c.status === "bloqueia");
+      if (bloqueios.length) return res.status(409).json({ error: "H\xE1 confer\xEAncias que impedem o fechamento.", checks });
+      if (checks.some((c) => c.status === "atencao") && req.body?.confirmar_avisos !== true) {
+        return res.status(409).json({ error: "H\xE1 avisos: confirme para fechar mesmo assim.", precisa_confirmar: true, checks });
+      }
+      const maxId = (await pool.query(`SELECT COALESCE(MAX(id), 0)::int m FROM fin_movements_asaas`)).rows[0].m;
+      const semItens = checks.map(({ itens, ...c }) => c);
+      await pool.query(
+        `
+        INSERT INTO fin_month_closings (month, status, closed_at, closed_by, checks, totais, max_movement_id, reopened_at, reopened_by, reopen_reason)
+        VALUES ($1, 'fechado', NOW(), $2, $3, $4, $5, NULL, NULL, NULL)
+        ON CONFLICT (month) DO UPDATE SET status = 'fechado', closed_at = NOW(), closed_by = $2, checks = $3, totais = $4,
+          max_movement_id = $5, reopened_at = NULL, reopened_by = NULL, reopen_reason = NULL`,
+        [mes, quem, JSON.stringify(semItens), JSON.stringify(totais), maxId]
+      );
+      await pool.query(
+        `INSERT INTO fin_month_closing_log (month, acao, por, checks, totais) VALUES ($1, 'fechar', $2, $3, $4)`,
+        [mes, quem, JSON.stringify(semItens), JSON.stringify(totais)]
+      );
+      res.json({ ok: true, totais });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+  app.post("/api/financeiro/fechamento/:mes/reabrir", async (req, res) => {
+    const mes = String(req.params.mes);
+    const quem = req.user?.email || null;
+    const motivo = String(req.body?.motivo || "").trim();
+    if (!await ehSuperadmin(pool, quem)) return res.status(403).json({ error: "S\xF3 o superadmin reabre o m\xEAs." });
+    if (motivo.length < 5) return res.status(400).json({ error: "Informe o motivo da reabertura." });
+    try {
+      const r = await pool.query(`
+        UPDATE fin_month_closings SET status = 'reaberto', reopened_at = NOW(), reopened_by = $2, reopen_reason = $3
+         WHERE month = $1 AND status = 'fechado' RETURNING totais`, [mes, quem, motivo]);
+      if (!r.rows.length) return res.status(409).json({ error: "Este m\xEAs n\xE3o est\xE1 fechado." });
+      await pool.query(
+        `INSERT INTO fin_month_closing_log (month, acao, por, motivo, totais) VALUES ($1, 'reabrir', $2, $3, $4)`,
+        [mes, quem, motivo, JSON.stringify(r.rows[0].totais)]
+      );
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+}
+var CARD_ACCOUNTS, competenciaSql, foraDeMesFechado, MESES, nomeMes, msgMesFechado, brl, DO_MES, SEM_PARES;
+var init_fechamento = __esm({
+  "src/routes/fechamento.ts"() {
+    CARD_ACCOUNTS = ["sicredi", "asaas_cartao"];
+    competenciaSql = (a = "") => `(CASE WHEN ${a}account = 'asaas' THEN to_char(${a}transaction_date, 'YYYY-MM') ELSE ${a}billing_month END)`;
+    foraDeMesFechado = (a = "") => `NOT EXISTS (SELECT 1 FROM fin_month_closings fc WHERE fc.status = 'fechado' AND fc.month = ${competenciaSql(a)})`;
+    MESES = ["janeiro", "fevereiro", "mar\xE7o", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+    nomeMes = (m) => `${MESES[Number(m.slice(5, 7)) - 1]}/${m.slice(0, 4)}`;
+    msgMesFechado = (m) => `${nomeMes(m).replace(/^./, (c) => c.toUpperCase())} est\xE1 fechado. Para alterar, reabra o m\xEAs no DFC \u203A Fechamento.`;
+    brl = (v) => Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+    DO_MES = (a = "") => `${competenciaSql(a)} = $1`;
+    SEM_PARES = (a = "") => `${a}is_anticipation_pair = false AND ${a}is_reversed_pair = false`;
+  }
+});
+
+// src/routes/bill-category.ts
+async function migrateBillCategory(pool) {
+  await pool.query(`ALTER TABLE fin_bills ADD COLUMN IF NOT EXISTS category_id INT`);
+}
+async function herdarCategoriaNoLancamento(pool, movementId) {
+  const r = await pool.query(`
+    UPDATE fin_movements_asaas m
+       SET custom_category_id = c.id,
+           custom_category    = c.description,
+           grapehub_category  = c.description,
+           edited_by          = 'conta-a-pagar',
+           edited_at          = NOW()
+      FROM fin_bill_entries e
+      JOIN fin_bills b      ON b.id = e.bill_id
+      JOIN fin_categories c ON c.id = b.category_id
+     WHERE m.id = $1
+       AND m.linked_bill_entry_id = e.id
+       AND ${PODE_SOBRESCREVER}
+       AND ${foraDeMesFechado("m.")}
+    RETURNING m.id`, [movementId]);
+  return (r.rowCount || 0) > 0;
+}
+async function herdarCategoriaDaConta(pool, billId) {
+  const r = await pool.query(`
+    UPDATE fin_movements_asaas m
+       SET custom_category_id = c.id,
+           custom_category    = c.description,
+           grapehub_category  = c.description,
+           edited_by          = 'conta-a-pagar',
+           edited_at          = NOW()
+      FROM fin_bill_entries e
+      JOIN fin_bills b      ON b.id = e.bill_id
+      JOIN fin_categories c ON c.id = b.category_id
+     WHERE b.id = $1
+       AND m.linked_bill_entry_id = e.id
+       AND ${PODE_SOBRESCREVER}
+       AND ${foraDeMesFechado("m.")}
+    RETURNING m.id`, [billId]);
+  return r.rowCount || 0;
+}
+var PODE_SOBRESCREVER;
+var init_bill_category = __esm({
+  "src/routes/bill-category.ts"() {
+    init_fechamento();
+    PODE_SOBRESCREVER = `(m.custom_category_id IS NULL OR m.edited_by IN ('regra-auto','motor-auto','conta-a-pagar'))`;
+  }
+});
+
 // src/routes/bills.ts
 function normalizeCardAccount(v) {
   const a = String(v || "").trim().toLowerCase();
-  return CARD_ACCOUNTS.includes(a) ? a : "sicredi";
+  return CARD_ACCOUNTS2.includes(a) ? a : "sicredi";
 }
 function autoCategory(description) {
   const lower = (description || "").toLowerCase();
@@ -83,7 +459,14 @@ async function categorizeMovements(pool, opts = {}) {
     const t = norm(n).split(/\s+/).filter(Boolean);
     return { first: t[0], second: (t[1] || "").slice(0, 3) };
   });
-  const classify = (desc) => {
+  const POR_TIPO = {
+    RECEIVABLE_ANTICIPATION_GROSS_CREDIT: "01.01.01",
+    // antecipação de fatura = receita recorrente
+    INVOICE_FEE: "02.07.100"
+    // taxa de emissão de nota fiscal
+  };
+  const classify = (desc, tipoAsaas) => {
+    if (tipoAsaas && POR_TIPO[tipoAsaas]) return POR_TIPO[tipoAsaas];
     const d = norm(desc);
     if (/pix.*para|transferencia/.test(d)) {
       if (d.includes("grape midia")) return "_T";
@@ -93,16 +476,24 @@ async function categorizeMovements(pool, opts = {}) {
     for (const r of DRE_RULES) if (r.re.test(d)) return r.s;
     return null;
   };
-  const where = opts.month ? `AND ((account='asaas' AND to_char(transaction_date,'YYYY-MM')=$1) OR (account = ANY('{${CARD_ACCOUNTS.join(",")}}') AND billing_month=$1))` : "";
+  const where = opts.month ? `AND ((account='asaas' AND to_char(transaction_date,'YYYY-MM')=$1) OR (account = ANY('{${CARD_ACCOUNTS2.join(",")}}') AND billing_month=$1))` : "";
   const params = opts.month ? [opts.month] : [];
   const mv = (await pool.query(
-    `SELECT id, COALESCE(NULLIF(custom_description,''),description) AS desc FROM fin_movements_asaas
-     WHERE is_anticipation_pair = false AND is_reversed_pair = false AND (custom_category_id IS NULL OR edited_by IN ('regra-auto','motor-auto')) ${where}`,
+    `SELECT id, transaction_type, type, COALESCE(NULLIF(custom_description,''),description) AS desc FROM fin_movements_asaas
+     WHERE is_anticipation_pair = false AND is_reversed_pair = false AND (custom_category_id IS NULL OR edited_by IN ('regra-auto','motor-auto')) ${where}
+       AND ${foraDeMesFechado()}`,
     params
   )).rows;
   let categorized = 0, transfers = 0, uncategorized = 0;
+  const naturezaBate = (estrutura, direcao) => {
+    const g = estrutura.slice(0, 2);
+    if (["02", "04", "05"].includes(g)) return direcao === -1;
+    if (["01", "03"].includes(g)) return direcao === 1;
+    return true;
+  };
   for (const m of mv) {
-    const s = classify(m.desc);
+    let s = classify(m.desc, m.transaction_type);
+    if (s && s !== "_T" && !naturezaBate(s, Number(m.type))) s = null;
     if (s === "_T") {
       if (transferId) {
         await pool.query("UPDATE fin_movements_asaas SET custom_category_id=$1, custom_category='Transfer\xEAncia', grapehub_category='Transfer\xEAncia', edited_by='motor-auto' WHERE id=$2", [transferId, m.id]);
@@ -144,13 +535,13 @@ function setupBillsRoutes(app, pool) {
     }
   });
   app.post("/api/fin/bills", async (req, res) => {
-    const { name, category, value, recurrence, due_day, due_date, notes } = req.body;
+    const { name, category, category_id, value, recurrence, due_day, due_date, notes } = req.body;
     if (!name) return res.status(400).json({ error: "name is required" });
     try {
       const result = await pool.query(
-        `INSERT INTO fin_bills (name, category, value, recurrence, due_day, due_date, notes)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-        [name, category || "Outros", value || null, recurrence || "monthly", due_day || null, due_date || null, notes || null]
+        `INSERT INTO fin_bills (name, category, category_id, value, recurrence, due_day, due_date, notes)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+        [name, category || "Outros", category_id || null, value || null, recurrence || "monthly", due_day || null, due_date || null, notes || null]
       );
       res.json(result.rows[0]);
     } catch (err) {
@@ -159,14 +550,35 @@ function setupBillsRoutes(app, pool) {
   });
   app.put("/api/fin/bills/:id", async (req, res) => {
     const { id } = req.params;
-    const { name, category, value, recurrence, due_day, due_date, notes } = req.body;
+    const { name, category, category_id, value, recurrence, due_day, due_date, notes } = req.body;
     try {
+      const antes = await pool.query(`SELECT category_id FROM fin_bills WHERE id=$1`, [id]);
       const result = await pool.query(
-        `UPDATE fin_bills SET name=$1, category=$2, value=$3, recurrence=$4, due_day=$5, due_date=$6, notes=$7, updated_at=NOW()
+        `UPDATE fin_bills SET name=$1, category=$2, value=$3, recurrence=$4, due_day=$5, due_date=$6, notes=$7,
+                category_id = CASE WHEN $9::boolean THEN $10::int ELSE category_id END,
+                updated_at=NOW()
          WHERE id=$8 RETURNING *`,
-        [name, category, value || null, recurrence || "monthly", due_day || null, due_date || null, notes || null, id]
+        // `category_id` só muda se veio no corpo: uma tela antiga que não conhece
+        // o campo não pode zerar o mapeamento que outra pessoa configurou.
+        [
+          name,
+          category,
+          value || null,
+          recurrence || "monthly",
+          due_day || null,
+          due_date || null,
+          notes || null,
+          id,
+          category_id !== void 0,
+          category_id || null
+        ]
       );
       if (result.rows.length === 0) return res.status(404).json({ error: "Not found" });
+      let herdados = 0;
+      const novo = result.rows[0].category_id;
+      if (novo && novo !== antes.rows[0]?.category_id) {
+        herdados = await herdarCategoriaDaConta(pool, Number(id));
+      }
       const currentMonth = (/* @__PURE__ */ new Date()).toISOString().slice(0, 7);
       const affected = await pool.query(
         `SELECT id, reference_month FROM fin_bill_entries
@@ -189,7 +601,7 @@ function setupBillsRoutes(app, pool) {
           [value || null, newDue, e.id]
         );
       }
-      res.json({ ...result.rows[0], propagated: affected.rows.length });
+      res.json({ ...result.rows[0], propagated: affected.rows.length, categoria_herdada: herdados });
     } catch (err) {
       res.status(500).json({ error: "Failed to update bill" });
     }
@@ -340,7 +752,8 @@ function setupBillsRoutes(app, pool) {
       await pool.query(`
         UPDATE fin_movements_asaas SET linked_bill_entry_id = $1 WHERE id = $2
       `, [id, m.id]);
-      res.json({ ok: true, linked: { movement_id: m.id, value: m.value, description: m.description } });
+      const herdou = await herdarCategoriaNoLancamento(pool, m.id);
+      res.json({ ok: true, herdou_categoria: herdou, linked: { movement_id: m.id, value: m.value, description: m.description } });
     } catch (err) {
       console.error("[fin/bills/link] error:", err);
       res.status(500).json({ error: "Failed to link" });
@@ -407,7 +820,7 @@ function setupBillsRoutes(app, pool) {
     try {
       const result = await pool.query(
         `SELECT id, asaas_id, description, custom_description, value, transaction_date,
-                type, grapehub_category, custom_category, user_comment, sicredi_status, billing_month
+                type, grapehub_category, custom_category, custom_category_id, user_comment, sicredi_status, billing_month
          FROM fin_movements_asaas
          WHERE account = $2 AND billing_month = $1
          ORDER BY transaction_date ASC`,
@@ -480,16 +893,47 @@ function setupBillsRoutes(app, pool) {
   });
   app.patch("/api/fin/bills/sicredi/:id", async (req, res) => {
     const { id } = req.params;
-    const { custom_description, custom_category, user_comment } = req.body;
+    const { custom_description, custom_category, custom_category_id, user_comment } = req.body;
     try {
+      if (custom_category_id !== void 0 || custom_category !== void 0) {
+        const fechado = await mesFechadoDoLancamento(pool, id);
+        if (fechado) return res.status(423).json({ error: msgMesFechado(fechado), mes_fechado: fechado });
+      }
+      let catId = void 0;
+      let catNome = null;
+      if (custom_category_id !== void 0) {
+        catId = custom_category_id ? Number(custom_category_id) : null;
+      } else if (custom_category) {
+        const r = await pool.query(`SELECT id FROM fin_categories WHERE description = $1 LIMIT 1`, [custom_category]);
+        catId = r.rows[0]?.id ?? void 0;
+      }
+      if (catId) {
+        const c = await pool.query(`SELECT description FROM fin_categories WHERE id = $1`, [catId]);
+        if (!c.rows[0]) return res.status(400).json({ error: "Categoria n\xE3o encontrada no plano de contas." });
+        catNome = c.rows[0].description;
+      }
+      const email = req.user?.email || null;
       const result = await pool.query(
         `UPDATE fin_movements_asaas
          SET custom_description=COALESCE($1, custom_description),
-             custom_category=COALESCE($2, custom_category),
              user_comment=COALESCE($3, user_comment),
+             custom_category    = CASE WHEN $5::boolean THEN $6::text ELSE COALESCE($2, custom_category) END,
+             grapehub_category  = CASE WHEN $5::boolean THEN $6::text ELSE grapehub_category END,
+             custom_category_id = CASE WHEN $5::boolean THEN $7::int  ELSE custom_category_id END,
+             -- Escolha de uma pessoa: os motores autom\xE1ticos n\xE3o reprocessam mais.
+             edited_by = CASE WHEN $5::boolean THEN COALESCE($8, 'edicao-manual') ELSE edited_by END,
              edited_at=NOW()
-         WHERE id=$4 AND account = ANY('{${CARD_ACCOUNTS.join(",")}}') RETURNING *`,
-        [custom_description, custom_category, user_comment, id]
+         WHERE id=$4 AND account = ANY('{${CARD_ACCOUNTS2.join(",")}}') RETURNING *`,
+        [
+          custom_description,
+          custom_category,
+          user_comment,
+          id,
+          catId !== void 0,
+          catNome,
+          catId ?? null,
+          email
+        ]
       );
       if (result.rows.length === 0) return res.status(404).json({ error: "Not found" });
       res.json(result.rows[0]);
@@ -498,9 +942,11 @@ function setupBillsRoutes(app, pool) {
     }
   });
 }
-var DEFAULT_CATEGORIES, CARD_ACCOUNTS, CARD_META, SICREDI_AUTO_CATEGORIES, DRE_RULES;
+var DEFAULT_CATEGORIES, CARD_ACCOUNTS2, CARD_META, SICREDI_AUTO_CATEGORIES, DRE_RULES;
 var init_bills = __esm({
   "src/routes/bills.ts"() {
+    init_bill_category();
+    init_fechamento();
     DEFAULT_CATEGORIES = [
       "Sal\xE1rios",
       "Aluguel",
@@ -513,7 +959,7 @@ var init_bills = __esm({
       "Equipamentos",
       "Outros"
     ];
-    CARD_ACCOUNTS = ["sicredi", "asaas_cartao"];
+    CARD_ACCOUNTS2 = ["sicredi", "asaas_cartao"];
     CARD_META = {
       sicredi: { label: "Sicredi", billName: "Cart\xE3o Sicredi", dueDay: 18 },
       asaas_cartao: { label: "Asaas", billName: "Cart\xE3o Asaas", dueDay: 10 }
@@ -541,7 +987,9 @@ var init_bills = __esm({
       { re: /baixa da antecip/, s: "02.07.07" },
       { re: /taxa de antecip/, s: "02.07.06" },
       { re: /tarifa|taxa.*notificac|taxa.*mensageria|taxa.*whatsapp/, s: "02.07.08" },
-      { re: /\biof\b/, s: "02.07.99" },
+      // IOF só aparece no cartão, cobrado sobre compra internacional — que aqui é
+      // sempre ferramenta (Atlassian, Hostinger, Gather…). Decisão do Jean em 25/09/2026.
+      { re: /\biof\b/, s: "02.02.100" },
       { re: /simples nacional/, s: "02.01.01" },
       { re: /\bdarf\b|\birpj\b|\bcsll\b/, s: "02.01.05" },
       { re: /\biss\b/, s: "02.01.06" },
@@ -555,7 +1003,9 @@ var init_bills = __esm({
       { re: /marvee|assessoria financeira/, s: "02.06.01" },
       { re: /honorario|advogad|juridic/, s: "02.06.04" },
       { re: /facebk|facebook|meta ads|instagram ads/, s: "02.05.08" },
-      { re: /openai|anthropic|elevenlabs|\bclaude\b/, s: "02.02.10" },
+      // Google Cloud é API de IA (Gemini etc.), não ferramenta — e tem de vir ANTES
+      // da regra genérica de "google", que casaria primeiro. Decisão de 25/09/2026.
+      { re: /openai|anthropic|elevenlabs|\bclaude\b|google\s*cloud/, s: "02.02.10" },
       { re: /hostinger|neon|atlassian|clickup|1password|capcut|canva|myhubi|uazapi|pichau|apple\.com|google|gsuite|workspace|dominio|\bvps\b/, s: "02.02.06" },
       { re: /wellhub|gympass/, s: "02.03.09" }
     ];
@@ -847,6 +1297,7 @@ async function pairReversedTransactions(pool) {
       SET is_reversed_pair = true
       WHERE m.account = 'asaas'
         AND m.is_reversed_pair = false
+        AND ${foraDeMesFechado("m.")}
         AND (m.raw_json->>'pixTransactionId') IS NOT NULL
         AND (m.raw_json->>'pixTransactionId') IN (
           SELECT raw_json->>'pixTransactionId'
@@ -867,6 +1318,7 @@ async function pairCancelledBillPayments(pool) {
       UPDATE fin_movements_asaas m
       SET is_reversed_pair = true
       WHERE m.is_reversed_pair = false
+        AND ${foraDeMesFechado("m.")}
         AND m.transaction_type IN ('BILL_PAYMENT', 'BILL_PAYMENT_CANCELLED')
         AND (m.raw_json->>'billId') IS NOT NULL
         AND (m.raw_json->>'billId') IN (
@@ -1014,6 +1466,7 @@ async function reconcileBills(pool) {
           SET linked_bill_entry_id = $1
           WHERE id = $2
         `, [entry.id, m.id]);
+        await herdarCategoriaNoLancamento(pool, m.id);
         matched++;
       }
     }
@@ -1210,6 +1663,8 @@ function setupAsaasSyncRoutes(app, pool) {
 var init_asaas_sync = __esm({
   "src/routes/asaas-sync.ts"() {
     init_bills();
+    init_bill_category();
+    init_fechamento();
   }
 });
 
@@ -1221,7 +1676,7 @@ import fs2 from "fs";
 import https2 from "https";
 import pg from "pg";
 import dotenv from "dotenv";
-import crypto3 from "crypto";
+import crypto4 from "crypto";
 import Anthropic2 from "@anthropic-ai/sdk";
 import admin3 from "firebase-admin";
 
@@ -2669,6 +3124,62 @@ ${quando}`
 init_asaas_sync();
 init_bills();
 
+// src/routes/dre-lancamentos.ts
+init_bills();
+function setupDreLancamentosRoutes(app, pool) {
+  app.get("/api/financeiro/dre/lancamentos", async (req, res) => {
+    const structure = String(req.query.structure || "").trim();
+    const de = String(req.query.de || "").trim();
+    const ate = String(req.query.ate || de).trim();
+    if (!/^[0-9]+(\.[0-9]+)*$/.test(structure)) return res.status(400).json({ error: "structure inv\xE1lida" });
+    if (!/^[0-9]{4}-[0-9]{2}$/.test(de) || !/^[0-9]{4}-[0-9]{2}$/.test(ate)) return res.status(400).json({ error: "per\xEDodo inv\xE1lido (YYYY-MM)" });
+    try {
+      const r = await pool.query(
+        `SELECT m.id, m.account, m.type, m.value::numeric AS value, m.transaction_type,
+                m.transaction_date, m.billing_month,
+                COALESCE(NULLIF(m.custom_description, ''), m.description) AS descricao,
+                m.description AS descricao_original,
+                c.structure, c.description AS categoria,
+                CASE WHEN m.account = 'asaas' THEN to_char(m.transaction_date, 'YYYY-MM') ELSE m.billing_month END AS competencia
+           FROM fin_movements_asaas m
+           JOIN fin_categories c ON c.id = m.custom_category_id
+          WHERE (c.structure = $1 OR c.structure LIKE $1 || '.%')
+            AND m.is_anticipation_pair = false AND m.is_reversed_pair = false
+            AND ((m.account = 'asaas' AND to_char(m.transaction_date, 'YYYY-MM') BETWEEN $2 AND $3)
+              OR (m.account = ANY($4::text[]) AND m.billing_month BETWEEN $2 AND $3))
+          ORDER BY m.value::numeric DESC, m.transaction_date DESC`,
+        [structure, de, ate, [...CARD_ACCOUNTS2]]
+      );
+      const hist = await pool.query(
+        `SELECT DISTINCT ref_month FROM fin_dfc_historico
+          WHERE ref_month BETWEEN $1 AND $2 AND structure ~ '^[0-9]' ORDER BY 1`,
+        [de, ate]
+      );
+      const itens = r.rows.map((x) => ({
+        ...x,
+        value: Number(x.value),
+        valor_dre: Number(x.value) * Number(x.type)
+        // com sinal, como no DRE
+      }));
+      res.json({
+        structure,
+        de,
+        ate,
+        meses_historicos: hist.rows.map((h) => h.ref_month),
+        total: itens.reduce((s, i) => s + i.valor_dre, 0),
+        itens
+      });
+    } catch (e) {
+      console.error("[dre-lancamentos]", e.message);
+      res.status(500).json({ error: "Falha ao buscar lan\xE7amentos" });
+    }
+  });
+}
+
+// server.ts
+init_fechamento();
+init_bill_category();
+
 // src/routes/bolao.ts
 import multer from "multer";
 import admin from "firebase-admin";
@@ -3126,9 +3637,14 @@ import Anthropic from "@anthropic-ai/sdk";
 var SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["due_date", "total", "items"],
+  required: ["due_date", "total", "emissor", "items"],
   properties: {
     due_date: { type: ["string", "null"], description: "Data de vencimento da fatura em YYYY-MM-DD" },
+    emissor: {
+      type: "string",
+      enum: ["asaas", "sicredi", "outro"],
+      description: 'Institui\xE7\xE3o que emitiu a fatura, pelo cabe\xE7alho/rodap\xE9 do PDF: "asaas" (ASAAS Gest\xE3o Financeira), "sicredi", ou "outro".'
+    },
     total: { type: ["number", "null"], description: "Valor total da fatura em reais" },
     items: {
       type: "array",
@@ -3159,7 +3675,8 @@ Regras:
 - Datas em YYYY-MM-DD. Quando a fatura mostrar s\xF3 dia/m\xEAs, deduza o ano pelo vencimento da fatura (compras de dezembro numa fatura que vence em janeiro s\xE3o do ano anterior).
 - Se um valor estiver em d\xF3lar e tamb\xE9m em reais, use o valor em reais.
 - Se a fatura separar por portador/cart\xE3o, preencha "card" com o identificador daquele bloco.
-- Devolva lista vazia se o PDF n\xE3o for uma fatura de cart\xE3o.`;
+- Devolva lista vazia se o PDF n\xE3o for uma fatura de cart\xE3o.
+- "emissor": identifique a institui\xE7\xE3o pelo cabe\xE7alho ou rodap\xE9 da fatura.`;
 async function extrairFaturaPDF(pdf, hint) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY n\xE3o configurada no servidor \u2014 necess\xE1ria para ler faturas em PDF.");
@@ -3207,8 +3724,207 @@ ${contexto}` : ""}` }
   return {
     due_date: parsed.due_date && iso.test(parsed.due_date) ? parsed.due_date : null,
     total: typeof parsed.total === "number" ? parsed.total : null,
+    // Valor fora do esperado vira 'outro': nesse caso a importação NÃO bloqueia
+    // (só recusa quando tem certeza de que a aba está errada).
+    emissor: parsed.emissor === "asaas" || parsed.emissor === "sicredi" ? parsed.emissor : "outro",
     items
   };
+}
+
+// src/routes/fatura-versoes.ts
+init_bills();
+init_fechamento();
+import crypto from "crypto";
+var TOLERANCIA_CONFERENCIA = 0.05;
+var cacheExtracao = /* @__PURE__ */ new Map();
+var VALIDADE_CACHE = 30 * 60 * 1e3;
+function hashArquivo(buf) {
+  return crypto.createHash("sha256").update(buf).digest("hex");
+}
+function extracaoGuardada(hash) {
+  const c = cacheExtracao.get(hash);
+  if (!c || Date.now() - c.em > VALIDADE_CACHE) {
+    cacheExtracao.delete(hash);
+    return null;
+  }
+  return c.fatura;
+}
+function guardarExtracao(hash, fatura) {
+  for (const [k, v] of cacheExtracao) if (Date.now() - v.em > VALIDADE_CACHE) cacheExtracao.delete(k);
+  cacheExtracao.set(hash, { fatura, em: Date.now() });
+}
+function conferirFatura(f) {
+  const soma = Math.round(f.items.reduce((s, i) => s + i.amount, 0) * 100) / 100;
+  if (f.total === null || !Number.isFinite(f.total)) {
+    return { status: "sem_total", soma, total_impresso: null, diferenca: null, itens: f.items.length };
+  }
+  const diferenca = Math.round((f.total - soma) * 100) / 100;
+  return {
+    status: Math.abs(diferenca) <= TOLERANCIA_CONFERENCIA ? "ok" : "divergente",
+    soma,
+    total_impresso: f.total,
+    diferenca,
+    itens: f.items.length
+  };
+}
+async function migrateFaturaVersoes(pool) {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fin_card_imports (
+      id SERIAL PRIMARY KEY,
+      account TEXT NOT NULL,
+      billing_month TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      created_by TEXT,
+      file_name TEXT,
+      formato TEXT,
+      itens INT,
+      inserted INT, skipped INT, pruned INT, moved INT,
+      soma NUMERIC, total_impresso NUMERIC,
+      conferencia TEXT,
+      asaas_ids TEXT[] NOT NULL DEFAULT '{}',
+      snapshot JSONB NOT NULL DEFAULT '[]'::jsonb,
+      invoice_snapshot JSONB,
+      undone_at TIMESTAMPTZ,
+      undone_by TEXT
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_fin_card_imports_conta_mes ON fin_card_imports (account, billing_month, id DESC)`);
+}
+async function fotografar(pool, account, month, asaasIds) {
+  const linhas = await pool.query(
+    `SELECT COALESCE(jsonb_agg(to_jsonb(m)), '[]'::jsonb) AS snap
+       FROM fin_movements_asaas m
+      WHERE m.account = $1 AND (m.billing_month = $2 OR m.asaas_id = ANY($3))`,
+    [account, month, asaasIds]
+  );
+  const fatura = await pool.query(
+    `SELECT to_jsonb(i) AS inv FROM fin_sicredi_invoice i WHERE billing_month = $1 AND account = $2`,
+    [month, account]
+  ).catch(() => ({ rows: [] }));
+  return { snapshot: linhas.rows[0].snap, invoice: fatura.rows[0]?.inv || null };
+}
+async function registrarImportacao(pool, d) {
+  const r = await pool.query(
+    `INSERT INTO fin_card_imports (account, billing_month, created_by, file_name, formato, itens, inserted, skipped, pruned, moved,
+                                   soma, total_impresso, conferencia, asaas_ids, snapshot, invoice_snapshot)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id`,
+    [
+      d.account,
+      d.month,
+      d.by,
+      d.fileName,
+      d.formato,
+      d.itens,
+      d.inserted,
+      d.skipped,
+      d.pruned,
+      d.moved,
+      d.conferencia?.soma ?? null,
+      d.conferencia?.total_impresso ?? null,
+      d.conferencia?.status ?? "nao_aplica",
+      d.asaasIds,
+      JSON.stringify(d.snapshot),
+      d.invoice ? JSON.stringify(d.invoice) : null
+    ]
+  );
+  return r.rows[0]?.id ?? null;
+}
+async function colunasMovimentos(c) {
+  const r = await c.query(
+    `SELECT column_name FROM information_schema.columns WHERE table_name = 'fin_movements_asaas' AND column_name <> 'id'`
+  );
+  return r.rows.map((x) => x.column_name);
+}
+function setupFaturaVersoesRoutes(app, pool) {
+  migrateFaturaVersoes(pool).catch((e) => console.error("[fatura-versoes] migrate:", e.message));
+  app.get("/api/fin/cartao/importacoes", async (req, res) => {
+    const account = String(req.query.account || "");
+    const month = String(req.query.month || "");
+    if (!CARD_ACCOUNTS2.includes(account) || !/^[0-9]{4}-[0-9]{2}$/.test(month)) {
+      return res.status(400).json({ error: "account/month inv\xE1lidos" });
+    }
+    try {
+      const r = await pool.query(
+        `SELECT i.id, i.created_at, i.created_by, i.file_name, i.formato, i.itens, i.inserted, i.skipped, i.pruned, i.moved,
+                i.soma, i.total_impresso, i.conferencia, i.undone_at, i.undone_by,
+                -- lan\xE7amentos editados \xE0 m\xE3o DEPOIS desta importa\xE7\xE3o: o desfazer os perderia
+                (SELECT COUNT(*)::int FROM fin_movements_asaas m
+                  WHERE m.account = i.account AND (m.billing_month = i.billing_month OR m.asaas_id = ANY(i.asaas_ids))
+                    AND m.edited_at > i.created_at) AS edicoes_depois
+           FROM fin_card_imports i
+          WHERE i.account = $1 AND i.billing_month = $2
+          ORDER BY i.id DESC LIMIT 10`,
+        [account, month]
+      );
+      const ultimaAtiva = r.rows.find((x) => !x.undone_at)?.id ?? null;
+      res.json({ importacoes: r.rows.map((x) => ({ ...x, pode_desfazer: x.id === ultimaAtiva })) });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+  app.post("/api/fin/cartao/importacoes/:id/desfazer", async (req, res) => {
+    const id = Number(req.params.id);
+    const quem = req.user?.email || null;
+    const c = await pool.connect();
+    try {
+      const imp = (await c.query(`SELECT * FROM fin_card_imports WHERE id = $1`, [id])).rows[0];
+      if (!imp) return res.status(404).json({ error: "Importa\xE7\xE3o n\xE3o encontrada." });
+      if (imp.undone_at) return res.status(409).json({ error: "Esta importa\xE7\xE3o j\xE1 foi desfeita." });
+      if (await mesFechado(pool, imp.billing_month)) return res.status(423).json({ error: msgMesFechado(imp.billing_month) });
+      const maisNova = (await c.query(
+        `SELECT id FROM fin_card_imports WHERE account = $1 AND billing_month = $2 AND undone_at IS NULL ORDER BY id DESC LIMIT 1`,
+        [imp.account, imp.billing_month]
+      )).rows[0];
+      if (maisNova && maisNova.id !== id) {
+        return res.status(409).json({ error: "Desfa\xE7a primeiro a importa\xE7\xE3o mais recente deste m\xEAs." });
+      }
+      await c.query("BEGIN");
+      const cols = await colunasMovimentos(c);
+      const alvo = `m.account = $1 AND (m.billing_month = $2 OR m.asaas_id = ANY($3))`;
+      const novas = await c.query(
+        `SELECT m.id FROM fin_movements_asaas m
+          WHERE ${alvo} AND m.id NOT IN (SELECT (e->>'id')::int FROM jsonb_array_elements($4::jsonb) e)`,
+        [imp.account, imp.billing_month, imp.asaas_ids, JSON.stringify(imp.snapshot)]
+      );
+      const idsNovas = novas.rows.map((x) => x.id);
+      if (idsNovas.length) {
+        const ref = await c.query(`SELECT COUNT(*)::int n FROM fin_recurring_bill_entries WHERE movement_asaas_id = ANY($1)`, [idsNovas]);
+        if (ref.rows[0].n > 0) {
+          await c.query("ROLLBACK");
+          return res.status(409).json({ error: `${ref.rows[0].n} lan\xE7amento(s) desta importa\xE7\xE3o j\xE1 est\xE3o vinculados a contas recorrentes. Desvincule antes de desfazer.` });
+        }
+        await c.query(`DELETE FROM fin_movements_asaas WHERE id = ANY($1)`, [idsNovas]);
+      }
+      const lista = cols.map((k) => `"${k}"`).join(", ");
+      const sets = cols.map((k) => `"${k}" = EXCLUDED."${k}"`).join(", ");
+      const up = await c.query(
+        `INSERT INTO fin_movements_asaas (id, ${lista})
+         SELECT id, ${lista} FROM jsonb_populate_recordset(NULL::fin_movements_asaas, $1::jsonb)
+         ON CONFLICT (id) DO UPDATE SET ${sets}`,
+        [JSON.stringify(imp.snapshot)]
+      );
+      if (imp.invoice_snapshot) {
+        await c.query(
+          `UPDATE fin_sicredi_invoice SET payment_date = ($3::jsonb->>'payment_date')::date, updated_at = NOW()
+            WHERE billing_month = $1 AND account = $2`,
+          [imp.billing_month, imp.account, JSON.stringify(imp.invoice_snapshot)]
+        );
+      } else {
+        await c.query(`DELETE FROM fin_sicredi_invoice WHERE billing_month = $1 AND account = $2`, [imp.billing_month, imp.account]);
+      }
+      await c.query(`UPDATE fin_card_imports SET undone_at = NOW(), undone_by = $2 WHERE id = $1`, [id, quem]);
+      await c.query("COMMIT");
+      await syncSicrediBillEntry(pool, imp.billing_month, imp.account).catch(() => {
+      });
+      res.json({ ok: true, removidas: idsNovas.length, restauradas: up.rowCount || 0 });
+    } catch (e) {
+      await c.query("ROLLBACK").catch(() => {
+      });
+      console.error("[fatura-versoes] desfazer:", e.message);
+      res.status(500).json({ error: "Falha ao desfazer: " + e.message });
+    } finally {
+      c.release();
+    }
+  });
 }
 
 // src/routes/cursos.ts
@@ -3614,14 +4330,14 @@ function setupCursosRoutes(app, pool) {
 // src/routes/estudio.ts
 import multer2 from "multer";
 import admin2 from "firebase-admin";
-import crypto2 from "crypto";
+import crypto3 from "crypto";
 
 // src/routes/estudio-mix.ts
 import { spawn } from "child_process";
 import { promises as fs, existsSync } from "fs";
 import os from "os";
 import path from "path";
-import crypto from "crypto";
+import crypto2 from "crypto";
 function binarioFfmpeg() {
   const doEnv = (process.env.FFMPEG_PATH || "").trim();
   if (doEnv) return doEnv;
@@ -3646,7 +4362,7 @@ function rodar(args) {
   });
 }
 async function comPastaTemp(fn) {
-  const dir = path.join(os.tmpdir(), `estudio-mix-${crypto.randomUUID()}`);
+  const dir = path.join(os.tmpdir(), `estudio-mix-${crypto2.randomUUID()}`);
   await fs.mkdir(dir, { recursive: true });
   try {
     return await fn(dir);
@@ -3743,7 +4459,7 @@ async function papel(pool, email) {
   const r = await pool.query("SELECT role FROM users WHERE LOWER(email) = $1", [email]);
   return String(r.rows[0]?.role || "");
 }
-var ehSuperadmin = (role) => role === "superadmin";
+var ehSuperadmin2 = (role) => role === "superadmin";
 var veSaldoDaConta = (role) => role === "superadmin" || role === "diretor-operacional";
 async function migrateEstudio(pool) {
   await pool.query(`CREATE SCHEMA IF NOT EXISTS estudio`);
@@ -4016,7 +4732,7 @@ async function modeloGeminiFlash(apiKey) {
 async function guardarNoStorage(caminho, dados, contentType) {
   const bucket = admin2.storage().bucket();
   const blob = bucket.file(caminho);
-  const token = crypto2.randomUUID();
+  const token = crypto3.randomUUID();
   await blob.save(dados, { metadata: { contentType, metadata: { firebaseStorageDownloadTokens: token } } });
   return `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(caminho)}?alt=media&token=${token}`;
 }
@@ -4096,7 +4812,7 @@ function setupEstudioRoutes(app, pool) {
   app.post("/api/estudio/vozes/clonar", uploadVoz.single("audio"), async (req, res) => {
     try {
       const { role } = await ctx(req);
-      if (!ehSuperadmin(role)) return res.status(403).json({ error: "Apenas o super admin." });
+      if (!ehSuperadmin2(role)) return res.status(403).json({ error: "Apenas o super admin." });
       const chave = (process.env.MINIMAX_API_KEY || "").trim();
       const grupo = (process.env.MINIMAX_GROUP_ID || "").trim();
       if (!chave) return res.status(503).json({ error: "MINIMAX_API_KEY n\xE3o configurada no servidor." });
@@ -4236,7 +4952,7 @@ function setupEstudioRoutes(app, pool) {
   app.get("/api/estudio/config", async (req, res) => {
     try {
       const { role } = await ctx(req);
-      if (!ehSuperadmin(role)) return res.status(403).json({ error: "Apenas o super admin." });
+      if (!ehSuperadmin2(role)) return res.status(403).json({ error: "Apenas o super admin." });
       const tipos = await pool.query(`SELECT * FROM estudio.copy_types ORDER BY ordem, name`);
       const vozes = await pool.query(`SELECT * FROM estudio.voices ORDER BY ordem, name`);
       const avatares = await pool.query(`SELECT * FROM estudio.avatars ORDER BY ordem, name`);
@@ -4278,7 +4994,7 @@ function setupEstudioRoutes(app, pool) {
   });
   app.put("/api/estudio/config", async (req, res) => {
     const { role } = await ctx(req);
-    if (!ehSuperadmin(role)) return res.status(403).json({ error: "Apenas o super admin." });
+    if (!ehSuperadmin2(role)) return res.status(403).json({ error: "Apenas o super admin." });
     const {
       tipos = [],
       vozes = [],
@@ -4502,7 +5218,7 @@ function setupEstudioRoutes(app, pool) {
   app.post("/api/estudio/vozes/:id/previa", async (req, res) => {
     try {
       const { role } = await ctx(req);
-      if (!ehSuperadmin(role)) return res.status(403).json({ error: "Apenas o super admin." });
+      if (!ehSuperadmin2(role)) return res.status(403).json({ error: "Apenas o super admin." });
       const chave = (process.env.MINIMAX_API_KEY || "").trim();
       if (!chave) return res.status(503).json({ error: "MINIMAX_API_KEY n\xE3o configurada no servidor." });
       const grupo = (process.env.MINIMAX_GROUP_ID || "").trim();
@@ -5374,7 +6090,7 @@ function loadFirebasePrivateKey() {
   const norm = (k) => (k || "").trim().replace(/^["']|["']$/g, "").replace(/\\r\\n/g, "\n").replace(/\\\\n/g, "\n").replace(/\\n/g, "\n").replace(/\\r/g, "");
   const isValid = (k) => {
     try {
-      crypto3.createPrivateKey(k);
+      crypto4.createPrivateKey(k);
       return true;
     } catch {
       return false;
@@ -5496,7 +6212,7 @@ async function verifyFirebaseToken(token) {
   }
   const signatureInput = parts[0] + "." + parts[1];
   const signature = Buffer.from(parts[2], "base64url");
-  const verify = crypto3.createVerify("RSA-SHA256");
+  const verify = crypto4.createVerify("RSA-SHA256");
   verify.update(signatureInput);
   const valid = verify.verify(publicKey, signature);
   if (!valid) throw new Error("Assinatura JWT inv\xE1lida");
@@ -5548,17 +6264,17 @@ var clientAuthSecret = null;
 var b64url = (buf) => buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 var b64urlToBuf = (s) => Buffer.from(s.replace(/-/g, "+").replace(/_/g, "/"), "base64");
 function hashPassword(pw) {
-  const salt = crypto3.randomBytes(16).toString("hex");
-  const hash = crypto3.scryptSync(pw, salt, 64).toString("hex");
+  const salt = crypto4.randomBytes(16).toString("hex");
+  const hash = crypto4.scryptSync(pw, salt, 64).toString("hex");
   return `${salt}:${hash}`;
 }
 function verifyPassword(pw, stored) {
   try {
     const [salt, hash] = String(stored).split(":");
     if (!salt || !hash) return false;
-    const h = crypto3.scryptSync(pw, salt, 64);
+    const h = crypto4.scryptSync(pw, salt, 64);
     const hb = Buffer.from(hash, "hex");
-    return h.length === hb.length && crypto3.timingSafeEqual(h, hb);
+    return h.length === hb.length && crypto4.timingSafeEqual(h, hb);
   } catch {
     return false;
   }
@@ -5566,7 +6282,7 @@ function verifyPassword(pw, stored) {
 function signClientToken(payload) {
   if (!clientAuthSecret) throw new Error("clientAuthSecret ausente");
   const body = b64url(Buffer.from(JSON.stringify(payload)));
-  const sig = b64url(crypto3.createHmac("sha256", clientAuthSecret).update(body).digest());
+  const sig = b64url(crypto4.createHmac("sha256", clientAuthSecret).update(body).digest());
   return `${body}.${sig}`;
 }
 function verifyClientToken(token) {
@@ -5574,9 +6290,9 @@ function verifyClientToken(token) {
     if (!clientAuthSecret || !token || token.indexOf(".") < 0) return null;
     const [body, sig] = token.split(".");
     if (!body || !sig) return null;
-    const expected = b64url(crypto3.createHmac("sha256", clientAuthSecret).update(body).digest());
+    const expected = b64url(crypto4.createHmac("sha256", clientAuthSecret).update(body).digest());
     const a = Buffer.from(sig), b = Buffer.from(expected);
-    if (a.length !== b.length || !crypto3.timingSafeEqual(a, b)) return null;
+    if (a.length !== b.length || !crypto4.timingSafeEqual(a, b)) return null;
     const payload = JSON.parse(b64urlToBuf(body).toString("utf8"));
     if (payload.typ !== "client") return null;
     if (payload.exp && Date.now() / 1e3 > payload.exp) return null;
@@ -5748,8 +6464,8 @@ async function startServer() {
   function encryptToken(plainText) {
     if (!TOKEN_ENCRYPTION_KEY) throw new Error("TOKEN_ENCRYPTION_KEY not configured");
     const key = Buffer.from(TOKEN_ENCRYPTION_KEY, "hex");
-    const iv = crypto3.randomBytes(12);
-    const cipher = crypto3.createCipheriv("aes-256-gcm", key, iv);
+    const iv = crypto4.randomBytes(12);
+    const cipher = crypto4.createCipheriv("aes-256-gcm", key, iv);
     const encrypted = Buffer.concat([cipher.update(plainText, "utf8"), cipher.final()]);
     const authTag = cipher.getAuthTag();
     return `${iv.toString("hex")}:${authTag.toString("hex")}:${encrypted.toString("hex")}`;
@@ -5758,7 +6474,7 @@ async function startServer() {
     if (!TOKEN_ENCRYPTION_KEY) throw new Error("TOKEN_ENCRYPTION_KEY not configured");
     const [ivHex, authTagHex, ciphertextHex] = encryptedStr.split(":");
     const key = Buffer.from(TOKEN_ENCRYPTION_KEY, "hex");
-    const decipher = crypto3.createDecipheriv("aes-256-gcm", key, Buffer.from(ivHex, "hex"));
+    const decipher = crypto4.createDecipheriv("aes-256-gcm", key, Buffer.from(ivHex, "hex"));
     decipher.setAuthTag(Buffer.from(authTagHex, "hex"));
     return decipher.update(ciphertextHex, "hex", "utf8") + decipher.final("utf8");
   }
@@ -7592,7 +8308,7 @@ async function startServer() {
     if (sec.rows[0]?.value) {
       clientAuthSecret = sec.rows[0].value;
     } else {
-      const gen = crypto3.randomBytes(48).toString("hex");
+      const gen = crypto4.randomBytes(48).toString("hex");
       await pool.query(`INSERT INTO app_secrets (key, value) VALUES ('client_auth', $1) ON CONFLICT (key) DO NOTHING`, [gen]);
       const re = await pool.query(`SELECT value FROM app_secrets WHERE key = 'client_auth'`);
       clientAuthSecret = re.rows[0]?.value || gen;
@@ -7874,7 +8590,7 @@ async function startServer() {
       if (!row.rows[0]) return res.status(404).json({ error: "Solicita\xE7\xE3o n\xE3o encontrada." });
       const proj = await pool.query("SELECT partner FROM projects WHERE id = $1", [req.portalProjectId]);
       const existing = Array.isArray(row.rows[0].comments) ? row.rows[0].comments : [];
-      const comment = { id: crypto3.randomUUID(), author: proj.rows[0]?.partner || "Cliente", authorType: "client", text: String(text).trim(), createdAt: (/* @__PURE__ */ new Date()).toISOString() };
+      const comment = { id: crypto4.randomUUID(), author: proj.rows[0]?.partner || "Cliente", authorType: "client", text: String(text).trim(), createdAt: (/* @__PURE__ */ new Date()).toISOString() };
       const merged = [...existing, comment];
       await pool.query("UPDATE project_requests SET comments = $1 WHERE id = $2", [JSON.stringify(merged), req.params.id]);
       res.status(201).json(comment);
@@ -7898,7 +8614,7 @@ async function startServer() {
         if (firebaseAdminReady) {
           const bucket = admin3.storage().bucket();
           const blob = bucket.file(path3);
-          const token = crypto3.randomUUID();
+          const token = crypto4.randomUUID();
           await blob.save(f.buffer, { metadata: { contentType: f.mimetype, metadata: { firebaseStorageDownloadTokens: token } } });
           url = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(path3)}?alt=media&token=${token}`;
         } else {
@@ -8199,7 +8915,7 @@ async function startServer() {
       const row = await pool.query("SELECT comments FROM project_requests WHERE id = $1", [req.params.id]);
       if (!row.rows[0]) return res.status(404).json({ error: "Solicita\xE7\xE3o n\xE3o encontrada." });
       const existing = Array.isArray(row.rows[0].comments) ? row.rows[0].comments : [];
-      const comment = { id: crypto3.randomUUID(), author: author || "Equipe Grape", authorType: "team", text: String(text).trim(), createdAt: (/* @__PURE__ */ new Date()).toISOString() };
+      const comment = { id: crypto4.randomUUID(), author: author || "Equipe Grape", authorType: "team", text: String(text).trim(), createdAt: (/* @__PURE__ */ new Date()).toISOString() };
       const merged = [...existing, comment];
       await pool.query("UPDATE project_requests SET comments = $1 WHERE id = $2", [JSON.stringify(merged), req.params.id]);
       res.status(201).json(comment);
@@ -9185,7 +9901,7 @@ async function startServer() {
       const a = req.body || {};
       if (!a.nome || !String(a.nome).trim()) return res.status(400).json({ error: "Nome da a\xE7\xE3o \xE9 obrigat\xF3rio." });
       if (!a.nicho) return res.status(400).json({ error: "Nicho \xE9 obrigat\xF3rio." });
-      const id = String(a.id || crypto3.randomUUID());
+      const id = String(a.id || crypto4.randomUUID());
       const r = await pool.query(
         `INSERT INTO playbook_acoes
            (id, nicho, nome, status, custo_lead_min, custo_lead_max, custo_lead_medio,
@@ -9232,7 +9948,7 @@ async function startServer() {
             cac_min, cac_max, contratos_min, contratos_max, observacoes)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
         [
-          crypto3.randomUUID(),
+          crypto4.randomUUID(),
           id,
           old.updated_at || /* @__PURE__ */ new Date(),
           old.status,
@@ -9448,7 +10164,7 @@ async function startServer() {
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
            ON CONFLICT (id) DO NOTHING`,
           [
-            String(a.id || crypto3.randomUUID()),
+            String(a.id || crypto4.randomUUID()),
             a.nicho,
             String(a.nome).trim(),
             a.status || "a_testar",
@@ -10570,7 +11286,7 @@ async function startServer() {
         const finalPageId = page_id || null;
         const insertedRows = [];
         for (let i = 0; i < DEFAULT_SECTIONS.length; i++) {
-          const newId = crypto3.randomUUID();
+          const newId = crypto4.randomUUID();
           const ins = await pool.query(
             `INSERT INTO todo_sections (id, project_id, page_id, name, is_default, order_index)
              VALUES ($1, $2, $3, $4, true, $5) RETURNING *`,
@@ -10592,7 +11308,7 @@ async function startServer() {
       const { project_id, page_id, name, is_fixed, is_default, order_index } = req.body;
       console.log("[TODO-SECTIONS POST] body:", { project_id, page_id, name, is_default, order_index });
       if (!project_id || !name) return res.status(400).json({ error: "project_id and name required" });
-      const newId = crypto3.randomUUID();
+      const newId = crypto4.randomUUID();
       const finalPageId = page_id || null;
       const result = await pool.query(
         `INSERT INTO todo_sections (id, project_id, page_id, name, is_default, order_index) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
@@ -10678,7 +11394,7 @@ async function startServer() {
       if (firebaseAdminReady) {
         const bucket = admin3.storage().bucket();
         const blob = bucket.file(fileName);
-        const token = crypto3.randomUUID();
+        const token = crypto4.randomUUID();
         await blob.save(file.buffer, {
           metadata: { contentType: file.mimetype, metadata: { firebaseStorageDownloadTokens: token } }
         });
@@ -11951,7 +12667,20 @@ async function startServer() {
       const faturamento_total = recebido + a_receber;
       const despesas_total = pago + a_pagar;
       const saldo_periodo = recebido - pago;
-      const previsto_fim_mes = saldo_caixa + a_receber - a_pagar;
+      let ponte = 0;
+      const hojeIso = new Date(Date.now() - (/* @__PURE__ */ new Date()).getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
+      if (inicio > hojeIso) {
+        const pr = await pool.query(`
+          SELECT
+            (SELECT COALESCE(SUM(value), 0) FROM fin_receivables
+              WHERE due_date >= $1 AND due_date < $2 AND status IN ('Pendente', 'PENDING')
+                AND COALESCE((raw_json->>'anticipated')::boolean, false) = false) AS receber,
+            (SELECT COALESCE(SUM(expected_value), 0) FROM fin_bill_entries
+              WHERE due_date >= $1 AND due_date < $2 AND status NOT IN ('paid', 'cancelled')) AS pagar
+        `, [hojeIso, inicio]);
+        ponte = parseFloat(pr.rows[0].receber) - parseFloat(pr.rows[0].pagar);
+      }
+      const previsto_fim_mes = saldo_caixa + ponte + a_receber - a_pagar;
       res.json({
         // Novos campos
         saldo_caixa,
@@ -12022,7 +12751,7 @@ async function startServer() {
            FROM fin_movements_asaas m JOIN fin_categories c ON c.id = m.custom_category_id
            WHERE m.is_anticipation_pair = false AND m.is_reversed_pair = false
              AND ((m.account='asaas' AND to_char(m.transaction_date,'YYYY-MM') = $1)
-               OR (m.account = ANY('{${CARD_ACCOUNTS.join(",")}}') AND m.billing_month = $1))
+               OR (m.account = ANY('{${CARD_ACCOUNTS2.join(",")}}') AND m.billing_month = $1))
            GROUP BY c.structure`,
           [month]
         );
@@ -12038,7 +12767,7 @@ async function startServer() {
           `SELECT COALESCE(SUM(m.value::numeric * m.type),0) AS val FROM fin_movements_asaas m
            WHERE m.is_anticipation_pair = false AND m.is_reversed_pair = false AND m.custom_category_id IS NULL
              AND ((m.account='asaas' AND to_char(m.transaction_date,'YYYY-MM') = $1)
-               OR (m.account = ANY('{${CARD_ACCOUNTS.join(",")}}') AND m.billing_month = $1))`,
+               OR (m.account = ANY('{${CARD_ACCOUNTS2.join(",")}}') AND m.billing_month = $1))`,
           [month]
         );
         liveSemCat[month] = parseFloat(semcat.rows[0].val) || 0;
@@ -12233,7 +12962,6 @@ async function startServer() {
         FROM fin_movements_asaas
         WHERE account = 'asaas' AND transaction_date >= $1
           AND is_anticipation_pair = false AND is_reversed_pair = false
-          AND LOWER(COALESCE(custom_category, '')) NOT IN ('transferencia entre contas', 'transfer\xEAncia entre contas')
       `, [fim]);
       const netAposMes = parseFloat(netAposRes.rows[0].net);
       const netMesRes = await pool.query(`
@@ -12244,7 +12972,6 @@ async function startServer() {
         WHERE account = 'asaas'
           AND transaction_date >= $1 AND transaction_date < $2
           AND is_anticipation_pair = false AND is_reversed_pair = false
-          AND LOWER(COALESCE(custom_category, '')) NOT IN ('transferencia entre contas', 'transfer\xEAncia entre contas')
       `, [inicio, fim]);
       const netMes = parseFloat(netMesRes.rows[0].net);
       let saldoAnterior = saldoAtual - netMes - netAposMes;
@@ -12254,6 +12981,7 @@ async function startServer() {
           SELECT COALESCE(SUM(value), 0) as val
           FROM fin_receivables
           WHERE due_date >= $1 AND due_date < $2 AND status IN ('Pendente', 'PENDING')
+            AND COALESCE((raw_json->>'anticipated')::boolean, false) = false
         `, [todayIso, inicio]);
         const prevSaiAteInicioRes = await pool.query(`
           SELECT COALESCE(SUM(e.expected_value), 0) as val
@@ -12264,15 +12992,24 @@ async function startServer() {
         saldoAnterior += parseFloat(prevEntAteInicioRes.rows[0].val) - parseFloat(prevSaiAteInicioRes.rows[0].val);
       }
       const realizadoRes = await pool.query(`
+        WITH m AS (
+          -- entre contas = categoria 99 do plano (ou o nome antigo gravado em texto)
+          SELECT fm.*,
+                 ((c.structure = '99' OR LOWER(COALESCE(fm.custom_category, '')) IN ('transferencia entre contas', 'transfer\xEAncia entre contas'))
+                  AND fm.transaction_type IS DISTINCT FROM 'ASAAS_CARD_BILL_PAYMENT') AS entre_contas
+          FROM fin_movements_asaas fm
+          LEFT JOIN fin_categories c ON c.id = fm.custom_category_id
+          WHERE fm.account = 'asaas'
+            AND fm.transaction_date >= $1 AND fm.transaction_date < $2
+            AND fm.is_anticipation_pair = false AND fm.is_reversed_pair = false
+        )
         SELECT
           TO_CHAR(transaction_date, 'DD/MM') AS dia,
           EXTRACT(DAY FROM transaction_date) AS dia_numero,
-          COALESCE(SUM(CASE WHEN type = 1  AND is_anticipation_pair = false AND is_reversed_pair = false THEN value ELSE 0 END), 0) AS entradas_realizadas,
-          COALESCE(SUM(CASE WHEN type = -1 AND is_anticipation_pair = false AND is_reversed_pair = false THEN value ELSE 0 END), 0) AS saidas_realizadas
-        FROM fin_movements_asaas
-        WHERE account = 'asaas'
-          AND transaction_date >= $1 AND transaction_date < $2
-          AND LOWER(COALESCE(custom_category, '')) NOT IN ('transferencia entre contas', 'transfer\xEAncia entre contas')
+          COALESCE(SUM(CASE WHEN type = 1  AND NOT entre_contas THEN value ELSE 0 END), 0) AS entradas_realizadas,
+          COALESCE(SUM(CASE WHEN type = -1 AND NOT entre_contas THEN value ELSE 0 END), 0) AS saidas_realizadas,
+          COALESCE(SUM(CASE WHEN entre_contas THEN (CASE WHEN type = 1 THEN value ELSE -value END) ELSE 0 END), 0) AS transferencias
+        FROM m
         GROUP BY transaction_date
         ORDER BY transaction_date
       `, [inicio, fim]);
@@ -12282,6 +13019,7 @@ async function startServer() {
         FROM fin_receivables
         WHERE due_date >= $1 AND due_date < $2
           AND status IN ('Pendente', 'PENDING')
+          AND COALESCE((raw_json->>'anticipated')::boolean, false) = false   -- antecipado j\xE1 entrou no caixa
         GROUP BY due_date
       `, [inicio, fim]);
       const prevSaiRes = await pool.query(`
@@ -12295,7 +13033,7 @@ async function startServer() {
       `, [inicio, fim]);
       const dayMap = {};
       for (const r of realizadoRes.rows) {
-        dayMap[r.dia] = { dia: r.dia, dia_numero: parseInt(r.dia_numero), entradas_realizadas: parseFloat(r.entradas_realizadas), saidas_realizadas: parseFloat(r.saidas_realizadas), entradas_previstas: 0, saidas_previstas: 0, tem_realizado: true };
+        dayMap[r.dia] = { dia: r.dia, dia_numero: parseInt(r.dia_numero), entradas_realizadas: parseFloat(r.entradas_realizadas), saidas_realizadas: parseFloat(r.saidas_realizadas), transferencias: parseFloat(r.transferencias), entradas_previstas: 0, saidas_previstas: 0, tem_realizado: true };
       }
       for (const p of prevEntRes.rows) {
         if (!dayMap[p.dia]) dayMap[p.dia] = { dia: p.dia, dia_numero: parseInt(p.dia.split("/")[0]), entradas_realizadas: 0, saidas_realizadas: 0, entradas_previstas: 0, saidas_previstas: 0, tem_realizado: false };
@@ -12523,14 +13261,14 @@ async function startServer() {
         const itemMonth = dateStr.slice(0, 7);
         if (itemMonth === currentMonthKey) totalMesAtual += val;
       }
-      const MESES = ["Janeiro", "Fevereiro", "Mar\xE7o", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+      const MESES2 = ["Janeiro", "Fevereiro", "Mar\xE7o", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
       const itemsByMonth = {};
       for (const item of items) {
         const dateStr = getYYYYMMDD(item.due_date);
         const [y, mo] = dateStr.split("-").map(Number);
         const key = dateStr.slice(0, 7);
         if (!itemsByMonth[key]) {
-          itemsByMonth[key] = { label: `${MESES[mo - 1]} ${y}`, total: 0, items: [] };
+          itemsByMonth[key] = { label: `${MESES2[mo - 1]} ${y}`, total: 0, items: [] };
         }
         const val = parseFloat(item.value) || 0;
         itemsByMonth[key].total += val;
@@ -13047,7 +13785,14 @@ async function startServer() {
         "RECEIVABLE_ANTICIPATION_DEBIT": "Antecipa\xE7\xE3o D\xE9bito",
         "PAYMENT_REVERSAL": "Estorno"
       };
-      const queryParams = [inicio, fim];
+      const contaPedida = String(req.query.account || "asaas");
+      const incluiAsaas = contaPedida === "all" || contaPedida === "asaas";
+      const cartoes = contaPedida === "all" ? [...CARD_ACCOUNTS2] : CARD_ACCOUNTS2.includes(contaPedida) ? [contaPedida] : [];
+      const mesIni = inicio.slice(0, 7);
+      const ultimoDia = new Date(fim);
+      ultimoDia.setDate(ultimoDia.getDate() - 1);
+      const mesFim = ultimoDia.toISOString().slice(0, 7);
+      const queryParams = [inicio, fim, incluiAsaas, cartoes, mesIni, mesFim];
       const result = await pool.query(`
         SELECT
           id,
@@ -13068,11 +13813,12 @@ async function startServer() {
           is_anticipation_pair,
           is_reversed_pair,
           account,
+          billing_month,
           COALESCE(custom_description, description) AS display_description,
           COALESCE(custom_category, grapehub_category) AS display_category
         FROM fin_movements_asaas
-        WHERE account = 'asaas'
-          AND transaction_date >= $1 AND transaction_date < $2
+        WHERE ((account = 'asaas' AND $3::boolean AND transaction_date >= $1 AND transaction_date < $2)
+            OR (account = ANY($4::text[]) AND billing_month BETWEEN $5 AND $6))
           AND LOWER(COALESCE(custom_category, '')) NOT IN ('transferencia entre contas', 'transfer\xEAncia entre contas')
         ORDER BY transaction_date DESC, id DESC
       `, queryParams);
@@ -13127,7 +13873,9 @@ async function startServer() {
           edited_by: r.edited_by || null,
           is_anticipation_pair: r.is_anticipation_pair || false,
           is_reversed_pair: r.is_reversed_pair || false,
-          account: r.account || "asaas"
+          account: r.account || "asaas",
+          billing_month: r.billing_month || null,
+          transaction_type: r.transaction_type || null
         };
       });
       res.json(rows);
@@ -13149,7 +13897,7 @@ async function startServer() {
   app.post("/api/financeiro/extrato/importar-ofx", express.json({ limit: "15mb" }), async (req, res) => {
     try {
       const account = req.body.account || "sicredi";
-      const isCard = CARD_ACCOUNTS.includes(account);
+      const isCard = CARD_ACCOUNTS2.includes(account);
       const billingMonth = req.body.billing_month || null;
       const paymentDate = typeof req.body.payment_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.body.payment_date) ? req.body.payment_date : null;
       let effectiveBillingMonth = paymentDate ? paymentDate.slice(0, 7) : billingMonth;
@@ -13171,9 +13919,31 @@ async function startServer() {
       const isPDF = fileName.endsWith(".pdf") || (fileBuf ? fileBuf.subarray(0, 5).toString("latin1") === "%PDF-" : false);
       const isCSV = !isPDF && (fileName.endsWith(".csv") || !fileName.endsWith(".ofx") && content.includes(";"));
       const transactions = [];
+      let conferencia = null;
       if (isPDF) {
         if (!fileBuf) return res.status(400).json({ error: "PDF precisa ser enviado em base64 (fileData)." });
-        const fatura = await extrairFaturaPDF(fileBuf, { billingMonth, fileName: req.body.fileName || "" });
+        const hash = hashArquivo(fileBuf);
+        const forcar = req.body.forcar_conferencia === true;
+        let fatura = forcar ? extracaoGuardada(hash) : null;
+        if (!fatura) {
+          fatura = await extrairFaturaPDF(fileBuf, { billingMonth, fileName: req.body.fileName || "" });
+          guardarExtracao(hash, fatura);
+        }
+        const abaEsperada = { asaas: "asaas_cartao", sicredi: "sicredi" };
+        const contaDoPdf = abaEsperada[fatura.emissor];
+        if (contaDoPdf && contaDoPdf !== account) {
+          const nome = fatura.emissor === "asaas" ? "Asaas" : "Sicredi";
+          return res.status(400).json({
+            error: `Este PDF \xE9 uma fatura do ${nome}. Selecione a aba ${nome} e envie de novo.`
+          });
+        }
+        conferencia = conferirFatura(fatura);
+        if (conferencia.status === "divergente" && !forcar) {
+          return res.status(409).json({
+            error: "A soma dos lan\xE7amentos lidos n\xE3o bate com o total da fatura.",
+            conferencia
+          });
+        }
         if (fatura.due_date) {
           detectedDueDate = fatura.due_date;
           if (!paymentDate) {
@@ -13198,7 +13968,7 @@ async function startServer() {
           const key = `${t.dtposted}_${t.memo}_${t.trnamt.toFixed(2)}_${t.card || ""}`;
           const n = occPdf.get(key) || 0;
           occPdf.set(key, n + 1);
-          t.fitid = crypto3.createHash("md5").update(`${key}_${n}`).digest("hex").slice(0, 16);
+          t.fitid = crypto4.createHash("md5").update(`${key}_${n}`).digest("hex").slice(0, 16);
         }
       } else if (isCSV) {
         const lines = content.split(/\r?\n/);
@@ -13305,7 +14075,7 @@ async function startServer() {
           const key = `${t.dtposted}_${t.memo}_${t.trnamt.toFixed(2)}_${t.card || ""}`;
           const n = occ.get(key) || 0;
           occ.set(key, n + 1);
-          t.fitid = crypto3.createHash("md5").update(`${key}_${n}`).digest("hex").slice(0, 16);
+          t.fitid = crypto4.createHash("md5").update(`${key}_${n}`).digest("hex").slice(0, 16);
         }
       } else {
         const trnRegex = /<STMTTRN>[\s\S]*?<\/STMTTRN>/gi;
@@ -13343,6 +14113,11 @@ async function startServer() {
         ).catch(() => ({ rows: [{ n: 0 }] }));
         moved = mv.rows[0]?.n || 0;
       }
+      const idsDoArquivo = transactions.map((t) => `${account}_${t.fitid}`);
+      if (isCard && effectiveBillingMonth && await mesFechado(pool, effectiveBillingMonth)) {
+        return res.status(423).json({ error: msgMesFechado(effectiveBillingMonth), mes_fechado: effectiveBillingMonth });
+      }
+      const foto = isCard && effectiveBillingMonth ? await fotografar(pool, account, effectiveBillingMonth, idsDoArquivo) : null;
       for (const tx of transactions) {
         const asaasId = `${account}_${tx.fitid}`;
         const type = tx.trnamt >= 0 ? 1 : -1;
@@ -13390,7 +14165,31 @@ async function startServer() {
       } catch (e) {
         console.warn("[categorizar] p\xF3s-import:", e.message);
       }
+      let importacaoId = null;
+      if (foto && effectiveBillingMonth) {
+        importacaoId = await registrarImportacao(pool, {
+          account,
+          month: effectiveBillingMonth,
+          by: req.user?.email || null,
+          fileName: req.body.fileName || fileName,
+          formato: isPDF ? "pdf" : isCSV ? "csv" : "ofx",
+          itens: transactions.length,
+          inserted,
+          skipped,
+          pruned,
+          moved,
+          conferencia,
+          asaasIds: idsDoArquivo,
+          snapshot: foto.snapshot,
+          invoice: foto.invoice
+        }).catch((e) => {
+          console.error("[fatura-versoes] registrar:", e.message);
+          return null;
+        });
+      }
       res.json({
+        importacao_id: importacaoId,
+        conferencia,
         inserted,
         skipped,
         pruned,
@@ -13410,6 +14209,10 @@ async function startServer() {
     try {
       const { id } = req.params;
       const { custom_description, custom_category, custom_category_id, user_comment, edited_by } = req.body;
+      if (custom_category_id !== void 0 || custom_category !== void 0) {
+        const fechado = await mesFechadoDoLancamento(pool, id);
+        if (fechado) return res.status(423).json({ error: msgMesFechado(fechado), mes_fechado: fechado });
+      }
       const setClauses = [];
       const values = [];
       let paramIdx = 1;
@@ -13458,6 +14261,8 @@ async function startServer() {
     try {
       const { id } = req.params;
       const { category, category_id } = req.body;
+      const fechado = await mesFechadoDoLancamento(pool, id);
+      if (fechado) return res.status(423).json({ error: msgMesFechado(fechado), mes_fechado: fechado });
       const chk = await pool.query(
         `SELECT (transaction_date >= $2) AS is_forward FROM fin_movements_asaas WHERE id = $1`,
         [id, EXTRATO_DRE_SYNC_CUTOFF]
@@ -13686,6 +14491,7 @@ async function startServer() {
       UPDATE fin_movements_asaas
       SET is_anticipation_pair = false AND is_reversed_pair = false
       WHERE is_anticipation_pair = true
+        AND ${foraDeMesFechado()}
       RETURNING id
     `);
     const reset = resetResult.rowCount || 0;
@@ -13715,6 +14521,7 @@ async function startServer() {
             edited_by = 'conciliacao-auto'
         WHERE id IN ($1, $2)
           AND transaction_type != 'RECEIVABLE_ANTICIPATION'
+          AND ${foraDeMesFechado()}
         RETURNING id
       `, [pair.cobranca_id, pair.baixa_id]);
       updated += result.rowCount || 0;
@@ -13729,6 +14536,7 @@ async function startServer() {
           edited_by = 'conciliacao-auto'
       WHERE (description ILIKE 'Baixa da antecipacao%' OR description ILIKE 'Baixa da antecipa\xE7\xE3o%')
         AND is_anticipation_pair = false AND is_reversed_pair = false
+        AND ${foraDeMesFechado()}
         AND transaction_type != 'RECEIVABLE_ANTICIPATION'
       RETURNING id
     `);
@@ -13822,6 +14630,7 @@ async function startServer() {
                edited_by = 'regra-auto'
            WHERE is_anticipation_pair = false AND is_reversed_pair = false
              AND fin_unaccent(description) ILIKE fin_unaccent($1)
+             AND ${foraDeMesFechado()}
            RETURNING id`,
           [pattern, rule.category_name, rule.category_id]
         );
@@ -13847,6 +14656,7 @@ async function startServer() {
         WHERE custom_category IS NULL
           AND (grapehub_category IS NULL OR grapehub_category = '')
           AND is_anticipation_pair = false AND is_reversed_pair = false
+          AND ${foraDeMesFechado()}
       `);
       const pending = parseInt(pendingCheck.rows[0].count);
       if (pending === 0) {
@@ -13883,6 +14693,7 @@ async function startServer() {
              AND (grapehub_category IS NULL OR grapehub_category = '')
              AND is_anticipation_pair = false AND is_reversed_pair = false
              AND fin_unaccent(description) ILIKE fin_unaccent($1)
+             AND ${foraDeMesFechado()}
            RETURNING id`,
           [pattern, rule.category_name, rule.category_id]
         );
@@ -17456,11 +18267,11 @@ async function startServer() {
       const result = await pool.query("SELECT form_webhook_url, whatsapp_webhook_url, inbound_token, inbound_kanban_id, inbound_coluna, inbound_responsavel_id, inbound_valor FROM crm_webhook_settings WHERE user_id = $1", [user_id]);
       let settings = result.rows[0];
       if (settings && !settings.inbound_token) {
-        const token = crypto3.randomUUID();
+        const token = crypto4.randomUUID();
         await pool.query("UPDATE crm_webhook_settings SET inbound_token = $1 WHERE user_id = $2", [token, user_id]);
         settings.inbound_token = token;
       } else if (!settings) {
-        const token = crypto3.randomUUID();
+        const token = crypto4.randomUUID();
         await pool.query("INSERT INTO crm_webhook_settings (user_id, inbound_token) VALUES ($1, $2)", [user_id, token]);
         settings = { form_webhook_url: "", whatsapp_webhook_url: "", inbound_token: token, inbound_kanban_id: "", inbound_coluna: "", inbound_responsavel_id: "", inbound_valor: 0 };
       }
@@ -22424,7 +23235,11 @@ ${instrucoes_extras}` : ""}
   setupCollectionRoutes(app, pool);
   setupDispatchRoutes(app, pool);
   setupAsaasSyncRoutes(app, pool);
+  await migrateBillCategory(pool).catch((e) => console.warn("[bills] category_id:", e.message));
   setupBillsRoutes(app, pool);
+  setupDreLancamentosRoutes(app, pool);
+  setupFaturaVersoesRoutes(app, pool);
+  setupFechamentoRoutes(app, pool);
   await migrateCursos(pool).catch((e) => console.warn("[cursos] migrate:", e.message));
   setupCursosRoutes(app, pool);
   await migrateEstudio(pool).catch((e) => console.warn("[estudio] migrate:", e.message));
@@ -22835,7 +23650,7 @@ ${instrucoes_extras}` : ""}
       const { projectId } = req.params;
       let r = await pool.query(`SELECT token FROM project_form_tokens WHERE project_id=$1`, [projectId]);
       if (!r.rows[0]) {
-        const token = crypto3.randomBytes(24).toString("hex");
+        const token = crypto4.randomBytes(24).toString("hex");
         r = await pool.query(
           `INSERT INTO project_form_tokens (project_id, token) VALUES ($1,$2)
            ON CONFLICT (project_id) DO UPDATE SET token=project_form_tokens.token RETURNING token`,
@@ -22850,7 +23665,7 @@ ${instrucoes_extras}` : ""}
   app.post("/api/projects/:projectId/form-token/regenerate", async (req, res) => {
     try {
       const { projectId } = req.params;
-      const token = crypto3.randomBytes(24).toString("hex");
+      const token = crypto4.randomBytes(24).toString("hex");
       await pool.query(`INSERT INTO project_form_tokens (project_id, token) VALUES ($1,$2) ON CONFLICT (project_id) DO UPDATE SET token=EXCLUDED.token`, [projectId, token]);
       res.json({ token });
     } catch (e) {

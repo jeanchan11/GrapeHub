@@ -120,7 +120,7 @@ const DateRangePicker: React.FC<Props> = ({ range, onChange, dark, align = 'righ
       </button>
 
       {open && pos && createPortal(
-        <div ref={menuRef} className="fixed z-[10001] rounded-2xl p-4" style={{ top: pos.top, left: pos.left, width: 320, background: c.panel, border: `1px solid ${c.border}`, boxShadow: '0 16px 40px -8px rgba(0,0,0,0.5)' }}>
+        <div ref={menuRef} data-picker-menu className="fixed z-[100000] rounded-2xl p-4" style={{ top: pos.top, left: pos.left, width: 320, background: c.panel, border: `1px solid ${c.border}`, boxShadow: '0 16px 40px -8px rgba(0,0,0,0.5)' }}>
           <p className="text-[10px] font-bold uppercase tracking-widest mb-3" style={{ color: c.muted }}>{selecting ? 'Clique na data final' : 'Selecionar Período'}</p>
 
           <div className="flex flex-wrap gap-1 mb-3 pb-3" style={{ borderBottom: `1px solid ${c.border}` }}>

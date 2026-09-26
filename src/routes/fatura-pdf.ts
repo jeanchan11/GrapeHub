@@ -17,15 +17,22 @@ export interface FaturaItem {
 export interface FaturaPDF {
   due_date: string | null;   // YYYY-MM-DD
   total: number | null;
+  /** Quem emitiu a fatura. Serve para recusar o PDF quando a aba está errada. */
+  emissor: 'asaas' | 'sicredi' | 'outro';
   items: FaturaItem[];
 }
 
 const SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['due_date', 'total', 'items'],
+  required: ['due_date', 'total', 'emissor', 'items'],
   properties: {
     due_date: { type: ['string', 'null'], description: 'Data de vencimento da fatura em YYYY-MM-DD' },
+    emissor: {
+      type: 'string',
+      enum: ['asaas', 'sicredi', 'outro'],
+      description: 'Instituição que emitiu a fatura, pelo cabeçalho/rodapé do PDF: "asaas" (ASAAS Gestão Financeira), "sicredi", ou "outro".',
+    },
     total: { type: ['number', 'null'], description: 'Valor total da fatura em reais' },
     items: {
       type: 'array',
@@ -57,7 +64,8 @@ Regras:
 - Datas em YYYY-MM-DD. Quando a fatura mostrar só dia/mês, deduza o ano pelo vencimento da fatura (compras de dezembro numa fatura que vence em janeiro são do ano anterior).
 - Se um valor estiver em dólar e também em reais, use o valor em reais.
 - Se a fatura separar por portador/cartão, preencha "card" com o identificador daquele bloco.
-- Devolva lista vazia se o PDF não for uma fatura de cartão.`;
+- Devolva lista vazia se o PDF não for uma fatura de cartão.
+- "emissor": identifique a instituição pelo cabeçalho ou rodapé da fatura.`;
 
 export async function extrairFaturaPDF(
   pdf: Buffer,
@@ -115,6 +123,9 @@ export async function extrairFaturaPDF(
   return {
     due_date: parsed.due_date && iso.test(parsed.due_date) ? parsed.due_date : null,
     total: typeof parsed.total === 'number' ? parsed.total : null,
+    // Valor fora do esperado vira 'outro': nesse caso a importação NÃO bloqueia
+    // (só recusa quando tem certeza de que a aba está errada).
+    emissor: parsed.emissor === 'asaas' || parsed.emissor === 'sicredi' ? parsed.emissor : 'outro',
     items,
   };
 }

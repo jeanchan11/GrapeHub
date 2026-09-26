@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ChevronRight, ChevronDown, Plus, Pencil, Check, X, FolderTree, Layers, Tag, Search, Loader2 } from 'lucide-react';
 import SplitHeadline from '../components/SplitHeadline';
+import { invalidarPlanoDeContas } from '../components/SeletorCategoriaDRE';
 import { promptDialog } from '@/src/lib/confirm';
 
 // ── Types ──────────────────────────────────────────────
@@ -219,6 +220,9 @@ export default function FinCategories({ onBack }: { onBack: () => void }) {
       const data = await res.json();
       setTree(data.tree);
       setFlat(data.flat);
+      // Toda alteração desta tela termina aqui (criar, renomear, excluir), então
+      // é o ponto único para avisar os seletores de categoria das outras telas.
+      invalidarPlanoDeContas();
     } catch (err) {
       console.error('Error fetching categories:', err);
     } finally {

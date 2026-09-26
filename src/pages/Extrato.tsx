@@ -1,10 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import SplitHeadline from '../components/SplitHeadline';
+import ModalConciliacao from '../components/ModalConciliacao';
+import { EVENTO_PLANO_MUDOU, usePlanoDeContas } from '../components/SeletorCategoriaDRE';
+import FiltroCategoriasDRE, { SEM_CATEGORIA, TotalCategoria } from '../components/FiltroCategoriasDRE';
 import BotaoSincronizar from '../components/BotaoSincronizar';
 import OptionPicker from '../components/ui/OptionPicker';
-import MultiOptionPicker from '../components/ui/MultiOptionPicker';
 import { createPortal } from 'react-dom';
-import { Search, ArrowUp, ArrowDown, FileText, Calendar, ChevronDown, ChevronUp, Check, Tag, AlertTriangle, ShieldAlert, Users, TrendingUp, TrendingDown, X, MessageSquare, Copy, ExternalLink, Pencil, Zap, ToggleLeft, ToggleRight, Trash2, Plus, Loader2, Wand2, Link2, EyeOff, Eye, Upload } from 'lucide-react';
+import { Search, ArrowUp, ArrowDown, FileText, Calendar, ChevronDown, ChevronUp, Check, Tag, AlertTriangle, ShieldAlert, Users, TrendingUp, TrendingDown, X, MessageSquare, Copy, ExternalLink, Pencil, Zap, ToggleLeft, ToggleRight, Trash2, Plus, Loader2, Wand2, Link2, EyeOff, Eye, Upload, SlidersHorizontal } from 'lucide-react';
+import { toast } from '@/src/lib/toast';
 
 // ── Types ──────────────────────────────────────────────
 interface ExtratoItem {
@@ -35,7 +38,22 @@ interface ExtratoItem {
   is_reversed_pair?: boolean;
   account?: string;
   raw_grapehub_category?: string | null;
+  billing_month?: string | null;     // só cartão: mês da fatura ('YYYY-MM')
+  transaction_type?: string | null;
 }
+
+// Rótulo e cor da conta de cada lançamento (Asaas = conta; os outros = cartões).
+const CONTA_LABEL: Record<string, { rotulo: string; cls: string }> = {
+  asaas: { rotulo: 'Asaas', cls: 'bg-violet-500/15 text-violet-400' },
+  sicredi: { rotulo: 'Cartão Sicredi', cls: 'bg-blue-500/15 text-blue-400' },
+  asaas_cartao: { rotulo: 'Cartão Asaas', cls: 'bg-amber-500/15 text-amber-400' },
+};
+const MESES_CURTOS = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+const rotuloFatura = (bm: string) => `Fatura ${MESES_CURTOS[Number(bm.slice(5, 7)) - 1]}/${bm.slice(2, 4)}`;
+
+// O pagamento da fatura do cartão Asaas sai da conta Asaas; com os itens da
+// fatura na mesma tela, contar os dois soma o mesmo gasto duas vezes.
+const PAGAMENTO_FATURA = 'ASAAS_CARD_BILL_PAYMENT';
 
 interface DateRange { start: string; end: string; }
 
@@ -158,10 +176,28 @@ const extractCreditCardTool = (description: string) => {
   return tool;
 };
 
+// "1.200,50" → 1200.5 · "390" → 390 · "" → null (sem limite).
+// Ponto é milhar e vírgula é decimal, como a pessoa digita; "1200.5" também
+// passa, porque ponto sem vírgula e com 1–2 casas no fim só pode ser decimal.
+function paraNumero(texto: string): number | null {
+  const t = (texto || '').trim().replace(/\s|R\$/g, '');
+  if (!t) return null;
+  const normal = t.includes(',')
+    ? t.replace(/\./g, '').replace(',', '.')
+    : /\.\d{1,2}$/.test(t) ? t : t.replace(/\./g, '');
+  const n = parseFloat(normal);
+  return Number.isFinite(n) ? n : null;
+}
+
 // ── CategoryPicker ───────────────────────────────────────
 // Cached categories tree (shared across all pickers)
 let _cachedCatTree: any[] | null = null;
 let _catFetchPromise: Promise<any[]> | null = null;
+// Categoria criada/editada em Configurações › Plano de Categorias invalida este
+// cache — sem isso a pílula continuava oferecendo a lista antiga até um F5.
+if (typeof window !== 'undefined') {
+  window.addEventListener(EVENTO_PLANO_MUDOU, () => { _cachedCatTree = null; _catFetchPromise = null; });
+}
 
 function fetchCatTree(): Promise<any[]> {
   if (_cachedCatTree) return Promise.resolve(_cachedCatTree);
@@ -190,6 +226,13 @@ function CategoryPicker({ item, onSave }: { item: ExtratoItem; onSave: (id: numb
   const searchRef = useRef<HTMLInputElement>(null);
   const cat = getCategory(item);
   const isManual = !!item.grapehub_category;
+  // `grapehub_category` vem preenchido MESMO sem categoria no banco: a API cai
+  // num rótulo derivado do tipo da transação do Asaas (TRANSFER → "Transferência",
+  // INVOICE_FEE → o próprio código). Quem diz a verdade é `raw_grapehub_category`,
+  // que chega null quando não há categoria de fato. Sem esta distinção, 38
+  // lançamentos de setembro (R$ 5.721,34) pareciam classificados e ficavam fora
+  // do DRE sem ninguém ver.
+  const semCategoria = !item.raw_grapehub_category && !item.custom_category;
 
   // Load categories when dropdown opens
   useEffect(() => {
@@ -220,8 +263,10 @@ function CategoryPicker({ item, onSave }: { item: ExtratoItem; onSave: (id: numb
         body: JSON.stringify({ category: name, category_id: categoryId ?? null }),
       });
       if (!res.ok) {
-        const err = await res.text();
+        const err = await res.json().catch(() => ({}));
         console.error('[CategoryPicker] Falha ao salvar categoria:', res.status, err);
+        // 423 = mês fechado: a pessoa precisa saber por que não mudou.
+        toast.error(err.error || 'Não foi possível salvar a categoria.');
         return;
       }
       onSave(item.id, name);
@@ -377,14 +422,26 @@ function CategoryPicker({ item, onSave }: { item: ExtratoItem; onSave: (id: numb
         onClick={toggleOpen}
         disabled={saving}
         className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all border
-          ${isManual
-            ? 'bg-violet-500/10 border-violet-500/30 text-violet-600 dark:text-violet-300 hover:bg-violet-500/20'
-            : 'bg-slate-100 dark:bg-white/5 border-transparent text-slate-500 hover:bg-slate-200 dark:hover:bg-white/10'
+          ${semCategoria
+            ? 'bg-amber-500/10 border-amber-500/40 text-amber-600 dark:text-amber-300 hover:bg-amber-500/20'
+            : isManual
+              ? 'bg-violet-500/10 border-violet-500/30 text-violet-600 dark:text-violet-300 hover:bg-violet-500/20'
+              : 'bg-slate-100 dark:bg-white/5 border-transparent text-slate-500 hover:bg-slate-200 dark:hover:bg-white/10'
           }`}
-        title={isManual ? 'Categoria manual — clique para alterar' : 'Categoria automática — clique para fixar'}
+        title={semCategoria
+          ? 'Sem categoria no banco — este lançamento fica de fora do DFC. Clique para classificar.'
+          : isManual ? 'Categoria manual — clique para alterar' : 'Categoria automática — clique para fixar'}
       >
-        <span>{cat.icon}</span>
-        <span className="max-w-[90px] truncate">{cat.name}</span>
+        {/* O ícone genérico 📁 é igual em quase todas e só roubava espaço do nome;
+            fica o ⚠️ (que é informação) e os ícones específicos, se houver. */}
+        {semCategoria
+          ? <span>⚠️</span>
+          : cat.icon && cat.icon !== '📁' && <span>{cat.icon}</span>}
+        {/* 200px cabem ~34 caracteres: medido em set/2026, mostra o nome inteiro
+            em 95% dos lançamentos (eram 21% com 90px). O resto aparece no title. */}
+        <span className="max-w-[200px] truncate" title={semCategoria ? 'Sem categoria' : cat.name}>
+          {semCategoria ? 'Sem categoria' : cat.name}
+        </span>
         <ChevronDown size={10} className={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {typeof document !== 'undefined' && createPortal(dropdown, document.body)}
@@ -1122,13 +1179,20 @@ export default function Extrato() {
   const [error, setError]       = useState<string | null>(null);
   const [search, setSearch]     = useState('');
   const [typeFilter, setTypeFilter] = useState<'todos'|'entradas'|'saidas'|'realizados'>('todos');
+  const [conciliando, setConciliando] = useState(false);
+  // Faixa de valor, em texto: o campo aceita vazio ("sem limite") e o jeito
+  // brasileiro de escrever (1.200,50).
+  const [valorMin, setValorMin] = useState('');
+  const [valorMax, setValorMax] = useState('');
+  const [filtrosAbertos, setFiltrosAbertos] = useState(false);
+  const filtrosRef = useRef<HTMLDivElement>(null);
   // Lista vazia = todas as categorias. '__sem_categoria__' representa "sem categoria".
   const [categoryFilters, setCategoryFilters] = useState<string[]>([]);
   const [hideAnticipation, setHideAnticipation] = useState(true);
   const [anticipationStats, setAnticipationStats] = useState<{ antecipado_bruto: number; taxas_antecipacao: number; liquido: number; count_pares: number } | null>(null);
 
   // ── Account filter state ──
-  const [accountFilter, setAccountFilter] = useState<'all' | 'asaas' | 'sicredi'>('all');
+  const [accountFilter, setAccountFilter] = useState<'all' | 'asaas' | 'sicredi' | 'asaas_cartao'>('all');
   const [lastImport, setLastImport] = useState<string | null>(null);
   const [showOfxModal, setShowOfxModal] = useState(false);
   const [ofxFile, setOfxFile] = useState<File | null>(null);
@@ -1266,8 +1330,11 @@ export default function Extrato() {
 
   // ── Extrato local state ──
   const handleCategorySave = (id: number, category: string) => {
+    // `raw_grapehub_category` junto: é ele que diz se o lançamento está
+    // categorizado de fato. Sem isto o aviso "Sem categoria" continuaria na
+    // linha até o próximo carregamento.
     setExtrato(prev => prev.map(item =>
-      item.id === id ? { ...item, grapehub_category: category || null } : item
+      item.id === id ? { ...item, grapehub_category: category || null, raw_grapehub_category: category || null } : item
     ));
     // Força re-fetch da aba Despesas para refletir a nova categoria
     setDespesasRefreshKey(k => k + 1);
@@ -1277,7 +1344,61 @@ export default function Extrato() {
     ? range.start === range.end ? formatDateBR(range.start) : `${formatDateBR(range.start)} → ${formatDateBR(range.end)}`
     : '';
 
-  const filtered = extrato.filter(item => {
+  // O que espera conciliação no período carregado: sem categoria de verdade no
+  // banco (`raw_grapehub_category` nulo). Independe dos filtros da lista — o
+  // popup mostra tudo o que falta, não só o que está na tela.
+  // Pares estornados (Pix devolvido, pagamento de conta cancelado) e pares de
+  // antecipação ficam FORA: o sync já os casa pelo id do Asaas (pixTransactionId /
+  // billId) e o DRE os ignora — pedir categoria para eles é trabalho sem efeito.
+  const pendentes = extrato.filter(i =>
+    !i.is_anticipation_pair && !i.is_reversed_pair && !i.raw_grapehub_category && !i.custom_category);
+  const aConciliar = pendentes.length;
+
+  // Filtros fora do padrão. "Antecipações ocultas" é o padrão, então só conta
+  // quando a pessoa MOSTRA as antecipações.
+  const filtrosAtivos =
+    (typeFilter !== 'todos' ? 1 : 0) +
+    (accountFilter !== 'all' ? 1 : 0) +
+    (categoryFilters.length > 0 ? 1 : 0) +
+    (paraNumero(valorMin) !== null || paraNumero(valorMax) !== null ? 1 : 0) +
+    (!hideAnticipation ? 1 : 0);
+
+  const limparFiltros = () => {
+    setTypeFilter('todos'); setAccountFilter('all'); setCategoryFilters([]);
+    setValorMin(''); setValorMax(''); setHideAnticipation(true);
+  };
+
+  // Fecha o painel com clique fora ou Esc. O menu de categorias abre num portal
+  // no <body> (`data-picker-menu`): clicar numa categoria não pode contar como
+  // "fora", senão o painel fecharia no meio da escolha.
+  useEffect(() => {
+    if (!filtrosAbertos) return;
+    const fora = (e: MouseEvent) => {
+      const t = e.target as Element;
+      if (filtrosRef.current?.contains(t) || t.closest?.('[data-picker-menu]')) return;
+      setFiltrosAbertos(false);
+    };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setFiltrosAbertos(false); };
+    document.addEventListener('mousedown', fora);
+    window.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', fora); window.removeEventListener('keydown', esc); };
+  }, [filtrosAbertos]);
+
+  // Categoria do lançamento no PLANO DE CONTAS. O id é o que o DRE usa; quem só
+  // tem o nome gravado (lançamentos antigos, de abril/2026) é resolvido pelo nome
+  // exato — cada um desses nomes existe uma única vez no plano.
+  const { folhas: folhasPlano } = usePlanoDeContas();
+  const nomeParaId = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const f of folhasPlano) m[f.nome.trim().toLowerCase()] = f.id;
+    return m;
+  }, [folhasPlano]);
+  const idDaCategoria = (i: ExtratoItem): number | null =>
+    i.custom_category_id
+      ?? nomeParaId[(i.custom_category || i.raw_grapehub_category || '').trim().toLowerCase()]
+      ?? null;
+
+  const semFiltroDeCategoria = extrato.filter(item => {
     // Hide anticipation pairs if toggle is on
     if (hideAnticipation && item.is_anticipation_pair) return false;
     const descMatch =
@@ -1289,24 +1410,53 @@ export default function Extrato() {
     if (typeFilter === 'realizados') return item.type_column === 'realizado';
     return true;
   }).filter(item => {
-    if (categoryFilters.length === 0) return true;
-    // Cada categoria marcada mantém o mesmo critério de quando era seleção única;
-    // o resultado é a união delas.
-    // Sem categoria: raw_grapehub_category nulo = não há categoria real no banco
-    // (ignora o fallback do autoCategory)
-    const semCategoria = !item.raw_grapehub_category && !item.custom_category;
-    if (semCategoria && categoryFilters.includes('__sem_categoria__')) return true;
-    return categoryFilters.includes(getCategory(item).name);
+    // Faixa de valor sobre o valor SEM sinal: quem procura "R$ 390" quer achar
+    // a saída de 390 e a entrada de 390, sem pensar no sinal.
+    const min = paraNumero(valorMin);
+    const max = paraNumero(valorMax);
+    if (min === null && max === null) return true;
+    const v = Math.abs(parseFloat(item.value || item.movement_value || '0'));
+    if (min !== null && v < min) return false;
+    if (max !== null && v > max) return false;
+    return true;
   });
 
-  // Categorias únicas presentes no extrato atual (para o dropdown)
-  const availableCategories = Array.from(
-    new Set(extrato.map(item => getCategory(item).name))
-  ).sort();
+  // Filtro de categorias por id do plano (união do que foi marcado).
+  // "Sem categoria" = sem id no plano: é exatamente o que o DRE deixa de fora.
+  const filtered = categoryFilters.length === 0 ? semFiltroDeCategoria : semFiltroDeCategoria.filter(item => {
+    const id = idDaCategoria(item);
+    return id === null ? categoryFilters.includes(SEM_CATEGORIA) : categoryFilters.includes(String(id));
+  });
+
+  // Totais por categoria para o filtro, calculados sobre tudo que os OUTROS
+  // filtros deixam passar (período, tipo, conta, busca, valor) — o número ao lado
+  // de cada categoria é o que aparece na tabela ao marcá-la. Pares estornados não
+  // contam, como no DRE.
+  // Há itens de cartão na tela? Então o pagamento da fatura sai das somas — e
+  // também toda transferência entre contas (99): a fatura do Sicredi é paga com
+  // um Pix da conta Asaas para a conta Sicredi (R$ 24.750 em 18/09/2026), que ao
+  // lado dos itens da fatura contaria o mesmo gasto duas vezes.
+  const temCartao = extrato.some(i => !!i.billing_month);
+  const idsTransferencia = new Set(folhasPlano.filter(f => f.natureza === '99').map(f => f.id));
+  const duplicaCartao = (i: ExtratoItem) => temCartao && (
+    i.transaction_type === PAGAMENTO_FATURA || idsTransferencia.has(idDaCategoria(i) ?? -1));
+  const totaisPorCategoria: Record<number, TotalCategoria> = {};
+  const totalSemCategoria: TotalCategoria = { v: 0, n: 0 };
+  for (const item of semFiltroDeCategoria) {
+    if (item.is_reversed_pair) continue;
+    if (duplicaCartao(item)) continue;
+    const v = Math.abs(parseFloat(item.value || item.movement_value || '0')) * (item.type === 1 ? 1 : -1);
+    const id = idDaCategoria(item);
+    const alvo = id === null ? totalSemCategoria : (totaisPorCategoria[id] ||= { v: 0, n: 0 });
+    alvo.v += v; alvo.n += 1;
+  }
+
 
   // Estornos/cancelamentos (débito cancelado + devolução) não entram nos totais — foram revertidos.
-  const totalEntradas = filtered.filter(i => i.type === 1  && i.type_column === 'realizado' && !i.is_reversed_pair).reduce((s, i) => s + parseFloat(i.value || i.movement_value || '0'), 0);
-  const totalSaidas   = filtered.filter(i => i.type === -1 && i.type_column === 'realizado' && !i.is_reversed_pair).reduce((s, i) => s + parseFloat(i.value || i.movement_value || '0'), 0);
+  const contaNosTotais = (i: ExtratoItem) =>
+    i.type_column === 'realizado' && !i.is_reversed_pair && !duplicaCartao(i);
+  const totalEntradas = filtered.filter(i => i.type === 1  && contaNosTotais(i)).reduce((s, i) => s + parseFloat(i.value || i.movement_value || '0'), 0);
+  const totalSaidas   = filtered.filter(i => i.type === -1 && contaNosTotais(i)).reduce((s, i) => s + parseFloat(i.value || i.movement_value || '0'), 0);
   const resultado     = totalEntradas - totalSaidas;
 
   // ── Month tabs computed ──
@@ -1345,9 +1495,9 @@ export default function Extrato() {
         {/* Switcher de data por aba + Rules button */}
         <div className="flex items-center gap-3">
         <BotaoSincronizar onDone={() => setVersaoSync(v => v + 1)} />
-        {activeTab === 'Extrato' ? (
-          <DateRangePicker range={range} onChange={setRange} />
-        ) : (
+        {/* O período do Extrato mora no painel de Filtros; o seletor de mês
+            abaixo é o das outras abas. */}
+        {activeTab !== 'Extrato' && (
           <div className="flex items-center gap-1">
             <button onClick={prevMonth}
               className="w-9 h-9 rounded-xl bg-dark-card border border-white/10 hover:border-violet-500/60 flex items-center justify-center transition-all hover:bg-dark-card-hover">
@@ -1425,7 +1575,8 @@ export default function Extrato() {
             </div>
           </div>
 
-          {/* Filters */}
+          {/* Filters — só a busca, o botão Filtros e o Conciliar ficam à vista.
+              Tipo, conta, categoria, valor e antecipações moram no painel. */}
           <div className="flex items-center gap-3 flex-wrap">
             <div className="relative flex-1 min-w-[220px]">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
@@ -1435,70 +1586,144 @@ export default function Extrato() {
                 className="w-full pl-9 pr-4 py-2.5 text-sm bg-dark-card border border-white/10 rounded-xl text-dark-text placeholder:text-slate-600 outline-none focus:ring-2 focus:ring-violet-500/30"
               />
             </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              {(['todos','entradas','saidas','realizados'] as const).map(f => (
-                <button key={f} onClick={() => setTypeFilter(f)}
-                  className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all ${
-                    typeFilter === f
-                      ? 'bg-violet-500 text-white shadow-lg shadow-violet-500/20'
-                      : 'bg-dark-card border border-white/10 text-slate-400 hover:text-white'
-                  }`}>
-                  {f.charAt(0).toUpperCase() + f.slice(1)}
-                </button>
-              ))}
-              {/* Category filter dropdown (seleção múltipla) */}
-              <MultiOptionPicker
-                values={categoryFilters.map(c => c === '__sem_categoria__' ? '⚠️ Sem categoria' : c)}
-                onChange={(vals) => setCategoryFilters(
-                  vals.map(v => v === '⚠️ Sem categoria' ? '__sem_categoria__' : v)
+
+            <div ref={filtrosRef} className="relative">
+              <button onClick={() => setFiltrosAbertos(v => !v)}
+                className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-bold rounded-xl transition-all ${
+                  filtrosAtivos > 0 || filtrosAbertos
+                    ? 'bg-violet-500/15 border border-violet-500/40 text-violet-400'
+                    : 'bg-dark-card border border-white/10 text-slate-400 hover:text-white'
+                }`}>
+                <SlidersHorizontal size={13} />
+                Filtros
+                {filtrosAtivos > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-md text-[10px] leading-none bg-violet-500 text-white">{filtrosAtivos}</span>
                 )}
-                options={[
-                  { label: '⚠️ Sem categoria', color: '#f59e0b' },
-                  ...availableCategories.map(cat => ({ label: cat })),
-                ]}
-                allLabel="Todas categorias"
-                itemNoun="categorias"
-                compact
-              />
-              {/* Account filter */}
-              <div className="flex items-center gap-1 ml-1 bg-dark-card border border-white/10 rounded-xl p-0.5">
-                {([['all', 'Todas'], ['asaas', 'Asaas'], ['sicredi', 'Sicredi']] as const).map(([val, label]) => (
-                  <button key={val} onClick={() => setAccountFilter(val as any)}
-                    className={`px-2.5 py-1.5 text-[10px] font-bold rounded-lg transition-all ${
-                      accountFilter === val ? 'bg-violet-500 text-white' : 'text-slate-400 hover:text-white'
-                    }`}>{label}</button>
-                ))}
-              </div>
-              {accountFilter === 'sicredi' && (
-                <>
-                  <span className="text-[10px] text-slate-500">
-                    {lastImport ? `Última importação: ${new Date(lastImport).toLocaleDateString('pt-BR')}` : 'Nenhuma importação ainda'}
-                  </span>
-                  <button onClick={() => { setOfxFile(null); setOfxResult(null); setShowOfxModal(true); }}
-                    className="flex items-center gap-1.5 px-3 py-2 bg-blue-500/15 border border-blue-500/30 text-blue-400 text-xs font-bold rounded-xl hover:bg-blue-500/25 transition-all">
-                    <Upload size={12} /> Importar OFX
+                <ChevronDown size={12} className={`transition-transform ${filtrosAbertos ? 'rotate-180' : ''}`} />
+              </button>
+
+              {filtrosAbertos && (
+                <div className="absolute right-0 top-full mt-2 z-50 w-[340px] bg-dark-card border border-white/10 rounded-2xl shadow-2xl p-4 space-y-4">
+                  {/* Período — define também os cards do topo (entradas, saídas,
+                      resultado); o intervalo escolhido segue à vista no subtítulo. */}
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Período</p>
+                    <DateRangePicker range={range} onChange={setRange} />
+                  </div>
+
+                  {/* Tipo */}
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Tipo</p>
+                    <div className="grid grid-cols-4 gap-1 bg-black/20 border border-white/5 rounded-xl p-0.5">
+                      {(['todos','entradas','saidas','realizados'] as const).map(f => (
+                        <button key={f} onClick={() => setTypeFilter(f)}
+                          className={`py-1.5 text-[11px] font-bold rounded-lg transition-all ${
+                            typeFilter === f ? 'bg-violet-500 text-white' : 'text-slate-400 hover:text-white'}`}>
+                          {f === 'saidas' ? 'Saídas' : f.charAt(0).toUpperCase() + f.slice(1)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Conta */}
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Conta</p>
+                    <div className="grid grid-cols-4 gap-1 bg-black/20 border border-white/5 rounded-xl p-0.5">
+                      {([['all', 'Todas'], ['asaas', 'Asaas'], ['sicredi', 'Cartão Sicredi'], ['asaas_cartao', 'Cartão Asaas']] as const).map(([val, label]) => (
+                        <button key={val} onClick={() => setAccountFilter(val)}
+                          className={`py-1.5 px-1 text-[10px] leading-tight font-bold rounded-lg transition-all ${
+                            accountFilter === val ? 'bg-violet-500 text-white' : 'text-slate-400 hover:text-white'}`}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Categorias */}
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Categorias</p>
+                    <FiltroCategoriasDRE
+                      totais={totaisPorCategoria}
+                      semCategoria={totalSemCategoria}
+                      selecionados={categoryFilters}
+                      onChange={setCategoryFilters}
+                    />
+                  </div>
+
+                  {/* Valor */}
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">
+                      Valor <span className="normal-case font-medium text-slate-600">— entradas e saídas</span>
+                    </p>
+                    <div className="flex items-center gap-2">
+                      {([['De', valorMin, setValorMin], ['Até', valorMax, setValorMax]] as const).map(([rotulo, v, setV]) => (
+                        <div key={rotulo} className="relative flex-1">
+                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-500">{rotulo} R$</span>
+                          <input value={v} onChange={e => setV(e.target.value)} inputMode="decimal" placeholder="0,00"
+                            className="w-full pl-14 pr-2 py-2 text-xs bg-black/20 border border-white/10 rounded-lg text-dark-text placeholder:text-slate-600 outline-none focus:border-violet-500/50" />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Antecipações */}
+                  <button onClick={() => setHideAnticipation(!hideAnticipation)}
+                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-black/20 border border-white/5 text-xs font-bold text-slate-300 hover:text-white transition-colors">
+                    <span className="flex items-center gap-2">
+                      {hideAnticipation ? <EyeOff size={12} /> : <Eye size={12} />}
+                      Ocultar antecipações
+                    </span>
+                    <span className={`w-8 h-4 rounded-full relative transition-colors ${hideAnticipation ? 'bg-violet-500' : 'bg-white/10'}`}>
+                      <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${hideAnticipation ? 'left-[18px]' : 'left-0.5'}`} />
+                    </span>
                   </button>
-                </>
+
+                  <div className="flex items-center justify-between pt-1 border-t border-white/5">
+                    <span className="text-[11px] text-slate-500">{loading ? '...' : `${filtered.length} registros`}</span>
+                    {filtrosAtivos > 0 && (
+                      <button onClick={limparFiltros} className="text-[11px] font-bold text-violet-400 hover:text-violet-300">
+                        Limpar filtros
+                      </button>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
-            {/* Hide anticipation toggle */}
-            <button
-              onClick={() => setHideAnticipation(!hideAnticipation)}
-              className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-xl transition-all ${
-                hideAnticipation
-                  ? 'bg-violet-500/15 border border-violet-500/40 text-violet-400'
+
+            {/* Conciliação fica À VISTA: é pendência com contador, não filtro —
+                dentro do painel o aviso sumiria. */}
+            <button onClick={() => setConciliando(true)}
+              title="Lançamentos sem categoria no banco — ficam de fora do DFC até serem classificados"
+              className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-bold rounded-xl transition-all ${
+                aConciliar > 0
+                  ? 'bg-amber-500/10 border border-amber-500/40 text-amber-500 hover:bg-amber-500/20'
                   : 'bg-dark-card border border-white/10 text-slate-400 hover:text-white'
-              }`}
-            >
-              {hideAnticipation ? <EyeOff size={12} /> : <Eye size={12} />}
-              {hideAnticipation ? 'Antecipações ocultas' : 'Ocultar antecipações'}
+              }`}>
+              Conciliar
+              {aConciliar > 0 && (
+                <span className="px-1.5 py-0.5 rounded-md text-[10px] leading-none bg-amber-500/20">{aConciliar}</span>
+              )}
             </button>
-            <span className="text-xs text-slate-500 ml-1">{loading ? '...' : `${filtered.length} registros`}</span>
+
+            {/* Sicredi: a importação de OFX só faz sentido com a conta Sicredi à vista */}
+            {accountFilter === 'sicredi' && (
+              <>
+                <span className="text-[10px] text-slate-500">
+                  {lastImport ? `Última importação: ${new Date(lastImport).toLocaleDateString('pt-BR')}` : 'Nenhuma importação ainda'}
+                </span>
+                <button onClick={() => { setOfxFile(null); setOfxResult(null); setShowOfxModal(true); }}
+                  className="flex items-center gap-1.5 px-3 py-2.5 bg-blue-500/15 border border-blue-500/30 text-blue-400 text-xs font-bold rounded-xl hover:bg-blue-500/25 transition-all">
+                  <Upload size={12} /> Importar OFX
+                </button>
+              </>
+            )}
+
+            <span className="text-xs text-slate-500 ml-auto">{loading ? '...' : `${filtered.length} registros`}</span>
           </div>
 
           {/* Table */}
           <div className="bg-dark-card border border-white/10 rounded-2xl overflow-visible relative">
-            <div className={`grid ${accountFilter === 'all' ? 'grid-cols-[1fr_160px_80px_90px_100px_110px_120px]' : 'grid-cols-[1fr_160px_90px_100px_110px_120px]'} px-4 py-2.5 border-b border-white/5 sticky top-0 z-10 bg-dark-card`}>
+            <div className={`grid ${accountFilter === 'all' ? 'grid-cols-[1fr_250px_100px_90px_100px_110px_120px]' : 'grid-cols-[1fr_250px_90px_100px_110px_120px]'} px-4 py-2.5 border-b border-white/5 sticky top-0 z-10 bg-dark-card`}>
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Descrição / Contraparte</span>
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider text-center">Categoria</span>
               {accountFilter === 'all' && <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider text-center">Conta</span>}
@@ -1552,7 +1777,7 @@ export default function Extrato() {
                         setModalDescription(item.custom_description || item.description || '');
                         setModalSaved(false);
                       }}
-                      className={`grid ${accountFilter === 'all' ? 'grid-cols-[1fr_160px_80px_90px_100px_110px_120px]' : 'grid-cols-[1fr_160px_90px_100px_110px_120px]'} px-4 py-2 hover:bg-white/[0.02] transition-colors items-center cursor-pointer`}>
+                      className={`grid ${accountFilter === 'all' ? 'grid-cols-[1fr_250px_100px_90px_100px_110px_120px]' : 'grid-cols-[1fr_250px_90px_100px_110px_120px]'} px-4 py-2 hover:bg-white/[0.02] transition-colors items-center cursor-pointer`}>
                       <div className="min-w-0 pr-4">
                         <div className="flex items-center gap-1.5">
                           <p className={`text-[13px] font-medium truncate ${item.is_anticipation_pair || item.is_reversed_pair ? 'text-slate-500' : 'text-dark-text'}`}>{item.description || '—'}</p>
@@ -1566,6 +1791,12 @@ export default function Extrato() {
                               <Link2 size={8} /> Antecipação
                             </span>
                           )}
+                          {item.billing_month && (
+                            <span className="shrink-0 px-1.5 py-0.5 bg-blue-500/10 text-blue-400 text-[9px] font-bold rounded-full"
+                              title="Compra no cartão: entra no mês da fatura, como no DFC">
+                              {rotuloFatura(item.billing_month)}
+                            </span>
+                          )}
                           {item.is_edited && !item.is_anticipation_pair && !item.is_reversed_pair && (
                             <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-500/10 text-amber-400 text-[9px] font-bold rounded-full">
                               <Pencil size={8} /> Editado
@@ -1577,9 +1808,10 @@ export default function Extrato() {
                       <div className="flex justify-center" data-category-picker><CategoryPicker item={item} onSave={handleCategorySave} /></div>
                       {accountFilter === 'all' && (
                         <div className="flex justify-center">
-                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
-                            (item.account || 'asaas') === 'sicredi' ? 'bg-blue-500/15 text-blue-400' : 'bg-violet-500/15 text-violet-400'
-                          }`}>{(item.account || 'asaas') === 'sicredi' ? 'Sicredi' : 'Asaas'}</span>
+                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold whitespace-nowrap ${
+                            (CONTA_LABEL[item.account || 'asaas'] || CONTA_LABEL.asaas).cls}`}>
+                            {(CONTA_LABEL[item.account || 'asaas'] || CONTA_LABEL.asaas).rotulo}
+                          </span>
                         </div>
                       )}
                       <div className="flex justify-center px-4">
@@ -1889,6 +2121,28 @@ export default function Extrato() {
           )}
         </div>
       </div>,
+      document.body
+    )}
+
+    {conciliando && createPortal(
+      <ModalConciliacao
+        itens={pendentes}
+        onFechar={() => setConciliando(false)}
+        onConciliado={(id, descricao, categoria) => {
+          // Atualiza a linha na hora: o card sai do popup e a lista principal
+          // já mostra a categoria, sem refazer o fetch do período inteiro.
+          setExtrato(prev => prev.map(item => item.id === id ? {
+            ...item,
+            description: descricao || item.description,
+            custom_description: descricao || item.custom_description,
+            grapehub_category: categoria.nome,
+            custom_category: categoria.nome,
+            raw_grapehub_category: categoria.nome,
+            custom_category_id: categoria.id,
+          } : item));
+          setDespesasRefreshKey(k => k + 1);
+        }}
+      />,
       document.body
     )}
     </>

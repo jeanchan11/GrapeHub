@@ -14,8 +14,12 @@ import { setupCollectionRoutes } from "./src/routes/collection";
 import { setupDispatchRoutes } from "./src/routes/dispatch";
 import { setupAsaasSyncRoutes, runAsaasSync } from "./src/routes/asaas-sync";
 import { setupBillsRoutes, syncSicrediBillEntry, categorizeMovements, CARD_ACCOUNTS } from "./src/routes/bills";
+import { setupDreLancamentosRoutes } from "./src/routes/dre-lancamentos";
+import { setupFechamentoRoutes, mesFechado, mesFechadoDoLancamento, msgMesFechado, foraDeMesFechado } from "./src/routes/fechamento";
+import { migrateBillCategory } from "./src/routes/bill-category";
 import { setupBolaoRoutes } from "./src/routes/bolao";
 import { extrairFaturaPDF } from "./src/routes/fatura-pdf";
+import { setupFaturaVersoesRoutes, conferirFatura, hashArquivo, extracaoGuardada, guardarExtracao, fotografar, registrarImportacao, type Conferencia } from "./src/routes/fatura-versoes";
 import { setupCursosRoutes, migrateCursos } from "./src/routes/cursos";
 import { setupEstudioRoutes, migrateEstudio } from "./src/routes/estudio";
 import { setupCalculadoraContratosRoutes, migrateCalculadoraContratos } from "./src/routes/calculadora-contratos";
@@ -7256,7 +7260,26 @@ app.get("/api/todos", async (req, res) => {
       const faturamento_total = recebido + a_receber;
       const despesas_total = pago + a_pagar;
       const saldo_periodo = recebido - pago;
-      const previsto_fim_mes = saldo_caixa + a_receber - a_pagar;
+      // Mês FUTURO: o caixa de hoje ainda vai receber/pagar o que vence entre hoje
+      // e o início do mês consultado. Sem isso o card ignorava o resto do mês atual
+      // e divergia do gráfico, que já somava essa ponte (fluxo-diario, passo 4) —
+      // em 26/09/2026, outubro mostrava R$ 46.225,76 no card e R$ 66.166,09 no
+      // gráfico: a diferença era o pendente de 26 a 30/09 (R$ 20.390,33 a receber,
+      // R$ 450,00 a pagar).
+      let ponte = 0;
+      const hojeIso = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+      if (inicio > hojeIso) {
+        const pr = await pool.query(`
+          SELECT
+            (SELECT COALESCE(SUM(value), 0) FROM fin_receivables
+              WHERE due_date >= $1 AND due_date < $2 AND status IN ('Pendente', 'PENDING')
+                AND COALESCE((raw_json->>'anticipated')::boolean, false) = false) AS receber,
+            (SELECT COALESCE(SUM(expected_value), 0) FROM fin_bill_entries
+              WHERE due_date >= $1 AND due_date < $2 AND status NOT IN ('paid', 'cancelled')) AS pagar
+        `, [hojeIso, inicio]);
+        ponte = parseFloat(pr.rows[0].receber) - parseFloat(pr.rows[0].pagar);
+      }
+      const previsto_fim_mes = saldo_caixa + ponte + a_receber - a_pagar;
 
       res.json({
         // Novos campos
@@ -7576,7 +7599,6 @@ app.get("/api/todos", async (req, res) => {
         FROM fin_movements_asaas
         WHERE account = 'asaas' AND transaction_date >= $1
           AND is_anticipation_pair = false AND is_reversed_pair = false
-          AND LOWER(COALESCE(custom_category, '')) NOT IN ('transferencia entre contas', 'transferência entre contas')
       `, [fim]);
       const netAposMes = parseFloat(netAposRes.rows[0].net);
 
@@ -7589,11 +7611,16 @@ app.get("/api/todos", async (req, res) => {
         WHERE account = 'asaas'
           AND transaction_date >= $1 AND transaction_date < $2
           AND is_anticipation_pair = false AND is_reversed_pair = false
-          AND LOWER(COALESCE(custom_category, '')) NOT IN ('transferencia entre contas', 'transferência entre contas')
       `, [inicio, fim]);
       const netMes = parseFloat(netMesRes.rows[0].net);
 
       // 4) Saldo no início do mês = saldo atual - movimentos do mês - movimentos após o mês
+      //    TODO movimento da conta entra aqui, inclusive transferência entre contas:
+      //    o ponto de partida é o saldo real do banco, e tirar uma saída real desta
+      //    conta desloca a curva inteira. Em 25/09/2026, classificar o pagamento da
+      //    fatura (R$ 3.894,72) e um Pix para a própria Grape (R$ 24.750) como
+      //    transferência derrubou o início de setembro em R$ 28.644,72 e o gráfico
+      //    mostrou caixa negativo num mês cujo mínimo real foi R$ 1.432,90.
       let saldoAnterior = saldoAtual - netMes - netAposMes;
 
       // Se o mês consultado for no futuro (ex: consultando Junho estando em Maio),
@@ -7606,6 +7633,7 @@ app.get("/api/todos", async (req, res) => {
           SELECT COALESCE(SUM(value), 0) as val
           FROM fin_receivables
           WHERE due_date >= $1 AND due_date < $2 AND status IN ('Pendente', 'PENDING')
+            AND COALESCE((raw_json->>'anticipated')::boolean, false) = false
         `, [todayIso, inicio]);
         
         // Subtrai Saídas Pendentes de hoje até o início do mês futuro (com mesma regra de dedup)
@@ -7621,16 +7649,30 @@ app.get("/api/todos", async (req, res) => {
 
       // 5) Realizado diário — Apenas Asaas por transaction_date
       //    Sicredi agora vem exclusivamente via fin_payables (previsto saídas)
+      //    Transferência entre contas próprias fica FORA das barras (não é receita
+      //    nem despesa), mas volta em `transferencias` para a linha de saldo, que
+      //    precisa bater com o banco. Exceção: o pagamento da fatura do cartão é
+      //    dinheiro que saiu para pagar compras — no fluxo de caixa é saída, mesmo
+      //    classificado como 99 (no DRE ele fica fora porque os itens da fatura já entram).
       const realizadoRes = await pool.query(`
+        WITH m AS (
+          -- entre contas = categoria 99 do plano (ou o nome antigo gravado em texto)
+          SELECT fm.*,
+                 ((c.structure = '99' OR LOWER(COALESCE(fm.custom_category, '')) IN ('transferencia entre contas', 'transferência entre contas'))
+                  AND fm.transaction_type IS DISTINCT FROM 'ASAAS_CARD_BILL_PAYMENT') AS entre_contas
+          FROM fin_movements_asaas fm
+          LEFT JOIN fin_categories c ON c.id = fm.custom_category_id
+          WHERE fm.account = 'asaas'
+            AND fm.transaction_date >= $1 AND fm.transaction_date < $2
+            AND fm.is_anticipation_pair = false AND fm.is_reversed_pair = false
+        )
         SELECT
           TO_CHAR(transaction_date, 'DD/MM') AS dia,
           EXTRACT(DAY FROM transaction_date) AS dia_numero,
-          COALESCE(SUM(CASE WHEN type = 1  AND is_anticipation_pair = false AND is_reversed_pair = false THEN value ELSE 0 END), 0) AS entradas_realizadas,
-          COALESCE(SUM(CASE WHEN type = -1 AND is_anticipation_pair = false AND is_reversed_pair = false THEN value ELSE 0 END), 0) AS saidas_realizadas
-        FROM fin_movements_asaas
-        WHERE account = 'asaas'
-          AND transaction_date >= $1 AND transaction_date < $2
-          AND LOWER(COALESCE(custom_category, '')) NOT IN ('transferencia entre contas', 'transferência entre contas')
+          COALESCE(SUM(CASE WHEN type = 1  AND NOT entre_contas THEN value ELSE 0 END), 0) AS entradas_realizadas,
+          COALESCE(SUM(CASE WHEN type = -1 AND NOT entre_contas THEN value ELSE 0 END), 0) AS saidas_realizadas,
+          COALESCE(SUM(CASE WHEN entre_contas THEN (CASE WHEN type = 1 THEN value ELSE -value END) ELSE 0 END), 0) AS transferencias
+        FROM m
         GROUP BY transaction_date
         ORDER BY transaction_date
       `, [inicio, fim]);
@@ -7644,6 +7686,7 @@ app.get("/api/todos", async (req, res) => {
         FROM fin_receivables
         WHERE due_date >= $1 AND due_date < $2
           AND status IN ('Pendente', 'PENDING')
+          AND COALESCE((raw_json->>'anticipated')::boolean, false) = false   -- antecipado já entrou no caixa
         GROUP BY due_date
       `, [inicio, fim]);
 
@@ -7663,7 +7706,7 @@ app.get("/api/todos", async (req, res) => {
       // Merge all days
       const dayMap: Record<string, any> = {};
       for (const r of realizadoRes.rows) {
-        dayMap[r.dia] = { dia: r.dia, dia_numero: parseInt(r.dia_numero), entradas_realizadas: parseFloat(r.entradas_realizadas), saidas_realizadas: parseFloat(r.saidas_realizadas), entradas_previstas: 0, saidas_previstas: 0, tem_realizado: true };
+        dayMap[r.dia] = { dia: r.dia, dia_numero: parseInt(r.dia_numero), entradas_realizadas: parseFloat(r.entradas_realizadas), saidas_realizadas: parseFloat(r.saidas_realizadas), transferencias: parseFloat(r.transferencias), entradas_previstas: 0, saidas_previstas: 0, tem_realizado: true };
       }
       for (const p of prevEntRes.rows) {
         if (!dayMap[p.dia]) dayMap[p.dia] = { dia: p.dia, dia_numero: parseInt(p.dia.split('/')[0]), entradas_realizadas: 0, saidas_realizadas: 0, entradas_previstas: 0, saidas_previstas: 0, tem_realizado: false };
@@ -8549,8 +8592,19 @@ app.get("/api/todos", async (req, res) => {
         'PAYMENT_REVERSAL': 'Estorno',
       };
 
-      // Account filter — Sicredi card no longer in extrato (now in fin_payables)
-      const queryParams: any[] = [inicio, fim];
+      // Contas no extrato. Sem `account` (o Dashboard pede o extrato de um dia),
+      // continua só a conta Asaas. O Extrato pede 'all' e traz também os CARTÕES,
+      // pelo MÊS DA FATURA (`billing_month`), igual ao DRE: a compra de 31/08 que
+      // caiu na fatura de setembro é gasto de setembro. Um período parcial traz a
+      // fatura inteira de cada mês que ele toca — a fatura não tem dia.
+      const contaPedida = String(req.query.account || 'asaas');
+      const incluiAsaas = contaPedida === 'all' || contaPedida === 'asaas';
+      const cartoes = contaPedida === 'all' ? [...CARD_ACCOUNTS]
+        : (CARD_ACCOUNTS as readonly string[]).includes(contaPedida) ? [contaPedida] : [];
+      const mesIni = inicio.slice(0, 7);
+      const ultimoDia = new Date(fim); ultimoDia.setDate(ultimoDia.getDate() - 1);
+      const mesFim = ultimoDia.toISOString().slice(0, 7);
+      const queryParams: any[] = [inicio, fim, incluiAsaas, cartoes, mesIni, mesFim];
 
       const result = await pool.query(`
         SELECT
@@ -8572,11 +8626,12 @@ app.get("/api/todos", async (req, res) => {
           is_anticipation_pair,
           is_reversed_pair,
           account,
+          billing_month,
           COALESCE(custom_description, description) AS display_description,
           COALESCE(custom_category, grapehub_category) AS display_category
         FROM fin_movements_asaas
-        WHERE account = 'asaas'
-          AND transaction_date >= $1 AND transaction_date < $2
+        WHERE ((account = 'asaas' AND $3::boolean AND transaction_date >= $1 AND transaction_date < $2)
+            OR (account = ANY($4::text[]) AND billing_month BETWEEN $5 AND $6))
           AND LOWER(COALESCE(custom_category, '')) NOT IN ('transferencia entre contas', 'transferência entre contas')
         ORDER BY transaction_date DESC, id DESC
       `, queryParams);
@@ -8646,6 +8701,8 @@ app.get("/api/todos", async (req, res) => {
           is_anticipation_pair: r.is_anticipation_pair || false,
           is_reversed_pair: r.is_reversed_pair || false,
           account: r.account || 'asaas',
+          billing_month: r.billing_month || null,
+          transaction_type: r.transaction_type || null,
         };
       });
 
@@ -8704,13 +8761,45 @@ app.get("/api/todos", async (req, res) => {
       const isCSV = !isPDF && (fileName.endsWith('.csv') || (!fileName.endsWith('.ofx') && content.includes(';')));
 
       const transactions: { fitid: string; trntype: string; trnamt: number; dtposted: string; memo: string; card?: string }[] = [];
+      let conferencia: Conferencia | null = null;
 
       if (isPDF) {
         // ── Fatura em PDF (cartão Asaas e afins) ──
         // Sem CSV/OFX disponível, o PDF é lido pelo Claude e devolve os mesmos
         // campos do parser de CSV. Daqui pra frente o fluxo é idêntico.
         if (!fileBuf) return res.status(400).json({ error: 'PDF precisa ser enviado em base64 (fileData).' });
-        const fatura = await extrairFaturaPDF(fileBuf, { billingMonth, fileName: req.body.fileName || '' });
+        // "Importar mesmo assim" depois de uma conferência divergente reaproveita a
+        // leitura já feita (mesmo arquivo, até 30 min) — não paga uma segunda.
+        const hash = hashArquivo(fileBuf);
+        const forcar = req.body.forcar_conferencia === true;
+        let fatura = forcar ? extracaoGuardada(hash) : null;
+        if (!fatura) {
+          fatura = await extrairFaturaPDF(fileBuf, { billingMonth, fileName: req.body.fileName || '' });
+          guardarExtracao(hash, fatura);
+        }
+
+        // Fatura na aba errada: a do Asaas importada na aba Sicredi entrou como
+        // cartão Sicredi (25/09/2026), e a próxima fatura real do Sicredi daquele
+        // mês a teria APAGADO no prune — ele remove do mês tudo que não está no
+        // arquivo novo. A checagem vem antes de qualquer escrita no banco.
+        const abaEsperada: Record<string, string> = { asaas: 'asaas_cartao', sicredi: 'sicredi' };
+        const contaDoPdf = abaEsperada[fatura.emissor];
+        if (contaDoPdf && contaDoPdf !== account) {
+          const nome = fatura.emissor === 'asaas' ? 'Asaas' : 'Sicredi';
+          return res.status(400).json({
+            error: `Este PDF é uma fatura do ${nome}. Selecione a aba ${nome} e envie de novo.`,
+          });
+        }
+
+        // Conferência: a soma dos itens lidos precisa bater com o total impresso.
+        // Divergiu → nada é gravado; a tela mostra a diferença e a pessoa decide.
+        conferencia = conferirFatura(fatura);
+        if (conferencia.status === 'divergente' && !forcar) {
+          return res.status(409).json({
+            error: 'A soma dos lançamentos lidos não bate com o total da fatura.',
+            conferencia,
+          });
+        }
 
         if (fatura.due_date) {
           detectedDueDate = fatura.due_date;
@@ -8926,6 +9015,16 @@ app.get("/api/todos", async (req, res) => {
         moved = mv.rows[0]?.n || 0;
       }
 
+      // Foto do que esta importação vai tocar — é o que permite desfazê-la.
+      // Se a foto falhar, a importação não segue: sem foto, o prune é irreversível.
+      const idsDoArquivo = transactions.map((t) => `${account}_${t.fitid}`);
+      if (isCard && effectiveBillingMonth && await mesFechado(pool, effectiveBillingMonth)) {
+        return res.status(423).json({ error: msgMesFechado(effectiveBillingMonth), mes_fechado: effectiveBillingMonth });
+      }
+      const foto = isCard && effectiveBillingMonth
+        ? await fotografar(pool, account, effectiveBillingMonth, idsDoArquivo)
+        : null;
+
       for (const tx of transactions) {
         const asaasId = `${account}_${tx.fitid}`;
         const type = tx.trnamt >= 0 ? 1 : -1;
@@ -8984,7 +9083,19 @@ app.get("/api/todos", async (req, res) => {
       // Categoriza os movimentos recém-importados no plano de contas (alimenta a DRE)
       try { await categorizeMovements(pool, effectiveBillingMonth ? { month: effectiveBillingMonth } : {}); } catch (e: any) { console.warn('[categorizar] pós-import:', e.message); }
 
+      let importacaoId: number | null = null;
+      if (foto && effectiveBillingMonth) {
+        importacaoId = await registrarImportacao(pool, {
+          account, month: effectiveBillingMonth, by: req.user?.email || null,
+          fileName: req.body.fileName || fileName, formato: isPDF ? 'pdf' : isCSV ? 'csv' : 'ofx',
+          itens: transactions.length, inserted, skipped, pruned, moved,
+          conferencia, asaasIds: idsDoArquivo, snapshot: foto.snapshot, invoice: foto.invoice,
+        }).catch((e: any) => { console.error('[fatura-versoes] registrar:', e.message); return null; });
+      }
+
       res.json({
+        importacao_id: importacaoId,
+        conferencia,
         inserted,
         skipped,
         pruned,
@@ -9006,6 +9117,12 @@ app.get("/api/todos", async (req, res) => {
     try {
       const { id } = req.params;
       const { custom_description, custom_category, custom_category_id, user_comment, edited_by } = req.body;
+      // Mês fechado: categoria/valor travados (o gatilho do banco também barra,
+      // mas em silêncio — aqui a pessoa recebe o motivo).
+      if (custom_category_id !== undefined || custom_category !== undefined) {
+        const fechado = await mesFechadoDoLancamento(pool, id);
+        if (fechado) return res.status(423).json({ error: msgMesFechado(fechado), mes_fechado: fechado });
+      }
 
       const setClauses: string[] = [];
       const values: any[] = [];
@@ -9069,6 +9186,8 @@ app.get("/api/todos", async (req, res) => {
     try {
       const { id } = req.params;
       const { category, category_id } = req.body as { category: string | null; category_id?: number | null };
+      const fechado = await mesFechadoDoLancamento(pool, id);
+      if (fechado) return res.status(423).json({ error: msgMesFechado(fechado), mes_fechado: fechado });
 
       const chk = await pool.query(
         `SELECT (transaction_date >= $2) AS is_forward FROM fin_movements_asaas WHERE id = $1`,
@@ -9359,6 +9478,7 @@ app.get("/api/todos", async (req, res) => {
       UPDATE fin_movements_asaas
       SET is_anticipation_pair = false AND is_reversed_pair = false
       WHERE is_anticipation_pair = true
+        AND ${foraDeMesFechado()}
       RETURNING id
     `);
     const reset = resetResult.rowCount || 0;
@@ -9394,6 +9514,7 @@ app.get("/api/todos", async (req, res) => {
             edited_by = 'conciliacao-auto'
         WHERE id IN ($1, $2)
           AND transaction_type != 'RECEIVABLE_ANTICIPATION'
+          AND ${foraDeMesFechado()}
         RETURNING id
       `, [pair.cobranca_id, pair.baixa_id]);
       updated += result.rowCount || 0;
@@ -9411,6 +9532,7 @@ app.get("/api/todos", async (req, res) => {
           edited_by = 'conciliacao-auto'
       WHERE (description ILIKE 'Baixa da antecipacao%' OR description ILIKE 'Baixa da antecipação%')
         AND is_anticipation_pair = false AND is_reversed_pair = false
+        AND ${foraDeMesFechado()}
         AND transaction_type != 'RECEIVABLE_ANTICIPATION'
       RETURNING id
     `);
@@ -9526,6 +9648,7 @@ app.get("/api/todos", async (req, res) => {
                edited_by = 'regra-auto'
            WHERE is_anticipation_pair = false AND is_reversed_pair = false
              AND fin_unaccent(description) ILIKE fin_unaccent($1)
+             AND ${foraDeMesFechado()}
            RETURNING id`,
           [pattern, rule.category_name, rule.category_id]
         );
@@ -9556,6 +9679,7 @@ app.get("/api/todos", async (req, res) => {
         WHERE custom_category IS NULL
           AND (grapehub_category IS NULL OR grapehub_category = '')
           AND is_anticipation_pair = false AND is_reversed_pair = false
+          AND ${foraDeMesFechado()}
       `);
       const pending = parseInt(pendingCheck.rows[0].count);
       if (pending === 0) {
@@ -9590,6 +9714,7 @@ app.get("/api/todos", async (req, res) => {
              AND (grapehub_category IS NULL OR grapehub_category = '')
              AND is_anticipation_pair = false AND is_reversed_pair = false
              AND fin_unaccent(description) ILIKE fin_unaccent($1)
+             AND ${foraDeMesFechado()}
            RETURNING id`,
           [pattern, rule.category_name, rule.category_id]
         );
@@ -18930,7 +19055,11 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
   // ── Dispatch Queue Routes ──────────────────────────────────────────────────
   setupDispatchRoutes(app, pool);
   setupAsaasSyncRoutes(app, pool);
+  await migrateBillCategory(pool).catch((e: any) => console.warn('[bills] category_id:', e.message));
   setupBillsRoutes(app, pool);
+  setupDreLancamentosRoutes(app, pool);
+  setupFaturaVersoesRoutes(app, pool);
+  setupFechamentoRoutes(app, pool);
   await migrateCursos(pool).catch((e: any) => console.warn('[cursos] migrate:', e.message));
   setupCursosRoutes(app, pool);
   await migrateEstudio(pool).catch((e: any) => console.warn('[estudio] migrate:', e.message));
