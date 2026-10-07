@@ -5,13 +5,22 @@ import { storage } from '../firebase';
 import SplitHeadline from '../components/SplitHeadline';
 import { toast } from '@/src/lib/toast';
 import { confirmDialog } from '@/src/lib/confirm';
+import { useAuth } from '../contexts/AuthContext';
+import { DndContext, closestCenter, PointerSensor, KeyboardSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
+import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove, sortableKeyboardCoordinates } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import confetti from 'canvas-confetti';
 import {
   Plus, Play, CheckCircle2, Circle, ChevronLeft, ChevronDown, ChevronRight,
   Trash2, Edit2, X, Upload, Loader2, BarChart3, Clock, GraduationCap,
-  FileText, Users, Eye, EyeOff,
+  FileText, Users, Eye, EyeOff, MessageSquare, Send, AlignLeft, Hand, Undo2, GripVertical,
+  Paperclip, Download, FileImage, FileVideo, FileAudio, FileArchive, FileSpreadsheet, Sparkles, ArrowRight, BookOpen, Trophy,
 } from 'lucide-react';
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
+
+// Anexo da aula (qualquer tipo). `path` = caminho no Storage, para apagar junto.
+interface Material { name: string; url: string; path?: string; size?: number; type?: string }
 
 interface Aula {
   id: number;
@@ -21,11 +30,12 @@ interface Aula {
   video_url: string | null;
   video_path: string | null;
   duration_seconds: number;
-  materials: { name: string; url: string }[];
+  materials: Material[];
   order_index: number;
   watched_seconds?: number | null;
   last_position?: number | null;
   completed?: boolean | null;
+  completed_via?: 'assistiu' | 'manual' | null;
 }
 
 interface Modulo {
@@ -59,6 +69,12 @@ interface LinhaRelatorio {
   percentual: number;
   dias_para_concluir: number | null;
   ultimo_acesso: string | null;
+  concluidas_manual?: number;
+  aulas?: {
+    lesson_id: number; titulo: string; modulo: string;
+    concluida: boolean; via: 'assistiu' | 'manual' | null; em: string | null;
+    marcado_por: string | null; assistido: number;
+  }[];
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -317,14 +333,48 @@ const AulaModal: React.FC<{
 const Relatorio: React.FC<{ cursoId: number; onFechar: () => void }> = ({ cursoId, onFechar }) => {
   const [dados, setDados] = useState<{ total_aulas: number; duracao_total: number; colaboradores: LinhaRelatorio[] } | null>(null);
   const [carregando, setCarregando] = useState(true);
+  const [aberto, setAberto] = useState<number | null>(null);
+  const [agindo, setAgindo] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetch(`/api/cursos/${cursoId}/relatorio`)
+  const carregar = useCallback(() => {
+    return fetch(`/api/cursos/${cursoId}/relatorio`)
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(setDados)
       .catch(() => toast.error('Falha ao carregar o relatório.'))
       .finally(() => setCarregando(false));
   }, [cursoId]);
+  useEffect(() => { void carregar(); }, [carregar]);
+
+  // Conclusão manual: para quem viu a aula fora do player. Fica registrado quem marcou.
+  const marcar = async (c: LinhaRelatorio, lessonId: number, titulo: string) => {
+    const ok = await confirmDialog({
+      title: 'Marcar como concluída',
+      message: `Marcar "${titulo}" como concluída para ${c.nome}? Fica registrado que foi marcada por você, não assistida no player.`,
+      confirmText: 'Marcar',
+    });
+    if (!ok) return;
+    setAgindo(`${c.email}|${lessonId}`);
+    try {
+      const r = await fetch(`/api/cursos/aulas/${lessonId}/concluir`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_email: c.email }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error);
+      await carregar();
+    } catch (e: any) { toast.error(e.message || 'Falha ao marcar.'); }
+    finally { setAgindo(null); }
+  };
+  const desmarcar = async (c: LinhaRelatorio, lessonId: number) => {
+    if (!(await confirmDialog({ message: `Desfazer a conclusão manual de ${c.nome} nesta aula?`, danger: true, confirmText: 'Desfazer' }))) return;
+    setAgindo(`${c.email}|${lessonId}`);
+    try {
+      const r = await fetch(`/api/cursos/aulas/${lessonId}/concluir?user_email=${encodeURIComponent(c.email)}`, { method: 'DELETE' });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error);
+      await carregar();
+    } catch (e: any) { toast.error(e.message || 'Falha ao desfazer.'); }
+    finally { setAgindo(null); }
+  };
 
   const concluidos = dados?.colaboradores.filter(c => c.percentual >= 100).length || 0;
   const naoIniciaram = dados?.colaboradores.filter(c => c.percentual === 0).length || 0;
@@ -369,11 +419,18 @@ const Relatorio: React.FC<{ cursoId: number; onFechar: () => void }> = ({ cursoI
                 ))}
               </div>
               {dados.colaboradores.map((c) => (
-                <div key={c.colaborador_id}
-                  className="grid grid-cols-[1fr_110px_90px_100px_90px] px-4 py-2.5 items-center border-b border-black/5 dark:border-white/5 last:border-0">
-                  <div className="min-w-0">
-                    <p className="text-sm font-bold text-dark-text truncate">{c.nome}</p>
-                    <p className="text-[11px] text-slate-500 truncate">{c.cargo || '—'}</p>
+                <div key={c.colaborador_id} className="border-b border-black/5 dark:border-white/5 last:border-0">
+                <div onClick={() => setAberto(a => a === c.colaborador_id ? null : c.colaborador_id)}
+                  className="grid grid-cols-[1fr_110px_90px_100px_90px] px-4 py-2.5 items-center cursor-pointer hover:bg-black/[0.02] dark:hover:bg-white/[0.02]">
+                  <div className="min-w-0 flex items-center gap-2">
+                    {aberto === c.colaborador_id ? <ChevronDown size={13} className="text-slate-500 shrink-0" /> : <ChevronRight size={13} className="text-slate-500 shrink-0" />}
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-dark-text truncate">{c.nome}</p>
+                      <p className="text-[11px] text-slate-500 truncate">
+                        {c.cargo || '—'}
+                        {(c.concluidas_manual || 0) > 0 && <span className="text-amber-500"> · {c.concluidas_manual} marcada{c.concluidas_manual! > 1 ? 's' : ''} à mão</span>}
+                      </p>
+                    </div>
                   </div>
                   <div className="px-2">
                     <Barra pct={c.percentual} />
@@ -384,6 +441,45 @@ const Relatorio: React.FC<{ cursoId: number; onFechar: () => void }> = ({ cursoI
                   <span className="text-xs text-slate-400 text-center">{c.aulas_concluidas}/{dados.total_aulas}</span>
                   <span className="text-xs text-slate-400 text-center">{fmtDuracao(c.tempo_assistido)}</span>
                   <span className="text-xs text-slate-500 text-center">{fmtData(c.ultimo_acesso)}</span>
+                </div>
+                {/* Aula a aula: assistiu no player × marcada pelo gestor */}
+                {aberto === c.colaborador_id && (
+                  <div className="px-4 pb-3 pl-10 space-y-1">
+                    {(c.aulas || []).map(a => {
+                      const chave = `${c.email}|${a.lesson_id}`;
+                      return (
+                        <div key={a.lesson_id} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-black/[0.03] dark:bg-white/[0.03]">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-semibold text-dark-text truncate">{a.titulo}</p>
+                            <p className="text-[10px] text-slate-500 truncate">{a.modulo}</p>
+                          </div>
+                          {a.via === 'assistiu' ? (
+                            <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-500 shrink-0">
+                              <CheckCircle2 size={12} /> Assistiu · {fmtData(a.em)}
+                            </span>
+                          ) : a.via === 'manual' ? (
+                            <span className="flex items-center gap-1 text-[11px] font-bold text-amber-500 shrink-0" title="Concluída à mão no painel da turma">
+                              <Hand size={12} /> Marcada por {String(a.marcado_por || '—').split(' ')[0]} · {fmtData(a.em)}
+                            </span>
+                          ) : (
+                            <span className="text-[11px] text-slate-500 shrink-0">
+                              {a.assistido > 0 ? `Assistiu ${fmtDuracao(a.assistido)}` : 'Não começou'}
+                            </span>
+                          )}
+                          {a.via === 'manual' ? (
+                            <button onClick={() => desmarcar(c, a.lesson_id)} disabled={agindo === chave} title="Desfazer conclusão manual"
+                              className="p-1.5 rounded-md text-slate-500 hover:text-rose-400 disabled:opacity-40"><Undo2 size={13} /></button>
+                          ) : !a.concluida ? (
+                            <button onClick={() => marcar(c, a.lesson_id, a.titulo)} disabled={agindo === chave}
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-md border border-black/10 dark:border-white/10 text-[11px] font-bold text-slate-400 hover:text-violet-400 hover:border-violet-500/40 disabled:opacity-40">
+                              {agindo === chave ? <Loader2 size={11} className="animate-spin" /> : <CheckCircle2 size={11} />} Marcar concluída
+                            </button>
+                          ) : <span className="w-[26px]" />}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
                 </div>
               ))}
               {dados.colaboradores.length === 0 && (
@@ -401,7 +497,456 @@ const Relatorio: React.FC<{ cursoId: number; onFechar: () => void }> = ({ cursoI
 
 // ─── Página ──────────────────────────────────────────────────────────────────
 
+// ─── Celebração ao concluir a aula ───────────────────────────────────────────
+// Confete (canvas-confetti) + check que se desenha + atalho para a próxima aula.
+// Dispara na passagem de "não concluída" → "concluída", pelo player ou pelo botão.
+const soltarConfete = () => {
+  const cores = ['#8b5cf6', '#a78bfa', '#10b981', '#f59e0b', '#ec4899'];
+  const base = { spread: 70, startVelocity: 45, ticks: 220, gravity: 1.1, colors: cores, zIndex: 100002 };
+  confetti({ ...base, particleCount: 90, origin: { x: 0.5, y: 0.55 } });
+  setTimeout(() => confetti({ ...base, particleCount: 45, angle: 60, origin: { x: 0.1, y: 0.7 } }), 150);
+  setTimeout(() => confetti({ ...base, particleCount: 45, angle: 120, origin: { x: 0.9, y: 0.7 } }), 300);
+};
+
+const CelebracaoAula: React.FC<{
+  titulo: string; proxima: Aula | null; ultimoDoCurso: boolean;
+  onProxima: () => void; onFechar: () => void;
+}> = ({ titulo, proxima, ultimoDoCurso, onProxima, onFechar }) => {
+  useEffect(() => {
+    soltarConfete();
+    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onFechar(); };
+    window.addEventListener('keydown', k);
+    const t = setTimeout(onFechar, proxima ? 9000 : 6000);
+    return () => { window.removeEventListener('keydown', k); clearTimeout(t); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <motion.div className="fixed inset-0 z-[9995] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onFechar}>
+      <motion.div onClick={e => e.stopPropagation()}
+        initial={{ scale: 0.7, y: 30, opacity: 0 }} animate={{ scale: 1, y: 0, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+        transition={{ type: 'spring', stiffness: 260, damping: 20 }}
+        className="relative w-full max-w-sm overflow-hidden rounded-3xl bg-dark-card border border-black/10 dark:border-white/10 shadow-2xl p-8 text-center">
+        <div className="absolute -top-20 left-1/2 -translate-x-1/2 w-64 h-64 rounded-full bg-emerald-500/20 blur-3xl pointer-events-none" />
+
+        {/* Check que se desenha, com anel pulsando */}
+        <div className="relative mx-auto w-24 h-24">
+          <motion.span className="absolute inset-0 rounded-full bg-emerald-500/20"
+            initial={{ scale: 0.6, opacity: 0 }} animate={{ scale: [0.6, 1.35, 1.15], opacity: [0, 0.8, 0] }}
+            transition={{ duration: 1.4, delay: 0.25, repeat: 1 }} />
+          <motion.svg viewBox="0 0 96 96" className="relative w-24 h-24"
+            initial={{ rotate: -90 }} animate={{ rotate: 0 }} transition={{ duration: 0.6, ease: 'easeOut' }}>
+            <motion.circle cx="48" cy="48" r="42" fill="none" stroke="#10b981" strokeWidth="6" strokeLinecap="round"
+              initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.6, ease: 'easeInOut' }} />
+            <motion.path d="M30 49 L43 62 L67 36" fill="none" stroke="#10b981" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round"
+              initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.45, delay: 0.5, ease: 'easeOut' }} />
+          </motion.svg>
+        </div>
+
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.7 }}>
+          <p className="text-[11px] font-black text-emerald-500 uppercase tracking-widest mt-5">
+            {ultimoDoCurso ? 'Curso concluído!' : 'Aula concluída!'}
+          </p>
+          <h3 className="text-xl font-black text-dark-text mt-1 leading-snug">{titulo}</h3>
+          <p className="text-sm text-slate-500 mt-2">
+            {ultimoDoCurso ? 'Você terminou todas as aulas deste curso. 🎉' : 'Mandou bem — segue o ritmo.'}
+          </p>
+
+          <div className="flex flex-col gap-2 mt-6">
+            {proxima && (
+              <button onClick={onProxima}
+                className="flex items-center justify-center gap-2 w-full py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold transition-colors">
+                Próxima aula: <span className="truncate max-w-[160px]">{proxima.title}</span> <ArrowRight size={15} />
+              </button>
+            )}
+            <button onClick={onFechar} className="w-full py-2.5 rounded-xl text-sm font-bold text-slate-500 hover:text-dark-text">
+              {proxima ? 'Ficar nesta aula' : 'Fechar'}
+            </button>
+          </div>
+        </motion.div>
+      </motion.div>
+    </motion.div>
+  );
+};
+
+// ─── Linha do índice (arrastável para o gestor) ──────────────────────────────
+const LinhaAula: React.FC<{
+  aula: Aula; ativa: boolean; podeEditar: boolean;
+  onAbrir: () => void; onExcluir: () => void;
+}> = ({ aula: a, ativa, podeEditar, onAbrir, onExcluir }) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: a.id, disabled: !podeEditar });
+  return (
+    <div ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition, zIndex: isDragging ? 10 : undefined, position: 'relative' }}
+      className={`flex items-center gap-0.5 group ${isDragging ? 'opacity-80' : ''}`}>
+      {podeEditar && (
+        // Alça: arrastar só por aqui, para o clique na aula continuar abrindo a aula
+        <span {...attributes} {...listeners} title="Arraste para reordenar"
+          className="p-1 -ml-1 text-slate-400 hover:text-violet-400 cursor-grab active:cursor-grabbing opacity-40 group-hover:opacity-100 touch-none">
+          <GripVertical size={13} />
+        </span>
+      )}
+      <button onClick={onAbrir}
+        className={`flex-1 flex items-center gap-2.5 min-w-0 px-2.5 py-2 rounded-xl text-left transition-colors ${
+          ativa ? 'bg-violet-600/15 border border-violet-500/30' : 'hover:bg-black/5 dark:hover:bg-white/5 border border-transparent'
+        } ${isDragging ? 'bg-dark-card shadow-lg border-violet-500/40' : ''}`}>
+        {a.completed
+          ? <motion.span key="ok" initial={{ scale: 0, rotate: -45 }} animate={{ scale: 1, rotate: 0 }}
+              transition={{ type: 'spring', stiffness: 500, damping: 15 }} className="shrink-0 flex">
+              <CheckCircle2 size={14} className="text-emerald-400" />
+            </motion.span>
+          : <Circle size={14} className={`shrink-0 ${ativa ? 'text-violet-400' : 'text-slate-600'}`} />}
+        <span className={`text-xs truncate ${ativa ? 'font-bold text-dark-text' : 'text-slate-400'}`}>{a.title}</span>
+        {a.duration_seconds > 0 && (
+          <span className="text-[10px] text-slate-500 ml-auto shrink-0">{fmtDuracao(a.duration_seconds)}</span>
+        )}
+      </button>
+      {podeEditar && (
+        <button onClick={onExcluir}
+          className="p-1 text-slate-600 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-all"><Trash2 size={11} /></button>
+      )}
+    </div>
+  );
+};
+
+// ─── Descrição da aula (edição no lugar, para gestor) ────────────────────────
+const tamanho = (b?: number) => !b ? '' : b < 1024 * 1024 ? `${Math.max(1, Math.round(b / 1024))} KB` : `${(b / 1024 / 1024).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} MB`;
+const iconeArquivo = (m: Material) => {
+  const t = (m.type || '').toLowerCase(), n = m.name.toLowerCase();
+  if (t.startsWith('image/')) return FileImage;
+  if (t.startsWith('video/')) return FileVideo;
+  if (t.startsWith('audio/')) return FileAudio;
+  if (/\.(zip|rar|7z|tar|gz)$/.test(n)) return FileArchive;
+  if (/\.(xlsx?|csv|ods)$/.test(n)) return FileSpreadsheet;
+  return FileText;
+};
+
+const DescricaoAula: React.FC<{
+  aula: Aula; cursoId: number; podeEditar: boolean;
+  onSalvo: (texto: string | null) => void; onMateriais: (lista: Material[]) => void;
+}> = ({ aula, cursoId, podeEditar, onSalvo, onMateriais }) => {
+  const [editando, setEditando] = useState(false);
+  const [enviando, setEnviando] = useState<{ nome: string; pct: number } | null>(null);
+  const [arrastando, setArrastando] = useState(false);
+  const inputArquivo = useRef<HTMLInputElement>(null);
+  const materiais: Material[] = Array.isArray(aula.materials) ? aula.materials : [];
+
+  const salvarMateriais = async (lista: Material[]) => {
+    const r = await fetch(`/api/cursos/aulas/${aula.id}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ materials: lista }),
+    });
+    if (!r.ok) throw new Error('Falha ao salvar os anexos.');
+    onMateriais(lista);
+  };
+
+  // Qualquer tipo de arquivo. Vai para cursos/{curso}/materiais/ (a regra do
+  // Storage `cursos/{courseId}/{allPaths=**}` já cobre).
+  const anexar = async (arquivos: FileList | File[]) => {
+    const fila = Array.from(arquivos);
+    if (!fila.length) return;
+    let lista = [...materiais];
+    try {
+      for (const file of fila) {
+        setEnviando({ nome: file.name, pct: 0 });
+        const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const path = `cursos/${cursoId}/materiais/${aula.id}/${Date.now()}-${safe}`;
+        const task = uploadBytesResumable(ref(storage, path), file, { contentType: file.type || 'application/octet-stream' });
+        await new Promise<void>((resolve, reject) => task.on('state_changed',
+          (snap) => setEnviando({ nome: file.name, pct: Math.round((snap.bytesTransferred / snap.totalBytes) * 100) }),
+          reject, () => resolve()));
+        const url = await getDownloadURL(task.snapshot.ref);
+        lista = [...lista, { name: file.name, url, path, size: file.size, type: file.type }];
+        await salvarMateriais(lista);
+      }
+      toast.success(fila.length > 1 ? `${fila.length} arquivos anexados.` : 'Arquivo anexado.');
+    } catch (e: any) { toast.error(e.message || 'Falha ao enviar o arquivo.'); }
+    finally { setEnviando(null); if (inputArquivo.current) inputArquivo.current.value = ''; }
+  };
+
+  const remover = async (m: Material) => {
+    if (!(await confirmDialog({ message: `Remover "${m.name}" da aula?`, danger: true }))) return;
+    try {
+      await salvarMateriais(materiais.filter(x => x !== m));
+      if (m.path) deleteObject(ref(storage, m.path)).catch(() => {});
+    } catch (e: any) { toast.error(e.message); }
+  };
+  const [texto, setTexto] = useState(aula.description || '');
+  const [salvando, setSalvando] = useState(false);
+  useEffect(() => { setTexto(aula.description || ''); setEditando(false); }, [aula.id, aula.description]);
+
+  const salvar = async () => {
+    setSalvando(true);
+    try {
+      // '' limpa a descrição (o PUT ignora null, então mandamos string vazia)
+      const r = await fetch(`/api/cursos/aulas/${aula.id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: texto.trim() }),
+      });
+      if (!r.ok) throw new Error();
+      onSalvo(texto.trim() || null);
+      setEditando(false);
+    } catch { toast.error('Não foi possível salvar a descrição.'); }
+    finally { setSalvando(false); }
+  };
+
+  if (!podeEditar && !aula.description && materiais.length === 0) return null;
+  return (
+    <div
+      onDragOver={podeEditar ? (e) => { e.preventDefault(); setArrastando(true); } : undefined}
+      onDragLeave={podeEditar ? (e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setArrastando(false); } : undefined}
+      onDrop={podeEditar ? (e) => { e.preventDefault(); setArrastando(false); if (e.dataTransfer.files?.length) void anexar(e.dataTransfer.files); } : undefined}
+      className={`bg-dark-card border rounded-2xl p-5 transition-colors ${arrastando ? 'border-violet-500 bg-violet-500/5' : 'border-black/10 dark:border-white/10'}`}>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="flex items-center gap-2 text-xs font-black text-dark-text uppercase tracking-widest">
+          <AlignLeft size={14} className="text-violet-500" /> Descrição da aula
+        </h3>
+        {podeEditar && !editando && (
+          <button onClick={() => setEditando(true)} className="flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-violet-400">
+            <Edit2 size={12} /> {aula.description ? 'Editar' : 'Adicionar'}
+          </button>
+        )}
+      </div>
+      {editando ? (
+        <div className="space-y-3">
+          <textarea value={texto} onChange={e => setTexto(e.target.value)} rows={6} autoFocus
+            placeholder="O que a pessoa vai aprender nesta aula, links e materiais de apoio…"
+            className="w-full bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-xl px-3 py-2.5 text-sm text-dark-text outline-none focus:border-violet-500/60 resize-y" />
+          <div className="flex justify-end gap-2">
+            <button onClick={() => { setTexto(aula.description || ''); setEditando(false); }}
+              className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-dark-text">Cancelar</button>
+            <button onClick={salvar} disabled={salvando}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold disabled:opacity-50">
+              {salvando && <Loader2 size={12} className="animate-spin" />} Salvar
+            </button>
+          </div>
+        </div>
+      ) : aula.description ? (
+        <p className="text-sm text-slate-500 dark:text-slate-400 whitespace-pre-wrap leading-relaxed">{aula.description}</p>
+      ) : (
+        <p className="text-sm text-slate-500 italic">Sem descrição ainda.</p>
+      )}
+
+      {/* Materiais / anexos */}
+      {(materiais.length > 0 || podeEditar) && (
+        <div className="mt-5 pt-4 border-t border-black/10 dark:border-white/10">
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="flex items-center gap-1.5 text-[11px] font-black text-dark-text uppercase tracking-widest">
+              <Paperclip size={12} className="text-violet-500" /> Materiais da aula
+              {materiais.length > 0 && <span className="text-slate-500">{materiais.length}</span>}
+            </h4>
+            {podeEditar && (
+              <>
+                <input ref={inputArquivo} type="file" multiple className="hidden"
+                  onChange={(e) => e.target.files && anexar(e.target.files)} />
+                <button onClick={() => inputArquivo.current?.click()} disabled={!!enviando}
+                  className="flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-violet-400 disabled:opacity-40">
+                  <Upload size={12} /> Anexar arquivos
+                </button>
+              </>
+            )}
+          </div>
+
+          {enviando && (
+            <div className="mb-2 px-3 py-2 rounded-xl bg-violet-500/10 text-[11px] text-violet-300">
+              <div className="flex justify-between gap-2"><span className="truncate">Enviando {enviando.nome}</span><span>{enviando.pct}%</span></div>
+              <div className="h-1 mt-1.5 rounded-full bg-white/10 overflow-hidden"><div className="h-full bg-violet-500" style={{ width: `${enviando.pct}%` }} /></div>
+            </div>
+          )}
+
+          {materiais.length === 0 ? (
+            !enviando && <p className="text-xs text-slate-500">Nenhum arquivo. Clique em "Anexar arquivos" ou arraste para cá — PDF, planilha, imagem, zip, qualquer tipo.</p>
+          ) : (
+            <div className="grid sm:grid-cols-2 gap-2">
+              {materiais.map((m, i) => {
+                const Icone = iconeArquivo(m);
+                return (
+                  <div key={`${m.url}-${i}`} className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-black/[0.03] dark:bg-white/[0.04] border border-black/5 dark:border-white/5 group">
+                    <span className="w-8 h-8 rounded-lg bg-violet-500/10 flex items-center justify-center shrink-0"><Icone size={15} className="text-violet-400" /></span>
+                    <a href={m.url} target="_blank" rel="noopener noreferrer" download={m.name} className="min-w-0 flex-1">
+                      <p className="text-xs font-semibold text-dark-text truncate hover:text-violet-400" title={m.name}>{m.name}</p>
+                      {m.size ? <p className="text-[10px] text-slate-500">{tamanho(m.size)}</p> : null}
+                    </a>
+                    <a href={m.url} target="_blank" rel="noopener noreferrer" download={m.name} title="Baixar"
+                      className="p-1.5 rounded-md text-slate-500 hover:text-violet-400"><Download size={13} /></a>
+                    {podeEditar && (
+                      <button onClick={() => remover(m)} title="Remover"
+                        className="p-1.5 rounded-md text-slate-500 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={12} /></button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── Comentários da aula ─────────────────────────────────────────────────────
+interface Comentario { id: number; texto: string; created_at: string; autor: string; foto: string | null; meu: boolean; pode_apagar: boolean }
+
+const quando = (iso: string) => {
+  const d = new Date(iso), seg = (Date.now() - d.getTime()) / 1000;
+  if (seg < 60) return 'agora';
+  if (seg < 3600) return `há ${Math.floor(seg / 60)} min`;
+  if (seg < 86400) return `há ${Math.floor(seg / 3600)} h`;
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: d.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined });
+};
+
+const ComentariosAula: React.FC<{ aulaId: number }> = ({ aulaId }) => {
+  const [lista, setLista] = useState<Comentario[]>([]);
+  const [carregando, setCarregando] = useState(true);
+  const [texto, setTexto] = useState('');
+  const [enviando, setEnviando] = useState(false);
+
+  useEffect(() => {
+    let vivo = true;
+    setCarregando(true); setLista([]);
+    fetch(`/api/cursos/aulas/${aulaId}/comentarios`)
+      .then(r => (r.ok ? r.json() : []))
+      .then(d => vivo && setLista(Array.isArray(d) ? d : []))
+      .finally(() => vivo && setCarregando(false));
+    return () => { vivo = false; };
+  }, [aulaId]);
+
+  const enviar = async () => {
+    const t = texto.trim();
+    if (!t) return;
+    setEnviando(true);
+    try {
+      const r = await fetch(`/api/cursos/aulas/${aulaId}/comentarios`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ texto: t }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error);
+      setLista(prev => [...prev, d]);
+      setTexto('');
+    } catch (e: any) { toast.error(e.message || 'Não foi possível comentar.'); }
+    finally { setEnviando(false); }
+  };
+
+  const apagar = async (c: Comentario) => {
+    if (!(await confirmDialog({ message: 'Apagar este comentário?', danger: true }))) return;
+    const r = await fetch(`/api/cursos/comentarios/${c.id}`, { method: 'DELETE' });
+    if (r.ok) setLista(prev => prev.filter(x => x.id !== c.id));
+    else toast.error('Não foi possível apagar.');
+  };
+
+  const Avatar = ({ c }: { c: { autor: string; foto: string | null } }) => c.foto
+    ? <img src={c.foto} alt="" className="w-8 h-8 rounded-full object-cover shrink-0" />
+    : <span className="w-8 h-8 rounded-full bg-violet-500/15 text-violet-400 text-xs font-black flex items-center justify-center shrink-0">{c.autor.slice(0, 1).toUpperCase()}</span>;
+
+  return (
+    <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl p-5">
+      <h3 className="flex items-center gap-2 text-xs font-black text-dark-text uppercase tracking-widest mb-4">
+        <MessageSquare size={14} className="text-violet-500" /> Comentários
+        {lista.length > 0 && <span className="text-slate-500 font-bold">{lista.length}</span>}
+      </h3>
+
+      {carregando ? (
+        <div className="py-6 flex justify-center"><Loader2 size={18} className="animate-spin text-violet-500" /></div>
+      ) : lista.length === 0 ? (
+        <p className="text-sm text-slate-500 mb-4">Nenhum comentário ainda. Ficou alguma dúvida? Comente aqui.</p>
+      ) : (
+        <div className="space-y-4 mb-5">
+          {lista.map(c => (
+            <div key={c.id} className="flex gap-3 group">
+              <Avatar c={c} />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-dark-text">{c.autor}</span>
+                  <span className="text-[11px] text-slate-500">{quando(c.created_at)}</span>
+                  {c.pode_apagar && (
+                    <button onClick={() => apagar(c)} title="Apagar"
+                      className="ml-auto p-1 rounded-md text-slate-500 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Trash2 size={12} />
+                    </button>
+                  )}
+                </div>
+                <p className="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-wrap leading-relaxed mt-0.5">{c.texto}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-end gap-2">
+        <textarea value={texto} onChange={e => setTexto(e.target.value)} rows={2}
+          onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void enviar(); } }}
+          placeholder="Escreva um comentário… (Ctrl/⌘ + Enter envia)"
+          className="flex-1 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-xl px-3 py-2.5 text-sm text-dark-text outline-none focus:border-violet-500/60 resize-none" />
+        <button onClick={enviar} disabled={enviando || !texto.trim()}
+          className="h-[46px] px-4 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold flex items-center gap-1.5 disabled:opacity-40">
+          {enviando ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Enviar
+        </button>
+      </div>
+    </div>
+  );
+};
+
 const Cursos: React.FC = () => {
+  const { userData, user } = useAuth() as any;
+  const meuEmail: string = String(user?.email || userData?.email || '').toLowerCase();
+  const [concluindo, setConcluindo] = useState(false);
+  const [celebrar, setCelebrar] = useState<number | null>(null);   // id da aula recém-concluída
+  // Espelho de `modulos` para saber, dentro dos callbacks, se a aula JÁ estava concluída
+  const modulosRef = useRef<Modulo[]>([]);
+
+  // Reordenar aulas dentro do módulo (arrastar pela alça). Atualiza na hora e
+  // salva; se o servidor recusar, volta a ordem anterior.
+  const sensores = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+  const reordenar = async (moduloId: number, ev: DragEndEvent) => {
+    const { active, over } = ev;
+    if (!over || active.id === over.id) return;
+    let anterior: Modulo[] = [];
+    let ids: number[] = [];
+    setModulos(prev => {
+      anterior = prev;
+      return prev.map(m => {
+        if (m.id !== moduloId) return m;
+        const de = m.aulas.findIndex(a => a.id === active.id), para = m.aulas.findIndex(a => a.id === over.id);
+        const aulas = arrayMove(m.aulas, de, para);
+        ids = aulas.map(a => a.id);
+        return { ...m, aulas };
+      });
+    });
+    try {
+      const r = await fetch(`/api/cursos/modulos/${moduloId}/ordem`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }),
+      });
+      if (!r.ok) throw new Error();
+    } catch {
+      setModulos(anterior);
+      toast.error('Não foi possível salvar a nova ordem.');
+    }
+  };
+
+  // Gestor marca a aula como concluída para si (fica como 'manual', não 'assistiu')
+  const alternarConclusao = async (aula: Aula) => {
+    if (!meuEmail) return;
+    setConcluindo(true);
+    try {
+      const desfazer = aula.completed && aula.completed_via === 'manual';
+      const r = desfazer
+        ? await fetch(`/api/cursos/aulas/${aula.id}/concluir?user_email=${encodeURIComponent(meuEmail)}`, { method: 'DELETE' })
+        : await fetch(`/api/cursos/aulas/${aula.id}/concluir`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_email: meuEmail }),
+          });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error);
+      const novo = desfazer ? { completed: false, completed_via: null } : { completed: true, completed_via: 'manual' as const };
+      setModulos(prev => prev.map(m => ({ ...m, aulas: m.aulas.map(a => a.id === aula.id ? { ...a, ...novo } : a) })));
+      setAulaAtiva(prev => prev && prev.id === aula.id ? { ...prev, ...novo } : prev);
+      if (desfazer) toast.success('Conclusão desfeita.');
+      else setCelebrar(aula.id);
+    } catch (e: any) { toast.error(e.message || 'Não foi possível atualizar.'); }
+    finally { setConcluindo(false); }
+  };
   const [cursos, setCursos] = useState<Curso[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [carregando, setCarregando] = useState(true);
@@ -450,6 +995,8 @@ const Cursos: React.FC = () => {
 
   // ── Progresso ──
   const aplicarProgresso = useCallback((aulaId: number, dados: { watched_seconds: number; completed: boolean }) => {
+    const antes = modulosRef.current.flatMap(m => m.aulas).find(a => a.id === aulaId);
+    if (dados.completed && antes && !antes.completed) setCelebrar(aulaId);
     setModulos(prev => prev.map(m => ({
       ...m,
       aulas: m.aulas.map(a => a.id === aulaId ? { ...a, ...dados } : a),
@@ -548,12 +1095,14 @@ const Cursos: React.FC = () => {
     if (!r.ok) return;
     // O arquivo no Storage continuaria ocupando espaço e cobrando; apaga junto.
     if (aula.video_path) { deleteObject(ref(storage, aula.video_path)).catch(() => {}); }
+    (aula.materials || []).forEach(m => { if (m.path) deleteObject(ref(storage, m.path)).catch(() => {}); });
     setModulos(prev => prev.map(m => ({ ...m, aulas: m.aulas.filter(a => a.id !== aula.id) })));
     setAulaAtiva(prev => prev?.id === aula.id ? null : prev);
   };
 
   // ── Derivados ──
   const todasAulas = useMemo(() => modulos.flatMap(m => m.aulas), [modulos]);
+  useEffect(() => { modulosRef.current = modulos; }, [modulos]);
   const pctCurso = todasAulas.length
     ? Math.round((todasAulas.filter(a => a.completed).length / todasAulas.length) * 100)
     : 0;
@@ -562,17 +1111,78 @@ const Cursos: React.FC = () => {
   if (!cursoAtivo) {
     return (
       <div className="min-h-screen bg-dark-bg">
-        <div className="px-6 pt-6 pb-4 flex items-start justify-between gap-4 flex-wrap">
-          <SplitHeadline text="Central de " highlight="Treinamentos"
-            subtitle="Trilhas de formação da equipe"
-            subtitleClassName="text-sm text-gray-500 dark:text-gray-400 mt-1" />
-          {isAdmin && (
-            <button onClick={criarCurso}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold transition-colors">
-              <Plus size={15} /> Novo curso
-            </button>
-          )}
-        </div>
+        {/* Banner — saudação, números da pessoa e atalho para continuar */}
+        {(() => {
+          const primeiroNome = String((userData as any)?.name || '').split(' ')[0];
+          const totAulas = cursos.reduce((s, c) => s + (c.total_aulas || 0), 0);
+          const feitas = cursos.reduce((s, c) => s + (c.aulas_concluidas || 0), 0);
+          const segundos = cursos.reduce((s, c) => s + (c.duracao_total || 0), 0);
+          const pctGeral = totAulas > 0 ? Math.round((feitas / totAulas) * 100) : 0;
+          // Continuar: o curso já começado e não terminado; senão, o primeiro a fazer
+          const pend = cursos.filter(c => c.total_aulas > 0 && c.aulas_concluidas < c.total_aulas);
+          const continuar = pend.find(c => c.aulas_concluidas > 0 || c.tempo_assistido > 0) || pend[0];
+          const horas = segundos >= 3600 ? `${(segundos / 3600).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}h` : fmtDuracao(segundos);
+          return (
+            <div className="px-6 pt-6 pb-2">
+              <div className="relative overflow-hidden rounded-3xl p-7 md:p-9 text-white"
+                style={{ background: 'linear-gradient(120deg, #1a0b2e 0%, #3b1673 45%, #6d28d9 80%, #8b5cf6 100%)' }}>
+                {/* Decoração */}
+                <div className="absolute -top-24 -right-16 w-80 h-80 rounded-full bg-fuchsia-500/30 blur-3xl pointer-events-none" />
+                <div className="absolute -bottom-28 left-1/3 w-96 h-96 rounded-full bg-violet-400/20 blur-3xl pointer-events-none" />
+                <div className="absolute inset-0 opacity-[0.07] pointer-events-none"
+                  style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, #fff 1px, transparent 0)', backgroundSize: '22px 22px' }} />
+                <GraduationCap size={220} strokeWidth={1} className="absolute -right-6 -bottom-10 text-white/10 pointer-events-none hidden md:block" />
+
+                <div className="relative flex flex-col lg:flex-row lg:items-end justify-between gap-8">
+                  <div className="max-w-xl">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 border border-white/15 text-[11px] font-bold uppercase tracking-widest">
+                      <Sparkles size={12} /> Central de Treinamentos
+                    </span>
+                    <h1 className="text-3xl md:text-4xl font-black tracking-tight mt-4 leading-tight">
+                      {primeiroNome ? `Bora evoluir, ${primeiroNome}?` : 'Bora evoluir?'}
+                    </h1>
+                    <p className="text-sm md:text-base text-white/70 mt-2">
+                      As trilhas de formação da Grape: o jeito como a gente trabalha, aula por aula.
+                    </p>
+                    <div className="flex flex-wrap items-center gap-3 mt-6">
+                      {continuar && (
+                        <button onClick={() => abrirCurso(continuar)}
+                          className="flex items-center gap-2 px-5 py-3 rounded-xl bg-white text-violet-700 text-sm font-black hover:bg-violet-50 transition-colors shadow-lg shadow-black/20">
+                          <Play size={15} fill="currentColor" />
+                          {continuar.aulas_concluidas > 0 || continuar.tempo_assistido > 0 ? 'Continuar' : 'Começar'}: {continuar.title}
+                          <ArrowRight size={15} />
+                        </button>
+                      )}
+                      {isAdmin && (
+                        <button onClick={criarCurso}
+                          className="flex items-center gap-2 px-4 py-3 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white text-sm font-bold transition-colors">
+                          <Plus size={15} /> Novo curso
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Números */}
+                  <div className="grid grid-cols-2 gap-3 shrink-0 w-full lg:w-[340px]">
+                    {[
+                      { i: BookOpen, v: String(cursos.length), r: cursos.length === 1 ? 'curso' : 'cursos' },
+                      { i: Play, v: String(totAulas), r: 'aulas' },
+                      { i: Clock, v: horas || '0min', r: 'de conteúdo' },
+                      { i: Trophy, v: `${pctGeral}%`, r: `concluído · ${feitas}/${totAulas}` },
+                    ].map(({ i: Icone, v, r }) => (
+                      <div key={r} className="rounded-2xl bg-white/10 border border-white/15 backdrop-blur-sm px-4 py-3">
+                        <Icone size={15} className="text-white/60" />
+                        <p className="text-2xl font-black mt-1 leading-none">{v}</p>
+                        <p className="text-[11px] text-white/60 mt-1">{r}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <h2 className="text-sm font-black text-dark-text uppercase tracking-widest mt-7 mb-1">Cursos</h2>
+            </div>
+          );
+        })()}
 
         <div className="px-6 pb-10">
           {carregando ? (
@@ -689,21 +1299,47 @@ const Cursos: React.FC = () => {
                         <span className="flex items-center gap-1"><Clock size={11} /> {fmtDuracao(aulaAtiva.duration_seconds)}</span>
                       )}
                       {aulaAtiva.completed
-                        ? <span className="flex items-center gap-1 text-emerald-400 font-bold"><CheckCircle2 size={11} /> Concluída</span>
-                        : (aulaAtiva.watched_seconds || 0) > 0 && <span>Você assistiu {fmtDuracao(aulaAtiva.watched_seconds || 0)}</span>}
+                        ? <span className={`flex items-center gap-1 font-bold ${aulaAtiva.completed_via === 'manual' ? 'text-amber-500' : 'text-emerald-400'}`}>
+                            {aulaAtiva.completed_via === 'manual' ? <Hand size={11} /> : <CheckCircle2 size={11} />}
+                            {aulaAtiva.completed_via === 'manual' ? 'Concluída (marcada à mão)' : 'Concluída'}
+                          </span>
+                        : (aulaAtiva.watched_seconds || 0) > 0
+                          ? <span>Você assistiu {fmtDuracao(aulaAtiva.watched_seconds || 0)}</span>
+                          : !isAdmin && <span>Conclui sozinha ao assistir 90% do vídeo</span>}
                     </div>
                   </div>
-                  {isAdmin && (
-                    <button onClick={() => setModalAula(aulaAtiva)}
-                      className="p-2 rounded-lg text-slate-500 hover:text-violet-400 transition-colors shrink-0">
-                      <Edit2 size={14} />
-                    </button>
-                  )}
+                  <div className="flex items-center gap-2 shrink-0">
+                    {/* Conclusão manual: só gestor; quem concluiu assistindo não tem o que desfazer */}
+                    {isAdmin && !(aulaAtiva.completed && aulaAtiva.completed_via !== 'manual') && (
+                      <button onClick={() => alternarConclusao(aulaAtiva)} disabled={concluindo}
+                        className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-colors disabled:opacity-50 ${
+                          aulaAtiva.completed
+                            ? 'border border-black/10 dark:border-white/10 text-slate-500 hover:text-rose-400'
+                            : 'bg-emerald-600 hover:bg-emerald-500 text-white'}`}>
+                        {concluindo ? <Loader2 size={13} className="animate-spin" />
+                          : aulaAtiva.completed ? <Undo2 size={13} /> : <CheckCircle2 size={13} />}
+                        {aulaAtiva.completed ? 'Desfazer conclusão' : 'Marcar como concluída'}
+                      </button>
+                    )}
+                    {isAdmin && (
+                      <button onClick={() => setModalAula(aulaAtiva)}
+                        className="p-2 rounded-lg text-slate-500 hover:text-violet-400 transition-colors">
+                        <Edit2 size={14} />
+                      </button>
+                    )}
+                  </div>
                 </div>
-                {aulaAtiva.description && (
-                  <p className="text-sm text-slate-400 mt-3 whitespace-pre-wrap leading-relaxed">{aulaAtiva.description}</p>
-                )}
               </div>
+              <DescricaoAula aula={aulaAtiva} cursoId={cursoAtivo.id} podeEditar={isAdmin}
+                onMateriais={(lista) => {
+                  setModulos(prev => prev.map(m => ({ ...m, aulas: m.aulas.map(a => a.id === aulaAtiva.id ? { ...a, materials: lista } : a) })));
+                  setAulaAtiva(prev => prev && prev.id === aulaAtiva.id ? { ...prev, materials: lista } : prev);
+                }}
+                onSalvo={(texto) => {
+                setModulos(prev => prev.map(m => ({ ...m, aulas: m.aulas.map(a => a.id === aulaAtiva.id ? { ...a, description: texto } : a) })));
+                setAulaAtiva(prev => prev && prev.id === aulaAtiva.id ? { ...prev, description: texto } : prev);
+              }} />
+              <ComentariosAula aulaId={aulaAtiva.id} />
             </>
           ) : (
             <div className="aspect-video rounded-2xl bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 flex flex-col items-center justify-center gap-2">
@@ -740,29 +1376,16 @@ const Cursos: React.FC = () => {
                   )}
                 </div>
 
-                {!fechado && m.aulas.map(a => {
-                  const ativa = aulaAtiva?.id === a.id;
-                  return (
-                    <div key={a.id} className="flex items-center gap-1 group">
-                      <button onClick={() => setAulaAtiva(a)}
-                        className={`flex-1 flex items-center gap-2.5 min-w-0 px-2.5 py-2 rounded-xl text-left transition-colors ${
-                          ativa ? 'bg-violet-600/15 border border-violet-500/30' : 'hover:bg-black/5 dark:hover:bg-white/5 border border-transparent'
-                        }`}>
-                        {a.completed
-                          ? <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
-                          : <Circle size={14} className={`shrink-0 ${ativa ? 'text-violet-400' : 'text-slate-600'}`} />}
-                        <span className={`text-xs truncate ${ativa ? 'font-bold text-dark-text' : 'text-slate-400'}`}>{a.title}</span>
-                        {a.duration_seconds > 0 && (
-                          <span className="text-[10px] text-slate-500 ml-auto shrink-0">{fmtDuracao(a.duration_seconds)}</span>
-                        )}
-                      </button>
-                      {isAdmin && (
-                        <button onClick={() => excluirAula(a)}
-                          className="p-1 text-slate-600 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-all"><Trash2 size={11} /></button>
-                      )}
-                    </div>
-                  );
-                })}
+                {!fechado && (
+                  <DndContext sensors={sensores} collisionDetection={closestCenter} onDragEnd={(ev) => reordenar(m.id, ev)}>
+                    <SortableContext items={m.aulas.map(a => a.id)} strategy={verticalListSortingStrategy}>
+                      {m.aulas.map(a => (
+                        <LinhaAula key={a.id} aula={a} ativa={aulaAtiva?.id === a.id} podeEditar={isAdmin}
+                          onAbrir={() => setAulaAtiva(a)} onExcluir={() => excluirAula(a)} />
+                      ))}
+                    </SortableContext>
+                  </DndContext>
+                )}
               </div>
             );
           })}
@@ -780,6 +1403,17 @@ const Cursos: React.FC = () => {
             onSalvar={salvarAula} onFechar={() => setModalAula(null)} />
         )}
         {verRelatorio && <Relatorio cursoId={cursoAtivo.id} onFechar={() => setVerRelatorio(false)} />}
+        {celebrar != null && (() => {
+          const idx = todasAulas.findIndex(a => a.id === celebrar);
+          const aula = todasAulas[idx];
+          const proxima = todasAulas.slice(idx + 1).find(a => !a.completed) || null;
+          return (
+            <CelebracaoAula key={`cel-${celebrar}`} titulo={aula?.title || ''} proxima={proxima}
+              ultimoDoCurso={todasAulas.length > 0 && todasAulas.every(a => a.completed)}
+              onProxima={() => { if (proxima) setAulaAtiva(proxima); setCelebrar(null); }}
+              onFechar={() => setCelebrar(null)} />
+          );
+        })()}
       </AnimatePresence>
     </div>
   );

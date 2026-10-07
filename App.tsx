@@ -84,6 +84,7 @@ import {
 } from './src/pages/Placeholders';
 
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
+import AlertaSaldoBaixo from './src/components/AlertaSaldoBaixo';
 import { MenuProvider, useMenu } from './src/context/MenuContext';
 import ActivityToastStack from './src/components/ActivityToastStack';
 import { MoodPopup } from './src/components/MoodPopup';
@@ -552,6 +553,8 @@ const AppContent: React.FC = () => {
         toggleTheme={toggleTheme}
         onCollapseChange={setSidebarCollapsed}
       />
+      {/* Saldo baixo nas contas de anúncio: só aparece para o gestor de uma página de Projetos */}
+      <AlertaSaldoBaixo onAbrirPagina={navigateTo} />
       <main 
         className="h-screen overflow-y-auto scrollbar-hide rounded-tl-[2.5rem] bg-light-bg dark:bg-dark-bg"
         style={{

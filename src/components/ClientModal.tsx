@@ -13,8 +13,8 @@ import {
 import { Modal } from './ui/Modal';
 import { designSystem } from '../design-system';
 import CrmCommentHistory from './CrmCommentHistory';
+import { confirmDialog } from '../lib/confirm';
 import { normalizePhoneBR, formatPhoneBR } from '../utils/phoneNormalize';
-import OptionPicker from './ui/OptionPicker';
 
 interface Client {
   id: string;
@@ -55,10 +55,14 @@ interface FinPerson {
 }
 
 interface FinMovement {
-  movement_date: string;
+  movement_date: string | null;   // dia em que o cliente pagou (YYYY-MM-DD)
+  credit_date?: string | null;    // dia em que o dinheiro cai (cartão: ~30 dias depois)
   expiration_date: string;
   movement_value: string;
   status: string;
+  asaas_status?: string;
+  payment_method?: string;
+  invoice_url?: string | null;
   value?: string;
 }
 
@@ -73,12 +77,368 @@ interface FinSubscription {
   description: string;
 }
 
+type SubLista = FinSubscription & {
+  customer_name?: string; customer_cnpjcpf?: string; grapehub_client_id?: string;
+  next_due?: string | null; linked_client_id?: string | null; linked_client_name?: string | null;
+};
+
 interface ClientModalProps {
   isOpen: boolean;
   onClose: () => void;
   editingClient: Client | null;
   onSaveSuccess: () => void;
 }
+
+// Par rótulo/valor da aba "Dados do Cliente" (modo leitura). Vazio vira "—".
+const Campo: React.FC<{ rotulo: string; className?: string; children?: React.ReactNode }> = ({ rotulo, className = '', children }) => {
+  const vazio = children == null || children === '' || children === false;
+  return (
+    <div className={`min-w-0 ${className}`}>
+      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">{rotulo}</p>
+      <div className={`text-sm font-semibold break-words ${vazio ? 'text-slate-400' : 'text-light-text dark:text-white'}`}>{vazio ? '—' : children}</div>
+    </div>
+  );
+};
+
+const campoEd = 'w-full px-3 py-2 rounded-lg text-sm modal-input focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all';
+
+const CampoEd: React.FC<{ rotulo: string; className?: string; children: React.ReactNode }> = ({ rotulo, className = '', children }) => (
+  <div className={`min-w-0 ${className}`}>
+    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">{rotulo}</p>
+    {children}
+  </div>
+);
+
+// Lista curta (squad, produto, meio de cobrança) como botões: um clique, e o valor
+// escolhido aparece com o mesmo destaque da leitura. Clicar no marcado desmarca.
+const Escolha: React.FC<{ valor: string; opcoes: string[]; onChange: (v: string) => void }> = ({ valor, opcoes, onChange }) => (
+  <div className="flex flex-wrap gap-1.5">
+    {opcoes.map(o => (
+      <button key={o} type="button" onClick={() => onChange(valor === o ? '' : o)}
+        className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+          valor === o
+            ? 'bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/40'
+            : 'border-slate-200 dark:border-white/10 text-slate-500 hover:border-violet-500/40 hover:text-violet-500'
+        }`}>{o}</button>
+    ))}
+  </div>
+);
+
+// ── Aba Financeiro ────────────────────────────────────────────────────────────
+// Reescrita em 06/10/2026 (estava confusa, sobretudo ao escolher a assinatura).
+//  • Escolha da assinatura é uma lista na própria aba, não um dropdown em portal.
+//    Sugere primeiro as que têm o nome parecido com o do cliente e avisa quando a
+//    assinatura já está ligada a OUTRO cliente — em 06/10/2026 eram 97 das 99
+//    ativas, então escolher às cegas quase sempre duplicava.
+//  • "Sem assinatura vinculada" deixou de ser a 1ª opção da lista: um clique nela
+//    desvinculava. Desvincular agora é um botão com confirmação.
+//  • "Pago em" é o dia em que o CLIENTE pagou. No cartão, o Asaas grava como
+//    data de pagamento o dia em que o dinheiro cai (~30 dias depois); essa data
+//    aparece embaixo, como "cai em". Ver /api/fin-people/:id/movements.
+const brlC = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const dataBR = (d?: string | null) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}` : '');
+const diaMes = (d?: string | null) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : '');
+const diasEntre = (a: string, b: string) => Math.round((Date.parse(b.slice(0, 10) + 'T12:00:00') - Date.parse(a.slice(0, 10) + 'T12:00:00')) / 86400000);
+const hojeISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const MESES_NOME = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+const mesNome = (d: string) => `${MESES_NOME[Number(d.slice(5, 7)) - 1]} ${d.slice(0, 4)}`;
+const CICLO: Record<string, string> = { MONTHLY: 'Mensal', YEARLY: 'Anual', QUARTERLY: 'Trimestral', SEMIANNUALLY: 'Semestral', WEEKLY: 'Semanal', BIWEEKLY: 'Quinzenal' };
+const FORMA: Record<string, string> = { BOLETO: 'Boleto', PIX: 'Pix', CREDIT_CARD: 'Cartão', UNDEFINED: 'Boleto ou Pix' };
+const STATUS_SUB: Record<string, { t: string; c: string }> = {
+  ACTIVE: { t: 'Ativa', c: 'bg-emerald-500/10 text-emerald-500' },
+  INACTIVE: { t: 'Inativa', c: 'bg-slate-500/10 text-slate-500' },
+  DELETED: { t: 'Cancelada', c: 'bg-rose-500/10 text-rose-500' },
+  EXPIRED: { t: 'Expirada', c: 'bg-slate-500/10 text-slate-500' },
+};
+
+// Semelhança de nome: palavras em comum, ignorando as que todo escritório tem
+const PALAVRAS_COMUNS = new Set(['advogados', 'advocacia', 'advogado', 'associados', 'sociedade', 'individual', 'ltda', 'eireli', 'escritorio', 'dos', 'das', 'consultoria', 'juridica', 'juridico']);
+const palavrasDe = (t?: string | null) =>
+  (t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+    .split(/[^a-z0-9]+/).filter(w => w.length >= 3 && !PALAVRAS_COMUNS.has(w));
+
+const AbaFinanceiro: React.FC<{
+  clientName: string;
+  subId: string;
+  subs: SubLista[];
+  carregandoSubs: boolean;
+  movimentos: FinMovement[];
+  carregandoMov: boolean;
+  clientId?: string;
+  onVincular: (id: string | null) => Promise<void> | void;
+}> = ({ clientName, subId, subs, carregandoSubs, movimentos, carregandoMov, clientId, onVincular }) => {
+  const [trocando, setTrocando] = useState(false);
+  const [busca, setBusca] = useState('');
+  const [comCanceladas, setComCanceladas] = useState(false);
+  const [verTudo, setVerTudo] = useState(false);
+
+  const sub = subs.find(s => String(s.id) === String(subId));
+  const escolhendo = !subId || trocando;
+  const hoje = hojeISO();
+
+  const opcoes = React.useMemo(() => {
+    const termo = busca.trim().toLowerCase();
+    const digitos = termo.replace(/\D/g, '');
+    const doCliente = palavrasDe(clientName);
+    return subs
+      .filter(s => comCanceladas || s.status === 'ACTIVE')
+      .filter(s => !termo
+        || (s.customer_name || '').toLowerCase().includes(termo)
+        || (digitos.length >= 3 && (s.customer_cnpjcpf || '').replace(/\D/g, '').includes(digitos)))
+      .map(s => {
+        const nomeSub = palavrasDe(s.customer_name);
+        const pontos = doCliente.filter(w => nomeSub.includes(w)).length;
+        const deOutro = !!s.linked_client_id && s.linked_client_id !== clientId;
+        return { s, pontos, deOutro };
+      })
+      .sort((a, b) => b.pontos - a.pontos || Number(a.deOutro) - Number(b.deOutro)
+        || (a.s.customer_name || '').localeCompare(b.s.customer_name || ''));
+  }, [subs, busca, comCanceladas, clientName, clientId]);
+  const sugeridas = opcoes.filter(o => o.pontos > 0);
+  const demais = opcoes.filter(o => o.pontos === 0);
+  const livres = subs.filter(s => s.status === 'ACTIVE' && !s.linked_client_id).length;
+
+  const escolher = async (o: { s: SubLista; deOutro: boolean }) => {
+    if (o.deOutro && !(await confirmDialog({
+      title: 'Assinatura já vinculada',
+      message: `Esta assinatura já está vinculada a "${o.s.linked_client_name}". Vincular também a este cliente fará os dois mostrarem a mesma mensalidade e os mesmos pagamentos.`,
+      confirmText: 'Vincular mesmo assim',
+    }))) return;
+    await onVincular(String(o.s.id));
+    setTrocando(false); setBusca('');
+  };
+
+  const desvincular = async () => {
+    if (!(await confirmDialog({
+      title: 'Desvincular assinatura',
+      message: 'O cliente deixa de mostrar mensalidade e histórico de pagamentos até ser vinculado de novo. A assinatura no Asaas não é alterada.',
+      confirmText: 'Desvincular', danger: true,
+    }))) return;
+    await onVincular(null);
+  };
+
+  // Resumo do mês corrente e do que está em atraso
+  const doMes = movimentos.find(m => m.expiration_date?.slice(0, 7) === hoje.slice(0, 7));
+  const atrasados = movimentos.filter(m => m.status === 'Atrasado');
+  const valorAtraso = atrasados.reduce((t, m) => t + (parseFloat(m.movement_value) || 0), 0);
+  const linhas = verTudo ? movimentos : movimentos.slice(0, 6);
+
+  const Opcao = ({ o }: { o: { s: SubLista; deOutro: boolean } }) => {
+    const atual = String(o.s.id) === String(subId);
+    const st = STATUS_SUB[o.s.status] || { t: o.s.status, c: 'bg-slate-500/10 text-slate-500' };
+    return (
+      <button type="button" onClick={() => !atual && escolher(o)}
+        className={`w-full text-left px-3 py-2.5 rounded-xl flex items-center gap-3 transition-all ${
+          atual ? 'bg-violet-500/10 cursor-default' : 'hover:bg-slate-100 dark:hover:bg-white/5'}`}>
+        <div className="min-w-0 flex-1">
+          <p className={`text-sm font-semibold truncate ${atual ? 'text-violet-500' : 'text-light-text dark:text-white'}`}>{o.s.customer_name || 'Sem nome'}</p>
+          <p className="text-[11px] text-slate-500 truncate">
+            {brlC(Number(o.s.value) || 0)} · {CICLO[o.s.cycle] || o.s.cycle} · {FORMA[o.s.billing_type] || o.s.billing_type}
+            {o.s.customer_cnpjcpf ? ` · ${o.s.customer_cnpjcpf}` : ''}
+          </p>
+        </div>
+        {o.s.status !== 'ACTIVE' && <span className={`shrink-0 px-2 py-0.5 rounded-md text-[10px] font-bold ${st.c}`}>{st.t}</span>}
+        {o.deOutro && (
+          <span className="shrink-0 max-w-[180px] truncate px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400" title={o.s.linked_client_name || ''}>
+            Já em: {o.s.linked_client_name}
+          </span>
+        )}
+        {atual && <Check size={15} className="shrink-0 text-violet-500" />}
+      </button>
+    );
+  };
+
+  return (
+    <div className="space-y-5">
+      {/* ── Assinatura ── */}
+      <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.03] p-6">
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <div>
+            <h4 className="text-sm font-bold text-light-text dark:text-white">Assinatura do Asaas</h4>
+            <p className="text-[11px] text-slate-500 mt-0.5">De onde vêm a mensalidade e o histórico de pagamentos</p>
+          </div>
+          {subId && !trocando && (
+            <div className="flex items-center gap-1 shrink-0">
+              <button type="button" onClick={() => setTrocando(true)}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold text-violet-500 hover:bg-violet-500/10 transition-all">Trocar</button>
+              <button type="button" onClick={desvincular}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:text-rose-500 hover:bg-rose-500/10 transition-all flex items-center gap-1.5">
+                <Unlink size={13} /> Desvincular
+              </button>
+            </div>
+          )}
+        </div>
+
+        {!escolhendo && (
+          sub ? (
+            <div className="flex items-center gap-4 rounded-xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 px-4 py-3.5">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center shrink-0"><CreditCard size={18} /></div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-bold text-light-text dark:text-white truncate">{sub.customer_name || 'Sem nome'}</p>
+                  {(() => { const st = STATUS_SUB[sub.status] || { t: sub.status, c: 'bg-slate-500/10 text-slate-500' };
+                    return <span className={`shrink-0 px-2 py-0.5 rounded-md text-[10px] font-bold ${st.c}`}>{st.t}</span>; })()}
+                </div>
+                <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                  {CICLO[sub.cycle] || sub.cycle} · {FORMA[sub.billing_type] || sub.billing_type}
+                  {sub.next_due ? ` · próximo vencimento ${dataBR(sub.next_due)}` : ''}
+                  {sub.customer_cnpjcpf ? ` · ${sub.customer_cnpjcpf}` : ''}
+                </p>
+              </div>
+              <p className="text-lg font-black text-light-text dark:text-white shrink-0">{brlC(Number(sub.value) || 0)}</p>
+            </div>
+          ) : carregandoSubs || subs.length === 0 ? (
+            <div className="h-[68px] rounded-xl bg-slate-200/50 dark:bg-white/5 animate-pulse" />
+          ) : (
+            <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-600 dark:text-amber-400">
+              <AlertCircle size={14} className="shrink-0" />
+              A assinatura vinculada (#{subId}) não está mais na lista do Asaas. Clique em Trocar para escolher outra.
+            </div>
+          )
+        )}
+
+        {escolhendo && (
+          <div className="rounded-xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 overflow-hidden">
+            <div className="p-3 border-b border-slate-200 dark:border-white/10">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+                <input autoFocus type="text" value={busca} onChange={e => setBusca(e.target.value)}
+                  placeholder="Buscar pelo nome ou CPF/CNPJ"
+                  className="w-full pl-9 pr-3 py-2 rounded-lg text-sm modal-input focus:outline-none focus:ring-2 focus:ring-purple-500/50" />
+              </div>
+            </div>
+            <div className="max-h-72 overflow-y-auto p-1.5">
+              {carregandoSubs && subs.length === 0 ? (
+                <p className="text-xs text-slate-500 text-center py-8">Carregando assinaturas…</p>
+              ) : opcoes.length === 0 ? (
+                <p className="text-xs text-slate-500 text-center py-8">Nenhuma assinatura encontrada{busca ? ` para "${busca}"` : ''}.</p>
+              ) : (
+                <>
+                  {sugeridas.length > 0 && (
+                    <>
+                      <p className="px-3 pt-2 pb-1 text-[10px] font-bold text-violet-500 uppercase tracking-widest">Nome parecido com o do cliente</p>
+                      {sugeridas.map(o => <Opcao key={o.s.id} o={o} />)}
+                      {demais.length > 0 && <p className="px-3 pt-3 pb-1 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Outras</p>}
+                    </>
+                  )}
+                  {demais.map(o => <Opcao key={o.s.id} o={o} />)}
+                </>
+              )}
+            </div>
+            <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-t border-slate-200 dark:border-white/10 text-[11px] text-slate-500">
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input type="checkbox" checked={comCanceladas} onChange={e => setComCanceladas(e.target.checked)} className="accent-violet-500" />
+                Mostrar canceladas
+              </label>
+              <span>{livres} {livres === 1 ? 'ativa livre' : 'ativas livres'}</span>
+              {trocando && (
+                <button type="button" onClick={() => { setTrocando(false); setBusca(''); }}
+                  className="font-bold text-slate-500 hover:text-light-text dark:hover:text-white">Cancelar</button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Resumo + histórico ── */}
+      {subId && (
+        carregandoMov ? (
+          <div className="py-14 flex flex-col items-center gap-3">
+            <div className="w-7 h-7 border-4 border-violet-500/20 border-t-violet-500 rounded-full animate-spin" />
+            <p className="text-slate-500 text-xs font-medium">Carregando pagamentos…</p>
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.03] p-6">
+            <div className="grid grid-cols-3 divide-x divide-slate-200 dark:divide-white/10 mb-6">
+              <div className="pr-4">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Mensalidade</p>
+                <p className="text-lg font-black text-light-text dark:text-white">{sub ? brlC(Number(sub.value) || 0) : '—'}</p>
+              </div>
+              <div className="px-4">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">{MESES_NOME[Number(hoje.slice(5, 7)) - 1]}</p>
+                {!doMes ? <p className="text-sm font-bold text-slate-400 mt-1">Sem cobrança no mês</p>
+                  : doMes.status === 'Conciliado' ? <p className="text-sm font-bold text-emerald-500 mt-1">Pago em {diaMes(doMes.movement_date)}</p>
+                  : doMes.status === 'Atrasado' ? <p className="text-sm font-bold text-rose-500 mt-1">Atrasado há {diasEntre(doMes.expiration_date, hoje)} dias</p>
+                  : <p className="text-sm font-bold text-amber-500 mt-1">Vence {diaMes(doMes.expiration_date)}</p>}
+              </div>
+              <div className="pl-4">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Em atraso</p>
+                {atrasados.length === 0 ? <p className="text-sm font-bold text-emerald-500 mt-1">Nada em atraso</p>
+                  : <p className="text-sm font-bold text-rose-500 mt-1">{brlC(valorAtraso)} <span className="font-medium text-[11px]">· {atrasados.length} {atrasados.length === 1 ? 'cobrança' : 'cobranças'}</span></p>}
+              </div>
+            </div>
+
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5 mb-3">
+              <FileText size={12} className="text-violet-500" /> Histórico de pagamentos
+            </p>
+            {movimentos.length === 0 ? (
+              <p className="text-xs text-slate-500 py-6 text-center">Nenhuma cobrança deste cliente no Asaas.</p>
+            ) : (
+              <div className="rounded-xl border border-slate-200 dark:border-white/10 overflow-hidden bg-white dark:bg-transparent">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="border-b border-slate-200 dark:border-white/10">
+                      <th className="px-4 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Cobrança</th>
+                      <th className="px-4 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Valor</th>
+                      <th className="px-4 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Situação</th>
+                      <th className="px-4 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right">Pago em</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 dark:divide-white/5">
+                    {linhas.map((m, idx) => {
+                      const pago = m.status === 'Conciliado';
+                      const atraso = pago && m.movement_date ? diasEntre(m.expiration_date, m.movement_date) : 0;
+                      const credito = m.credit_date && m.credit_date !== m.movement_date ? m.credit_date : null;
+                      const sit = pago ? { t: 'Pago', c: 'bg-emerald-500/10 text-emerald-500' }
+                        : m.status === 'Atrasado' ? { t: 'Atrasado', c: 'bg-rose-500/10 text-rose-500' }
+                        : m.status === 'Pendente' ? { t: 'Em aberto', c: 'bg-amber-500/10 text-amber-500' }
+                        : { t: m.status, c: 'bg-slate-500/10 text-slate-500' };
+                      return (
+                        <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors">
+                          <td className="px-4 py-2.5">
+                            <p className="text-xs font-bold text-light-text dark:text-white">{mesNome(m.expiration_date)}</p>
+                            <p className="text-[10px] text-slate-500">vence {dataBR(m.expiration_date)}{m.payment_method ? ` · ${FORMA[m.payment_method] || m.payment_method}` : ''}</p>
+                          </td>
+                          <td className="px-4 py-2.5 text-xs font-medium text-slate-600 dark:text-slate-300">{brlC(parseFloat(m.movement_value) || 0)}</td>
+                          <td className="px-4 py-2.5"><span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${sit.c}`}>{sit.t}</span></td>
+                          <td className="px-4 py-2.5 text-right">
+                            <p className="text-xs text-light-text dark:text-white">
+                              {m.movement_date ? dataBR(m.movement_date) : <span className="text-slate-400">—</span>}
+                              {atraso > 0 && <span className="ml-1.5 text-[10px] font-bold text-amber-500">+{atraso}d</span>}
+                            </p>
+                            {pago && credito && (
+                              <p className="text-[10px] text-slate-500">{credito <= hoje ? 'caiu' : 'cai'} na conta em {dataBR(credito)}</p>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {movimentos.length > 6 && (
+                  <button type="button" onClick={() => setVerTudo(v => !v)}
+                    className="w-full py-2 text-[11px] font-bold text-violet-500 hover:bg-violet-500/5 border-t border-slate-200 dark:border-white/10">
+                    {verTudo ? 'Mostrar só os 6 últimos' : `Ver todas as ${movimentos.length} cobranças`}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      )}
+
+      {/* ── Comentários (independem da assinatura) ── */}
+      {clientId && (
+        <div className="space-y-4 pt-1">
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+            <MessageSquare size={12} className="text-violet-500" /> Histórico de comentários
+          </p>
+          <CrmCommentHistory clientId={clientId} />
+        </div>
+      )}
+    </div>
+  );
+};
 
 const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientModalProps) => {
   const [activeTab, setActiveTab] = useState<'client' | 'finance' | 'churn' | 'projeto'>('client');
@@ -123,35 +483,8 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
   const [finPeopleSearch, setFinPeopleSearch] = useState('');
   const [isFinPeopleDropOpen, setIsFinPeopleDropOpen] = useState(false);
   const [isSavingFinPerson, setIsSavingFinPerson] = useState(false);
-
-  // Subscription state — single dropdown for all subscriptions
-  const [allSubscriptions, setAllSubscriptions] = useState<(FinSubscription & { customer_name?: string; customer_cnpjcpf?: string; grapehub_client_id?: string })[]>([]);
-  const [subSearchQuery, setSubSearchQuery] = useState('');
-  const [isSubDropdownOpen, setIsSubDropdownOpen] = useState(false);
-  const subTriggerRef = React.useRef<HTMLButtonElement>(null);
-  const [subMenuPos, setSubMenuPos] = useState<{ top: number; left: number; width: number } | null>(null);
-
-  // Posiciona o dropdown de assinatura via portal (fixed) para não ser cortado pelo modal
-  useEffect(() => {
-    if (!isSubDropdownOpen) return;
-    const place = () => {
-      const el = subTriggerRef.current;
-      if (!el) return;
-      const r = el.getBoundingClientRect();
-      const MENU_H = 340; // altura estimada (busca + lista)
-      const below = window.innerHeight - r.bottom;
-      const openUp = below < MENU_H && r.top > below; // sem espaço embaixo e mais espaço em cima
-      const top = openUp ? Math.max(8, r.top - 8 - MENU_H) : r.bottom + 8;
-      setSubMenuPos({ top, left: r.left, width: r.width });
-    };
-    place();
-    window.addEventListener('resize', place);
-    window.addEventListener('scroll', place, true);
-    return () => {
-      window.removeEventListener('resize', place);
-      window.removeEventListener('scroll', place, true);
-    };
-  }, [isSubDropdownOpen]);
+  // Assinaturas do Asaas (lista do seletor da aba Financeiro)
+  const [allSubscriptions, setAllSubscriptions] = useState<SubLista[]>([]);
   const [isFetchingSubs, setIsFetchingSubs] = useState(false);
 
   // Project state
@@ -574,142 +907,52 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
         <div className="flex-1 overflow-y-auto">
           {activeTab === 'client' && (
             isEditing ? (
-            <form id="client-form" onSubmit={handleSave} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label className={designSystem.input.label}>Nome do Cliente</label>
-                  <input 
-                    required
-                    type="text"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="Ex: Advocacia Silva"
-                    className={designSystem.input.field}
-                  />
+            <form id="client-form" onSubmit={handleSave}>
+              {/* Edição no mesmo desenho da leitura (formato VB Hub): um card, grade de 3
+                  colunas, rótulo pequeno em cima. Listas curtas viram botões de escolha. */}
+              <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.03] p-6">
+                <h4 className="text-sm font-bold text-light-text dark:text-white mb-5">Dados do cliente e do contrato</h4>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-5">
+                  <CampoEd rotulo="Nome do cliente" className="col-span-2 md:col-span-3">
+                    <input required type="text" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="Ex: Advocacia Silva" className={campoEd} />
+                  </CampoEd>
+                  <CampoEd rotulo="Telefone">
+                    <input type="text" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} placeholder="(00) 00000-0000" className={campoEd} />
+                  </CampoEd>
+                  <CampoEd rotulo="E-mail">
+                    <input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} placeholder="contato@empresa.com" className={campoEd} />
+                  </CampoEd>
+                  <CampoEd rotulo="Local do escritório">
+                    <input type="text" value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })} placeholder="Ex: Uberlândia, MG" className={campoEd} />
+                  </CampoEd>
+                  <CampoEd rotulo="Data inicial">
+                    <input type="date" value={formData.startDate} onChange={(e) => setFormData({ ...formData, startDate: e.target.value })} className={campoEd} />
+                  </CampoEd>
+                  <CampoEd rotulo="Squad">
+                    <Escolha valor={formData.squad} opcoes={squads} onChange={(v) => setFormData({ ...formData, squad: v || 'Able' })} />
+                  </CampoEd>
+                  <CampoEd rotulo="Produto">
+                    <Escolha valor={formData.product} opcoes={['TCV', 'Recorrência Mensal']} onChange={(v) => setFormData({ ...formData, product: v })} />
+                  </CampoEd>
+                  <CampoEd rotulo="Tags (separadas por vírgula)" className="col-span-2 md:col-span-3">
+                    <input type="text" value={formData.tags} onChange={(e) => setFormData({ ...formData, tags: e.target.value })} placeholder="Ex: consumidor, previdenciário" className={campoEd} />
+                  </CampoEd>
                 </div>
-                <div className="space-y-2">
-                  <label className={designSystem.input.label}>Data Inicial</label>
-                  <input 
-                    type="date"
-                    value={formData.startDate}
-                    onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-                    className={designSystem.input.field}
-                  />
-                </div>
-              </div>
 
-              <div className="space-y-2">
-                <label className={designSystem.input.label}>Local do Escritório</label>
-                <input 
-                  type="text"
-                  value={formData.location}
-                  onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                  placeholder="Ex: Uberlândia, MG"
-                  className={designSystem.input.field}
-                />
-              </div>
+                <div className="border-t border-slate-200 dark:border-white/10 my-6" />
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label className={designSystem.input.label}>Squad</label>
-                  <OptionPicker
-                    value={formData.squad}
-                    options={squads.map(s => ({ label: s }))}
-                    placeholder="Squad"
-                    onChange={(val) => setFormData({ ...formData, squad: val || 'Able' })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className={designSystem.input.label}>Produto</label>
-                  <OptionPicker
-                    value={formData.product || null}
-                    options={[
-                      { label: 'TCV' },
-                      { label: 'Recorrência Mensal' },
-                    ]}
-                    placeholder="Selecionar..."
-                    emptyLabel="Selecionar..."
-                    onChange={(val) => setFormData({ ...formData, product: val || '' })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className={designSystem.input.label}>Tags (separadas por vírgula)</label>
-                  <input 
-                    type="text"
-                    value={formData.tags}
-                    onChange={(e) => setFormData({ ...formData, tags: e.target.value })}
-                    placeholder="Ex: consumidor, previdenciário"
-                    className={designSystem.input.field}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label className={designSystem.input.label}>Email</label>
-                  <input 
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    placeholder="contato@empresa.com"
-                    className={designSystem.input.field}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className={designSystem.input.label}>Telefone</label>
-                  <input 
-                    type="text"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    placeholder="(00) 00000-0000"
-                    className={designSystem.input.field}
-                  />
-                </div>
-              </div>
-
-              <div className="pt-6 border-t border-slate-200 dark:border-white/10">
-                <h4 className="text-sm font-bold text-light-text dark:text-white mb-4 flex items-center gap-2">
-                  <CreditCard size={18} className="text-violet-500" /> Informações de Cobrança
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                  <div className="space-y-2">
-                    <label className={designSystem.input.label}>Nome de Cobrança</label>
-                    <input 
-                      type="text"
-                      value={formData.billingName}
-                      onChange={(e) => setFormData({ ...formData, billingName: e.target.value })}
-                      placeholder="Ex: Financeiro Empresa"
-                      className={designSystem.input.field}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className={designSystem.input.label}>Meio de Cobrança</label>
-                    <OptionPicker
-                      value={formData.billingMethod || null}
-                      options={[
-                        { label: 'Whatsapp' },
-                        { label: 'E-mail' },
-                        { label: 'E-mail e Whatsapp' },
-                      ]}
-                      placeholder="Selecionar..."
-                      emptyLabel="Selecionar..."
-                      onChange={(val) => setFormData({ ...formData, billingMethod: val || '' })}
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <label className={designSystem.input.label}>Email de Cobrança</label>
-                    <input 
-                      type="email"
-                      value={formData.billingEmail}
-                      onChange={(e) => setFormData({ ...formData, billingEmail: e.target.value })}
-                      placeholder="financeiro@empresa.com"
-                      className={designSystem.input.field}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className={designSystem.input.label}>Whatsapp de Cobrança</label>
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                  <CreditCard size={12} className="text-violet-500" /> Cobrança
+                </p>
+                <p className="text-[11px] text-slate-500 mt-0.5 mb-4">Para onde vão os lembretes e as cobranças do Asaas</p>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-5">
+                  <CampoEd rotulo="Nome">
+                    <input type="text" value={formData.billingName} onChange={(e) => setFormData({ ...formData, billingName: e.target.value })} placeholder="Ex: Financeiro Empresa" className={campoEd} />
+                  </CampoEd>
+                  <CampoEd rotulo="Meio de cobrança" className="md:col-span-2">
+                    <Escolha valor={formData.billingMethod} opcoes={['Whatsapp', 'E-mail', 'E-mail e Whatsapp']} onChange={(v) => setFormData({ ...formData, billingMethod: v })} />
+                  </CampoEd>
+                  <CampoEd rotulo="WhatsApp">
                     <input 
                       type="text"
                       value={formData.billingPhone}
@@ -731,7 +974,7 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
                         }
                       }}
                       placeholder="(00) 00000-0000"
-                      className={`${designSystem.input.field} ${billingPhoneError ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-500/20' : ''}`}
+                      className={`${campoEd} ${billingPhoneError ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-500/20' : ''}`}
                     />
                     {billingPhoneError && (
                       <p className="text-xs text-rose-500 flex items-center gap-1 mt-1">
@@ -739,105 +982,69 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
                         {billingPhoneError}
                       </p>
                     )}
-                  </div>
-                </div>
-                <div className="space-y-2 mt-4">
-                  <label className={designSystem.input.label}>Comentários de Cobrança</label>
-                  <textarea
-                    value={formData.billingNotes}
-                    onChange={(e) => setFormData({ ...formData, billingNotes: e.target.value })}
-                    placeholder="Observações sobre a cobrança deste cliente..."
-                    rows={3}
-                    className={`${designSystem.input.field} resize-none`}
-                  />
+                  </CampoEd>
+                  <CampoEd rotulo="E-mail" className="md:col-span-2">
+                    <input type="email" value={formData.billingEmail} onChange={(e) => setFormData({ ...formData, billingEmail: e.target.value })} placeholder="financeiro@empresa.com" className={campoEd} />
+                  </CampoEd>
+                  <CampoEd rotulo="Comentários" className="col-span-2 md:col-span-3">
+                    <textarea value={formData.billingNotes} onChange={(e) => setFormData({ ...formData, billingNotes: e.target.value })} placeholder="Observações sobre a cobrança deste cliente..." rows={3} className={`${campoEd} resize-none`} />
+                  </CampoEd>
                 </div>
               </div>
             </form>
             ) : (
             <div className="space-y-5">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Nome do Cliente</p>
-                  <p className="text-sm font-bold text-light-text dark:text-white">{formData.name || '-'}</p>
+              {/* Leitura no formato do VB Hub: um card só, rótulo pequeno em cima e valor
+                  embaixo, em grade de 3 colunas, seções separadas por linha — em vez de
+                  uma caixa por campo. */}
+              <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.03] p-6">
+                <h4 className="text-sm font-bold text-light-text dark:text-white mb-5">Dados do cliente e do contrato</h4>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-5">
+                  <Campo rotulo="Telefone">{formData.phone}</Campo>
+                  <Campo rotulo="E-mail">{formData.email}</Campo>
+                  <Campo rotulo="Local do escritório">{formData.location}</Campo>
+                  <Campo rotulo="Data inicial">{formData.startDate ? new Date(formData.startDate + 'T12:00:00').toLocaleDateString('pt-BR') : ''}</Campo>
+                  <Campo rotulo="Squad">
+                    {formData.squad && (
+                      <span className={`inline-flex px-2 py-0.5 rounded-md text-xs font-bold ${
+                        formData.squad === 'Able' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-blue-500/10 text-blue-500'
+                      }`}>{formData.squad}</span>
+                    )}
+                  </Campo>
+                  <Campo rotulo="Produto">
+                    {formData.product && (
+                      <span className={`inline-flex px-2 py-0.5 rounded-md text-xs font-bold ${
+                        formData.product === 'TCV' ? 'bg-cyan-500/10 text-cyan-500' : 'bg-violet-500/10 text-violet-500'
+                      }`}>{formData.product}</span>
+                    )}
+                  </Campo>
+                  <Campo rotulo="Status">
+                    {formData.status && (
+                      <span className={`inline-flex px-2 py-0.5 rounded-md text-xs font-bold ${
+                        formData.status === 'Ativo' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'
+                      }`}>{formData.status}</span>
+                    )}
+                  </Campo>
+                  <Campo rotulo="Tags" className="md:col-span-2">{formData.tags}</Campo>
                 </div>
-                <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Data Inicial</p>
-                  <p className="text-sm font-bold text-light-text dark:text-white">{formData.startDate ? new Date(formData.startDate + 'T12:00:00').toLocaleDateString('pt-BR') : '-'}</p>
-                </div>
-              </div>
-              <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Local do Escritório</p>
-                <p className="text-sm font-bold text-light-text dark:text-white">{formData.location || '-'}</p>
-              </div>
-              <div className="grid grid-cols-3 gap-4">
-                <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Squad</p>
-                  <span className={`inline-flex px-3 py-1 rounded-lg text-xs font-bold ${
-                    formData.squad === 'Able' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-blue-500/10 text-blue-500'
-                  }`}>{formData.squad}</span>
-                </div>
-                <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Produto</p>
-                  {formData.product ? (
-                    <span className={`inline-flex px-3 py-1 rounded-lg text-xs font-bold ${
-                      formData.product === 'TCV' ? 'bg-cyan-500/10 text-cyan-500' : 'bg-violet-500/10 text-violet-500'
-                    }`}>{formData.product}</span>
-                  ) : (
-                    <p className="text-sm text-slate-400 italic">Não definido</p>
+
+                <div className="border-t border-slate-200 dark:border-white/10 my-6" />
+
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                  <CreditCard size={12} className="text-violet-500" /> Cobrança
+                </p>
+                <p className="text-[11px] text-slate-500 mt-0.5 mb-4">Para onde vão os lembretes e as cobranças do Asaas</p>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-5">
+                  <Campo rotulo="Nome">{formData.billingName}</Campo>
+                  <Campo rotulo="Meio de cobrança">{formData.billingMethod}</Campo>
+                  <Campo rotulo="WhatsApp">{formData.billingPhone ? formatPhoneBR(formData.billingPhone) : ''}</Campo>
+                  <Campo rotulo="E-mail" className="md:col-span-3">{formData.billingEmail}</Campo>
+                  {formData.billingNotes && (
+                    <Campo rotulo="Comentários" className="col-span-2 md:col-span-3">
+                      <span className="whitespace-pre-wrap font-normal">{formData.billingNotes}</span>
+                    </Campo>
                   )}
                 </div>
-                <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Tags</p>
-                  <p className="text-sm text-light-text dark:text-white">{formData.tags || '-'}</p>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Email</p>
-                  <p className="text-sm text-light-text dark:text-white">{formData.email || '-'}</p>
-                </div>
-                <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Telefone</p>
-                  <p className="text-sm text-light-text dark:text-white">{formData.phone || '-'}</p>
-                </div>
-              </div>
-              <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Status</p>
-                <span className={`inline-flex px-3 py-1 rounded-lg text-xs font-bold ${
-                  formData.status === 'Ativo' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'
-                }`}>{formData.status}</span>
-              </div>
-
-              <div className="pt-6 border-t border-slate-200 dark:border-white/10">
-                <h4 className="text-sm font-bold text-light-text dark:text-white mb-4 flex items-center gap-2">
-                  <CreditCard size={18} className="text-violet-500" /> Informações de Cobrança
-                </h4>
-                <div className="grid grid-cols-2 gap-4 mb-4">
-                  <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Nome</p>
-                    <p className="text-sm text-light-text dark:text-white">{formData.billingName || '-'}</p>
-                  </div>
-                  <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Meio de Cobrança</p>
-                    <p className="text-sm font-medium text-light-text dark:text-white">{formData.billingMethod || '-'}</p>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Email</p>
-                    <p className="text-sm text-light-text dark:text-white">{formData.billingEmail || '-'}</p>
-                  </div>
-                  <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Whatsapp</p>
-                    <p className="text-sm text-light-text dark:text-white">{formData.billingPhone ? formatPhoneBR(formData.billingPhone) : '-'}</p>
-                  </div>
-                </div>
-                {formData.billingNotes && (
-                  <div className="mt-4 p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Comentários</p>
-                    <p className="text-sm text-light-text dark:text-white whitespace-pre-wrap">{formData.billingNotes}</p>
-                  </div>
-                )}
               </div>
               <button
                 onClick={() => setIsEditing(true)}
@@ -849,165 +1056,16 @@ const ClientModal = ({ isOpen, onClose, editingClient, onSaveSuccess }: ClientMo
             )
           )}
           {activeTab === 'finance' && (
-            <div className="space-y-6">
-
-                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block ml-1">Vincular a uma assinatura do Asaas</label>
-                        <div className="flex gap-2">
-                          <div className="relative flex-1">
-                            <button ref={subTriggerRef} type="button" onClick={() => setIsSubDropdownOpen(!isSubDropdownOpen)}
-                              className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-5 py-4 text-left flex items-center justify-between transition-all hover:border-violet-500/50">
-                              {formData.finSubscriptionId ? (() => {
-                                const sub = allSubscriptions.find(s => String(s.id) === formData.finSubscriptionId);
-                                return (<div className="flex items-center gap-2">
-                                  <span className="text-light-text dark:text-white font-medium">{sub?.customer_name || 'Assinatura'} — {sub ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sub.value) : ''}</span>
-                                  <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-500 text-[9px] font-bold rounded-md uppercase tracking-widest">Vinculada ✓</span>
-                                </div>);
-                              })() : (<span className="text-slate-400">Selecionar assinatura...</span>)}
-                              <ChevronDown size={18} className={`text-slate-400 transition-transform ${isSubDropdownOpen ? 'rotate-180' : ''}`} />
-                            </button>
-                            {isSubDropdownOpen && subMenuPos && createPortal(
-                              <>
-                                <div className="fixed inset-0 z-[1200]" onClick={() => setIsSubDropdownOpen(false)} />
-                                <div
-                                  className="fixed z-[1201] bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden"
-                                  style={{ top: subMenuPos.top, left: subMenuPos.left, width: subMenuPos.width }}
-                                >
-                                <div className="p-3 border-b border-slate-100 dark:border-white/5">
-                                  <div className="relative">
-                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                                    <input autoFocus type="text" placeholder="Buscar por nome..." value={subSearchQuery} onChange={(e) => setSubSearchQuery(e.target.value)}
-                                      className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-lg pl-10 pr-4 py-2 text-sm text-light-text dark:text-white outline-none focus:border-violet-500 transition-all" />
-                                  </div>
-                                </div>
-                                <div className="max-h-[250px] overflow-y-auto p-1">
-                                  <button type="button" onClick={() => { saveFinSubscription(null); setIsSubDropdownOpen(false); }}
-                                    className={`w-full text-left p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-white/5 transition-all ${!formData.finSubscriptionId ? 'bg-violet-500/10' : ''}`}>
-                                    <span className={`font-bold text-sm ${!formData.finSubscriptionId ? 'text-violet-500' : 'text-light-text dark:text-white'}`}>Sem assinatura vinculada</span>
-                                  </button>
-                                  {allSubscriptions
-                                    .filter(s => (s.customer_name || '').toLowerCase().includes(subSearchQuery.toLowerCase()))
-                                    .map(sub => (
-                                      <button key={sub.id} type="button" onClick={() => { saveFinSubscription(sub.id); setIsSubDropdownOpen(false); }}
-                                        className={`w-full text-left p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-white/5 transition-all flex flex-col gap-0.5 ${formData.finSubscriptionId === String(sub.id) ? 'bg-violet-500/10' : ''}`}>
-                                        <div className="flex items-center justify-between">
-                                          <span className={`font-bold text-sm ${formData.finSubscriptionId === String(sub.id) ? 'text-violet-500' : 'text-light-text dark:text-white'}`}>{sub.customer_name || 'Sem nome'}</span>
-                                          {formData.finSubscriptionId === String(sub.id) && <Check size={14} className="text-violet-500" />}
-                                        </div>
-                                        <span className="text-[10px] text-slate-500 font-medium">
-                                          {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sub.value)} · {sub.cycle === 'MONTHLY' ? 'Mensal' : sub.cycle === 'YEARLY' ? 'Anual' : sub.cycle} · {sub.status === 'ACTIVE' ? '✅ Ativa' : '⏸ ' + sub.status}
-                                        </span>
-                                      </button>))}
-                                </div>
-                                </div>
-                              </>,
-                              document.body
-                            )}
-                          </div>
-                          {formData.finSubscriptionId && (
-                            <button type="button" onClick={() => saveFinSubscription(null)}
-                              className="px-4 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-xl transition-all flex items-center justify-center gap-2 border border-rose-500/20">
-                              <Unlink size={18} /><span className="text-xs font-bold uppercase tracking-widest">Desvincular</span>
-                            </button>
-                          )}
-                        </div>
-
-                    {!formData.finSubscriptionId ? (
-                      <div className="p-8 bg-amber-500/5 border border-amber-500/20 rounded-2xl flex flex-col items-center gap-3 text-center">
-                        <AlertCircle className="text-amber-500" size={32} />
-                        <p className="text-sm font-medium text-amber-600 dark:text-amber-400">
-                          Vincule uma assinatura do Asaas para visualizar dados de pagamento
-                        </p>
-                      </div>
-                    ) : isFetchingMovements ? (
-                      <div className="py-20 flex flex-col items-center gap-3">
-                        <div className="w-8 h-8 border-4 border-violet-500/20 border-t-violet-500 rounded-full animate-spin"></div>
-                        <p className="text-slate-500 text-sm font-medium">Carregando dados financeiros...</p>
-                      </div>
-                    ) : (
-                      <>
-                        {/* Seção 2 - Resumo Financeiro */}
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="p-5 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
-                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Fee Mensal Atual</p>
-                            <p className="text-xl font-bold text-light-text dark:text-white">
-                              {(() => {
-                                const sub = allSubscriptions.find(s => String(s.id) === formData.finSubscriptionId);
-                                return sub ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(sub.value) : 'R$ 0,00';
-                              })()}
-                            </p>
-                          </div>
-                          <div className="p-5 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
-                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Status do Mês</p>
-                            {(() => {
-                              const currentMonth = new Date().toISOString().slice(0, 7);
-                              const monthMovement = finMovements.find(m => (m.movement_date || m.expiration_date)?.startsWith(currentMonth));
-                              if (!monthMovement) return <p className="text-sm font-bold text-slate-400">Sem lançamento</p>;
-                              if (monthMovement.status === 'Conciliado') return <p className="text-sm font-bold text-emerald-500">Em dia ✓</p>;
-                              if (monthMovement.status === 'Atrasado') {
-                                const diff = Math.floor((new Date().getTime() - new Date(monthMovement.expiration_date).getTime()) / (1000 * 60 * 60 * 24));
-                                return <p className="text-sm font-bold text-rose-500">Atrasado {diff} dias</p>;
-                              }
-                              return <p className="text-sm font-bold text-amber-500">Pendente</p>;
-                            })()}
-                          </div>
-                        </div>
-
-
-                        {/* Seção 3 - Histórico de Pagamentos */}
-                        <div className="space-y-4">
-                          <div className="flex items-center gap-2">
-                            <FileText size={16} className="text-violet-500" />
-                            <h3 className="text-sm font-bold text-light-text dark:text-white uppercase tracking-widest">Histórico de Pagamentos</h3>
-                          </div>
-                          <div className="bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5 overflow-hidden">
-                            <table className="w-full text-left border-collapse">
-                              <thead>
-                                <tr className="border-b border-slate-200 dark:border-white/5 bg-slate-100/50 dark:bg-white/5">
-                                  <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Mês</th>
-                                  <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Valor</th>
-                                  <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center">Status</th>
-                                  <th className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right">Pagamento</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-slate-200 dark:divide-white/5">
-                                {finMovements.slice(0, 6).map((m, idx) => (
-                                  <tr key={idx} className="hover:bg-slate-100/50 dark:hover:bg-white/[0.02] transition-colors">
-                                    <td className="px-4 py-3 text-xs font-bold text-light-text dark:text-white">
-                                      {new Date(m.expiration_date).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).replace(/^\w/, c => c.toUpperCase())}
-                                    </td>
-                                    <td className="px-4 py-3 text-xs font-medium text-slate-600 dark:text-slate-400">
-                                      {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(parseFloat(m.movement_value))}
-                                    </td>
-                                    <td className="px-4 py-3 text-center">
-                                      <span className={`px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-widest ${
-                                        m.status === 'Conciliado' ? 'bg-emerald-500/10 text-emerald-500' :
-                                        m.status === 'Atrasado' ? 'bg-rose-500/10 text-rose-500' :
-                                        'bg-amber-500/10 text-amber-500'
-                                      }`}>
-                                        {m.status}
-                                      </span>
-                                    </td>
-                                    <td className="px-4 py-3 text-right text-xs text-slate-500">
-                                      {m.movement_date ? new Date(m.movement_date).toLocaleDateString('pt-BR') : '-'}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-
-                        {/* Seção 4 - Histórico de Comentários */}
-                        <div className="space-y-4 pt-6 mt-6 border-t border-slate-200 dark:border-white/10">
-                          <div className="flex items-center gap-2">
-                            <MessageSquare size={16} className="text-violet-500" />
-                            <h3 className="text-sm font-bold text-light-text dark:text-white uppercase tracking-widest">Histórico de Comentários</h3>
-                          </div>
-                          {editingClient && <CrmCommentHistory clientId={editingClient.id} />}
-                        </div>
-                      </>
-                    )}
-            </div>
+            <AbaFinanceiro
+              clientName={formData.name}
+              subId={formData.finSubscriptionId}
+              subs={allSubscriptions}
+              carregandoSubs={isFetchingSubs}
+              movimentos={finMovements}
+              carregandoMov={isFetchingMovements}
+              clientId={editingClient?.id}
+              onVincular={saveFinSubscription}
+            />
           )}
           {activeTab === 'churn' && (
                   <div className="space-y-6">

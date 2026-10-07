@@ -268,7 +268,7 @@ const loadColumnConfig = (): ColumnConfig => {
 
 const ColumnConfigContext = React.createContext<ColumnConfig>(DEFAULT_COLUMN_CONFIG);
 
-export type ColId = 'entregavel' | 'prioridade' | 'hospedagem' | 'squad' | 'resp' | 'start_date' | 'due_date' | 'arquivos';
+export type ColId = 'entregavel' | 'prioridade' | 'hospedagem' | 'resp' | 'start_date' | 'due_date' | 'arquivos';
 
 export interface ColDef {
   id: ColId;
@@ -276,13 +276,13 @@ export interface ColDef {
   width: string;
 }
 
-export const DEFAULT_COL_ORDER: ColId[] = ['entregavel', 'prioridade', 'hospedagem', 'squad', 'resp', 'start_date', 'due_date', 'arquivos'];
+// 'squad' saiu da lista em 06/10/2026 (pedido do Jean); a ordem salva com ele é filtrada por COL_DEFS.
+export const DEFAULT_COL_ORDER: ColId[] = ['entregavel', 'prioridade', 'hospedagem', 'resp', 'start_date', 'due_date', 'arquivos'];
 
 export const COL_DEFS: Record<ColId, ColDef> = {
-  entregavel: { id: 'entregavel', label: 'Entregável', width: 'w-28' },
-  prioridade: { id: 'prioridade', label: 'Prioridade', width: 'w-20' },
-  hospedagem: { id: 'hospedagem', label: 'Hospedagem', width: 'w-28' },
-  squad:      { id: 'squad',      label: 'Squad',       width: 'w-32' },
+  entregavel: { id: 'entregavel', label: 'Entregável', width: 'w-32' },
+  prioridade: { id: 'prioridade', label: 'Prioridade', width: 'w-24' },
+  hospedagem: { id: 'hospedagem', label: 'Hospedagem', width: 'w-32' },
   resp:       { id: 'resp',       label: 'Resp.',       width: 'w-24' },
   start_date: { id: 'start_date', label: 'Data Iníc.',  width: 'w-24' },
   due_date:   { id: 'due_date',   label: 'Data Fim',    width: 'w-24' },
@@ -946,26 +946,47 @@ const OptionPicker = ({ value, options, placeholder, onChange, emptyLabel, compa
 
   return (
     <div ref={ref} className="relative">
+      {compact ? (
+        // Etiqueta da linha da lista (redesenhada em 06/10/2026): pílula com a
+        // bolinha da cor, texto normal numa linha só. Vazia, é um traço discreto.
+        <button
+          onClick={() => setOpen(v => !v)}
+          title={value || placeholder}
+          className={`group/tag max-w-full inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full text-[11px] font-semibold whitespace-nowrap transition-all cursor-pointer ${
+            cs ? 'hover:brightness-125' : 'text-slate-500 hover:bg-white/5 hover:text-slate-300'
+          }`}
+          style={cs ? { background: cs.bg, color: cs.text } : undefined}
+        >
+          {cs ? (
+            <>
+              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: cs.text }} />
+              <span className="truncate">{value}</span>
+            </>
+          ) : (
+            <>
+              <span className="group-hover/tag:hidden">—</span>
+              <span className="hidden group-hover/tag:inline-flex items-center gap-1"><Plus size={11} /> Adicionar</span>
+            </>
+          )}
+        </button>
+      ) : (
       <button
         onClick={() => setOpen(v => !v)}
-        className={`flex items-center gap-1.5 rounded-lg transition-all cursor-pointer ${
-          compact
-            ? 'px-2 py-1 text-[10px] font-bold uppercase tracking-wider border hover:bg-white/5'
-            : 'px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider border hover:bg-white/5'
-        }`}
+        className="flex items-center gap-1.5 rounded-lg transition-all cursor-pointer px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider border hover:bg-white/5"
         style={cs ? {
           background: cs.bg,
           color: cs.text,
           borderColor: cs.border,
         } : {
           background: 'transparent',
-          borderColor: compact ? 'transparent' : 'rgba(255,255,255,0.1)',
+          borderColor: 'rgba(255,255,255,0.1)',
           color: '#94a3b8',
         }}
       >
         {value || placeholder || '—'}
         <ChevronDown size={12} className="opacity-50" />
       </button>
+      )}
 
       {open && (
         <div className="absolute top-full left-0 mt-1 z-50 bg-dark-card border border-white/10 rounded-xl shadow-2xl py-1.5 min-w-[160px] animate-in fade-in slide-in-from-top-1 duration-150">
@@ -1032,26 +1053,42 @@ const PriorityPicker = ({ value, onChange, compact = false }: {
 
   return (
     <div ref={ref} className="relative">
+      {compact ? (
+        // Mesmo desenho das etiquetas da linha: pílula, texto normal, vazio = traço
+        <button
+          onClick={() => setOpen(v => !v)}
+          className={`group/tag inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full text-[11px] font-semibold whitespace-nowrap transition-all cursor-pointer ${
+            cfg ? 'hover:brightness-125' : 'text-slate-500 hover:bg-white/5 hover:text-slate-300'
+          }`}
+          style={cfg ? { background: cfg.bg, color: cfg.color } : undefined}
+        >
+          {cfg ? (
+            <><PriorityFlag color={cfg.color} size={10} /> {cfg.label}</>
+          ) : (
+            <>
+              <span className="group-hover/tag:hidden">—</span>
+              <span className="hidden group-hover/tag:inline-flex items-center gap-1"><Plus size={11} /> Adicionar</span>
+            </>
+          )}
+        </button>
+      ) : (
       <button
         onClick={() => setOpen(v => !v)}
-        className={`flex items-center gap-1.5 rounded-lg transition-all cursor-pointer ${
-          compact
-            ? 'px-2 py-1 text-[10px] font-bold uppercase tracking-wider border hover:bg-white/5'
-            : 'px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider border hover:bg-white/5'
-        }`}
+        className="flex items-center gap-1.5 rounded-lg transition-all cursor-pointer px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider border hover:bg-white/5"
         style={cfg ? {
           background: cfg.bg,
           color: cfg.color,
           borderColor: cfg.border,
         } : {
           background: 'transparent',
-          borderColor: compact ? 'transparent' : 'rgba(255,255,255,0.1)',
+          borderColor: 'rgba(255,255,255,0.1)',
           color: '#94a3b8',
         }}
       >
-        {cfg ? <PriorityFlag color={cfg.color} size={compact ? 11 : 12} /> : null}
-        {cfg ? cfg.label : (compact ? 'Prior.' : '—')}
+        {cfg ? <PriorityFlag color={cfg.color} size={12} /> : null}
+        {cfg ? cfg.label : '—'}
       </button>
+      )}
 
       {open && (
         <div className="absolute top-full left-0 mt-1 z-50 bg-dark-card border border-white/10 rounded-xl shadow-2xl py-1.5 min-w-[160px] animate-in fade-in slide-in-from-top-1 duration-150">
@@ -1273,7 +1310,6 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask, dragHandleProps 
   };
   const columnConfig = React.useContext(ColumnConfigContext);
   const colOrder = React.useContext(ColOrderContext);
-  const [squad, setSquad] = useState(task.squad || '');
   const [showStatusPicker, setShowStatusPicker] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -1471,17 +1507,6 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask, dragHandleProps 
     } catch { /* silent */ }
   };
 
-  const handleSquadChange = async (newSquad: string) => {
-    setSquad(newSquad);
-    try {
-      await fetch(`/api/onboarding-tasks/${task.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ squad: newSquad }),
-      });
-    } catch { /* silent */ }
-  };
-
   const handleStatusChange = async (newStatus: string) => {
     if (newStatus === task.status_group) { setShowStatusPicker(false); return; }
     setShowStatusPicker(false);
@@ -1525,7 +1550,7 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask, dragHandleProps 
     switch (colId) {
       case 'entregavel':
         return (
-          <div key="entregavel" className="shrink-0 w-28">
+          <div key="entregavel" className="shrink-0 w-32">
             <OptionPicker
               value={task.entregavel}
               options={columnConfig.entregavel}
@@ -1548,7 +1573,7 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask, dragHandleProps 
 
       case 'prioridade':
         return (
-          <div key="prioridade" className="shrink-0 w-20">
+          <div key="prioridade" className="shrink-0 w-24">
             <PriorityPicker
               value={task.prioridade}
               compact
@@ -1568,7 +1593,7 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask, dragHandleProps 
 
       case 'hospedagem':
         return (
-          <div key="hospedagem" className="shrink-0 w-28">
+          <div key="hospedagem" className="shrink-0 w-32">
             <OptionPicker
               value={task.hospedagem}
               options={columnConfig.hospedagem}
@@ -1585,20 +1610,6 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask, dragHandleProps 
                   onUpdate();
                 } catch { /* silent */ }
               }}
-            />
-          </div>
-        );
-
-      case 'squad':
-        return (
-          <div key="squad" className="shrink-0 w-32">
-            <OptionPicker
-              value={squad}
-              options={columnConfig.squad}
-              placeholder="SQUAD"
-              emptyLabel="SQUAD"
-              compact
-              onChange={(val) => handleSquadChange(val || '')}
             />
           </div>
         );
@@ -2537,17 +2548,20 @@ const TaskDetailModal = ({ task, onClose, onUpdate }: { task: OnboardingTask; on
 
   const handleSaveName = async () => {
     const trimmed = editNameValue.trim();
-    if (trimmed && trimmed !== task.client_name) {
-      try {
-        await fetch(`/api/onboarding-tasks/${task.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ client_name: trimmed }),
-        });
-        onUpdate();
-      } catch { /* silent */ }
-    }
     setEditingName(false);
+    if (!trimmed || trimmed === task.client_name) return;
+    try {
+      const res = await fetch(`/api/onboarding-tasks/${task.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client_name: trimmed }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || `HTTP ${res.status}`);
+      onUpdate();
+    } catch (e: any) {
+      setEditNameValue(task.client_name);
+      alert(`Não foi possível renomear a tarefa: ${e.message}`);
+    }
   };
 
   useEffect(() => {
@@ -4627,7 +4641,9 @@ export default function VisualHub() {
       {/* Task Detail Modal */}
       {detailTask && (
         <TaskDetailModal
-          task={detailTask}
+          // A versão da lista, não a foto tirada ao abrir: com a foto, o nome (e o
+          // que mais o modal lê de `task`) só mudava depois de recarregar a página.
+          task={tasks.find(t => t.id === detailTask.id) || detailTask}
           onClose={() => setDetailTask(null)}
           onUpdate={() => fetchTasks(true)}
         />

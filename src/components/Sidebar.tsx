@@ -1,7 +1,7 @@
 
 // Sidebar component for GrapeHub
 // Last updated: 2026-04-19
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth } from '../firebase';
@@ -309,6 +309,8 @@ interface SidebarProps {
 }
 
 type FlyoutItem = { id: string; label: string; icon: string; icon_color?: string; indent: number };
+// Grupo do painel flutuante: páginas soltas da seção (sem título) ou de uma pasta (com o nome dela)
+type FlyoutGrupo = { titulo?: string; itens: FlyoutItem[] };
 
 const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userData, theme, themePref = 'system', toggleTheme, onCollapseChange }) => {
   // No modo automático, mostra também qual tema o sistema está aplicando agora.
@@ -371,16 +373,21 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
   const [flyoutSection, setFlyoutSection] = useState<string | null>(null);
   const [flyoutY, setFlyoutY] = useState(0);
   const [flyoutTitle, setFlyoutTitle] = useState('');
-  const [flyoutItems, setFlyoutItems] = useState<FlyoutItem[]>([]);
+  const [flyoutGrupos, setFlyoutGrupos] = useState<FlyoutGrupo[]>([]);
+  // Posição final do painel, medida depois de renderizar: centralizado no ícone, mas sem
+  // passar da tela (antes ficava cortado em cima quando a seção tinha muitas páginas)
+  const flyoutRef = useRef<HTMLDivElement>(null);
+  const [flyoutTop, setFlyoutTop] = useState<number | null>(null);
   const flyoutTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { menu } = useMenu();
 
-  const openFlyout = (sectionId: string, title: string, items: FlyoutItem[], centerY: number) => {
+  const openFlyout = (sectionId: string, title: string, grupos: FlyoutGrupo[], centerY: number) => {
     if (flyoutTimeout.current) clearTimeout(flyoutTimeout.current);
+    if (sectionId !== flyoutSection) setFlyoutTop(null);
     setFlyoutSection(sectionId);
     setFlyoutTitle(title);
-    setFlyoutItems(items);
+    setFlyoutGrupos(grupos);
     setFlyoutY(centerY);
   };
 
@@ -446,22 +453,32 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
     (section.pages?.some((p: any) => isPageAllowed(p.id)) ?? false) ||
     (section.subSubSessions?.some((sss: any) => hasAllowedPagesInSubSubSession(sss)) ?? false);
 
-  const flattenSectionPages = (section: any): FlyoutItem[] => {
-    const items: FlyoutItem[] = [];
-    section.pages?.filter((p: any) => isPageAllowed(p.id)).forEach((p: any) =>
-      items.push({ id: p.id, label: p.label, icon: p.icon, icon_color: p.icon_color, indent: 0 }));
+  // Páginas da seção agrupadas por pasta, na mesma ordem da sidebar aberta.
+  const flattenSectionPages = (section: any): FlyoutGrupo[] => {
+    const grupos: FlyoutGrupo[] = [];
+    const pag = (p: any): FlyoutItem => ({ id: p.id, label: p.label, icon: p.icon, icon_color: p.icon_color, indent: 0 });
+    const soltas = (section.pages || []).filter((p: any) => isPageAllowed(p.id)).map(pag);
+    if (soltas.length) grupos.push({ itens: soltas });
     section.subSubSessions?.filter((sss: any) => hasAllowedPagesInSubSubSession(sss)).forEach((sss: any) =>
-      sss.pages?.filter((p: any) => isPageAllowed(p.id)).forEach((p: any) =>
-        items.push({ id: p.id, label: p.label, icon: p.icon, icon_color: p.icon_color, indent: 0 })));
+      grupos.push({ titulo: sss.label, itens: sss.pages.filter((p: any) => isPageAllowed(p.id)).map(pag) }));
     section.subSessions?.filter((ss: any) => hasAllowedPagesInSubSession(ss)).forEach((ss: any) => {
-      ss.pages?.filter((p: any) => isPageAllowed(p.id)).forEach((p: any) =>
-        items.push({ id: p.id, label: p.label, icon: p.icon, icon_color: p.icon_color, indent: 0 }));
+      const diretas = (ss.pages || []).filter((p: any) => isPageAllowed(p.id)).map(pag);
+      if (diretas.length) grupos.push({ titulo: ss.label, itens: diretas });
       ss.subSubSessions?.filter((sss: any) => hasAllowedPagesInSubSubSession(sss)).forEach((sss: any) =>
-        sss.pages?.filter((p: any) => isPageAllowed(p.id)).forEach((p: any) =>
-          items.push({ id: p.id, label: p.label, icon: p.icon, icon_color: p.icon_color, indent: 1 })));
+        grupos.push({ titulo: `${ss.label} › ${sss.label}`, itens: sss.pages.filter((p: any) => isPageAllowed(p.id)).map(pag) }));
     });
-    return items;
+    return grupos;
   };
+
+  // Mede o painel e prende dentro da tela (12px de margem). Com muitas páginas ele vira
+  // duas colunas; se ainda assim não couber, rola por dentro.
+  useLayoutEffect(() => {
+    if (!flyoutSection || !flyoutRef.current) return;
+    const h = flyoutRef.current.offsetHeight;
+    const vh = window.innerHeight;
+    const topo = Math.min(Math.max(12, flyoutY - h / 2), Math.max(12, vh - h - 12));
+    setFlyoutTop(topo);
+  }, [flyoutSection, flyoutY, flyoutGrupos]);
 
   const bottomItems = [
     { id: 'notifications', label: 'Notificações', icon: Bell, badge: 12 },
@@ -928,46 +945,63 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
       </aside>
 
       {/* ── Flyout panel (fixed, fora da sidebar) ────────────── */}
-      {isCollapsed && flyoutSection && flyoutItems.length > 0 && (
+      {isCollapsed && flyoutSection && flyoutGrupos.length > 0 && (() => {
+        const total = flyoutGrupos.reduce((n, g) => n + g.itens.length + (g.titulo ? 1 : 0), 0);
+        const duasColunas = total > 14;
+        return (
         <div
+          ref={flyoutRef}
           style={{
             position: 'fixed',
             left: 84,
-            top: flyoutY,
-            transform: 'translateY(-50%)',
+            top: flyoutTop ?? flyoutY,
+            // antes de medir, fica invisível no lugar estimado (evita o "pulo")
+            visibility: flyoutTop == null ? 'hidden' : 'visible',
+            maxHeight: 'calc(100vh - 24px)',
             zIndex: 300,
           }}
-          className="min-w-[200px] bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl py-2 overflow-hidden"
+          className={`${duasColunas ? 'w-[460px]' : 'min-w-[220px] max-w-[280px]'} flex flex-col bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl py-2`}
           onMouseEnter={keepFlyout}
           onMouseLeave={closeFlyout}
         >
-          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-3 pb-1.5 pt-0.5">
+          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-3 pb-1.5 pt-0.5 shrink-0">
             {flyoutTitle}
           </p>
-          <div className="mx-3 mb-1.5 border-t border-slate-100 dark:border-white/10" />
+          <div className="mx-3 mb-1.5 border-t border-slate-100 dark:border-white/10 shrink-0" />
 
-          {flyoutItems.map(item => {
-            const ItemIcon = iconMap[item.icon];
-            const isActive = activePage === item.id;
-            return (
-              <a
-                key={item.id}
-                href={`#/${item.id}`}
-                onClick={(e) => { e.preventDefault(); onPageChange(item.id); setFlyoutSection(null); }}
-                style={{ paddingLeft: `${12 + item.indent * 16}px` }}
-                className={`flex items-center gap-2.5 pr-4 py-2 mx-1 rounded-lg cursor-pointer transition-all text-xs font-medium no-underline ${
-                  isActive
-                    ? 'bg-violet-600 text-white'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                {ItemIcon && <ItemIcon size={13} color={isActive ? '#fff' : (item.icon_color || '#9CA3AF')} />}
-                {item.label}
-              </a>
-            );
-          })}
+          <div className={`overflow-y-auto px-1 ${duasColunas ? 'columns-2 gap-1' : ''}`}>
+            {flyoutGrupos.map((g, gi) => (
+              <div key={gi} className="break-inside-avoid mb-1">
+                {g.titulo && (
+                  <p className="px-3 pt-2 pb-1 text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate" title={g.titulo}>
+                    {g.titulo}
+                  </p>
+                )}
+                {g.itens.map(item => {
+                  const ItemIcon = iconMap[item.icon];
+                  const isActive = activePage === item.id;
+                  return (
+                    <a
+                      key={item.id}
+                      href={`#/${item.id}`}
+                      onClick={(e) => { e.preventDefault(); onPageChange(item.id); setFlyoutSection(null); }}
+                      className={`flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-all text-xs font-medium no-underline ${
+                        isActive
+                          ? 'bg-violet-600 text-white'
+                          : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      {ItemIcon && <ItemIcon size={13} className="shrink-0" color={isActive ? '#fff' : (item.icon_color || '#9CA3AF')} />}
+                      <span className="truncate">{item.label}</span>
+                    </a>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* ── User Profile Modal ─────────────────────────────── */}
       <AnimatePresence>

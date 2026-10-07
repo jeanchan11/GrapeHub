@@ -227,6 +227,36 @@ async function conferirMes(pool, mes) {
     status: "info",
     detalhe: inad.rows[0].n ? `${inad.rows[0].n} cobran\xE7a(s) vencida(s) no m\xEAs sem pagamento: ${brl(inad.rows[0].v)}.` : "Tudo o que venceu no m\xEAs foi recebido."
   });
+  const hist = await pool.query(
+    `SELECT structure, value::numeric AS valor FROM fin_dfc_historico WHERE ref_month = $1`,
+    [mes]
+  );
+  const ehHistorico = hist.rows.some((r) => /^[0-9]/.test(r.structure));
+  if (ehHistorico) {
+    for (const c of checks) {
+      if (c.status === "bloqueia" || c.status === "atencao") {
+        c.status = "info";
+        c.detalhe = `N\xE3o afeta o DFC (m\xEAs importado do Marvee). ${c.detalhe}`;
+      }
+    }
+    checks.unshift({
+      id: "historico",
+      titulo: "N\xFAmeros do DFC v\xEAm do hist\xF3rico importado (Marvee)",
+      status: "info",
+      detalhe: "Neste m\xEAs o DFC usa o valor importado, n\xE3o os lan\xE7amentos do GrapeHub \u2014 as confer\xEAncias abaixo s\xE3o s\xF3 informativas."
+    });
+    const grupos2 = {};
+    let geracao2 = null, saldoIni = null, saldoFim = null;
+    for (const r of hist.rows) {
+      const v = Math.round(Number(r.valor) * 100) / 100;
+      if (/^[0-9]{2}$/.test(r.structure)) grupos2[r.structure] = v;
+      else if (r.structure === "_geracao") geracao2 = v;
+      else if (r.structure === "_saldo_inicial") saldoIni = v;
+      else if (r.structure === "_saldo_final") saldoFim = v;
+    }
+    if (geracao2 === null) geracao2 = Math.round(Object.entries(grupos2).filter(([g]) => g !== "99").reduce((a, [, v]) => a + v, 0) * 100) / 100;
+    return { checks, totais: { grupos: grupos2, geracao: geracao2, saldo_inicial: saldoIni, saldo_final: saldoFim, origem: "historico" } };
+  }
   const tot = await pool.query(`
     SELECT left(c.structure, 2) AS grupo, SUM(m.value::numeric * m.type) AS valor
       FROM fin_movements_asaas m JOIN fin_categories c ON c.id = m.custom_category_id
@@ -3176,6 +3206,259 @@ function setupDreLancamentosRoutes(app, pool) {
   });
 }
 
+// src/routes/crm-reunioes.ts
+async function migrateCrmReunioes(pool) {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS crm_comercial_columns_legacy (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      kanban_id TEXT,
+      deleted_at TIMESTAMPTZ DEFAULT NOW(),
+      origem TEXT            -- 'exclusao' (gravado ao apagar) | 'inferido' (reconstru\xEDdo depois)
+    )`);
+}
+async function guardarColunasApagadas(pool, where, params) {
+  await pool.query(
+    `INSERT INTO crm_comercial_columns_legacy (id, title, kanban_id, origem)
+     SELECT id::text, title, kanban_id::text, 'exclusao' FROM crm_comercial_columns WHERE ${where}
+     ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, kanban_id = EXCLUDED.kanban_id, deleted_at = NOW()`,
+    params
+  ).catch((e) => console.error("[crm-reunioes] guardar colunas apagadas:", e.message));
+}
+var COLUNAS_RM = `
+  SELECT id::text AS id FROM crm_comercial_columns
+   WHERE LOWER(title) LIKE '%reuni\xE3o marcada%' OR LOWER(title) LIKE '%reuniao marcada%'
+  UNION
+  SELECT id FROM crm_comercial_columns_legacy
+   WHERE LOWER(title) LIKE '%reuni\xE3o marcada%' OR LOWER(title) LIKE '%reuniao marcada%'`;
+function sqlReunioesMarcadas(ini, fim) {
+  const periodo = ini && fim ? `WHERE em >= ${ini} AND em < (${fim}::date + interval '1 day')` : "";
+  return `
+    WITH rm AS (${COLUNAS_RM}),
+    entradas AS (
+      SELECT h.lead_id, h.created_at AS em
+        FROM crm_comercial_history h
+       WHERE h.to_coluna IN (SELECT id FROM rm)
+      UNION ALL
+      SELECT l.id, l.created_at
+        FROM crm_comercial_leads l
+       WHERE COALESCE(
+               (SELECT h.from_coluna FROM crm_comercial_history h
+                 WHERE h.lead_id = l.id AND COALESCE(h.from_coluna, '') <> ''
+                 ORDER BY h.created_at, h.id LIMIT 1),
+               l.coluna) IN (SELECT id FROM rm)
+    )
+    SELECT COUNT(DISTINCT lead_id)::int AS marcadas FROM entradas ${periodo}`;
+}
+
+// src/routes/funil-meta.ts
+var CONTA_PADRAO = "690496082457749";
+var API = "https://graph.facebook.com/v21.0";
+async function get(url) {
+  const r = await fetch(url);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.error) throw new Error(j?.error?.message || `HTTP ${r.status}`);
+  return j;
+}
+var cacheConversao = null;
+async function conversaoClicouAgendar(conta, token) {
+  if (cacheConversao && Date.now() - cacheConversao.em < 30 * 60 * 1e3) return cacheConversao.id;
+  const j = await get(`${API}/act_${conta}/customconversions?fields=id,name,rule,custom_event_type&limit=100&access_token=${encodeURIComponent(token)}`);
+  const achada = (j.data || []).find((c) => String(c.rule || "").includes("ClicouAgendar"));
+  cacheConversao = { id: achada?.id || null, em: Date.now() };
+  return cacheConversao.id;
+}
+function setupFunilMetaRoutes(app) {
+  app.get("/api/marketing-funil-meta", async (req, res) => {
+    const token = process.env.META_GRAPE_ACCESS_TOKEN;
+    const conta = String(process.env.META_GRAPE_ACCOUNT_ID || CONTA_PADRAO).replace(/^act_/, "");
+    const inicio = String(req.query.start || ""), fim = String(req.query.end || "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(inicio) || !/^\d{4}-\d{2}-\d{2}$/.test(fim)) {
+      return res.status(400).json({ error: "start/end inv\xE1lidos (YYYY-MM-DD)" });
+    }
+    if (!token) {
+      return res.json({
+        pageview_lp: null,
+        clicou_agendar: null,
+        impressoes: null,
+        cliques_link: null,
+        gasto: null,
+        motivo: "Falta o token da conta de an\xFAncio da Grape (META_GRAPE_ACCESS_TOKEN) no servidor."
+      });
+    }
+    try {
+      const idConv = await conversaoClicouAgendar(conta, token).catch(() => null);
+      const ins = await get(`${API}/act_${conta}/insights?level=account&fields=impressions,spend,actions&time_range=${encodeURIComponent(JSON.stringify({ since: inicio, until: fim }))}&access_token=${encodeURIComponent(token)}`);
+      const acoes = ins.data?.[0]?.actions || [];
+      const valor = (tipo) => {
+        const a = acoes.find((x) => x.action_type === tipo);
+        return a ? Number(a.value) : 0;
+      };
+      const d = ins.data?.[0] || {};
+      res.json({
+        conta,
+        impressoes: Number(d.impressions) || 0,
+        cliques_link: valor("link_click"),
+        gasto: Number(d.spend) || 0,
+        pageview_lp: valor("landing_page_view"),
+        clicou_agendar: idConv ? valor(`offsite_conversion.custom.${idConv}`) : null,
+        motivo: idConv ? null : "O evento ClicouAgendar chega no pixel, mas ainda n\xE3o existe convers\xE3o personalizada para ele no Gerenciador \u2014 sem ela a Meta n\xE3o atribui o clique \xE0 campanha."
+      });
+    } catch (e) {
+      res.status(502).json({ error: `Meta: ${e.message}` });
+    }
+  });
+}
+
+// src/routes/alerta-saldo.ts
+var PADRAO = { ativo: true, dias: 3, minimo: 100 };
+function setupAlertaSaldoRoutes(app, pool, fetchMetaAccountInfo) {
+  pool.query(`
+    CREATE TABLE IF NOT EXISTS projetos_alerta_saldo (
+      page_id    TEXT PRIMARY KEY,
+      ativo      BOOLEAN NOT NULL DEFAULT true,
+      dias       NUMERIC NOT NULL DEFAULT 3,
+      minimo     NUMERIC NOT NULL DEFAULT 100,
+      updated_by TEXT,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`).catch((e) => console.error("[alerta-saldo] migra\xE7\xE3o:", e.message));
+  const regraDa = async (pageIds) => {
+    const rows = (await pool.query(
+      `SELECT page_id, ativo, dias, minimo FROM projetos_alerta_saldo WHERE page_id = ANY($1)`,
+      [pageIds]
+    )).rows;
+    const m = /* @__PURE__ */ new Map();
+    for (const id of pageIds) m.set(id, { ...PADRAO });
+    for (const r of rows) m.set(r.page_id, { ativo: r.ativo, dias: Number(r.dias), minimo: Number(r.minimo) });
+    return m;
+  };
+  async function contasBaixas(paginas, regras) {
+    const ativas = paginas.filter((p) => regras.get(p.id)?.ativo);
+    if (ativas.length === 0) return [];
+    const projetos = (await pool.query(
+      `SELECT p.id, p.partner, p.page_id, regexp_replace(pt.account_id, '^act_', '') AS conta
+         FROM projects p
+         JOIN project_tokens pt ON pt.project_id = p.id AND pt.platform = 'meta_ads'
+                               AND pt.token_encrypted IS NOT NULL AND pt.account_id IS NOT NULL
+        WHERE p.page_id = ANY($1)`,
+      [ativas.map((p) => p.id)]
+    )).rows;
+    if (projetos.length === 0) return [];
+    const gastos = new Map((await pool.query(
+      `SELECT regexp_replace(account_id, '^act_', '') AS conta, SUM(spend) / 7.0 AS por_dia
+         FROM marketing.meta_insights
+        WHERE date >= current_date - 7 AND date < current_date
+          AND regexp_replace(account_id, '^act_', '') = ANY($1)
+        GROUP BY 1`,
+      [projetos.map((p) => p.conta)]
+    )).rows.map((r) => [r.conta, Number(r.por_dia) || 0]));
+    const rotulo = new Map(paginas.map((p) => [p.id, p.label]));
+    const infos = await Promise.all(projetos.map((p) => fetchMetaAccountInfo(p.id).catch(() => null)));
+    return projetos.flatMap((p, i) => {
+      const info = infos[i];
+      if (!info || info.error || !info.prepaid || info.saldo == null) return [];
+      const regra = regras.get(p.page_id);
+      const saldo = Number(info.saldo);
+      const porDia = gastos.get(p.conta) || 0;
+      const dias = porDia > 0 ? saldo / porDia : null;
+      const baixo = saldo < regra.minimo || dias != null && dias < regra.dias;
+      if (!baixo) return [];
+      return [{
+        project_id: p.id,
+        partner: String(p.partner || "").trim(),
+        page_id: p.page_id,
+        page_label: rotulo.get(p.page_id) || "",
+        saldo,
+        gasto_dia: Math.round(porDia * 100) / 100,
+        dias: dias == null ? null : Math.round(dias * 10) / 10,
+        conferido_em: info.checkedAt || null
+      }];
+    }).sort((a, b) => a.saldo - b.saldo);
+  }
+  app.get("/api/alertas/saldo-baixo", async (req, res) => {
+    try {
+      const email = String(req.user?.email || "").toLowerCase();
+      if (!email) return res.json({ itens: [] });
+      const paginas = (await pool.query(
+        `SELECT mp.id, mp.label FROM menu_pages mp
+           JOIN users u ON u.id::text = mp.manager_id
+          WHERE mp.template = 'projects' AND lower(u.email) = $1`,
+        [email]
+      )).rows;
+      if (paginas.length === 0) return res.json({ itens: [], gestor: false });
+      const regras = await regraDa(paginas.map((p) => p.id));
+      const itens = await contasBaixas(paginas, regras);
+      const unica = paginas.length === 1 ? regras.get(paginas[0].id) : null;
+      res.json({ itens, gestor: true, regra: unica ? { dias: unica.dias, minimo: unica.minimo } : null });
+    } catch (e) {
+      console.error("GET /api/alertas/saldo-baixo:", e.message);
+      res.status(500).json({ error: "Falha ao conferir saldos" });
+    }
+  });
+  app.get("/api/projetos/:pageId/alerta-saldo", async (req, res) => {
+    try {
+      const pageId = String(req.params.pageId);
+      const r = (await pool.query(
+        `SELECT ativo, dias, minimo, updated_by, updated_at FROM projetos_alerta_saldo WHERE page_id=$1`,
+        [pageId]
+      )).rows[0];
+      res.json(r ? { ...r, dias: Number(r.dias), minimo: Number(r.minimo), padrao: false } : { ...PADRAO, padrao: true });
+    } catch (e) {
+      res.status(500).json({ error: "Falha ao ler a configura\xE7\xE3o" });
+    }
+  });
+  const podeEditar = async (email, pageId) => {
+    const r = (await pool.query(
+      `SELECT u.role, (mp.manager_id = u.id::text) AS gestor
+         FROM users u LEFT JOIN menu_pages mp ON mp.id = $2
+        WHERE lower(u.email) = $1`,
+      [email, pageId]
+    )).rows[0];
+    return !!r && (r.role === "superadmin" || r.gestor === true);
+  };
+  const validar = (b) => {
+    const dias = Number(b?.dias), minimo = Number(b?.minimo);
+    if (!Number.isFinite(dias) || dias < 0 || dias > 60) return "Dias precisa estar entre 0 e 60.";
+    if (!Number.isFinite(minimo) || minimo < 0 || minimo > 1e5) return "Valor m\xEDnimo precisa estar entre R$ 0 e R$ 100.000.";
+    return { ativo: b?.ativo !== false, dias, minimo };
+  };
+  app.put("/api/projetos/:pageId/alerta-saldo", async (req, res) => {
+    try {
+      const pageId = String(req.params.pageId);
+      const email = String(req.user?.email || "").toLowerCase();
+      if (!await podeEditar(email, pageId)) {
+        return res.status(403).json({ error: "S\xF3 o respons\xE1vel pela p\xE1gina ou um superadmin muda o alerta." });
+      }
+      const v = validar(req.body);
+      if (typeof v === "string") return res.status(400).json({ error: v });
+      const r = (await pool.query(
+        `INSERT INTO projetos_alerta_saldo (page_id, ativo, dias, minimo, updated_by, updated_at)
+         VALUES ($1,$2,$3,$4,$5,NOW())
+         ON CONFLICT (page_id) DO UPDATE SET ativo=EXCLUDED.ativo, dias=EXCLUDED.dias, minimo=EXCLUDED.minimo,
+           updated_by=EXCLUDED.updated_by, updated_at=NOW()
+         RETURNING ativo, dias, minimo, updated_by, updated_at`,
+        [pageId, v.ativo, v.dias, v.minimo, email]
+      )).rows[0];
+      res.json({ ...r, dias: Number(r.dias), minimo: Number(r.minimo), padrao: false });
+    } catch (e) {
+      console.error("PUT alerta-saldo:", e.message);
+      res.status(500).json({ error: "Falha ao salvar" });
+    }
+  });
+  app.get("/api/projetos/:pageId/alerta-saldo/previa", async (req, res) => {
+    try {
+      const pageId = String(req.params.pageId);
+      const v = validar({ ativo: true, dias: req.query.dias, minimo: req.query.minimo });
+      if (typeof v === "string") return res.status(400).json({ error: v });
+      const pg2 = (await pool.query(`SELECT id, label FROM menu_pages WHERE id=$1`, [pageId])).rows;
+      const itens = pg2.length ? await contasBaixas(pg2, /* @__PURE__ */ new Map([[pageId, v]])) : [];
+      res.json({ itens });
+    } catch (e) {
+      res.status(500).json({ error: "Falha na pr\xE9via" });
+    }
+  });
+}
+
 // server.ts
 init_fechamento();
 init_bill_category();
@@ -3992,6 +4275,32 @@ async function migrateCursos(pool) {
       UNIQUE (lesson_id, user_email)
     );
 
+    -- Como a aula foi conclu\xEDda: 'assistiu' (player, \u226590% tocando de verdade) ou
+    -- 'manual' (gestor marcou na Turma \u2014 ex.: viu a aula numa reuni\xE3o). completed_by
+    -- = e-mail de quem marcou. O hist\xF3rico de marcar/desmarcar fica no log abaixo.
+    ALTER TABLE lesson_progress ADD COLUMN IF NOT EXISTS completed_via TEXT;
+    ALTER TABLE lesson_progress ADD COLUMN IF NOT EXISTS completed_by  TEXT;
+    UPDATE lesson_progress SET completed_via = 'assistiu' WHERE completed AND completed_via IS NULL;
+
+    CREATE TABLE IF NOT EXISTS lesson_completion_log (
+      id          SERIAL PRIMARY KEY,
+      lesson_id   INT NOT NULL REFERENCES course_lessons(id) ON DELETE CASCADE,
+      user_email  TEXT NOT NULL,
+      acao        TEXT NOT NULL,            -- marcou | desmarcou
+      por         TEXT NOT NULL,            -- e-mail do gestor
+      em          TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    -- Coment\xE1rios de quem assistiu, por aula. Autor pelo e-mail do token.
+    CREATE TABLE IF NOT EXISTS lesson_comments (
+      id          SERIAL PRIMARY KEY,
+      lesson_id   INT NOT NULL REFERENCES course_lessons(id) ON DELETE CASCADE,
+      user_email  TEXT NOT NULL,
+      texto       TEXT NOT NULL,
+      created_at  TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_lesson_comments_lesson ON lesson_comments(lesson_id, created_at);
+
     CREATE INDEX IF NOT EXISTS idx_lesson_progress_email ON lesson_progress(user_email);
     CREATE INDEX IF NOT EXISTS idx_course_modules_course ON course_modules(course_id);
     CREATE INDEX IF NOT EXISTS idx_course_lessons_module ON course_lessons(module_id);
@@ -4048,7 +4357,7 @@ function setupCursosRoutes(app, pool) {
         [req.params.id]
       );
       const lessons = await pool.query(
-        `SELECT l.*, p.watched_seconds, p.last_position, p.completed, p.completed_at
+        `SELECT l.*, p.watched_seconds, p.last_position, p.completed, p.completed_at, p.completed_via
            FROM course_lessons l
            JOIN course_modules m ON m.id = l.module_id
            LEFT JOIN lesson_progress p ON p.lesson_id = l.id AND p.user_email = $2
@@ -4089,7 +4398,7 @@ function setupCursosRoutes(app, pool) {
       const atingiu = duracao > 0 && prog.watched_seconds >= duracao * COMPLETION_THRESHOLD;
       if (!prog.completed && (atingiu || req.body?.ended === true)) {
         const up = await pool.query(
-          `UPDATE lesson_progress SET completed = true, completed_at = NOW() WHERE id = $1 RETURNING *`,
+          `UPDATE lesson_progress SET completed = true, completed_at = NOW(), completed_via = 'assistiu', completed_by = NULL WHERE id = $1 RETURNING *`,
           [prog.id]
         );
         return res.json(up.rows[0]);
@@ -4260,12 +4569,140 @@ function setupCursosRoutes(app, pool) {
       res.status(500).json({ error: "Falha ao salvar aula." });
     }
   });
+  app.put("/api/cursos/modulos/:id/ordem", somenteAdmin, async (req, res) => {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number).filter(Number.isFinite) : [];
+    if (!ids.length) return res.status(400).json({ error: "Envie a lista de aulas." });
+    const c = await pool.connect();
+    try {
+      await c.query("BEGIN");
+      for (let i = 0; i < ids.length; i++) {
+        await c.query(
+          `UPDATE course_lessons SET order_index = $1, module_id = $2, updated_at = NOW()
+            WHERE id = $3 AND module_id IN (
+              SELECT id FROM course_modules WHERE course_id = (SELECT course_id FROM course_modules WHERE id = $2))`,
+          [i, req.params.id, ids[i]]
+        );
+      }
+      await c.query("COMMIT");
+      res.json({ ok: true });
+    } catch (err) {
+      await c.query("ROLLBACK").catch(() => {
+      });
+      console.error("[cursos] ordem:", err.message);
+      res.status(500).json({ error: "Falha ao salvar a ordem." });
+    } finally {
+      c.release();
+    }
+  });
   app.delete("/api/cursos/aulas/:id", somenteAdmin, async (req, res) => {
     try {
       await pool.query("DELETE FROM course_lessons WHERE id = $1", [req.params.id]);
       res.json({ ok: true });
     } catch (err) {
       res.status(500).json({ error: "Falha ao excluir aula." });
+    }
+  });
+  async function podeVerAula(lessonId, email) {
+    const r = await pool.query(
+      `SELECT c.status FROM course_lessons l JOIN course_modules m ON m.id = l.module_id
+         JOIN courses c ON c.id = m.course_id WHERE l.id = $1`,
+      [lessonId]
+    );
+    if (!r.rows[0]) return false;
+    return r.rows[0].status === "publicado" || await ehAdmin(pool, email);
+  }
+  app.get("/api/cursos/aulas/:id/comentarios", async (req, res) => {
+    try {
+      const email = emailDoToken(req);
+      if (!await podeVerAula(req.params.id, email)) return res.status(403).json({ error: "Sem acesso a esta aula." });
+      const admin4 = await ehAdmin(pool, email);
+      const r = await pool.query(
+        `SELECT c.id, c.texto, c.created_at, c.user_email, u.name AS autor, u.picture AS foto
+           FROM lesson_comments c LEFT JOIN users u ON LOWER(u.email) = c.user_email
+          WHERE c.lesson_id = $1 ORDER BY c.created_at ASC, c.id ASC`,
+        [req.params.id]
+      );
+      res.json(r.rows.map((c) => ({
+        id: c.id,
+        texto: c.texto,
+        created_at: c.created_at,
+        autor: c.autor || c.user_email.split("@")[0],
+        foto: c.foto || null,
+        meu: c.user_email === email,
+        pode_apagar: c.user_email === email || admin4
+      })));
+    } catch (err) {
+      console.error("[cursos] GET coment\xE1rios:", err.message);
+      res.status(500).json({ error: "Falha ao carregar coment\xE1rios." });
+    }
+  });
+  app.post("/api/cursos/aulas/:id/comentarios", async (req, res) => {
+    try {
+      const email = emailDoToken(req);
+      if (!email) return res.status(401).json({ error: "Sess\xE3o inv\xE1lida." });
+      const texto = String(req.body?.texto || "").trim();
+      if (!texto) return res.status(400).json({ error: "Escreva o coment\xE1rio." });
+      if (texto.length > 4e3) return res.status(400).json({ error: "Coment\xE1rio muito longo (m\xE1x. 4.000 caracteres)." });
+      if (!await podeVerAula(req.params.id, email)) return res.status(403).json({ error: "Sem acesso a esta aula." });
+      const r = await pool.query(
+        `INSERT INTO lesson_comments (lesson_id, user_email, texto) VALUES ($1, $2, $3) RETURNING id, texto, created_at`,
+        [req.params.id, email, texto]
+      );
+      const u = await pool.query(`SELECT name, picture FROM users WHERE LOWER(email) = $1`, [email]);
+      res.status(201).json({ ...r.rows[0], autor: u.rows[0]?.name || email.split("@")[0], foto: u.rows[0]?.picture || null, meu: true, pode_apagar: true });
+    } catch (err) {
+      console.error("[cursos] POST coment\xE1rio:", err.message);
+      res.status(500).json({ error: "Falha ao comentar." });
+    }
+  });
+  app.delete("/api/cursos/comentarios/:id", async (req, res) => {
+    try {
+      const email = emailDoToken(req);
+      const c = await pool.query(`SELECT user_email FROM lesson_comments WHERE id = $1`, [req.params.id]);
+      if (!c.rows[0]) return res.status(404).json({ error: "Coment\xE1rio n\xE3o encontrado." });
+      if (c.rows[0].user_email !== email && !await ehAdmin(pool, email)) {
+        return res.status(403).json({ error: "S\xF3 o autor ou um gestor apaga o coment\xE1rio." });
+      }
+      await pool.query(`DELETE FROM lesson_comments WHERE id = $1`, [req.params.id]);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: "Falha ao apagar coment\xE1rio." });
+    }
+  });
+  app.post("/api/cursos/aulas/:id/concluir", somenteAdmin, async (req, res) => {
+    try {
+      const alvo = String(req.body?.user_email || "").toLowerCase().trim();
+      if (!alvo.includes("@")) return res.status(400).json({ error: "Informe o e-mail do colaborador." });
+      const atual = (await pool.query(`SELECT completed, completed_via FROM lesson_progress WHERE lesson_id = $1 AND user_email = $2`, [req.params.id, alvo])).rows[0];
+      if (atual?.completed) return res.status(409).json({ error: atual.completed_via === "manual" ? "J\xE1 est\xE1 marcada como conclu\xEDda." : "Esta pessoa j\xE1 concluiu assistindo." });
+      const r = await pool.query(
+        `INSERT INTO lesson_progress (lesson_id, user_email, completed, completed_at, completed_via, completed_by, updated_at)
+         VALUES ($1, $2, true, NOW(), 'manual', $3, NOW())
+         ON CONFLICT (lesson_id, user_email) DO UPDATE
+           SET completed = true, completed_at = NOW(), completed_via = 'manual', completed_by = $3, updated_at = NOW()
+         RETURNING *`,
+        [req.params.id, alvo, req.adminEmail]
+      );
+      await pool.query(`INSERT INTO lesson_completion_log (lesson_id, user_email, acao, por) VALUES ($1, $2, 'marcou', $3)`, [req.params.id, alvo, req.adminEmail]);
+      res.json(r.rows[0]);
+    } catch (err) {
+      console.error("[cursos] concluir manual:", err.message);
+      res.status(500).json({ error: "Falha ao marcar a aula." });
+    }
+  });
+  app.delete("/api/cursos/aulas/:id/concluir", somenteAdmin, async (req, res) => {
+    try {
+      const alvo = String(req.query?.user_email || "").toLowerCase().trim();
+      const r = await pool.query(
+        `UPDATE lesson_progress SET completed = false, completed_at = NULL, completed_via = NULL, completed_by = NULL, updated_at = NOW()
+          WHERE lesson_id = $1 AND user_email = $2 AND completed AND completed_via = 'manual' RETURNING id`,
+        [req.params.id, alvo]
+      );
+      if (!r.rows.length) return res.status(409).json({ error: "S\xF3 d\xE1 para desmarcar conclus\xE3o feita \xE0 m\xE3o." });
+      await pool.query(`INSERT INTO lesson_completion_log (lesson_id, user_email, acao, por) VALUES ($1, $2, 'desmarcou', $3)`, [req.params.id, alvo, req.adminEmail]);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: "Falha ao desmarcar." });
     }
   });
   app.get("/api/cursos/:id/relatorio", somenteAdmin, async (req, res) => {
@@ -4284,6 +4721,7 @@ function setupCursosRoutes(app, pool) {
                 c.start_date                                          AS admissao,
                 LOWER(u.email)                                        AS email,
                 COUNT(p.id) FILTER (WHERE p.completed)::int           AS aulas_concluidas,
+                COUNT(p.id) FILTER (WHERE p.completed AND p.completed_via = 'manual')::int AS concluidas_manual,
                 COALESCE(SUM(p.watched_seconds), 0)::int              AS tempo_assistido,
                 MIN(p.started_at)                                     AS iniciou_em,
                 MAX(p.completed_at) FILTER (WHERE p.completed)        AS ultima_conclusao,
@@ -4301,6 +4739,18 @@ function setupCursosRoutes(app, pool) {
           ORDER BY c.name ASC`,
         [req.params.id]
       );
+      const aulas = (await pool.query(
+        `SELECT l.id, l.title, m.title AS modulo FROM course_lessons l JOIN course_modules m ON m.id = l.module_id
+          WHERE m.course_id = $1 ORDER BY m.order_index, m.id, l.order_index, l.id`,
+        [req.params.id]
+      )).rows;
+      const progs = (await pool.query(
+        `SELECT p.lesson_id, p.user_email, p.completed, p.completed_at, p.completed_via, p.completed_by, p.watched_seconds,
+                ub.name AS marcado_por
+           FROM lesson_progress p LEFT JOIN users ub ON LOWER(ub.email) = p.completed_by
+          WHERE p.lesson_id = ANY($1)`,
+        [aulas.map((a) => a.id)]
+      )).rows;
       const linhas = r.rows.map((x) => {
         const concluidas = Number(x.aulas_concluidas) || 0;
         let dias = null;
@@ -4311,6 +4761,19 @@ function setupCursosRoutes(app, pool) {
         }
         return {
           ...x,
+          aulas: aulas.map((a) => {
+            const p = progs.find((y) => y.lesson_id === a.id && y.user_email === x.email);
+            return {
+              lesson_id: a.id,
+              titulo: a.title,
+              modulo: a.modulo,
+              concluida: !!p?.completed,
+              via: p?.completed ? p.completed_via || "assistiu" : null,
+              em: p?.completed_at || null,
+              marcado_por: p?.completed_via === "manual" ? p.marcado_por || p.completed_by : null,
+              assistido: Number(p?.watched_seconds) || 0
+            };
+          }),
           percentual: totalAulas > 0 ? Math.round(concluidas / totalAulas * 100) : 0,
           dias_para_concluir: dias
         };
@@ -5685,7 +6148,7 @@ function setupEstudioRoutes(app, pool) {
 }
 
 // src/routes/calculadora-contratos.ts
-var PADRAO = {
+var PADRAO2 = {
   baseSalary: 2500,
   // salário fixo
   contractsTarget: 10,
@@ -5720,12 +6183,12 @@ function setupCalculadoraContratosRoutes(app, pool) {
       );
       const raw = r.rows[0]?.data || {};
       res.json({
-        baseSalary: numero(raw.baseSalary, PADRAO.baseSalary),
-        contractsTarget: numero(raw.contractsTarget, PADRAO.contractsTarget),
-        bonusValue: numero(raw.bonusValue, PADRAO.bonusValue),
-        averageTicket: numero(raw.averageTicket, PADRAO.averageTicket),
-        commissionPerContract: numero(raw.commissionPerContract, PADRAO.commissionPerContract),
-        contractsClosed: numero(raw.contractsClosed, PADRAO.contractsClosed)
+        baseSalary: numero(raw.baseSalary, PADRAO2.baseSalary),
+        contractsTarget: numero(raw.contractsTarget, PADRAO2.contractsTarget),
+        bonusValue: numero(raw.bonusValue, PADRAO2.bonusValue),
+        averageTicket: numero(raw.averageTicket, PADRAO2.averageTicket),
+        commissionPerContract: numero(raw.commissionPerContract, PADRAO2.commissionPerContract),
+        contractsClosed: numero(raw.contractsClosed, PADRAO2.contractsClosed)
       });
     } catch (err) {
       console.error("[calculadora-contratos] GET:", err.message);
@@ -5736,12 +6199,12 @@ function setupCalculadoraContratosRoutes(app, pool) {
     try {
       const b = req.body || {};
       const data = {
-        baseSalary: numero(b.baseSalary, PADRAO.baseSalary),
-        contractsTarget: numero(b.contractsTarget, PADRAO.contractsTarget),
-        bonusValue: numero(b.bonusValue, PADRAO.bonusValue),
-        averageTicket: numero(b.averageTicket, PADRAO.averageTicket),
-        commissionPerContract: numero(b.commissionPerContract, PADRAO.commissionPerContract),
-        contractsClosed: numero(b.contractsClosed, PADRAO.contractsClosed)
+        baseSalary: numero(b.baseSalary, PADRAO2.baseSalary),
+        contractsTarget: numero(b.contractsTarget, PADRAO2.contractsTarget),
+        bonusValue: numero(b.bonusValue, PADRAO2.bonusValue),
+        averageTicket: numero(b.averageTicket, PADRAO2.averageTicket),
+        commissionPerContract: numero(b.commissionPerContract, PADRAO2.commissionPerContract),
+        contractsClosed: numero(b.contractsClosed, PADRAO2.contractsClosed)
       };
       const existe = await pool.query(
         `SELECT id FROM calculadora_contratos_data ORDER BY updated_at DESC LIMIT 1`
@@ -6878,6 +7341,8 @@ async function startServer() {
       -- Funil com SDR: no-show e capacidade de agendamento por SDR
       ALTER TABLE commercial_data ADD COLUMN IF NOT EXISTS no_show_rate NUMERIC DEFAULT 20;
       ALTER TABLE commercial_data ADD COLUMN IF NOT EXISTS meetings_per_sdr NUMERIC DEFAULT 60;
+      ALTER TABLE commercial_data ADD COLUMN IF NOT EXISTS meeting_cost NUMERIC;
+      ALTER TABLE commercial_data ADD COLUMN IF NOT EXISTS media_investment NUMERIC;
 
       CREATE TABLE IF NOT EXISTS gestor_data (
         id SERIAL PRIMARY KEY,
@@ -7981,38 +8446,6 @@ async function startServer() {
     await pool.query(`ALTER TABLE project_tokens ADD COLUMN IF NOT EXISTS last_synced_at TIMESTAMPTZ`).catch((e) => console.error("migrate last_synced_at:", e.message));
     await pool.query(`ALTER TABLE project_tokens ADD COLUMN IF NOT EXISTS last_error TEXT`).catch((e) => console.error("migrate last_error:", e.message));
     await pool.query(`ALTER TABLE project_tokens ADD COLUMN IF NOT EXISTS account_name TEXT`).catch((e) => console.error("migrate account_name:", e.message));
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS form_submissions (
-        id SERIAL PRIMARY KEY,
-        project_id TEXT NOT NULL,
-        form_id TEXT,
-        response_id TEXT,
-        submitted_at TIMESTAMPTZ,
-        answers JSONB DEFAULT '[]'::jsonb,
-        meta JSONB DEFAULT '{}'::jsonb,
-        raw JSONB,
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        UNIQUE (project_id, form_id, response_id)
-      )
-    `).catch((e) => console.error("create form_submissions:", e.message));
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_form_submissions_project ON form_submissions(project_id, submitted_at DESC)`).catch(() => {
-    });
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS project_form_tokens (
-        project_id TEXT PRIMARY KEY,
-        token TEXT UNIQUE NOT NULL,
-        created_at TIMESTAMPTZ DEFAULT NOW()
-      )
-    `).catch((e) => console.error("create project_form_tokens:", e.message));
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS project_forms (
-        project_id TEXT NOT NULL,
-        form_id TEXT NOT NULL,
-        label TEXT,
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        PRIMARY KEY (project_id, form_id)
-      )
-    `).catch((e) => console.error("create project_forms:", e.message));
     await pool.query(`CREATE SCHEMA IF NOT EXISTS marketing`).catch((e) => console.error("create marketing schema:", e.message));
     await pool.query(`
       CREATE TABLE IF NOT EXISTS marketing.meta_insights (
@@ -9082,12 +9515,22 @@ async function startServer() {
               );
               if (colRes.rows.length > 0) {
                 await pool.query(`UPDATE crm_comercial_leads SET coluna = $2 WHERE id = $1`, [leadId, colRes.rows[0].id]);
+                await pool.query(
+                  `INSERT INTO crm_comercial_history (lead_id, from_coluna, to_coluna, moved_by) VALUES ($1, $2, $3, 'Automa\xE7\xE3o')`,
+                  [leadId, lead.coluna || null, String(colRes.rows[0].id)]
+                ).catch(() => {
+                });
               }
             } else if (actionType === "mark_lost") {
               await pool.query(`UPDATE crm_comercial_leads SET is_lost = TRUE WHERE id = $1`, [leadId]);
             } else if (actionType === "move_stage") {
               if (cfg.column_id) {
                 await pool.query(`UPDATE crm_comercial_leads SET coluna = $2 WHERE id = $1`, [leadId, cfg.column_id]);
+                await pool.query(
+                  `INSERT INTO crm_comercial_history (lead_id, from_coluna, to_coluna, moved_by) VALUES ($1, $2, $3, 'Automa\xE7\xE3o')`,
+                  [leadId, lead.coluna || null, String(cfg.column_id)]
+                ).catch(() => {
+                });
               }
             } else if (actionType === "create_lead") {
               if (cfg.kanban_id) {
@@ -10251,7 +10694,14 @@ async function startServer() {
           meetingToClosingRate: parseFloat(row.meeting_to_closing_rate),
           averageTicket: parseFloat(row.average_ticket),
           noShowRate: row.no_show_rate != null ? parseFloat(row.no_show_rate) : 20,
-          meetingsPerSdr: row.meetings_per_sdr != null ? parseFloat(row.meetings_per_sdr) : 60
+          meetingsPerSdr: row.meetings_per_sdr != null ? parseFloat(row.meetings_per_sdr) : 60,
+          // Funil sem SDR (28/09/2026): a entrada virou custo por reunião agendada.
+          // Linha antiga sem o campo herda a conta do funil com SDR (CPL ÷ taxa de
+          // agendamento), para a projeção não mudar sozinha na troca.
+          meetingCost: row.meeting_cost != null ? parseFloat(row.meeting_cost) : parseFloat(row.lead_to_meeting_rate) > 0 ? Math.round(parseFloat(row.lead_cost) / (parseFloat(row.lead_to_meeting_rate) / 100) * 100) / 100 : 300,
+          // Entrada do planejador desde 28/09/2026 (antes era a meta de vendas).
+          // null = linha antiga: a tela deriva da meta de vendas.
+          mediaInvestment: row.media_investment != null ? parseFloat(row.media_investment) : null
         });
       } else {
         res.json({
@@ -10261,7 +10711,8 @@ async function startServer() {
           meetingToClosingRate: 25,
           averageTicket: 14e3,
           noShowRate: 20,
-          meetingsPerSdr: 60
+          meetingsPerSdr: 60,
+          meetingCost: 300
         });
       }
     } catch (err) {
@@ -10270,11 +10721,22 @@ async function startServer() {
     }
   });
   app.post("/api/comercial-data", async (req, res) => {
-    const { targetSales, leadCost, leadToMeetingRate, meetingToClosingRate, averageTicket, noShowRate, meetingsPerSdr } = req.body;
+    const { targetSales, leadCost, leadToMeetingRate, meetingToClosingRate, averageTicket, noShowRate, meetingsPerSdr, meetingCost, mediaInvestment } = req.body;
     try {
+      const ult = (await pool.query("SELECT target_sales, lead_cost, lead_to_meeting_rate, meetings_per_sdr FROM commercial_data ORDER BY id DESC LIMIT 1")).rows[0] || {};
       await pool.query(
-        "INSERT INTO commercial_data (target_sales, lead_cost, lead_to_meeting_rate, meeting_to_closing_rate, average_ticket, no_show_rate, meetings_per_sdr) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-        [targetSales, leadCost, leadToMeetingRate, meetingToClosingRate, averageTicket, noShowRate ?? 20, meetingsPerSdr ?? 60]
+        "INSERT INTO commercial_data (target_sales, lead_cost, lead_to_meeting_rate, meeting_to_closing_rate, average_ticket, no_show_rate, meetings_per_sdr, meeting_cost, media_investment) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+        [
+          targetSales ?? ult.target_sales ?? null,
+          leadCost ?? ult.lead_cost ?? 0,
+          leadToMeetingRate ?? ult.lead_to_meeting_rate ?? 0,
+          meetingToClosingRate,
+          averageTicket,
+          noShowRate ?? 20,
+          meetingsPerSdr ?? ult.meetings_per_sdr ?? 60,
+          meetingCost ?? null,
+          mediaInvestment ?? null
+        ]
       );
       res.json({ status: "success" });
     } catch (err) {
@@ -14800,8 +15262,17 @@ async function startServer() {
           r.description,
           r.value::text as movement_value,
           r.net_value::text as value,
-          r.payment_date as movement_date,
-          r.due_date as expiration_date,
+          -- Data em que o CLIENTE pagou. No cart\xE3o, payment_date \xE9 o dia em que o
+          -- Asaas libera o dinheiro (~30 dias depois) e CONFIRMED nem tem
+          -- payment_date \u2014 por isso o clientPaymentDate vem primeiro. Texto, n\xE3o
+          -- Date, para o fuso n\xE3o puxar o dia para tr\xE1s no navegador.
+          COALESCE(r.client_payment_date, (r.raw_json->>'clientPaymentDate')::date,
+                   (r.raw_json->>'confirmedDate')::date, r.payment_date)::text as movement_date,
+          COALESCE(r.payment_date, r.credit_date, r.estimated_credit_date,
+                   (r.raw_json->>'estimatedCreditDate')::date)::text as credit_date,
+          r.due_date::text as expiration_date,
+          r.status as asaas_status,
+          r.invoice_url,
           CASE 
             WHEN r.status = 'RECEIVED' OR r.status = 'CONFIRMED' THEN 'Conciliado'
             WHEN r.status = 'OVERDUE' THEN 'Atrasado'
@@ -14861,9 +15332,17 @@ async function startServer() {
           fs.description,
           fp.name as customer_name,
           fp.cnpjcpf as customer_cnpjcpf,
-          fp.grapehub_client_id
+          fp.grapehub_client_id,
+          fs.next_due_date::text as next_due,
+          -- Cliente do GrapeHub que j\xE1 usa esta assinatura (o seletor avisa antes
+          -- de ligar a mesma assinatura em dois clientes)
+          vc.id as linked_client_id,
+          vc.name as linked_client_name
         FROM fin_subscriptions fs
         LEFT JOIN fin_people fp ON fp.asaas_id = fs.customer_id
+        LEFT JOIN LATERAL (
+          SELECT c.id, c.name FROM clients c WHERE c.fin_subscription_id = fs.id::text LIMIT 1
+        ) vc ON true
         ORDER BY fp.name ASC, fs.value DESC
       `);
       res.json(result.rows);
@@ -14926,6 +15405,7 @@ async function startServer() {
         await pool.query("DELETE FROM crm_comercial_comments WHERE lead_id = ANY($1)", [leadIds]);
       }
       await pool.query("DELETE FROM crm_comercial_leads WHERE kanban_id = $1", [id]);
+      await guardarColunasApagadas(pool, "kanban_id = $1", [id]);
       await pool.query("DELETE FROM crm_comercial_columns WHERE kanban_id = $1", [id]);
       await pool.query("DELETE FROM crm_comercial_kanbans WHERE id = $1", [id]);
       res.status(204).send();
@@ -15026,6 +15506,7 @@ async function startServer() {
   app.delete("/api/crm-comercial/columns/:id", async (req, res) => {
     try {
       const { id } = req.params;
+      await guardarColunasApagadas(pool, "id::text = $1", [String(id)]);
       await pool.query("DELETE FROM crm_comercial_columns WHERE id = $1", [id]);
       res.status(204).send();
     } catch (err) {
@@ -15299,28 +15780,10 @@ async function startServer() {
       let reunioesRealizadas = 0;
       let reunioesTotal = 0;
       try {
-        const marcadasResult = await pool.query(`
-          SELECT COUNT(DISTINCT sub.lead_id)::int AS marcadas
-          FROM (
-            SELECT h.lead_id
-            FROM crm_comercial_history h
-            JOIN crm_comercial_columns c ON h.to_coluna = c.id::text
-            WHERE (LOWER(c.title) LIKE '%reuni\xE3o marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%')
-              ${startDate && endDate ? `AND h.created_at >= $1 AND h.created_at <= ($2::date + interval '1 day')` : ""}
-            UNION
-            SELECT l.id AS lead_id
-            FROM crm_comercial_leads l
-            JOIN crm_comercial_columns c ON l.coluna = c.id::text
-            WHERE (LOWER(c.title) LIKE '%reuni\xE3o marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%')
-              ${startDate && endDate ? `AND l.created_at >= $1 AND l.created_at <= ($2::date + interval '1 day')` : ""}
-            UNION
-            SELECT h.lead_id
-            FROM crm_comercial_history h
-            JOIN crm_comercial_columns c ON h.from_coluna = c.id::text
-            WHERE (LOWER(c.title) LIKE '%reuni\xE3o marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%')
-              ${startDate && endDate ? `AND h.created_at >= $1 AND h.created_at <= ($2::date + interval '1 day')` : ""}
-          ) sub
-        `, startDate && endDate ? [startDate, endDate] : []);
+        const marcadasResult = await pool.query(
+          sqlReunioesMarcadas(startDate && endDate ? "$1" : void 0, startDate && endDate ? "$2" : void 0),
+          startDate && endDate ? [startDate, endDate] : []
+        );
         reunioesMarcadas = marcadasResult.rows[0]?.marcadas || 0;
       } catch (e) {
         console.error("[marketing-dashboard] marcadas error:", e.message);
@@ -15337,12 +15800,20 @@ async function startServer() {
         console.error("[marketing-dashboard] realizadas error:", e.message);
       }
       let totalVendas = 0;
+      let vendasTrafego = 0;
+      let receitaTrafego = 0;
       try {
         const vendasResult = await pool.query(`
-          SELECT COUNT(*) AS vendas FROM fechamentos
+          SELECT COUNT(*) AS vendas,
+                 COUNT(*) FILTER (WHERE LOWER(COALESCE("INDICA\xC7\xC3O / CAMPANHA", '')) LIKE '%campa%') AS vendas_trafego,
+                 COALESCE(SUM(CAST(NULLIF(REPLACE(REPLACE(REPLACE(COALESCE("Valor", '0'), 'R$', ''), ',', '.'), ' ', ''), '') AS NUMERIC))
+                   FILTER (WHERE LOWER(COALESCE("INDICA\xC7\xC3O / CAMPANHA", '')) LIKE '%campa%'), 0) AS receita_trafego
+            FROM fechamentos
           ${startDate && endDate ? `WHERE day >= $1 AND day <= $2` : ""}
         `, startDate && endDate ? [startDate, endDate] : []);
         totalVendas = Number(vendasResult.rows[0]?.vendas) || 0;
+        vendasTrafego = Number(vendasResult.rows[0]?.vendas_trafego) || 0;
+        receitaTrafego = Number(vendasResult.rows[0]?.receita_trafego) || 0;
       } catch (e) {
         console.error("[marketing-dashboard] vendas error:", e.message);
       }
@@ -15368,7 +15839,9 @@ async function startServer() {
           total_impressions: fb.total_impressions || 0,
           total_campaigns: fb.total_campaigns || 0,
           total_vendas: totalVendas,
-          cac: totalVendas > 0 ? totalSpend / totalVendas : 0
+          vendas_trafego: vendasTrafego,
+          receita_trafego: receitaTrafego,
+          cac: vendasTrafego > 0 ? totalSpend / vendasTrafego : 0
         },
         daily_spend: fbDailyResult.rows,
         daily_leads: formDailyResult.rows,
@@ -16570,30 +17043,8 @@ async function startServer() {
           } else if (meta.tipo === "reunioes_marcadas") {
             const startStr = dataInicio.toISOString().slice(0, 10);
             const endStr = dataFim.toISOString().slice(0, 10);
-            const q = await pool.query(
-              `SELECT COUNT(DISTINCT sub.lead_id) AS total
-               FROM (
-                 SELECT h.lead_id
-                 FROM crm_comercial_history h
-                 JOIN crm_comercial_columns c ON h.to_coluna = c.id::text
-                 WHERE (LOWER(c.title) LIKE '%reuni\xE3o marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%')
-                   AND h.created_at >= $1 AND h.created_at <= ($2::date + interval '1 day')
-                 UNION
-                 SELECT l.id AS lead_id
-                 FROM crm_comercial_leads l
-                 JOIN crm_comercial_columns c ON l.coluna = c.id::text
-                 WHERE (LOWER(c.title) LIKE '%reuni\xE3o marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%')
-                   AND l.created_at >= $1 AND l.created_at <= ($2::date + interval '1 day')
-                 UNION
-                 SELECT h.lead_id
-                 FROM crm_comercial_history h
-                 JOIN crm_comercial_columns c ON h.from_coluna = c.id::text
-                 WHERE (LOWER(c.title) LIKE '%reuni\xE3o marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%')
-                   AND h.created_at >= $1 AND h.created_at <= ($2::date + interval '1 day')
-               ) sub`,
-              [startStr, endStr]
-            );
-            valorAtual = Number(q.rows[0]?.total || 0);
+            const q = await pool.query(sqlReunioesMarcadas("$1", "$2"), [startStr, endStr]);
+            valorAtual = Number(q.rows[0]?.marcadas || 0);
           } else if (meta.tipo === "reunioes_realizadas") {
             const startStr = dataInicio.toISOString().slice(0, 10);
             const endStr = dataFim.toISOString().slice(0, 10);
@@ -18895,28 +19346,7 @@ async function startServer() {
         `SELECT id FROM crm_comercial_kanbans WHERE LOWER(nome) LIKE '%pr_-vendas%' OR LOWER(nome) LIKE '%pr__vendas%' OR LOWER(nome) LIKE '%pre vendas%' OR LOWER(nome) LIKE '%pr\xE9 vendas%' LIMIT 1`
       ).catch(() => ({ rows: [] }));
       const preVendasKanbanId = preVendasKanban.rows[0]?.id || null;
-      const reunMarcadasMonth = await pool.query(`
-        SELECT COUNT(DISTINCT sub.lead_id) AS marcadas
-        FROM (
-          SELECT h.lead_id
-          FROM crm_comercial_history h
-          JOIN crm_comercial_columns c ON h.to_coluna = c.id::text
-          WHERE (LOWER(c.title) LIKE '%reuni\xE3o marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%')
-            AND h.created_at >= $1 AND h.created_at <= ($2::date + interval '1 day')
-          UNION
-          SELECT l.id AS lead_id
-          FROM crm_comercial_leads l
-          JOIN crm_comercial_columns c ON l.coluna = c.id::text
-          WHERE (LOWER(c.title) LIKE '%reuni\xE3o marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%')
-            AND l.created_at >= $1 AND l.created_at <= ($2::date + interval '1 day')
-          UNION
-          SELECT h.lead_id
-          FROM crm_comercial_history h
-          JOIN crm_comercial_columns c ON h.from_coluna = c.id::text
-          WHERE (LOWER(c.title) LIKE '%reuni\xE3o marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%')
-            AND h.created_at >= $1 AND h.created_at <= ($2::date + interval '1 day')
-        ) sub
-      `, [startDate, endDate]);
+      const reunMarcadasMonth = await pool.query(sqlReunioesMarcadas("$1", "$2"), [startDate, endDate]);
       const reunRealizadasMonth = await pool.query(`
         SELECT COUNT(DISTINCT m.lead_id) AS realizadas
         FROM crm_comercial_meetings m
@@ -23240,6 +23670,9 @@ ${instrucoes_extras}` : ""}
   setupDreLancamentosRoutes(app, pool);
   setupFaturaVersoesRoutes(app, pool);
   setupFechamentoRoutes(app, pool);
+  setupFunilMetaRoutes(app);
+  setupAlertaSaldoRoutes(app, pool, fetchMetaAccountInfo);
+  migrateCrmReunioes(pool).catch((e) => console.error("[crm-reunioes] migrate:", e.message));
   await migrateCursos(pool).catch((e) => console.warn("[cursos] migrate:", e.message));
   setupCursosRoutes(app, pool);
   await migrateEstudio(pool).catch((e) => console.warn("[estudio] migrate:", e.message));
@@ -23603,119 +24036,6 @@ ${instrucoes_extras}` : ""}
       }
       accounts.sort((a, b) => (a.status === 1 ? 0 : 1) - (b.status === 1 ? 0 : 1) || a.name.localeCompare(b.name, "pt-BR"));
       res.json({ accounts });
-    } catch (e) {
-      res.status(500).json({ error: e.message });
-    }
-  });
-  const FORM_META_KEYS = /* @__PURE__ */ new Set(["ip_address", "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"]);
-  app.post("/api/forms/webhook", async (req, res) => {
-    try {
-      const token = String(req.query.token || "");
-      if (!token) return res.status(401).json({ error: "token ausente" });
-      const proj = await pool.query(`SELECT project_id FROM project_form_tokens WHERE token = $1`, [token]);
-      if (!proj.rows[0]) return res.status(401).json({ error: "token inv\xE1lido" });
-      const projectId = proj.rows[0].project_id;
-      let p = req.body;
-      if (Array.isArray(p)) p = p[0];
-      const b = p && typeof p === "object" && p.body ? p.body : p;
-      const formId = (b?.form_id ?? "") === "" ? null : String(b.form_id);
-      const responseId = (b?.response_id ?? "") === "" ? null : String(b.response_id);
-      const submittedAt = b?.submitted_at || (/* @__PURE__ */ new Date()).toISOString();
-      const data = b && typeof b.data === "object" && b.data ? b.data : {};
-      const answers = [];
-      const meta = {};
-      for (const [k, v] of Object.entries(data)) {
-        if (FORM_META_KEYS.has(k)) meta[k] = v;
-        else answers.push({ label: k, value: v });
-      }
-      await pool.query(
-        `INSERT INTO form_submissions (project_id, form_id, response_id, submitted_at, answers, meta, raw)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)
-         ON CONFLICT (project_id, form_id, response_id) DO UPDATE SET
-           submitted_at=EXCLUDED.submitted_at, answers=EXCLUDED.answers, meta=EXCLUDED.meta, raw=EXCLUDED.raw`,
-        [projectId, formId, responseId, submittedAt, JSON.stringify(answers), JSON.stringify(meta), JSON.stringify(req.body)]
-      );
-      if (formId) {
-        await pool.query(`INSERT INTO project_forms (project_id, form_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [projectId, formId]).catch(() => {
-        });
-      }
-      res.json({ ok: true });
-    } catch (e) {
-      console.error("[forms-webhook]", e.message);
-      res.status(500).json({ error: e.message });
-    }
-  });
-  app.get("/api/projects/:projectId/form-token", async (req, res) => {
-    try {
-      const { projectId } = req.params;
-      let r = await pool.query(`SELECT token FROM project_form_tokens WHERE project_id=$1`, [projectId]);
-      if (!r.rows[0]) {
-        const token = crypto4.randomBytes(24).toString("hex");
-        r = await pool.query(
-          `INSERT INTO project_form_tokens (project_id, token) VALUES ($1,$2)
-           ON CONFLICT (project_id) DO UPDATE SET token=project_form_tokens.token RETURNING token`,
-          [projectId, token]
-        );
-      }
-      res.json({ token: r.rows[0].token });
-    } catch (e) {
-      res.status(500).json({ error: e.message });
-    }
-  });
-  app.post("/api/projects/:projectId/form-token/regenerate", async (req, res) => {
-    try {
-      const { projectId } = req.params;
-      const token = crypto4.randomBytes(24).toString("hex");
-      await pool.query(`INSERT INTO project_form_tokens (project_id, token) VALUES ($1,$2) ON CONFLICT (project_id) DO UPDATE SET token=EXCLUDED.token`, [projectId, token]);
-      res.json({ token });
-    } catch (e) {
-      res.status(500).json({ error: e.message });
-    }
-  });
-  const formsListQuery = `
-    SELECT pf.form_id, COALESCE(NULLIF(pf.label,''), 'Formul\xE1rio ' || pf.form_id) AS label,
-           (SELECT COUNT(*) FROM form_submissions s WHERE s.project_id=pf.project_id AND s.form_id=pf.form_id)::int AS count
-    FROM project_forms pf WHERE pf.project_id=$1 ORDER BY pf.created_at`;
-  app.get("/api/projects/:projectId/form-submissions", async (req, res) => {
-    try {
-      const { projectId } = req.params;
-      const forms = (await pool.query(formsListQuery, [projectId])).rows;
-      const formId = req.query.formId ? String(req.query.formId) : null;
-      const subs = (await pool.query(
-        `SELECT id, form_id, response_id, submitted_at, answers, meta FROM form_submissions
-         WHERE project_id=$1 ${formId ? "AND form_id=$2" : ""} ORDER BY submitted_at DESC NULLS LAST LIMIT 500`,
-        formId ? [projectId, formId] : [projectId]
-      )).rows;
-      res.json({ forms, submissions: subs });
-    } catch (e) {
-      res.status(500).json({ error: e.message });
-    }
-  });
-  app.patch("/api/projects/:projectId/forms/:formId", async (req, res) => {
-    try {
-      const { projectId, formId } = req.params;
-      const { label } = req.body;
-      await pool.query(
-        `INSERT INTO project_forms (project_id, form_id, label) VALUES ($1,$2,$3)
-         ON CONFLICT (project_id, form_id) DO UPDATE SET label=EXCLUDED.label`,
-        [projectId, formId, label || null]
-      );
-      res.json({ ok: true });
-    } catch (e) {
-      res.status(500).json({ error: e.message });
-    }
-  });
-  app.get("/api/portal/form-submissions", requirePortalClient, async (req, res) => {
-    try {
-      const projectId = req.portalProjectId;
-      const forms = (await pool.query(formsListQuery, [projectId])).rows;
-      const formId = req.query.formId ? String(req.query.formId) : null;
-      const subs = (await pool.query(
-        `SELECT id, form_id, submitted_at, answers FROM form_submissions
-         WHERE project_id=$1 ${formId ? "AND form_id=$2" : ""} ORDER BY submitted_at DESC NULLS LAST LIMIT 500`,
-        formId ? [projectId, formId] : [projectId]
-      )).rows;
-      res.json({ forms, submissions: subs });
     } catch (e) {
       res.status(500).json({ error: e.message });
     }

@@ -17,6 +17,9 @@ aqui** — é o que evita repetir contexto para a próxima sessão.
 - `npm run lint` é só `tsc --noEmit`. **O projeto tem erros de tipo pré-existentes** em várias
   páginas (CrmComercial, ContasAReceber, Organograma…). Ao validar uma alteração, filtre a
   saída pelos arquivos que você tocou — não tente zerar o projeto inteiro.
+- **Não existe `timeout` no macOS.** `timeout 300 npx tsc … | grep X` sai com 127 sem rodar
+  nada, e o grep vazio parece "sem erros". O tsc completo leva ~2–4 min: rode direto, com o
+  timeout da ferramenta, e grave a saída em arquivo antes de filtrar.
 - Tailwind vem por **CDN** (`index.html`), com config inline. Não há build de CSS.
 
 ## Temas
@@ -78,8 +81,40 @@ nunca cores fixas. A preferência fica em `App.tsx` (`'system' | 'light' | 'dark
   projetos). Nunca use nome de pessoa inventado como fallback.
 - `projects.responsible` é **texto livre**, não FK para `collaborators`. Quem sai da empresa
   continua como responsável até alguém reatribuir — confira contra `collaborators.status`.
+- **`products` (produto do projeto) não grava Leads, Contratos, CPA nem Investimento do mês** —
+  só `cac`. A aba KPIs do popup do produto perde esses números ao recarregar. O antigo botão
+  "Dados do produto" recalculava o CAC a partir deles e gravava R$ 0,00 por cima (13 usos
+  mai–out/2026; 3 CAC reais apagados: "Conta de banco bloqueada" R$ 140,83 em 06/10 e
+  "Auxílio Doença RJ" da Diego Lopes, R$ 145,97 e R$ 116,29). O botão saiu em 06/10/2026; nome
+  e ícone se editam no título. **Os 2 CAC atuais NÃO foram restaurados** (decisão do Jean).
+  "Adicionar Métricas" (métricas semanais → CAC/CPA) e a aba KPIs também saíram em 06/10/2026:
+  só 2 de 135 produtos tinham CAC (ambos da Dutra Medeiros, criados em 14/05) e o campo
+  `kpis` era o texto de exemplo "CTR 0% | CPC R$ 0" nos 135. A coluna `products.cac` ficou.
 - Antes de qualquer normalização em massa, crie tabela de backup (`<tabela>_backup_YYYYMMDD`)
   e confira o resultado antes de descartá-la.
+
+- **Coluna apagada leva a métrica junto.** O histórico do CRM (`crm_comercial_history`) guarda
+  o **id** da coluna, e as métricas juntam pelo **título** em `crm_comercial_columns`. Em
+  ~24/09/2026 a "Reunião Marcada" foi apagada e recriada com outro id (junto com o kanban de
+  Pré-vendas) — setembro passou a mostrar 10 reuniões marcadas em vez de 38. Hoje apagar coluna
+  ou kanban grava o título antes em `crm_comercial_columns_legacy`; a antiga (`c7e4f656…`) foi
+  reconstruída pelo caminho dos leads (origem `inferido`). Há outras 10 colunas apagadas no
+  histórico sem título conhecido.
+- **Lead que nasce numa coluna não gera movimentação.** O webhook do GrapeCRM cria o lead direto
+  em "Reunião Marcada", sem registro de entrada. Contagem por coluna precisa tratar a coluna
+  inicial (o `from_coluna` da 1ª movimentação, ou a atual) como entrada na data de criação —
+  é o que faz `sqlReunioesMarcadas()` (`src/routes/crm-reunioes.ts`), usada pelo painel de
+  Marketing, pelas Métricas e pelas Metas. Automação "mover etapa"/"marcar ganho" agora grava
+  a movimentação.
+
+- **`fin_receivables.payment_date` no cartão é o dia em que o dinheiro CAI, não o dia em
+  que o cliente pagou** (~30 dias depois; medido em 06/10/2026: 63 de 64 cartões recebidos
+  em 2026 com `payment_date` mais de 20 dias após o vencimento). E cobrança `CONFIRMED`
+  (cartão pago, a cair) nem tem `payment_date`. A data do cliente é
+  `COALESCE(client_payment_date, raw_json->>'clientPaymentDate', raw_json->>'confirmedDate',
+  payment_date)` — `client_payment_date` está vazia em parte das linhas, o `raw_json` não.
+  Para caixa (DFC, fluxo), `payment_date` é o certo; para "o cliente pagou em dia?", não.
+  A aba Financeiro do cliente (`/api/fin-people/:id/movements`) já usa a do cliente.
 
 ## Armadilhas de front
 
@@ -90,6 +125,11 @@ nunca cores fixas. A preferência fica em `App.tsx` (`'system' | 'light' | 'dark
   zero linhas, silenciosamente. Use classes explícitas: `'^[0-9]{4}'`.
 - Comentário JSX dentro de `{cond && (` quebra o build (TS1005) — ponha acima da condicional.
 - Drag and drop: o padrão do projeto é **`@dnd-kit`** (core/sortable/utilities).
+- **Etiqueta em linha de lista de tarefas** (aprovada pelo Jean em 06/10/2026): pílula com
+  bolinha da cor, texto normal, sem borda, vazio = traço que vira "+ Adicionar" no hover.
+  Use `PilulaTag` (só mostrar) ou `<OptionPicker variant="tag">` (escolher), ambos em
+  `src/components/ui/OptionPicker.tsx`. O `compact` antigo continua para o resto do app.
+  O Visual Hub tem pickers próprios com o mesmo desenho.
 - **Recarregar depois de editar uma linha não pode ligar o `loading`.** Nas tabelas que trocam
   o conteúdo por spinner, isso desmonta as linhas, refaz a animação de entrada e joga a rolagem
   para o topo — em Contas a Pagar, categorizar a fatura linha a linha virava "refresh" a cada
@@ -146,6 +186,14 @@ Não há CI. O processo é manual e tem uma pegadinha:
   O canal sai de `clients.billing_method`, que é texto livre — já foi normalizado para três
   valores canônicos. O seletor da UI grava **"E-mail"** com hífen; comparações precisam
   normalizar (upper + remover espaço/hífen) antes de decidir o canal.
+- **Meta da própria Grape (funil de aquisição)** — conta Captação [ATIVA] `690496082457749`,
+  pixel `1865105590542909`. A conta NÃO está em `project_tokens` (lá só há contas de
+  cliente); a rota `/api/marketing-funil-meta` (`src/routes/funil-meta.ts`) lê
+  `META_GRAPE_ACCESS_TOKEN`. Pageview da LP = `landing_page_view` do **Insights** (não o
+  PageView do dataset: conta orgânico e tem 516 eventos de `localhost` de teste). Clique no
+  agendar = evento `ClicouAgendar`, que só vira número por campanha depois de existir uma
+  **conversão personalizada** para ele. A conversão "Reunião marcada" (777593924849494) está
+  morta desde 26/08/2025 (regra no Calendly; hoje é cal.com) — reunião vem do CRM.
 - **Anthropic SDK** já instalado e em uso no servidor (`ANTHROPIC_API_KEY` no `.env`).
 
 ## Decisões em vigor
@@ -384,6 +432,10 @@ Não há CI. O processo é manual e tem uma pegadinha:
   (banco é a verdade — a tela conta "+N depois"). Cartão novo em mês fechado não entra.
   Achado ao testar: **junho/2026 não fecha o saldo — faltam R$ 2.396,02 de movimentação**
   gravada (jul–set fecham no centavo).
+  **Mês do histórico Marvee (jan–jun/2026)**: o DFC usa `fin_dfc_historico`, não os
+  lançamentos — as conferências viram informativas e os totais congelados saem do histórico
+  (`totais.origem = 'historico'`). Jan–jun fechados em 03/10/2026 (janeiro tinha congelado
+  totais pelos lançamentos; refeito, com log `recalcular`).
 
 - **A página "DRE" virou "DFC"** (26/09/2026, `menu_pages.label`): o relatório é regime de
   caixa. Ids internos ficaram (`financeiro-dre`, `/api/financeiro/dre`, `Dre*.tsx`).
@@ -429,6 +481,18 @@ Não há CI. O processo é manual e tem uma pegadinha:
   (`motor-auto`) — a conta é um mapeamento específico, a regra é palavra-chave —,
   mas **nunca** a categoria escolhida por uma pessoa.
 
+- **Popup de saldo baixo** (`src/routes/alerta-saldo.ts`, `AlertaSaldoBaixo.tsx`,
+  `ConfigProjetosModal.tsx`, 06/10/2026): aparece em qualquer tela para o **gestor da página de
+  Projetos** (`menu_pages.manager_id`, template `projects`) — superadmin que não gere página
+  não vê. Regra: conta Meta pré-paga com menos de **N dias** de saldo pelo gasto médio de 7 dias
+  (`marketing.meta_insights`) **ou** abaixo de **R$ X**. É **por página**
+  (`projetos_alerta_saldo`, editada na engrenagem do topo de Projetos, com prévia das contas
+  que entrariam); página sem linha = 3 dias / R$ 100. Só o gestor da página ou superadmin
+  altera. Só o valor fixo deixava passar quem gasta muito: Douglas Silva tinha R$ 389,94 e
+  gastava R$ 168/dia. Adiar fica no localStorage por projeto; projeto novo na lista reabre o
+  popup. O alerta de WhatsApp do mesmo saldo (`checkMetaAccounts`) segue com a regra antiga
+  (`meta_alert_config`) e está **desligado** (`alert_webhook_config.enabled=false`).
+
 - **Telefonia foi REMOVIDA do GrapeHub** (24/09/2026). Saíram: a página Ligações
   (`CrmLigacoes.tsx`), o softphone WebRTC (`useSoftphone.ts`, JsSIP), o botão
   "Ligar" e a aba Ligações do card do lead, a seção Integrações das
@@ -443,10 +507,24 @@ Não há CI. O processo é manual e tem uma pegadinha:
   `crm_api4com_settings` e `crm_comercial_call_status` viraram
   `*_backup_20260924`. Para reverter de vez, é só dropá-las.
 
+- **Formulários (Grapeforms) foram REMOVIDOS** (06/10/2026): aba do popup do projeto
+  (`FormulariosTab.tsx`), aba "Formulários" do portal do cliente e as 6 rotas
+  (`/api/forms/webhook`, `/api/projects/:id/form-token[/regenerate]`,
+  `/api/projects/:id/form-submissions`, `/api/projects/:id/forms/:formId`,
+  `/api/portal/form-submissions`). Uso medido: 4 respostas desde 10/07/2026, todas da JN
+  Advocacia, a 1ª era teste e a última foi em 20/07. Tabelas viraram
+  `form_submissions|project_forms|project_form_tokens_backup_20261006` (há também backups de
+  demo de 16/09). Para apagar de vez, é só dropá-las. **Não confundir com `formulario`**: são os
+  leads da captação da própria Grape, em uso (`server.ts`, ~4,2 mil linhas).
+
 - **Central de Treinamentos** (`src/pages/Cursos.tsx`, `src/routes/cursos.ts`): curso → módulos
   → aulas em vídeo, com progresso por colaborador. O progresso é gravado pelo **e-mail do
   token**, nunca pelo corpo da requisição, e só conta avanço contínuo de reprodução (arrastar a
-  barra não conclui a aula). Pendente: atribuição de trilha por cargo (tabela
+  barra não conclui a aula). Cada conclusão registra a forma em `lesson_progress.completed_via`:
+  `assistiu` (player) ou `manual` (gestor marcou na Turma, com `completed_by`); marcar/desmarcar
+  vai para `lesson_completion_log`. Conclusão manual nunca sobrescreve quem assistiu, e só ela
+  pode ser desfeita. Aula tem descrição editável no lugar e comentários (`lesson_comments`).
+  Pendente: atribuição de trilha por cargo (tabela
   `course_assignments` existe, falta a tela), prazo e certificado.
 
 ## Como trabalhar aqui

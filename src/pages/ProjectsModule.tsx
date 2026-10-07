@@ -7,6 +7,8 @@ import OptionPicker from '../components/ui/OptionPicker';
 import ActionPicker, { CatalogAction, CatalogFolder } from '../components/ui/ActionPicker';
 import SplitHeadline from '../components/SplitHeadline';
 import MetaAdsModal from '../components/MetaAdsModal';
+import ConfigProjetosModal from '../components/ConfigProjetosModal';
+import { Settings as IconeConfig } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useMenu } from '../context/MenuContext';
 import { designSystem } from '../design-system';
@@ -30,7 +32,6 @@ import confetti from 'canvas-confetti';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import FormulariosTab from '../components/FormulariosTab';
 import ThemedDropdown from '../components/ui/ThemedDropdown';
 import RichTextEditor from '../components/RichTextEditor';
 import MediaLightbox, { LbFile } from '../components/MediaLightbox';
@@ -466,7 +467,6 @@ interface Product {
   leadsGoal?: string;
   cacGoal?: string;
   fechamentosGoal?: string;
-  weeklyMetrics?: { week: string; investment: string; leads: string; contracts: string }[];
 }
 
 interface Project {
@@ -566,6 +566,8 @@ interface Props {
 const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
   const { userData } = useAuth();
   const { menu, refreshMenu } = useMenu();
+  // Engrenagem do topo: configurações desta página (alerta de saldo baixo)
+  const [configAberta, setConfigAberta] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('Todos os Status');
   const [resultFilter, setResultFilter] = useState('Todos os Resultados');
@@ -577,10 +579,10 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
   const [isPageModalOpen, setIsPageModalOpen] = useState(false);
   const [pageModalProjectId, setPageModalProjectId] = useState<string | null>(null);
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
-  const [activeProductTab, setActiveProductTab] = useState<'resultado' | 'kpis'>('resultado');
-  const [activeProjectTab, setActiveProjectTab] = useState<'resultado' | 'reunioes' | 'criativos' | 'comentarios' | 'formularios' | 'nps' | 'tokens' | 'churn'>('resultado');
+  // O popup do produto tinha a aba KPIs; saiu em 06/10/2026 junto com "Adicionar Métricas".
+  const activeProductTab = 'resultado' as const;
+  const [activeProjectTab, setActiveProjectTab] = useState<'resultado' | 'reunioes' | 'criativos' | 'comentarios' | 'nps' | 'tokens' | 'churn'>('resultado');
   // Menu "..." que agrupa as abas Formulários, Tokens e Portal
-  const [isMoreTabsOpen, setIsMoreTabsOpen] = useState(false);
   // Só gestão gerencia o acesso do cliente ao portal.
   const [npsResponses, setNpsResponses] = useState<any[]>([]);
   const [isNpsLoading, setIsNpsLoading] = useState(false);
@@ -621,7 +623,6 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
   const [images, setImages] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isAddingNote, setIsAddingNote] = useState(false);
-  const [isEditingMetrics, setIsEditingMetrics] = useState(false);
   const [tempProduct, setTempProduct] = useState<Product | null>(null);
   const [isResultDropdownOpen, setIsResultDropdownOpen] = useState(false);
   const [isStatusDropdownOpen, setIsStatusDropdownOpen] = useState(false);
@@ -640,13 +641,6 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
   const [commentUploading, setCommentUploading] = useState(false);
   const commentFileRef = useRef<HTMLInputElement>(null);
   const [fileLightbox, setFileLightbox] = useState<{ files: LbFile[]; index: number } | null>(null);
-  const [isAddMetricsModalOpen, setIsAddMetricsModalOpen] = useState(false);
-  const [weeklyMetrics, setWeeklyMetrics] = useState([
-    { week: '1', investment: '', leads: '', contracts: '' },
-    { week: '2', investment: '', leads: '', contracts: '' },
-    { week: '3', investment: '', leads: '', contracts: '' },
-    { week: '4', investment: '', leads: '', contracts: '' },
-  ]);
 
   const handleFileUpload = async (file: File) => {
     if (!selectedProject) return;
@@ -1242,13 +1236,24 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     activeClientId: ''
   });
 
-  const getDynamicStats = (projectsList: Project[]) => [
-    { label: 'Total de Projetos', value: projectsList.length.toString(), icon: Briefcase, color: 'text-blue-500', bg: 'bg-blue-500/10' },
-    { label: 'Rodando', value: projectsList.filter(p => p.status === 'Operacional' || p.status === 'Rodando').length.toString(), icon: CheckCircle2, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
-    { label: 'Pausados', value: projectsList.filter(p => p.status === 'Pausado').length.toString(), icon: PauseCircle, color: 'text-slate-500', bg: 'bg-slate-500/10' },
-    { label: 'Gargalo', value: projectsList.filter(p => p.status === 'Gargalo').length.toString(), icon: AlertTriangle, color: 'text-rose-500', bg: 'bg-rose-500/10' },
-    { label: 'Investimento Total', value: `R$ ${projectsList.reduce((acc, p) => acc + parseCurrency(p.investment || '0'), 0).toLocaleString('pt-BR')}`, icon: DollarSign, color: 'text-violet-500', bg: 'bg-violet-500/10' },
-  ];
+  // Faixa de KPIs do topo: cada número traz uma linha de contexto (parte do total,
+  // média por projeto) — sozinho, "13" não diz se está bom.
+  const getDynamicStats = (projectsList: Project[]) => {
+    const total = projectsList.length;
+    const rodando = projectsList.filter(p => p.status === 'Operacional' || p.status === 'Rodando').length;
+    const pausados = projectsList.filter(p => p.status === 'Pausado').length;
+    const gargalo = projectsList.filter(p => p.status === 'Gargalo').length;
+    const invest = projectsList.reduce((acc, p) => acc + parseCurrency(p.investment || '0'), 0);
+    const parte = (n: number) => (total ? `${Math.round((n / total) * 100)}% do total` : '—');
+    return [
+      { label: 'Projetos', value: total.toString(), icon: Briefcase, color: 'text-blue-500', bg: 'bg-blue-500/10', sub: 'nesta página', alerta: false },
+      { label: 'Rodando', value: rodando.toString(), icon: CheckCircle2, color: 'text-emerald-500', bg: 'bg-emerald-500/10', sub: parte(rodando), alerta: false },
+      { label: 'Gargalo', value: gargalo.toString(), icon: AlertTriangle, color: 'text-rose-500', bg: 'bg-rose-500/10', sub: gargalo ? parte(gargalo) : 'nenhum travado', alerta: gargalo > 0 },
+      { label: 'Pausados', value: pausados.toString(), icon: PauseCircle, color: 'text-slate-500', bg: 'bg-slate-500/10', sub: pausados ? parte(pausados) : 'nenhum pausado', alerta: false },
+      { label: 'Investimento', value: `R$ ${invest.toLocaleString('pt-BR')}`, icon: DollarSign, color: 'text-violet-500', bg: 'bg-violet-500/10',
+        sub: total ? `média R$ ${Math.round(invest / total).toLocaleString('pt-BR')} por projeto` : '—', alerta: false },
+    ];
+  };
 
   const filteredProjects = projects.map(project => {
     // Resolve partner name dynamically from clients list when linked
@@ -1290,7 +1295,8 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     const matchesSearch = (project.partner || '').toLowerCase().includes(query) || 
                          (project.product || '').toLowerCase().includes(query);
     const matchesStatus = statusFilter === 'Todos os Status' || project.status === statusFilter;
-    const matchesResult = resultFilter === 'Todos os Resultados' || (project.projectResult || 'Sem Resultado') === resultFilter;
+    const resultadoDoProjeto = project.projectResult && project.projectResult !== '-' ? project.projectResult : 'Sem Resultado';
+    const matchesResult = resultFilter === 'Todos os Resultados' || resultadoDoProjeto === resultFilter;
     return matchesSearch && matchesStatus && matchesResult;
   });
 
@@ -1636,7 +1642,6 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     setSelectedProduct(product);
     setTempProduct(product);
     setIsProductModalOpen(true);
-    setIsEditingMetrics(false);
   };
 
   const handleOpenAddProduct = (projectId: string) => {
@@ -1866,73 +1871,6 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       roi: '0.0x',
       activeClientId: ''
     });
-  };
-
-  const handleSaveMetrics = () => {
-    if (!tempProduct || !selectedProduct) return;
-
-    // Calculate CAC and CPA automatically
-    const investment = parseCurrency(tempProduct.investmentMonthly);
-    const contracts = parseFloat(tempProduct.contracts) || 0;
-    const leads = parseFloat(tempProduct.leads) || 0;
-
-    const calculatedCac = contracts > 0 ? `R$ ${(investment / contracts).toFixed(2).replace('.', ',')}` : 'R$ 0,00';
-    const calculatedCpa = leads > 0 ? `R$ ${(investment / leads).toFixed(2).replace('.', ',')}` : 'R$ 0,00';
-
-    const finalProduct = { 
-      ...tempProduct,
-      cac: calculatedCac,
-      cpa: calculatedCpa
-    };
-
-    const changes: string[] = [];
-    const fields: { key: keyof Product; label: string }[] = [
-      { key: 'name', label: 'Nome do Produto' },
-      { key: 'icon', label: 'Ícone' },
-      { key: 'investmentMonthly', label: 'Investimento' },
-      { key: 'leads', label: 'Leads' },
-      { key: 'contracts', label: 'Contratos' },
-      { key: 'cac', label: 'CAC' },
-      { key: 'cpa', label: 'CPA' },
-      { key: 'balance', label: 'Saldo' },
-      { key: 'kpis', label: 'KPIs' },
-      { key: 'platform', label: 'Plataforma' },
-      { key: 'status', label: 'Status' },
-      { key: 'delivery', label: 'Veiculação' },
-      { key: 'aiService', label: 'IA' },
-      { key: 'bottleneck', label: 'Gargalo' },
-      { key: 'paymentMethod', label: 'Pagamento' },
-    ];
-
-    fields.forEach(field => {
-      if (selectedProduct[field.key] !== finalProduct[field.key]) {
-        changes.push(`${field.label}: de "${selectedProduct[field.key]}" para "${finalProduct[field.key]}"`);
-      }
-    });
-
-    if (changes.length > 0) {
-      const now = new Date();
-      const note: Optimization = {
-        id: Math.random().toString(36).substr(2, 9),
-        author: userData?.name || 'João',
-        authorPhoto: userData?.picture || auth.currentUser?.photoURL || '',
-        role: userData?.role || 'Gestor',
-        date: now.toLocaleDateString('pt-BR'),
-        time: now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-        message: `Métricas atualizadas:\n${changes.join('\n')}`,
-        type: 'Métricas'
-      };
-      finalProduct.optimizations = [note, ...(finalProduct.optimizations || [])];
-    }
-
-    commitProjects(prev => prev.map(proj => ({
-      ...proj,
-      products: proj.products?.map(p => p.id === selectedProduct.id ? finalProduct : p)
-    })));
-
-    setSelectedProduct(finalProduct);
-    setTempProduct(finalProduct);
-    setIsEditingMetrics(false);
   };
 
   const handleSaveEditNote = (noteId: string) => {
@@ -2453,24 +2391,28 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
               className="relative w-full max-w-5xl min-h-[800px] flex flex-col modal-container overflow-hidden mb-10 transition-colors duration-300"
             >
               {/* Modal Header */}
-              <div className="p-8 border-b border-slate-200 dark:border-white/10">
-                <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6 mb-6">
+              <div className="px-8 pt-7 pb-6 border-b border-slate-200 dark:border-white/10">
+                <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 mb-5">
                   <div className="flex flex-wrap items-center gap-4">
-                    {isEditingMetrics ? (
-                      <div className="flex items-center gap-3">
-                        <div className="relative group">
-                          <button 
-                            className="p-3 bg-white/50 dark:bg-white/5 border border-white/20 dark:border-white/10 rounded-xl text-violet-600 hover:bg-white/70 dark:hover:bg-white/10 transition-all"
-                            title="Mudar Ícone"
-                          >
-                            {getProductIcon(tempProduct.icon)}
-                          </button>
-                          <div className="absolute top-full left-0 mt-2 w-64 bg-white/80 backdrop-blur-xl dark:bg-dark-sidebar border border-white/20 dark:border-white/10 rounded-xl shadow-2xl z-[110] p-2 hidden group-hover:grid grid-cols-4 gap-1">
+                    {/* Nome e ícone se editam aqui mesmo (06/10/2026). Antes era preciso entrar em
+                        "Dados do produto" e salvar — e esse salvamento recalculava o CAC a partir de
+                        Leads/Contratos/Investimento, que não são gravados no banco, e o zerava
+                        (3 CAC reais apagados entre jun e out/2026). */}
+                    <div className="flex items-center gap-3">
+                      <div className="relative group">
+                        <button
+                          className="w-11 h-11 rounded-xl bg-violet-500/10 text-violet-500 flex items-center justify-center shrink-0 hover:bg-violet-500/20 transition-colors"
+                          title="Trocar ícone"
+                        >
+                          {getProductIcon(selectedProduct.icon)}
+                        </button>
+                        <div className="absolute top-full left-0 pt-2 z-[110] hidden group-hover:block">
+                          <div className="w-64 bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl p-2 grid grid-cols-4 gap-1">
                             {productIcons.map((item) => (
                               <button
                                 key={item.name}
-                                onClick={() => setTempProduct({ ...tempProduct, icon: item.name })}
-                                className={`p-2 rounded-lg hover:bg-white/50 dark:hover:bg-white/5 transition-all flex items-center justify-center ${tempProduct.icon === item.name ? 'bg-violet-500/20 text-violet-600' : 'text-slate-500'}`}
+                                onClick={() => handleUpdateResultField('icon' as keyof Product, item.name, 'Ícone')}
+                                className={`p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 transition-all flex items-center justify-center ${selectedProduct.icon === item.name ? 'bg-violet-500/20 text-violet-500' : 'text-slate-500'}`}
                                 title={item.label}
                               >
                                 <item.icon size={18} />
@@ -2478,88 +2420,38 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                             ))}
                           </div>
                         </div>
-                        <input 
-                          type="text" 
-                          value={tempProduct.name || ''}
-                          onChange={(e) => setTempProduct({ ...tempProduct, name: e.target.value })}
-                          className="text-2xl font-bold text-slate-900 dark:text-white bg-white/50 dark:bg-white/5 border border-white/20 dark:border-white/10 rounded-xl px-3 py-1 focus:border-violet-500 outline-none"
-                        />
                       </div>
-                    ) : (
-                      <div className="flex items-center gap-4">
-                        <div className="p-3 bg-violet-600/20 rounded-xl">
-                          <div className="text-violet-600">
-                            {getProductIcon(selectedProduct.icon)}
-                          </div>
-                        </div>
-                        <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{selectedProduct.name}</h2>
-                      </div>
-                    )}
-                    <span className={`px-3 py-1 ${(getCampaignStatusColor(selectedProduct.status) || '').replace('text-', 'bg-')}/20 ${getCampaignStatusColor(selectedProduct.status)} text-xs font-bold rounded-full flex items-center gap-1.5`}>
+                      <input
+                        type="text"
+                        value={tempProduct.name ?? selectedProduct.name ?? ''}
+                        onChange={(e) => setTempProduct({ ...tempProduct, name: e.target.value })}
+                        onBlur={(e) => {
+                          const nome = e.target.value.trim();
+                          if (!nome) { setTempProduct({ ...tempProduct, name: selectedProduct.name }); return; }
+                          handleUpdateResultField('name' as keyof Product, nome, 'Nome do produto');
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                          if (e.key === 'Escape') { setTempProduct({ ...tempProduct, name: selectedProduct.name }); (e.target as HTMLInputElement).blur(); }
+                        }}
+                        title="Clique para renomear"
+                        size={Math.max(8, (tempProduct.name ?? selectedProduct.name ?? '').length)}
+                        className="text-xl font-bold text-slate-900 dark:text-white bg-transparent rounded-lg px-2 py-1 -ml-2 border border-transparent hover:border-slate-200 dark:hover:border-white/10 focus:border-violet-500 focus:bg-slate-50 dark:focus:bg-white/5 outline-none transition-colors max-w-[420px]"
+                      />
+                    </div>
+                    <span className={`h-6 px-2.5 ${(getCampaignStatusColor(selectedProduct.status) || '').replace('text-', 'bg-')}/15 ${getCampaignStatusColor(selectedProduct.status)} text-[11px] font-semibold rounded-full flex items-center gap-1.5`}>
                       <div className={`w-1.5 h-1.5 rounded-full ${(getCampaignStatusColor(selectedProduct.status) || '').replace('text-', 'bg-')} animate-pulse`} />
                       {selectedProduct.status}
                     </span>
                   </div>
-                  <div className="flex flex-wrap items-center gap-3 justify-end w-full xl:w-auto mt-4 xl:mt-0">
-                    {!isEditingMetrics && (
-                      <>
-                        <button 
-                          onClick={() => setIsAddMetricsModalOpen(true)}
-                          className="px-4 py-2 bg-violet-600/10 hover:bg-violet-600/20 text-violet-500 text-sm font-bold rounded-xl transition-all border border-violet-500/20 flex items-center gap-2"
-                        >
-                          <Plus size={16} />
-                          Adicionar Métricas
-                        </button>
-                      </>
-                    )}
-                    {isEditingMetrics ? (
-                      <button 
-                        onClick={handleSaveMetrics}
-                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-slate-900 dark:text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-emerald-600/20"
-                      >
-                        Salvar Alterações
-                      </button>
-                    ) : (
-                      <button 
-                        onClick={() => {
-                          setIsEditingMetrics(true);
-                          setTempProduct({ ...selectedProduct });
-                        }}
-                        className="px-4 py-2 bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 text-slate-900 dark:text-white text-sm font-bold rounded-xl transition-all border border-slate-200 dark:border-white/5"
-                      >
-                        Dados do produto
-                      </button>
-                    )}
+                  <div className="flex flex-wrap items-center gap-2 justify-end w-full xl:w-auto">
                     <button 
                       onClick={() => setIsProductModalOpen(false)}
-                      className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl text-slate-500 hover:text-slate-900 dark:hover:text-white transition-all"
+                      className="w-10 h-10 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl text-slate-500 hover:text-slate-900 dark:hover:text-white transition-all"
                     >
-                      <X size={20} />
+                      <X size={18} />
                     </button>
                   </div>
-                </div>
-
-                {/* Tabs */}
-                <div className="flex items-center gap-6 mb-8 border-b border-slate-200 dark:border-white/10">
-                  {(['resultado', 'kpis'] as const).map((tab) => (
-                    <button
-                      key={tab}
-                      onClick={() => setActiveProductTab(tab)}
-                      className={`pb-4 text-sm font-bold transition-all relative ${
-                        activeProductTab === tab
-                          ? 'text-violet-600'
-                          : 'text-slate-500 hover:text-light-text dark:hover:text-white'
-                      }`}
-                    >
-                      {tab === 'resultado' ? 'Resultado do produto' : 'KPI\'s Produto'}
-                      {activeProductTab === tab && (
-                        <motion.div
-                          layoutId="product-tab-indicator"
-                          className="absolute bottom-0 left-0 right-0 h-0.5 bg-violet-500"
-                        />
-                      )}
-                    </button>
-                  ))}
                 </div>
 
                 {/* Content based on active tab */}
@@ -2574,17 +2466,17 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                 {activeProductTab === 'resultado' && (
                   <>
                     {/* Selectors Area */}
-                    <div className="pt-2 pb-8 border-b border-slate-200 dark:border-white/5 relative mb-8 flex gap-6">
+                    <div className="relative grid grid-cols-2 gap-3">
                       
                       {/* Project Result Selector */}
-                      <div className="flex-1 max-w-xs relative">
-                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Resultado do Projeto</p>
+                      <div className="relative px-5 py-4 rounded-2xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/5">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Resultado do produto</p>
                         <button 
                           onClick={() => {
                             setIsResultDropdownOpen(!isResultDropdownOpen);
                             setIsStatusDropdownOpen(false);
                           }}
-                          className="flex items-center justify-between w-full px-4 py-3 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-bold text-slate-900 dark:text-white hover:bg-slate-200 dark:hover:bg-white/10 transition-all"
+                          className="flex items-center justify-between w-full -mx-2 px-2 py-1.5 rounded-lg text-sm font-semibold text-slate-900 dark:text-white hover:bg-slate-100 dark:hover:bg-white/5 transition-all"
                         >
                           <div className="flex items-center gap-2">
                             <div className={`w-2 h-2 rounded-full ${projectResults.find(r => r.label === selectedProduct.projectResult)?.color || 'bg-slate-500'}`} />
@@ -2636,14 +2528,14 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                       </div>
 
                       {/* Status Campanha Selector */}
-                      <div className="flex-1 max-w-xs relative">
-                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Status Campanha</p>
+                      <div className="relative px-5 py-4 rounded-2xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/5">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Status da campanha</p>
                         <button 
                           onClick={() => {
                             setIsStatusDropdownOpen(!isStatusDropdownOpen);
                             setIsResultDropdownOpen(false);
                           }}
-                          className="flex items-center justify-between w-full px-4 py-3 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-sm font-bold text-slate-900 dark:text-white hover:bg-slate-200 dark:hover:bg-white/10 transition-all"
+                          className="flex items-center justify-between w-full -mx-2 px-2 py-1.5 rounded-lg text-sm font-semibold text-slate-900 dark:text-white hover:bg-slate-100 dark:hover:bg-white/5 transition-all"
                         >
                           <div className="flex items-center gap-2">
                             <div className={`w-2 h-2 rounded-full ${campaignStatusOptions.find(r => r.label === selectedProduct.status)?.color?.replace('text-', 'bg-') || 'bg-slate-500'}`} />
@@ -2687,7 +2579,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     </div>
 
                     {/* Detailed Metrics Grid */}
-                    <div className="mt-8 grid grid-cols-3 gap-4">
+                    <div className="mt-3 grid grid-cols-3 gap-3">
                       {[
                         { label: 'Investimento', value: 'budget', icon: DollarSign, color: 'text-slate-900 dark:text-white', type: 'text', editable: true },
                         { label: 'Plataforma', value: 'platform', icon: Globe, color: 'platformColor', type: 'select', options: platformOptions, editable: true },
@@ -2695,10 +2587,10 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                         { label: 'IA de Atendimento', value: 'aiService', icon: Bot, color: 'text-slate-900 dark:text-white', type: 'select', options: aiServiceOptions, editable: true, hasKeyword: true },
                         { label: 'Pagamento', value: 'paymentMethod', icon: CreditCard, color: 'text-slate-900 dark:text-white', type: 'select', options: ['Automático', 'Manual'], editable: true, hasBalance: true }
                       ].map((metric: any) => (
-                        <div key={metric.label} className="p-4 bg-white dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5 hover:border-violet-500/20 transition-all">
-                          <div className="flex items-center gap-2 text-slate-500 mb-1">
-                            <metric.icon size={14} />
-                            <span className="text-[10px] font-bold uppercase tracking-wider">{metric.label}</span>
+                        <div key={metric.label} className="px-5 py-4 bg-slate-50 dark:bg-white/[0.03] rounded-2xl border border-slate-200 dark:border-white/5 hover:border-violet-500/20 transition-all">
+                          <div className="flex items-center gap-1.5 text-slate-500 mb-2">
+                            <metric.icon size={12} />
+                            <span className="text-[10px] font-bold uppercase tracking-widest">{metric.label}</span>
                           </div>
                           {metric.type === 'select' ? (
                             <OptionPicker
@@ -2709,7 +2601,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                 setTempProduct({ ...tempProduct!, [metric.value]: v });
                                 handleUpdateResultField(metric.value as keyof Product, v, metric.label);
                               }}
-                              compact
+                              variant="tag"
                             />
                           ) : (
                             <input 
@@ -2725,7 +2617,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                               onBlur={(e) => handleUpdateResultField(metric.value as keyof Product, (tempProduct as any)[metric.value] ?? e.target.value, metric.label)}
                               className={`w-full bg-transparent outline-none ${
                                 metric.color === 'dynamic' ? getCampaignStatusColor((selectedProduct as any)[metric.value]) : metric.color
-                              } text-sm font-bold placeholder:text-slate-500/50 border-b border-transparent hover:border-slate-300 dark:hover:border-white/20 focus:border-violet-500 transition-all`}
+                              } text-base font-bold placeholder:text-slate-500/50 border-b border-transparent hover:border-slate-300 dark:hover:border-white/20 focus:border-violet-500 transition-all`}
                             />
                           )}
                           {metric.hasKeyword && (
@@ -2763,48 +2655,17 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                   </>
                 )}
 
-                {activeProductTab === 'kpis' && (
-                  <div className="mt-8 grid grid-cols-3 gap-4">
-                    {[
-                      { label: 'Investimento', value: 'investmentMonthly', icon: DollarSign, color: 'text-slate-900 dark:text-white', type: 'text', editable: false },
-                      { label: 'Leads', value: 'leads', icon: Users, color: 'text-slate-900 dark:text-white', type: 'text', editable: false },
-                      { label: 'Contratos', value: 'contracts', icon: FileText, color: 'text-slate-900 dark:text-white', type: 'text', editable: false },
-                      { label: 'CAC', value: 'cac', icon: Target, color: 'text-emerald-500', type: 'text', editable: false },
-                      { label: 'CPA', value: 'cpa', icon: Target, color: 'text-emerald-500', type: 'text', editable: false },
-                      { label: 'KPIs Campanha', value: 'kpis', icon: Activity, color: 'text-slate-900 dark:text-white', type: 'text', editable: false },
-                    ].map((metric: any) => (
-                      <div key={metric.label} className="p-4 bg-white dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/5">
-                        <div className="flex items-center gap-2 text-slate-500 mb-1">
-                          <metric.icon size={14} />
-                          <span className="text-[10px] font-bold uppercase tracking-wider">{metric.label}</span>
-                        </div>
-                        {isEditingMetrics && metric.editable ? (
-                          <input 
-                            type="text" 
-                            value={(tempProduct as any)[metric.value] || ''}
-                            onChange={(e) => setTempProduct({ ...tempProduct, [metric.value]: e.target.value })}
-                            className="w-full bg-light-sidebar dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded-lg px-2 py-1 text-xs text-slate-900 dark:text-white focus:border-violet-500 outline-none mt-1"
-                          />
-                        ) : (
-                          <p className={`text-sm font-bold ${metric.color === 'dynamic' ? getCampaignStatusColor((selectedProduct as any)[metric.value]) : metric.color}`}>
-                            {(selectedProduct as any)[metric.value]}
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
                 </motion.div>
                 </AnimatePresence>
               </div>
 
               {/* Modal Content - Optimization History */}
               {activeProductTab === 'resultado' && (
-                <div className="p-8 overflow-y-visible">
-                <div className="flex items-center justify-between mb-10">
-                  <div className="flex items-center gap-3">
-                    <Activity size={20} className="text-violet-500" />
-                    <h3 className="text-lg font-bold text-light-text dark:text-white">Histórico de Otimizações</h3>
+                <div className="px-8 pt-6 pb-8 overflow-y-visible">
+                <div className="flex items-center justify-between mb-5">
+                  <div className="flex items-center gap-2">
+                    <Activity size={16} className="text-violet-500" />
+                    <h3 className="text-base font-bold text-light-text dark:text-white">Histórico de otimizações</h3>
                   </div>
                   <div className="flex items-center gap-2">
                     <OptionPicker
@@ -2828,10 +2689,10 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     />
                     <button 
                       onClick={() => setIsAddingNote(!isAddingNote)}
-                      className="flex items-center gap-2 text-violet-400 hover:text-violet-300 text-sm font-bold transition-colors ml-4"
+                      className="h-9 px-3 flex items-center gap-1.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition-colors ml-2"
                     >
-                      <Plus size={16} />
-                      Adicionar Nota
+                      <Plus size={14} />
+                      Adicionar nota
                     </button>
                   </div>
                 </div>
@@ -2840,7 +2701,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                   <motion.div 
                     initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="mb-8 p-4 bg-slate-100 dark:bg-white/5 rounded-2xl border border-violet-500/20"
+                    className="mb-5 p-4 bg-slate-50 dark:bg-white/[0.03] rounded-2xl border border-violet-500/30"
                   >
                     <div className="relative">
                       <textarea 
@@ -2962,9 +2823,10 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
 
                 {/* Timeline */}
                 <div className="relative max-h-[900px] overflow-y-auto custom-scrollbar pr-2">
-                  <div className="relative space-y-12 py-4">
-                    {/* Vertical Line */}
-                    <div className="absolute left-1/2 top-0 bottom-0 w-px bg-slate-200 dark:bg-white/10 -translate-x-1/2" />
+                  {/* Uma coluna só (06/10/2026), como no popup do projeto: antes os cards alternavam
+                      esquerda/direita com 40% da largura e metade do espaço ficava vazio. */}
+                  <div className="relative space-y-3 py-1 pl-12">
+                    <div className="absolute left-[15px] top-3 bottom-3 w-px bg-slate-200 dark:bg-white/10" />
 
                     {selectedProduct.optimizations
                       ?.slice()
@@ -2987,19 +2849,23 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                (!opt.isInternal || (auth.currentUser?.email?.endsWith('@grapemidia.com')));
                       })
                       .map((opt, idx) => (
-                      <div key={opt.id} className="relative flex items-center justify-center">
-                        {/* Timeline Dot */}
-                        <div className="absolute left-1/2 -translate-x-1/2 z-10">
-                          <div className="w-8 h-8 rounded-full bg-white dark:bg-[#1a1625]">
-                            <div className="w-full h-full rounded-full bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/20 flex items-center justify-center shadow-sm">
-                              <Clock size={16} className="text-violet-500" />
+                      <div key={opt.id} className="relative">
+                        {/* Marcador na linha: ícone e cor pelo tipo */}
+                        {(() => {
+                          const t = opt.isInternal ? { I: Lock, c: 'text-amber-500 bg-amber-500/10 border-amber-500/20' }
+                            : opt.optimization ? { I: TrendingUp, c: 'text-violet-500 bg-violet-500/10 border-violet-500/20' }
+                            : opt.status === 'Mudança de Status' ? { I: Activity, c: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20' }
+                            : (opt.type || opt.status) ? { I: BarChart3, c: 'text-blue-500 bg-blue-500/10 border-blue-500/20' }
+                            : { I: MessageSquare, c: 'text-slate-500 bg-slate-500/10 border-slate-500/20' };
+                          return (
+                            <div className="absolute -left-12 top-4 z-10 w-8 h-8 rounded-full bg-white dark:bg-[#1a1625]">
+                              <div className={`w-full h-full rounded-full border flex items-center justify-center ${t.c}`}><t.I size={14} /></div>
                             </div>
-                          </div>
-                        </div>
+                          );
+                        })()}
 
-                        {/* Card */}
-                        <div className={`w-[40%] p-5 rounded-2xl border transition-all ${opt.isInternal ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-500/20' : 'bg-white dark:bg-white/5 border-slate-200 dark:border-white/5'} hover:border-violet-500/20 ${idx % 2 === 0 ? 'mr-auto text-left' : 'ml-auto text-left'}`}>
-                          <div className="flex items-center justify-between mb-3">
+                        <div className={`px-5 py-4 rounded-2xl border transition-all ${opt.isInternal ? 'bg-amber-50 dark:bg-amber-500/[0.06] border-amber-500/20' : 'bg-white dark:bg-white/[0.03] border-slate-200 dark:border-white/5'} hover:border-violet-500/20`}>
+                          <div className="flex items-center justify-between mb-2">
                             <div className="flex items-center gap-2">
                               {opt.authorPhoto ? (
                                 <img src={opt.authorPhoto} alt={opt.author} className="w-6 h-6 rounded-full object-cover" referrerPolicy="no-referrer" />
@@ -3014,20 +2880,20 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                             </div>
                             <div className="flex items-center gap-2">
                               {opt.optimization && (
-                                <span className="px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-500 text-[10px] font-bold uppercase tracking-wider">
+                                <span className="h-5 inline-flex items-center px-2 rounded-full bg-violet-500/10 text-violet-500 text-[10px] font-semibold">
                                   Otimização
                                 </span>
                               )}
                               {opt.type && (
-                                <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-500 text-[10px] font-bold uppercase tracking-wider">
+                                <span className="h-5 inline-flex items-center px-2 rounded-full bg-blue-500/10 text-blue-500 text-[10px] font-semibold">
                                   Métricas
                                 </span>
                               )}
                               {opt.status && (
                                 opt.status === 'Mudança de Status' ? (
-                                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 text-[10px] font-bold uppercase tracking-wider">Status</span>
+                                  <span className="h-5 inline-flex items-center px-2 rounded-full bg-emerald-500/10 text-emerald-500 text-[10px] font-semibold">Status</span>
                                 ) : (
-                                  <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-500 text-[10px] font-bold uppercase tracking-wider">Métricas</span>
+                                  <span className="h-5 inline-flex items-center px-2 rounded-full bg-blue-500/10 text-blue-500 text-[10px] font-semibold">Métricas</span>
                                 )
                               )}
                               <div className="flex items-center">
@@ -3062,8 +2928,8 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                             </div>
                           </div>
                           {opt.isInternal && (
-                            <div className="flex items-center gap-1 mb-2 text-[10px] font-bold text-amber-600 dark:text-amber-500 uppercase tracking-wider">
-                              <span className="opacity-70">🔒</span> MENSAGEM INTERNA
+                            <div className="flex items-center gap-1 mb-2 text-[10px] font-semibold text-amber-600 dark:text-amber-500">
+                              <Lock size={10} /> Nota interna — só a equipe Grape vê
                             </div>
                           )}
                           {editingNoteId === opt.id ? (
@@ -3090,7 +2956,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                               </div>
                             </div>
                           ) : (
-                            <p className={`text-xs ${opt.isInternal ? 'text-amber-900 dark:text-amber-200' : 'text-slate-600 dark:text-slate-400'} leading-relaxed whitespace-pre-line`}>
+                            <p className={`text-[13px] ${opt.isInternal ? 'text-amber-900 dark:text-amber-200' : 'text-slate-700 dark:text-slate-200'} leading-relaxed whitespace-pre-line`}>
                               {opt.message}
                             </p>
                           )}
@@ -3163,7 +3029,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                               )}
 
                               {/* Action Bar */}
-                              <div className="mt-4 pt-3 border-t border-slate-100 dark:border-white/5 flex items-center justify-between">
+                              <div className="mt-3 flex items-center gap-1">
                                 <div className="flex items-center gap-2">
                                   <button 
                                     onClick={(e) => { e.stopPropagation(); handleToggleLike(opt.id, selectedProduct?.id); }}
@@ -3183,7 +3049,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                 </div>
                                 <button 
                                   onClick={(e) => { e.stopPropagation(); setReplyingNoteId(opt.id); }}
-                                  className="text-xs font-bold text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors"
+                                  className="px-2.5 py-1 rounded-full text-xs font-semibold text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
                                 >
                                   Responder
                                 </button>
@@ -3195,75 +3061,6 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                 </div>
               </div>
               )}
-              {/* Add Metrics Modal */}
-              <AnimatePresence>
-                {isAddMetricsModalOpen && (
-                  <div className="absolute inset-0 z-[500] flex items-center justify-center p-4 modal-overlay rounded-3xl">
-                    <motion.div 
-                      initial={{ opacity: 0, scale: 0.9 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.9 }}
-                      className="relative p-6 modal-container w-full max-w-lg"
-                    >
-                      <h3 className="text-lg font-bold mb-1">Adicionar Métricas Semanais</h3>
-                      <input 
-                        type="month" 
-                        defaultValue={new Date().toISOString().slice(0, 7)}
-                        className="text-sm text-slate-500 mb-4 capitalize hover:text-violet-500 transition-colors bg-transparent border-none focus:ring-0 cursor-pointer"
-                      />
-                      <div className="space-y-4">
-                        {weeklyMetrics.map((m, index) => (
-                          <div key={m.week} className="grid grid-cols-4 gap-2 items-center">
-                            <p className="text-xs font-bold text-slate-500">Semana {m.week}</p>
-                            <input type="number" placeholder="Inv." value={m.investment} onChange={(e) => {
-                              const newMetrics = [...weeklyMetrics];
-                              newMetrics[index].investment = e.target.value;
-                              setWeeklyMetrics(newMetrics);
-                            }} className="bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-white" />
-                            <input type="number" placeholder="Leads" value={m.leads} onChange={(e) => {
-                              const newMetrics = [...weeklyMetrics];
-                              newMetrics[index].leads = e.target.value;
-                              setWeeklyMetrics(newMetrics);
-                            }} className="bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-white" />
-                            <input type="number" placeholder="Cont." value={m.contracts} onChange={(e) => {
-                              const newMetrics = [...weeklyMetrics];
-                              newMetrics[index].contracts = e.target.value;
-                              setWeeklyMetrics(newMetrics);
-                            }} className="bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-white" />
-                          </div>
-                        ))}
-                      </div>
-                      <div className="flex justify-end gap-4 mt-6">
-                        <button onClick={() => setIsAddMetricsModalOpen(false)} className="px-4 py-2 text-sm text-slate-500">Cancelar</button>
-                        <button onClick={() => {
-                          if (selectedProduct) {
-                            const totalInv = weeklyMetrics.reduce((sum, m) => sum + Number(m.investment || 0), 0);
-                            const totalLeads = weeklyMetrics.reduce((sum, m) => sum + Number(m.leads || 0), 0);
-                            const totalCont = weeklyMetrics.reduce((sum, m) => sum + Number(m.contracts || 0), 0);
-                            
-                            const updatedProduct = { 
-                              ...selectedProduct, 
-                              weeklyMetrics,
-                              investmentMonthly: `R$ ${totalInv.toLocaleString('pt-BR')}`,
-                              leads: totalLeads.toString(),
-                              contracts: totalCont.toString(),
-                              cac: totalCont > 0 ? `R$ ${(totalInv / totalCont).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'R$ 0,00',
-                              cpa: totalLeads > 0 ? `R$ ${(totalInv / totalLeads).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'R$ 0,00'
-                            };
-                            
-                            commitProjects(prev => prev.map(p => ({
-                              ...p,
-                              products: p.products?.map(prod => prod.id === updatedProduct.id ? updatedProduct : prod)
-                            })));
-                            setSelectedProduct(updatedProduct);
-                            setIsAddMetricsModalOpen(false);
-                          }
-                        }} className="px-4 py-2 text-sm bg-violet-600 text-white rounded-xl">Salvar</button>
-                      </div>
-                    </motion.div>
-                  </div>
-                )}
-              </AnimatePresence>
             </motion.div>
           </div>
         )}
@@ -3830,15 +3627,16 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
               subtitle="Gerenciamento centralizado de contas, performance e gargalos operacionais."
             />
           </div>
-          <div className="flex items-center gap-4 relative z-50">
-            <div className="flex items-center gap-2 bg-white dark:bg-dark-card/60 backdrop-blur-md px-4 py-2.5 rounded-xl border border-slate-200 dark:border-white/10 shadow-sm">
-              <User size={16} className="text-slate-500" />
-              <span className="text-sm font-medium text-slate-600 dark:text-slate-300">Responsável:</span>
+          {/* Barra do topo (06/10/2026): tudo com 40px de altura, sem caixa dentro de caixa */}
+          <div className="flex items-center gap-2 relative z-50">
+            <div className="flex items-center gap-1 h-10 pl-3 pr-1 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5">
+              <User size={14} className="text-slate-400" />
+              <span className="text-xs font-medium text-slate-500">Responsável</span>
               <div className="relative">
                 <button
                   type="button"
                   onClick={() => setShowResponsavelDropdown(!showResponsavelDropdown)}
-                  className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white hover:text-violet-500 transition-colors bg-slate-50 dark:bg-white/5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-white/10"
+                  className="flex items-center gap-2 h-8 px-2.5 rounded-lg text-sm font-semibold text-slate-900 dark:text-white hover:bg-slate-100 dark:hover:bg-white/10 transition-colors"
                 >
                   {(() => {
                     let pageData = null;
@@ -3958,11 +3756,23 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                 )}
               </div>
             </div>
+            {activePage && (
+              <button
+                onClick={() => setConfigAberta(true)}
+                title="Configurações da página"
+                className="w-10 h-10 shrink-0 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-500 hover:text-violet-500 hover:border-violet-500/40 transition-all flex items-center justify-center"
+              >
+                <IconeConfig size={16} />
+              </button>
+            )}
+            {configAberta && activePage && (
+              <ConfigProjetosModal pageId={activePage} onClose={() => setConfigAberta(false)} />
+            )}
             <button 
               onClick={() => setIsAddPartnerModalOpen(true)}
-              className="px-6 py-3 bg-violet-600 hover:bg-violet-500 text-white font-bold rounded-xl transition-all shadow-lg shadow-violet-600/20 flex items-center gap-2 shrink-0"
+              className="h-10 px-4 bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-violet-600/20 flex items-center gap-2 shrink-0"
             >
-              <Plus size={20} />
+              <Plus size={16} />
               Adicionar Parceiro
             </button>
           </div>
@@ -3970,60 +3780,91 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       </header>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-10">
+      {/* 5 cards baixos e separados (antes: cards altos com uma seta que não levava a lugar nenhum) */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
         {dynamicStats.map((stat, i) => (
-          <div key={i} className="bg-white dark:bg-dark-card/60 backdrop-blur-md border border-slate-200 dark:border-white/5 rounded-3xl p-6 shadow-xl transition-all group">
-            <div className="flex items-center justify-between mb-4">
-              <div className={`p-3 rounded-xl ${stat.bg}`}>
-                <stat.icon size={20} className={stat.color} />
+          <div key={i} className={`px-5 py-4 rounded-2xl border backdrop-blur-md ${i === 4 ? 'col-span-2 lg:col-span-1' : ''} ${
+            stat.alerta
+              ? 'bg-rose-500/[0.06] border-rose-500/20'
+              : 'bg-white dark:bg-dark-card/60 border-slate-200 dark:border-white/5'
+          }`}>
+            <div className="flex items-center gap-2 mb-2">
+              <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${stat.bg}`}>
+                <stat.icon size={14} className={stat.color} />
               </div>
-              <ArrowUpRight size={16} className="text-slate-400 group-hover:text-violet-500 transition-colors" />
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{stat.label}</p>
             </div>
-            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">{stat.label}</p>
-            <h3 className="text-3xl font-bold text-slate-900 dark:text-white"><KpiCountUp value={stat.value} /></h3>
+            <h3 className={`text-2xl font-bold ${stat.alerta ? 'text-rose-500' : 'text-slate-900 dark:text-white'}`}><KpiCountUp value={stat.value} /></h3>
+            <p className={`text-[11px] mt-0.5 ${stat.alerta ? 'text-rose-400' : 'text-slate-500'}`}>{stat.sub}</p>
           </div>
         ))}
       </div>
 
-      {/* Filters */}
-      <div className="bg-white dark:bg-dark-card/60 backdrop-blur-md p-4 rounded-3xl border border-slate-200 dark:border-white/5 mb-6 flex flex-wrap items-center gap-4 shadow-sm transition-colors">
-        <div className="flex-1 min-w-[240px] relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-          <input 
-            type="text" 
-            placeholder="Buscar parceiro ou produto..." 
+      {/* Busca e filtros (06/10/2026): sem a caixa em volta, tudo com 40px de altura.
+          Status virou botões (são só 3 + todos); resultado segue em lista, com a cor de cada um. */}
+      <div className="mb-6 flex flex-wrap items-center gap-2">
+        <div className="flex-1 min-w-[260px] relative">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+          <input
+            type="text"
+            placeholder="Buscar parceiro ou produto..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl py-3 pl-12 pr-4 text-sm text-light-text dark:text-white placeholder:text-slate-500 outline-none focus:ring-2 focus:ring-violet-500/20 transition-all"
+            className="w-full h-10 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl pl-10 pr-9 text-sm text-light-text dark:text-white placeholder:text-slate-500 outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 transition-all"
           />
+          {searchQuery && (
+            <button onClick={() => setSearchQuery('')} title="Limpar busca"
+              className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 rounded-md flex items-center justify-center text-slate-400 hover:text-light-text dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10">
+              <X size={13} />
+            </button>
+          )}
         </div>
-        
-        <div className="flex items-center gap-3">
-          <OptionPicker
-            value={statusFilter === 'Todos os Status' ? null : statusFilter}
-            options={[
-              { label: 'Rodando' },
-              { label: 'Gargalo' },
-              { label: 'Pausado' },
-            ]}
-            placeholder="Todos os Status"
-            emptyLabel="Todos os Status"
-            onChange={(val) => setStatusFilter(val || 'Todos os Status')}
-          />
 
+        <div className="flex items-center gap-0.5 h-10 p-1 rounded-xl bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/10">
+          {([
+            ['Todos os Status', 'Todos', ''],
+            ['Rodando', 'Rodando', 'bg-emerald-500'],
+            ['Gargalo', 'Gargalo', 'bg-rose-500'],
+            ['Pausado', 'Pausados', 'bg-slate-400'],
+          ] as const).map(([valor, rotulo, cor]) => (
+            <button key={valor} onClick={() => setStatusFilter(valor)}
+              className={`h-8 px-3 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+                statusFilter === valor
+                  ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm'
+                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
+              }`}>
+              {cor && <span className={`w-1.5 h-1.5 rounded-full ${cor}`} />}
+              {rotulo}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-1 h-10 pl-3 pr-1 rounded-xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10">
+          <span className="text-xs text-slate-500">Resultado</span>
           <OptionPicker
             value={resultFilter === 'Todos os Resultados' ? null : resultFilter}
             options={[
-              { label: 'RESULTADO BOM' },
-              { label: 'RESULTADO OK' },
-              { label: 'RESULTADO RUIM' },
-              { label: 'Sem Resultado' },
+              ...projectResults.filter(r => r.label !== '-').map(r => ({
+                label: r.label,
+                color: ({ 'bg-emerald-500': '#10b981', 'bg-amber-500': '#f59e0b', 'bg-rose-500': '#f43f5e', 'bg-blue-500': '#3b82f6' } as Record<string, string>)[r.color] || '#94a3b8',
+              })),
+              { label: 'Sem Resultado', color: '#64748b' },
             ]}
-            placeholder="Todos os Resultados"
-            emptyLabel="Todos os Resultados"
+            placeholder="Todos"
+            emptyLabel="Todos"
+            compact
             onChange={(val) => setResultFilter(val || 'Todos os Resultados')}
           />
         </div>
+
+        {(searchQuery || statusFilter !== 'Todos os Status' || resultFilter !== 'Todos os Resultados') && (
+          <button
+            onClick={() => { setSearchQuery(''); setStatusFilter('Todos os Status'); setResultFilter('Todos os Resultados'); }}
+            className="h-10 px-3 rounded-xl text-xs font-semibold text-slate-500 hover:text-violet-500 hover:bg-violet-500/10 transition-colors"
+          >
+            Limpar filtros
+          </button>
+        )}
       </div>
 
       {/* Containers por grupo */}
@@ -4552,93 +4393,50 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
           }}
           title={toTitleCase(selectedProject.partner || 'Detalhes do Projeto')}
           headerContent={
-            <div className="flex items-center gap-3 ml-4 border-l border-slate-200 dark:border-white/10 pl-4">
-              <div className="w-7 h-7 rounded-lg bg-violet-600 flex items-center justify-center text-xs font-bold text-white shadow-sm">
-                {(selectedProject.partner || 'P').charAt(0).toUpperCase()}
+            // Ao lado do nome: só o(s) produto(s), como pílula (antes: uma letra num quadrado roxo
+            // que não dizia nada + um selo cinza com borda)
+            selectedProject.product ? (
+              <div className="flex items-center gap-1.5 ml-3 flex-wrap">
+                {String(selectedProject.product).split(',').map(p => p.trim())
+                  .filter(p => p && p.toLowerCase() !== String(selectedProject.partner || '').trim().toLowerCase())
+                  .map(p => (
+                  <span key={p} className="inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full text-[11px] font-semibold bg-violet-500/10 text-violet-500 dark:text-violet-400">
+                    <span className="w-1.5 h-1.5 rounded-full bg-current" />{p}
+                  </span>
+                ))}
               </div>
-              {selectedProject.product && (
-                <span className="text-[10px] text-slate-500 dark:text-slate-300 font-bold px-2 py-1 bg-slate-100 dark:bg-white/5 rounded-md border border-slate-200 dark:border-white/10">{selectedProject.product}</span>
-              )}
-            </div>
+            ) : null
           }
           maxWidth="max-w-[1400px]"
           minHeight="min-h-[800px]"
         >
         <div className="flex flex-col min-h-[750px]">
-          {/* Tabs */}
-          {/* Abas distribuídas por toda a largura do modal */}
-          <div className="flex items-center justify-between gap-4 mb-6 px-1 border-b modal-divider shrink-0">
-            {(['resultado', 'reunioes', 'comentarios', 'criativos', 'nps', 'churn'] as const).map((tab) => (
+          {/* Abas como barra de botões compacta (06/10/2026). Antes eram espalhadas pela largura
+              toda, com uma segunda linha divisória logo abaixo da do cabeçalho do modal. */}
+          <div className="flex items-center gap-1 mb-6 p-1 w-fit max-w-full overflow-x-auto rounded-xl bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/5 shrink-0">
+            {(['resultado', 'reunioes', 'comentarios', 'criativos', 'nps', 'churn', 'tokens'] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveProjectTab(tab as any)}
-                className={`pb-4 text-sm font-bold transition-all relative whitespace-nowrap ${
+                className={`relative h-9 px-4 rounded-lg text-sm font-semibold transition-colors whitespace-nowrap ${
                   activeProjectTab === tab
-                    ? 'modal-tab-active'
-                    : 'text-slate-500 dark:text-slate-300 hover:text-gray-900 dark:hover:text-white'
+                    ? 'text-slate-900 dark:text-white'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white'
                 }`}
               >
-                {tab === 'resultado' ? 'Resumo' : tab === 'reunioes' ? 'Reuniões' : tab === 'criativos' ? 'Criativos' : tab === 'comentarios' ? 'Comentários' : tab === 'nps' ? 'NPS' : 'Risco de Churn'}
                 {activeProjectTab === tab && (
                   <motion.div
                     layoutId="project-tab-indicator"
-                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-violet-500"
+                    className="absolute inset-0 rounded-lg bg-white dark:bg-white/10 shadow-sm"
+                    transition={{ type: 'spring', stiffness: 500, damping: 40 }}
                   />
                 )}
+                <span className="relative">
+                  {tab === 'resultado' ? 'Resumo' : tab === 'reunioes' ? 'Reuniões' : tab === 'criativos' ? 'Criativos' : tab === 'comentarios' ? 'Comentários' : tab === 'nps' ? 'NPS' : tab === 'tokens' ? 'Tokens' : 'Risco de Churn'}
+                </span>
               </button>
             ))}
 
-            {/* Abas agrupadas no menu "..." — Formulários e Tokens */}
-            {(() => {
-              const moreTabs = [
-                { id: 'formularios' as const, label: 'Formulários' },
-                { id: 'tokens' as const, label: 'Tokens' },
-              ];
-              const activeMore = moreTabs.find(t => t.id === activeProjectTab);
-              return (
-                <DropdownMenu.Root open={isMoreTabsOpen} onOpenChange={setIsMoreTabsOpen}>
-                  <DropdownMenu.Trigger asChild>
-                    <button
-                      className={`pb-4 text-sm font-bold transition-all relative whitespace-nowrap flex items-center gap-1.5 outline-none ${
-                        activeMore ? 'modal-tab-active' : 'text-slate-500 dark:text-slate-300 hover:text-gray-900 dark:hover:text-white'
-                      }`}
-                      title="Mais abas"
-                    >
-                      {activeMore ? activeMore.label : <MoreHorizontal size={18} />}
-                      {activeMore && <ChevronDown size={13} className="opacity-60" />}
-                      {activeMore && (
-                        <motion.div
-                          layoutId="project-tab-indicator"
-                          className="absolute bottom-0 left-0 right-0 h-0.5 bg-violet-500"
-                        />
-                      )}
-                    </button>
-                  </DropdownMenu.Trigger>
-                  <DropdownMenu.Portal>
-                    <DropdownMenu.Content
-                      className="w-44 bg-white dark:bg-dark-card rounded-xl shadow-2xl border border-slate-200 dark:border-white/10 z-[9999] overflow-hidden p-1"
-                      align="start"
-                      sideOffset={5}
-                    >
-                      {moreTabs.map(t => (
-                        <DropdownMenu.Item asChild key={t.id}>
-                          <button
-                            onClick={() => { setActiveProjectTab(t.id as any); setIsMoreTabsOpen(false); }}
-                            className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer outline-none ${
-                              activeProjectTab === t.id
-                                ? 'bg-violet-500/10 text-violet-600 dark:text-violet-400'
-                                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5'
-                            }`}
-                          >
-                            {t.label}
-                          </button>
-                        </DropdownMenu.Item>
-                      ))}
-                    </DropdownMenu.Content>
-                  </DropdownMenu.Portal>
-                </DropdownMenu.Root>
-              );
-            })()}
           </div>
 
           {/* Content based on active tab */}
@@ -4654,15 +4452,15 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
             {activeProjectTab === 'resultado' && (
                   <>
                     {/* KPIs Dashboard */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-2 items-start">
-                      <div className="p-4 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm">
-                        <p className="text-[10px] font-bold text-slate-500 dark:text-slate-300 uppercase tracking-widest mb-2">Status do Projeto</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-1">
+                      <div className="px-5 py-4 rounded-2xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/5 flex flex-col justify-between min-h-[92px]">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2.5">Status do Projeto</p>
                         {getStatusBadge(selectedProject.status)}
                       </div>
                       
-                      <div className="p-4 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm">
-                        <p className="text-[10px] font-bold text-slate-500 dark:text-slate-300 uppercase tracking-widest mb-2">Resultado</p>
-                        <div className="flex items-center gap-2 mt-1 relative">
+                      <div className="px-5 py-4 rounded-2xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/5 flex flex-col justify-between min-h-[92px]">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2.5">Resultado</p>
+                        <div className="flex items-center gap-2 relative">
                           <button 
                             onClick={() => setIsProjectResultDropdownOpen(!isProjectResultDropdownOpen)}
                             className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest cursor-pointer outline-none flex items-center gap-1.5 ${(() => {
@@ -4717,13 +4515,13 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                         </div>
                       </div>
 
-                      <div className="p-4 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm">
-                        <p className="text-[10px] font-bold text-slate-500 dark:text-slate-300 uppercase tracking-widest mb-2">Investimento</p>
-                        <span className="text-sm font-bold text-slate-900 dark:text-white">{selectedProject.investment}</span>
+                      <div className="px-5 py-4 rounded-2xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/5 flex flex-col justify-between min-h-[92px]">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2.5">Investimento</p>
+                        <span className="text-xl font-bold text-slate-900 dark:text-white leading-none">{selectedProject.investment}</span>
                       </div>
 
-                      <div className="p-4 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm">
-                        <p className="text-[10px] font-bold text-slate-500 dark:text-slate-300 uppercase tracking-widest mb-2">Última Reunião</p>
+                      <div className="px-5 py-4 rounded-2xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/5 flex flex-col justify-between min-h-[92px]">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2.5">Última Reunião</p>
                         {selectedProject.lastMeetingDate ? (
                           <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold whitespace-nowrap ${meetingBadgeClasses(selectedProject.lastMeetingDate)}`}>
                             <Calendar size={12} className="shrink-0" />
@@ -4740,21 +4538,24 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
 
                     {/* Product Previews */}
                     {selectedProject.products && selectedProject.products.length > 0 && (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-8">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
                         {selectedProject.products.map((prod) => (
                           <div
                             key={prod.id}
                             onClick={() => handleProductClick(prod)}
-                            className="flex items-center gap-4 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/30 border border-slate-200 dark:border-white/5 hover:border-violet-500/30 hover:bg-white dark:hover:bg-white/5 cursor-pointer transition-all shadow-sm group"
+                            className="flex items-center gap-4 px-5 py-4 rounded-2xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/5 hover:border-violet-500/30 hover:bg-white dark:hover:bg-white/5 cursor-pointer transition-all group"
                           >
                             <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-violet-500/10 text-violet-500 flex-shrink-0">
                               {getProductIcon(prod.icon)}
                             </div>
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-bold text-slate-900 dark:text-white truncate group-hover:text-violet-400 transition-colors">{prod.name}</p>
-                              <span className={`inline-block mt-0.5 px-2 py-0.5 ${(getCampaignStatusColor(prod.status) || '').replace('text-', 'bg-')}/20 ${getCampaignStatusColor(prod.status)} text-[10px] font-bold rounded-full`}>{prod.status}</span>
+                              <span className={`inline-flex items-center gap-1.5 mt-1 h-5 px-2 ${(getCampaignStatusColor(prod.status) || '').replace('text-', 'bg-')}/15 ${getCampaignStatusColor(prod.status)} text-[10px] font-semibold rounded-full`}><span className="w-1.5 h-1.5 rounded-full bg-current" />{prod.status}</span>
                             </div>
-                            <p className="text-sm font-bold text-emerald-500 flex-shrink-0">{prod.budget}</p>
+                            <div className="text-right flex-shrink-0">
+                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Verba</p>
+                              <p className="text-base font-bold text-emerald-500">{prod.budget}</p>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -4828,9 +4629,9 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
 
 
                 {activeProjectTab === 'resultado' && (
-                  <div className="space-y-4 mt-8">
-                    <div className="flex items-center justify-between mb-4">
-                      <h4 className="text-xs font-bold text-slate-500 dark:text-slate-300 uppercase tracking-widest">Histórico Consolidado</h4>
+                  <div className="space-y-3 mt-8">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Histórico do projeto</h4>
                       <OptionPicker
                         value={timelineFilter === 'Todos' ? null : timelineFilter}
                         options={[
@@ -4847,9 +4648,10 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                     
                     {/* Timeline */}
                     <div className="relative max-h-[900px] overflow-y-auto custom-scrollbar pr-2">
-                      <div className="relative space-y-12 py-4">
-                        {/* Vertical Line */}
-                        <div className="absolute left-1/2 top-0 bottom-0 w-px bg-slate-200 dark:bg-white/10 -translate-x-1/2" />
+                      {/* Uma coluna só (06/10/2026): antes os cards alternavam esquerda/direita com 40% da
+                          largura cada, e metade da tela ficava vazia. O ícone na linha diz o tipo. */}
+                      <div className="relative space-y-3 py-1 pl-12">
+                        <div className="absolute left-[15px] top-3 bottom-3 w-px bg-slate-200 dark:bg-white/10" />
 
                         {timelineItems.filter(opt => {
                           if (timelineFilter === 'Todos') return true;
@@ -4859,18 +4661,21 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                           if (timelineFilter === 'Status') return opt.status === 'Mudança de Status';
                           return true;
                         }).map((opt, idx) => (
-                          <div key={opt.id} className="relative flex items-center justify-center">
-                            {/* Timeline Clock */}
-                            <div className="absolute left-1/2 -translate-x-1/2 z-10">
-                              <div className="w-8 h-8 rounded-full bg-white dark:bg-[#1a1625]">
-                                <div className="w-full h-full rounded-full bg-violet-50 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/20 flex items-center justify-center shadow-sm">
-                                  <Clock size={16} className="text-violet-500" />
+                          <div key={opt.id} className="relative">
+                            {/* Marcador na linha: ícone e cor pelo tipo do registro */}
+                            {(() => {
+                              const t = opt.type === 'meeting' ? { I: Calendar, c: 'text-amber-500 bg-amber-500/10 border-amber-500/20' }
+                                : opt.optimization ? { I: TrendingUp, c: 'text-violet-500 bg-violet-500/10 border-violet-500/20' }
+                                : opt.status === 'Mudança de Status' ? { I: Activity, c: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20' }
+                                : { I: BarChart3, c: 'text-blue-500 bg-blue-500/10 border-blue-500/20' };
+                              return (
+                                <div className="absolute -left-12 top-4 z-10 w-8 h-8 rounded-full bg-white dark:bg-[#1a1625]">
+                                  <div className={`w-full h-full rounded-full border flex items-center justify-center ${t.c}`}><t.I size={14} /></div>
                                 </div>
-                              </div>
-                            </div>
+                              );
+                            })()}
 
-                            {/* Card */}
-                            <div className={`w-[40%] p-5 rounded-2xl border transition-all bg-white dark:bg-white/5 border-slate-200 dark:border-white/5 hover:border-violet-500/20 ${idx % 2 === 0 ? 'mr-auto text-left' : 'ml-auto text-left'}`}>
+                            <div className="px-5 py-4 rounded-2xl border transition-all bg-white dark:bg-white/[0.03] border-slate-200 dark:border-white/5 hover:border-violet-500/20">
                               {opt.type === 'meeting' ? (
                                 <>
                                   <div className="flex items-start justify-between mb-4">
@@ -4960,7 +4765,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                 </>
                               ) : (
                                 <>
-                                  <div className="flex items-center justify-between mb-3">
+                                  <div className="flex items-center justify-between mb-2">
                                     <div className="flex items-center gap-2">
                                       {opt.authorPhoto ? (
                                         <img src={opt.authorPhoto} alt={opt.author} className="w-6 h-6 rounded-full object-cover" referrerPolicy="no-referrer" />
@@ -4978,16 +4783,16 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-2 mb-2">
-                                    <p className="text-xs font-bold text-violet-600 dark:text-violet-400 uppercase tracking-wide">{opt.productName}</p>
+                                    {opt.productName && <p className="text-xs font-semibold text-violet-600 dark:text-violet-400">{opt.productName}</p>}
                                     {opt.optimization ? (
-                                      <span className="px-2 py-0.5 text-[10px] font-bold rounded-full uppercase whitespace-nowrap text-violet-700 bg-violet-100 dark:bg-violet-900/30">Otimização</span>
+                                      <span className="h-5 inline-flex items-center px-2 text-[10px] font-semibold rounded-full whitespace-nowrap text-violet-600 dark:text-violet-400 bg-violet-500/10">Otimização</span>
                                     ) : opt.status === 'Mudança de Status' ? (
-                                      <span className="px-2 py-0.5 text-[10px] font-bold rounded-full uppercase whitespace-nowrap text-emerald-700 bg-emerald-100 dark:bg-emerald-900/30">Status</span>
+                                      <span className="h-5 inline-flex items-center px-2 text-[10px] font-semibold rounded-full whitespace-nowrap text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">Status</span>
                                     ) : (
-                                      <span className="px-2 py-0.5 text-[10px] font-bold rounded-full uppercase whitespace-nowrap text-blue-700 bg-blue-100 dark:bg-blue-900/30">Métricas</span>
+                                      <span className="h-5 inline-flex items-center px-2 text-[10px] font-semibold rounded-full whitespace-nowrap text-blue-600 dark:text-blue-400 bg-blue-500/10">Métricas</span>
                                     )}
                                   </div>
-                                  <p className="text-xs text-slate-700 dark:text-white leading-relaxed whitespace-pre-line">
+                                  <p className="text-[13px] text-slate-700 dark:text-slate-200 leading-relaxed whitespace-pre-line">
                                     {opt.message}
                                   </p>
                                 </>
@@ -5066,7 +4871,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                               )}
 
                               {/* Action Bar */}
-                              <div className="mt-4 pt-3 border-t border-slate-100 dark:border-white/5 flex items-center justify-between">
+                              <div className="mt-3 flex items-center gap-1">
                                 <div className="flex items-center gap-2">
                                   <button 
                                     onClick={(e) => { 
@@ -5093,7 +4898,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                                 </div>
                                 <button 
                                   onClick={(e) => { e.stopPropagation(); setReplyingNoteId(opt.id); }}
-                                  className="text-xs font-bold text-slate-400 dark:text-slate-300 hover:text-slate-600 dark:hover:text-white transition-colors"
+                                  className="px-2.5 py-1 rounded-full text-xs font-semibold text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
                                 >
                                   Responder
                                 </button>
@@ -5703,10 +5508,6 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
                       </div>
                     )}
                   </div>
-                )}
-
-                {activeProjectTab === 'formularios' && (
-                  <FormulariosTab projectId={selectedProject.id} />
                 )}
 
                 {activeProjectTab === 'comentarios' && (() => {

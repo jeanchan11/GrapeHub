@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import SplitHeadline from '../components/SplitHeadline';
-import OptionPicker from '../components/ui/OptionPicker';
+import OptionPicker, { PilulaTag } from '../components/ui/OptionPicker';
 import { createPortal } from 'react-dom';
 import { Plus, ChevronDown, ChevronRight, Calendar, Users, Tag, MoreHorizontal, Circle, CheckCircle2, Loader2, X, Trash2, GripVertical, Settings, FileText, Link as LinkIcon, Save, Heading1, Heading2, Heading3, Type, List, ListOrdered, CheckSquare, Check, Edit2, Palette, Layers, FileVideo, Globe, MessageCircle, PlaySquare, FileSignature, MonitorPlay, ShoppingBag } from 'lucide-react';
 import RichTextEditor from '../components/RichTextEditor';
@@ -151,14 +151,12 @@ const STATUS_GROUPS: Omit<StatusGroup, 'tasks'>[] = [
 // ── Tag Badge ─────────────────────────────────────────────
 const TagBadge = ({ label, onRemove }: { label: string; onRemove?: () => void }) => {
   const colors: Record<string, string> = {
-    'coletar conta de anúncio': 'bg-amber-500/15 text-amber-400 border border-amber-500/30',
-    'pendência do advogado': 'bg-rose-500/15 text-rose-400 border border-rose-500/30',
-    'crm': 'bg-violet-500/15 text-violet-400 border border-violet-500/30',
+    'coletar conta de anúncio': '#fbbf24',
+    'pendência do advogado': '#fb7185',
+    'crm': '#a78bfa',
   };
-  const cls = colors[label.toLowerCase()] || 'bg-slate-500/15 text-slate-400 border border-slate-500/30';
   return (
-    <span className={`group/tag inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${cls}`}>
-      {label}
+    <PilulaTag label={label} color={colors[label.toLowerCase()]} className="group/tag">
       {onRemove && (
         <button
           onClick={(e) => { e.stopPropagation(); onRemove(); }}
@@ -167,7 +165,7 @@ const TagBadge = ({ label, onRemove }: { label: string; onRemove?: () => void })
           <X size={10} />
         </button>
       )}
-    </span>
+    </PilulaTag>
   );
 };
 
@@ -715,13 +713,7 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask, dragHandleProps 
                   if (parsed.color) pColor = parsed.color;
                 }
               } catch(e) {}
-              return (
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg truncate border"
-                      style={{ color: pColor, backgroundColor: `${pColor}15`, borderColor: `${pColor}30` }}
-                      title={pName}>
-                  {pName}
-                </span>
-              );
+              return <PilulaTag label={pName} color={pColor} />;
             })()
           ) : (
             <span className="text-[11px] text-slate-600">—</span>
@@ -737,9 +729,9 @@ const TaskRow = ({ task, onUpdate, onOpenDetail, onOpenSubtask, dragHandleProps 
               label: s,
               color: s === 'Squad Able' ? '#3b82f6' : s === 'Squad Baker' ? '#d946ef' : undefined,
             }))}
-            emptyLabel="— SQUAD —"
-            placeholder="— SQUAD —"
-            compact
+            emptyLabel="Sem squad"
+            placeholder="Squad"
+            variant="tag"
           />
         </div>
 

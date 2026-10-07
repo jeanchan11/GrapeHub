@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Check } from 'lucide-react';
+import { ChevronDown, Check, Plus } from 'lucide-react';
 
 export interface OptionPickerOption {
   label: string;
@@ -16,8 +16,29 @@ interface OptionPickerProps {
   onChange: (val: string | null) => void;
   emptyLabel?: string;
   compact?: boolean;
+  /** 'tag': etiqueta de linha de lista (pílula com bolinha, texto normal, vazio = traço). */
+  variant?: 'tag';
   className?: string;
 }
+
+/**
+ * Etiqueta das listas de tarefas (Visual Hub, Onboarding, Implementação IA, Listas),
+ * desenho aprovado pelo Jean em 06/10/2026: pílula arredondada com a bolinha da cor,
+ * texto em caixa normal numa linha só, sem borda. Use para mostrar um valor; para
+ * escolher, `<OptionPicker variant="tag">` usa o mesmo desenho.
+ */
+export const PilulaTag: React.FC<{ label: string; color?: string; title?: string; className?: string; children?: React.ReactNode }> = ({ label, color, title, className = '', children }) => {
+  const c = color || '#94a3b8';
+  return (
+    <span title={title || label}
+      className={`max-w-full inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full text-[11px] font-semibold whitespace-nowrap ${className}`}
+      style={{ background: `${c}26`, color: c }}>
+      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: c }} />
+      <span className="truncate">{label}</span>
+      {children}
+    </span>
+  );
+};
 
 /**
  * z-index do menu: ele é montado em portal na raiz do documento, então precisa
@@ -36,6 +57,7 @@ const OptionPicker: React.FC<OptionPickerProps> = ({
   onChange,
   emptyLabel,
   compact = false,
+  variant,
   className = '',
 }) => {
   const [open, setOpen] = useState(false);
@@ -86,6 +108,29 @@ const OptionPicker: React.FC<OptionPickerProps> = ({
 
   return (
     <div ref={ref} className={`relative ${className}`}>
+      {variant === 'tag' ? (
+        <button
+          type="button"
+          onClick={() => setOpen(v => !v)}
+          title={value || placeholder}
+          className={`group/tag max-w-full inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full text-[11px] font-semibold whitespace-nowrap transition-all cursor-pointer ${
+            value ? 'hover:brightness-125' : 'text-slate-500 hover:bg-white/5 hover:text-slate-300'
+          }`}
+          style={value ? { background: `${cs?.text || '#94a3b8'}26`, color: cs?.text || '#94a3b8' } : undefined}
+        >
+          {value ? (
+            <>
+              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: cs?.text || '#94a3b8' }} />
+              <span className="truncate">{value}</span>
+            </>
+          ) : (
+            <>
+              <span className="group-hover/tag:hidden">—</span>
+              <span className="hidden group-hover/tag:inline-flex items-center gap-1"><Plus size={11} /> Adicionar</span>
+            </>
+          )}
+        </button>
+      ) : (
       <button
         type="button"
         onClick={() => setOpen(v => !v)}
@@ -108,6 +153,7 @@ const OptionPicker: React.FC<OptionPickerProps> = ({
         {value || placeholder || '—'}
         <ChevronDown size={12} className="opacity-50" />
       </button>
+      )}
 
       {open && pos && createPortal(
         <div

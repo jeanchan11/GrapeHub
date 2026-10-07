@@ -15,6 +15,9 @@ import { setupDispatchRoutes } from "./src/routes/dispatch";
 import { setupAsaasSyncRoutes, runAsaasSync } from "./src/routes/asaas-sync";
 import { setupBillsRoutes, syncSicrediBillEntry, categorizeMovements, CARD_ACCOUNTS } from "./src/routes/bills";
 import { setupDreLancamentosRoutes } from "./src/routes/dre-lancamentos";
+import { migrateCrmReunioes, guardarColunasApagadas, sqlReunioesMarcadas } from "./src/routes/crm-reunioes";
+import { setupFunilMetaRoutes } from "./src/routes/funil-meta";
+import { setupAlertaSaldoRoutes } from './src/routes/alerta-saldo';
 import { setupFechamentoRoutes, mesFechado, mesFechadoDoLancamento, msgMesFechado, foraDeMesFechado } from "./src/routes/fechamento";
 import { migrateBillCategory } from "./src/routes/bill-category";
 import { setupBolaoRoutes } from "./src/routes/bolao";
@@ -956,6 +959,8 @@ async function startServer() {
       -- Funil com SDR: no-show e capacidade de agendamento por SDR
       ALTER TABLE commercial_data ADD COLUMN IF NOT EXISTS no_show_rate NUMERIC DEFAULT 20;
       ALTER TABLE commercial_data ADD COLUMN IF NOT EXISTS meetings_per_sdr NUMERIC DEFAULT 60;
+      ALTER TABLE commercial_data ADD COLUMN IF NOT EXISTS meeting_cost NUMERIC;
+      ALTER TABLE commercial_data ADD COLUMN IF NOT EXISTS media_investment NUMERIC;
 
       CREATE TABLE IF NOT EXISTS gestor_data (
         id SERIAL PRIMARY KEY,
@@ -2130,40 +2135,9 @@ async function startServer() {
     await pool.query(`ALTER TABLE project_tokens ADD COLUMN IF NOT EXISTS last_error TEXT`).catch(e => console.error('migrate last_error:', e.message));
     await pool.query(`ALTER TABLE project_tokens ADD COLUMN IF NOT EXISTS account_name TEXT`).catch(e => console.error('migrate account_name:', e.message));
 
-    // ── Formulários (submissions vindas do app de formulário via webhook) ──────
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS form_submissions (
-        id SERIAL PRIMARY KEY,
-        project_id TEXT NOT NULL,
-        form_id TEXT,
-        response_id TEXT,
-        submitted_at TIMESTAMPTZ,
-        answers JSONB DEFAULT '[]'::jsonb,
-        meta JSONB DEFAULT '{}'::jsonb,
-        raw JSONB,
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        UNIQUE (project_id, form_id, response_id)
-      )
-    `).catch(e => console.error('create form_submissions:', e.message));
-    await pool.query(`CREATE INDEX IF NOT EXISTS idx_form_submissions_project ON form_submissions(project_id, submitted_at DESC)`).catch(() => {});
-    // 1 token por projeto (todos os forms do cliente usam a mesma URL de webhook)
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS project_form_tokens (
-        project_id TEXT PRIMARY KEY,
-        token TEXT UNIQUE NOT NULL,
-        created_at TIMESTAMPTZ DEFAULT NOW()
-      )
-    `).catch(e => console.error('create project_form_tokens:', e.message));
-    // Rótulo amigável por form_id (o payload só traz o id numérico)
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS project_forms (
-        project_id TEXT NOT NULL,
-        form_id TEXT NOT NULL,
-        label TEXT,
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        PRIMARY KEY (project_id, form_id)
-      )
-    `).catch(e => console.error('create project_forms:', e.message));
+    // Formulários (Grapeforms → webhook → form_submissions) foram REMOVIDOS em 06/10/2026:
+    // 4 respostas em 3 meses, todas de um projeto, a última em 20/07/2026. As tabelas
+    // viraram *_backup_20261006. Não recriar aqui — CREATE IF NOT EXISTS ressuscitaria.
 
     // Marketing schema + meta_insights table
     await pool.query(`CREATE SCHEMA IF NOT EXISTS marketing`).catch(e => console.error('create marketing schema:', e.message));
@@ -3279,6 +3253,10 @@ async function startServer() {
               );
               if (colRes.rows.length > 0) {
                 await pool.query(`UPDATE crm_comercial_leads SET coluna = $2 WHERE id = $1`, [leadId, colRes.rows[0].id]);
+                // Movimentação de automação também vai para o histórico — sem isso as
+                // métricas por coluna (ex.: reunião marcada) não enxergam a entrada.
+                await pool.query(`INSERT INTO crm_comercial_history (lead_id, from_coluna, to_coluna, moved_by) VALUES ($1, $2, $3, 'Automação')`,
+                  [leadId, lead.coluna || null, String(colRes.rows[0].id)]).catch(() => {});
               }
 
             } else if (actionType === 'mark_lost') {
@@ -3287,6 +3265,8 @@ async function startServer() {
             } else if (actionType === 'move_stage') {
               if (cfg.column_id) {
                 await pool.query(`UPDATE crm_comercial_leads SET coluna = $2 WHERE id = $1`, [leadId, cfg.column_id]);
+                await pool.query(`INSERT INTO crm_comercial_history (lead_id, from_coluna, to_coluna, moved_by) VALUES ($1, $2, $3, 'Automação')`,
+                  [leadId, lead.coluna || null, String(cfg.column_id)]).catch(() => {});
               }
 
             } else if (actionType === 'create_lead') {
@@ -4549,7 +4529,18 @@ async function startServer() {
           meetingToClosingRate: parseFloat(row.meeting_to_closing_rate),
           averageTicket: parseFloat(row.average_ticket),
           noShowRate: row.no_show_rate != null ? parseFloat(row.no_show_rate) : 20,
-          meetingsPerSdr: row.meetings_per_sdr != null ? parseFloat(row.meetings_per_sdr) : 60
+          meetingsPerSdr: row.meetings_per_sdr != null ? parseFloat(row.meetings_per_sdr) : 60,
+          // Funil sem SDR (28/09/2026): a entrada virou custo por reunião agendada.
+          // Linha antiga sem o campo herda a conta do funil com SDR (CPL ÷ taxa de
+          // agendamento), para a projeção não mudar sozinha na troca.
+          meetingCost: row.meeting_cost != null
+            ? parseFloat(row.meeting_cost)
+            : (parseFloat(row.lead_to_meeting_rate) > 0
+                ? Math.round(parseFloat(row.lead_cost) / (parseFloat(row.lead_to_meeting_rate) / 100) * 100) / 100
+                : 300),
+          // Entrada do planejador desde 28/09/2026 (antes era a meta de vendas).
+          // null = linha antiga: a tela deriva da meta de vendas.
+          mediaInvestment: row.media_investment != null ? parseFloat(row.media_investment) : null,
         });
       } else {
         // Default values
@@ -4560,7 +4551,8 @@ async function startServer() {
           meetingToClosingRate: 25,
           averageTicket: 14000,
           noShowRate: 20,
-          meetingsPerSdr: 60
+          meetingsPerSdr: 60,
+          meetingCost: 300
         });
       }
     } catch (err) {
@@ -4570,11 +4562,15 @@ async function startServer() {
   });
 
   app.post("/api/comercial-data", async (req, res) => {
-    const { targetSales, leadCost, leadToMeetingRate, meetingToClosingRate, averageTicket, noShowRate, meetingsPerSdr } = req.body;
+    const { targetSales, leadCost, leadToMeetingRate, meetingToClosingRate, averageTicket, noShowRate, meetingsPerSdr, meetingCost, mediaInvestment } = req.body;
     try {
+      // A tela nova não manda CPL/taxa/capacidade do SDR: repete os da última linha
+      // (colunas NOT NULL no esquema antigo) em vez de gravar vazio.
+      const ult = (await pool.query("SELECT target_sales, lead_cost, lead_to_meeting_rate, meetings_per_sdr FROM commercial_data ORDER BY id DESC LIMIT 1")).rows[0] || {};
       await pool.query(
-        "INSERT INTO commercial_data (target_sales, lead_cost, lead_to_meeting_rate, meeting_to_closing_rate, average_ticket, no_show_rate, meetings_per_sdr) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-        [targetSales, leadCost, leadToMeetingRate, meetingToClosingRate, averageTicket, noShowRate ?? 20, meetingsPerSdr ?? 60]
+        "INSERT INTO commercial_data (target_sales, lead_cost, lead_to_meeting_rate, meeting_to_closing_rate, average_ticket, no_show_rate, meetings_per_sdr, meeting_cost, media_investment) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+        [targetSales ?? ult.target_sales ?? null, leadCost ?? ult.lead_cost ?? 0, leadToMeetingRate ?? ult.lead_to_meeting_rate ?? 0, meetingToClosingRate, averageTicket,
+         noShowRate ?? 20, meetingsPerSdr ?? ult.meetings_per_sdr ?? 60, meetingCost ?? null, mediaInvestment ?? null]
       );
       res.json({ status: "success" });
     } catch (err) {
@@ -9845,8 +9841,17 @@ app.get("/api/todos", async (req, res) => {
           r.description,
           r.value::text as movement_value,
           r.net_value::text as value,
-          r.payment_date as movement_date,
-          r.due_date as expiration_date,
+          -- Data em que o CLIENTE pagou. No cartão, payment_date é o dia em que o
+          -- Asaas libera o dinheiro (~30 dias depois) e CONFIRMED nem tem
+          -- payment_date — por isso o clientPaymentDate vem primeiro. Texto, não
+          -- Date, para o fuso não puxar o dia para trás no navegador.
+          COALESCE(r.client_payment_date, (r.raw_json->>'clientPaymentDate')::date,
+                   (r.raw_json->>'confirmedDate')::date, r.payment_date)::text as movement_date,
+          COALESCE(r.payment_date, r.credit_date, r.estimated_credit_date,
+                   (r.raw_json->>'estimatedCreditDate')::date)::text as credit_date,
+          r.due_date::text as expiration_date,
+          r.status as asaas_status,
+          r.invoice_url,
           CASE 
             WHEN r.status = 'RECEIVED' OR r.status = 'CONFIRMED' THEN 'Conciliado'
             WHEN r.status = 'OVERDUE' THEN 'Atrasado'
@@ -9911,9 +9916,17 @@ app.get("/api/todos", async (req, res) => {
           fs.description,
           fp.name as customer_name,
           fp.cnpjcpf as customer_cnpjcpf,
-          fp.grapehub_client_id
+          fp.grapehub_client_id,
+          fs.next_due_date::text as next_due,
+          -- Cliente do GrapeHub que já usa esta assinatura (o seletor avisa antes
+          -- de ligar a mesma assinatura em dois clientes)
+          vc.id as linked_client_id,
+          vc.name as linked_client_name
         FROM fin_subscriptions fs
         LEFT JOIN fin_people fp ON fp.asaas_id = fs.customer_id
+        LEFT JOIN LATERAL (
+          SELECT c.id, c.name FROM clients c WHERE c.fin_subscription_id = fs.id::text LIMIT 1
+        ) vc ON true
         ORDER BY fp.name ASC, fs.value DESC
       `);
       res.json(result.rows);
@@ -9988,6 +10001,9 @@ app.get("/api/todos", async (req, res) => {
       
       // Delete associated leads
       await pool.query("DELETE FROM crm_comercial_leads WHERE kanban_id = $1", [id]);
+      // Guarda o título das colunas antes de apagar: o histórico dos leads aponta
+      // para esses ids, e sem o título as métricas perdem tudo que passou por elas.
+      await guardarColunasApagadas(pool, 'kanban_id = $1', [id]);
       // Delete associated columns
       await pool.query("DELETE FROM crm_comercial_columns WHERE kanban_id = $1", [id]);
       // Delete kanban
@@ -10099,6 +10115,7 @@ app.get("/api/todos", async (req, res) => {
 
       // Update leads in this column to be orphaned or handled.
       // For simplicity here, we'll just delete the column. Leads without a column will be auto-recovered or disappear.
+      await guardarColunasApagadas(pool, 'id::text = $1', [String(id)]);
       await pool.query("DELETE FROM crm_comercial_columns WHERE id = $1", [id]);
       res.status(204).send();
     } catch (err) {
@@ -10407,28 +10424,9 @@ app.get("/api/todos", async (req, res) => {
       // 1. Reuniões Marcadas — leads DISTINTOS que passaram pela coluna "Reunião Marcada"
       // (mesma lógica do /api/crm-metricas-dashboard)
       try {
-        const marcadasResult = await pool.query(`
-          SELECT COUNT(DISTINCT sub.lead_id)::int AS marcadas
-          FROM (
-            SELECT h.lead_id
-            FROM crm_comercial_history h
-            JOIN crm_comercial_columns c ON h.to_coluna = c.id::text
-            WHERE (LOWER(c.title) LIKE '%reunião marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%')
-              ${startDate && endDate ? `AND h.created_at >= $1 AND h.created_at <= ($2::date + interval '1 day')` : ''}
-            UNION
-            SELECT l.id AS lead_id
-            FROM crm_comercial_leads l
-            JOIN crm_comercial_columns c ON l.coluna = c.id::text
-            WHERE (LOWER(c.title) LIKE '%reunião marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%')
-              ${startDate && endDate ? `AND l.created_at >= $1 AND l.created_at <= ($2::date + interval '1 day')` : ''}
-            UNION
-            SELECT h.lead_id
-            FROM crm_comercial_history h
-            JOIN crm_comercial_columns c ON h.from_coluna = c.id::text
-            WHERE (LOWER(c.title) LIKE '%reunião marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%')
-              ${startDate && endDate ? `AND h.created_at >= $1 AND h.created_at <= ($2::date + interval '1 day')` : ''}
-          ) sub
-        `, startDate && endDate ? [startDate, endDate] : []);
+        const marcadasResult = await pool.query(
+          sqlReunioesMarcadas(startDate && endDate ? '$1' : undefined, startDate && endDate ? '$2' : undefined),
+          startDate && endDate ? [startDate, endDate] : []);
         reunioesMarcadas = marcadasResult.rows[0]?.marcadas || 0;
       } catch (e: any) {
         console.error('[marketing-dashboard] marcadas error:', e.message);
@@ -10450,13 +10448,26 @@ app.get("/api/todos", async (req, res) => {
 
 
       // ── Vendas (fechamentos) para cálculo do CAC ────
+      // CAC é verba de mídia ÷ contratos que a MÍDIA trouxe. Até 28/09/2026 dividia
+      // por todas as vendas, inclusive indicação (que não custa anúncio): set/2026
+      // saía R$ 1.816,60 (÷5) em vez de R$ 2.270,75 (÷4). A origem vem da coluna
+      // "INDICAÇÃO / CAMPANHA" com o mesmo critério das Métricas do comercial
+      // (LIKE '%campa%'); origem em branco não conta como tráfego.
       let totalVendas = 0;
+      let vendasTrafego = 0;
+      let receitaTrafego = 0;
       try {
         const vendasResult = await pool.query(`
-          SELECT COUNT(*) AS vendas FROM fechamentos
+          SELECT COUNT(*) AS vendas,
+                 COUNT(*) FILTER (WHERE LOWER(COALESCE("INDICAÇÃO / CAMPANHA", '')) LIKE '%campa%') AS vendas_trafego,
+                 COALESCE(SUM(CAST(NULLIF(REPLACE(REPLACE(REPLACE(COALESCE("Valor", '0'), 'R$', ''), ',', '.'), ' ', ''), '') AS NUMERIC))
+                   FILTER (WHERE LOWER(COALESCE("INDICAÇÃO / CAMPANHA", '')) LIKE '%campa%'), 0) AS receita_trafego
+            FROM fechamentos
           ${startDate && endDate ? `WHERE day >= $1 AND day <= $2` : ''}
         `, startDate && endDate ? [startDate, endDate] : []);
         totalVendas = Number(vendasResult.rows[0]?.vendas) || 0;
+        vendasTrafego = Number(vendasResult.rows[0]?.vendas_trafego) || 0;
+        receitaTrafego = Number(vendasResult.rows[0]?.receita_trafego) || 0;
       } catch (e: any) {
         console.error('[marketing-dashboard] vendas error:', e.message);
       }
@@ -10485,7 +10496,9 @@ app.get("/api/todos", async (req, res) => {
           total_impressions: fb.total_impressions || 0,
           total_campaigns: fb.total_campaigns || 0,
           total_vendas: totalVendas,
-          cac: totalVendas > 0 ? totalSpend / totalVendas : 0,
+          vendas_trafego: vendasTrafego,
+          receita_trafego: receitaTrafego,
+          cac: vendasTrafego > 0 ? totalSpend / vendasTrafego : 0,
         },
         daily_spend: fbDailyResult.rows,
         daily_leads: formDailyResult.rows,
@@ -11673,30 +11686,8 @@ app.get("/api/todos", async (req, res) => {
             const startStr = dataInicio.toISOString().slice(0, 10);
             const endStr   = dataFim.toISOString().slice(0, 10);
 
-            const q = await pool.query(
-              `SELECT COUNT(DISTINCT sub.lead_id) AS total
-               FROM (
-                 SELECT h.lead_id
-                 FROM crm_comercial_history h
-                 JOIN crm_comercial_columns c ON h.to_coluna = c.id::text
-                 WHERE (LOWER(c.title) LIKE '%reunião marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%')
-                   AND h.created_at >= $1 AND h.created_at <= ($2::date + interval '1 day')
-                 UNION
-                 SELECT l.id AS lead_id
-                 FROM crm_comercial_leads l
-                 JOIN crm_comercial_columns c ON l.coluna = c.id::text
-                 WHERE (LOWER(c.title) LIKE '%reunião marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%')
-                   AND l.created_at >= $1 AND l.created_at <= ($2::date + interval '1 day')
-                 UNION
-                 SELECT h.lead_id
-                 FROM crm_comercial_history h
-                 JOIN crm_comercial_columns c ON h.from_coluna = c.id::text
-                 WHERE (LOWER(c.title) LIKE '%reunião marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%')
-                   AND h.created_at >= $1 AND h.created_at <= ($2::date + interval '1 day')
-               ) sub`,
-              [startStr, endStr]
-            );
-            valorAtual = Number(q.rows[0]?.total || 0);
+            const q = await pool.query(sqlReunioesMarcadas('$1', '$2'), [startStr, endStr]);
+            valorAtual = Number(q.rows[0]?.marcadas || 0);
 
           // ──────────────────────────────────────────────────────────────
           // REUNIÕES REALIZADAS
@@ -14303,28 +14294,7 @@ app.get("/api/todos", async (req, res) => {
       // Reuniões do mês — usando dados do CRM (sem filtro de kanban,
       // pois o lead pode ter saído do pré-vendas após a reunião)
       // Marcadas: leads DISTINTOS que passaram pela coluna "Reunião Marcada" no período
-      const reunMarcadasMonth = await pool.query(`
-        SELECT COUNT(DISTINCT sub.lead_id) AS marcadas
-        FROM (
-          SELECT h.lead_id
-          FROM crm_comercial_history h
-          JOIN crm_comercial_columns c ON h.to_coluna = c.id::text
-          WHERE (LOWER(c.title) LIKE '%reunião marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%')
-            AND h.created_at >= $1 AND h.created_at <= ($2::date + interval '1 day')
-          UNION
-          SELECT l.id AS lead_id
-          FROM crm_comercial_leads l
-          JOIN crm_comercial_columns c ON l.coluna = c.id::text
-          WHERE (LOWER(c.title) LIKE '%reunião marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%')
-            AND l.created_at >= $1 AND l.created_at <= ($2::date + interval '1 day')
-          UNION
-          SELECT h.lead_id
-          FROM crm_comercial_history h
-          JOIN crm_comercial_columns c ON h.from_coluna = c.id::text
-          WHERE (LOWER(c.title) LIKE '%reunião marcada%' OR LOWER(c.title) LIKE '%reuniao marcada%')
-            AND h.created_at >= $1 AND h.created_at <= ($2::date + interval '1 day')
-        ) sub
-      `, [startDate, endDate]);
+      const reunMarcadasMonth = await pool.query(sqlReunioesMarcadas('$1', '$2'), [startDate, endDate]);
 
       // Realizadas: leads DISTINTOS que possuem um registro na aba de reuniões (crm_comercial_meetings)
       const reunRealizadasMonth = await pool.query(`
@@ -19060,6 +19030,10 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
   setupDreLancamentosRoutes(app, pool);
   setupFaturaVersoesRoutes(app, pool);
   setupFechamentoRoutes(app, pool);
+  setupFunilMetaRoutes(app);
+  // Popup de saldo baixo para o gestor da página de Projetos
+  setupAlertaSaldoRoutes(app, pool, fetchMetaAccountInfo);
+  migrateCrmReunioes(pool).catch((e: any) => console.error("[crm-reunioes] migrate:", e.message));
   await migrateCursos(pool).catch((e: any) => console.warn('[cursos] migrate:', e.message));
   setupCursosRoutes(app, pool);
   await migrateEstudio(pool).catch((e: any) => console.warn('[estudio] migrate:', e.message));
@@ -19429,124 +19403,6 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
       // Ativas primeiro (status 1), depois por nome
       accounts.sort((a, b) => (a.status === 1 ? 0 : 1) - (b.status === 1 ? 0 : 1) || a.name.localeCompare(b.name, 'pt-BR'));
       res.json({ accounts });
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
-  });
-
-  // ==========================================
-  // FORMULÁRIOS — webhook do app de formulário + leitura interna e no portal
-  // ==========================================
-  const FORM_META_KEYS = new Set(['ip_address', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content']);
-
-  // Webhook público (autenticado por ?token=). Aceita o formato do n8n (array/{body}) ou o body direto.
-  app.post('/api/forms/webhook', async (req: any, res) => {
-    try {
-      const token = String(req.query.token || '');
-      if (!token) return res.status(401).json({ error: 'token ausente' });
-      const proj = await pool.query(`SELECT project_id FROM project_form_tokens WHERE token = $1`, [token]);
-      if (!proj.rows[0]) return res.status(401).json({ error: 'token inválido' });
-      const projectId = proj.rows[0].project_id;
-
-      let p: any = req.body;
-      if (Array.isArray(p)) p = p[0];
-      const b = (p && typeof p === 'object' && p.body) ? p.body : p;
-      const formId = (b?.form_id ?? '') === '' ? null : String(b.form_id);
-      const responseId = (b?.response_id ?? '') === '' ? null : String(b.response_id);
-      const submittedAt = b?.submitted_at || new Date().toISOString();
-      const data = (b && typeof b.data === 'object' && b.data) ? b.data : {};
-
-      const answers: { label: string; value: any }[] = [];
-      const meta: Record<string, any> = {};
-      for (const [k, v] of Object.entries(data)) {
-        if (FORM_META_KEYS.has(k)) meta[k] = v;
-        else answers.push({ label: k, value: v });
-      }
-
-      await pool.query(
-        `INSERT INTO form_submissions (project_id, form_id, response_id, submitted_at, answers, meta, raw)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)
-         ON CONFLICT (project_id, form_id, response_id) DO UPDATE SET
-           submitted_at=EXCLUDED.submitted_at, answers=EXCLUDED.answers, meta=EXCLUDED.meta, raw=EXCLUDED.raw`,
-        [projectId, formId, responseId, submittedAt, JSON.stringify(answers), JSON.stringify(meta), JSON.stringify(req.body)]
-      );
-      if (formId) {
-        await pool.query(`INSERT INTO project_forms (project_id, form_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [projectId, formId]).catch(() => {});
-      }
-      res.json({ ok: true });
-    } catch (e: any) {
-      console.error('[forms-webhook]', e.message);
-      res.status(500).json({ error: e.message });
-    }
-  });
-
-  // Token do webhook do projeto (cria na primeira leitura)
-  app.get('/api/projects/:projectId/form-token', async (req: any, res) => {
-    try {
-      const { projectId } = req.params;
-      let r = await pool.query(`SELECT token FROM project_form_tokens WHERE project_id=$1`, [projectId]);
-      if (!r.rows[0]) {
-        const token = crypto.randomBytes(24).toString('hex');
-        r = await pool.query(
-          `INSERT INTO project_form_tokens (project_id, token) VALUES ($1,$2)
-           ON CONFLICT (project_id) DO UPDATE SET token=project_form_tokens.token RETURNING token`,
-          [projectId, token]
-        );
-      }
-      res.json({ token: r.rows[0].token });
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
-  });
-  app.post('/api/projects/:projectId/form-token/regenerate', async (req: any, res) => {
-    try {
-      const { projectId } = req.params;
-      const token = crypto.randomBytes(24).toString('hex');
-      await pool.query(`INSERT INTO project_form_tokens (project_id, token) VALUES ($1,$2) ON CONFLICT (project_id) DO UPDATE SET token=EXCLUDED.token`, [projectId, token]);
-      res.json({ token });
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
-  });
-
-  const formsListQuery = `
-    SELECT pf.form_id, COALESCE(NULLIF(pf.label,''), 'Formulário ' || pf.form_id) AS label,
-           (SELECT COUNT(*) FROM form_submissions s WHERE s.project_id=pf.project_id AND s.form_id=pf.form_id)::int AS count
-    FROM project_forms pf WHERE pf.project_id=$1 ORDER BY pf.created_at`;
-
-  // Interno (equipe): completo, com UTM/IP
-  app.get('/api/projects/:projectId/form-submissions', async (req: any, res) => {
-    try {
-      const { projectId } = req.params;
-      const forms = (await pool.query(formsListQuery, [projectId])).rows;
-      const formId = req.query.formId ? String(req.query.formId) : null;
-      const subs = (await pool.query(
-        `SELECT id, form_id, response_id, submitted_at, answers, meta FROM form_submissions
-         WHERE project_id=$1 ${formId ? 'AND form_id=$2' : ''} ORDER BY submitted_at DESC NULLS LAST LIMIT 500`,
-        formId ? [projectId, formId] : [projectId]
-      )).rows;
-      res.json({ forms, submissions: subs });
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
-  });
-  app.patch('/api/projects/:projectId/forms/:formId', async (req: any, res) => {
-    try {
-      const { projectId, formId } = req.params;
-      const { label } = req.body;
-      await pool.query(
-        `INSERT INTO project_forms (project_id, form_id, label) VALUES ($1,$2,$3)
-         ON CONFLICT (project_id, form_id) DO UPDATE SET label=EXCLUDED.label`,
-        [projectId, formId, label || null]
-      );
-      res.json({ ok: true });
-    } catch (e: any) { res.status(500).json({ error: e.message }); }
-  });
-
-  // Portal (cliente): só respostas, sem UTM/IP
-  app.get('/api/portal/form-submissions', requirePortalClient, async (req: any, res) => {
-    try {
-      const projectId = req.portalProjectId;
-      const forms = (await pool.query(formsListQuery, [projectId])).rows;
-      const formId = req.query.formId ? String(req.query.formId) : null;
-      const subs = (await pool.query(
-        `SELECT id, form_id, submitted_at, answers FROM form_submissions
-         WHERE project_id=$1 ${formId ? 'AND form_id=$2' : ''} ORDER BY submitted_at DESC NULLS LAST LIMIT 500`,
-        formId ? [projectId, formId] : [projectId]
-      )).rows;
-      res.json({ forms, submissions: subs });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 

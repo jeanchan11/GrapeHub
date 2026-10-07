@@ -72,6 +72,32 @@ export async function migrateCursos(pool: Pool) {
       UNIQUE (lesson_id, user_email)
     );
 
+    -- Como a aula foi concluída: 'assistiu' (player, ≥90% tocando de verdade) ou
+    -- 'manual' (gestor marcou na Turma — ex.: viu a aula numa reunião). completed_by
+    -- = e-mail de quem marcou. O histórico de marcar/desmarcar fica no log abaixo.
+    ALTER TABLE lesson_progress ADD COLUMN IF NOT EXISTS completed_via TEXT;
+    ALTER TABLE lesson_progress ADD COLUMN IF NOT EXISTS completed_by  TEXT;
+    UPDATE lesson_progress SET completed_via = 'assistiu' WHERE completed AND completed_via IS NULL;
+
+    CREATE TABLE IF NOT EXISTS lesson_completion_log (
+      id          SERIAL PRIMARY KEY,
+      lesson_id   INT NOT NULL REFERENCES course_lessons(id) ON DELETE CASCADE,
+      user_email  TEXT NOT NULL,
+      acao        TEXT NOT NULL,            -- marcou | desmarcou
+      por         TEXT NOT NULL,            -- e-mail do gestor
+      em          TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    -- Comentários de quem assistiu, por aula. Autor pelo e-mail do token.
+    CREATE TABLE IF NOT EXISTS lesson_comments (
+      id          SERIAL PRIMARY KEY,
+      lesson_id   INT NOT NULL REFERENCES course_lessons(id) ON DELETE CASCADE,
+      user_email  TEXT NOT NULL,
+      texto       TEXT NOT NULL,
+      created_at  TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_lesson_comments_lesson ON lesson_comments(lesson_id, created_at);
+
     CREATE INDEX IF NOT EXISTS idx_lesson_progress_email ON lesson_progress(user_email);
     CREATE INDEX IF NOT EXISTS idx_course_modules_course ON course_modules(course_id);
     CREATE INDEX IF NOT EXISTS idx_course_lessons_module ON course_lessons(module_id);
@@ -140,7 +166,7 @@ export function setupCursosRoutes(app: Express, pool: Pool) {
         [req.params.id]
       );
       const lessons = await pool.query(
-        `SELECT l.*, p.watched_seconds, p.last_position, p.completed, p.completed_at
+        `SELECT l.*, p.watched_seconds, p.last_position, p.completed, p.completed_at, p.completed_via
            FROM course_lessons l
            JOIN course_modules m ON m.id = l.module_id
            LEFT JOIN lesson_progress p ON p.lesson_id = l.id AND p.user_email = $2
@@ -192,7 +218,7 @@ export function setupCursosRoutes(app: Express, pool: Pool) {
       const atingiu = duracao > 0 && prog.watched_seconds >= duracao * COMPLETION_THRESHOLD;
       if (!prog.completed && (atingiu || req.body?.ended === true)) {
         const up = await pool.query(
-          `UPDATE lesson_progress SET completed = true, completed_at = NOW() WHERE id = $1 RETURNING *`,
+          `UPDATE lesson_progress SET completed = true, completed_at = NOW(), completed_via = 'assistiu', completed_by = NULL WHERE id = $1 RETURNING *`,
           [prog.id]
         );
         return res.json(up.rows[0]);
@@ -346,12 +372,139 @@ export function setupCursosRoutes(app: Express, pool: Pool) {
     }
   });
 
+  // PUT /api/cursos/modulos/:id/ordem — { ids: [aula, aula, ...] } na ordem nova.
+  // Grava order_index = posição. Aceita aula de outro módulo DO MESMO curso (move
+  // junto), para o arrastar entre módulos funcionar sem outra rota.
+  app.put('/api/cursos/modulos/:id/ordem', somenteAdmin, async (req: any, res) => {
+    const ids: number[] = Array.isArray(req.body?.ids) ? req.body.ids.map(Number).filter(Number.isFinite) : [];
+    if (!ids.length) return res.status(400).json({ error: 'Envie a lista de aulas.' });
+    const c = await pool.connect();
+    try {
+      await c.query('BEGIN');
+      for (let i = 0; i < ids.length; i++) {
+        await c.query(
+          `UPDATE course_lessons SET order_index = $1, module_id = $2, updated_at = NOW()
+            WHERE id = $3 AND module_id IN (
+              SELECT id FROM course_modules WHERE course_id = (SELECT course_id FROM course_modules WHERE id = $2))`,
+          [i, req.params.id, ids[i]]);
+      }
+      await c.query('COMMIT');
+      res.json({ ok: true });
+    } catch (err: any) {
+      await c.query('ROLLBACK').catch(() => {});
+      console.error('[cursos] ordem:', err.message);
+      res.status(500).json({ error: 'Falha ao salvar a ordem.' });
+    } finally { c.release(); }
+  });
+
   app.delete('/api/cursos/aulas/:id', somenteAdmin, async (req: any, res) => {
     try {
       await pool.query('DELETE FROM course_lessons WHERE id = $1', [req.params.id]);
       res.json({ ok: true });
     } catch (err: any) {
       res.status(500).json({ error: 'Falha ao excluir aula.' });
+    }
+  });
+
+  // ── Comentários da aula ───────────────────────────────────────────────────
+  // Quem vê o curso comenta. Autor sai do token; apagar: o próprio autor ou admin.
+  async function podeVerAula(lessonId: string | number, email: string | null) {
+    const r = await pool.query(
+      `SELECT c.status FROM course_lessons l JOIN course_modules m ON m.id = l.module_id
+         JOIN courses c ON c.id = m.course_id WHERE l.id = $1`, [lessonId]);
+    if (!r.rows[0]) return false;
+    return r.rows[0].status === 'publicado' || await ehAdmin(pool, email);
+  }
+
+  app.get('/api/cursos/aulas/:id/comentarios', async (req: any, res) => {
+    try {
+      const email = emailDoToken(req);
+      if (!(await podeVerAula(req.params.id, email))) return res.status(403).json({ error: 'Sem acesso a esta aula.' });
+      const admin = await ehAdmin(pool, email);
+      const r = await pool.query(
+        `SELECT c.id, c.texto, c.created_at, c.user_email, u.name AS autor, u.picture AS foto
+           FROM lesson_comments c LEFT JOIN users u ON LOWER(u.email) = c.user_email
+          WHERE c.lesson_id = $1 ORDER BY c.created_at ASC, c.id ASC`, [req.params.id]);
+      res.json(r.rows.map((c: any) => ({
+        id: c.id, texto: c.texto, created_at: c.created_at,
+        autor: c.autor || c.user_email.split('@')[0], foto: c.foto || null,
+        meu: c.user_email === email, pode_apagar: c.user_email === email || admin,
+      })));
+    } catch (err: any) {
+      console.error('[cursos] GET comentários:', err.message);
+      res.status(500).json({ error: 'Falha ao carregar comentários.' });
+    }
+  });
+
+  app.post('/api/cursos/aulas/:id/comentarios', async (req: any, res) => {
+    try {
+      const email = emailDoToken(req);
+      if (!email) return res.status(401).json({ error: 'Sessão inválida.' });
+      const texto = String(req.body?.texto || '').trim();
+      if (!texto) return res.status(400).json({ error: 'Escreva o comentário.' });
+      if (texto.length > 4000) return res.status(400).json({ error: 'Comentário muito longo (máx. 4.000 caracteres).' });
+      if (!(await podeVerAula(req.params.id, email))) return res.status(403).json({ error: 'Sem acesso a esta aula.' });
+      const r = await pool.query(
+        `INSERT INTO lesson_comments (lesson_id, user_email, texto) VALUES ($1, $2, $3) RETURNING id, texto, created_at`,
+        [req.params.id, email, texto]);
+      const u = await pool.query(`SELECT name, picture FROM users WHERE LOWER(email) = $1`, [email]);
+      res.status(201).json({ ...r.rows[0], autor: u.rows[0]?.name || email.split('@')[0], foto: u.rows[0]?.picture || null, meu: true, pode_apagar: true });
+    } catch (err: any) {
+      console.error('[cursos] POST comentário:', err.message);
+      res.status(500).json({ error: 'Falha ao comentar.' });
+    }
+  });
+
+  app.delete('/api/cursos/comentarios/:id', async (req: any, res) => {
+    try {
+      const email = emailDoToken(req);
+      const c = await pool.query(`SELECT user_email FROM lesson_comments WHERE id = $1`, [req.params.id]);
+      if (!c.rows[0]) return res.status(404).json({ error: 'Comentário não encontrado.' });
+      if (c.rows[0].user_email !== email && !(await ehAdmin(pool, email))) {
+        return res.status(403).json({ error: 'Só o autor ou um gestor apaga o comentário.' });
+      }
+      await pool.query(`DELETE FROM lesson_comments WHERE id = $1`, [req.params.id]);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: 'Falha ao apagar comentário.' });
+    }
+  });
+
+  // ── Conclusão manual pelo gestor ─────────────────────────────────────────
+  // Para quem viu a aula fora do player (reunião, antes do controle existir).
+  // Nunca sobrescreve quem concluiu assistindo; só o que foi marcado à mão pode
+  // ser desmarcado. Toda ação vai para lesson_completion_log.
+  app.post('/api/cursos/aulas/:id/concluir', somenteAdmin, async (req: any, res) => {
+    try {
+      const alvo = String(req.body?.user_email || '').toLowerCase().trim();
+      if (!alvo.includes('@')) return res.status(400).json({ error: 'Informe o e-mail do colaborador.' });
+      const atual = (await pool.query(`SELECT completed, completed_via FROM lesson_progress WHERE lesson_id = $1 AND user_email = $2`, [req.params.id, alvo])).rows[0];
+      if (atual?.completed) return res.status(409).json({ error: atual.completed_via === 'manual' ? 'Já está marcada como concluída.' : 'Esta pessoa já concluiu assistindo.' });
+      const r = await pool.query(
+        `INSERT INTO lesson_progress (lesson_id, user_email, completed, completed_at, completed_via, completed_by, updated_at)
+         VALUES ($1, $2, true, NOW(), 'manual', $3, NOW())
+         ON CONFLICT (lesson_id, user_email) DO UPDATE
+           SET completed = true, completed_at = NOW(), completed_via = 'manual', completed_by = $3, updated_at = NOW()
+         RETURNING *`, [req.params.id, alvo, req.adminEmail]);
+      await pool.query(`INSERT INTO lesson_completion_log (lesson_id, user_email, acao, por) VALUES ($1, $2, 'marcou', $3)`, [req.params.id, alvo, req.adminEmail]);
+      res.json(r.rows[0]);
+    } catch (err: any) {
+      console.error('[cursos] concluir manual:', err.message);
+      res.status(500).json({ error: 'Falha ao marcar a aula.' });
+    }
+  });
+
+  app.delete('/api/cursos/aulas/:id/concluir', somenteAdmin, async (req: any, res) => {
+    try {
+      const alvo = String(req.query?.user_email || '').toLowerCase().trim();
+      const r = await pool.query(
+        `UPDATE lesson_progress SET completed = false, completed_at = NULL, completed_via = NULL, completed_by = NULL, updated_at = NOW()
+          WHERE lesson_id = $1 AND user_email = $2 AND completed AND completed_via = 'manual' RETURNING id`, [req.params.id, alvo]);
+      if (!r.rows.length) return res.status(409).json({ error: 'Só dá para desmarcar conclusão feita à mão.' });
+      await pool.query(`INSERT INTO lesson_completion_log (lesson_id, user_email, acao, por) VALUES ($1, $2, 'desmarcou', $3)`, [req.params.id, alvo, req.adminEmail]);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: 'Falha ao desmarcar.' });
     }
   });
 
@@ -376,6 +529,7 @@ export function setupCursosRoutes(app: Express, pool: Pool) {
                 c.start_date                                          AS admissao,
                 LOWER(u.email)                                        AS email,
                 COUNT(p.id) FILTER (WHERE p.completed)::int           AS aulas_concluidas,
+                COUNT(p.id) FILTER (WHERE p.completed AND p.completed_via = 'manual')::int AS concluidas_manual,
                 COALESCE(SUM(p.watched_seconds), 0)::int              AS tempo_assistido,
                 MIN(p.started_at)                                     AS iniciou_em,
                 MAX(p.completed_at) FILTER (WHERE p.completed)        AS ultima_conclusao,
@@ -394,6 +548,16 @@ export function setupCursosRoutes(app: Express, pool: Pool) {
         [req.params.id]
       );
 
+      // Detalhe por aula (para o gestor ver quem assistiu e quem foi marcado à mão)
+      const aulas = (await pool.query(
+        `SELECT l.id, l.title, m.title AS modulo FROM course_lessons l JOIN course_modules m ON m.id = l.module_id
+          WHERE m.course_id = $1 ORDER BY m.order_index, m.id, l.order_index, l.id`, [req.params.id])).rows;
+      const progs = (await pool.query(
+        `SELECT p.lesson_id, p.user_email, p.completed, p.completed_at, p.completed_via, p.completed_by, p.watched_seconds,
+                ub.name AS marcado_por
+           FROM lesson_progress p LEFT JOIN users ub ON LOWER(ub.email) = p.completed_by
+          WHERE p.lesson_id = ANY($1)`, [aulas.map((a: any) => a.id)])).rows;
+
       const linhas = r.rows.map((x: any) => {
         const concluidas = Number(x.aulas_concluidas) || 0;
         // Dias corridos entre a primeira aula aberta e a última concluída.
@@ -405,6 +569,15 @@ export function setupCursosRoutes(app: Express, pool: Pool) {
         }
         return {
           ...x,
+          aulas: aulas.map((a: any) => {
+            const p = progs.find((y: any) => y.lesson_id === a.id && y.user_email === x.email);
+            return {
+              lesson_id: a.id, titulo: a.title, modulo: a.modulo,
+              concluida: !!p?.completed, via: p?.completed ? (p.completed_via || 'assistiu') : null,
+              em: p?.completed_at || null, marcado_por: p?.completed_via === 'manual' ? (p.marcado_por || p.completed_by) : null,
+              assistido: Number(p?.watched_seconds) || 0,
+            };
+          }),
           percentual: totalAulas > 0 ? Math.round((concluidas / totalAulas) * 100) : 0,
           dias_para_concluir: dias,
         };

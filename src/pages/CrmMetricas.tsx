@@ -9,6 +9,8 @@ import {
   ChevronDown, Award, PhoneCall, UserCheck, RotateCcw,
   Filter, ChevronRight, PieChart as PieChartIcon, Phone, Clock, Globe, Share2, UserMinus
 } from 'lucide-react';
+import MarketingDashboard from './MarketingDashboard';
+import FunilCompleto from '../components/FunilCompleto';
 
 const MESES       = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 const MESES_FULL  = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
@@ -391,7 +393,10 @@ export default function CrmMetricas() {
   const [loading, setLoading] = useState(true);
   const [spinning, setSpinning] = useState(false);
   const [error, setError]   = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'pre-vendas' | 'vendas'>('vendas');
+  const [activeTab, setActiveTab] = useState<'pre-vendas' | 'vendas' | 'marketing' | 'funil'>('vendas');
+  // Aba Marketing = o Dashboard Marketing embutido; o botão de atualizar da
+  // página incrementa isto para ele buscar de novo.
+  const [versaoMarketing, setVersaoMarketing] = useState(0);
   const [vendedorFilter, setVendedorFilter] = useState<string>('');
 
   const fetchData = useCallback(async (r: DateRange, vendedor = '', silent = false) => {
@@ -482,6 +487,8 @@ export default function CrmMetricas() {
   const TABS = [
     { id: 'vendas' as const, label: 'Vendas' },
     { id: 'pre-vendas' as const, label: 'Pré vendas' },
+    { id: 'marketing' as const, label: 'Marketing' },
+    { id: 'funil' as const, label: 'Funil' },
   ];
 
   return (
@@ -499,7 +506,7 @@ export default function CrmMetricas() {
           )}
           <DateRangePicker range={range} onChange={setRange} />
           <button
-            onClick={() => fetchData(range, vendedorFilter, true)}
+            onClick={() => (activeTab === 'marketing' || activeTab === 'funil') ? setVersaoMarketing(v => v + 1) : fetchData(range, vendedorFilter, true)}
             className={`w-9 h-9 rounded-xl bg-dark-card border border-white/10 hover:bg-dark-card-hover flex items-center justify-center transition-colors ${spinning ? 'animate-spin' : ''}`}
           >
             <RefreshCw size={14} className="text-slate-400" />
@@ -527,14 +534,18 @@ export default function CrmMetricas() {
       </div>
 
       {/* ── Error ────────────────────────────────────────────────────────── */}
-      {error && (
+      {error && activeTab !== 'marketing' && activeTab !== 'funil' && (
         <div className="mx-6 md:mx-8 mb-4 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-red-400 dark:text-red-300 text-sm">
           ⚠ {error}
         </div>
       )}
 
       {/* ── Loading skeleton ─────────────────────────────────────────────── */}
-      {loading && !data ? (
+      {activeTab === 'marketing' ? (
+        <MarketingDashboard embutido range={range} versao={versaoMarketing} />
+      ) : activeTab === 'funil' ? (
+        <FunilCompleto range={range} versao={versaoMarketing} />
+      ) : loading && !data ? (
         <div className="flex items-center justify-center h-64">
           <div className="w-10 h-10 border-4 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
         </div>

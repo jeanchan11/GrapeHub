@@ -287,6 +287,40 @@ export async function conferirMes(pool: Pool, mes: string): Promise<{ checks: Ch
     detalhe: inad.rows[0].n ? `${inad.rows[0].n} cobrança(s) vencida(s) no mês sem pagamento: ${brl(inad.rows[0].v)}.` : 'Tudo o que venceu no mês foi recebido.',
   });
 
+  // Mês do HISTÓRICO importado (Marvee, jan–jun/2026): o DFC desses meses usa o
+  // número importado em `fin_dfc_historico`, não os lançamentos. Então as
+  // conferências de lançamento (categoria, saldo, faturas) não mudam número
+  // nenhum do DFC — viram informativas, e os totais congelados saem do histórico.
+  // Antes disso, fev–jun não fechavam (31 lançamentos sem categoria em abril,
+  // saldo de junho com R$ 2.396,02 faltando) e janeiro, que fechou, congelou
+  // totais calculados pelos lançamentos, que não batem com o DFC.
+  const hist = await pool.query(
+    `SELECT structure, value::numeric AS valor FROM fin_dfc_historico WHERE ref_month = $1`, [mes]);
+  const ehHistorico = hist.rows.some((r: any) => /^[0-9]/.test(r.structure));
+  if (ehHistorico) {
+    for (const c of checks) {
+      if (c.status === 'bloqueia' || c.status === 'atencao') {
+        c.status = 'info';
+        c.detalhe = `Não afeta o DFC (mês importado do Marvee). ${c.detalhe}`;
+      }
+    }
+    checks.unshift({
+      id: 'historico', titulo: 'Números do DFC vêm do histórico importado (Marvee)', status: 'info',
+      detalhe: 'Neste mês o DFC usa o valor importado, não os lançamentos do GrapeHub — as conferências abaixo são só informativas.',
+    });
+    const grupos: Record<string, number> = {};
+    let geracao: number | null = null, saldoIni: number | null = null, saldoFim: number | null = null;
+    for (const r of hist.rows) {
+      const v = Math.round(Number(r.valor) * 100) / 100;
+      if (/^[0-9]{2}$/.test(r.structure)) grupos[r.structure] = v;
+      else if (r.structure === '_geracao') geracao = v;
+      else if (r.structure === '_saldo_inicial') saldoIni = v;
+      else if (r.structure === '_saldo_final') saldoFim = v;
+    }
+    if (geracao === null) geracao = Math.round(Object.entries(grupos).filter(([g]) => g !== '99').reduce((a, [, v]) => a + v, 0) * 100) / 100;
+    return { checks, totais: { grupos, geracao, saldo_inicial: saldoIni, saldo_final: saldoFim, origem: 'historico' } };
+  }
+
   // Totais do DFC no mês (congelados no fechamento).
   const tot = await pool.query(`
     SELECT left(c.structure, 2) AS grupo, SUM(m.value::numeric * m.type) AS valor

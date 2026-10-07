@@ -1146,14 +1146,14 @@ const CrmFinanceiro = () => {
               >
                 Histórico
               </button>
-              {selectedClient.crmStatus === 'processo_saida' && (
-                <button
-                  onClick={() => setActiveTab('checklist')}
-                  className={`pb-4 text-sm font-bold transition-all ${activeTab === 'checklist' ? 'modal-tab-active' : 'text-slate-500 hover:text-light-text dark:hover:text-white'}`}
-                >
-                  Checklist de Saída
-                </button>
-              )}
+              {/* Checklist de Saída em todas as colunas (antes só em "Processo de saída"):
+                  dá para adiantar itens enquanto o cliente ainda está em aviso/negociação. */}
+              <button
+                onClick={() => setActiveTab('checklist')}
+                className={`pb-4 text-sm font-bold transition-all ${activeTab === 'checklist' ? 'modal-tab-active' : 'text-slate-500 hover:text-light-text dark:hover:text-white'}`}
+              >
+                Checklist de Saída
+              </button>
             </>
           )
         }
@@ -1280,7 +1280,7 @@ const CrmFinanceiro = () => {
                   <CrmCommentHistory clientId={selectedClient.id} />
                 )}
 
-                {activeTab === 'checklist' && selectedClient.crmStatus === 'processo_saida' && (
+                {activeTab === 'checklist' && (
                   <div>
                     <div className="flex justify-end mb-4">
                       <button

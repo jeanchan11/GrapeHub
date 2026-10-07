@@ -1259,9 +1259,10 @@ const TaskRow = ({ task, coloredTagDefs, onUpdate, onOpenDetail, onOpenSubtask, 
                   key={tg}
                   onClick={e => { e.stopPropagation(); handleToggleTag(tg); }}
                   title={`Remover "${tg}"`}
-                  className="group/tag flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap transition-all hover:pr-1"
-                  style={{ backgroundColor: `${color}22`, color, border: `1px solid ${color}44` }}
+                  className="group/tag inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full text-[11px] font-semibold whitespace-nowrap transition-all hover:pr-1.5"
+                  style={{ backgroundColor: `${color}26`, color }}
                 >
+                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: color }} />
                   {tg}
                   <X size={9} className="opacity-0 group-hover/tag:opacity-100 transition-opacity shrink-0 -mr-0.5" />
                 </button>
@@ -1334,9 +1335,9 @@ const TaskRow = ({ task, coloredTagDefs, onUpdate, onOpenDetail, onOpenSubtask, 
                 label: s,
                 color: s === 'Squad Able' ? '#3b82f6' : s === 'Squad Baker' ? '#d946ef' : undefined,
               }))}
-              emptyLabel="— SQUAD —"
-              placeholder="— SQUAD —"
-              compact
+              emptyLabel="Sem squad"
+              placeholder="Squad"
+              variant="tag"
             />
           </div>
         );

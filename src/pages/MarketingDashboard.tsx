@@ -7,7 +7,7 @@ import {
 import {
   DollarSign, Users, UserCheck, Video, RefreshCw,
   Calendar, ChevronDown, MousePointerClick, Eye, Megaphone,
-  BarChart2, Target, AlertCircle, TrendingUp
+  BarChart2, Target, AlertCircle, TrendingUp, FileSignature
 } from 'lucide-react';
 
 const MESES       = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
@@ -45,6 +45,8 @@ interface Kpis {
   total_impressions: number;
   total_campaigns: number;
   total_vendas: number;
+  vendas_trafego?: number;
+  receita_trafego?: number;
   cac: number;
 }
 interface DashData {
@@ -345,7 +347,15 @@ function getDay(dateStr: string) {
 }
 
 // ── Main Component ────────────────────────────────────────────────────────
-export default function MarketingDashboard() {
+/**
+ * `embutido`: usado como aba "Marketing" dentro de Comercial › Métricas. Nesse
+ * modo o período vem de fora (o seletor da própria página de Métricas), o
+ * cabeçalho some e `versao` pede uma nova busca quando o usuário clica em
+ * atualizar lá em cima.
+ */
+export default function MarketingDashboard({ embutido = false, range: rangeExterno, versao = 0 }: {
+  embutido?: boolean; range?: DateRange; versao?: number;
+} = {}) {
   const today = new Date();
   const defaultRange = (): DateRange => {
     const y = today.getFullYear(), m = today.getMonth() + 1;
@@ -354,7 +364,8 @@ export default function MarketingDashboard() {
     return { start, end };
   };
 
-  const [range, setRange]       = useState<DateRange>(defaultRange);
+  const [rangeProprio, setRange] = useState<DateRange>(defaultRange);
+  const range = embutido && rangeExterno ? rangeExterno : rangeProprio;
   const [data, setData]         = useState<DashData | null>(null);
   const [loading, setLoading]   = useState(true);
   const [spinning, setSpinning] = useState(false);
@@ -376,7 +387,9 @@ export default function MarketingDashboard() {
     }
   }, []);
 
-  useEffect(() => { fetchData(range); }, [range, fetchData]);
+  useEffect(() => { fetchData(range); }, [range.start, range.end, fetchData]);
+  // Botão de atualizar da página que embute (Métricas): busca sem esconder a tela.
+  useEffect(() => { if (versao > 0) fetchData(range, true); }, [versao]);
 
   const rangeLabel = range.start && range.end
     ? range.start === range.end
@@ -392,6 +405,8 @@ export default function MarketingDashboard() {
   const valReuniRealizadas = kpis.reunioes_realizadas || 0;
   const valVendas = kpis.total_vendas || 0;
   const valCAC = kpis.cac || 0;
+  const valVendasTrafego = kpis.vendas_trafego || 0;
+  const valReceitaTrafego = kpis.receita_trafego || 0;
 
   const dailySpend = (data?.daily_spend || []).map(d => ({ ...d, day: getDay(d.date) }));
   const dailyLeads = (data?.daily_leads || []).map(d => ({ ...d, day: getDay(d.date) }));
@@ -402,9 +417,10 @@ export default function MarketingDashboard() {
   const EMERALD_SHADES = ['#10b981', '#059669', '#047857', '#065f46', '#34d399', '#6ee7b7'];
 
   return (
-    <div className="min-h-screen bg-dark-bg transition-colors duration-300">
+    <div className={embutido ? '' : 'min-h-screen bg-dark-bg transition-colors duration-300'}>
       
       {/* ── Header ───────────────────────────────────────────────────────── */}
+      {!embutido && (
       <div className="flex items-center justify-between px-6 md:px-8 pt-8 pb-4 flex-wrap gap-4">
         <div>
           <SplitHeadline text="Dashboard " highlight="Marketing" className="text-2xl font-black tracking-tight text-dark-text" />
@@ -422,6 +438,7 @@ export default function MarketingDashboard() {
           </button>
         </div>
       </div>
+      )}
 
       {/* ── Error ────────────────────────────────────────────────────────── */}
       {error && (
@@ -439,25 +456,13 @@ export default function MarketingDashboard() {
         <div className="px-6 md:px-8 pb-10 space-y-5">
 
           {/* ── KPI Cards ──────────────────────────────────────────────── */}
-          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
             <KpiCard
               iconBg="bg-violet-500/15"
               icon={<DollarSign size={17} className="text-violet-500" />}
               label="Valor Gasto"
               value={fmtCurrency(valSpend)}
               sub={`Custo/Lead: ${fmtCurrency(valLeads > 0 ? valSpend / valLeads : 0)}`}
-            />
-            <KpiCard
-              iconBg="bg-blue-500/15"
-              icon={<Target size={17} className="text-blue-500" />}
-              label="CAC"
-              value={fmtCurrency(valCAC)}
-              sub={
-                <span>
-                  Vendas no período: <span className="text-blue-500 font-bold">{fmtInt(valVendas)}</span>
-                </span>
-              }
-              extra={<div className="text-[10px] text-slate-500 mt-0.5">Custo de Aquisição de Cliente</div>}
             />
             <KpiCard
               iconBg="bg-pink-500/15"
@@ -482,6 +487,38 @@ export default function MarketingDashboard() {
                 </span>
               }
               extra={<div className="text-[10px] text-slate-500 mt-0.5">Custo/Realizada: {fmtCurrency(valReuniRealizadas > 0 ? valSpend / valReuniRealizadas : 0)}</div>}
+            />
+            {/* Contratos fechados que vieram do tráfego — origem "campanhas" no
+                fechamento. Indicação e origem em branco ficam fora. */}
+            <KpiCard
+              iconBg="bg-emerald-500/15"
+              icon={<FileSignature size={17} className="text-emerald-500" />}
+              label="Contratos Fechados"
+              value={fmtInt(valVendasTrafego)}
+              sub={
+                <span>
+                  Das realizadas: <span className="text-emerald-500 font-bold">{pct(valVendasTrafego, valReuniRealizadas)}</span>
+                </span>
+              }
+              extra={
+                <div className="text-[10px] text-slate-500 mt-0.5">
+                  Só tráfego · {fmtCurrency(valReceitaTrafego)}
+                  {valVendas > valVendasTrafego && <> · {fmtInt(valVendas - valVendasTrafego)} de outras origens fora</>}
+                </div>
+              }
+            />
+            {/* CAC por último: fecha a leitura do funil (verba → reunião → contrato → custo do contrato). */}
+            <KpiCard
+              iconBg="bg-blue-500/15"
+              icon={<Target size={17} className="text-blue-500" />}
+              label="CAC"
+              value={fmtCurrency(valCAC)}
+              sub={
+                <span>
+                  Contratos do tráfego: <span className="text-blue-500 font-bold">{fmtInt(valVendasTrafego)}</span>
+                </span>
+              }
+              extra={<div className="text-[10px] text-slate-500 mt-0.5">Verba ÷ contratos do tráfego (indicação fora)</div>}
             />
           </div>
 
