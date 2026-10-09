@@ -18,6 +18,7 @@ import { setupDreLancamentosRoutes } from "./src/routes/dre-lancamentos";
 import { migrateCrmReunioes, guardarColunasApagadas, sqlReunioesMarcadas } from "./src/routes/crm-reunioes";
 import { setupFunilMetaRoutes } from "./src/routes/funil-meta";
 import { setupAlertaSaldoRoutes } from './src/routes/alerta-saldo';
+import { setupMenuPastaEmPastaRoutes } from './src/routes/menu-pasta-em-pasta';
 import { setupFechamentoRoutes, mesFechado, mesFechadoDoLancamento, msgMesFechado, foraDeMesFechado } from "./src/routes/fechamento";
 import { migrateBillCategory } from "./src/routes/bill-category";
 import { setupBolaoRoutes } from "./src/routes/bolao";
@@ -4726,6 +4727,8 @@ async function startServer() {
     }
   });
 
+  // order_index vai junto em páginas, pastas e subpastas: a ordem dentro de cada seção/pasta é
+  // uma sequência ÚNICA entre os tipos (ver src/lib/menuOrdem.ts).
   app.get("/api/menu", async (req, res) => {
 
     try {
@@ -4752,6 +4755,7 @@ async function startServer() {
             label: sss.label,
             icon: sss.icon,
             icon_color: sss.icon_color,
+            order_index: sss.order_index,
             pages: pages
               .filter(p => p.subsubsession_id === sss.id)
               .map(p => ({
@@ -4760,7 +4764,8 @@ async function startServer() {
                 icon: p.icon,
                 icon_color: p.icon_color,
                 template: p.template,
-                manager_id: p.manager_id
+                manager_id: p.manager_id,
+                order_index: p.order_index
               }))
           }));
 
@@ -4777,7 +4782,8 @@ async function startServer() {
               icon: p.icon,
               icon_color: p.icon_color,
               template: p.template,
-              manager_id: p.manager_id
+              manager_id: p.manager_id,
+                order_index: p.order_index
             })),
           subSubSessions: sectionSubSubSessions,
           subSessions: subsessions
@@ -4788,6 +4794,7 @@ async function startServer() {
                 label: ss.label,
                 icon: ss.icon,
                 icon_color: ss.icon_color,
+                order_index: ss.order_index,
                 subSubSessions: subsubsessions
                   .filter(sss => sss.subsession_id === ss.id)
                   .map(sss => {
@@ -4796,6 +4803,7 @@ async function startServer() {
                       label: sss.label,
                       icon: sss.icon,
                       icon_color: sss.icon_color,
+            order_index: sss.order_index,
                       pages: pages
                         .filter(p => p.subsubsession_id === sss.id)
                         .map(p => ({
@@ -4804,7 +4812,8 @@ async function startServer() {
                           icon: p.icon,
                           icon_color: p.icon_color,
                           template: p.template,
-                          manager_id: p.manager_id
+                          manager_id: p.manager_id,
+                order_index: p.order_index
                         }))
                     };
                   }),
@@ -4816,7 +4825,8 @@ async function startServer() {
                     icon: p.icon,
                     icon_color: p.icon_color,
                     template: p.template,
-                    manager_id: p.manager_id
+                    manager_id: p.manager_id,
+                order_index: p.order_index
                   }))
               };
             })
@@ -19033,6 +19043,8 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
   setupFunilMetaRoutes(app);
   // Popup de saldo baixo para o gestor da página de Projetos
   setupAlertaSaldoRoutes(app, pool, fetchMetaAccountInfo);
+  // Gerenciar Páginas: mover uma pasta para dentro de outra (vira subpasta)
+  setupMenuPastaEmPastaRoutes(app, pool);
   migrateCrmReunioes(pool).catch((e: any) => console.error("[crm-reunioes] migrate:", e.message));
   await migrateCursos(pool).catch((e: any) => console.warn('[cursos] migrate:', e.message));
   setupCursosRoutes(app, pool);

@@ -38,6 +38,23 @@ nunca cores fixas. A preferência fica em `App.tsx` (`'system' | 'light' | 'dark
   3. entrada no catálogo de `src/components/PageManager.tsx`.
   O menu em si é montado pelo Jean na UI de admin — o passo 3 só faz a página aparecer na
   lista de páginas disponíveis.
+- **Estrutura do menu** (Configurações › Gerenciar Páginas › Estrutura, `src/components/EstruturaMenu.tsx`,
+  09/10/2026): árvore achatada com um só `SortableContext`; o deslocamento horizontal do arraste
+  decide o nível. Encaixes: seção só na raiz, pasta (`menu_subsessions`) só em seção, subpasta
+  (`menu_subsubsessions`) em seção ou pasta, página em qualquer um. Mover = `PUT` do item com o
+  pai novo + `POST /api/menu/reorder` dos irmãos do mesmo tipo. **Excluir é em cascata no banco**
+  (FK `ON DELETE CASCADE` em todas as tabelas `menu_*`): seção apagada leva pastas e páginas.
+  **Pasta dentro de pasta** = converter em subpasta (`POST /api/menu/subsessions/:id/virar-subpasta`,
+  `src/routes/menu-pasta-em-pasta.ts`): só pasta sem subpastas; numa transação, as páginas trocam
+  de pai ANTES do DELETE da pasta (senão o CASCADE as levaria). Dashboard de squad e
+  `ParceirosSquad` resolvem o squad pela pasta de 1º nível da página — converter uma pasta de
+  gestor muda o squad que essas telas enxergam.
+  **Ordem mista** (09/10/2026): dentro de cada seção/pasta, `order_index` é UMA sequência entre
+  páginas, subpastas e pastas (`src/lib/menuOrdem.ts`, usado pela Sidebar, pelo menu flutuante e
+  pela árvore; a API `/api/menu` passou a mandar `order_index`). Antes a Sidebar desenhava por
+  tipo e não dava para pôr uma subpasta acima de uma página. A base foi renumerada mantendo a
+  ordem da tela (backup `menu_*_backup_20261009_ordem`). Página criada entra com
+  `MAX(order_index)+1` da tabela inteira, ou seja, no fim do container.
 - **Uma página do menu ≠ um componente.** O menu vive na tabela `menu_pages` (montado pelo Jean
   na UI de admin) e cada linha aponta para um `template`. **Templates são reaproveitados**: hoje
   7 páginas usam `meeting-notes`, 4 usam `projects`, 4 `dashboard-head`, 3 `todo`/`todo-staff`/
@@ -516,6 +533,13 @@ Não há CI. O processo é manual e tem uma pegadinha:
   `form_submissions|project_forms|project_form_tokens_backup_20261006` (há também backups de
   demo de 16/09). Para apagar de vez, é só dropá-las. **Não confundir com `formulario`**: são os
   leads da captação da própria Grape, em uso (`server.ts`, ~4,2 mil linhas).
+
+- **Postagens IG** (página `postagens`, template `lista` → `ListaPage.tsx` + `PostagensUI.tsx`,
+  09/10/2026): calendário do mês na visão geral e quadro por etapa. A postagem é uma linha de
+  `onboarding_tasks` (`type = lista-postagens`) e reaproveita colunas: `produto` = **perfil**
+  (Jean | Grape, os dois Instagrams do cofre D-020), `entregavel` = **formato**, `due_date` = dia
+  de publicar. As anotações da página (`lista_page_settings.notes_html[_right]`) viraram a linha
+  editorial de cada perfil. Só essa página usa o template `lista`.
 
 - **Central de Treinamentos** (`src/pages/Cursos.tsx`, `src/routes/cursos.ts`): curso → módulos
   → aulas em vídeo, com progresso por colaborador. O progresso é gravado pelo **e-mail do

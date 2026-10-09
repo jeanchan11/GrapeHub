@@ -31,9 +31,7 @@ import Soldier from './icons/Soldier';
 import Squad from './icons/Squad';
 import ColorSelector from './ColorSelector';
 import { useMenu } from '../context/MenuContext';
-import { DndContext, closestCenter, rectIntersection, closestCorners, KeyboardSensor, PointerSensor, useSensor, useSensors, useDndContext, useDroppable } from '@dnd-kit/core';
-import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import EstruturaMenu from './EstruturaMenu';
 import { toast } from '@/src/lib/toast';
 
 const availableIcons = [
@@ -462,387 +460,16 @@ const templates = (() => {
   return [{ id: 'blank', label: 'Em Branco' }, ...list.sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'))];
 })();
 
-const SortablePage = ({ page, parentId, parentType, editingPage, editPageData, setEditPageData, setEditingPage, handleSaveEditPage, handleDeletePage, handleEditPage, menu }: any) => {
-  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ 
-    id: page.id,
-    data: { type: 'page', parentId: parentId, parentType: parentType }
-  });
-  const { over } = useDndContext();
-  const isOver = over?.id === page.id;
-  const style = { transform: CSS.Transform.toString(transform), transition };
-
-  return (
-    <div ref={setNodeRef} style={style} className={`flex items-center justify-between p-3 ${parentType === 'section' ? 'pl-6' : (parentType === 'subsession' ? 'pl-10' : 'pl-14')} hover:bg-white/5 transition-colors border-t border-white/5 bg-dark-card/40 ${isOver ? 'bg-violet-900/20' : ''}`}>
-      <div {...attributes} {...listeners} className="cursor-grab text-slate-400 hover:text-slate-600 mr-2">
-        <GripVertical size={16} />
-      </div>
-      {editingPage === page.id ? (
-        <div className="flex-1 flex flex-wrap items-center gap-3 pr-4 py-2">
-          <input type="text" value={editPageData.label} onChange={e => setEditPageData({...editPageData, label: e.target.value})} className="bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded px-2 py-1 text-sm text-light-text dark:text-white flex-1 min-w-[150px]" placeholder="Nome" />
-          <div className="w-40 shrink-0">
-            <IconSelector value={editPageData.icon} onChange={(icon) => setEditPageData({ ...editPageData, icon })} />
-          </div>
-          <div className="shrink-0">
-            <ColorSelector value={editPageData.icon_color} onChange={(icon_color) => setEditPageData({ ...editPageData, icon_color })} />
-          </div>
-          <OptionPicker
-            value={templates.find(t => t.id === editPageData.template)?.label || null}
-            options={templates.map(t => ({ label: t.label }))}
-            placeholder="Template"
-            onChange={(val) => {
-              const tId = templates.find(t => t.label === val)?.id || '';
-              setEditPageData({...editPageData, template: tId});
-            }}
-          />
-          <OptionPicker
-            value={(() => {
-              if (editPageData.section_id) {
-                const sec = Array.isArray(menu) && menu.find((s: any) => s.id === editPageData.section_id);
-                return sec ? `📁 ${sec.title} (direto na seção)` : null;
-              }
-              if (editPageData.subsubsession_id) {
-                for (const s of (Array.isArray(menu) ? menu : [])) {
-                  for (const ss of s.subSessions) {
-                    const sss = ss.subSubSessions?.find((x: any) => x.id === editPageData.subsubsession_id);
-                    if (sss) return `  ${s.title} > ${ss.label} > ${sss.label}`;
-                  }
-                }
-                return null;
-              }
-              if (editPageData.subsession_id) {
-                for (const s of (Array.isArray(menu) ? menu : [])) {
-                  const ss = s.subSessions.find((x: any) => x.id === editPageData.subsession_id);
-                  if (ss) return `${s.title} > ${ss.label}`;
-                }
-                return null;
-              }
-              return null;
-            })()}
-            options={(() => {
-              const opts: { label: string }[] = [];
-              if (Array.isArray(menu)) {
-                menu.forEach((s: any) => {
-                  opts.push({ label: `📁 ${s.title} (direto na seção)` });
-                  s.subSessions.forEach((ss: any) => {
-                    opts.push({ label: `${s.title} > ${ss.label}` });
-                    if (ss.subSubSessions) {
-                      ss.subSubSessions.forEach((sss: any) => {
-                        opts.push({ label: `  ${s.title} > ${ss.label} > ${sss.label}` });
-                      });
-                    }
-                  });
-                });
-              }
-              return opts;
-            })()}
-            placeholder="Selecione o destino..."
-            emptyLabel="Selecione o destino..."
-            onChange={(val) => {
-              if (!val) {
-                setEditPageData({...editPageData, section_id: null, subsubsession_id: null, subsession_id: null});
-                return;
-              }
-              if (Array.isArray(menu)) {
-                for (const s of menu) {
-                  if (val === `📁 ${s.title} (direto na seção)`) {
-                    setEditPageData({...editPageData, section_id: s.id, subsubsession_id: null, subsession_id: null});
-                    return;
-                  }
-                  for (const ss of s.subSessions) {
-                    if (val === `${s.title} > ${ss.label}`) {
-                      setEditPageData({...editPageData, section_id: null, subsubsession_id: null, subsession_id: ss.id});
-                      return;
-                    }
-                    if (ss.subSubSessions) {
-                      for (const sss of ss.subSubSessions) {
-                        if (val === `  ${s.title} > ${ss.label} > ${sss.label}`) {
-                          setEditPageData({...editPageData, section_id: null, subsubsession_id: sss.id, subsession_id: null});
-                          return;
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-              setEditPageData({...editPageData, section_id: null, subsubsession_id: null, subsession_id: null});
-            }}
-          />
-          <div className="flex items-center gap-2 shrink-0">
-            <button onClick={handleSaveEditPage} className="p-1.5 bg-emerald-500 text-white rounded hover:bg-emerald-600 flex items-center gap-1"><Save size={16} /> Salvar</button>
-            <button onClick={() => setEditingPage(null)} className="p-1.5 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded hover:bg-slate-300 dark:hover:bg-slate-600">Cancelar</button>
-          </div>
-        </div>
-      ) : (
-        <>
-          <div className="flex items-center gap-3">
-            {page.icon && React.createElement(availableIcons.find(i => i.name === page.icon)?.component || FileText, { size: 16, className: "text-slate-400", style: { color: page.icon_color } })}
-            <span className="text-sm font-medium text-slate-900 dark:text-white">{page.label}</span>
-            <span className="text-xs text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-white/5 px-2 py-0.5 rounded">ID: {page.id}</span>
-            <span className="text-xs text-violet-700 dark:text-violet-400 bg-violet-500/10 px-2 py-0.5 rounded">Template: {page.template}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <button onClick={(e) => { e.stopPropagation(); handleEditPage(page, parentId, parentType); }} className="p-2 text-blue-500 hover:bg-blue-500/10 rounded-lg transition-colors" title="Editar Página">
-              <Edit size={16} />
-            </button>
-            <button onClick={(e) => { e.stopPropagation(); handleDeletePage(page.id); }} className="p-2 text-rose-500 hover:bg-rose-500/10 rounded-lg transition-colors" title="Excluir Página">
-              <Trash2 size={16} />
-            </button>
-          </div>
-        </>
-      )}
-    </div>
-  );
-};
-
-const SortableSection = ({ section, editingSection, editSectionData, setEditSectionData, setEditingSection, handleSaveEditSection, handleDeleteSection, handleEditSection, children }: any) => {
-  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ 
-    id: section.id,
-    data: { type: 'section' }
-  });
-  const style = { transform: CSS.Transform.toString(transform), transition };
-
-  return (
-    <div ref={setNodeRef} style={style} className="border border-white/5 rounded-xl overflow-hidden">
-      <div className="bg-dark-card/40 p-3 font-bold text-sm text-slate-700 dark:text-slate-300 flex items-center justify-between">
-        {editingSection === section.id ? (
-          <div className="flex-1 flex flex-wrap items-center gap-3 pr-4 py-2">
-            <input type="text" value={editSectionData.title} onChange={e => setEditSectionData({...editSectionData, title: e.target.value})} className="bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded px-2 py-1 text-sm text-light-text dark:text-white flex-1 min-w-[150px]" placeholder="Título da Seção" />
-            <div className="w-40 shrink-0">
-              <IconSelector value={editSectionData.icon} onChange={(icon) => setEditSectionData({ ...editSectionData, icon })} />
-            </div>
-            <div className="shrink-0">
-              <ColorSelector value={editSectionData.icon_color} onChange={(icon_color) => setEditSectionData({ ...editSectionData, icon_color })} />
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <button onClick={handleSaveEditSection} className="p-1.5 bg-emerald-500 text-white rounded hover:bg-emerald-600 flex items-center gap-1"><Save size={16} /> Salvar</button>
-              <button onClick={() => setEditingSection(null)} className="p-1.5 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded hover:bg-slate-300 dark:hover:bg-slate-600">Cancelar</button>
-            </div>
-          </div>
-        ) : (
-          <>
-            <div className="flex items-center gap-2">
-              <div {...attributes} {...listeners} className="cursor-grab text-slate-400 hover:text-slate-600">
-                <GripVertical size={16} />
-              </div>
-              <span>{section.title}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button onClick={(e) => { e.stopPropagation(); handleEditSection(section); }} className="p-1.5 text-blue-500 hover:bg-blue-500/10 rounded transition-colors" title="Editar Seção"><Edit size={14} /></button>
-              <button onClick={(e) => { e.stopPropagation(); handleDeleteSection(section.id); }} className="p-1.5 text-rose-500 hover:bg-rose-500/10 rounded transition-colors" title="Excluir Seção"><Trash2 size={14} /></button>
-            </div>
-          </>
-        )}
-      </div>
-      {children}
-    </div>
-  );
-};
-
-const SortableSubSession = ({ sub, sectionId, editingSub, editSubData, setEditSubData, setEditingSub, handleSaveEditSub, handleDeleteSub, handleEditSub, children, menu, onMoveUp, onMoveDown, canMoveUp, canMoveDown }: any) => {
-  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ 
-    id: sub.id,
-    data: { type: 'subsession', parentId: sectionId }
-  });
-  const { setNodeRef: setDroppableRef, isOver: isContainerOver } = useDroppable({
-    id: `droppable_sub_${sub.id}`,
-    data: { type: 'subsession_container', subId: sub.id }
-  });
-  const { over } = useDndContext();
-  const isOver = over?.id === sub.id || isContainerOver;
-  const style = { transform: CSS.Transform.toString(transform), transition };
-
-  return (
-    <div ref={setDroppableRef} className={`border-t border-white/5 w-full ${isOver ? 'bg-violet-900/20' : ''}`}>
-      <div ref={setNodeRef} style={style} className="bg-dark-card/40 p-2 pl-6 text-sm font-medium text-slate-600 dark:text-slate-400 flex items-center justify-between w-full">
-        {editingSub === sub.id ? (
-          <div className="flex-1 flex flex-wrap items-center gap-3 pr-4 py-2">
-            <input type="text" value={editSubData.label} onChange={e => setEditSubData({...editSubData, label: e.target.value})} className="bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded px-2 py-1 text-sm text-light-text dark:text-white flex-1 min-w-[150px]" placeholder="Nome da Sub-seção" />
-            <div className="w-40 shrink-0">
-              <IconSelector value={editSubData.icon} onChange={(icon) => setEditSubData({ ...editSubData, icon })} />
-            </div>
-            <div className="shrink-0">
-              <ColorSelector value={editSubData.icon_color} onChange={(icon_color) => setEditSubData({ ...editSubData, icon_color })} />
-            </div>
-            <OptionPicker
-              value={(() => {
-                if (Array.isArray(menu)) {
-                  const sec = menu.find((s: any) => s.id === editSubData.section_id);
-                  if (sec) return sec.title;
-                }
-                return null;
-              })()}
-              options={Array.isArray(menu) ? menu.map((s: any) => ({ label: s.title })) : []}
-              placeholder="Seção pai"
-              onChange={(val) => {
-                const sec = Array.isArray(menu) && menu.find((s: any) => s.title === val);
-                setEditSubData({...editSubData, section_id: sec ? sec.id : ''});
-              }}
-            />
-            <div className="flex items-center gap-2 shrink-0">
-              <button onClick={handleSaveEditSub} className="p-1.5 bg-emerald-500 text-white rounded hover:bg-emerald-600 flex items-center gap-1"><Save size={16} /> Salvar</button>
-              <button onClick={() => setEditingSub(null)} className="p-1.5 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded hover:bg-slate-300 dark:hover:bg-slate-600">Cancelar</button>
-            </div>
-          </div>
-        ) : (
-          <>
-            <div className="flex items-center gap-2">
-              <div {...attributes} {...listeners} className="cursor-grab text-slate-400 hover:text-slate-600">
-                <GripVertical size={14} />
-              </div>
-              {sub.icon && React.createElement(availableIcons.find(i => i.name === sub.icon)?.component || Folder, { size: 14, className: "text-slate-600 dark:text-slate-400" })}
-              <span className="text-slate-800 dark:text-slate-300">└ {sub.label}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button onClick={(e) => { e.stopPropagation(); onMoveUp && onMoveUp(); }} disabled={!canMoveUp} className="p-1.5 text-slate-400 hover:text-violet-500 hover:bg-violet-500/10 rounded transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed" title="Subir"><ArrowUp size={14} /></button>
-              <button onClick={(e) => { e.stopPropagation(); onMoveDown && onMoveDown(); }} disabled={!canMoveDown} className="p-1.5 text-slate-400 hover:text-violet-500 hover:bg-violet-500/10 rounded transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed" title="Descer"><ArrowDown size={14} /></button>
-              <button onClick={(e) => { e.stopPropagation(); handleEditSub(sub, sectionId); }} className="p-1.5 text-blue-500 hover:bg-blue-500/10 rounded transition-colors" title="Editar Sub-seção"><Edit size={14} /></button>
-              <button onClick={(e) => { e.stopPropagation(); handleDeleteSub(sub.id); }} className="p-1.5 text-rose-500 hover:bg-rose-500/10 rounded transition-colors" title="Excluir Sub-seção"><Trash2 size={14} /></button>
-            </div>
-          </>
-        )}
-      </div>
-      {children}
-    </div>
-  );
-};
-
-const SortableSubSubSession = ({ subsub, subId, editingSubsub, editSubsubData, setEditSubsubData, setEditingSubsub, handleSaveEditSubsub, handleDeleteSubsub, handleEditSubsub, children, menu, onMoveUp, onMoveDown, canMoveUp, canMoveDown }: any) => {
-  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ 
-    id: subsub.id,
-    data: { type: 'subsubsession', parentId: subId }
-  });
-  const { setNodeRef: setDroppableRef, isOver: isContainerOver } = useDroppable({
-    id: `droppable_subsub_${subsub.id}`,
-    data: { type: 'subsubsession_container', subsubId: subsub.id }
-  });
-  const { over } = useDndContext();
-  const isOver = over?.id === subsub.id || isContainerOver;
-  const style = { transform: CSS.Transform.toString(transform), transition };
-
-  return (
-    <div ref={setDroppableRef} className={`w-full ${isOver ? 'bg-violet-100 dark:bg-violet-900/20' : ''}`}>
-      <div ref={setNodeRef} style={style} className="p-2 pl-10 text-xs font-medium text-slate-700 dark:text-slate-400 flex items-center justify-between border-t border-slate-100 dark:border-white/5 w-full">
-        {editingSubsub === subsub.id ? (
-          <div className="flex-1 flex flex-wrap items-center gap-3 pr-4 py-2">
-            <input type="text" value={editSubsubData.label} onChange={e => setEditSubsubData({...editSubsubData, label: e.target.value})} className="bg-white dark:bg-dark-input border border-slate-200 dark:border-white/10 rounded px-2 py-1 text-sm text-light-text dark:text-white flex-1 min-w-[150px]" placeholder="Nome da Sub-sub-seção" />
-            <div className="w-40 shrink-0">
-              <IconSelector value={editSubsubData.icon} onChange={(icon) => setEditSubsubData({ ...editSubsubData, icon })} />
-            </div>
-            <div className="shrink-0">
-              <ColorSelector value={editSubsubData.icon_color} onChange={(icon_color) => setEditSubsubData({ ...editSubsubData, icon_color })} />
-            </div>
-            <OptionPicker
-              value={(() => {
-                if (editSubsubData.subsession_id) {
-                  for (const s of (Array.isArray(menu) ? menu : [])) {
-                    const ss = s.subSessions.find((x: any) => x.id === editSubsubData.subsession_id);
-                    if (ss) return `${s.title} > ${ss.label}`;
-                  }
-                  return null;
-                }
-                if (editSubsubData.section_id) {
-                  const sec = Array.isArray(menu) && menu.find((s: any) => s.id === editSubsubData.section_id);
-                  return sec ? `📁 ${sec.title} (direto na seção)` : null;
-                }
-                return null;
-              })()}
-              options={(() => {
-                const opts: { label: string }[] = [];
-                if (Array.isArray(menu)) {
-                  menu.forEach((s: any) => {
-                    opts.push({ label: `📁 ${s.title} (direto na seção)` });
-                    s.subSessions.forEach((ss: any) => {
-                      opts.push({ label: `${s.title} > ${ss.label}` });
-                    });
-                  });
-                }
-                return opts;
-              })()}
-              placeholder="Selecione o pai..."
-              emptyLabel="Selecione o pai..."
-              onChange={(val) => {
-                if (!val) {
-                  setEditSubsubData({...editSubsubData, section_id: '', subsession_id: ''});
-                  return;
-                }
-                if (Array.isArray(menu)) {
-                  for (const s of menu) {
-                    if (val === `📁 ${s.title} (direto na seção)`) {
-                      setEditSubsubData({...editSubsubData, section_id: s.id, subsession_id: ''});
-                      return;
-                    }
-                    for (const ss of s.subSessions) {
-                      if (val === `${s.title} > ${ss.label}`) {
-                        setEditSubsubData({...editSubsubData, subsession_id: ss.id, section_id: ''});
-                        return;
-                      }
-                    }
-                  }
-                }
-                setEditSubsubData({...editSubsubData, section_id: '', subsession_id: ''});
-              }}
-            />
-            <div className="flex items-center gap-2 shrink-0">
-              <button onClick={handleSaveEditSubsub} className="p-1.5 bg-emerald-500 text-white rounded hover:bg-emerald-600 flex items-center gap-1"><Save size={16} /> Salvar</button>
-              <button onClick={() => setEditingSubsub(null)} className="p-1.5 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded hover:bg-slate-300 dark:hover:bg-slate-600">Cancelar</button>
-            </div>
-          </div>
-        ) : (
-          <>
-            <div className="flex items-center gap-2">
-              <div {...attributes} {...listeners} className="cursor-grab text-slate-400 hover:text-slate-600">
-                <GripVertical size={12} />
-              </div>
-              {subsub.icon && React.createElement(availableIcons.find(i => i.name === subsub.icon)?.component || FolderOpen, { size: 12, className: "text-slate-600 dark:text-slate-400" })}
-              <span className="text-slate-800 dark:text-slate-300">└ {subsub.label}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button onClick={(e) => { e.stopPropagation(); onMoveUp && onMoveUp(); }} disabled={!canMoveUp} className="p-1.5 text-slate-400 hover:text-violet-500 hover:bg-violet-500/10 rounded transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed" title="Subir"><ArrowUp size={14} /></button>
-              <button onClick={(e) => { e.stopPropagation(); onMoveDown && onMoveDown(); }} disabled={!canMoveDown} className="p-1.5 text-slate-400 hover:text-violet-500 hover:bg-violet-500/10 rounded transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed" title="Descer"><ArrowDown size={14} /></button>
-              <button onClick={(e) => { e.stopPropagation(); handleEditSubsub(subsub, subId, 'subsession'); }} className="p-1.5 text-blue-500 hover:bg-blue-500/10 rounded transition-colors" title="Editar Sub-sub-seção"><Edit size={14} /></button>
-              <button onClick={(e) => { e.stopPropagation(); handleDeleteSubsub(subsub.id); }} className="p-1.5 text-rose-500 hover:bg-rose-500/10 rounded transition-colors" title="Excluir Sub-sub-seção"><Trash2 size={14} /></button>
-            </div>
-          </>
-        )}
-      </div>
-      {children}
-    </div>
-  );
-};
-
 export const PageManager: React.FC = () => {
   const { menu, setMenu, refreshMenu } = useMenu();
-  const [activeTab, setActiveTab] = useState<'create-page' | 'create-section' | 'create-sub' | 'create-subsub' | 'manage'>('create-page');
+  const [activeTab, setActiveTab] = useState<'create-page' | 'create-section' | 'create-sub' | 'create-subsub' | 'manage'>('manage');
   const [isAdding, setIsAdding] = useState(false);
-  
-  const activeOriginalParentId = useRef<string | null>(null);
-  // Track cross-container move separately without mutating dnd-kit's data
-  const crossContainerMove = useRef<{ newParentId: string; parentType: string } | null>(null);
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 8,
-      },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
   
   // Form states
   const [pageData, setPageData] = useState({ id: '', label: '', icon: 'FileText', icon_color: '#64748b', template: 'blank', subsubsession_id: '', subsession_id: '', section_id: '' });
   const [sectionData, setSectionData] = useState({ id: '', title: '', icon: 'Folder', icon_color: '#64748b' });
   const [subData, setSubData] = useState({ id: '', section_id: '', label: '', icon: 'Folder', icon_color: '#64748b' });
   const [subsubData, setSubsubData] = useState({ id: '', subsession_id: '', section_id: '', label: '', icon: 'FolderOpen', icon_color: '#64748b' });
-
-  const [confirmDialog, setConfirmDialog] = useState<{ isOpen: boolean, message: string } | null>(null);
-  const onConfirmRef = useRef<() => void>(() => {});
-
-  const confirmAction = (message: string, onConfirm: () => void) => {
-    onConfirmRef.current = onConfirm;
-    setConfirmDialog({ isOpen: true, message });
-  };
 
   const handleCreatePage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -885,11 +512,11 @@ export const PageManager: React.FC = () => {
     try {
       const res = await fetch('/api/menu/subsessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(subData) });
       if (res.ok) {
-        toast.success('Sub-seção criada com sucesso!');
+        toast.success('Pasta criada.');
         await refreshMenu();
         setSubData({ id: '', section_id: '', label: '', icon: 'Folder', icon_color: '#64748b' });
-      } else toast.error('Erro ao criar sub-seção.');
-    } catch (err) { console.error(err); toast.error('Erro ao criar sub-seção.'); } finally { setIsAdding(false); }
+      } else toast.error('Erro ao criar pasta.');
+    } catch (err) { console.error(err); toast.error('Erro ao criar pasta.'); } finally { setIsAdding(false); }
   };
 
   const handleCreateSubsub = async (e: React.FormEvent) => {
@@ -899,600 +526,37 @@ export const PageManager: React.FC = () => {
     try {
       const res = await fetch('/api/menu/subsubsessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(subsubData) });
       if (res.ok) {
-        toast.success('Sub-sub-seção criada com sucesso!');
+        toast.success('Subpasta criada.');
         await refreshMenu();
         setSubsubData({ id: '', subsession_id: '', section_id: '', label: '', icon: 'FolderOpen', icon_color: '#64748b' });
-      } else toast.error('Erro ao criar sub-sub-seção.');
-    } catch (err) { console.error(err); toast.error('Erro ao criar sub-sub-seção.'); } finally { setIsAdding(false); }
-  };
-
-  const [editingPage, setEditingPage] = useState<string | null>(null);
-  const [editPageData, setEditPageData] = useState({ id: '', label: '', icon: '', icon_color: '#64748b', template: '', subsubsession_id: '', subsession_id: '', section_id: '' });
-
-  const [editingSection, setEditingSection] = useState<string | null>(null);
-  const [editSectionData, setEditSectionData] = useState({ id: '', title: '', icon: 'Folder', icon_color: '#64748b' });
-
-  const [editingSub, setEditingSub] = useState<string | null>(null);
-  const [editSubData, setEditSubData] = useState({ id: '', section_id: '', label: '', icon: '', icon_color: '#64748b' });
-
-  const [editingSubsub, setEditingSubsub] = useState<string | null>(null);
-  const [editSubsubData, setEditSubsubData] = useState({ id: '', subsession_id: '', section_id: '', label: '', icon: '', icon_color: '#64748b' });
-
-  const handleEditPage = (page: any, parentId: string, parentType: 'section' | 'subsession' | 'subsubsession') => {
-    setEditingPage(page.id);
-    setEditPageData({
-      id: page.id,
-      label: page.label,
-      icon: page.icon,
-      icon_color: page.icon_color || '#64748b',
-      template: page.template || 'blank',
-      subsubsession_id: parentType === 'subsubsession' ? parentId : '',
-      subsession_id: parentType === 'subsession' ? parentId : '',
-      section_id: parentType === 'section' ? parentId : ''
-    });
-  };
-
-  const handleSaveEditPage = async () => {
-    if (!editPageData.label || (!editPageData.subsubsession_id && !editPageData.subsession_id && !editPageData.section_id)) return toast.error('Preencha os campos obrigatórios.');
-    
-    // Ensure foreign key integrity
-    const payload = {
-        id: editPageData.id,
-        label: editPageData.label,
-        icon: editPageData.icon,
-        icon_color: editPageData.icon_color,
-        template: editPageData.template,
-        subsubsession_id: editPageData.subsubsession_id || null,
-        subsession_id: editPageData.subsession_id || null,
-        section_id: editPageData.section_id || null
-    };
-    console.log('Saving page payload:', payload);
-
-    try {
-      const res = await fetch(`/api/menu/pages/${editPageData.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      console.log('Save response status:', res.status);
-      if (res.ok) {
-        toast.success('Página atualizada!');
-        await refreshMenu();
-        setEditingPage(null);
-      } else {
-        const errorText = await res.text();
-        console.error('Save error:', errorText);
-        toast.error(`Erro ao atualizar página: ${errorText}`);
-      }
-    } catch (err) { console.error(err); toast.error('Erro ao atualizar página.'); }
-  };
-
-  const handleDeletePage = async (id: string) => {
-    confirmAction('Tem certeza que deseja excluir esta página?', async () => {
-      try {
-        const res = await fetch(`/api/menu/pages/${id}`, { method: 'DELETE' });
-        if (res.ok) {
-          await refreshMenu();
-        } else {
-          const errorText = await res.text();
-          console.error('Delete error:', errorText);
-          toast.error(`Erro ao excluir página: ${errorText}`);
-        }
-      } catch (err) { console.error('Delete exception:', err); toast.error('Erro ao excluir página.'); }
-    });
-  };
-
-  const handleEditSection = (section: any) => {
-    setEditingSection(section.id);
-    setEditSectionData({ id: section.id, title: section.title, icon: section.icon || 'Folder', icon_color: section.icon_color || '#64748b' });
-  };
-
-  const handleSaveEditSection = async () => {
-    if (!editSectionData.title) return toast.error('Preencha os campos obrigatórios.');
-    try {
-      const res = await fetch(`/api/menu/sections/${editSectionData.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editSectionData)
-      });
-      if (res.ok) {
-        toast.success('Seção atualizada!');
-        await refreshMenu();
-        setEditingSection(null);
-      } else toast.error('Erro ao atualizar seção.');
-    } catch (err) { console.error(err); toast.error('Erro ao atualizar seção.'); }
-  };
-
-  const handleDeleteSection = async (id: string) => {
-    confirmAction('Tem certeza que deseja excluir esta seção? Todas as sub-seções e páginas dentro dela também serão excluídas.', async () => {
-      try {
-        const res = await fetch(`/api/menu/sections/${id}`, { method: 'DELETE' });
-        if (res.ok) {
-          await refreshMenu();
-        } else toast.error('Erro ao excluir seção.');
-      } catch (err) { console.error(err); toast.error('Erro ao excluir seção.'); }
-    });
-  };
-
-  const handleEditSub = (sub: any, sectionId: string) => {
-    setEditingSub(sub.id);
-    setEditSubData({ id: sub.id, section_id: sectionId, label: sub.label, icon: sub.icon || 'Folder', icon_color: sub.icon_color || '#64748b' });
-  };
-
-  const handleSaveEditSub = async () => {
-    if (!editSubData.label || !editSubData.section_id) return toast.error('Preencha os campos obrigatórios.');
-    try {
-      const res = await fetch(`/api/menu/subsessions/${editSubData.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editSubData)
-      });
-      if (res.ok) {
-        toast.success('Sub-seção atualizada!');
-        await refreshMenu();
-        setEditingSub(null);
-      } else toast.error('Erro ao atualizar sub-seção.');
-    } catch (err) { console.error(err); toast.error('Erro ao atualizar sub-seção.'); }
-  };
-
-  const handleDeleteSub = async (id: string) => {
-    confirmAction('Tem certeza que deseja excluir esta sub-seção? Todas as páginas dentro dela também serão excluídas.', async () => {
-      try {
-        const res = await fetch(`/api/menu/subsessions/${id}`, { method: 'DELETE' });
-        if (res.ok) {
-          await refreshMenu();
-        } else toast.error('Erro ao excluir sub-seção.');
-      } catch (err) { console.error(err); toast.error('Erro ao excluir sub-seção.'); }
-    });
-  };
-
-  const handleEditSubsub = (subsub: any, parentId: string, parentType: 'subsession' | 'section') => {
-    setEditingSubsub(subsub.id);
-    setEditSubsubData({
-      id: subsub.id,
-      subsession_id: parentType === 'subsession' ? parentId : '',
-      section_id: parentType === 'section' ? parentId : '',
-      label: subsub.label,
-      icon: subsub.icon || 'FolderOpen',
-      icon_color: subsub.icon_color || '#64748b'
-    });
-  };
-
-  const handleSaveEditSubsub = async () => {
-    if (!editSubsubData.label || (!editSubsubData.subsession_id && !editSubsubData.section_id)) return toast.error('Preencha os campos obrigatórios.');
-    try {
-      const res = await fetch(`/api/menu/subsubsessions/${editSubsubData.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...editSubsubData,
-          subsession_id: editSubsubData.subsession_id || null,
-          section_id: editSubsubData.section_id || null,
-        })
-      });
-      if (res.ok) {
-        toast.success('Sub-sub-seção atualizada!');
-        await refreshMenu();
-        setEditingSubsub(null);
-      } else toast.error('Erro ao atualizar sub-sub-seção.');
-    } catch (err) { console.error(err); toast.error('Erro ao atualizar sub-sub-seção.'); }
-  };
-
-  const handleDeleteSubsub = async (id: string) => {
-    confirmAction('Tem certeza que deseja excluir esta sub-sub-seção? Todas as páginas dentro dela também serão excluídas.', async () => {
-      try {
-        const res = await fetch(`/api/menu/subsubsessions/${id}`, { method: 'DELETE' });
-        if (res.ok) {
-          await refreshMenu();
-        } else toast.error('Erro ao excluir sub-sub-seção.');
-      } catch (err) { console.error(err); toast.error('Erro ao excluir sub-sub-seção.'); }
-    });
-  };
-
-  const handleReorder = async (type: string, items: any[], oldIndex: number, newIndex: number, parentId: string | null = null) => {
-    if (oldIndex === newIndex) return;
-    const newItems = arrayMove(items, oldIndex, newIndex);
-
-    // Optimistic UI update
-    const updateMenu = (currentMenu: any[]): any[] => {
-      if (type === 'section') return newItems;
-
-      return currentMenu.map(section => {
-        if (type === 'subsession' && section.id === parentId) {
-          return { ...section, subSessions: newItems };
-        }
-        if (type === 'subsubsession' && section.id === parentId) {
-          return { ...section, subSubSessions: newItems };
-        }
-        if (type === 'page_in_section' && section.id === parentId) {
-          return { ...section, pages: newItems };
-        }
-
-        const updatedSubSessions = section.subSessions?.map((sub: any) => {
-          if (type === 'subsubsession' && sub.id === parentId) {
-            return { ...sub, subSubSessions: newItems };
-          }
-          if (type === 'page' && sub.id === parentId) {
-            return { ...sub, pages: newItems };
-          }
-
-          const updatedSubSubSessions = sub.subSubSessions?.map((subsub: any) => {
-            if (type === 'page' && subsub.id === parentId) {
-              return { ...subsub, pages: newItems };
-            }
-            return subsub;
-          });
-
-          return { ...sub, subSubSessions: updatedSubSubSessions ?? sub.subSubSessions };
-        });
-
-        return { ...section, subSessions: updatedSubSessions ?? section.subSessions };
-      });
-    };
-
-    setMenu(updateMenu(menu));
-
-    const updates = newItems.map((item: any, i: number) => ({ id: item.id, order_index: i }));
-
-    let apiType = '';
-    if (type === 'section') apiType = 'sections';
-    else if (type === 'subsession') apiType = 'subsessions';
-    else if (type === 'subsubsession') apiType = 'subsubsessions';
-    else if (type === 'page' || type === 'page_in_section') apiType = 'pages';
-
-    try {
-      const res = await fetch('/api/menu/reorder', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: apiType, items: updates })
-      });
-      if (!res.ok) {
-        toast.error('Erro ao reordenar. Recarregando...');
-        await refreshMenu();
-      }
-    } catch (err) {
-      console.error(err);
-      toast.error('Erro ao reordenar. Recarregando...');
-      await refreshMenu();
-    }
-  };
-
-  const findPage = (menu: any[], pageId: string): any => {
-    for (const section of menu) {
-      if (section.pages) {
-        const page = section.pages.find((p: any) => p.id === pageId);
-        if (page) return page;
-      }
-      if (section.subSubSessions) {
-        for (const subsub of section.subSubSessions) {
-          if (subsub.pages) {
-            const page = subsub.pages.find((p: any) => p.id === pageId);
-            if (page) return page;
-          }
-        }
-      }
-      if (section.subSessions) {
-        for (const sub of section.subSessions) {
-          if (sub.subSubSessions) {
-            for (const subsub of sub.subSubSessions) {
-              if (subsub.pages) {
-                const page = subsub.pages.find((p: any) => p.id === pageId);
-                if (page) return page;
-              }
-            }
-          }
-          if (sub.pages) {
-            const page = sub.pages.find((p: any) => p.id === pageId);
-            if (page) return page;
-          }
-        }
-      }
-    }
-    return null;
-  };
-
-  const handleMovePage = async (pageId: string, newParentId: string, parentType: string) => {
-    const page = findPage(menu, pageId);
-    if (!page) return false;
-
-    try {
-      const payload = {
-        ...page,
-        subsubsession_id: parentType === 'subsubsession' ? newParentId : null,
-        subsession_id: parentType === 'subsession' ? newParentId : null,
-        section_id: parentType === 'section' ? newParentId : null
-      };
-      
-      const res = await fetch(`/api/menu/pages/${pageId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      if (res.ok) {
-        return true;
-      } else {
-        toast.error('Erro ao mover página.');
-        return false;
-      }
-    } catch (err) { 
-      console.error(err); 
-      toast.error('Erro ao mover página.'); 
-      return false;
-    }
-  };
-
-  const onDragStart = (event: any) => {
-    activeOriginalParentId.current = event.active.data.current?.parentId || null;
-    crossContainerMove.current = null;
-  };
-
-  const onDragOver = (event: any) => {
-    const { active, over } = event;
-    if (!over) return;
-
-    const activeData = active.data.current;
-    const overData = over.data.current;
-    if (!activeData || !overData) return;
-    if (activeData.type !== 'page') return;
-
-    const activeContainerId = activeData.parentId;
-    let overContainerId: string | null = null;
-    let overParentType = 'section';
-
-    if (overData.type === 'page') {
-      overContainerId = overData.parentId;
-      overParentType = overData.parentType;
-    } else if (overData.type === 'subsession_container') {
-      overContainerId = overData.subId;
-      overParentType = 'subsession';
-    } else if (overData.type === 'subsubsession_container') {
-      overContainerId = overData.subsubId;
-      overParentType = 'subsubsession';
-    } else if (overData.type === 'section_container') {
-      overContainerId = overData.sectionId;
-      overParentType = 'section';
-    } else {
-      return;
-    }
-
-    if (!overContainerId || activeContainerId === overContainerId) return;
-
-    // Track cross-container move without mutating dnd-kit data
-    crossContainerMove.current = { newParentId: overContainerId, parentType: overParentType };
-
-    setMenu((prevMenu: any[]) => {
-      const newMenu = JSON.parse(JSON.stringify(prevMenu));
-      let activePage: any = null;
-
-      // Find and remove from source
-      for (const section of newMenu) {
-        if (section.pages && activeContainerId === section.id) {
-          const idx = section.pages.findIndex((p: any) => p.id === active.id);
-          if (idx !== -1) { activePage = section.pages.splice(idx, 1)[0]; break; }
-        }
-        for (const subsub of (section.subSubSessions || [])) {
-          if (subsub.id === activeContainerId && subsub.pages) {
-            const idx = subsub.pages.findIndex((p: any) => p.id === active.id);
-            if (idx !== -1) { activePage = subsub.pages.splice(idx, 1)[0]; break; }
-          }
-        }
-        if (activePage) break;
-        for (const sub of (section.subSessions || [])) {
-          if (sub.id === activeContainerId && sub.pages) {
-            const idx = sub.pages.findIndex((p: any) => p.id === active.id);
-            if (idx !== -1) { activePage = sub.pages.splice(idx, 1)[0]; break; }
-          }
-          for (const subsub of (sub.subSubSessions || [])) {
-            if (subsub.id === activeContainerId && subsub.pages) {
-              const idx = subsub.pages.findIndex((p: any) => p.id === active.id);
-              if (idx !== -1) { activePage = subsub.pages.splice(idx, 1)[0]; break; }
-            }
-          }
-          if (activePage) break;
-        }
-        if (activePage) break;
-      }
-
-      if (!activePage) return prevMenu;
-
-      // Insert into target
-      for (const section of newMenu) {
-        if (section.id === overContainerId && overParentType === 'section') {
-          // If moving directly into section (rarely used via droppable zone, but good to have)
-          section.pages = section.pages || [];
-          const overIdx = overData.type === 'page' ? section.pages.findIndex((p: any) => p.id === over.id) : -1;
-          section.pages.splice(overIdx >= 0 ? overIdx : section.pages.length, 0, activePage);
-          return newMenu;
-        }
-        for (const subsub of (section.subSubSessions || [])) {
-          if (subsub.id === overContainerId) {
-            subsub.pages = subsub.pages || [];
-            const overIdx = overData.type === 'page' ? subsub.pages.findIndex((p: any) => p.id === over.id) : -1;
-            subsub.pages.splice(overIdx >= 0 ? overIdx : subsub.pages.length, 0, activePage);
-            return newMenu;
-          }
-        }
-        for (const sub of (section.subSessions || [])) {
-          if (sub.id === overContainerId) {
-            sub.pages = sub.pages || [];
-            const overIdx = overData.type === 'page' ? sub.pages.findIndex((p: any) => p.id === over.id) : -1;
-            sub.pages.splice(overIdx >= 0 ? overIdx : sub.pages.length, 0, activePage);
-            return newMenu;
-          }
-          for (const subsub of (sub.subSubSessions || [])) {
-            if (subsub.id === overContainerId) {
-              subsub.pages = subsub.pages || [];
-              const overIdx = overData.type === 'page' ? subsub.pages.findIndex((p: any) => p.id === over.id) : -1;
-              subsub.pages.splice(overIdx >= 0 ? overIdx : subsub.pages.length, 0, activePage);
-              return newMenu;
-            }
-          }
-        }
-      }
-      return newMenu;
-    });
-  };
-
-  const onDragEnd = async (event: any) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) {
-      crossContainerMove.current = null;
-      return;
-    }
-
-    const activeData = active.data.current;
-    const overData = over.data.current;
-    if (!activeData || !overData) return;
-
-    // --- Handle cross-container page move ---
-    if (activeData.type === 'page' && crossContainerMove.current) {
-      const { newParentId, parentType } = crossContainerMove.current;
-      crossContainerMove.current = null;
-      await handleMovePage(active.id, newParentId, parentType);
-      // The UI was already updated optimistically in onDragOver — reorder within new list
-      const currentMenu = menu;
-      let newParentItems: any[] = [];
-      for (const section of currentMenu) {
-        if (section.id === newParentId && parentType === 'section') { newParentItems = section.pages || []; break; }
-        for (const subsub of (section.subSubSessions || [])) {
-          if (subsub.id === newParentId) { newParentItems = subsub.pages || []; break; }
-        }
-        if (newParentItems.length) break;
-        
-        for (const sub of (section.subSessions || [])) {
-          if (sub.id === newParentId) { newParentItems = sub.pages || []; break; }
-          for (const subsub of (sub.subSubSessions || [])) {
-            if (subsub.id === newParentId) { newParentItems = subsub.pages || []; break; }
-          }
-          if (newParentItems.length) break;
-        }
-        if (newParentItems.length) break;
-      }
-      if (newParentItems.length > 1) {
-        const oldIdx = newParentItems.findIndex((p: any) => p.id === active.id);
-        const newIdx = newParentItems.findIndex((p: any) => p.id === over.id);
-        if (oldIdx !== -1 && newIdx !== -1 && oldIdx !== newIdx) {
-          await handleReorder('page', newParentItems, oldIdx, newIdx, newParentId);
-        } else {
-          await handleReorder('page', newParentItems, 0, 0, newParentId);
-        }
-      }
-      return;
-    }
-    crossContainerMove.current = null;
-
-    // --- Find the items list for this type ---
-    let items: any[] = [];
-    let reorderType = activeData.type;
-    let targetId: string = over.id; // sibling id to drop next to (resolved for container types)
-    const parentId: string = activeData.parentId;
-
-    // Resolve which direct child (subsession/subsubsession) a drop landed on/inside,
-    // so a container can be reordered even when the cursor is over one of its pages.
-    const resolveSiblingId = (siblings: any[]): string | null => {
-      const overId = over.id;
-      for (const sib of (siblings || [])) {
-        if (sib.id === overId) return sib.id;
-        if (overData.type === 'subsession_container' && overData.subId === sib.id) return sib.id;
-        if (overData.type === 'subsubsession_container' && overData.subsubId === sib.id) return sib.id;
-        if ((sib.pages || []).some((p: any) => p.id === overId)) return sib.id;
-        for (const ss of (sib.subSubSessions || [])) {
-          if (ss.id === overId) return sib.id;
-          if (overData.type === 'subsubsession_container' && overData.subsubId === ss.id) return sib.id;
-          if ((ss.pages || []).some((p: any) => p.id === overId)) return sib.id;
-        }
-      }
-      return null;
-    };
-
-    if (activeData.type === 'section') {
-      // When dragging sections, the cursor often lands over a child (subsession/page)
-      // We need to find which section the over.id belongs to
-      items = Array.isArray(menu) ? [...menu] : [];
-      // Find what section contains over.id (could be a section itself, or a child)
-      const overIsDirectSection = items.some((s: any) => s.id === over.id);
-      if (!overIsDirectSection) {
-        // Find the section containing the over item and use it as the drop target
-        let overSectionId: string | null = null;
-        for (const section of items) {
-          if (section.pages?.some((p: any) => p.id === over.id)) { overSectionId = section.id; break; }
-          if (section.subSubSessions?.some((sss: any) => sss.id === over.id || sss.pages?.some((p: any) => p.id === over.id))) { overSectionId = section.id; break; }
-          for (const sub of (section.subSessions || [])) {
-            if (sub.id === over.id || sub.pages?.some((p: any) => p.id === over.id)) { overSectionId = section.id; break; }
-            if (sub.subSubSessions?.some((sss: any) => sss.id === over.id || sss.pages?.some((p: any) => p.id === over.id))) { overSectionId = section.id; break; }
-          }
-          if (overSectionId) break;
-        }
-        if (!overSectionId) return; // couldn't resolve, bail
-        const oldIndex = items.findIndex((s: any) => s.id === active.id);
-        const newIndex = items.findIndex((s: any) => s.id === overSectionId);
-        if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
-        await handleReorder('section', items, oldIndex, newIndex, null);
-        return;
-      }
-    } else if (activeData.type === 'subsession') {
-      const section = (menu as any[]).find((s: any) => s.id === parentId);
-      if (!section) return;
-      items = [...(section.subSessions || [])];
-      const resolved = resolveSiblingId(items);
-      if (!resolved) return; // dropped outside this section — ignore
-      targetId = resolved;
-    } else if (activeData.type === 'subsubsession') {
-      // parent may be a section (section-level) or a subsession
-      let parent: any = null;
-      for (const section of (menu as any[])) {
-        if (section.id === parentId) { parent = section; break; }
-        const sub = (section.subSessions || []).find((s: any) => s.id === parentId);
-        if (sub) { parent = sub; break; }
-      }
-      if (!parent) return;
-      items = [...(parent.subSubSessions || [])];
-      const resolved = resolveSiblingId(items);
-      if (!resolved) return;
-      targetId = resolved;
-    } else if (activeData.type === 'page') {
-      for (const section of (menu as any[])) {
-        // section-level pages
-        if (section.id === parentId && section.pages) {
-          items = [...section.pages];
-          reorderType = 'page_in_section';
-          break;
-        }
-        for (const sub of (section.subSessions || [])) {
-          if (sub.id === parentId) { items = [...(sub.pages || [])]; break; }
-          for (const subsub of (sub.subSubSessions || [])) {
-            if (subsub.id === parentId) { items = [...(subsub.pages || [])]; break; }
-          }
-          if (items.length) break;
-        }
-        if (items.length) break;
-      }
-    }
-
-    if (!items.length) return;
-
-    const oldIndex = items.findIndex((i: any) => i.id === active.id);
-    const newIndex = items.findIndex((i: any) => i.id === targetId);
-    if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
-
-    await handleReorder(reorderType, items, oldIndex, newIndex, parentId || null);
+      } else toast.error('Erro ao criar subpasta.');
+    } catch (err) { console.error(err); toast.error('Erro ao criar subpasta.'); } finally { setIsAdding(false); }
   };
 
   return (
     <div className="bg-dark-card/60 backdrop-blur-md rounded-3xl border border-white/10 shadow-xl p-6">
-      <div className="flex flex-wrap gap-2 mb-6 border-b border-slate-200 dark:border-white/10 pb-4">
-        <button onClick={() => setActiveTab('create-page')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'create-page' ? 'bg-violet-500/10 text-violet-600 dark:text-violet-400' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5'}`}>Criar Página</button>
-        <button onClick={() => setActiveTab('create-section')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'create-section' ? 'bg-violet-500/10 text-violet-600 dark:text-violet-400' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5'}`}>Criar Seção</button>
-        <button onClick={() => setActiveTab('create-sub')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'create-sub' ? 'bg-violet-500/10 text-violet-600 dark:text-violet-400' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5'}`}>Criar Sub-seção</button>
-        <button onClick={() => setActiveTab('create-subsub')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'create-subsub' ? 'bg-violet-500/10 text-violet-600 dark:text-violet-400' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5'}`}>Criar Sub-sub-seção</button>
-        <button onClick={() => setActiveTab('manage')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'manage' ? 'bg-violet-500/10 text-violet-600 dark:text-violet-400' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5'}`}>Gerenciar Páginas</button>
+      <div className="flex flex-wrap items-center gap-1 mb-6 p-1 w-fit max-w-full overflow-x-auto rounded-xl bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/5">
+        {([
+          ['manage', 'Estrutura'],
+          ['create-page', 'Nova página'],
+          ['create-section', 'Nova seção'],
+          ['create-sub', 'Nova pasta'],
+          ['create-subsub', 'Nova subpasta'],
+        ] as const).map(([id, rotulo]) => (
+          <button key={id} onClick={() => setActiveTab(id)}
+            className={`h-9 px-4 rounded-lg text-sm font-semibold transition-colors whitespace-nowrap ${
+              activeTab === id ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
+            }`}>
+            {rotulo}
+          </button>
+        ))}
       </div>
 
       {activeTab === 'create-page' && (
         <form onSubmit={handleCreatePage} className="space-y-6 max-w-2xl">
           <div className="flex items-center gap-3 mb-6">
             <FileText className="text-violet-500" size={24} />
-            <h3 className="text-xl font-bold text-light-text dark:text-white">Criar Nova Página</h3>
+            <h3 className="text-xl font-bold text-light-text dark:text-white">Nova página</h3>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
@@ -1524,7 +588,7 @@ export const PageManager: React.FC = () => {
               <ColorSelector value={pageData.icon_color} onChange={(icon_color) => setPageData({ ...pageData, icon_color })} />
             </div>
             <div className="md:col-span-2">
-              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Localização (Seção, Sub-seção ou Sub-sub-seção)</label>
+              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Onde fica (seção, pasta ou subpasta)</label>
               <OptionPicker
                 value={(() => {
                   if (pageData.section_id) {
@@ -1533,6 +597,8 @@ export const PageManager: React.FC = () => {
                   }
                   if (pageData.subsubsession_id) {
                     for (const s of (Array.isArray(menu) ? menu : [])) {
+                      const direta = (s.subSubSessions || []).find((x: any) => x.id === pageData.subsubsession_id);
+                      if (direta) return `  ${s.title} > ${direta.label}`;
                       for (const sub of s.subSessions) {
                         const sss = sub.subSubSessions?.find((x: any) => x.id === pageData.subsubsession_id);
                         if (sss) return `  ${s.title} > ${sub.label} > ${sss.label}`;
@@ -1554,6 +620,7 @@ export const PageManager: React.FC = () => {
                   if (Array.isArray(menu)) {
                     menu.forEach((section: any) => {
                       opts.push({ label: `📁 ${section.title} (direto na seção)` });
+                      (section.subSubSessions || []).forEach((ss: any) => opts.push({ label: `  ${section.title} > ${ss.label}` }));
                       section.subSessions.forEach((sub: any) => {
                         opts.push({ label: `${section.title} > ${sub.label}` });
                         if (sub.subSubSessions) {
@@ -1577,6 +644,11 @@ export const PageManager: React.FC = () => {
                     for (const section of menu) {
                       if (val === `📁 ${section.title} (direto na seção)`) {
                         setPageData({...pageData, section_id: section.id, subsubsession_id: '', subsession_id: ''});
+                        return;
+                      }
+                      const direta = (section.subSubSessions || []).find((ss: any) => val === `  ${section.title} > ${ss.label}`);
+                      if (direta) {
+                        setPageData({...pageData, section_id: '', subsubsession_id: direta.id, subsession_id: ''});
                         return;
                       }
                       for (const sub of section.subSessions) {
@@ -1612,7 +684,7 @@ export const PageManager: React.FC = () => {
         <form onSubmit={handleCreateSection} className="space-y-6 max-w-2xl">
           <div className="flex items-center gap-3 mb-6">
             <Layers className="text-violet-500" size={24} />
-            <h3 className="text-xl font-bold text-light-text dark:text-white">Criar Nova Seção</h3>
+            <h3 className="text-xl font-bold text-light-text dark:text-white">Nova seção</h3>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
@@ -1644,15 +716,15 @@ export const PageManager: React.FC = () => {
         <form onSubmit={handleCreateSub} className="space-y-6 max-w-2xl">
           <div className="flex items-center gap-3 mb-6">
             <Folder className="text-violet-500" size={24} />
-            <h3 className="text-xl font-bold text-light-text dark:text-white">Criar Nova Sub-seção</h3>
+            <h3 className="text-xl font-bold text-light-text dark:text-white">Nova pasta</h3>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="block text-sm font-bold text-slate-800 dark:text-slate-200 mb-2">ID da Sub-seção</label>
+              <label className="block text-sm font-bold text-slate-800 dark:text-slate-200 mb-2">ID da pasta</label>
               <input type="text" required value={subData.id} onChange={(e) => setSubData({ ...subData, id: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') })} placeholder="ex: equipe-a" className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/5 rounded-xl py-2.5 px-4 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-violet-500/20" />
             </div>
             <div>
-              <label className="block text-sm font-bold text-slate-800 dark:text-slate-200 mb-2">Nome da Sub-seção</label>
+              <label className="block text-sm font-bold text-slate-800 dark:text-slate-200 mb-2">Nome da pasta</label>
               <input type="text" required value={subData.label} onChange={(e) => setSubData({ ...subData, label: e.target.value })} placeholder="ex: Equipe A" className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/5 rounded-xl py-2.5 px-4 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-violet-500/20" />
             </div>
             <div>
@@ -1664,7 +736,7 @@ export const PageManager: React.FC = () => {
               <ColorSelector value={subData.icon_color} onChange={(icon_color) => setSubData({ ...subData, icon_color })} />
             </div>
             <div>
-              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Seção Pai</label>
+              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Dentro da seção</label>
               <OptionPicker
                 value={(() => {
                   if (Array.isArray(menu)) {
@@ -1685,7 +757,7 @@ export const PageManager: React.FC = () => {
           </div>
           <div className="pt-4 flex justify-end">
             <button type="submit" disabled={isAdding} className="bg-violet-600 hover:bg-violet-700 text-white px-6 py-3 rounded-xl text-sm font-bold transition-all disabled:opacity-50 flex items-center gap-2 shadow-lg shadow-violet-600/20">
-              {isAdding ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />} Criar Sub-seção
+              {isAdding ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />} Criar pasta
             </button>
           </div>
         </form>
@@ -1695,15 +767,15 @@ export const PageManager: React.FC = () => {
         <form onSubmit={handleCreateSubsub} className="space-y-6 max-w-2xl">
           <div className="flex items-center gap-3 mb-6">
             <FolderPlus className="text-violet-500" size={24} />
-            <h3 className="text-xl font-bold text-light-text dark:text-white">Criar Nova Sub-sub-seção</h3>
+            <h3 className="text-xl font-bold text-light-text dark:text-white">Nova subpasta</h3>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="block text-sm font-bold text-slate-800 dark:text-slate-200 mb-2">ID da Sub-sub-seção</label>
+              <label className="block text-sm font-bold text-slate-800 dark:text-slate-200 mb-2">ID da subpasta</label>
               <input type="text" required value={subsubData.id} onChange={(e) => setSubsubData({ ...subsubData, id: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') })} placeholder="ex: relatorios-equipe-a" className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/5 rounded-xl py-2.5 px-4 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-violet-500/20" />
             </div>
             <div>
-              <label className="block text-sm font-bold text-slate-800 dark:text-slate-200 mb-2">Nome da Sub-sub-seção</label>
+              <label className="block text-sm font-bold text-slate-800 dark:text-slate-200 mb-2">Nome da subpasta</label>
               <input type="text" required value={subsubData.label} onChange={(e) => setSubsubData({ ...subsubData, label: e.target.value })} placeholder="ex: Relatórios" className="w-full bg-slate-100 dark:bg-dark-input border border-slate-200 dark:border-white/5 rounded-xl py-2.5 px-4 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-violet-500/20" />
             </div>
             <div>
@@ -1715,7 +787,7 @@ export const PageManager: React.FC = () => {
               <ColorSelector value={subsubData.icon_color} onChange={(icon_color) => setSubsubData({ ...subsubData, icon_color })} />
             </div>
             <div>
-              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Pai (Seção ou Sub-seção)</label>
+              <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Dentro de (seção ou pasta)</label>
               <OptionPicker
                 value={(() => {
                   if (subsubData.subsession_id) {
@@ -1771,165 +843,31 @@ export const PageManager: React.FC = () => {
           </div>
           <div className="pt-4 flex justify-end">
             <button type="submit" disabled={isAdding} className="bg-violet-600 hover:bg-violet-700 text-white px-6 py-3 rounded-xl text-sm font-bold transition-all disabled:opacity-50 flex items-center gap-2 shadow-lg shadow-violet-600/20">
-              {isAdding ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />} Criar Sub-sub-seção
+              {isAdding ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />} Criar subpasta
             </button>
           </div>
         </form>
       )}
 
       {activeTab === 'manage' && (
-        <div>
-          <div className="flex items-center gap-3 mb-6">
-            <Layers className="text-violet-500" size={24} />
-            <h3 className="text-xl font-bold text-light-text dark:text-white">Gerenciar Estrutura</h3>
-          </div>
-          <div className="space-y-4">
-            <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragOver={onDragOver}>
-              <SortableContext items={Array.isArray(menu) ? menu.map(s => s.id) : []} strategy={verticalListSortingStrategy}>
-                {Array.isArray(menu) && menu.map((section) => (
-                  <SortableSection 
-                    key={section.id} 
-                    section={section} 
-                    editingSection={editingSection} 
-                    editSectionData={editSectionData} 
-                    setEditSectionData={setEditSectionData} 
-                    setEditingSection={setEditingSection} 
-                    handleSaveEditSection={handleSaveEditSection} 
-                    handleDeleteSection={handleDeleteSection} 
-                    handleEditSection={handleEditSection}
-                  >
-                      {/* Section-level pages */}
-                      {section.pages && section.pages.length > 0 && (
-                        <SortableContext items={section.pages.map((p: any) => p.id)} strategy={verticalListSortingStrategy}>
-                          {section.pages.map((page: any) => (
-                            <SortablePage key={page.id} page={page} parentId={section.id} parentType="section" editingPage={editingPage} editPageData={editPageData} setEditPageData={setEditPageData} setEditingPage={setEditingPage} handleSaveEditPage={handleSaveEditPage} handleDeletePage={handleDeletePage} handleEditPage={handleEditPage} menu={menu} />
-                          ))}
-                        </SortableContext>
-                      )}
-
-                      {/* Section-level SubSubSessions */}
-                      {section.subSubSessions && section.subSubSessions.length > 0 && (
-                        <SortableContext items={section.subSubSessions.map((s: any) => s.id)} strategy={verticalListSortingStrategy}>
-                          {section.subSubSessions.map((subsub: any, ssIdx: number) => (
-                            <SortableSubSubSession
-                              key={subsub.id}
-                              subsub={subsub}
-                              subId={section.id}
-                              editingSubsub={editingSubsub}
-                              editSubsubData={editSubsubData}
-                              setEditSubsubData={setEditSubsubData}
-                              setEditingSubsub={setEditingSubsub}
-                              handleSaveEditSubsub={handleSaveEditSubsub}
-                              handleDeleteSubsub={handleDeleteSubsub}
-                              handleEditSubsub={handleEditSubsub}
-                              menu={menu}
-                              canMoveUp={ssIdx > 0}
-                              canMoveDown={ssIdx < section.subSubSessions.length - 1}
-                              onMoveUp={() => handleReorder('subsubsession', section.subSubSessions, ssIdx, ssIdx - 1, section.id)}
-                              onMoveDown={() => handleReorder('subsubsession', section.subSubSessions, ssIdx, ssIdx + 1, section.id)}
-                            >
-                              {subsub.pages && (
-                                  <SortableContext items={subsub.pages.map((p: any) => p.id)} strategy={verticalListSortingStrategy}>
-                                    {subsub.pages.map((page: any) => (
-                                      <SortablePage key={page.id} page={page} parentId={subsub.id} parentType="subsubsession" editingPage={editingPage} editPageData={editPageData} setEditPageData={setEditPageData} setEditingPage={setEditingPage} handleSaveEditPage={handleSaveEditPage} handleDeletePage={handleDeletePage} handleEditPage={handleEditPage} menu={menu} />
-                                    ))}
-                                  </SortableContext>
-                                )}
-                            </SortableSubSubSession>
-                          ))}
-                        </SortableContext>
-                      )}
-                      <SortableContext items={section.subSessions.map((s: any) => s.id)} strategy={verticalListSortingStrategy}>
-                        {section.subSessions.map((sub: any, subIdx: number) => (
-                          <SortableSubSession
-                            key={sub.id}
-                            sub={sub}
-                            sectionId={section.id}
-                            editingSub={editingSub}
-                            editSubData={editSubData}
-                            setEditSubData={setEditSubData}
-                            setEditingSub={setEditingSub}
-                            handleSaveEditSub={handleSaveEditSub}
-                            handleDeleteSub={handleDeleteSub}
-                            handleEditSub={handleEditSub}
-                            menu={menu}
-                            canMoveUp={subIdx > 0}
-                            canMoveDown={subIdx < section.subSessions.length - 1}
-                            onMoveUp={() => handleReorder('subsession', section.subSessions, subIdx, subIdx - 1, section.id)}
-                            onMoveDown={() => handleReorder('subsession', section.subSessions, subIdx, subIdx + 1, section.id)}
-                          >
-                              {sub.pages && (
-                                <SortableContext items={sub.pages.map((p: any) => p.id)} strategy={verticalListSortingStrategy}>
-                                  {sub.pages.map((page: any) => (
-                                    <SortablePage key={page.id} page={page} parentId={sub.id} parentType="subsession" editingPage={editingPage} editPageData={editPageData} setEditPageData={setEditPageData} setEditingPage={setEditingPage} handleSaveEditPage={handleSaveEditPage} handleDeletePage={handleDeletePage} handleEditPage={handleEditPage} menu={menu} />
-                                  ))}
-                                </SortableContext>
-                              )}
-                              <SortableContext items={sub.subSubSessions.map((s: any) => s.id)} strategy={verticalListSortingStrategy}>
-                                {sub.subSubSessions.map((subsub: any, ssIdx: number) => (
-                                  <SortableSubSubSession
-                                    key={subsub.id}
-                                    subsub={subsub}
-                                    subId={sub.id}
-                                    editingSubsub={editingSubsub}
-                                    editSubsubData={editSubsubData}
-                                    setEditSubsubData={setEditSubsubData}
-                                    setEditingSubsub={setEditingSubsub}
-                                    handleSaveEditSubsub={handleSaveEditSubsub}
-                                    handleDeleteSubsub={handleDeleteSubsub}
-                                    handleEditSubsub={handleEditSubsub}
-                                    menu={menu}
-                                    canMoveUp={ssIdx > 0}
-                                    canMoveDown={ssIdx < sub.subSubSessions.length - 1}
-                                    onMoveUp={() => handleReorder('subsubsession', sub.subSubSessions, ssIdx, ssIdx - 1, sub.id)}
-                                    onMoveDown={() => handleReorder('subsubsession', sub.subSubSessions, ssIdx, ssIdx + 1, sub.id)}
-                                  >
-                                    {subsub.pages && (
-                                        <SortableContext items={subsub.pages.map((p: any) => p.id)} strategy={verticalListSortingStrategy}>
-                                          {subsub.pages.map((page: any) => (
-                                            <SortablePage key={page.id} page={page} parentId={subsub.id} parentType="subsubsession" editingPage={editingPage} editPageData={editPageData} setEditPageData={setEditPageData} setEditingPage={setEditingPage} handleSaveEditPage={handleSaveEditPage} handleDeletePage={handleDeletePage} handleEditPage={handleEditPage} menu={menu} />
-                                          ))}
-                                        </SortableContext>
-                                      )}
-                                  </SortableSubSubSession>
-                                ))}
-                              </SortableContext>
-                          </SortableSubSession>
-                        ))}
-                      </SortableContext>
-                  </SortableSection>
-                ))}
-              </SortableContext>
-            </DndContext>
-          </div>
-        </div>
-      )}
-
-      {/* Confirmation Modal */}
-      {confirmDialog?.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/20 dark:bg-black/40 darker:bg-black/60 backdrop-blur-sm">
-          <div className="bg-white/20 backdrop-blur-lg dark:bg-violet-500/10 darker:!bg-black/80 dark:backdrop-blur-lg rounded-3xl p-6 max-w-md w-full mx-4 shadow-[0_8px_32px_0_rgba(31,38,135,0.1)] dark:shadow-[0_8px_32px_0_rgba(0,0,0,0.3)] border border-white/30 dark:border-violet-500/20 darker:!border-white/5">
-            <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-4">Confirmar Exclusão</h3>
-            <p className="text-slate-600 dark:text-slate-300 mb-6">{confirmDialog.message}</p>
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setConfirmDialog(null)}
-                className="px-4 py-2 rounded-lg text-sm font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={() => {
-                  onConfirmRef.current();
-                  setConfirmDialog(null);
-                }}
-                className="px-4 py-2 rounded-lg text-sm font-bold bg-rose-500 text-white hover:bg-rose-600 transition-colors"
-              >
-                Excluir
-              </button>
-            </div>
-          </div>
-        </div>
+        <EstruturaMenu
+          menu={Array.isArray(menu) ? menu : []}
+          setMenu={setMenu}
+          refreshMenu={refreshMenu}
+          iconeDe={(nome) => availableIcons.find(i => i.name === nome)?.component || FileText}
+          IconSelector={IconSelector}
+          ColorSelector={ColorSelector}
+          templates={templates}
+          onNovaPagina={({ tipo, id }) => {
+            setPageData(d => ({
+              ...d,
+              section_id: tipo === 'section' ? id : '',
+              subsession_id: tipo === 'subsession' ? id : '',
+              subsubsession_id: tipo === 'subsubsession' ? id : '',
+            }));
+            setActiveTab('create-page');
+          }}
+        />
       )}
     </div>
   );

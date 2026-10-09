@@ -2080,7 +2080,7 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
       role: userData?.role || 'Gestor',
       date: now.toLocaleDateString('pt-BR'),
       time: now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-      message: `Resultado do Projeto alterado: de "${selectedProduct.projectResult || '-'}" para "${result}"`,
+      message: `Resultado do produto alterado: de "${selectedProduct.projectResult || '-'}" para "${result}"`,
       status: 'Mudança de Status'
     };
 
@@ -2093,18 +2093,13 @@ const ProjectsModule: React.FC<Props> = ({ activePage, modalOnly }) => {
     setSelectedProduct(updatedProduct);
     setTempProduct(updatedProduct);
 
-    // Atualiza o produto E sincroniza o resultado do PROJETO que o contém,
-    // pois a linha do parceiro exibe project.projectResult.
-    const applyResultChange = (proj: Project): Project => {
-      const hasProduct = proj.products?.some(p => p.id === selectedProduct.id);
-      return {
-        ...proj,
-        projectResult: hasProduct ? result : proj.projectResult,
-        products: proj.products?.map(p => p.id === selectedProduct.id ? updatedProduct : p)
-      };
-    };
-
-    commitProjects(prev => prev.map(applyResultChange));
+    // Resultado do produto e do projeto são independentes (pedido do Jean, 09/10/2026).
+    // Antes, trocar o do produto copiava o valor para o projeto que o contém — num parceiro com
+    // dois produtos, o último produto editado definia o resultado do parceiro inteiro.
+    commitProjects(prev => prev.map(proj => ({
+      ...proj,
+      products: proj.products?.map(p => p.id === selectedProduct.id ? updatedProduct : p),
+    })));
 
     setIsResultDropdownOpen(false);
   };

@@ -2,6 +2,7 @@
 // Sidebar component for GrapeHub
 // Last updated: 2026-04-19
 import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import { filhosEmOrdem, posicoesFilhos } from '../lib/menuOrdem';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth } from '../firebase';
@@ -457,16 +458,23 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
   const flattenSectionPages = (section: any): FlyoutGrupo[] => {
     const grupos: FlyoutGrupo[] = [];
     const pag = (p: any): FlyoutItem => ({ id: p.id, label: p.label, icon: p.icon, icon_color: p.icon_color, indent: 0 });
-    const soltas = (section.pages || []).filter((p: any) => isPageAllowed(p.id)).map(pag);
-    if (soltas.length) grupos.push({ itens: soltas });
-    section.subSubSessions?.filter((sss: any) => hasAllowedPagesInSubSubSession(sss)).forEach((sss: any) =>
-      grupos.push({ titulo: sss.label, itens: sss.pages.filter((p: any) => isPageAllowed(p.id)).map(pag) }));
-    section.subSessions?.filter((ss: any) => hasAllowedPagesInSubSession(ss)).forEach((ss: any) => {
-      const diretas = (ss.pages || []).filter((p: any) => isPageAllowed(p.id)).map(pag);
-      if (diretas.length) grupos.push({ titulo: ss.label, itens: diretas });
-      ss.subSubSessions?.filter((sss: any) => hasAllowedPagesInSubSubSession(sss)).forEach((sss: any) =>
-        grupos.push({ titulo: `${ss.label} › ${sss.label}`, itens: sss.pages.filter((p: any) => isPageAllowed(p.id)).map(pag) }));
-    });
+    // Na ordem mista do container: páginas seguidas formam um grupo sem título; cada pasta, o seu
+    const percorrer = (c: any, prefixo: string) => {
+      let soltas: FlyoutItem[] = [];
+      const fechar = () => { if (soltas.length) { grupos.push({ titulo: prefixo || undefined, itens: soltas }); soltas = []; } };
+      for (const { tipo, item } of filhosEmOrdem(c)) {
+        if (tipo === 'page') { if (isPageAllowed(item.id)) soltas.push(pag(item)); continue; }
+        fechar();
+        const nome = prefixo ? `${prefixo} › ${item.label}` : item.label;
+        if (tipo === 'subsubsession') {
+          if (hasAllowedPagesInSubSubSession(item)) grupos.push({ titulo: nome, itens: (item.pages || []).filter((p: any) => isPageAllowed(p.id)).map(pag) });
+        } else if (hasAllowedPagesInSubSession(item)) {
+          percorrer(item, nome);
+        }
+      }
+      fechar();
+    };
+    percorrer(section, '');
     return grupos;
   };
 
@@ -686,12 +694,13 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                         animate={{ height: 'auto', opacity: 1 }}
                         exit={{ height: 0, opacity: 0 }}
                         transition={{ duration: 0.2, ease: 'easeInOut' }}
-                        className="overflow-hidden"
+                        className="overflow-hidden flex flex-col"
                       >
-                        {/* Direct pages */}
+                        {/* Páginas, subpastas e pastas numa ordem só (order_index misto, ver lib/menuOrdem);
+                            o JSX desenha por tipo e o CSS `order` intercala. */}
                         {Array.isArray(section.pages) && section.pages.filter(p => isPageAllowed(p.id)).map(page => (
+                          <div key={page.id} style={{ order: posicoesFilhos(section).get(`page:${page.id}`) }}>
                           <PageItemWithMenu
-                            key={page.id}
                             page={page}
                             isActive={activePage === page.id}
                             paddingLeft="28px"
@@ -699,13 +708,14 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                             canManagePermissions={canManageForSection(section.title)}
                             onOpenPermissions={(id, label) => setPermissionsPage({ id, label })}
                           />
+                          </div>
                         ))}
 
                         {/* SubSubSessions directly in Section */}
                         {Array.isArray(section.subSubSessions) && section.subSubSessions.filter((sss: any) => hasAllowedPagesInSubSubSession(sss)).map((subSubSession: any) => {
                           const SubSubIcon = iconMap[subSubSession.icon];
                           return (
-                            <div key={subSubSession.id}>
+                            <div key={subSubSession.id} style={{ order: posicoesFilhos(section).get(`subsubsession:${subSubSession.id}`) }}>
                               <div onClick={(e) => { e.stopPropagation(); toggleExpand(`secsubsub-${subSubSession.id}`); }}
                                 style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '28px', paddingRight: '12px', paddingTop: '7px', paddingBottom: '7px', borderRadius: '8px', margin: '1px 8px 1px 0', cursor: 'pointer', background: 'transparent' }}
                                 className="w-full text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white transition-all group"
@@ -747,7 +757,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                         {Array.isArray(section.subSessions) && section.subSessions.filter(ss => hasAllowedPagesInSubSession(ss)).map(subSession => {
                           const Icon = iconMap[subSession.icon];
                           return (
-                            <div key={subSession.id}>
+                            <div key={subSession.id} style={{ order: posicoesFilhos(section).get(`subsession:${subSession.id}`) }}>
                               <div onClick={(e) => { e.stopPropagation(); toggleExpand(`sub-${subSession.id}`); }}
                                 style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '28px', paddingRight: '12px', paddingTop: '7px', paddingBottom: '7px', borderRadius: '8px', margin: '1px 8px 1px 0', cursor: 'pointer', background: 'transparent' }}
                                 className="w-full text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white transition-all group"
@@ -767,10 +777,10 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
 
                               <AnimatePresence initial={false}>
                                 {(!!query || expanded[`sub-${subSession.id}`]) && (
-                                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2, ease: 'easeInOut' }} className="overflow-hidden">
+                                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2, ease: 'easeInOut' }} className="overflow-hidden flex flex-col">
                                     {Array.isArray(subSession.pages) && subSession.pages.filter(p => isPageAllowed(p.id)).map(page => (
+                                      <div key={page.id} style={{ order: posicoesFilhos(subSession).get(`page:${page.id}`) }}>
                                       <PageItemWithMenu
-                                        key={page.id}
                                         page={page}
                                         isActive={activePage === page.id}
                                         paddingLeft="40px"
@@ -778,12 +788,13 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, onPageChange, user, userD
                                         canManagePermissions={canManageForSection(section.title)}
                                         onOpenPermissions={(id, label) => setPermissionsPage({ id, label })}
                                       />
+                                      </div>
                                     ))}
 
                                     {Array.isArray(subSession.subSubSessions) && subSession.subSubSessions.filter(hasAllowedPagesInSubSubSession).map(subSubSession => {
                                       const SubIcon = iconMap[subSubSession.icon];
                                       return (
-                                        <div key={subSubSession.id}>
+                                        <div key={subSubSession.id} style={{ order: posicoesFilhos(subSession).get(`subsubsession:${subSubSession.id}`) }}>
                                           <div onClick={(e) => { e.stopPropagation(); toggleExpand(`subsub-${subSubSession.id}`); }}
                                             style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '40px', paddingRight: '12px', paddingTop: '7px', paddingBottom: '7px', borderRadius: '8px', margin: '1px 8px 1px 0', cursor: 'pointer', background: 'transparent' }}
                                             className="w-full text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white group"
