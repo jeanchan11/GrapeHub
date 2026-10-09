@@ -203,6 +203,11 @@ Não há CI. O processo é manual e tem uma pegadinha:
   O canal sai de `clients.billing_method`, que é texto livre — já foi normalizado para três
   valores canônicos. O seletor da UI grava **"E-mail"** com hífen; comparações precisam
   normalizar (upper + remover espaço/hífen) antes de decidir o canal.
+  **Pausar a régua** (Contas a Receber › Régua de Cobrança) = `fin_dispatch_config.dispatch_enabled`,
+  a mesma chave do "disparo automático" das Configurações: desligada, o lote diário
+  (`runDailyBatchIfNeeded`, `src/routes/dispatch.ts`) não roda; "Disparar Fila" e envio manual
+  continuam. O `PUT /api/finance/dispatch/config` grava `dispatch_time`/`interval`/`n8n_webhook_url`
+  sem COALESCE — mande os valores atuais junto, senão apaga.
 - **Meta da própria Grape (funil de aquisição)** — conta Captação [ATIVA] `690496082457749`,
   pixel `1865105590542909`. A conta NÃO está em `project_tokens` (lá só há contas de
   cliente); a rota `/api/marketing-funil-meta` (`src/routes/funil-meta.ts`) lê
@@ -540,6 +545,24 @@ Não há CI. O processo é manual e tem uma pegadinha:
   (Jean | Grape, os dois Instagrams do cofre D-020), `entregavel` = **formato**, `due_date` = dia
   de publicar. As anotações da página (`lista_page_settings.notes_html[_right]`) viraram a linha
   editorial de cada perfil. Só essa página usa o template `lista`.
+
+- **Mapa de clientes** (Clientes Ativos › aba Mapa, `ClientesMapa.tsx` + `src/routes/clientes-mapa.ts`,
+  09/10/2026): `clients.location` é texto livre (57 formas para 75 clientes) e vira cidade pela
+  tabela `ibge_municipios` (5.571 cidades com lat/lng, + `ibge_estados`; base pública
+  kelvins/municipios-brasileiros carregada no banco). Lê as partes de trás para frente, reconhece
+  UF e nome de estado; "São Paulo"/"Rio de Janeiro" sem UF = a capital (cidade homônima no mesmo
+  estado). Sem cidade (só estado, "Interior SP", vazio) **não ganha pino** — vai para a lista
+  "Sem cidade no cadastro". Em 09/10: 69 de 75 no mapa, 36 cidades. Mapa = **Leaflet direto**
+  (o `react-leaflet` compatível pede React 18; o projeto está no 19) + tiles **Esri** (ruas e
+  satélite, sem chave). **CARTO não serve**: passou a exigir chave e desenha "API KEY REQUIRED"
+  por cima do mapa. Um pino por cliente, espalhados em espiral em volta do ponto da cidade.
+  **`clients.tags` é TEXT com JSON dentro** (`'["quarentena"]'`), não array: quem ler direto do
+  banco precisa de `JSON.parse` — a 1ª versão do mapa via zero clientes em retenção por isso.
+
+- **"Dashboard Financeiro" é um RESUMO DO DIA** (página `dashboard-financeiro`, template
+  `superadmin-dashboard`, esclarecido pelo Jean em 09/10/2026): contas a pagar de hoje, cobranças
+  automáticas enviadas (com os erros) e próximas contas a pagar (14 dias). Saldo, curva e
+  inadimplência NÃO entram — já estão no Fluxo de Caixa e em Contas a Receber.
 
 - **Central de Treinamentos** (`src/pages/Cursos.tsx`, `src/routes/cursos.ts`): curso → módulos
   → aulas em vídeo, com progresso por colaborador. O progresso é gravado pelo **e-mail do

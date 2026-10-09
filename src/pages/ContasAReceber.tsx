@@ -4,6 +4,8 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, useSpring, useTransform, useInView } from 'motion/react';
 import { Calendar, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Clock, CreditCard, Zap, FileText, ExternalLink, Settings, AlertTriangle, Pause, Play, Check, X, ShieldAlert, Activity, CheckCircle2, Send, Settings2, Search, TrendingUp, Banknote, BarChart2, MessageCircle, MessageSquare, Copy, Phone, Mail, Users, DollarSign, Filter, RefreshCw, MoreHorizontal, RotateCcw } from 'lucide-react';
 import BotaoSincronizar from '../components/BotaoSincronizar';
+import { confirmDialog } from '../lib/confirm';
+import { toast } from '../lib/toast';
 
 // ── Types ──────────────────────────────────────────────
 interface InvoiceItem {
@@ -80,6 +82,51 @@ const CountUp = ({ value, isCurrency = false, suffix = '' }: { value: number; is
 
   return <motion.span ref={ref}>{display}</motion.span>;
 };
+
+// ── Cartão de número ──────────────────────────────────
+// Padrão visual do Financeiro (09/10/2026): ícone pequeno + rótulo, valor, uma linha
+// de contexto. Fica no nível do módulo de propósito: declarado dentro do componente,
+// ele remontaria a cada render (polling de 30s, cada tecla da busca) e o CountUp
+// recomeçaria do zero.
+const CartaoNumero = ({ Icone, cor, rotulo, valor, contexto, alerta, valorCls, onClick, hoverCls, sinal }: {
+  Icone: any;
+  cor: string;
+  rotulo: string;
+  valor: React.ReactNode;
+  contexto: React.ReactNode;
+  alerta?: boolean;
+  valorCls?: string;
+  onClick?: () => void;
+  hoverCls?: string;
+  sinal?: React.ReactNode;
+}) => (
+  <div
+    onClick={onClick}
+    className={`px-5 py-4 rounded-2xl border transition-colors ${
+      alerta ? 'bg-rose-500/[0.06] border-rose-500/20' : 'bg-white dark:bg-dark-card/60 border-slate-200 dark:border-white/5'
+    } ${onClick ? `cursor-pointer ${hoverCls || 'hover:border-violet-500/40'}` : ''}`}
+  >
+    <div className="flex items-center gap-2 mb-2">
+      <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${cor}1a`, color: cor }}>
+        <Icone size={14} />
+      </div>
+      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest truncate">{rotulo}</p>
+      {sinal && <span className="ml-auto flex items-center">{sinal}</span>}
+    </div>
+    <h3 className={`text-2xl font-bold ${alerta ? 'text-rose-500' : valorCls || 'text-slate-900 dark:text-white'}`}>{valor}</h3>
+    <p className={`text-[11px] mt-0.5 truncate ${alerta ? 'text-rose-400' : 'text-slate-500'}`}>{contexto}</p>
+  </div>
+);
+
+// Classes compartilhadas (mesmo desenho das outras telas do Financeiro)
+const ABAS_CLS = 'flex items-center gap-1 p-1 w-fit max-w-full overflow-x-auto rounded-xl bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/5';
+const abaCls = (ativa: boolean) =>
+  `h-9 px-4 rounded-lg text-sm font-semibold whitespace-nowrap flex items-center gap-2 transition-colors ${
+    ativa ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
+  }`;
+const BOTAO_SEC_CLS = 'h-10 flex items-center gap-2 px-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:border-slate-300 dark:hover:border-white/20 disabled:opacity-50 transition-colors shrink-0';
+const TABELA_CLS = 'rounded-2xl border border-slate-200 dark:border-white/5 bg-white dark:bg-dark-card/60 overflow-hidden';
+const PILULA_CLS = 'inline-flex items-center gap-1 h-5 px-2 rounded-full text-[10px] font-semibold whitespace-nowrap';
 
 const BILLING_LABELS: Record<string, { label: string; icon: string }> = {
   'PIX': { label: 'Pix', icon: '⚡' },
@@ -388,6 +435,42 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
     }
   };
 
+  // Pausar/retomar a régua = a chave geral `dispatch_enabled` (a mesma do "disparo automático"
+  // nas Configurações). Desligada, o lote diário não roda (runDailyBatchIfNeeded em
+  // src/routes/dispatch.ts); "Disparar Fila" e os envios manuais seguem funcionando.
+  // Antes o botão "Pausar Régua" não tinha ação nenhuma.
+  const reguaAtiva = dispatchConfig?.dispatch_enabled ?? true;
+  const [alternandoRegua, setAlternandoRegua] = useState(false);
+  const alternarRegua = async () => {
+    const pausar = reguaAtiva;
+    if (pausar && !(await confirmDialog({
+      title: 'Pausar régua de cobrança',
+      message: 'Nenhuma cobrança automática sai até você retomar. A fila fica como está, e "Disparar Fila" e os envios manuais continuam funcionando.',
+      confirmText: 'Pausar', danger: true,
+    }))) return;
+    const c = dispatchConfig || {};
+    setAlternandoRegua(true);
+    try {
+      const r = await fetch('/api/finance/dispatch/config', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        // a rota grava estes 4 campos de uma vez; os da UAZAPI ficam como estão quando não vêm
+        body: JSON.stringify({
+          dispatch_enabled: !pausar,
+          dispatch_time: String(c.dispatch_time || '09:00').slice(0, 5),
+          dispatch_interval_seconds: c.dispatch_interval_seconds || 60,
+          n8n_webhook_url: c.n8n_webhook_url || '',
+        }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const novo = await r.json();
+      setDispatchConfig(novo);
+      setCfgForm(f => ({ ...f, dispatch_enabled: !!novo.dispatch_enabled }));
+      toast.success(pausar ? 'Régua pausada: nenhuma cobrança automática sai.' : 'Régua retomada.');
+    } catch (e: any) {
+      toast.error(`Não foi possível ${pausar ? 'pausar' : 'retomar'} a régua: ${e.message}`);
+    } finally { setAlternandoRegua(false); }
+  };
+
   const handleSaveConfig = async () => {
     setSavingCfg(true);
     try {
@@ -596,7 +679,7 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
     const parts = resolved.split(/(\*[^*]+\*)/g);
     return parts.map((part, i) => {
       if (part.startsWith('*') && part.endsWith('*') && part.length > 2) {
-        return <strong key={i} className="font-bold text-white">{part.slice(1, -1)}</strong>;
+        return <strong key={i} className="font-bold text-slate-900 dark:text-white">{part.slice(1, -1)}</strong>;
       }
       return <span key={i}>{part}</span>;
     });
@@ -641,34 +724,36 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
 
   return (
     <div>
-      {/* Action bar */}
-      <div className="flex items-center justify-end gap-2 flex-wrap mb-6">
-        <div className="relative">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar..." className="pl-9 pr-3 py-1.5 bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-white/10 rounded-lg text-xs text-gray-900 dark:text-white focus:outline-none focus:border-violet-500/50" />
+      {/* Action bar — busca à esquerda, ações à direita, tudo com 40px */}
+      <div className="flex items-center gap-2 flex-wrap mb-5">
+        <div className="relative flex-1 min-w-[220px] max-w-sm">
+          <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Buscar..." className="w-full h-10 pl-10 pr-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-violet-500/50 transition-colors" />
         </div>
-        {/* Depois do sync, esta tela ainda repopula a fila de cobrança — é o
-            único lugar que faz isso, por isso vai no onDone e não no botão. */}
-        <BotaoSincronizar onDone={async () => {
-          await fetch('/api/finance/dispatch/queue/populate', { method: 'POST' });
-          await fetchDispatch();
-          setTimeout(fetchDispatch, 1000);
-        }} />
-        <button onClick={handlePopulateQueue} disabled={isPopulating} className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-lg text-xs font-medium text-gray-600 dark:text-slate-300 hover:bg-gray-100 disabled:opacity-50 transition-colors">
-          <RefreshCw size={13} className={isPopulating ? 'animate-spin' : ''} />
-          {isPopulating ? 'Atualizando...' : 'Atualizar Fila'}
-        </button>
-        <button onClick={() => setShowReguaModal(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-lg text-xs font-medium text-violet-600 dark:text-violet-400 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors">
-          <Settings2 size={13} />
-          Régua de Cobrança
-        </button>
-        <button onClick={() => setShowSendAllConfirm(true)} disabled={sendingAll || dispatchItems.filter(i => i.status === 'AGENDADO').length === 0}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white rounded-lg text-xs font-bold transition-colors">
-          {sendingAll ? <><div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Disparando...</> : <><Send size={13} /> Disparar Fila</>}
-        </button>
-        <button onClick={() => setShowConfigModal(true)} className="p-1.5 rounded-lg bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors" title="Configurações">
-          <Settings size={15} />
-        </button>
+        <div className="ml-auto flex items-center gap-2 flex-wrap">
+          {/* Depois do sync, esta tela ainda repopula a fila de cobrança — é o
+              único lugar que faz isso, por isso vai no onDone e não no botão. */}
+          <BotaoSincronizar className="h-10 rounded-xl" onDone={async () => {
+            await fetch('/api/finance/dispatch/queue/populate', { method: 'POST' });
+            await fetchDispatch();
+            setTimeout(fetchDispatch, 1000);
+          }} />
+          <button onClick={handlePopulateQueue} disabled={isPopulating} className={BOTAO_SEC_CLS}>
+            <RefreshCw size={14} className={isPopulating ? 'animate-spin' : ''} />
+            {isPopulating ? 'Atualizando...' : 'Atualizar Fila'}
+          </button>
+          <button onClick={() => setShowReguaModal(true)} className={BOTAO_SEC_CLS}>
+            <Settings2 size={14} className="text-violet-500" />
+            Régua de Cobrança
+          </button>
+          <button onClick={() => setShowConfigModal(true)} className={`${BOTAO_SEC_CLS} w-10 justify-center px-0`} title="Configurações">
+            <Settings size={15} />
+          </button>
+          <button onClick={() => setShowSendAllConfirm(true)} disabled={sendingAll || dispatchItems.filter(i => i.status === 'AGENDADO').length === 0}
+            className="h-10 flex items-center gap-2 px-4 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white text-sm font-bold transition-colors shrink-0">
+            {sendingAll ? <><div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Disparando...</> : <><Send size={14} /> Disparar Fila</>}
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -677,118 +762,52 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
         <>
           {/* Alerta Humano */}
           {(summary.humano > 0 || summary.suspensao > 0) && (
-            <div className="mb-6 p-4 bg-orange-50 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-500/50 rounded-xl flex items-center gap-3">
-              <AlertTriangle className="text-orange-500 dark:text-orange-400 shrink-0" size={20} />
-              <p className="text-sm text-orange-800 dark:text-orange-200 font-medium">
-                <strong className="text-orange-600 dark:text-orange-500">{summary.humano + summary.suspensao} cliente(s)</strong> atingiram D+10 e requerem contato humano urgente.
+            <div className="mb-5 px-4 py-3 rounded-2xl border border-orange-500/20 bg-orange-500/[0.06] flex items-center gap-3">
+              <div className="w-7 h-7 rounded-lg bg-orange-500/10 text-orange-500 flex items-center justify-center shrink-0">
+                <AlertTriangle size={14} />
+              </div>
+              <p className="text-sm text-slate-700 dark:text-slate-200">
+                <strong className="font-bold text-orange-600 dark:text-orange-400">{summary.humano + summary.suspensao} cliente(s)</strong> atingiram D+10 e requerem contato humano urgente.
               </p>
             </div>
           )}
 
           {/* Métricas */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 mb-5">
             {/* 1) Disparos Hoje */}
-            <div className="bg-dark-card border border-white/10 rounded-2xl px-4 py-3 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[108px]">
-              <div className="flex items-center justify-between mb-3">
-                <div className="p-1.5 rounded-lg bg-slate-600"><Send size={16} className="text-white" /></div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Disparos</p>
-              </div>
-              <div className="flex flex-col mt-auto">
-                <h3 className="text-2xl font-black tracking-tight mb-1 text-dark-text"><CountUp value={dispatchStats.disparos_hoje} /></h3>
-                <div className="pt-2 border-t border-white/10">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="text-slate-500">Hoje</span>
-                    <span className="font-semibold text-slate-400">{dispatchStats.disparos_hoje} envios</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <CartaoNumero Icone={Send} cor="#64748b" rotulo="Disparos"
+              valor={<CountUp value={dispatchStats.disparos_hoje} />}
+              contexto={<>Hoje · {dispatchStats.disparos_hoje} envios</>} />
             {/* 2) Preventivo */}
-            <div onClick={() => openPhaseDetail('preventivo')} className="bg-dark-card border border-white/10 rounded-2xl px-4 py-3 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[108px] cursor-pointer hover:border-[#2dd4bf]/40">
-              <div className="flex items-center justify-between mb-3">
-                <div className="p-1.5 rounded-lg bg-teal-600"><Activity size={16} className="text-white" /></div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Preventivo</p>
-              </div>
-              <div className="flex flex-col mt-auto">
-                <h3 className="text-2xl font-black tracking-tight mb-1 text-dark-text"><CountUp value={summary.preventivo} /></h3>
-                <div className="pt-2 border-t border-white/10">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="text-slate-500">Antes do venc.</span>
-                    <span className="font-semibold text-teal-500">{summary.preventivo} clientes</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <CartaoNumero Icone={Activity} cor="#14b8a6" rotulo="Preventivo"
+              onClick={() => openPhaseDetail('preventivo')} hoverCls="hover:border-teal-500/40"
+              valor={<CountUp value={summary.preventivo} />}
+              contexto={<>Antes do venc. · <span className="font-semibold text-teal-600 dark:text-teal-400">{summary.preventivo} clientes</span></>} />
             {/* 3) No Vencimento */}
-            <div onClick={() => openPhaseDetail('vencimento')} className="bg-dark-card border border-white/10 rounded-2xl px-4 py-3 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[108px] cursor-pointer hover:border-amber-500/40">
-              <div className="flex items-center justify-between mb-3">
-                <div className="p-1.5 rounded-lg bg-amber-500"><Clock size={16} className="text-white" /></div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Vencimento</p>
-              </div>
-              <div className="flex flex-col mt-auto">
-                <h3 className="text-2xl font-black tracking-tight mb-1 text-dark-text"><CountUp value={summary.vencimento} /></h3>
-                <div className="pt-2 border-t border-white/10">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="text-slate-500">No dia</span>
-                    <span className="font-semibold text-amber-500">{summary.vencimento} clientes</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            {/* 4) Em Atraso */}
-            <div onClick={() => openPhaseDetail('reativo')} className="bg-dark-card border border-white/10 rounded-2xl px-4 py-3 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[108px] cursor-pointer hover:border-rose-500/40">
-              <div className="flex items-center justify-between mb-3">
-                <div className="p-1.5 rounded-lg bg-rose-600"><AlertTriangle size={16} className="text-white" /></div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Em Atraso</p>
-              </div>
-              <div className="flex flex-col mt-auto">
-                <h3 className={`text-2xl font-black tracking-tight mb-1 ${summary.reativo > 0 ? 'text-rose-400/80' : 'text-dark-text'}`}><CountUp value={summary.reativo} /></h3>
-                <div className="pt-2 border-t border-white/10">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="text-slate-500">Pós-vencimento</span>
-                    <span className={`font-semibold ${summary.reativo > 0 ? 'text-rose-500' : 'text-slate-500'}`}>{summary.reativo} clientes</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <CartaoNumero Icone={Clock} cor="#f59e0b" rotulo="Vencimento"
+              onClick={() => openPhaseDetail('vencimento')} hoverCls="hover:border-amber-500/40"
+              valor={<CountUp value={summary.vencimento} />}
+              contexto={<>No dia · <span className="font-semibold text-amber-600 dark:text-amber-400">{summary.vencimento} clientes</span></>} />
+            {/* 4) Em Atraso — vira cartão de alerta quando há clientes */}
+            <CartaoNumero Icone={AlertTriangle} cor="#f43f5e" rotulo="Em Atraso"
+              onClick={() => openPhaseDetail('reativo')} hoverCls="hover:border-rose-500/40"
+              alerta={summary.reativo > 0}
+              valor={<CountUp value={summary.reativo} />}
+              contexto={<>Pós-vencimento · <span className="font-semibold">{summary.reativo} clientes</span></>} />
             {/* 5) Contato Humano */}
-            <div onClick={() => openPhaseDetail('humano')} className="bg-dark-card border border-white/10 rounded-2xl px-4 py-3 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[108px] cursor-pointer hover:border-violet-500/40">
-              <div className="flex items-center justify-between mb-3">
-                <div className="p-1.5 rounded-lg bg-violet-600"><Phone size={16} className="text-white" /></div>
-                <div className="flex items-center gap-2">
-                  {dispatchHumanoCount > 0 && <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shadow-[0_0_8px_rgba(244,63,94,0.8)]" />}
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Humano</p>
-                </div>
-              </div>
-              <div className="flex flex-col mt-auto">
-                <h3 className={`text-2xl font-black tracking-tight mb-1 ${dispatchHumanoCount > 0 ? 'text-violet-400/80' : 'text-dark-text'}`}><CountUp value={dispatchHumanoCount} /></h3>
-                <div className="pt-2 border-t border-white/10">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="text-slate-500">D+10</span>
-                    <span className={`font-semibold ${dispatchHumanoCount > 0 ? 'text-violet-500' : 'text-slate-500'}`}>{dispatchHumanoCount} clientes</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <CartaoNumero Icone={Phone} cor="#8b5cf6" rotulo="Humano"
+              onClick={() => openPhaseDetail('humano')} hoverCls="hover:border-violet-500/40"
+              sinal={dispatchHumanoCount > 0 ? <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" /> : null}
+              valorCls={dispatchHumanoCount > 0 ? 'text-violet-600 dark:text-violet-400' : undefined}
+              valor={<CountUp value={dispatchHumanoCount} />}
+              contexto={<>D+10 · <span className={`font-semibold ${dispatchHumanoCount > 0 ? 'text-violet-600 dark:text-violet-400' : ''}`}>{dispatchHumanoCount} clientes</span></>} />
             {/* 6) Suspensão */}
-            <div onClick={() => openPhaseDetail('suspensao')} className="bg-dark-card border border-white/10 rounded-2xl px-4 py-3 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[108px] cursor-pointer hover:border-orange-500/40">
-              <div className="flex items-center justify-between mb-3">
-                <div className="p-1.5 rounded-lg bg-orange-600"><ShieldAlert size={16} className="text-white" /></div>
-                <div className="flex items-center gap-2">
-                  {dispatchSuspensaoCount > 0 && <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse shadow-[0_0_8px_rgba(249,115,22,0.8)]" />}
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Suspensão</p>
-                </div>
-              </div>
-              <div className="flex flex-col mt-auto">
-                <h3 className={`text-2xl font-black tracking-tight mb-1 ${dispatchSuspensaoCount > 0 ? 'text-orange-400/80' : 'text-dark-text'}`}><CountUp value={dispatchSuspensaoCount} /></h3>
-                <div className="pt-2 border-t border-white/10">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="text-slate-500">D+15</span>
-                    <span className={`font-semibold ${dispatchSuspensaoCount > 0 ? 'text-orange-500' : 'text-slate-500'}`}>{dispatchSuspensaoCount} clientes</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <CartaoNumero Icone={ShieldAlert} cor="#f97316" rotulo="Suspensão"
+              onClick={() => openPhaseDetail('suspensao')} hoverCls="hover:border-orange-500/40"
+              sinal={dispatchSuspensaoCount > 0 ? <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" /> : null}
+              valorCls={dispatchSuspensaoCount > 0 ? 'text-orange-600 dark:text-orange-400' : undefined}
+              valor={<CountUp value={dispatchSuspensaoCount} />}
+              contexto={<>D+15 · <span className={`font-semibold ${dispatchSuspensaoCount > 0 ? 'text-orange-600 dark:text-orange-400' : ''}`}>{dispatchSuspensaoCount} clientes</span></>} />
           </div>
           {/* Modal Régua de Cobrança */}
           <AnimatePresence>
@@ -814,14 +833,19 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                   <div className="flex items-center gap-3">
                     <Settings2 size={20} className="text-violet-500" />
                     <h3 className="text-lg font-bold text-gray-900 dark:text-white tracking-tight">Régua de Cobrança</h3>
-                    <span className="px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-500 text-[10px] font-bold rounded-full uppercase tracking-widest flex items-center gap-1">
-                      <CheckCircle2 size={10} /> Ativa
-                    </span>
+                    {reguaAtiva ? (
+                      <span className={`${PILULA_CLS} bg-emerald-500/10 text-emerald-600 dark:text-emerald-400`}>
+                        <CheckCircle2 size={10} /> Ativa
+                      </span>
+                    ) : (
+                      <span className={`${PILULA_CLS} bg-amber-500/10 text-amber-600 dark:text-amber-400`}>
+                        <Pause size={10} /> Pausada
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-3">
-                    <button className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 dark:bg-white/5 hover:bg-gray-100 dark:hover:bg-white/10 border border-gray-200 dark:border-white/10 rounded-lg text-xs font-medium text-gray-600 dark:text-slate-300 transition-colors">
-                      <Settings size={14} /> Editar Régua
-                    </button>
+                    {/* "Editar Régua" não tinha ação: a edição é por etapa, clicando no card */}
+                    <span className="text-xs text-gray-500 dark:text-slate-400">Clique numa etapa para editar a mensagem</span>
                     <button onClick={() => setShowReguaModal(false)} className="text-gray-400 dark:text-slate-400 hover:text-gray-700 dark:hover:text-white transition-colors">
                       <X size={20} />
                     </button>
@@ -900,9 +924,17 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
 
               {/* 5. Footer / Pausar */}
               <div className="pt-6 border-t border-gray-100 dark:border-white/5 flex justify-end">
-                <button className="flex items-center gap-2 px-4 py-2 text-rose-500 bg-rose-500/5 hover:bg-rose-500/10 border border-rose-500/10 rounded-xl text-xs font-bold transition-colors">
-                  <Pause size={14} /> Pausar Régua
-                </button>
+                {reguaAtiva ? (
+                  <button onClick={alternarRegua} disabled={alternandoRegua}
+                    className="h-10 flex items-center gap-2 px-4 text-rose-500 bg-rose-500/5 hover:bg-rose-500/10 border border-rose-500/10 rounded-xl text-xs font-bold transition-colors disabled:opacity-50">
+                    <Pause size={14} /> Pausar Régua
+                  </button>
+                ) : (
+                  <button onClick={alternarRegua} disabled={alternandoRegua}
+                    className="h-10 flex items-center gap-2 px-4 text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl text-xs font-bold transition-colors disabled:opacity-50">
+                    <Play size={14} /> Retomar Régua
+                  </button>
+                )}
               </div>
                 </div>
                 </motion.div>
@@ -1013,27 +1045,27 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
 
 
             return (
-              <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-4">
+              <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-3">
 
+                {/* Sub-tabs — barra segmentada, contador colorido na aba ativa */}
+                <div className={ABAS_CLS}>
+                  {subTabCfg.map(({ key, label, color, items }) => {
+                    const active = dispatchSubTab === key;
+                    return (
+                      <button key={key} onClick={() => setDispatchSubTab(key)} className={abaCls(active)}>
+                        {label}
+                        <span className={`text-[10px] font-bold h-5 min-w-[20px] px-1.5 rounded-full inline-flex items-center justify-center ${active ? `bg-${color}-500/10 text-${color}-600 dark:text-${color}-400` : 'bg-slate-200/70 dark:bg-white/5 text-slate-500'}`}>
+                          {items.length}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
 
-                {/* Table + Sub-tabs */}
-                <div className="bg-dark-card rounded-2xl border border-white/10 overflow-hidden">
-                  <div className="flex items-center gap-6 px-4 pt-3 border-b border-gray-100 dark:border-white/5 bg-gray-50 dark:bg-dark-bg/50 rounded-t-xl">
-                    {subTabCfg.map(({ key, label, color, items }) => {
-                      const active = dispatchSubTab === key;
-                      return (
-                        <button key={key} onClick={() => setDispatchSubTab(key)}
-                          className={`pb-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${active ? `border-${color}-400 text-${color}-600 dark:text-${color}-400` : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'}`}>
-                          {label}
-                          <span className={`ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full ${active ? `bg-${color}-500/15 text-${color}-600 dark:text-${color}-400` : 'bg-gray-100 dark:bg-white/5 text-gray-500'}`}>
-                            {items.length}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
+                {/* Table */}
+                <div className={TABELA_CLS}>
                   {/* Header */}
-                  <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] gap-4 px-4 py-2.5 bg-dark-bg/50 border-b border-white/5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                  <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] gap-4 px-4 py-2.5 bg-slate-50 dark:bg-white/[0.02] border-b border-slate-200 dark:border-white/5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
                     <span>Cliente / Valor</span>
                     <span>Regra</span>
                     <span>Canal</span>
@@ -1043,7 +1075,7 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                   </div>
 
                   {/* Rows */}
-                  <div className="divide-y divide-white/5">
+                  <div className="divide-y divide-slate-100 dark:divide-white/5">
                     {currentItems.length === 0 ? (
                       <div className="px-4 py-10 text-center text-sm text-slate-500">Nenhum item nesta categoria.</div>
                     ) : currentItems.map((item, idx) => {
@@ -1059,10 +1091,10 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                       const d = item.day_offset ?? 0;
                       const phaseKey = d < 0 ? 'preventivo' : d === 0 ? 'vencimento' : d >= 10 ? 'humano' : 'reativo';
                       const pillColors: Record<string, string> = {
-                        preventivo: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
-                        vencimento: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
-                        reativo:    'bg-orange-500/10 text-orange-400 border-orange-500/20',
-                        humano:     'bg-violet-500/10 text-violet-400 border-violet-500/20',
+                        preventivo: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
+                        vencimento: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+                        reativo:    'bg-orange-500/10 text-orange-600 dark:text-orange-400',
+                        humano:     'bg-violet-500/10 text-violet-600 dark:text-violet-400',
                       };
                       const dayLabel = d < 0 ? `D${d}` : d === 0 ? 'D0' : `D+${d}`;
 
@@ -1078,49 +1110,49 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                           }}
                         >
                           <div
-                            className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] gap-4 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors cursor-pointer items-center"
+                            className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] gap-4 px-4 py-3 hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors cursor-pointer items-center"
                             onClick={() => setExpandedDispatchId(isRowExpanded ? null : item.id)}
                           >
                             {/* Client Info */}
                             <div className="flex items-center gap-3 min-w-0">
-                              <div className={`w-7 h-7 rounded-xl flex items-center justify-center font-black text-xs shrink-0 ${pillColors[phaseKey]}`}>
+                              <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${pillColors[phaseKey]}`}>
                                 {(item.customer_name || 'X').charAt(0).toUpperCase()}
                               </div>
                               <div className="min-w-0">
-                                <p className="text-[13px] font-bold text-gray-900 dark:text-dark-text truncate">{item.customer_name}</p>
-                                <p className="text-[10px] text-gray-500 dark:text-slate-500">{formatCurrency(item.amount)} • {fmtDate(item.due_date)}</p>
+                                <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">{item.customer_name}</p>
+                                <p className="text-[11px] text-slate-500">{formatCurrency(item.amount)} • {fmtDate(item.due_date)}</p>
                               </div>
                             </div>
 
                             {/* Rule */}
-                            <div className="flex items-center gap-2">
-                              <span className={`px-2 py-0.5 rounded text-[9px] font-bold border ${pillColors[phaseKey]}`}>{dayLabel}</span>
-                              <span className="text-xs text-gray-500 dark:text-slate-400 truncate">{item.rule_triggered || '—'}</span>
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className={`${PILULA_CLS} shrink-0 ${pillColors[phaseKey]}`}>{dayLabel}</span>
+                              <span className="text-xs text-slate-500 dark:text-slate-400 truncate">{item.rule_triggered || '—'}</span>
                             </div>
 
                             {/* Channel */}
                             <div>
-                              <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-md ${
+                              <span className={`${PILULA_CLS} ${
                                 isEmail ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
                                 : isWA   ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                                : 'bg-gray-100 dark:bg-white/5 text-gray-500 dark:text-slate-400'
+                                : 'bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400'
                               }`}>{channelLabel}</span>
                             </div>
 
                             {/* Scheduled Date */}
                             <div>
-                              <span className="text-xs text-gray-500 dark:text-slate-400">{fmtDate(item.scheduled_date)}</span>
+                              <span className="text-xs text-slate-500 dark:text-slate-400">{fmtDate(item.scheduled_date)}</span>
                             </div>
 
                             {/* Status */}
                             <div onClick={e => e.stopPropagation()}>
                               {item.status === 'AGENDADO' && (
-                                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                <span className={`${PILULA_CLS} bg-amber-500/10 text-amber-600 dark:text-amber-400`}>
                                   <Clock size={10} /> Agendado
                                 </span>
                               )}
                               {item.status === 'ENVIANDO' && (
-                                <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-bold bg-blue-500/10 text-blue-400">
+                                <span className={`${PILULA_CLS} gap-1.5 bg-blue-500/10 text-blue-600 dark:text-blue-400`}>
                                   <div className="w-2.5 h-2.5 border-2 border-blue-400/30 border-t-blue-500 rounded-full animate-spin" /> Enviando...
                                 </span>
                               )}
@@ -1129,9 +1161,9 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                                   <span
                                     onMouseEnter={e => showTooltip(e, item, 'sent')}
                                     onMouseLeave={hideTooltip}
-                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold cursor-default transition-all bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+                                    className={`${PILULA_CLS} cursor-default bg-emerald-500/10 text-emerald-600 dark:text-emerald-400`}
                                   >
-                                    <CheckCircle2 size={11} /> Enviado
+                                    <CheckCircle2 size={10} /> Enviado
                                   </span>
                                 );
                               })()}
@@ -1139,19 +1171,19 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                                 <span
                                   onMouseEnter={e => showTooltip(e, item, 'error')}
                                   onMouseLeave={hideTooltip}
-                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold cursor-default bg-rose-500/15 text-rose-300 border border-rose-500/30"
+                                  className={`${PILULA_CLS} cursor-default bg-rose-500/10 text-rose-600 dark:text-rose-400`}
                                 >
                                   <AlertTriangle size={10} /> Erro
                                 </span>
                               )}
                               {item.status === 'CANCELADO' && (
-                                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-white/5 text-slate-500">Cancelado</span>
+                                <span className={`${PILULA_CLS} bg-slate-100 dark:bg-white/5 text-slate-500`}>Cancelado</span>
                               )}
                             </div>
 
                             {/* Chevron */}
                             <div className="w-8 flex justify-center">
-                              <button className={`transition-colors ${isRowExpanded ? 'text-violet-400' : 'text-slate-500'}`}>
+                              <button className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${isRowExpanded ? 'text-violet-500 bg-violet-500/10' : 'text-slate-400 hover:text-slate-700 dark:hover:text-white'}`}>
                                 {isRowExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                               </button>
                             </div>
@@ -1159,19 +1191,19 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
 
                           {/* Expanded Detail */}
                           {isRowExpanded && (
-                            <div className="bg-gray-50 dark:bg-dark-bg/50 border-t border-gray-100 dark:border-white/5 px-5 py-4">
+                            <div className="bg-slate-50 dark:bg-white/[0.02] border-t border-slate-100 dark:border-white/5 px-5 py-4">
                               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 {/* Contact Info */}
                                 <div className="space-y-2">
                                   <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Contato</p>
-                                  <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-slate-300">
-                                    {isWA ? <MessageCircle size={12} className="text-emerald-400" /> : isEmail ? <Mail size={12} className="text-blue-400" /> : <Phone size={12} className="text-slate-400" />}
+                                  <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+                                    {isWA ? <MessageCircle size={12} className="text-emerald-500" /> : isEmail ? <Mail size={12} className="text-blue-500" /> : <Phone size={12} className="text-slate-400" />}
                                     <span>{contact}</span>
                                   </div>
                                   {cl?.billingNotes && (
-                                    <div className="mt-2 p-2 bg-dark-card rounded-lg border border-white/5">
+                                    <div className="mt-2 p-3 bg-white dark:bg-dark-card rounded-xl border border-slate-200 dark:border-white/5">
                                       <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Observações</p>
-                                      <p className="text-xs text-slate-400 whitespace-pre-wrap">{cl.billingNotes}</p>
+                                      <p className="text-xs text-slate-600 dark:text-slate-400 whitespace-pre-wrap">{cl.billingNotes}</p>
                                     </div>
                                   )}
                                 </div>
@@ -1179,14 +1211,14 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                                 {/* Invoice & Rule details */}
                                 <div className="space-y-2">
                                   <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Detalhes</p>
-                                  <div className="flex items-center gap-3 p-3 bg-dark-card rounded-xl border border-white/5">
+                                  <div className="flex items-center gap-3 p-3 bg-white dark:bg-dark-card rounded-xl border border-slate-200 dark:border-white/5">
                                     <div className="min-w-0 flex-1">
-                                      <p className="text-xs font-bold text-dark-text">{formatCurrency(item.amount)}</p>
-                                      <p className="text-[10px] text-slate-500">Vencimento: {fmtDate(item.due_date)}</p>
+                                      <p className="text-sm font-bold text-slate-900 dark:text-white">{formatCurrency(item.amount)}</p>
+                                      <p className="text-[11px] text-slate-500">Vencimento: {fmtDate(item.due_date)}</p>
                                     </div>
                                     {item.invoice_url && (
-                                      <a href={item.invoice_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 px-2 py-1 bg-violet-500/10 border border-violet-500/20 text-violet-400 hover:bg-violet-500/20 rounded-lg text-[10px] font-bold transition-all shrink-0">
-                                        <ExternalLink size={10} /> Ver Fatura
+                                      <a href={item.invoice_url} target="_blank" rel="noopener noreferrer" className="h-8 flex items-center gap-1.5 px-3 bg-violet-500/10 text-violet-600 dark:text-violet-400 hover:bg-violet-500/20 rounded-lg text-[11px] font-semibold transition-colors shrink-0">
+                                        <ExternalLink size={11} /> Ver Fatura
                                       </a>
                                     )}
                                   </div>
@@ -1198,31 +1230,31 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
                                   <div className="flex flex-wrap items-center gap-2">
                                     {item.status === 'AGENDADO' && (
                                       <>
-                                        <button onClick={() => handleDispatchSend(item.id)} disabled={sendingId === item.id} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-colors">
-                                          <Play size={10} /> Enviar
+                                        <button onClick={() => handleDispatchSend(item.id)} disabled={sendingId === item.id} className="h-8 inline-flex items-center gap-1.5 px-3 rounded-lg text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-50 transition-colors">
+                                          <Play size={11} /> Enviar
                                         </button>
-                                        <button onClick={() => handleDispatchMarkManual(item.id)} disabled={sendingId === item.id} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold bg-violet-500/10 border border-violet-500/20 text-violet-400 hover:bg-violet-500/20 transition-colors">
-                                          <CheckCircle2 size={10} /> Manual
+                                        <button onClick={() => handleDispatchMarkManual(item.id)} disabled={sendingId === item.id} className="h-8 inline-flex items-center gap-1.5 px-3 rounded-lg text-[11px] font-semibold bg-violet-500/10 text-violet-600 dark:text-violet-400 hover:bg-violet-500/20 disabled:opacity-50 transition-colors">
+                                          <CheckCircle2 size={11} /> Manual
                                         </button>
-                                        <button onClick={() => handleDispatchCancel(item.id)} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold bg-white/5 border border-white/10 text-slate-400 hover:text-rose-400 hover:border-rose-500/20 transition-colors">
-                                          <X size={10} /> Cancelar
+                                        <button onClick={() => handleDispatchCancel(item.id)} className="h-8 inline-flex items-center gap-1.5 px-3 rounded-lg text-[11px] font-semibold bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-500 hover:text-rose-500 hover:border-rose-500/30 transition-colors">
+                                          <X size={11} /> Cancelar
                                         </button>
                                       </>
                                     )}
                                     {item.status === 'ENVIADO' && (
-                                      <button onClick={e => openMenu(e, item)} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold bg-white/5 border border-white/10 text-slate-400 hover:text-white hover:border-white/20 transition-colors">
-                                        <MoreHorizontal size={10} /> Opções
+                                      <button onClick={e => openMenu(e, item)} className="h-8 inline-flex items-center gap-1.5 px-3 rounded-lg text-[11px] font-semibold bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors">
+                                        <MoreHorizontal size={11} /> Opções
                                       </button>
                                     )}
                                     {item.status === 'ERRO' && (
-                                      <button onClick={() => handleDispatchSend(item.id)} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-emerald-500/10 hover:text-emerald-400 transition-colors">
-                                        <RefreshCw size={10} /> Retentar
+                                      <button onClick={() => handleDispatchSend(item.id)} className="h-8 inline-flex items-center gap-1.5 px-3 rounded-lg text-[11px] font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-emerald-500/10 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors">
+                                        <RefreshCw size={11} /> Retentar
                                       </button>
                                     )}
-                                    <button onClick={() => copyDispatchMessage(item)} className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all border ${
+                                    <button onClick={() => copyDispatchMessage(item)} className={`h-8 inline-flex items-center gap-1.5 px-3 rounded-lg text-[11px] font-semibold transition-colors border ${
                                       copiedDispatchId === item.id
-                                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-                                        : 'bg-white/5 border-white/10 text-slate-400 hover:text-white hover:border-white/20'
+                                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+                                        : 'bg-white dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-500 hover:text-slate-900 dark:hover:text-white'
                                     }`}>
                                       {copiedDispatchId === item.id ? <Check size={10} /> : <Copy size={10} />}
                                       {copiedDispatchId === item.id ? 'Copiado!' : 'Copiar Msg'}
@@ -1375,7 +1407,7 @@ const CollectionRulesBlock = ({ selectedMonth }: { selectedMonth: string }) => {
 
               <div>
                 <label className="text-[10px] font-bold text-gray-500 dark:text-slate-500 uppercase tracking-widest block mb-1">URL do Webhook n8n <span className="text-gray-400 dark:text-slate-600 normal-case font-medium">· usado só para e-mail</span></label>
-                <input type="url" value={cfgForm.n8n_webhook_url} onChange={e => { setCfgForm(f => ({ ...f, n8n_webhook_url: e.target.value })); setWebhookTestWA('idle'); setWebhookTestEmail('idle'); }}
+                <input type="url" value={cfgForm.n8n_webhook_url} onChange={e => { setCfgForm(f => ({ ...f, n8n_webhook_url: e.target.value })); setWebhookTestEmail('idle'); }}
                   placeholder="https://n8n.seudominio.com/webhook/..." className="w-full bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-violet-500/50" />
                 {/* Botões Testar Webhook */}
                 <div className="mt-2">
@@ -1765,10 +1797,11 @@ interface InadimplentesClient {
   note: string | null;
 }
 
+// Só cor (visual): fundo ~10% e texto legível nos dois temas
 const getDaysColor = (days: number) => {
-  if (days >= 30) return { bg: 'bg-rose-500/20', text: 'text-rose-400', border: 'border-rose-500/30' };
-  if (days >= 15) return { bg: 'bg-orange-500/20', text: 'text-orange-400', border: 'border-orange-500/30' };
-  return { bg: 'bg-amber-500/20', text: 'text-amber-400', border: 'border-amber-500/30' };
+  if (days >= 30) return { bg: 'bg-rose-500/10', text: 'text-rose-600 dark:text-rose-400', border: 'border-rose-500/20' };
+  if (days >= 15) return { bg: 'bg-orange-500/10', text: 'text-orange-600 dark:text-orange-400', border: 'border-orange-500/20' };
+  return { bg: 'bg-amber-500/10', text: 'text-amber-600 dark:text-amber-400', border: 'border-amber-500/20' };
 };
 
 const getWhatsAppMessage = (client: InadimplentesClient) => {
@@ -1898,143 +1931,77 @@ const InadimplentesBlock = ({ selectedMonth, onCountChange }: { selectedMonth: s
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Subtabs for Inadimplentes */}
-      <div className="flex items-center gap-4 border-b border-white/5 pb-1">
-        <button
-          onClick={() => setSubTab('mes')}
-          className={`pb-2 text-sm font-bold border-b-2 transition-colors ${
-            subTab === 'mes' ? 'border-rose-500 text-rose-400' : 'border-transparent text-slate-500 hover:text-slate-300'
-          }`}
-        >
+      <div className={ABAS_CLS}>
+        <button onClick={() => setSubTab('mes')} className={abaCls(subTab === 'mes')}>
           Inadimplentes do Mês
         </button>
-        <button
-          onClick={() => setSubTab('todos')}
-          className={`pb-2 text-sm font-bold border-b-2 transition-colors ${
-            subTab === 'todos' ? 'border-rose-500 text-rose-400' : 'border-transparent text-slate-500 hover:text-slate-300'
-          }`}
-        >
+        <button onClick={() => setSubTab('todos')} className={abaCls(subTab === 'todos')}>
           Todos inadimplentes
         </button>
       </div>
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-dark-card border border-white/10 rounded-2xl px-4 py-3 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[108px]">
-          <div className="flex items-center justify-between mb-2">
-            <div className="p-1.5 rounded-lg bg-rose-500"><Users size={16} className="text-white" /></div>
-            <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Inadimplentes</p>
-          </div>
-          <div className="flex flex-col mt-auto">
-            <h3 className="text-2xl font-black tracking-tight mb-1 text-dark-text">
-              <CountUp value={activeClients.length} />
-            </h3>
-            <div className="pt-2 border-t border-white/10">
-              <div className="flex justify-between items-center text-xs">
-                <span className="text-slate-500">Clientes com atraso</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-dark-card border border-white/10 rounded-2xl px-4 py-3 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[108px]">
-          <div className="flex items-center justify-between mb-2">
-            <div className="p-1.5 rounded-lg bg-orange-500"><DollarSign size={16} className="text-white" /></div>
-            <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Total Em Risco</p>
-          </div>
-          <div className="flex flex-col mt-auto">
-            <h3 className="text-2xl font-black tracking-tight mb-1 text-dark-text">
-              <CountUp value={totalAmount} isCurrency />
-            </h3>
-            <div className="pt-2 border-t border-white/10">
-              <div className="flex justify-between items-center text-xs">
-                <span className="text-slate-500">Em cobranças abertas</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-dark-card border border-white/10 rounded-2xl px-4 py-3 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[108px]">
-          <div className="flex items-center justify-between mb-2">
-            <div className="p-1.5 rounded-lg bg-amber-500"><Clock size={16} className="text-white" /></div>
-            <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Média De Atraso</p>
-          </div>
-          <div className="flex flex-col mt-auto">
-            <h3 className="text-2xl font-black tracking-tight mb-1 text-dark-text">
-              <CountUp value={avgDays} suffix="d" />
-            </h3>
-            <div className="pt-2 border-t border-white/10">
-              <div className="flex justify-between items-center text-xs">
-                <span className="text-slate-500">Dias em média</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-dark-card border border-white/10 rounded-2xl px-4 py-3 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[108px]">
-          <div className="flex items-center justify-between mb-2">
-            <div className="p-1.5 rounded-lg bg-rose-600"><AlertTriangle size={16} className="text-white" /></div>
-            <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Críticos +30d</p>
-          </div>
-          <div className="flex flex-col mt-auto">
-            <h3 className="text-2xl font-black tracking-tight mb-1 text-red-500/80 dark:text-red-400/80">
-              <CountUp value={criticalCount} />
-            </h3>
-            <div className="pt-2 border-t border-white/10">
-              <div className="flex justify-between items-center text-xs">
-                <span className="text-slate-500">Clientes críticos</span>
-              </div>
-            </div>
-          </div>
-        </div>
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+        <CartaoNumero Icone={Users} cor="#f43f5e" rotulo="Inadimplentes"
+          valor={<CountUp value={activeClients.length} />}
+          contexto="Clientes com atraso" />
+        <CartaoNumero Icone={DollarSign} cor="#f97316" rotulo="Total Em Risco"
+          valor={<CountUp value={totalAmount} isCurrency />}
+          contexto="Em cobranças abertas" />
+        <CartaoNumero Icone={Clock} cor="#f59e0b" rotulo="Média De Atraso"
+          valor={<CountUp value={avgDays} suffix="d" />}
+          contexto="Dias em média" />
+        {/* Críticos: cartão de alerta quando há algum */}
+        <CartaoNumero Icone={AlertTriangle} cor="#f43f5e" rotulo="Críticos +30d"
+          alerta={criticalCount > 0}
+          valor={<CountUp value={criticalCount} />}
+          contexto="Clientes críticos" />
       </div>
 
-      {/* Toolbar */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-[200px]">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+      {/* Toolbar — busca, ordenação e atualizar na mesma linha, 40px */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative flex-1 min-w-[220px]">
+          <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
           <input
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Buscar cliente ou telefone..."
-            className="w-full pl-9 pr-4 py-2 bg-dark-card border border-white/10 rounded-xl text-sm text-dark-text focus:outline-none focus:border-rose-500/50 focus:ring-1 focus:ring-rose-500/20"
+            className="w-full h-10 pl-10 pr-4 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-violet-500/50 transition-colors"
           />
         </div>
-        <div className="flex items-center gap-1 bg-dark-card border border-white/10 rounded-xl p-1">
+        <div className="h-10 flex items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/5">
           {([['days', 'Atraso'], ['value', 'Valor'], ['charges', 'Cobranças']] as const).map(([key, label]) => (
             <button
               key={key}
               onClick={() => setSortBy(key)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${sortBy === key ? 'bg-rose-500/20 text-rose-400' : 'text-slate-400 hover:text-white'}`}
+              className={`h-full px-3 rounded-lg text-xs font-semibold transition-colors ${sortBy === key ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'}`}
             >
               {label}
             </button>
           ))}
         </div>
-        <button
-          onClick={fetchData}
-          className="flex items-center gap-2 px-3 py-2 bg-dark-card border border-white/10 rounded-xl text-xs font-bold text-slate-400 hover:text-white hover:border-white/20 transition-all"
-        >
-          <RefreshCw size={13} />
+        <button onClick={fetchData} className={BOTAO_SEC_CLS}>
+          <RefreshCw size={14} />
           Atualizar
         </button>
       </div>
 
       {/* Clients List */}
-      <div className="bg-dark-card border border-white/10 rounded-2xl overflow-hidden">
+      <div className={TABELA_CLS}>
         {filtered.length === 0 ? (
-          <div className="py-20 text-center">
-            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-emerald-500/10 flex items-center justify-center">
-              <CheckCircle2 size={28} className="text-emerald-400" />
+          <div className="py-16 text-center">
+            <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+              <CheckCircle2 size={22} className="text-emerald-500" />
             </div>
-            <p className="text-lg font-bold text-dark-text mb-1">Nenhum inadimplente!</p>
+            <p className="text-base font-bold text-slate-900 dark:text-white mb-1">Nenhum inadimplente!</p>
             <p className="text-sm text-slate-500">Todos os clientes estão em dia com os pagamentos.</p>
           </div>
         ) : (
           <>
             {/* Table Header */}
-            <div className="grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 px-4 py-2.5 bg-dark-bg/50 border-b border-white/5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+            <div className="grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 px-4 py-2.5 bg-slate-50 dark:bg-white/[0.02] border-b border-slate-200 dark:border-white/5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
               <span>Cliente</span>
               <span>Cobranças</span>
               <span>Total Em Aberto</span>
@@ -2043,7 +2010,7 @@ const InadimplentesBlock = ({ selectedMonth, onCountChange }: { selectedMonth: s
             </div>
 
             {/* Rows */}
-            <div className="divide-y divide-white/5">
+            <div className="divide-y divide-slate-100 dark:divide-white/5">
               {filtered.map((client, idx) => {
                 const daysColor = getDaysColor(client.max_days_overdue || 0);
                 const isExpanded = expandedId === client.customer_id;
@@ -2064,24 +2031,24 @@ const InadimplentesBlock = ({ selectedMonth, onCountChange }: { selectedMonth: s
                   >
                     {/* Main Row */}
                     <div
-                      className="grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 px-4 py-2.5 hover:bg-white/[0.02] transition-colors cursor-pointer items-center"
+                      className="grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 px-4 py-3 hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors cursor-pointer items-center"
                       onClick={() => setExpandedId(isExpanded ? null : client.customer_id)}
                     >
                       {/* Client Info */}
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className={`w-7 h-7 rounded-xl flex items-center justify-center font-black text-xs shrink-0 ${daysColor.bg} ${daysColor.text}`}>
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${daysColor.bg} ${daysColor.text}`}>
                           {(client.customer_name || 'X').charAt(0).toUpperCase()}
                         </div>
                         <div className="min-w-0">
-                          <p className="text-[13px] font-bold text-dark-text truncate">{client.customer_name || 'Desconhecido'}</p>
+                          <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">{client.customer_name || 'Desconhecido'}</p>
                           <div className="flex items-center gap-2 mt-0.5">
                             {client.phone && (
-                              <span className="text-[10px] text-slate-500 flex items-center gap-1">
-                                <Phone size={9} /> {client.phone}
+                              <span className="text-[11px] text-slate-500 flex items-center gap-1">
+                                <Phone size={10} /> {client.phone}
                               </span>
                             )}
                             {client.squad && (
-                              <span className="text-[10px] text-violet-400 bg-violet-500/10 px-1.5 py-0.5 rounded-full">
+                              <span className={`${PILULA_CLS} h-4 px-1.5 bg-violet-500/10 text-violet-600 dark:text-violet-400`}>
                                 {client.squad}
                               </span>
                             )}
@@ -2091,50 +2058,50 @@ const InadimplentesBlock = ({ selectedMonth, onCountChange }: { selectedMonth: s
 
                       {/* Total Charges */}
                       <div>
-                        <span className={`text-xs font-bold ${daysColor.text} ${daysColor.bg} border ${daysColor.border} px-2 py-1 rounded-full`}>
+                        <span className={`${PILULA_CLS} ${daysColor.bg} ${daysColor.text}`}>
                           {client.total_charges} {Number(client.total_charges) === 1 ? 'cobrança' : 'cobranças'}
                         </span>
                       </div>
 
                       {/* Total Value */}
                       <div>
-                        <p className="text-sm font-black text-rose-400">{formatCurrency(client.total_value)}</p>
-                        <p className="text-[10px] text-slate-500">Desde {fmtDate(client.oldest_due_date)}</p>
+                        <p className="text-sm font-bold text-rose-500">{formatCurrency(client.total_value)}</p>
+                        <p className="text-[11px] text-slate-500">Desde {fmtDate(client.oldest_due_date)}</p>
                       </div>
 
                       {/* Days Overdue */}
                       <div>
-                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-black border ${daysColor.bg} ${daysColor.text} ${daysColor.border}`}>
+                        <span className={`${PILULA_CLS} ${daysColor.bg} ${daysColor.text}`}>
                           <Clock size={10} />
                           {client.max_days_overdue}d de atraso
                         </span>
                       </div>
 
                       {/* Actions */}
-                      <div className="flex items-center gap-2 w-24 justify-end" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center gap-1.5 w-24 justify-end" onClick={e => e.stopPropagation()}>
                         {waUrl && (
                           <a
                             href={waUrl}
                             target="_blank"
                             rel="noopener noreferrer"
                             title="Abrir WhatsApp"
-                            className="flex items-center gap-1 px-2 py-1.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 rounded-lg text-[10px] font-bold transition-all"
+                            className="h-7 flex items-center gap-1 px-2 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 rounded-lg text-[11px] font-semibold transition-colors"
                           >
-                            <MessageCircle size={11} /> WA
+                            <MessageCircle size={12} /> WA
                           </a>
                         )}
                         <button
                           onClick={() => copyWhatsAppMsg(client)}
                           title="Copiar mensagem"
-                          className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all border ${
+                          className={`w-7 h-7 flex items-center justify-center rounded-lg transition-colors border ${
                             copiedId === client.customer_id
-                              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-                              : 'bg-white/5 border-white/10 text-slate-400 hover:text-white hover:border-white/20'
+                              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+                              : 'bg-white dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-500 hover:text-slate-900 dark:hover:text-white'
                           }`}
                         >
-                          {copiedId === client.customer_id ? <Check size={11} /> : <Copy size={11} />}
+                          {copiedId === client.customer_id ? <Check size={12} /> : <Copy size={12} />}
                         </button>
-                        <button className={`transition-colors ${isExpanded ? 'text-rose-400' : 'text-slate-500'}`}>
+                        <button className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${isExpanded ? 'text-violet-500 bg-violet-500/10' : 'text-slate-400 hover:text-slate-700 dark:hover:text-white'}`}>
                           {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                         </button>
                       </div>
@@ -2142,7 +2109,7 @@ const InadimplentesBlock = ({ selectedMonth, onCountChange }: { selectedMonth: s
 
                     {/* Expanded: Charge Detail */}
                     {isExpanded && (
-                      <div className="bg-dark-bg/50 border-t border-white/5 px-5 py-4">
+                      <div className="bg-slate-50 dark:bg-white/[0.02] border-t border-slate-100 dark:border-white/5 px-5 py-4">
                         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Cobranças em Aberto</p>
                         <div className="space-y-2">
                           {client.charges.map((charge, idx) => {
@@ -2150,27 +2117,27 @@ const InadimplentesBlock = ({ selectedMonth, onCountChange }: { selectedMonth: s
                             const daysLate = Math.floor((Date.now() - new Date(charge.due_date).getTime()) / (1000 * 60 * 60 * 24));
                             const c = getDaysColor(daysLate);
                             return (
-                              <div key={idx} className="flex items-center justify-between p-3 bg-dark-card rounded-xl border border-white/5 hover:border-white/10 transition-all">
+                              <div key={idx} className="flex items-center justify-between gap-3 px-3 py-2.5 bg-white dark:bg-dark-card rounded-xl border border-slate-200 dark:border-white/5">
                                 <div className="flex items-center gap-3 min-w-0">
-                                  <span className="text-lg">{bt.icon}</span>
+                                  <span className="text-base">{bt.icon}</span>
                                   <div className="min-w-0">
-                                    <p className="text-xs font-bold text-dark-text truncate max-w-[300px]">{charge.description || 'Cobrança'}</p>
-                                    <p className="text-[10px] text-slate-500">Venceu em {fmtDate(charge.due_date)}</p>
+                                    <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 truncate max-w-[300px]">{charge.description || 'Cobrança'}</p>
+                                    <p className="text-[11px] text-slate-500">Venceu em {fmtDate(charge.due_date)}</p>
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-3 shrink-0">
-                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${c.bg} ${c.text} ${c.border}`}>
+                                  <span className={`${PILULA_CLS} ${c.bg} ${c.text}`}>
                                     {daysLate}d atraso
                                   </span>
-                                  <span className="text-sm font-black text-rose-400">{formatCurrency(charge.value)}</span>
+                                  <span className="text-sm font-bold text-rose-500">{formatCurrency(charge.value)}</span>
                                   {charge.invoice_url && (
                                     <a
                                       href={charge.invoice_url}
                                       target="_blank"
                                       rel="noopener noreferrer"
-                                      className="flex items-center gap-1 px-2 py-1 bg-violet-500/10 border border-violet-500/20 text-violet-400 hover:bg-violet-500/20 rounded-lg text-[10px] font-bold transition-all"
+                                      className="h-7 flex items-center gap-1 px-2.5 bg-violet-500/10 text-violet-600 dark:text-violet-400 hover:bg-violet-500/20 rounded-lg text-[11px] font-semibold transition-colors"
                                     >
-                                      <ExternalLink size={10} /> Ver Fatura
+                                      <ExternalLink size={11} /> Ver Fatura
                                     </a>
                                   )}
                                 </div>
@@ -2186,7 +2153,7 @@ const InadimplentesBlock = ({ selectedMonth, onCountChange }: { selectedMonth: s
                         )}
 
                         {/* Anotação de cobrança */}
-                        <div className="mt-4 pt-4 border-t border-white/5" onClick={(e) => e.stopPropagation()}>
+                        <div className="mt-4 pt-4 border-t border-slate-200 dark:border-white/5" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center gap-1.5 mb-2">
                             <MessageSquare size={12} className="text-slate-500" />
                             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Anotação de cobrança</p>
@@ -2196,16 +2163,16 @@ const InadimplentesBlock = ({ selectedMonth, onCountChange }: { selectedMonth: s
                             onChange={(e) => setNoteDrafts(prev => ({ ...prev, [client.customer_id]: e.target.value }))}
                             placeholder="Ex: conversei dia 02, cliente vai pagar até sexta, aguardando comprovante..."
                             rows={3}
-                            className="w-full bg-dark-card border border-white/10 rounded-xl px-3 py-2 text-xs text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500/40 resize-y"
+                            className="w-full bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-violet-500/40 resize-y"
                           />
                           <div className="flex items-center justify-end gap-2 mt-2">
                             {noteDrafts[client.customer_id] !== undefined && noteDrafts[client.customer_id] !== (client.note ?? '') && (
-                              <span className="text-[10px] text-amber-400">não salvo</span>
+                              <span className="text-[11px] text-amber-600 dark:text-amber-400">não salvo</span>
                             )}
                             <button
                               onClick={() => handleSaveNote(client.customer_id)}
                               disabled={savingNote === client.customer_id}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold bg-violet-500/10 border border-violet-500/20 text-violet-400 hover:bg-violet-500/20 transition-colors disabled:opacity-50"
+                              className="h-8 inline-flex items-center gap-1.5 px-3 rounded-lg text-[11px] font-semibold bg-violet-500/10 text-violet-600 dark:text-violet-400 hover:bg-violet-500/20 transition-colors disabled:opacity-50"
                             >
                               <Check size={11} /> {savingNote === client.customer_id ? 'Salvando...' : 'Salvar nota'}
                             </button>
@@ -2225,7 +2192,7 @@ const InadimplentesBlock = ({ selectedMonth, onCountChange }: { selectedMonth: s
       {filtered.length > 0 && (
         <div className="flex items-center justify-between px-2 text-xs text-slate-500">
           <span>{filtered.length} cliente(s) com cobranças em atraso</span>
-          <span className="font-bold text-rose-400">Total: {formatCurrency(totalAmount)}</span>
+          <span className="font-bold text-rose-500">Total: {formatCurrency(totalAmount)}</span>
         </div>
       )}
     </div>
@@ -2349,58 +2316,47 @@ export default function ContasAReceber() {
   return (
     <div className="min-h-screen bg-dark-bg transition-colors duration-300">
 
-      {/* ── Header ── */}
-      <div className="flex items-start justify-between gap-4 flex-wrap px-6 md:px-8 pt-8 pb-4">
-        <div>
-          <SplitHeadline text="Contas a " highlight="Receber" className="text-2xl font-black tracking-tight text-dark-text" />
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Referência: {monthLabel}
-          </p>
-        </div>
+      {/* ── Header ── visual refeito em 09/10/2026 (mesmas informações): título à
+          esquerda, mês num controle só à direita, abas numa barra segmentada abaixo */}
+      <div className="max-w-[1600px] mx-auto px-6 md:px-8 pt-8 pb-5 space-y-5">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <SplitHeadline text="Contas a " highlight="Receber" subtitle={`Referência: ${monthLabel}`} />
 
-        <div className="flex items-center gap-4 mt-1 flex-wrap">
-          {/* Tabs */}
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setMainTab('cobrancas')}
-              className={`px-3 py-1.5 text-sm font-bold border-b-2 transition-colors ${mainTab === 'cobrancas' ? 'border-violet-500 text-violet-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
-            >
-              Cobranças
-            </button>
-            <button
-              onClick={() => setMainTab('receber')}
-              className={`px-3 py-1.5 text-sm font-bold border-b-2 transition-colors ${mainTab === 'receber' ? 'border-violet-500 text-violet-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
-            >
-              A Receber
-            </button>
-            <button
-              onClick={() => setMainTab('inadimplentes')}
-              className={`px-3 py-1.5 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${mainTab === 'inadimplentes' ? 'border-rose-500 text-rose-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}
-            >
-              <span>Inadimplentes</span>
-              {inadimplenteCount > 0 && <span className="text-[10px] font-black bg-rose-500/20 text-rose-400 border border-rose-500/30 px-1.5 py-0.5 rounded-full">{inadimplenteCount}</span>}
-            </button>
-          </div>
-
-          {/* Month nav */}
-          <div className="flex items-center gap-1">
+          {/* Month nav — um controle só, com as setas dentro */}
+          <div className="h-10 flex items-center rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 shrink-0">
             <button onClick={prevMonth}
-              className="w-9 h-9 rounded-xl bg-dark-card border border-white/10 hover:border-violet-500/60 flex items-center justify-center transition-all hover:bg-dark-card-hover">
-              <ChevronDown size={14} className="text-slate-400 rotate-90" />
+              className="w-9 h-full flex items-center justify-center text-slate-400 hover:text-violet-500 rounded-l-xl transition-colors"
+              title="Mês anterior">
+              <ChevronDown size={15} className="rotate-90" />
             </button>
-            <div className="flex items-center gap-2 px-4 py-2 bg-dark-card border border-violet-500/60 rounded-xl">
-              <Calendar size={16} className="text-violet-500" />
-              <span className="text-sm font-bold text-dark-text">{monthLabel}</span>
+            <div className="flex items-center gap-2 px-2 min-w-[150px] justify-center">
+              <Calendar size={14} className="text-violet-500" />
+              <span className="text-sm font-bold text-slate-900 dark:text-white">{monthLabel}</span>
             </div>
             <button onClick={nextMonth}
-              className="w-9 h-9 rounded-xl bg-dark-card border border-white/10 hover:border-violet-500/60 flex items-center justify-center transition-all hover:bg-dark-card-hover">
-              <ChevronDown size={14} className="text-slate-400 -rotate-90" />
+              className="w-9 h-full flex items-center justify-center text-slate-400 hover:text-violet-500 rounded-r-xl transition-colors"
+              title="Próximo mês">
+              <ChevronDown size={15} className="-rotate-90" />
             </button>
           </div>
+        </div>
+
+        {/* Tabs */}
+        <div className={ABAS_CLS}>
+          <button onClick={() => setMainTab('cobrancas')} className={abaCls(mainTab === 'cobrancas')}>
+            Cobranças
+          </button>
+          <button onClick={() => setMainTab('receber')} className={abaCls(mainTab === 'receber')}>
+            A Receber
+          </button>
+          <button onClick={() => setMainTab('inadimplentes')} className={abaCls(mainTab === 'inadimplentes')}>
+            <span>Inadimplentes</span>
+            {inadimplenteCount > 0 && <span className="text-[10px] font-bold h-5 min-w-[20px] px-1.5 rounded-full inline-flex items-center justify-center bg-rose-500/10 text-rose-600 dark:text-rose-400">{inadimplenteCount}</span>}
+          </button>
         </div>
       </div>
 
-      <div className="px-6 md:px-8 pb-8 space-y-6">
+      <div className="max-w-[1600px] mx-auto px-6 md:px-8 pb-8 space-y-5">
         {loading ? (
           <div className="flex items-center justify-center py-24">
             <div className="w-8 h-8 border-4 border-violet-500/30 border-t-violet-500 rounded-full animate-spin" />
@@ -2411,110 +2367,54 @@ export default function ContasAReceber() {
             {mainTab === 'receber' && (
               <>
                 {/* KPI Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
                   {/* 1) Recebidas */}
-                  <div className="bg-dark-card border border-white/10 rounded-2xl px-4 py-3 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[108px]">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="p-1.5 rounded-lg bg-emerald-600"><TrendingUp size={16} className="text-white" /></div>
-                      <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Recebidas</p>
-                    </div>
-                    <div className="flex flex-col mt-auto">
-                      <h3 className="text-2xl font-black tracking-tight mb-1 text-dark-text">
-                        <CountUp value={summary.total_recebidas} isCurrency />
-                      </h3>
-                      <div className="pt-2 border-t border-white/10">
-                        <div className="flex justify-between items-center text-xs">
-                          <span className="text-slate-500">Pix + Boleto</span>
-                          <span className="font-semibold text-emerald-500">{recebidas.length} cobranças</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                  <CartaoNumero Icone={TrendingUp} cor="#10b981" rotulo="Recebidas"
+                    valor={<CountUp value={summary.total_recebidas} isCurrency />}
+                    contexto={<>Pix + Boleto · <span className="font-semibold text-emerald-600 dark:text-emerald-400">{recebidas.length} cobranças</span></>} />
                   {/* 2) Confirmadas */}
-                  <div className="bg-dark-card border border-white/10 rounded-2xl px-4 py-3 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[108px]">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="p-1.5 rounded-lg bg-blue-600"><Banknote size={16} className="text-white" /></div>
-                      <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Confirmadas</p>
-                    </div>
-                    <div className="flex flex-col mt-auto">
-                      <h3 className="text-2xl font-black tracking-tight mb-1 text-dark-text">
-                        <CountUp value={summary.total_confirmadas} isCurrency />
-                      </h3>
-                      <div className="pt-2 border-t border-white/10">
-                        <div className="flex justify-between items-center text-xs">
-                          <span className="text-slate-500">Cartão + Antecipadas</span>
-                          <span className="font-semibold text-blue-500">{confirmadas.length} cobranças</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                  <CartaoNumero Icone={Banknote} cor="#3b82f6" rotulo="Confirmadas"
+                    valor={<CountUp value={summary.total_confirmadas} isCurrency />}
+                    contexto={<>Cartão + Antecipadas · <span className="font-semibold text-blue-600 dark:text-blue-400">{confirmadas.length} cobranças</span></>} />
                   {/* 3) A Receber */}
-                  <div className="bg-dark-card border border-white/10 rounded-2xl px-4 py-3 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[108px]">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="p-1.5 rounded-lg bg-amber-500"><Clock size={16} className="text-white" /></div>
-                      <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">A Receber</p>
-                    </div>
-                    <div className="flex flex-col mt-auto">
-                      <h3 className="text-2xl font-black tracking-tight mb-1 text-dark-text">
-                        <CountUp value={pendentes.reduce((s, r) => s + parseFloat(r.value || '0'), 0)} isCurrency />
-                      </h3>
-                      <div className="pt-2 border-t border-white/10">
-                        <div className="flex justify-between items-center text-xs">
-                          <span className="text-slate-500">Cobranças</span>
-                          <span className="font-semibold text-amber-500">{pendentes.length} pendentes</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  {/* 4) Vencidas */}
-                  <div className="bg-dark-card border border-white/10 rounded-2xl px-4 py-3 relative overflow-hidden transition-all duration-200 flex flex-col min-h-[108px]">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="p-1.5 rounded-lg bg-rose-600"><AlertTriangle size={16} className="text-white" /></div>
-                      <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Vencidas</p>
-                    </div>
-                    <div className="flex flex-col mt-auto">
-                      <h3 className={`text-2xl font-black tracking-tight mb-1 ${vencidos.length > 0 ? 'text-red-500/80 dark:text-red-400/80' : 'text-dark-text'}`}>
-                        <CountUp value={vencidos.reduce((s, r) => s + parseFloat(r.value || '0'), 0)} isCurrency />
-                      </h3>
-                      <div className="pt-2 border-t border-white/10">
-                        <div className="flex justify-between items-center text-xs">
-                          <span className="text-slate-500">Atrasadas</span>
-                          <span className={`font-semibold ${vencidos.length > 0 ? 'text-rose-500' : 'text-slate-500'}`}>{vencidos.length} cobranças</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                  <CartaoNumero Icone={Clock} cor="#f59e0b" rotulo="A Receber"
+                    valor={<CountUp value={pendentes.reduce((s, r) => s + parseFloat(r.value || '0'), 0)} isCurrency />}
+                    contexto={<>Cobranças · <span className="font-semibold text-amber-600 dark:text-amber-400">{pendentes.length} pendentes</span></>} />
+                  {/* 4) Vencidas — cartão de alerta quando há cobrança atrasada */}
+                  <CartaoNumero Icone={AlertTriangle} cor="#f43f5e" rotulo="Vencidas"
+                    alerta={vencidos.length > 0}
+                    valor={<CountUp value={vencidos.reduce((s, r) => s + parseFloat(r.value || '0'), 0)} isCurrency />}
+                    contexto={<>Atrasadas · <span className="font-semibold">{vencidos.length} cobranças</span></>} />
                 </div>
 
                 {/* Sub-tabs: A Receber / Já Recebido */}
-                <div className="bg-dark-card border border-white/10 rounded-2xl overflow-hidden">
-                  <div className="flex items-center gap-6 px-6 pt-4 border-b border-white/5">
-                    <button onClick={() => setReceberSubTab('pendentes')}
-                      className={`pb-3 text-sm font-bold border-b-2 transition-colors ${receberSubTab === 'pendentes' ? 'border-amber-400 text-amber-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}>
+                <div className="space-y-3">
+                  <div className={ABAS_CLS}>
+                    <button onClick={() => setReceberSubTab('pendentes')} className={abaCls(receberSubTab === 'pendentes')}>
                       A Receber
-                      <span className="ml-2 text-[10px] font-bold bg-amber-500/15 text-amber-400 px-2 py-0.5 rounded-full">{pendentes.length + vencidos.length}</span>
+                      <span className={`text-[10px] font-bold h-5 min-w-[20px] px-1.5 rounded-full inline-flex items-center justify-center ${receberSubTab === 'pendentes' ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400' : 'bg-slate-200/70 dark:bg-white/5 text-slate-500'}`}>{pendentes.length + vencidos.length}</span>
                     </button>
-                    <button onClick={() => setReceberSubTab('recebidos')}
-                      className={`pb-3 text-sm font-bold border-b-2 transition-colors ${receberSubTab === 'recebidos' ? 'border-emerald-400 text-emerald-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}>
+                    <button onClick={() => setReceberSubTab('recebidos')} className={abaCls(receberSubTab === 'recebidos')}>
                       Já Recebido
-                      <span className="ml-2 text-[10px] font-bold bg-emerald-500/15 text-emerald-400 px-2 py-0.5 rounded-full">{recebidos.length}</span>
+                      <span className={`text-[10px] font-bold h-5 min-w-[20px] px-1.5 rounded-full inline-flex items-center justify-center ${receberSubTab === 'recebidos' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-slate-200/70 dark:bg-white/5 text-slate-500'}`}>{recebidos.length}</span>
                     </button>
                   </div>
 
+                <div className={TABELA_CLS}>
                   {/* Sub-tab: A Receber */}
                   {receberSubTab === 'pendentes' && (
-                    <div>
+                    <div className="overflow-x-auto">
                       <table className="w-full text-left border-collapse">
                         <thead>
-                          <tr className="bg-gray-50 dark:bg-dark-bg/50 border-b border-gray-100 dark:border-white/5">
-                            <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest">Cliente / Descrição</th>
-                            <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest">Tipo</th>
-                            <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest">Vencimento</th>
-                            <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest text-right">Valor</th>
-                            <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest text-right">Status</th>
+                          <tr className="bg-slate-50 dark:bg-white/[0.02] border-b border-slate-200 dark:border-white/5">
+                            <th className="px-4 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Cliente / Descrição</th>
+                            <th className="px-4 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Tipo</th>
+                            <th className="px-4 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Vencimento</th>
+                            <th className="px-4 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right">Valor</th>
+                            <th className="px-4 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right">Status</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-100 dark:divide-white/5">
+                        <tbody className="divide-y divide-slate-100 dark:divide-white/5">
                           {[...vencidos, ...pendentes].length === 0 ? (
                             <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500 text-sm">Nenhuma cobrança pendente neste mês.</td></tr>
                           ) : [...vencidos, ...pendentes].map((inv, idx) => {
@@ -2523,7 +2423,7 @@ export default function ContasAReceber() {
                             return (
                               <motion.tr
                                 key={idx}
-                                className="hover:bg-white/[0.02] transition-colors"
+                                className="hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors"
                                 initial={{ opacity: 0, y: -18, scale: 0.98 }}
                                 animate={{ opacity: 1, y: 0, scale: 1 }}
                                 transition={{
@@ -2533,33 +2433,33 @@ export default function ContasAReceber() {
                                 }}
                               >
                                 <td className="px-4 py-3">
-                                  <p className="text-sm font-bold text-gray-900 dark:text-white">{inv.customer_name || 'Desconhecido'}</p>
-                                  {inv.description && <p className="text-xs text-slate-500 truncate max-w-[300px]">{inv.description}</p>}
+                                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{inv.customer_name || 'Desconhecido'}</p>
+                                  {inv.description && <p className="text-[11px] text-slate-500 truncate max-w-[300px]">{inv.description}</p>}
                                 </td>
                                 <td className="px-4 py-3">
-                                  <span className="text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest bg-gray-100 dark:bg-white/5 px-2 py-1 rounded-md border border-gray-200 dark:border-white/5">
+                                  <span className={`${PILULA_CLS} bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300`}>
                                     {bt.icon} {bt.label}
                                   </span>
                                 </td>
                                 <td className="px-4 py-3">
-                                  <span className="text-xs text-slate-400">{fmtDate(inv.due_date)}</span>
+                                  <span className="text-xs text-slate-500 dark:text-slate-400">{fmtDate(inv.due_date)}</span>
                                 </td>
                                 <td className="px-4 py-3 text-right">
-                                  <span className={`text-sm font-bold ${isOverdue ? 'text-rose-400' : 'text-amber-400'}`}>{formatCurrency(inv.value)}</span>
+                                  <span className={`text-sm font-bold ${isOverdue ? 'text-rose-500' : 'text-amber-600 dark:text-amber-400'}`}>{formatCurrency(inv.value)}</span>
                                 </td>
-                                <td className="px-4 py-3 text-right">
+                                <td className="px-4 py-3 text-right whitespace-nowrap">
                                   {isOverdue ? (
-                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-rose-400 bg-rose-500/10 px-2 py-1 rounded-full">
+                                    <span className={`${PILULA_CLS} bg-rose-500/10 text-rose-600 dark:text-rose-400`}>
                                       <AlertTriangle size={10} /> Vencido
                                     </span>
                                   ) : (
-                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-amber-400 bg-amber-500/10 px-2 py-1 rounded-full">
+                                    <span className={`${PILULA_CLS} bg-amber-500/10 text-amber-600 dark:text-amber-400`}>
                                       <Clock size={10} /> Pendente
                                     </span>
                                   )}
                                   {inv.invoice_url && (
-                                    <a href={inv.invoice_url} target="_blank" rel="noopener noreferrer" className="ml-2 text-violet-400 hover:text-violet-300 inline-block align-middle">
-                                      <ExternalLink size={12} />
+                                    <a href={inv.invoice_url} target="_blank" rel="noopener noreferrer" title="Ver fatura" className="ml-2 text-slate-400 hover:text-violet-500 inline-block align-middle transition-colors">
+                                      <ExternalLink size={13} />
                                     </a>
                                   )}
                                 </td>
@@ -2573,19 +2473,19 @@ export default function ContasAReceber() {
 
                   {/* Sub-tab: Já Recebido */}
                   {receberSubTab === 'recebidos' && (
-                    <div>
+                    <div className="overflow-x-auto">
                       <table className="w-full text-left border-collapse">
                         <thead>
-                          <tr className="bg-gray-50 dark:bg-dark-bg/50 border-b border-gray-100 dark:border-white/5">
-                            <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest">Cliente / Descrição</th>
-                            <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest">Tipo</th>
-                            <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest">Vencimento</th>
-                            <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest">Pago em</th>
-                            <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest text-right">Valor</th>
-                            <th className="px-4 py-3 text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest text-right">Status</th>
+                          <tr className="bg-slate-50 dark:bg-white/[0.02] border-b border-slate-200 dark:border-white/5">
+                            <th className="px-4 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Cliente / Descrição</th>
+                            <th className="px-4 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Tipo</th>
+                            <th className="px-4 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Vencimento</th>
+                            <th className="px-4 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Pago em</th>
+                            <th className="px-4 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right">Valor</th>
+                            <th className="px-4 py-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right">Status</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-100 dark:divide-white/5">
+                        <tbody className="divide-y divide-slate-100 dark:divide-white/5">
                           {recebidos.length === 0 ? (
                             <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-500 text-sm">Nenhum recebimento neste mês.</td></tr>
                           ) : recebidos.map((inv: any, idx: number) => {
@@ -2593,7 +2493,7 @@ export default function ContasAReceber() {
                             return (
                               <motion.tr
                                 key={idx}
-                                className="hover:bg-white/[0.02] transition-colors"
+                                className="hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors"
                                 initial={{ opacity: 0, y: -18, scale: 0.98 }}
                                 animate={{ opacity: 1, y: 0, scale: 1 }}
                                 transition={{
@@ -2603,25 +2503,25 @@ export default function ContasAReceber() {
                                 }}
                               >
                                 <td className="px-4 py-3">
-                                  <p className="text-sm font-bold text-gray-900 dark:text-white">{inv.customer_name || 'Desconhecido'}</p>
-                                  {inv.description && <p className="text-xs text-slate-500 truncate max-w-[300px]">{inv.description}</p>}
+                                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{inv.customer_name || 'Desconhecido'}</p>
+                                  {inv.description && <p className="text-[11px] text-slate-500 truncate max-w-[300px]">{inv.description}</p>}
                                 </td>
                                 <td className="px-4 py-3">
-                                  <span className="text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase tracking-widest bg-gray-100 dark:bg-white/5 px-2 py-1 rounded-md border border-gray-200 dark:border-white/5">
+                                  <span className={`${PILULA_CLS} bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300`}>
                                     {bt.icon} {bt.label}
                                   </span>
                                 </td>
                                 <td className="px-4 py-3">
-                                  <span className="text-xs text-slate-400">{fmtDate(inv.due_date)}</span>
+                                  <span className="text-xs text-slate-500 dark:text-slate-400">{fmtDate(inv.due_date)}</span>
                                 </td>
                                 <td className="px-4 py-3">
-                                  <span className="text-xs text-emerald-400">{inv.payment_date ? fmtDate(inv.payment_date) : '—'}</span>
+                                  <span className="text-xs text-emerald-600 dark:text-emerald-400">{inv.payment_date ? fmtDate(inv.payment_date) : '—'}</span>
                                 </td>
                                 <td className="px-4 py-3 text-right">
-                                   <span className="text-sm font-bold text-emerald-400">{formatCurrency(inv.value)}</span>
+                                   <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">{formatCurrency(inv.value)}</span>
                                  </td>
-                                 <td className="px-4 py-3 text-right">
-                                   <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-full">
+                                 <td className="px-4 py-3 text-right whitespace-nowrap">
+                                   <span className={`${PILULA_CLS} bg-emerald-500/10 text-emerald-600 dark:text-emerald-400`}>
                                      <CheckCircle2 size={10} /> Recebido
                                    </span>
                                  </td>
@@ -2632,6 +2532,7 @@ export default function ContasAReceber() {
                        </table>
                      </div>
                    )}
+                 </div>
                  </div>
                </>
              )}

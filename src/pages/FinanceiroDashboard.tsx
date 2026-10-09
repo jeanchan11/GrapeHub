@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend, Filler, LineController, BarController } from 'chart.js';
 import { Chart } from 'react-chartjs-2';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend as RechartsLegend, ResponsiveContainer, PieChart, Pie, Cell, ComposedChart, Line, Area } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend as RechartsLegend, ResponsiveContainer, PieChart, Pie, Cell, ComposedChart, Line, Area, ReferenceLine } from 'recharts';
 import { MoreVertical, DollarSign, TrendingUp, TrendingDown, AlertCircle, Wallet, Calendar, AlertTriangle, ArrowUpRight, ShieldAlert, Users, ChevronDown, ChevronUp, X, ArrowUp, ArrowDown } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import BotaoSincronizar from '../components/BotaoSincronizar';
@@ -503,7 +503,7 @@ export default function FinanceiroDashboard() {
       </style>
       <div className="max-w-[1600px] mx-auto space-y-6">
         
-        {/* Header */}
+        {/* Cabeçalho — visual refeito em 09/10/2026 (mesmas informações): controles com 40px de altura */}
         <PageHeader
           title="Fluxo de"
           titleAccent="Caixa"
@@ -511,335 +511,229 @@ export default function FinanceiroDashboard() {
         >
           <div className="flex items-center gap-2">
             <BotaoSincronizar onDone={() => setVersaoSync(v => v + 1)} />
-            {/* Botão Fred IA */}
             <button
               onClick={() => setShowAI(o => !o)}
-              className={`flex items-center gap-2 px-3 py-2 rounded-xl border font-bold text-xs transition-all ${
+              className={`h-10 flex items-center gap-2 px-3 rounded-xl border text-xs font-bold transition-all ${
                 showAI
                   ? 'bg-violet-500 border-violet-500 text-white shadow-lg shadow-violet-500/30'
-                  : 'bg-dark-card border-white/10 text-violet-400 hover:border-violet-500/50 hover:bg-violet-500/10'
+                  : 'bg-white dark:bg-white/5 border-slate-200 dark:border-white/10 text-violet-500 hover:border-violet-500/50'
               }`}
               title="Perguntar ao Fred (especialista financeiro IA)"
             >
-              <div style={{ width: 22, height: 22, flexShrink: 0 }}>
-                <img src={fredImg} alt="Fred" style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
+              <img src={fredImg} alt="Fred" className="w-5 h-5 object-contain" />
+              Consultar Fred
+            </button>
+            {/* Mês: um controle só, com as setas dentro */}
+            <div className="h-10 flex items-center rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5">
+              <button
+                onClick={() => {
+                  const [y, m] = selectedMonth.split('-').map(Number);
+                  let nm = m - 1; let ny = y;
+                  if (nm < 1) { nm = 12; ny -= 1; }
+                  setSelectedMonth(`${ny}-${String(nm).padStart(2,'0')}`);
+                }}
+                className="w-9 h-full flex items-center justify-center text-slate-400 hover:text-violet-500 rounded-l-xl"
+                title="Mês anterior"
+              >
+                <ChevronDown size={15} className="rotate-90" />
+              </button>
+              <div className="flex items-center gap-2 px-2 min-w-[150px] justify-center">
+                <Calendar size={14} className="text-violet-500" />
+                <span className="text-sm font-bold text-slate-900 dark:text-white">
+                  {MESES_FULL_FIN[parseInt(selectedMonth.split('-')[1]) - 1]} {selectedMonth.split('-')[0]}
+                </span>
               </div>
-              <span>Consultar Fred</span>
-            </button>
-
-            {/* Month picker */}
-            <div className="flex items-center gap-1">
-            {/* Seta esquerda */}
-            <button
-              onClick={() => {
-                const [y, m] = selectedMonth.split('-').map(Number);
-                let nm = m - 1; let ny = y;
-                if (nm < 1) { nm = 12; ny -= 1; }
-                setSelectedMonth(`${ny}-${String(nm).padStart(2,'0')}`);
-              }}
-              className="w-9 h-9 rounded-xl bg-dark-card border border-white/10 hover:border-violet-500/60 flex items-center justify-center transition-all hover:bg-dark-card-hover"
-              title="Mês anterior"
-            >
-              <ChevronDown size={14} className="text-slate-400 rotate-90" />
-            </button>
-            {/* Label */}
-            <div className="flex items-center gap-2 px-4 py-2 bg-dark-card border border-violet-500/60 rounded-xl">
-              <Calendar size={16} className="text-violet-500" />
-              <span className="text-sm font-bold text-dark-text">
-                {MESES_FULL_FIN[parseInt(selectedMonth.split('-')[1]) - 1]} {selectedMonth.split('-')[0]}
-              </span>
+              <button
+                onClick={() => {
+                  const [y, m] = selectedMonth.split('-').map(Number);
+                  let nm = m + 1; let ny = y;
+                  if (nm > 12) { nm = 1; ny += 1; }
+                  setSelectedMonth(`${ny}-${String(nm).padStart(2,'0')}`);
+                }}
+                className="w-9 h-full flex items-center justify-center text-slate-400 hover:text-violet-500 rounded-r-xl"
+                title="Próximo mês"
+              >
+                <ChevronDown size={15} className="-rotate-90" />
+              </button>
             </div>
-            {/* Seta direita */}
-            <button
-              onClick={() => {
-                const [y, m] = selectedMonth.split('-').map(Number);
-                let nm = m + 1; let ny = y;
-                if (nm > 12) { nm = 1; ny += 1; }
-                setSelectedMonth(`${ny}-${String(nm).padStart(2,'0')}`);
-              }}
-              className="w-9 h-9 rounded-xl bg-dark-card border border-white/10 hover:border-violet-500/60 flex items-center justify-center transition-all hover:bg-dark-card-hover"
-              title="Próximo mês"
-            >
-              <ChevronDown size={14} className="text-slate-400 -rotate-90" />
-            </button>
-            </div>{/* end month picker */}
-          </div>{/* end outer flex gap-2 */}
+          </div>
         </PageHeader>
 
-        {/* Visão Geral — Fluxo de Caixa (DRE e Orçamento migraram para a página "DRE") */}
-        {activeTab === 'visao' && (
-        <>
-            {/* Linha 1 - KPIs */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard
-            icon={ArrowUpRight}
-            title="Caixa"
-            value={formatCurrency(saldoCaixa)}
-            subtitle={
-              <div className="space-y-3">
-                <div className="flex flex-col gap-2">
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-slate-500">Atual</span>
-                    <span className={`font-semibold ${saldoCaixa >= 0 ? 'text-emerald-500' : 'text-rose-400'}`}>
-                      {formatCurrency(saldoCaixa)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-slate-500">Previsto fim do mês</span>
-                    <span className={`font-semibold ${saldoAcumulado >= 0 ? 'text-violet-400' : 'text-rose-400'}`}>
-                      {formatCurrency(saldoAcumulado)}
-                    </span>
-                  </div>
-                </div>
-                <div className="h-[22px]" />
+        {activeTab === 'visao' && (() => {
+          const pctReceb = Math.round((valorRecebido / (faturamentoTotal || 1)) * 100);
+          const pctPago = Math.round((valorPago / (totalDespesasMes || 1)) * 100);
+          const saldoPrevistoPeriodo = faturamentoTotal - totalDespesasMes;
+          const curto = (v: number) => {
+            const a = Math.abs(v);
+            return a >= 1000 ? `${v < 0 ? '−' : ''}R$ ${(a / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mil` : `R$ ${v.toLocaleString('pt-BR')}`;
+          };
+          const Kpi = ({ Icone, cor, rotulo, valor, negativo, linhas, barra }: {
+            Icone: any; cor: string; rotulo: string; valor: number; negativo?: boolean;
+            linhas: { r: string; v: number; cls: string }[]; barra?: { pct: number; cor: string };
+          }) => (
+            <div className={`px-5 py-4 rounded-2xl border ${negativo ? 'bg-rose-500/[0.06] border-rose-500/20' : 'bg-white dark:bg-dark-card/60 border-slate-200 dark:border-white/5'}`}>
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: `${cor}1a`, color: cor }}><Icone size={14} /></div>
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{rotulo}</p>
               </div>
-            }
-            colorClass="bg-emerald-600"
-            isNegative={saldoCaixa < 0}
-          />
-          <StatCard 
-            icon={TrendingUp} 
-            title="Faturamento do Mês" 
-            value={formatCurrency(faturamentoTotal)} 
-            subtitle={
-              <div className="space-y-3">
-                <div className="flex flex-col gap-2">
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-slate-500">Recebido</span>
-                    <span className="font-semibold text-emerald-500">{formatCurrency(valorRecebido)}</span>
+              <h3 className={`text-2xl font-bold ${negativo ? 'text-rose-500' : 'text-slate-900 dark:text-white'}`}>{formatCurrency(valor)}</h3>
+              <div className="mt-3 space-y-1">
+                {linhas.map(l => (
+                  <div key={l.r} className="flex items-center justify-between text-xs">
+                    <span className="text-slate-500">{l.r}</span>
+                    <span className={`font-semibold ${l.cls}`}>{formatCurrency(l.v)}</span>
                   </div>
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-slate-500">A receber</span>
-                    <span className="font-semibold text-slate-700 dark:text-slate-300">{formatCurrency(valorAReceber)}</span>
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <div className="flex justify-between items-center">
-                    <div className="flex-1 h-1.5 bg-slate-100 dark:bg-white/10 rounded-full overflow-hidden">
-                      <div 
-                        className="h-full bg-emerald-500 rounded-full transition-all duration-500" 
-                        style={{ width: `${Math.min(100, (valorRecebido / (faturamentoTotal || 1)) * 100)}%` }}
-                      ></div>
-                    </div>
-                    <span className="ml-3 text-[10px] font-bold text-slate-400">
-                      {Math.round((valorRecebido / (faturamentoTotal || 1)) * 100)}%
-                    </span>
-                  </div>
-                </div>
+                ))}
               </div>
-            }
-            colorClass="bg-violet-600"
-          />
-          <StatCard 
-            icon={TrendingDown} 
-            title="Total de Despesas do Mês" 
-            value={formatCurrency(totalDespesasMes)} 
-            subtitle={
-              <div className="space-y-3">
-                <div className="flex flex-col gap-2">
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-slate-500">Pago</span>
-                    <span className="font-semibold text-emerald-500">{formatCurrency(valorPago)}</span>
+              {barra && (
+                <div className="flex items-center gap-2 mt-2.5">
+                  <div className="flex-1 h-1.5 rounded-full bg-slate-100 dark:bg-white/5 overflow-hidden">
+                    <div className="h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(100, barra.pct)}%`, background: barra.cor }} />
                   </div>
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-slate-500">A pagar</span>
-                    <span className="font-semibold text-rose-400">{formatCurrency(valorAPagar)}</span>
-                  </div>
+                  <span className="text-[10px] font-bold text-slate-400 w-8 text-right">{barra.pct}%</span>
                 </div>
-                <div className="space-y-1.5">
-                  <div className="flex justify-between items-center">
-                    <div className="flex-1 h-1.5 bg-slate-100 dark:bg-white/10 rounded-full overflow-hidden">
-                      <div 
-                        className="h-full bg-emerald-500 rounded-full transition-all duration-500" 
-                        style={{ width: `${Math.min(100, (valorPago / (totalDespesasMes || 1)) * 100)}%` }}
-                      ></div>
-                    </div>
-                    <span className="ml-3 text-[10px] font-bold text-slate-400">
-                      {Math.round((valorPago / (totalDespesasMes || 1)) * 100)}%
-                    </span>
-                  </div>
-                </div>
-              </div>
-            }
-            colorClass="bg-violet-600"
-          />
-          <StatCard 
-            icon={Wallet} 
-            title="Saldo do Período" 
-            value={formatCurrency(saldoPeriodo)} 
-            subtitle={
-              <div className="space-y-3">
-                <div className="flex flex-col gap-2">
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-slate-500">Realizado</span>
-                    <span className={`font-semibold ${saldoPeriodo >= 0 ? 'text-emerald-500' : 'text-rose-400'}`}>
-                      {formatCurrency(saldoPeriodo)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-slate-500">Previsto</span>
-                    <span className={`font-semibold ${(faturamentoTotal - totalDespesasMes) >= 0 ? 'text-violet-400' : 'text-rose-400'}`}>
-                      {formatCurrency(faturamentoTotal - totalDespesasMes)}
-                    </span>
-                  </div>
-                </div>
-                <div className="h-[22px]" />
-              </div>
-            }
-            colorClass="bg-violet-500"
-            isNegative={saldoPeriodo < 0}
-          />
-        </div>
+              )}
+            </div>
+          );
+          const Chip = ({ cor, r, tracejado }: { cor: string; r: string; tracejado?: boolean }) => (
+            <span className="inline-flex items-center gap-1.5 text-[11px] text-slate-500">
+              {tracejado ? <span className="w-4 border-t-2 border-dashed" style={{ borderColor: cor }} /> : <span className="w-2.5 h-2.5 rounded-sm" style={{ background: cor }} />}
+              {r}
+            </span>
+          );
+          const eixo = { fill: '#94a3b8', fontSize: 10 };
 
-        {/* Linha 2 - Gráficos */}
-        <div className="grid grid-cols-1 gap-6">
-          <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200">
-            <div className="mb-6">
-              <h2 className="text-lg font-bold text-slate-900 dark:text-white">Movimentação Diária</h2>
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Entradas (Verde) vs Saídas (Vermelho)</p>
+          return (
+          <>
+            {/* Números do mês */}
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+              <Kpi Icone={ArrowUpRight} cor="#10b981" rotulo="Caixa" valor={saldoCaixa} negativo={saldoCaixa < 0}
+                linhas={[
+                  { r: 'Atual', v: saldoCaixa, cls: saldoCaixa >= 0 ? 'text-emerald-500' : 'text-rose-500' },
+                  { r: 'Previsto fim do mês', v: saldoAcumulado, cls: saldoAcumulado >= 0 ? 'text-violet-500' : 'text-rose-500' },
+                ]} />
+              <Kpi Icone={TrendingUp} cor="#7c3aed" rotulo="Faturamento do mês" valor={faturamentoTotal}
+                linhas={[
+                  { r: 'Recebido', v: valorRecebido, cls: 'text-emerald-500' },
+                  { r: 'A receber', v: valorAReceber, cls: 'text-slate-700 dark:text-slate-200' },
+                ]}
+                barra={{ pct: pctReceb, cor: '#10b981' }} />
+              <Kpi Icone={TrendingDown} cor="#f43f5e" rotulo="Despesas do mês" valor={totalDespesasMes}
+                linhas={[
+                  { r: 'Pago', v: valorPago, cls: 'text-emerald-500' },
+                  { r: 'A pagar', v: valorAPagar, cls: 'text-rose-500' },
+                ]}
+                barra={{ pct: pctPago, cor: '#f43f5e' }} />
+              <Kpi Icone={Wallet} cor="#8b5cf6" rotulo="Saldo do período" valor={saldoPeriodo} negativo={saldoPeriodo < 0}
+                linhas={[
+                  { r: 'Realizado', v: saldoPeriodo, cls: saldoPeriodo >= 0 ? 'text-emerald-500' : 'text-rose-500' },
+                  { r: 'Previsto', v: saldoPrevistoPeriodo, cls: saldoPrevistoPeriodo >= 0 ? 'text-violet-500' : 'text-rose-500' },
+                ]} />
             </div>
-            <div className="h-[300px]" style={{ userSelect: 'none' }} onMouseDown={(e) => e.preventDefault()}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={todosOsDias}
-                  barSize={18}
-                  barCategoryGap="20%"
-                  style={{ cursor: 'pointer' }}
-                  onClick={(data: any) => {
-                    if (data && data.activePayload && data.activePayload.length > 0) {
-                      handleBarClick(data.activePayload[0].payload);
-                    }
-                  }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(150, 150, 150, 0.1)" />
-                  <XAxis
-                    dataKey="dia"
-                    tickFormatter={(val) => `${val} ${mesAbrev}`}
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fill: 'rgba(150, 150, 150, 1)', fontSize: 10, fontFamily: 'Inter' }}
-                    dy={10}
-                  />
-                  <YAxis
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fill: 'rgba(150, 150, 150, 1)', fontSize: 10, fontFamily: 'Inter' }}
-                    tickFormatter={(val) => 'R$ ' + val.toLocaleString('pt-BR')}
-                  />
-                  <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0,0,0,0.05)' }} />
-                  <RechartsLegend
-                    wrapperStyle={{ paddingTop: '20px', fontSize: '12px', fontFamily: 'Inter', color: 'rgba(150, 150, 150, 1)' }}
-                    iconType="circle"
-                  />
-                  <Bar dataKey="entradas_realizadas" name="Entradas" stackId="entradas" fill="#10B981" radius={[4, 4, 0, 0]} onClick={handleBarClick} style={{ cursor: 'pointer' }} />
-                  <Bar dataKey="entradas_previstas" name="Entradas Previstas" stackId="entradas" fill="rgba(16, 185, 129, 0.4)" radius={[4, 4, 0, 0]} onClick={handleBarClick} style={{ cursor: 'pointer' }} />
-                  <Bar dataKey="saidas_realizadas" name="Saídas" stackId="saidas" fill="#EF4444" radius={[4, 4, 0, 0]} onClick={handleBarClick} style={{ cursor: 'pointer' }} />
-                  <Bar dataKey="saidas_previstas" name="Saídas Previstas" stackId="saidas" fill="rgba(239, 68, 68, 0.4)" radius={[4, 4, 0, 0]} onClick={handleBarClick} style={{ cursor: 'pointer' }} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-          <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200">
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <h2 className="text-lg font-bold text-slate-900 dark:text-white">Saúde do Caixa Diário</h2>
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Evolução do Saldo Acumulado (Roxo)</p>
+
+            {/* Movimentação diária */}
+            <div className="rounded-2xl border border-slate-200 dark:border-white/5 bg-white dark:bg-dark-card/60 p-5">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-4">
+                <div className="mr-auto">
+                  <h2 className="text-sm font-bold text-slate-900 dark:text-white">Movimentação diária</h2>
+                  <p className="text-[11px] text-slate-500">Clique num dia para ver os lançamentos</p>
+                </div>
+                <Chip cor="#10B981" r="Entradas" />
+                <Chip cor="rgba(16,185,129,0.4)" r="Entradas previstas" />
+                <Chip cor="#EF4444" r="Saídas" />
+                <Chip cor="rgba(239,68,68,0.4)" r="Saídas previstas" />
               </div>
-              <div className="text-right">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Saldo Projetado (Fim do Mês)</p>
-                <h3 className={`text-2xl font-bold ${saldoAcumulado < 0 ? 'text-red-500/80 dark:text-red-400/80' : 'text-violet-600 dark:text-violet-400'}`}>
-                  {formatCurrency(saldoAcumulado)}
-                </h3>
-              </div>
-            </div>
-            <div
-              className="h-[300px]"
-              style={{ cursor: 'pointer' }}
-              onMouseDown={(e) => e.preventDefault()}
-            >
-              <ResponsiveContainer key={`saude-caixa-${chartAnimKey}`} width="100%" height="100%">
-                <ComposedChart
-                  data={rechartsSaudeData}
-                  onClick={(data: any) => {
-                    if (data && data.activePayload && data.activePayload.length > 0) {
-                      handleBarClick(data.activePayload[0].payload);
-                    }
-                  }}
-                >
-                  <defs>
-                    <linearGradient id="gradientRealizado" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.15} />
-                      <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0.01} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(150, 150, 150, 0.1)" />
-                  <XAxis
-                    dataKey="name"
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fill: 'rgba(150, 150, 150, 1)', fontSize: 10, fontFamily: 'Inter' }}
-                    dy={10}
-                  />
-                  <YAxis
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fill: 'rgba(150, 150, 150, 1)', fontSize: 10, fontFamily: 'Inter' }}
-                    tickFormatter={(val) => 'R$ ' + val.toLocaleString('pt-BR')}
-                  />
-                  <RechartsTooltip
-                    contentStyle={{
-                      backgroundColor: 'rgba(17, 17, 27, 0.9)',
-                      border: 'none',
-                      borderRadius: '8px',
-                      padding: '12px',
-                      fontFamily: 'Inter',
-                      fontSize: '12px',
-                      color: '#fff',
+              <div className="h-[280px]" style={{ userSelect: 'none' }} onMouseDown={(e) => e.preventDefault()}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={todosOsDias}
+                    barSize={10}
+                    barGap={2}
+                    barCategoryGap="22%"
+                    style={{ cursor: 'pointer' }}
+                    onClick={(data: any) => {
+                      if (data && data.activePayload && data.activePayload.length > 0) {
+                        handleBarClick(data.activePayload[0].payload);
+                      }
                     }}
-                    formatter={(value: any) => ['R$ ' + Number(value).toLocaleString('pt-BR')]}
-                    labelStyle={{ color: 'rgba(150,150,150,1)', fontSize: '12px' }}
-                  />
-                  <RechartsLegend
-                    wrapperStyle={{ paddingTop: '20px', fontSize: '12px', fontFamily: 'Inter', color: 'rgba(150, 150, 150, 1)' }}
-                    iconType="circle"
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="realizado"
-                    name="Realizado"
-                    stroke="#8B5CF6"
-                    strokeWidth={3}
-                    fill="url(#gradientRealizado)"
-                    dot={false}
-                    activeDot={{ r: 6, fill: '#8B5CF6', stroke: '#fff', strokeWidth: 2 }}
-                    animationBegin={0}
-                    animationDuration={1200}
-                    animationEasing="ease-out"
-                    connectNulls={false}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="previsto"
-                    name="Previsto"
-                    stroke="#C4B5FD"
-                    strokeWidth={3}
-                    strokeDasharray="5 5"
-                    dot={false}
-                    activeDot={{ r: 6, fill: '#C4B5FD', stroke: '#fff', strokeWidth: 2 }}
-                    animationBegin={400}
-                    animationDuration={1200}
-                    animationEasing="ease-out"
-                    connectNulls={false}
-                  />
-                </ComposedChart>
-              </ResponsiveContainer>
+                  >
+                    <CartesianGrid vertical={false} stroke="rgba(150, 150, 150, 0.12)" />
+                    <XAxis dataKey="dia" tickFormatter={(val) => String(val).slice(0, 2)} axisLine={false} tickLine={false} tick={eixo} dy={6} interval={0} />
+                    <YAxis axisLine={false} tickLine={false} tick={eixo} width={70} tickFormatter={curto} />
+                    <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(124,58,237,0.06)' }} />
+                    <Bar dataKey="entradas_realizadas" name="Entradas" stackId="entradas" fill="#10B981" radius={[3, 3, 0, 0]} onClick={handleBarClick} />
+                    <Bar dataKey="entradas_previstas" name="Entradas Previstas" stackId="entradas" fill="rgba(16, 185, 129, 0.4)" radius={[3, 3, 0, 0]} onClick={handleBarClick} />
+                    <Bar dataKey="saidas_realizadas" name="Saídas" stackId="saidas" fill="#EF4444" radius={[3, 3, 0, 0]} onClick={handleBarClick} />
+                    <Bar dataKey="saidas_previstas" name="Saídas Previstas" stackId="saidas" fill="rgba(239, 68, 68, 0.4)" radius={[3, 3, 0, 0]} onClick={handleBarClick} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             </div>
-          </div>
-        </div>
+
+            {/* Saúde do caixa */}
+            <div className="rounded-2xl border border-slate-200 dark:border-white/5 bg-white dark:bg-dark-card/60 p-5">
+              <div className="flex flex-wrap items-start gap-x-4 gap-y-2 mb-4">
+                <div className="mr-auto">
+                  <h2 className="text-sm font-bold text-slate-900 dark:text-white">Saúde do caixa diário</h2>
+                  <p className="text-[11px] text-slate-500">Evolução do saldo acumulado no mês</p>
+                </div>
+                <div className="flex items-center gap-4 self-center">
+                  <Chip cor="#8B5CF6" r="Realizado" />
+                  <Chip cor="#C4B5FD" r="Previsto" tracejado />
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Saldo projetado (fim do mês)</p>
+                  <p className={`text-xl font-bold ${saldoAcumulado < 0 ? 'text-rose-500' : 'text-violet-600 dark:text-violet-400'}`}>{formatCurrency(saldoAcumulado)}</p>
+                </div>
+              </div>
+              <div className="h-[280px]" style={{ cursor: 'pointer' }} onMouseDown={(e) => e.preventDefault()}>
+                <ResponsiveContainer key={`saude-caixa-${chartAnimKey}`} width="100%" height="100%">
+                  <ComposedChart
+                    data={rechartsSaudeData}
+                    onClick={(data: any) => {
+                      if (data && data.activePayload && data.activePayload.length > 0) {
+                        handleBarClick(data.activePayload[0].payload);
+                      }
+                    }}
+                  >
+                    <defs>
+                      <linearGradient id="gradientRealizado" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.22} />
+                        <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0.01} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid vertical={false} stroke="rgba(150, 150, 150, 0.12)" />
+                    <XAxis dataKey="dia" tickFormatter={(val) => String(val || '').slice(0, 2)} axisLine={false} tickLine={false} tick={eixo} dy={6} interval={0} />
+                    <YAxis axisLine={false} tickLine={false} tick={eixo} width={70} tickFormatter={curto} />
+                    <ReferenceLine y={0} stroke="#f43f5e" strokeOpacity={0.35} strokeDasharray="4 4" />
+                    <RechartsTooltip
+                      cursor={{ stroke: '#8B5CF6', strokeOpacity: 0.25 }}
+                      content={({ active, payload }: any) => {
+                        if (!active || !payload?.length) return null;
+                        const p = payload[0].payload;
+                        return (
+                          <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-card shadow-xl px-3 py-2 text-xs min-w-[180px]">
+                            <p className="font-bold text-slate-900 dark:text-white mb-1">{p.name}</p>
+                            {p.realizado != null && <p className="flex justify-between gap-4"><span className="text-slate-500">Realizado</span><span className="font-semibold text-violet-600 dark:text-violet-400">{formatCurrency(p.realizado)}</span></p>}
+                            {p.previsto != null && <p className="flex justify-between gap-4"><span className="text-slate-500">Previsto</span><span className="font-semibold text-violet-400">{formatCurrency(p.previsto)}</span></p>}
+                          </div>
+                        );
+                      }}
+                    />
+                    <Area type="monotone" dataKey="realizado" name="Realizado" stroke="#8B5CF6" strokeWidth={2.5} fill="url(#gradientRealizado)" dot={false}
+                      activeDot={{ r: 5, fill: '#8B5CF6', stroke: '#fff', strokeWidth: 2 }} animationDuration={1000} animationEasing="ease-out" connectNulls={false} />
+                    <Line type="monotone" dataKey="previsto" name="Previsto" stroke="#C4B5FD" strokeWidth={2.5} strokeDasharray="5 5" dot={false}
+                      activeDot={{ r: 5, fill: '#C4B5FD', stroke: '#fff', strokeWidth: 2 }} animationBegin={300} animationDuration={1000} animationEasing="ease-out" connectNulls={false} />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
           </>
-        )}
+          );
+        })()}
 
       </div>
+
 
       {/* AIChat — modo inline, sem botão flutuante, controlado pelo header */}
       <AIChat

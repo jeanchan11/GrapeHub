@@ -1,5 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
+import ClientesMapa from '../components/ClientesMapa';
+import { MapPin as IconeMapa } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Users, Plus, Search, Mail, Phone, 
@@ -61,7 +63,7 @@ const ActiveClients: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'ativos' | 'tcv' | 'recorrente' | 'quarentena' | 'churn'>('ativos');
+  const [activeTab, setActiveTab] = useState<'ativos' | 'tcv' | 'recorrente' | 'quarentena' | 'churn' | 'mapa'>('ativos');
   const [churnMap, setChurnMap] = useState<Record<string, { exit: string; gestor: string | null; ltv: string | null }>>({});
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -594,83 +596,58 @@ const ActiveClients: React.FC = () => {
         </button>
       </PageHeader>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
-        {/* 1. Clientes Ativos */}
-        <div className="bg-white dark:bg-dark-card/60 backdrop-blur-md p-5 rounded-3xl border border-slate-200 dark:border-white/10 hover:border-emerald-500/30 transition-all group shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <div className="p-2.5 rounded-xl bg-emerald-500/10">
-              <CheckCircle2 size={18} className="text-emerald-500" />
-            </div>
-            {statsLoading && <div className="w-3 h-3 border-2 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />}
+      {/* Cards (09/10/2026): baixos e separados, como os de Projetos — ícone e rótulo na mesma
+          linha, número e uma linha de contexto. Churn fica vermelho quando houve saída no mês. */}
+      {(() => {
+        // Totais = todos com status Ativo (inclui retenção); Ativos = sem os de retenção, o mesmo
+        // número da aba "Ativos" logo abaixo
+        const totais = allActiveClients.length;
+        const comAssinatura = allActiveClients.filter(c => c.hasActiveSubscription).length;
+        const pct = (n: number) => (totais ? `${Math.round((n / totais) * 100)}%` : '—');
+        const cards = [
+          { rotulo: 'Clientes totais', valor: totais, sub: `${comAssinatura} com assinatura no Asaas`, Icone: Users, cor: 'text-violet-500', fundo: 'bg-violet-500/10', carregando: statsLoading, alerta: false },
+          { rotulo: 'Clientes ativos', valor: activeClients.length, sub: `${pct(activeClients.length)} da base, fora da retenção`, Icone: CheckCircle2, cor: 'text-emerald-500', fundo: 'bg-emerald-500/10', carregando: statsLoading, alerta: false },
+          { rotulo: 'Retenção', valor: quarentenaClients.length, sub: quarentenaClients.length ? `${pct(quarentenaClients.length)} da base em risco` : 'ninguém em retenção', Icone: ShieldAlert, cor: 'text-amber-500', fundo: 'bg-amber-500/10', carregando: false, alerta: false },
+          { rotulo: 'Entradas', valor: stats.entradas, sub: 'fechamentos este mês', Icone: UserPlus, cor: 'text-blue-500', fundo: 'bg-blue-500/10', carregando: statsLoading, alerta: false },
+          { rotulo: 'Churn', valor: stats.churn, sub: stats.churn ? `saída${stats.churn > 1 ? 's' : ''} este mês` : 'nenhuma saída este mês', Icone: UserMinus, cor: 'text-rose-500', fundo: 'bg-rose-500/10', carregando: statsLoading, alerta: stats.churn > 0 },
+        ];
+        return (
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4 mb-8">
+            {cards.map(c => (
+              <div key={c.rotulo} className={`px-5 py-4 rounded-2xl border backdrop-blur-md ${
+                c.alerta ? 'bg-rose-500/[0.06] border-rose-500/20' : 'bg-white dark:bg-dark-card/60 border-slate-200 dark:border-white/5'
+              }`}>
+                <div className="flex items-center gap-2 mb-2">
+                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${c.fundo}`}>
+                    <c.Icone size={14} className={c.cor} />
+                  </div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{c.rotulo}</p>
+                  {c.carregando && <div className="ml-auto w-3 h-3 border-2 border-slate-300/40 border-t-slate-400 rounded-full animate-spin" />}
+                </div>
+                <h3 className={`text-2xl font-bold ${c.alerta ? 'text-rose-500' : 'text-light-text dark:text-white'}`}>{c.valor}</h3>
+                <p className={`text-[11px] mt-0.5 ${c.alerta ? 'text-rose-400' : 'text-slate-500'}`}>{c.sub}</p>
+              </div>
+            ))}
           </div>
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Clientes Ativos</p>
-          <h3 className="text-3xl font-bold text-light-text dark:text-white">{allActiveClients.length}</h3>
-          <p className="text-[10px] text-emerald-500 mt-1">
-            {allActiveClients.filter(c => c.hasActiveSubscription).length} com assinatura Asaas
-          </p>
-        </div>
+        );
+      })()}
 
-        {/* 2. Quarentena */}
-        <div className="bg-white dark:bg-dark-card/60 backdrop-blur-md p-5 rounded-3xl border border-slate-200 dark:border-white/10 hover:border-amber-500/30 transition-all group shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <div className="p-2.5 rounded-xl bg-amber-500/10">
-              <ShieldAlert size={18} className="text-amber-500" />
-            </div>
-          </div>
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Retenção</p>
-          <h3 className="text-3xl font-bold text-light-text dark:text-white">{quarentenaClients.length}</h3>
-          <p className="text-[10px] text-amber-500 mt-1">Clientes em retenção</p>
-        </div>
-
-        {/* 4. Entradas do Mês */}
-        <div className="bg-white dark:bg-dark-card/60 backdrop-blur-md p-5 rounded-3xl border border-slate-200 dark:border-white/10 hover:border-blue-500/30 transition-all group shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <div className="p-2.5 rounded-xl bg-blue-500/10">
-              <UserPlus size={18} className="text-blue-500" />
-            </div>
-            {statsLoading && <div className="w-3 h-3 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />}
-          </div>
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Entradas</p>
-          <h3 className="text-3xl font-bold text-light-text dark:text-white">{stats.entradas}</h3>
-          <p className="text-[10px] text-blue-500 mt-1">Fechamentos este mês</p>
-        </div>
-
-        {/* 5. Churn do Mês */}
-        <div className="bg-white dark:bg-dark-card/60 backdrop-blur-md p-5 rounded-3xl border border-slate-200 dark:border-white/10 hover:border-rose-500/30 transition-all group shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <div className="p-2.5 rounded-xl bg-rose-500/10">
-              <UserMinus size={18} className="text-rose-500" />
-            </div>
-            {statsLoading && <div className="w-3 h-3 border-2 border-rose-500/30 border-t-rose-500 rounded-full animate-spin" />}
-          </div>
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Churn</p>
-          <h3 className="text-3xl font-bold text-light-text dark:text-white">{stats.churn}</h3>
-          <p className="text-[10px] text-rose-500 mt-1">Saídas este mês</p>
-        </div>
-      </div>
-
-      {/* Filters Bar */}
-      <div className="bg-white dark:bg-dark-card/60 backdrop-blur-md p-4 rounded-3xl border border-slate-200 dark:border-white/10 mb-6 flex flex-wrap items-center gap-4 shadow-sm transition-colors">
-        <div className="flex-1 min-w-[240px] relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-          <input 
-            type="text" 
-            placeholder="Buscar por nome, email, local ou squad..." 
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl py-3 pl-12 pr-4 text-sm text-light-text dark:text-white placeholder:text-slate-500 outline-none focus:ring-2 focus:ring-violet-500/20 transition-all"
-          />
-        </div>
-        
-        <div className="flex items-center gap-3">
-          <button className="p-3 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl text-slate-500 hover:text-light-text dark:hover:text-white transition-colors">
-            <Filter size={18} />
+      {/* Busca: sem a caixa em volta, 40px de altura (os botões de filtro/download não tinham ação e saíram) */}
+      <div className="mb-6 relative">
+        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+        <input
+          type="text"
+          placeholder="Buscar por nome, e-mail, local ou squad..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full h-10 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl pl-10 pr-9 text-sm text-light-text dark:text-white placeholder:text-slate-500 outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 transition-all"
+        />
+        {searchQuery && (
+          <button onClick={() => setSearchQuery('')} title="Limpar busca"
+            className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 rounded-md flex items-center justify-center text-slate-400 hover:text-light-text dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10">
+            <X size={13} />
           </button>
-          <button className="p-3 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl text-slate-500 hover:text-light-text dark:hover:text-white transition-colors">
-            <Download size={18} />
-          </button>
-        </div>
+        )}
       </div>
 
       {/* Tabs */}
@@ -719,6 +696,17 @@ const ActiveClients: React.FC = () => {
           <UserMinus size={14} />
           Churn
         </button>
+        <button
+          onClick={() => setActiveTab('mapa')}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+            activeTab === 'mapa'
+              ? 'bg-violet-500 text-white shadow-lg shadow-violet-500/25'
+              : 'text-slate-500 hover:text-light-text dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5'
+          }`}
+        >
+          <IconeMapa size={14} />
+          Mapa
+        </button>
 
         {isSuperAdmin && (
           <div className="ml-auto flex items-center gap-3 px-4 py-2 bg-white dark:bg-dark-card/80 rounded-xl border border-slate-200 dark:border-white/10 shadow-sm">
@@ -755,8 +743,13 @@ const ActiveClients: React.FC = () => {
         )}
       </div>
 
+      {/* Mapa: cidade de cada cliente ativo (a tabela fica escondida, não desmontada) */}
+      {activeTab === 'mapa' && (
+        <ClientesMapa onAbrirCliente={(id) => { const c = clients.find(x => String(x.id) === String(id)); if (c) handleOpenModal(c); }} />
+      )}
+
       {/* Table Section */}
-      <div className="bg-white dark:bg-dark-card/60 backdrop-blur-md rounded-3xl border border-slate-200 dark:border-white/10 overflow-hidden shadow-2xl transition-colors duration-300">
+      <div className={`bg-white dark:bg-dark-card/60 backdrop-blur-md rounded-3xl border border-slate-200 dark:border-white/10 overflow-hidden shadow-2xl transition-colors duration-300 ${activeTab === 'mapa' ? 'hidden' : ''}`}>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>

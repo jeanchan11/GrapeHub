@@ -6,7 +6,7 @@ import FiltroCategoriasDRE, { SEM_CATEGORIA, TotalCategoria } from '../component
 import BotaoSincronizar from '../components/BotaoSincronizar';
 import OptionPicker from '../components/ui/OptionPicker';
 import { createPortal } from 'react-dom';
-import { Search, ArrowUp, ArrowDown, FileText, Calendar, ChevronDown, ChevronUp, Check, Tag, AlertTriangle, ShieldAlert, Users, TrendingUp, TrendingDown, X, MessageSquare, Copy, ExternalLink, Pencil, Zap, ToggleLeft, ToggleRight, Trash2, Plus, Loader2, Wand2, Link2, EyeOff, Eye, Upload, SlidersHorizontal } from 'lucide-react';
+import { Search, ArrowUp, ArrowDown, FileText, Calendar, ChevronDown, ChevronUp, Check, Tag, AlertTriangle, ShieldAlert, Users, TrendingUp, TrendingDown, X, MessageSquare, Copy, ExternalLink, Pencil, Zap, ToggleLeft, ToggleRight, Trash2, Plus, Loader2, Wand2, Link2, EyeOff, Eye, Upload, SlidersHorizontal, Wallet } from 'lucide-react';
 import { toast } from '@/src/lib/toast';
 
 // ── Types ──────────────────────────────────────────────
@@ -44,9 +44,9 @@ interface ExtratoItem {
 
 // Rótulo e cor da conta de cada lançamento (Asaas = conta; os outros = cartões).
 const CONTA_LABEL: Record<string, { rotulo: string; cls: string }> = {
-  asaas: { rotulo: 'Asaas', cls: 'bg-violet-500/15 text-violet-400' },
-  sicredi: { rotulo: 'Cartão Sicredi', cls: 'bg-blue-500/15 text-blue-400' },
-  asaas_cartao: { rotulo: 'Cartão Asaas', cls: 'bg-amber-500/15 text-amber-400' },
+  asaas: { rotulo: 'Asaas', cls: 'bg-violet-500/10 text-violet-600 dark:text-violet-400' },
+  sicredi: { rotulo: 'Cartão Sicredi', cls: 'bg-blue-500/10 text-blue-600 dark:text-blue-400' },
+  asaas_cartao: { rotulo: 'Cartão Asaas', cls: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' },
 };
 const MESES_CURTOS = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
 const rotuloFatura = (bm: string) => `Fatura ${MESES_CURTOS[Number(bm.slice(5, 7)) - 1]}/${bm.slice(2, 4)}`;
@@ -313,19 +313,19 @@ function CategoryPicker({ item, onSave }: { item: ExtratoItem; onSave: (id: numb
         zIndex: 9999,
         width: 320,
       }}
-      className="bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl overflow-hidden"
+      className="bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl overflow-hidden"
     >
       {/* Search */}
       <div className="p-2 border-b border-slate-100 dark:border-white/5">
         <div className="relative">
-          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-dark-text/30" />
+          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             ref={searchRef}
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar categoria..."
-            className="w-full pl-7 pr-3 py-1.5 bg-dark-bg border border-dark-text/5 rounded-lg text-[11px] text-dark-text placeholder-dark-text/30 focus:outline-none focus:border-violet-500/30"
+            className="w-full h-8 pl-7 pr-3 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-lg text-[11px] text-dark-text placeholder:text-slate-400 focus:outline-none focus:border-violet-500/40"
           />
         </div>
       </div>
@@ -344,7 +344,7 @@ function CategoryPicker({ item, onSave }: { item: ExtratoItem; onSave: (id: numb
                 {/* Level 1 — Group header */}
                 <div className="px-3 pt-2.5 pb-1 flex items-center gap-1.5">
                   <div className="w-1.5 h-1.5 rounded-full bg-violet-500 shrink-0" />
-                  <span className="text-[9px] font-bold text-violet-400 uppercase tracking-widest truncate">{l1.structure} — {l1.description}</span>
+                  <span className="text-[9px] font-bold text-violet-600 dark:text-violet-400 uppercase tracking-widest truncate">{l1.structure} — {l1.description}</span>
                 </div>
                 {l1.children?.map((l2: any) => {
                   if (!matchesSearch(l2, search)) return null;
@@ -356,7 +356,7 @@ function CategoryPicker({ item, onSave }: { item: ExtratoItem; onSave: (id: numb
                         <>
                           <div className="px-3 pt-1.5 pb-0.5 ml-3 flex items-center gap-1.5">
                             <div className="w-1.5 h-1.5 rounded-full bg-sky-500 shrink-0" />
-                            <span className="text-[9px] font-semibold text-sky-400/70 uppercase tracking-wider truncate">{l2.structure} — {l2.description}</span>
+                            <span className="text-[9px] font-semibold text-sky-600/80 dark:text-sky-400/70 uppercase tracking-wider truncate">{l2.structure} — {l2.description}</span>
                           </div>
                           {l2.children.map((l3: any) => {
                             if (search && !l3.description.toLowerCase().includes(search.toLowerCase()) && !l3.structure.includes(search)) return null;
@@ -370,7 +370,7 @@ function CategoryPicker({ item, onSave }: { item: ExtratoItem; onSave: (id: numb
                                 }`}
                               >
                                 <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-                                <span className="text-[10px] font-mono text-dark-text/20 shrink-0">{l3.structure}</span>
+                                <span className="text-[10px] font-mono text-slate-400 shrink-0">{l3.structure}</span>
                                 <span className="flex-1 truncate">{l3.description}</span>
                                 {isSelected && <Check size={11} className="text-violet-500 shrink-0" />}
                               </button>
@@ -386,7 +386,7 @@ function CategoryPicker({ item, onSave }: { item: ExtratoItem; onSave: (id: numb
                           }`}
                         >
                           <div className="w-1.5 h-1.5 rounded-full bg-sky-500 shrink-0" />
-                          <span className="text-[10px] font-mono text-dark-text/20 shrink-0">{l2.structure}</span>
+                          <span className="text-[10px] font-mono text-slate-400 shrink-0">{l2.structure}</span>
                           <span className="flex-1 truncate">{l2.description}</span>
                           {currentCat === l2.description && <Check size={11} className="text-violet-500 shrink-0" />}
                         </button>
@@ -405,7 +405,7 @@ function CategoryPicker({ item, onSave }: { item: ExtratoItem; onSave: (id: numb
         <div className="border-t border-slate-100 dark:border-white/5 p-1.5">
           <button
             onClick={() => select('')}
-            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-400 hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg transition-colors text-left"
+            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-500 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg transition-colors text-left"
           >
             <Tag size={12} />
             Resetar para automático
@@ -421,11 +421,11 @@ function CategoryPicker({ item, onSave }: { item: ExtratoItem; onSave: (id: numb
         ref={btnRef}
         onClick={toggleOpen}
         disabled={saving}
-        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all border
+        className={`inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full text-[11px] font-semibold transition-colors border
           ${semCategoria
-            ? 'bg-amber-500/10 border-amber-500/40 text-amber-600 dark:text-amber-300 hover:bg-amber-500/20'
+            ? 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-300 hover:bg-amber-500/20'
             : isManual
-              ? 'bg-violet-500/10 border-violet-500/30 text-violet-600 dark:text-violet-300 hover:bg-violet-500/20'
+              ? 'bg-violet-500/10 border-transparent text-violet-600 dark:text-violet-300 hover:bg-violet-500/20'
               : 'bg-slate-100 dark:bg-white/5 border-transparent text-slate-500 hover:bg-slate-200 dark:hover:bg-white/10'
           }`}
         title={semCategoria
@@ -619,7 +619,7 @@ function DateRangePicker({ range, onChange }: { range: DateRange; onChange: (r: 
   function preset(lbl: string, start: string, end: string) {
     return (
       <button key={lbl} onClick={() => { onChange({ start, end }); setOpen(false); setSelecting(''); }}
-        className="text-xs text-slate-400 hover:text-violet-400 hover:bg-violet-500/10 px-2 py-1 rounded-lg transition-colors text-left whitespace-nowrap">
+        className="h-7 px-2.5 rounded-lg text-xs font-semibold text-slate-500 hover:text-violet-600 dark:hover:text-violet-400 hover:bg-violet-500/10 transition-colors text-left whitespace-nowrap">
         {lbl}
       </button>
     );
@@ -628,18 +628,18 @@ function DateRangePicker({ range, onChange }: { range: DateRange; onChange: (r: 
   return (
     <div ref={ref} className="relative">
       <button onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-2.5 bg-dark-card border border-violet-500/60 rounded-xl px-4 py-2.5 transition-all hover:border-violet-500">
-        <Calendar size={14} className="text-violet-500" />
-        <span className="text-sm font-bold text-dark-text">{label}</span>
-        <ChevronDown size={14} className={`text-slate-400 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+        className="w-full h-10 flex items-center gap-2 px-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 hover:border-violet-500/50 transition-colors">
+        <Calendar size={14} className="text-violet-500 shrink-0" />
+        <span className="flex-1 text-left text-sm font-bold text-slate-900 dark:text-white truncate">{label}</span>
+        <ChevronDown size={14} className={`text-slate-400 shrink-0 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 z-50 bg-dark-card border border-white/10 rounded-2xl shadow-2xl p-4" style={{ minWidth: 320 }}>
+        <div className="absolute right-0 top-full mt-2 z-50 bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl p-4" style={{ minWidth: 320 }}>
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">
             {selecting ? 'Clique na data final' : 'Selecionar Período'}
           </p>
-          <div className="flex flex-wrap gap-1 mb-3 pb-3 border-b border-white/10">
+          <div className="flex flex-wrap gap-1 mb-3 pb-3 border-b border-slate-200 dark:border-white/10">
             {preset('Hoje', todayIso, todayIso)}
             {preset('Últ. 7 dias', d7.toISOString().slice(0,10), todayIso)}
             {preset('Últ. 30 dias', d30.toISOString().slice(0,10), todayIso)}
@@ -647,11 +647,11 @@ function DateRangePicker({ range, onChange }: { range: DateRange; onChange: (r: 
             {preset('Mês passado', pmStart, pmEnd)}
           </div>
           <div className="flex items-center justify-between mb-3">
-            <button onClick={() => stepMonth(-1)} className="w-7 h-7 rounded-lg hover:bg-white/10 flex items-center justify-center transition-colors">
+            <button onClick={() => stepMonth(-1)} className="w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 flex items-center justify-center transition-colors">
               <ChevronDown size={13} className="text-slate-400 rotate-90" />
             </button>
-            <span className="text-sm font-bold text-dark-text">{MESES_FULL[viewMonth - 1]} {viewYear}</span>
-            <button onClick={() => stepMonth(1)} className="w-7 h-7 rounded-lg hover:bg-white/10 flex items-center justify-center transition-colors">
+            <span className="text-sm font-bold text-slate-900 dark:text-white">{MESES_FULL[viewMonth - 1]} {viewYear}</span>
+            <button onClick={() => stepMonth(1)} className="w-8 h-8 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 flex items-center justify-center transition-colors">
               <ChevronDown size={13} className="text-slate-400 -rotate-90" />
             </button>
           </div>
@@ -682,10 +682,10 @@ function DateRangePicker({ range, onChange }: { range: DateRange; onChange: (r: 
             })}
           </div>
           {range.start && range.end && (
-            <div className="mt-3 pt-3 border-t border-white/10 flex items-center justify-between text-xs">
+            <div className="mt-3 pt-3 border-t border-slate-200 dark:border-white/10 flex items-center justify-between text-xs">
               <span className="text-slate-500">{formatDateBR(range.start)} → {formatDateBR(range.end)}</span>
               <button onClick={() => { onChange({ start: mStart, end: mEnd }); setSelecting(''); }}
-                className="text-violet-400 hover:text-violet-300 transition-colors">Limpar</button>
+                className="font-semibold text-violet-600 dark:text-violet-400 hover:text-violet-500 transition-colors">Limpar</button>
             </div>
           )}
         </div>
@@ -872,31 +872,33 @@ function ReconciliationModal({ open, onClose, onApplied }: { open: boolean; onCl
   return createPortal(
     <div className="fixed inset-0 z-[9990] flex items-center justify-center" onClick={onClose}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-      <div className="relative bg-dark-card border border-white/10 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+      <div className="relative bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
         {/* Header */}
-        <div className="p-6 border-b border-white/5 flex items-center justify-between">
+        <div className="px-6 py-5 border-b border-slate-200 dark:border-white/5 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center">
-              <Zap size={20} className="text-violet-400" />
+              <Zap size={18} className="text-violet-500" />
             </div>
             <div>
-              <h2 className="text-lg font-black text-dark-text">Regras de Conciliação</h2>
+              <h2 className="text-lg font-bold text-slate-900 dark:text-white">Regras de Conciliação</h2>
               <p className="text-[10px] text-slate-500 uppercase tracking-widest">Automatize a categorização dos lançamentos</p>
             </div>
           </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-lg bg-dark-text/5 hover:bg-dark-text/10 flex items-center justify-center transition-colors">
-            <X size={16} className="text-dark-text/50" />
+          <button onClick={onClose} className="w-9 h-9 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 flex items-center justify-center transition-colors">
+            <X size={16} />
           </button>
         </div>
 
         {/* Tabs */}
-        <div className="px-6 pt-4 flex gap-1">
+        <div className="px-6 pt-4">
+          <div className="flex items-center gap-1 p-1 w-fit rounded-xl bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/5">
           {(['rules', 'apply'] as const).map(t => (
             <button key={t} onClick={() => { setTab(t); setShowForm(false); }}
-              className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${tab === t ? 'bg-violet-500/10 text-violet-400' : 'text-slate-500 hover:text-dark-text hover:bg-dark-text/5'}`}>
+              className={`h-9 px-4 rounded-lg text-sm font-semibold transition-all ${tab === t ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'}`}>
               {t === 'rules' ? `Regras (${rules.length})` : `Aplicar (${pendingCount} pendentes)`}
             </button>
           ))}
+          </div>
         </div>
 
         {/* Content */}
@@ -905,59 +907,59 @@ function ReconciliationModal({ open, onClose, onApplied }: { open: boolean; onCl
           {tab === 'rules' && !showForm && (
             <div className="space-y-3">
               <button onClick={openCreateForm}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold rounded-xl transition-colors">
+                className="w-full h-10 flex items-center justify-center gap-2 px-4 bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold rounded-xl transition-colors">
                 <Plus size={14} /> Nova Regra
               </button>
               {loading ? (
-                <div className="flex justify-center py-8"><Loader2 size={20} className="text-violet-400 animate-spin" /></div>
+                <div className="flex justify-center py-8"><Loader2 size={20} className="text-violet-500 animate-spin" /></div>
               ) : rules.length === 0 ? (
                 <div className="text-center py-8">
-                  <Zap size={32} className="mx-auto text-dark-text/10 mb-2" />
-                  <p className="text-sm text-dark-text/30">Nenhuma regra cadastrada</p>
-                  <p className="text-[10px] text-dark-text/20 mt-1">Crie regras para automatizar a categorização</p>
+                  <Zap size={32} className="mx-auto text-slate-300 dark:text-white/10 mb-2" />
+                  <p className="text-sm font-semibold text-slate-500">Nenhuma regra cadastrada</p>
+                  <p className="text-[11px] text-slate-400 mt-1">Crie regras para automatizar a categorização</p>
                 </div>
               ) : (
                 rules.map(rule => (
-                  <div key={rule.id} className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${
-                    rule.is_active ? 'bg-dark-text/[0.02] border-white/5' : 'bg-dark-text/[0.01] border-white/[0.02] opacity-50'
+                  <div key={rule.id} className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all ${
+                    rule.is_active ? 'bg-white dark:bg-white/[0.02] border-slate-200 dark:border-white/5' : 'bg-slate-50 dark:bg-white/[0.01] border-slate-200 dark:border-white/5 opacity-50'
                   }`}>
                     {/* Toggle */}
                     <button onClick={() => handleToggle(rule)} className="shrink-0" title={rule.is_active ? 'Desativar' : 'Ativar'}>
                       {rule.is_active
-                        ? <ToggleRight size={22} className="text-emerald-400" />
+                        ? <ToggleRight size={22} className="text-emerald-500" />
                         : <ToggleLeft size={22} className="text-slate-500" />
                       }
                     </button>
                     {/* Info */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-dark-text truncate">{rule.name}</span>
-                        <span className="text-[9px] px-1.5 py-0.5 bg-dark-text/5 text-dark-text/40 rounded font-mono">{MATCH_TYPE_LABELS[rule.match_type]}: "{rule.match_text}"</span>
+                        <span className="text-sm font-semibold text-slate-900 dark:text-white truncate">{rule.name}</span>
+                        <span className="inline-flex items-center h-5 px-2 rounded-full bg-slate-100 dark:bg-white/5 text-slate-500 text-[10px] font-mono">{MATCH_TYPE_LABELS[rule.match_type]}: "{rule.match_text}"</span>
                       </div>
                       <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-[10px] text-violet-400/70">→ {rule.category_name || 'Sem categoria'}</span>
-                        {rule.category_structure && <span className="text-[9px] font-mono text-dark-text/20">{rule.category_structure}</span>}
-                        <span className="text-[9px] text-dark-text/20">P{rule.priority}</span>
+                        <span className="text-[11px] text-violet-600 dark:text-violet-400">→ {rule.category_name || 'Sem categoria'}</span>
+                        {rule.category_structure && <span className="text-[10px] font-mono text-slate-400">{rule.category_structure}</span>}
+                        <span className="text-[10px] text-slate-400">P{rule.priority}</span>
                       </div>
                     </div>
                     {/* Actions */}
                     {confirmDeleteId === rule.id ? (
                       <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] text-rose-400 font-semibold whitespace-nowrap">Excluir?</span>
-                        <button onClick={confirmDelete} className="w-7 h-7 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 flex items-center justify-center transition-colors" title="Confirmar exclusão">
-                          <Check size={12} className="text-rose-400" />
+                        <span className="text-[11px] text-rose-500 font-semibold whitespace-nowrap">Excluir?</span>
+                        <button onClick={confirmDelete} className="w-8 h-8 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 flex items-center justify-center transition-colors" title="Confirmar exclusão">
+                          <Check size={13} className="text-rose-500" />
                         </button>
-                        <button onClick={() => setConfirmDeleteId(null)} className="w-7 h-7 rounded-lg bg-dark-text/5 hover:bg-dark-text/10 flex items-center justify-center transition-colors" title="Cancelar">
-                          <X size={12} className="text-dark-text/40" />
+                        <button onClick={() => setConfirmDeleteId(null)} className="w-8 h-8 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 flex items-center justify-center transition-colors" title="Cancelar">
+                          <X size={13} />
                         </button>
                       </div>
                     ) : (
                       <>
-                        <button onClick={() => openEditForm(rule)} className="w-7 h-7 rounded-lg bg-dark-text/5 hover:bg-violet-500/15 flex items-center justify-center transition-colors" title="Editar">
-                          <Pencil size={11} className="text-dark-text/40" />
+                        <button onClick={() => openEditForm(rule)} className="w-8 h-8 rounded-lg text-slate-400 hover:text-violet-500 hover:bg-violet-500/10 flex items-center justify-center transition-colors" title="Editar">
+                          <Pencil size={13} />
                         </button>
-                        <button onClick={() => handleDelete(rule.id)} className="w-7 h-7 rounded-lg bg-dark-text/5 hover:bg-rose-500/15 flex items-center justify-center transition-colors" title="Excluir">
-                          <Trash2 size={11} className="text-dark-text/40" />
+                        <button onClick={() => handleDelete(rule.id)} className="w-8 h-8 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 flex items-center justify-center transition-colors" title="Excluir">
+                          <Trash2 size={13} />
                         </button>
                       </>
                     )}
@@ -970,23 +972,23 @@ function ReconciliationModal({ open, onClose, onApplied }: { open: boolean; onCl
           {/* ── Tab: Rules — Form ── */}
           {tab === 'rules' && showForm && (
             <div className="space-y-4">
-              <button onClick={() => setShowForm(false)} className="flex items-center gap-1.5 text-xs text-violet-400 hover:text-violet-300 transition-colors">
+              <button onClick={() => setShowForm(false)} className="flex items-center gap-1.5 text-xs font-semibold text-violet-600 dark:text-violet-400 hover:text-violet-500 transition-colors">
                 <ChevronDown size={12} className="rotate-90" /> Voltar para lista
               </button>
-              <h3 className="text-sm font-bold text-dark-text">{editingRule ? 'Editar Regra' : 'Nova Regra'}</h3>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">{editingRule ? 'Editar Regra' : 'Nova Regra'}</h3>
 
               {/* Name */}
               <div>
-                <label className="text-[10px] font-bold text-dark-text/50 uppercase tracking-widest">Nome da regra</label>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Nome da regra</label>
                 <input value={formData.name} onChange={e => setFormData(f => ({ ...f, name: e.target.value }))}
                   placeholder="Ex: Taxa do Pix"
-                  className="w-full mt-1 px-3 py-2.5 bg-dark-bg border border-white/5 rounded-xl text-sm text-dark-text placeholder-dark-text/20 focus:outline-none focus:border-violet-500/30" />
+                  className="w-full mt-1 h-10 px-3 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-sm text-dark-text placeholder:text-slate-400 focus:outline-none focus:border-violet-500/40" />
               </div>
 
               {/* Match */}
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="text-[10px] font-bold text-dark-text/50 uppercase tracking-widest">Se a descrição</label>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Se a descrição</label>
                   <OptionPicker
                     value={({ contains: 'Contém', starts_with: 'Começa com', exact: 'É exatamente' } as Record<string, string>)[formData.match_type] || 'Contém'}
                     onChange={(val) => {
@@ -1003,33 +1005,33 @@ function ReconciliationModal({ open, onClose, onApplied }: { open: boolean; onCl
                   />
                 </div>
                 <div className="col-span-2">
-                  <label className="text-[10px] font-bold text-dark-text/50 uppercase tracking-widest">Texto</label>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Texto</label>
                   <input value={formData.match_text} onChange={e => setFormData(f => ({ ...f, match_text: e.target.value }))}
                     placeholder="Ex: Taxa do Pix"
-                    className="w-full mt-1 px-3 py-2.5 bg-dark-bg border border-white/5 rounded-xl text-sm text-dark-text placeholder-dark-text/20 focus:outline-none focus:border-violet-500/30" />
+                    className="w-full mt-1 h-10 px-3 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-sm text-dark-text placeholder:text-slate-400 focus:outline-none focus:border-violet-500/40" />
                 </div>
               </div>
 
               {/* Category picker */}
               <div>
-                <label className="text-[10px] font-bold text-dark-text/50 uppercase tracking-widest">Aplicar categoria</label>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Aplicar categoria</label>
                 <div className="relative mt-1">
                   <button onClick={() => setShowCatPicker(!showCatPicker)}
-                    className={`w-full flex items-center justify-between px-3 py-2.5 bg-dark-bg border rounded-xl text-sm transition-all ${
-                      formData.category_name ? 'border-violet-500/30 text-violet-400' : 'border-white/5 text-dark-text/30'
+                    className={`w-full h-10 flex items-center justify-between px-3 bg-white dark:bg-white/5 border rounded-xl text-sm transition-all ${
+                      formData.category_name ? 'border-violet-500/40 text-violet-600 dark:text-violet-400' : 'border-slate-200 dark:border-white/10 text-slate-400'
                     }`}>
                     <span className="truncate">{formData.category_name || 'Selecione uma categoria...'}</span>
-                    <ChevronDown size={14} className={`text-dark-text/30 transition-transform ${showCatPicker ? 'rotate-180' : ''}`} />
+                    <ChevronDown size={14} className={`text-slate-400 transition-transform ${showCatPicker ? 'rotate-180' : ''}`} />
                   </button>
 
                   {showCatPicker && (
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-dark-card border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden">
-                      <div className="p-2 border-b border-white/5">
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden">
+                      <div className="p-2 border-b border-slate-100 dark:border-white/5">
                         <div className="relative">
-                          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-dark-text/30" />
+                          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
                           <input type="text" value={catSearch} onChange={e => setCatSearch(e.target.value)}
                             placeholder="Buscar categoria..."
-                            className="w-full pl-7 pr-3 py-1.5 bg-dark-bg border border-dark-text/5 rounded-lg text-[11px] text-dark-text placeholder-dark-text/30 focus:outline-none focus:border-violet-500/30" />
+                            className="w-full h-8 pl-7 pr-3 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-lg text-[11px] text-dark-text placeholder:text-slate-400 focus:outline-none focus:border-violet-500/40" />
                         </div>
                       </div>
                       <div className="max-h-[250px] overflow-y-auto py-1">
@@ -1039,7 +1041,7 @@ function ReconciliationModal({ open, onClose, onApplied }: { open: boolean; onCl
                             <div key={l1.id}>
                               <div className="px-3 pt-2 pb-0.5 flex items-center gap-1.5">
                                 <div className="w-1.5 h-1.5 rounded-full bg-violet-500 shrink-0" />
-                                <span className="text-[9px] font-bold text-violet-400 uppercase tracking-widest truncate">{l1.structure} — {l1.description}</span>
+                                <span className="text-[9px] font-bold text-violet-600 dark:text-violet-400 uppercase tracking-widest truncate">{l1.structure} — {l1.description}</span>
                               </div>
                               {l1.children?.map((l2: any) => {
                                 if (!matchesCatSearch(l2, catSearch)) return null;
@@ -1050,18 +1052,18 @@ function ReconciliationModal({ open, onClose, onApplied }: { open: boolean; onCl
                                       <>
                                         <div className="px-3 pt-1 pb-0.5 ml-3 flex items-center gap-1.5">
                                           <div className="w-1.5 h-1.5 rounded-full bg-sky-500 shrink-0" />
-                                          <span className="text-[9px] font-semibold text-sky-400/70 uppercase tracking-wider truncate">{l2.structure} — {l2.description}</span>
+                                          <span className="text-[9px] font-semibold text-sky-600/80 dark:text-sky-400/70 uppercase tracking-wider truncate">{l2.structure} — {l2.description}</span>
                                         </div>
                                         {l2.children.map((l3: any) => {
                                           if (catSearch && !l3.description.toLowerCase().includes(catSearch.toLowerCase()) && !l3.structure.includes(catSearch)) return null;
                                           return (
                                             <button key={l3.id}
                                               onClick={() => { setFormData(f => ({ ...f, category_id: l3.id, category_name: l3.description })); setShowCatPicker(false); setCatSearch(''); }}
-                                              className={`w-full flex items-center gap-2 pl-10 pr-3 py-1.5 text-[11px] hover:bg-white/5 transition-colors text-left ${
-                                                formData.category_name === l3.description ? 'text-violet-400 font-bold bg-violet-500/5' : 'text-slate-300'
+                                              className={`w-full flex items-center gap-2 pl-10 pr-3 py-1.5 text-[11px] hover:bg-slate-50 dark:hover:bg-white/5 transition-colors text-left ${
+                                                formData.category_name === l3.description ? 'text-violet-600 dark:text-violet-400 font-bold bg-violet-50 dark:bg-violet-500/5' : 'text-slate-600 dark:text-slate-300'
                                               }`}>
                                               <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-                                              <span className="text-[10px] font-mono text-dark-text/20 shrink-0">{l3.structure}</span>
+                                              <span className="text-[10px] font-mono text-slate-400 shrink-0">{l3.structure}</span>
                                               <span className="flex-1 truncate">{l3.description}</span>
                                               {formData.category_name === l3.description && <Check size={11} className="text-violet-500 shrink-0" />}
                                             </button>
@@ -1071,11 +1073,11 @@ function ReconciliationModal({ open, onClose, onApplied }: { open: boolean; onCl
                                     ) : (
                                       <button key={l2.id}
                                         onClick={() => { setFormData(f => ({ ...f, category_id: l2.id, category_name: l2.description })); setShowCatPicker(false); setCatSearch(''); }}
-                                        className={`w-full flex items-center gap-2 pl-6 pr-3 py-1.5 text-[11px] hover:bg-white/5 transition-colors text-left ${
-                                          formData.category_name === l2.description ? 'text-violet-400 font-bold bg-violet-500/5' : 'text-slate-300'
+                                        className={`w-full flex items-center gap-2 pl-6 pr-3 py-1.5 text-[11px] hover:bg-slate-50 dark:hover:bg-white/5 transition-colors text-left ${
+                                          formData.category_name === l2.description ? 'text-violet-600 dark:text-violet-400 font-bold bg-violet-50 dark:bg-violet-500/5' : 'text-slate-600 dark:text-slate-300'
                                         }`}>
                                         <div className="w-1.5 h-1.5 rounded-full bg-sky-500 shrink-0" />
-                                        <span className="text-[10px] font-mono text-dark-text/20 shrink-0">{l2.structure}</span>
+                                        <span className="text-[10px] font-mono text-slate-400 shrink-0">{l2.structure}</span>
                                         <span className="flex-1 truncate">{l2.description}</span>
                                         {formData.category_name === l2.description && <Check size={11} className="text-violet-500 shrink-0" />}
                                       </button>
@@ -1094,14 +1096,14 @@ function ReconciliationModal({ open, onClose, onApplied }: { open: boolean; onCl
 
               {/* Priority */}
               <div>
-                <label className="text-[10px] font-bold text-dark-text/50 uppercase tracking-widest">Prioridade (menor = executa primeiro)</label>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Prioridade (menor = executa primeiro)</label>
                 <input type="number" min="0" value={formData.priority} onChange={e => setFormData(f => ({ ...f, priority: parseInt(e.target.value) || 0 }))}
-                  className="w-full mt-1 px-3 py-2.5 bg-dark-bg border border-white/5 rounded-xl text-sm text-dark-text focus:outline-none focus:border-violet-500/30" />
+                  className="w-full mt-1 h-10 px-3 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-sm text-dark-text focus:outline-none focus:border-violet-500/40" />
               </div>
 
               {/* Save */}
               <button onClick={handleSaveRule} disabled={saving || !formData.name || !formData.match_text || !formData.category_name}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl transition-colors">
+                className="w-full h-10 flex items-center justify-center gap-2 px-4 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-bold rounded-xl transition-colors">
                 {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
                 {editingRule ? 'Salvar Alterações' : 'Criar Regra'}
               </button>
@@ -1112,24 +1114,24 @@ function ReconciliationModal({ open, onClose, onApplied }: { open: boolean; onCl
           {tab === 'apply' && (
             <div className="space-y-4">
               {/* Pending card */}
-              <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-5 text-center">
-                <p className="text-3xl font-black text-amber-400">{pendingCount}</p>
-                <p className="text-xs text-amber-400/70 font-medium mt-1">lançamentos pendentes de conciliação</p>
+              <div className="bg-amber-500/[0.06] border border-amber-500/20 rounded-2xl px-5 py-4">
+                <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">{pendingCount}</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">lançamentos pendentes de conciliação</p>
               </div>
 
               {/* Active rules summary */}
-              <div className="bg-dark-text/[0.02] border border-white/5 rounded-xl p-4">
-                <p className="text-[10px] font-bold text-dark-text/40 uppercase tracking-widest mb-2">Regras ativas que serão aplicadas</p>
+              <div className="bg-white dark:bg-dark-card/60 border border-slate-200 dark:border-white/5 rounded-2xl px-5 py-4">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Regras ativas que serão aplicadas</p>
                 {rules.filter(r => r.is_active).length === 0 ? (
-                  <p className="text-xs text-dark-text/20">Nenhuma regra ativa. Crie regras na aba "Regras".</p>
+                  <p className="text-xs text-slate-400">Nenhuma regra ativa. Crie regras na aba "Regras".</p>
                 ) : (
                   <div className="space-y-1">
                     {rules.filter(r => r.is_active).map(r => (
-                      <div key={r.id} className="flex items-center gap-2 text-xs text-dark-text/50">
-                        <span className="text-[9px] font-mono bg-dark-text/5 px-1.5 py-0.5 rounded">P{r.priority}</span>
-                        <span className="font-medium text-dark-text/70">{r.name}</span>
-                        <span className="text-dark-text/20">→</span>
-                        <span className="text-violet-400/60">{r.category_name}</span>
+                      <div key={r.id} className="flex items-center gap-2 text-xs text-slate-500">
+                        <span className="inline-flex items-center h-5 px-2 rounded-full text-[10px] font-mono bg-slate-100 dark:bg-white/5">P{r.priority}</span>
+                        <span className="font-medium text-slate-700 dark:text-slate-200">{r.name}</span>
+                        <span className="text-slate-400">→</span>
+                        <span className="text-violet-600 dark:text-violet-400">{r.category_name}</span>
                       </div>
                     ))}
                   </div>
@@ -1138,21 +1140,21 @@ function ReconciliationModal({ open, onClose, onApplied }: { open: boolean; onCl
 
               {/* Apply button */}
               <button onClick={handleApply} disabled={applying || pendingCount === 0 || rules.filter(r => r.is_active).length === 0}
-                className="w-full flex items-center justify-center gap-2 px-4 py-4 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-bold rounded-xl transition-colors">
+                className="w-full h-11 flex items-center justify-center gap-2 px-4 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-bold rounded-xl transition-colors">
                 {applying ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}
                 Aplicar Regras Agora
               </button>
 
               {/* Result */}
               {applyResult && (
-                <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-5">
-                  <p className="text-lg font-black text-emerald-400 text-center">{applyResult.applied} lançamentos conciliados</p>
+                <div className="bg-emerald-500/[0.06] border border-emerald-500/20 rounded-2xl px-5 py-4">
+                  <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400 text-center">{applyResult.applied} lançamentos conciliados</p>
                   {applyResult.details.length > 0 && (
                     <div className="mt-3 space-y-1">
                       {applyResult.details.map((d, i) => (
                         <div key={i} className="flex items-center justify-between text-xs">
-                          <span className="text-emerald-400/70">{d.rule}</span>
-                          <span className="font-bold text-emerald-400">{d.applied}</span>
+                          <span className="text-slate-600 dark:text-slate-300">{d.rule}</span>
+                          <span className="font-bold text-emerald-600 dark:text-emerald-400">{d.applied}</span>
                         </div>
                       ))}
                     </div>
@@ -1481,35 +1483,39 @@ export default function Extrato() {
 
   return (
     <>
+    {/* Visual refeito em 09/10/2026 (mesmas informações e comportamento): cards,
+        controles de 40px e tabela no padrão do Fluxo de Caixa. */}
     <div className="min-h-screen bg-dark-bg transition-colors duration-300">
 
       {/* ── Header ── */}
-      <div className="flex items-center justify-between px-6 md:px-8 pt-8 pb-4">
-        <div>
+      <div className="flex flex-wrap items-center justify-between gap-4 px-6 md:px-8 pt-8 pb-5">
+        <div className="min-w-0">
           <SplitHeadline text="Extra" highlight="to" className="text-2xl font-black tracking-tight text-dark-text" />
-          <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5">
+          <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mt-0.5">
             {activeTab === 'Extrato' ? (rangeLabel || 'Todas as movimentações bancárias') : `Referência: ${monthLabel}`}
           </p>
         </div>
 
         {/* Switcher de data por aba + Rules button */}
-        <div className="flex items-center gap-3">
-        <BotaoSincronizar onDone={() => setVersaoSync(v => v + 1)} />
+        <div className="flex items-center gap-2 flex-wrap">
+        <BotaoSincronizar className="h-10 px-3 rounded-xl font-semibold" onDone={() => setVersaoSync(v => v + 1)} />
         {/* O período do Extrato mora no painel de Filtros; o seletor de mês
-            abaixo é o das outras abas. */}
+            abaixo é o das outras abas. Mês: um controle só, com as setas dentro. */}
         {activeTab !== 'Extrato' && (
-          <div className="flex items-center gap-1">
+          <div className="h-10 flex items-center rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5">
             <button onClick={prevMonth}
-              className="w-9 h-9 rounded-xl bg-dark-card border border-white/10 hover:border-violet-500/60 flex items-center justify-center transition-all hover:bg-dark-card-hover">
-              <ChevronDown size={14} className="text-slate-400 rotate-90" />
+              className="w-9 h-full flex items-center justify-center text-slate-400 hover:text-violet-500 rounded-l-xl"
+              title="Mês anterior">
+              <ChevronDown size={15} className="rotate-90" />
             </button>
-            <div className="flex items-center gap-2 px-4 py-2 bg-dark-card border border-violet-500/60 rounded-xl">
-              <Calendar size={16} className="text-violet-500" />
-              <span className="text-sm font-bold text-dark-text">{monthLabel}</span>
+            <div className="flex items-center gap-2 px-2 min-w-[150px] justify-center">
+              <Calendar size={14} className="text-violet-500" />
+              <span className="text-sm font-bold text-slate-900 dark:text-white">{monthLabel}</span>
             </div>
             <button onClick={nextMonth}
-              className="w-9 h-9 rounded-xl bg-dark-card border border-white/10 hover:border-violet-500/60 flex items-center justify-center transition-all hover:bg-dark-card-hover">
-              <ChevronDown size={14} className="text-slate-400 -rotate-90" />
+              className="w-9 h-full flex items-center justify-center text-slate-400 hover:text-violet-500 rounded-r-xl"
+              title="Próximo mês">
+              <ChevronDown size={15} className="-rotate-90" />
             </button>
           </div>
         )}
@@ -1517,12 +1523,12 @@ export default function Extrato() {
           {/* Rules button */}
           <button
             onClick={() => setShowRulesModal(true)}
-            className="flex items-center gap-2 px-4 py-2.5 bg-dark-card border border-white/10 hover:border-violet-500/40 rounded-xl transition-all hover:bg-dark-card-hover group"
+            className="h-10 flex items-center gap-2 px-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-violet-500/50 transition-colors"
           >
-            <Zap size={14} className="text-violet-400" />
-            <span className="text-xs font-bold text-dark-text/70 group-hover:text-dark-text">Regras</span>
+            <Zap size={14} className="text-violet-500" />
+            Regras
             {pendingCount > 0 && (
-              <span className="px-1.5 py-0.5 bg-amber-500/20 text-amber-400 text-[9px] font-bold rounded-full">
+              <span className="inline-flex items-center h-5 px-1.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 text-[10px] font-bold">
                 {pendingCount}
               </span>
             )}
@@ -1533,42 +1539,50 @@ export default function Extrato() {
 
       {/* ── Tab: Extrato ── */}
       {activeTab === 'Extrato' && (
-        <div className="px-6 md:px-8 pb-8 space-y-6">
+        <div className="px-6 md:px-8 pb-8 space-y-5">
           {/* KPI Cards */}
-          <div className="grid grid-cols-3 lg:grid-cols-4 gap-3 items-start">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
             {[
-              { label: 'Total Entradas', value: totalEntradas, color: 'text-emerald-400' },
-              { label: 'Total Saídas',   value: totalSaidas,   color: 'text-rose-400' },
-              { label: 'Resultado',       value: resultado,     color: resultado >= 0 ? 'text-emerald-400' : 'text-rose-400' },
-            ].map(({ label, value, color }) => (
-              <div key={label} className="bg-dark-card border border-white/10 rounded-2xl px-4 py-3 transition-colors duration-200">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">{label}</p>
+              { label: 'Total Entradas', value: totalEntradas, Icone: TrendingUp,   cor: '#10b981', contexto: 'Realizadas no período', alerta: false },
+              { label: 'Total Saídas',   value: totalSaidas,   Icone: TrendingDown, cor: '#f43f5e', contexto: 'Realizadas no período', alerta: false },
+              { label: 'Resultado',       value: resultado,     Icone: Wallet,       cor: '#8b5cf6', contexto: 'Entradas − saídas',      alerta: resultado < 0 },
+            ].map(({ label, value, Icone, cor, contexto, alerta }) => (
+              <div key={label} className={`px-5 py-4 rounded-2xl border transition-colors duration-200 ${
+                !loading && alerta ? 'bg-rose-500/[0.06] border-rose-500/20' : 'bg-white dark:bg-dark-card/60 border-slate-200 dark:border-white/5'}`}>
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: `${cor}1a`, color: cor }}><Icone size={14} /></div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{label}</p>
+                </div>
                 {loading
-                  ? <div className="h-8 w-32 bg-white/5 rounded animate-pulse" />
-                  : <p className={`text-xl font-black ${color}`}>{formatCurrency(value)}</p>
+                  ? <div className="h-8 w-32 bg-slate-100 dark:bg-white/5 rounded-lg animate-pulse" />
+                  : <p className={`text-2xl font-bold tabular-nums ${alerta ? 'text-rose-500' : 'text-slate-900 dark:text-white'}`}>{formatCurrency(value)}</p>
                 }
+                <p className="text-[11px] text-slate-500 mt-0.5">{contexto}</p>
               </div>
             ))}
-            {/* Anticipation KPI Card */}
-            <div className="group bg-dark-card border border-white/10 rounded-2xl px-4 py-3 transition-colors duration-200">
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Antecipações no Mês</p>
+            {/* Anticipation KPI Card — bruto e taxas ficam à vista na linha de
+                contexto; antes só apareciam ao passar o mouse. */}
+            <div className="px-5 py-4 rounded-2xl border bg-white dark:bg-dark-card/60 border-slate-200 dark:border-white/5 transition-colors duration-200">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-violet-500/10 text-violet-500"><Link2 size={14} /></div>
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Antecipações no Mês</p>
+                {!loading && anticipationStats && anticipationStats.count_pares > 0 && (
+                  <span className="ml-auto inline-flex items-center h-5 px-2 rounded-full bg-slate-500/10 text-slate-500 dark:text-slate-400 text-[10px] font-semibold whitespace-nowrap"
+                    title={`${anticipationStats.count_pares} pares identificados`}>
+                    {anticipationStats.count_pares} pares identificados
+                  </span>
+                )}
+              </div>
               {loading || !anticipationStats
-                ? <div className="h-8 w-32 bg-white/5 rounded animate-pulse" />
+                ? <div className="h-8 w-32 bg-slate-100 dark:bg-white/5 rounded-lg animate-pulse" />
                 : (
                   <>
-                    <p className="text-xl font-black text-violet-400">{formatCurrency(anticipationStats.liquido)}</p>
-                    {/* Detalhes — só aparecem ao passar o mouse */}
-                    <div className="max-h-0 opacity-0 overflow-hidden transition-all duration-200 ease-out group-hover:max-h-24 group-hover:opacity-100">
-                      <div className="flex items-center gap-3 mt-1.5">
-                        <span className="text-[9px] text-slate-500">Bruto: {formatCurrency(anticipationStats.antecipado_bruto)}</span>
-                        <span className="text-[9px] text-rose-400">Taxas: -{formatCurrency(anticipationStats.taxas_antecipacao)}</span>
-                      </div>
-                      {anticipationStats.count_pares > 0 && (
-                        <span className="inline-flex items-center gap-1 mt-1.5 text-[9px] font-bold text-slate-500">
-                          <Link2 size={8} />{anticipationStats.count_pares} pares identificados
-                        </span>
-                      )}
-                    </div>
+                    <p className="text-2xl font-bold tabular-nums text-slate-900 dark:text-white">{formatCurrency(anticipationStats.liquido)}</p>
+                    <p className="text-[11px] text-slate-500 mt-0.5 truncate">
+                      Bruto: {formatCurrency(anticipationStats.antecipado_bruto)}
+                      <span className="mx-1.5 text-slate-300 dark:text-slate-600">·</span>
+                      <span className="text-rose-500">Taxas: -{formatCurrency(anticipationStats.taxas_antecipacao)}</span>
+                    </p>
                   </>
                 )
               }
@@ -1577,33 +1591,33 @@ export default function Extrato() {
 
           {/* Filters — só a busca, o botão Filtros e o Conciliar ficam à vista.
               Tipo, conta, categoria, valor e antecipações moram no painel. */}
-          <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
             <div className="relative flex-1 min-w-[220px]">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+              <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
               <input
                 type="text" placeholder="Buscar movimentação..."
                 value={search} onChange={e => setSearch(e.target.value)}
-                className="w-full pl-9 pr-4 py-2.5 text-sm bg-dark-card border border-white/10 rounded-xl text-dark-text placeholder:text-slate-600 outline-none focus:ring-2 focus:ring-violet-500/30"
+                className="w-full h-10 pl-10 pr-4 text-sm bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-dark-text placeholder:text-slate-400 outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 transition-colors"
               />
             </div>
 
             <div ref={filtrosRef} className="relative">
               <button onClick={() => setFiltrosAbertos(v => !v)}
-                className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-bold rounded-xl transition-all ${
+                className={`h-10 flex items-center gap-1.5 px-3 rounded-xl border text-xs font-semibold transition-colors ${
                   filtrosAtivos > 0 || filtrosAbertos
-                    ? 'bg-violet-500/15 border border-violet-500/40 text-violet-400'
-                    : 'bg-dark-card border border-white/10 text-slate-400 hover:text-white'
+                    ? 'bg-violet-500/10 border-violet-500/40 text-violet-600 dark:text-violet-400'
+                    : 'bg-white dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200 hover:border-violet-500/50'
                 }`}>
-                <SlidersHorizontal size={13} />
+                <SlidersHorizontal size={14} />
                 Filtros
                 {filtrosAtivos > 0 && (
-                  <span className="px-1.5 py-0.5 rounded-md text-[10px] leading-none bg-violet-500 text-white">{filtrosAtivos}</span>
+                  <span className="inline-flex items-center justify-center h-5 min-w-[20px] px-1.5 rounded-full text-[10px] font-bold bg-violet-600 text-white">{filtrosAtivos}</span>
                 )}
-                <ChevronDown size={12} className={`transition-transform ${filtrosAbertos ? 'rotate-180' : ''}`} />
+                <ChevronDown size={13} className={`transition-transform ${filtrosAbertos ? 'rotate-180' : ''}`} />
               </button>
 
               {filtrosAbertos && (
-                <div className="absolute right-0 top-full mt-2 z-50 w-[340px] bg-dark-card border border-white/10 rounded-2xl shadow-2xl p-4 space-y-4">
+                <div className="absolute right-0 top-full mt-2 z-50 w-[340px] bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl p-4 space-y-4">
                   {/* Período — define também os cards do topo (entradas, saídas,
                       resultado); o intervalo escolhido segue à vista no subtítulo. */}
                   <div>
@@ -1614,11 +1628,13 @@ export default function Extrato() {
                   {/* Tipo */}
                   <div>
                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Tipo</p>
-                    <div className="grid grid-cols-4 gap-1 bg-black/20 border border-white/5 rounded-xl p-0.5">
+                    <div className="grid grid-cols-4 gap-1 p-1 rounded-xl bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/5">
                       {(['todos','entradas','saidas','realizados'] as const).map(f => (
                         <button key={f} onClick={() => setTypeFilter(f)}
-                          className={`py-1.5 text-[11px] font-bold rounded-lg transition-all ${
-                            typeFilter === f ? 'bg-violet-500 text-white' : 'text-slate-400 hover:text-white'}`}>
+                          className={`h-8 rounded-lg text-[11px] font-semibold transition-all ${
+                            typeFilter === f
+                              ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm'
+                              : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'}`}>
                           {f === 'saidas' ? 'Saídas' : f.charAt(0).toUpperCase() + f.slice(1)}
                         </button>
                       ))}
@@ -1628,11 +1644,13 @@ export default function Extrato() {
                   {/* Conta */}
                   <div>
                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Conta</p>
-                    <div className="grid grid-cols-4 gap-1 bg-black/20 border border-white/5 rounded-xl p-0.5">
+                    <div className="grid grid-cols-4 gap-1 p-1 rounded-xl bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/5">
                       {([['all', 'Todas'], ['asaas', 'Asaas'], ['sicredi', 'Cartão Sicredi'], ['asaas_cartao', 'Cartão Asaas']] as const).map(([val, label]) => (
                         <button key={val} onClick={() => setAccountFilter(val)}
-                          className={`py-1.5 px-1 text-[10px] leading-tight font-bold rounded-lg transition-all ${
-                            accountFilter === val ? 'bg-violet-500 text-white' : 'text-slate-400 hover:text-white'}`}>
+                          className={`min-h-[32px] py-1 px-1 rounded-lg text-[10px] leading-tight font-semibold transition-all ${
+                            accountFilter === val
+                              ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm'
+                              : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'}`}>
                           {label}
                         </button>
                       ))}
@@ -1653,14 +1671,14 @@ export default function Extrato() {
                   {/* Valor */}
                   <div>
                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">
-                      Valor <span className="normal-case font-medium text-slate-600">— entradas e saídas</span>
+                      Valor <span className="normal-case tracking-normal font-medium text-slate-400">— entradas e saídas</span>
                     </p>
                     <div className="flex items-center gap-2">
                       {([['De', valorMin, setValorMin], ['Até', valorMax, setValorMax]] as const).map(([rotulo, v, setV]) => (
                         <div key={rotulo} className="relative flex-1">
-                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-500">{rotulo} R$</span>
+                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 pointer-events-none">{rotulo} R$</span>
                           <input value={v} onChange={e => setV(e.target.value)} inputMode="decimal" placeholder="0,00"
-                            className="w-full pl-14 pr-2 py-2 text-xs bg-black/20 border border-white/10 rounded-lg text-dark-text placeholder:text-slate-600 outline-none focus:border-violet-500/50" />
+                            className="w-full h-9 pl-14 pr-2 text-xs bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-lg text-dark-text placeholder:text-slate-400 outline-none focus:border-violet-500/50" />
                         </div>
                       ))}
                     </div>
@@ -1668,20 +1686,20 @@ export default function Extrato() {
 
                   {/* Antecipações */}
                   <button onClick={() => setHideAnticipation(!hideAnticipation)}
-                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-black/20 border border-white/5 text-xs font-bold text-slate-300 hover:text-white transition-colors">
+                    className="w-full h-10 flex items-center justify-between px-3 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/5 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors">
                     <span className="flex items-center gap-2">
-                      {hideAnticipation ? <EyeOff size={12} /> : <Eye size={12} />}
+                      {hideAnticipation ? <EyeOff size={13} /> : <Eye size={13} />}
                       Ocultar antecipações
                     </span>
-                    <span className={`w-8 h-4 rounded-full relative transition-colors ${hideAnticipation ? 'bg-violet-500' : 'bg-white/10'}`}>
-                      <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${hideAnticipation ? 'left-[18px]' : 'left-0.5'}`} />
+                    <span className={`w-8 h-4 rounded-full relative transition-colors ${hideAnticipation ? 'bg-violet-500' : 'bg-slate-300 dark:bg-white/10'}`}>
+                      <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow-sm transition-all ${hideAnticipation ? 'left-[18px]' : 'left-0.5'}`} />
                     </span>
                   </button>
 
-                  <div className="flex items-center justify-between pt-1 border-t border-white/5">
+                  <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-white/5">
                     <span className="text-[11px] text-slate-500">{loading ? '...' : `${filtered.length} registros`}</span>
                     {filtrosAtivos > 0 && (
-                      <button onClick={limparFiltros} className="text-[11px] font-bold text-violet-400 hover:text-violet-300">
+                      <button onClick={limparFiltros} className="text-[11px] font-semibold text-violet-600 dark:text-violet-400 hover:text-violet-500">
                         Limpar filtros
                       </button>
                     )}
@@ -1694,70 +1712,70 @@ export default function Extrato() {
                 dentro do painel o aviso sumiria. */}
             <button onClick={() => setConciliando(true)}
               title="Lançamentos sem categoria no banco — ficam de fora do DFC até serem classificados"
-              className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-bold rounded-xl transition-all ${
+              className={`h-10 flex items-center gap-1.5 px-3 rounded-xl border text-xs font-semibold transition-colors ${
                 aConciliar > 0
-                  ? 'bg-amber-500/10 border border-amber-500/40 text-amber-500 hover:bg-amber-500/20'
-                  : 'bg-dark-card border border-white/10 text-slate-400 hover:text-white'
+                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-500/15'
+                  : 'bg-white dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200 hover:border-violet-500/50'
               }`}>
               Conciliar
               {aConciliar > 0 && (
-                <span className="px-1.5 py-0.5 rounded-md text-[10px] leading-none bg-amber-500/20">{aConciliar}</span>
+                <span className="inline-flex items-center justify-center h-5 min-w-[20px] px-1.5 rounded-full text-[10px] font-bold bg-amber-500/20">{aConciliar}</span>
               )}
             </button>
 
             {/* Sicredi: a importação de OFX só faz sentido com a conta Sicredi à vista */}
             {accountFilter === 'sicredi' && (
               <>
-                <span className="text-[10px] text-slate-500">
+                <span className="text-[11px] text-slate-500">
                   {lastImport ? `Última importação: ${new Date(lastImport).toLocaleDateString('pt-BR')}` : 'Nenhuma importação ainda'}
                 </span>
                 <button onClick={() => { setOfxFile(null); setOfxResult(null); setShowOfxModal(true); }}
-                  className="flex items-center gap-1.5 px-3 py-2.5 bg-blue-500/15 border border-blue-500/30 text-blue-400 text-xs font-bold rounded-xl hover:bg-blue-500/25 transition-all">
-                  <Upload size={12} /> Importar OFX
+                  className="h-10 flex items-center gap-1.5 px-3 rounded-xl border bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-400 text-xs font-semibold hover:bg-blue-500/15 transition-colors">
+                  <Upload size={13} /> Importar OFX
                 </button>
               </>
             )}
 
-            <span className="text-xs text-slate-500 ml-auto">{loading ? '...' : `${filtered.length} registros`}</span>
+            <span className="text-xs text-slate-500 ml-auto tabular-nums">{loading ? '...' : `${filtered.length} registros`}</span>
           </div>
 
           {/* Table */}
-          <div className="bg-dark-card border border-white/10 rounded-2xl overflow-visible relative">
-            <div className={`grid ${accountFilter === 'all' ? 'grid-cols-[1fr_250px_100px_90px_100px_110px_120px]' : 'grid-cols-[1fr_250px_90px_100px_110px_120px]'} px-4 py-2.5 border-b border-white/5 sticky top-0 z-10 bg-dark-card`}>
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Descrição / Contraparte</span>
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider text-center">Categoria</span>
-              {accountFilter === 'all' && <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider text-center">Conta</span>}
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider text-center px-4">Tipo</span>
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider text-center px-4">Status</span>
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider text-right px-4">Data</span>
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider text-right pl-4">Valor</span>
+          <div className="rounded-2xl border border-slate-200 dark:border-white/5 bg-white dark:bg-dark-card/60 overflow-hidden">
+            <div className={`grid ${accountFilter === 'all' ? 'grid-cols-[1fr_250px_100px_90px_100px_110px_120px]' : 'grid-cols-[1fr_250px_90px_100px_110px_120px]'} px-4 py-3 border-b border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-white/[0.02]`}>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Descrição / Contraparte</span>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center">Categoria</span>
+              {accountFilter === 'all' && <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center">Conta</span>}
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center px-4">Tipo</span>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center px-4">Status</span>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right px-4">Data</span>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right pl-4">Valor</span>
             </div>
-            <div className="divide-y divide-white/5 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 320px)' }}>
+            <div className="divide-y divide-slate-100 dark:divide-white/5 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 320px)' }}>
               {loading ? (
                 Array.from({ length: 8 }).map((_, i) => (
-                  <div key={i} className="flex items-center gap-4 px-4 py-2">
+                  <div key={i} className="flex items-center gap-4 px-4 py-3">
                     <div className="flex-1 space-y-1.5">
-                      <div className="h-3 w-48 bg-white/5 rounded animate-pulse" />
-                      <div className="h-2.5 w-32 bg-white/5 rounded animate-pulse" />
+                      <div className="h-3 w-48 bg-slate-100 dark:bg-white/5 rounded animate-pulse" />
+                      <div className="h-2.5 w-32 bg-slate-100 dark:bg-white/5 rounded animate-pulse" />
                     </div>
-                    <div className="h-6 w-28 bg-white/5 rounded-lg animate-pulse" />
-                    <div className="h-5 w-16 bg-white/5 rounded-full animate-pulse" />
-                    <div className="h-5 w-16 bg-white/5 rounded-full animate-pulse" />
-                    <div className="h-3 w-20 bg-white/5 rounded animate-pulse" />
-                    <div className="h-4 w-24 bg-white/5 rounded animate-pulse" />
+                    <div className="h-6 w-28 bg-slate-100 dark:bg-white/5 rounded-full animate-pulse" />
+                    <div className="h-5 w-16 bg-slate-100 dark:bg-white/5 rounded-full animate-pulse" />
+                    <div className="h-5 w-16 bg-slate-100 dark:bg-white/5 rounded-full animate-pulse" />
+                    <div className="h-3 w-20 bg-slate-100 dark:bg-white/5 rounded animate-pulse" />
+                    <div className="h-4 w-24 bg-slate-100 dark:bg-white/5 rounded animate-pulse" />
                   </div>
                 ))
               ) : error ? (
                 <div className="py-16 text-center">
-                  <p className="text-sm font-bold text-rose-400">{error}</p>
+                  <p className="text-sm font-semibold text-rose-500">{error}</p>
                 </div>
               ) : filtered.length === 0 ? (
                 <div className="py-16 text-center">
-                  <FileText size={32} className="mx-auto text-slate-600 mb-3" />
-                  <p className="text-sm font-bold text-slate-500">Nenhuma movimentação encontrada</p>
+                  <FileText size={32} className="mx-auto text-slate-300 dark:text-slate-600 mb-3" />
+                  <p className="text-sm font-semibold text-slate-500">Nenhuma movimentação encontrada</p>
                   {(search || typeFilter !== 'todos') && (
                     <button onClick={() => { setSearch(''); setTypeFilter('todos'); }}
-                      className="mt-3 text-xs text-violet-400 hover:text-violet-300 font-bold">
+                      className="mt-3 text-xs font-semibold text-violet-600 dark:text-violet-400 hover:text-violet-500">
                       Limpar filtros
                     </button>
                   )}
@@ -1777,29 +1795,29 @@ export default function Extrato() {
                         setModalDescription(item.custom_description || item.description || '');
                         setModalSaved(false);
                       }}
-                      className={`grid ${accountFilter === 'all' ? 'grid-cols-[1fr_250px_100px_90px_100px_110px_120px]' : 'grid-cols-[1fr_250px_90px_100px_110px_120px]'} px-4 py-2 hover:bg-white/[0.02] transition-colors items-center cursor-pointer`}>
+                      className={`grid ${accountFilter === 'all' ? 'grid-cols-[1fr_250px_100px_90px_100px_110px_120px]' : 'grid-cols-[1fr_250px_90px_100px_110px_120px]'} px-4 py-3 hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors items-center cursor-pointer`}>
                       <div className="min-w-0 pr-4">
                         <div className="flex items-center gap-1.5">
-                          <p className={`text-[13px] font-medium truncate ${item.is_anticipation_pair || item.is_reversed_pair ? 'text-slate-500' : 'text-dark-text'}`}>{item.description || '—'}</p>
+                          <p className={`text-[13px] font-medium truncate ${item.is_anticipation_pair || item.is_reversed_pair ? 'text-slate-400 dark:text-slate-500' : 'text-dark-text'}`}>{item.description || '—'}</p>
                           {item.is_reversed_pair && (
-                            <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-rose-500/10 text-rose-400 text-[9px] font-bold rounded-full">
+                            <span className="shrink-0 inline-flex items-center gap-1 h-5 px-2 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 text-[10px] font-semibold">
                               ✕ Cancelado
                             </span>
                           )}
                           {item.is_anticipation_pair && (
-                            <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-slate-500/10 text-slate-400 text-[9px] font-bold rounded-full">
-                              <Link2 size={8} /> Antecipação
+                            <span className="shrink-0 inline-flex items-center gap-1 h-5 px-2 rounded-full bg-slate-500/10 text-slate-500 dark:text-slate-400 text-[10px] font-semibold">
+                              <Link2 size={10} /> Antecipação
                             </span>
                           )}
                           {item.billing_month && (
-                            <span className="shrink-0 px-1.5 py-0.5 bg-blue-500/10 text-blue-400 text-[9px] font-bold rounded-full"
+                            <span className="shrink-0 inline-flex items-center h-5 px-2 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] font-semibold"
                               title="Compra no cartão: entra no mês da fatura, como no DFC">
                               {rotuloFatura(item.billing_month)}
                             </span>
                           )}
                           {item.is_edited && !item.is_anticipation_pair && !item.is_reversed_pair && (
-                            <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-500/10 text-amber-400 text-[9px] font-bold rounded-full">
-                              <Pencil size={8} /> Editado
+                            <span className="shrink-0 inline-flex items-center gap-1 h-5 px-2 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] font-semibold">
+                              <Pencil size={10} /> Editado
                             </span>
                           )}
                         </div>
@@ -1808,32 +1826,32 @@ export default function Extrato() {
                       <div className="flex justify-center" data-category-picker><CategoryPicker item={item} onSave={handleCategorySave} /></div>
                       {accountFilter === 'all' && (
                         <div className="flex justify-center">
-                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold whitespace-nowrap ${
+                          <span className={`inline-flex items-center h-5 px-2 rounded-full text-[10px] font-semibold whitespace-nowrap ${
                             (CONTA_LABEL[item.account || 'asaas'] || CONTA_LABEL.asaas).cls}`}>
                             {(CONTA_LABEL[item.account || 'asaas'] || CONTA_LABEL.asaas).rotulo}
                           </span>
                         </div>
                       )}
                       <div className="flex justify-center px-4">
-                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                          isEntrada ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'
+                        <span className={`inline-flex items-center gap-1 h-5 px-2 rounded-full text-[10px] font-semibold ${
+                          isEntrada ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
                         }`}>
                           {isEntrada ? <ArrowUp size={10} /> : <ArrowDown size={10} />}
                           {isEntrada ? 'Entrada' : 'Saída'}
                         </span>
                       </div>
                       <div className="flex justify-center px-4">
-                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                          item.is_reversed_pair ? 'bg-rose-500/15 text-rose-400' : isReal ? 'bg-violet-500/15 text-violet-400' : 'bg-slate-500/15 text-slate-400'
+                        <span className={`inline-flex items-center h-5 px-2 rounded-full text-[10px] font-semibold ${
+                          item.is_reversed_pair ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400' : isReal ? 'bg-violet-500/10 text-violet-600 dark:text-violet-400' : 'bg-slate-500/10 text-slate-500 dark:text-slate-400'
                         }`}>
                           {item.is_reversed_pair ? 'Cancelado' : isReal ? 'Realizado' : 'Previsto'}
                         </span>
                       </div>
                       <div className="text-right px-4">
-                        <span className="text-xs text-slate-400">{fmtCalDate(getItemDate(item))}</span>
+                        <span className="text-xs text-slate-500 tabular-nums">{fmtCalDate(getItemDate(item))}</span>
                       </div>
                       <div className="text-right pl-4">
-                        <span className={`text-[13px] font-bold ${item.is_anticipation_pair || item.is_reversed_pair ? 'text-slate-500 line-through' : isEntrada ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        <span className={`text-[13px] font-bold tabular-nums ${item.is_anticipation_pair || item.is_reversed_pair ? 'text-slate-400 dark:text-slate-500 line-through' : isEntrada ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
                           {isEntrada ? '+' : '-'}{formatCurrency(Math.abs(valor))}
                         </span>
                       </div>
@@ -1853,37 +1871,37 @@ export default function Extrato() {
       {selectedTransaction && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={() => setSelectedTransaction(null)}>
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-          <div className="relative w-full max-w-lg mx-4 bg-dark-card border border-dark-text/10 rounded-2xl shadow-2xl overflow-hidden"
+          <div className="relative w-full max-w-lg mx-4 bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden"
             onClick={(e) => e.stopPropagation()}>
             {/* Header */}
-            <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-dark-text/10">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-white/5">
               <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                  selectedTransaction.type === 1 ? 'bg-emerald-500/15' : 'bg-rose-500/15'
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${
+                  selectedTransaction.type === 1 ? 'bg-emerald-500/10' : 'bg-rose-500/10'
                 }`}>
                   {selectedTransaction.type === 1
-                    ? <ArrowUp size={20} className="text-emerald-400" />
-                    : <ArrowDown size={20} className="text-rose-400" />
+                    ? <ArrowUp size={18} className="text-emerald-500" />
+                    : <ArrowDown size={18} className="text-rose-500" />
                   }
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-bold text-dark-text">Detalhes da Transação</h3>
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">Detalhes da Transação</h3>
                     {selectedTransaction.is_edited && (
-                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-500/10 text-amber-400 text-[9px] font-bold rounded-full">
-                        <Pencil size={8} /> Editado
+                      <span className="inline-flex items-center gap-1 h-5 px-2 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] font-semibold">
+                        <Pencil size={10} /> Editado
                       </span>
                     )}
                   </div>
-                  <p className="text-[10px] text-dark-text/50 uppercase tracking-widest mt-0.5">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">
                     {selectedTransaction.type === 1 ? 'Entrada' : 'Saída'} • {selectedTransaction.status}
                     {selectedTransaction.edited_at && ` • Editado em ${fmtDate(selectedTransaction.edited_at)}`}
                   </p>
                 </div>
               </div>
               <button onClick={() => setSelectedTransaction(null)}
-                className="w-8 h-8 rounded-lg bg-dark-text/5 hover:bg-dark-text/10 flex items-center justify-center transition-colors">
-                <X size={16} className="text-dark-text/50" />
+                className="w-9 h-9 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 flex items-center justify-center transition-colors">
+                <X size={16} />
               </button>
             </div>
 
@@ -1892,19 +1910,19 @@ export default function Extrato() {
               {/* Description — editable */}
               <div>
                 <div className="flex items-center gap-2 mb-1">
-                  <Pencil size={12} className="text-violet-400" />
-                  <label className="text-[10px] font-bold text-dark-text/50 uppercase tracking-widest">Descrição</label>
+                  <Pencil size={12} className="text-violet-500" />
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Descrição</label>
                 </div>
                 <input
                   type="text"
                   value={modalDescription}
                   onChange={(e) => setModalDescription(e.target.value)}
-                  className="w-full bg-dark-bg border border-dark-text/10 rounded-xl px-3 py-2.5 text-sm text-dark-text placeholder-dark-text/30 focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/20 transition-all"
+                  className="w-full h-10 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-3 text-sm text-dark-text placeholder:text-slate-400 focus:outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 transition-all"
                   placeholder="Descrição personalizada..."
                 />
                 {selectedTransaction.original_description && modalDescription !== selectedTransaction.original_description && (
-                  <p className="text-[10px] text-dark-text/30 mt-1 flex items-center gap-1">
-                    <span className="text-dark-text/20">Original:</span> {selectedTransaction.original_description}
+                  <p className="text-[11px] text-slate-500 mt-1 flex items-center gap-1">
+                    <span className="text-slate-400">Original:</span> {selectedTransaction.original_description}
                   </p>
                 )}
               </div>
@@ -1912,26 +1930,26 @@ export default function Extrato() {
               {/* Person */}
               {(selectedTransaction.person_fantasy_name || selectedTransaction.person_name) && (
                 <div>
-                  <label className="text-[10px] font-bold text-dark-text/50 uppercase tracking-widest">Contraparte</label>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Contraparte</label>
                   <p className="text-sm text-dark-text mt-1">{selectedTransaction.person_fantasy_name || selectedTransaction.person_name}</p>
                 </div>
               )}
 
               {/* Info Grid */}
               <div className="grid grid-cols-2 gap-3">
-                <div className="bg-dark-bg rounded-xl p-3 border border-dark-text/5">
-                  <label className="text-[10px] font-bold text-dark-text/50 uppercase tracking-widest">Valor</label>
-                  <p className={`text-lg font-black mt-1 ${selectedTransaction.type === 1 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                <div className="bg-slate-50 dark:bg-white/[0.03] rounded-xl px-4 py-3 border border-slate-200 dark:border-white/5">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Valor</label>
+                  <p className={`text-lg font-bold tabular-nums mt-1 ${selectedTransaction.type === 1 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
                     {selectedTransaction.type === 1 ? '+' : '-'}{formatCurrency(Math.abs(parseFloat(selectedTransaction.value || '0')))}
                   </p>
                 </div>
-                <div className="bg-dark-bg rounded-xl p-3 border border-dark-text/5">
-                  <label className="text-[10px] font-bold text-dark-text/50 uppercase tracking-widest">Data</label>
-                  <p className="text-sm font-bold text-dark-text mt-1">{fmtCalDate(selectedTransaction.movement_date || selectedTransaction.expiration_date || '')}</p>
+                <div className="bg-slate-50 dark:bg-white/[0.03] rounded-xl px-4 py-3 border border-slate-200 dark:border-white/5">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Data</label>
+                  <p className="text-sm font-bold text-slate-900 dark:text-white mt-1">{fmtCalDate(selectedTransaction.movement_date || selectedTransaction.expiration_date || '')}</p>
                 </div>
                 {/* Category — editable */}
-                <div className="bg-dark-bg rounded-xl p-3 border border-dark-text/5 relative">
-                  <label className="text-[10px] font-bold text-dark-text/50 uppercase tracking-widest">Categoria</label>
+                <div className="bg-slate-50 dark:bg-white/[0.03] rounded-xl px-4 py-3 border border-slate-200 dark:border-white/5 relative">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Categoria</label>
                   <div className="mt-1">
                     <CategoryPicker
                       item={selectedTransaction}
@@ -1942,23 +1960,23 @@ export default function Extrato() {
                     />
                   </div>
                 </div>
-                <div className="bg-dark-bg rounded-xl p-3 border border-dark-text/5">
-                  <label className="text-[10px] font-bold text-dark-text/50 uppercase tracking-widest">Método</label>
-                  <p className="text-sm font-bold text-dark-text mt-1 capitalize">{selectedTransaction.payment_method || '—'}</p>
+                <div className="bg-slate-50 dark:bg-white/[0.03] rounded-xl px-4 py-3 border border-slate-200 dark:border-white/5">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Método</label>
+                  <p className="text-sm font-bold text-slate-900 dark:text-white mt-1 capitalize">{selectedTransaction.payment_method || '—'}</p>
                 </div>
               </div>
 
               {/* Document Code */}
               {selectedTransaction.document_code && (
-                <div className="flex items-center gap-2 bg-dark-bg rounded-xl p-3 border border-dark-text/5">
+                <div className="flex items-center gap-2 bg-slate-50 dark:bg-white/[0.03] rounded-xl px-4 py-3 border border-slate-200 dark:border-white/5">
                   <div className="flex-1">
-                    <label className="text-[10px] font-bold text-dark-text/50 uppercase tracking-widest">Código do Documento</label>
-                    <p className="text-xs text-dark-text mt-1 font-mono">{selectedTransaction.document_code}</p>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Código do Documento</label>
+                    <p className="text-xs text-slate-700 dark:text-slate-200 mt-1 font-mono">{selectedTransaction.document_code}</p>
                   </div>
                   <button onClick={() => navigator.clipboard.writeText(selectedTransaction.document_code)}
-                    className="w-8 h-8 rounded-lg bg-dark-text/5 hover:bg-dark-text/10 flex items-center justify-center transition-colors"
+                    className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 flex items-center justify-center transition-colors"
                     title="Copiar código">
-                    <Copy size={14} className="text-dark-text/50" />
+                    <Copy size={14} />
                   </button>
                 </div>
               )}
@@ -1966,14 +1984,14 @@ export default function Extrato() {
               {/* Comments */}
               <div>
                 <div className="flex items-center gap-2 mb-2">
-                  <MessageSquare size={14} className="text-violet-400" />
-                  <label className="text-[10px] font-bold text-dark-text/50 uppercase tracking-widest">Comentários</label>
+                  <MessageSquare size={14} className="text-violet-500" />
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Comentários</label>
                 </div>
                 <textarea
                   value={modalComments}
                   onChange={(e) => setModalComments(e.target.value)}
                   placeholder="Adicione um comentário sobre esta transação..."
-                  className="w-full bg-dark-bg border border-dark-text/10 rounded-xl p-3 text-sm text-dark-text placeholder-dark-text/30 resize-none focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/20 transition-all"
+                  className="w-full bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl p-3 text-sm text-dark-text placeholder:text-slate-400 resize-none focus:outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 transition-all"
                   rows={3}
                 />
               </div>
@@ -2031,7 +2049,7 @@ export default function Extrato() {
                   }
                 }}
                 disabled={savingModal}
-                className="w-full py-2.5 bg-violet-600 hover:bg-violet-500 disabled:bg-violet-600/50 text-white text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-2"
+                className="w-full h-10 bg-violet-600 hover:bg-violet-500 disabled:bg-violet-600/50 text-white text-sm font-bold rounded-xl transition-colors flex items-center justify-center gap-2"
               >
                 {savingModal ? (
                   <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -2071,48 +2089,48 @@ export default function Extrato() {
     {showOfxModal && createPortal(
       <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={() => setShowOfxModal(false)}>
         <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-        <div className="relative bg-dark-bg border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="relative bg-white dark:bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
           <div className="flex items-center justify-between mb-5">
-            <h3 className="text-sm font-bold text-dark-text">Importar Extrato <span className="text-blue-400">Sicredi</span></h3>
-            <button onClick={() => setShowOfxModal(false)} className="p-1.5 hover:bg-white/10 rounded-lg"><X size={14} className="text-slate-400" /></button>
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Importar Extrato <span className="text-blue-600 dark:text-blue-400">Sicredi</span></h3>
+            <button onClick={() => setShowOfxModal(false)} className="w-9 h-9 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10"><X size={16} /></button>
           </div>
 
           {ofxResult ? (
             <div className="space-y-4">
-              <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-5 text-center">
-                <p className="text-2xl font-black text-emerald-400">{ofxResult.inserted}</p>
-                <p className="text-xs text-emerald-400/70 mt-1">registros importados</p>
+              <div className="bg-emerald-500/[0.06] border border-emerald-500/20 rounded-2xl px-5 py-4 text-center">
+                <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{ofxResult.inserted}</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">registros importados</p>
               </div>
               {ofxResult.skipped > 0 && (
-                <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4 text-center">
-                  <p className="text-sm font-bold text-amber-400">{ofxResult.skipped} já existiam</p>
+                <div className="bg-amber-500/[0.06] border border-amber-500/20 rounded-2xl px-5 py-3 text-center">
+                  <p className="text-sm font-bold text-amber-600 dark:text-amber-400">{ofxResult.skipped} já existiam</p>
                 </div>
               )}
-              <button onClick={() => setShowOfxModal(false)} className="w-full py-2.5 bg-violet-500 hover:bg-violet-600 rounded-xl text-xs font-bold text-white transition-all">Fechar</button>
+              <button onClick={() => setShowOfxModal(false)} className="w-full h-10 bg-violet-600 hover:bg-violet-500 rounded-xl text-sm font-bold text-white transition-colors">Fechar</button>
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="border-2 border-dashed border-white/10 rounded-xl p-8 text-center hover:border-blue-500/30 transition-colors">
-                <Upload size={28} className="mx-auto text-slate-500 mb-3" />
-                <p className="text-xs text-slate-400 mb-3">Selecione o arquivo CSV ou OFX do Sicredi</p>
+              <div className="border-2 border-dashed border-slate-200 dark:border-white/10 rounded-2xl p-8 text-center hover:border-blue-500/40 transition-colors">
+                <Upload size={28} className="mx-auto text-slate-400 mb-3" />
+                <p className="text-xs text-slate-500 mb-3">Selecione o arquivo CSV ou OFX do Sicredi</p>
                 <input
                   type="file"
                   accept=".csv,.CSV,.ofx,.OFX"
                   onChange={e => setOfxFile(e.target.files?.[0] || null)}
-                  className="block mx-auto text-xs text-slate-400 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-blue-500/15 file:text-blue-400 hover:file:bg-blue-500/25 file:cursor-pointer file:transition-all"
+                  className="block mx-auto text-xs text-slate-500 file:mr-3 file:h-9 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-blue-500/10 file:text-blue-600 dark:file:text-blue-400 hover:file:bg-blue-500/20 file:cursor-pointer file:transition-all"
                 />
               </div>
               {ofxFile && (
-                <div className="flex items-center gap-2 px-3 py-2 bg-blue-500/5 border border-blue-500/20 rounded-xl">
-                  <FileText size={14} className="text-blue-400" />
-                  <span className="text-xs text-blue-400 font-medium flex-1 truncate">{ofxFile.name}</span>
+                <div className="flex items-center gap-2 h-10 px-3 bg-blue-500/[0.06] border border-blue-500/20 rounded-xl">
+                  <FileText size={14} className="text-blue-500" />
+                  <span className="text-xs text-blue-600 dark:text-blue-400 font-medium flex-1 truncate">{ofxFile.name}</span>
                   <span className="text-[10px] text-slate-500">{(ofxFile.size / 1024).toFixed(1)} KB</span>
                 </div>
               )}
               <button
                 onClick={handleOfxUpload}
                 disabled={!ofxFile || ofxUploading}
-                className="w-full flex items-center justify-center gap-2 py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl text-xs font-bold text-white transition-all"
+                className="w-full h-10 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl text-sm font-bold text-white transition-colors"
               >
                 {ofxUploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
                 {ofxUploading ? 'Importando...' : 'Importar'}

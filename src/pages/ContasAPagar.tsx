@@ -3,7 +3,7 @@ import { RotateCcw,
   Plus, Pencil, Trash2, CheckCircle2, Clock, AlertTriangle, X, Upload,
   RefreshCw, ChevronDown, ChevronLeft, ChevronRight, BarChart2, CreditCard,
   Receipt, Tag, Calendar, DollarSign, FileText, Check, Loader2,
-  Home, Laptop, Truck, Megaphone, Users, Wrench, Code, Zap
+  Home, Laptop, Truck, Megaphone, Users, Wrench, Code, Zap, Link2
 } from 'lucide-react';
 import SplitHeadline from '../components/SplitHeadline';
 import { toast } from '@/src/lib/toast';
@@ -104,6 +104,24 @@ const getDueDateStatus = (dueDate: string | null, status: string) => {
   return 'normal';
 };
 
+// ── Estilos compartilhados (visual refeito em 09/10/2026, padrão do FinanceiroDashboard) ──
+// Barra segmentada de abas
+const SEG_BARRA = 'flex items-center gap-1 p-1 w-fit rounded-xl bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/5';
+const segBotao = (ativo: boolean) =>
+  `h-9 px-4 rounded-lg text-sm font-semibold flex items-center gap-2 transition-colors ${
+    ativo ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
+  }`;
+// Botões do cabeçalho / barra de ferramentas (40px)
+const BTN_SEC = 'h-10 px-3 inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:border-violet-500/40 transition-colors';
+const BTN_PRI = 'h-10 px-4 inline-flex items-center justify-center gap-2 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-sm font-bold transition-colors';
+// Pílula de status/categoria: sem caixa alta, fundo da cor ~10%
+const PILULA = 'inline-flex items-center gap-1.5 rounded-full h-5 px-2 text-[10px] font-semibold whitespace-nowrap';
+// Botões de ação da linha (mesma altura)
+const BTN_LINHA = 'h-7 inline-flex items-center justify-center gap-1 rounded-lg border text-[11px] font-semibold transition-colors';
+// Contêiner de tabela / caixa de conteúdo e cabeçalho de coluna
+const CAIXA = 'rounded-2xl border border-slate-200 dark:border-white/5 overflow-hidden bg-white dark:bg-dark-card/60';
+const TH = 'text-[10px] font-bold text-slate-500 uppercase tracking-widest';
+
 // ── CountUp ─────────────────────────────────────────────────────────────────
 const CountUp = ({ value, currency = false }: { value: number; currency?: boolean }) => {
   const ref = useRef<HTMLSpanElement>(null);
@@ -119,13 +137,13 @@ const CountUp = ({ value, currency = false }: { value: number; currency?: boolea
 // ── Status Badge ─────────────────────────────────────────────────────────────
 const StatusBadge = ({ status, dueDate }: { status: Entry['status']; dueDate: string | null }) => {
   const ds = getDueDateStatus(dueDate, status);
-  if (ds === 'paid') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400">✓ Pago</span>;
-  if (status === 'partial') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-400">~ Parcial</span>;
-  if (status === 'cancelled') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-500/15 text-slate-400">× Cancelado</span>;
-  if (ds === 'overdue') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/15 text-rose-400">⚠ Atrasado</span>;
-  if (ds === 'today') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-400">● Hoje</span>;
-  if (ds === 'soon') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/15 text-blue-400">Em breve</span>;
-  return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/5 text-slate-400">Pendente</span>;
+  if (ds === 'paid') return <span className={`${PILULA} bg-emerald-500/10 text-emerald-600 dark:text-emerald-400`}>✓ Pago</span>;
+  if (status === 'partial') return <span className={`${PILULA} bg-amber-500/10 text-amber-600 dark:text-amber-400`}>~ Parcial</span>;
+  if (status === 'cancelled') return <span className={`${PILULA} bg-slate-500/10 text-slate-500 dark:text-slate-400`}>× Cancelado</span>;
+  if (ds === 'overdue') return <span className={`${PILULA} bg-rose-500/10 text-rose-600 dark:text-rose-400`}>⚠ Atrasado</span>;
+  if (ds === 'today') return <span className={`${PILULA} bg-amber-500/10 text-amber-600 dark:text-amber-400`}>● Hoje</span>;
+  if (ds === 'soon') return <span className={`${PILULA} bg-blue-500/10 text-blue-600 dark:text-blue-400`}>Em breve</span>;
+  return <span className={`${PILULA} bg-slate-500/10 text-slate-500 dark:text-slate-400`}>Pendente</span>;
 };
 
 // ── Category Styles & Colors ──────────────────────────────────────────────────
@@ -138,16 +156,16 @@ const CAT_COLORS: Record<string, string> = {
 
 const getCategoryStyles = (category: string) => {
   const colors: Record<string, { bg: string, text: string, border: string, dot: string }> = {
-    'Salários': { bg: 'bg-violet-500/10', text: 'text-violet-400', border: 'border-violet-500/20', dot: 'bg-violet-500' },
-    'Aluguel': { bg: 'bg-amber-500/10', text: 'text-amber-400', border: 'border-amber-500/20', dot: 'bg-amber-500' },
-    'Software': { bg: 'bg-blue-500/10', text: 'text-blue-400', border: 'border-blue-500/20', dot: 'bg-blue-500' },
-    'Marketing': { bg: 'bg-pink-500/10', text: 'text-pink-400', border: 'border-pink-500/20', dot: 'bg-pink-500' },
-    'Impostos': { bg: 'bg-rose-500/10', text: 'text-rose-400', border: 'border-rose-500/20', dot: 'bg-rose-500' },
-    'Serviços': { bg: 'bg-teal-500/10', text: 'text-teal-400', border: 'border-teal-500/20', dot: 'bg-teal-500' },
-    'Fornecedores': { bg: 'bg-orange-500/10', text: 'text-orange-400', border: 'border-orange-500/20', dot: 'bg-orange-500' },
-    'Utilidades': { bg: 'bg-cyan-500/10', text: 'text-cyan-400', border: 'border-cyan-500/20', dot: 'bg-cyan-500' },
-    'Equipamentos': { bg: 'bg-indigo-500/10', text: 'text-indigo-400', border: 'border-indigo-500/20', dot: 'bg-indigo-500' },
-    'Outros': { bg: 'bg-slate-500/10', text: 'text-slate-400', border: 'border-slate-500/20', dot: 'bg-slate-500' },
+    'Salários': { bg: 'bg-violet-500/10', text: 'text-violet-600 dark:text-violet-400', border: 'border-violet-500/20', dot: 'bg-violet-500' },
+    'Aluguel': { bg: 'bg-amber-500/10', text: 'text-amber-600 dark:text-amber-400', border: 'border-amber-500/20', dot: 'bg-amber-500' },
+    'Software': { bg: 'bg-blue-500/10', text: 'text-blue-600 dark:text-blue-400', border: 'border-blue-500/20', dot: 'bg-blue-500' },
+    'Marketing': { bg: 'bg-pink-500/10', text: 'text-pink-600 dark:text-pink-400', border: 'border-pink-500/20', dot: 'bg-pink-500' },
+    'Impostos': { bg: 'bg-rose-500/10', text: 'text-rose-600 dark:text-rose-400', border: 'border-rose-500/20', dot: 'bg-rose-500' },
+    'Serviços': { bg: 'bg-teal-500/10', text: 'text-teal-600 dark:text-teal-400', border: 'border-teal-500/20', dot: 'bg-teal-500' },
+    'Fornecedores': { bg: 'bg-orange-500/10', text: 'text-orange-600 dark:text-orange-400', border: 'border-orange-500/20', dot: 'bg-orange-500' },
+    'Utilidades': { bg: 'bg-cyan-500/10', text: 'text-cyan-600 dark:text-cyan-400', border: 'border-cyan-500/20', dot: 'bg-cyan-500' },
+    'Equipamentos': { bg: 'bg-indigo-500/10', text: 'text-indigo-600 dark:text-indigo-400', border: 'border-indigo-500/20', dot: 'bg-indigo-500' },
+    'Outros': { bg: 'bg-slate-500/10', text: 'text-slate-500 dark:text-slate-400', border: 'border-slate-500/20', dot: 'bg-slate-500' },
   };
 
   if (colors[category]) return colors[category];
@@ -500,18 +518,18 @@ const EntryEditModal = ({ entry, categories, onSave, onClose }: {
 };
 
 // ── KPI Card ─────────────────────────────────────────────────────────────────
+// Padrão aprovado: ícone 7×7 com fundo da cor ~10%, rótulo pequeno, valor 2xl.
+// `alerta` pinta o card de rosa (vencendo em 7 dias, atraso).
 const KpiCard = ({
-  icon, label, value, sub, subColor, accent
-}: { icon: React.ReactNode; label: string; value: string; sub?: string; subColor?: string; accent?: string }) => (
-  <div className={`bg-dark-card border border-black/10 dark:border-white/10 rounded-xl px-4 py-3 flex flex-col gap-2 hover:border-white/20 transition-all duration-200`}>
-    <div className="flex items-center justify-between">
-      <div className={`p-1.5 rounded-lg ${accent || 'bg-violet-600'}`}>{icon}</div>
-      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{label}</p>
+  icon, label, value, sub, iconClass, alerta
+}: { icon: React.ReactNode; label: string; value: string; sub?: string; iconClass?: string; alerta?: boolean }) => (
+  <div className={`px-5 py-4 rounded-2xl border ${alerta ? 'bg-rose-500/[0.06] border-rose-500/20' : 'bg-white dark:bg-dark-card/60 border-slate-200 dark:border-white/5'}`}>
+    <div className="flex items-center gap-2 mb-2">
+      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${iconClass || 'bg-violet-500/10 text-violet-500'}`}>{icon}</div>
+      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest truncate">{label}</p>
     </div>
-    <div>
-      <p className="text-lg font-black text-dark-text tracking-tight leading-tight">{value}</p>
-      {sub && <p className={`text-[11px] mt-0.5 font-semibold ${subColor || 'text-slate-500'}`}>{sub}</p>}
-    </div>
+    <p className={`text-2xl font-bold truncate ${alerta ? 'text-rose-500' : 'text-slate-900 dark:text-white'}`}>{value}</p>
+    {sub && <p className={`text-[11px] mt-0.5 ${alerta ? 'text-rose-400' : 'text-slate-500'}`}>{sub}</p>}
   </div>
 );
 
@@ -662,23 +680,25 @@ export default function ContasAPagar() {
   const handleDeleteBill = async (id: number) => {
     if (!(await confirmDialog({ message: 'Remover esta conta recorrente?', danger: true }))) return;
     await fetch(`/api/fin/bills/${id}`, { method: 'DELETE' });
-    await fetchBills(); await fetchEntries();
+    await fetchBills(); await fetchEntries({ silencioso: true });
   };
 
   const handleDeleteEntry = async (id: number) => {
     if (!(await confirmDialog({ message: 'Excluir este lançamento do mês? (Esta ação não remove a conta recorrente cadastrada)', danger: true }))) return;
     const r = await fetch(`/api/fin/bills/entries/${id}`, { method: 'DELETE' });
-    if (r.ok) await fetchEntries();
+    if (r.ok) await fetchEntries({ silencioso: true });
   };
 
+  // Ações de uma linha recarregam em silêncio: com `loading` a tabela virava spinner e a
+  // rolagem voltava ao topo a cada pagamento/edição (mesma regra dos cartões, ver CLAUDE.md).
   const handlePayEntry = async (id: number, data: any) => {
     const r = await fetch(`/api/fin/bills/entries/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
-    if (r.ok) await fetchEntries();
+    if (r.ok) await fetchEntries({ silencioso: true });
   };
 
   const handleEditEntry = async (id: number, data: any) => {
     const r = await fetch(`/api/fin/bills/entries/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
-    if (r.ok) await fetchEntries();
+    if (r.ok) await fetchEntries({ silencioso: true });
   };
 
   const handleSicrediEdit = async (id: number, data: any) => {
@@ -868,7 +888,7 @@ export default function ContasAPagar() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ movement_id: movementId }),
       });
-      if (r.ok) { setLinkModal(null); await fetchEntries(); }
+      if (r.ok) { setLinkModal(null); await fetchEntries({ silencioso: true }); }
     } catch { /* ignore */ }
   };
 
@@ -876,38 +896,65 @@ export default function ContasAPagar() {
     if (!(await confirmDialog({ message: 'Desvincular este pagamento?', danger: true }))) return;
     try {
       const r = await fetch(`/api/fin/bills/entries/${entryId}/unlink`, { method: 'POST' });
-      if (r.ok) await fetchEntries();
+      if (r.ok) await fetchEntries({ silencioso: true });
     } catch { /* ignore */ }
   };
 
   return (
     <div className="min-h-screen bg-dark-bg">
-      {/* ── Header ── */}
-      <div className="px-6 pt-6 pb-4 flex flex-col gap-1">
+      {/* ── Header ── visual refeito em 09/10/2026 (mesmas informações): controles com 40px de altura */}
+      <div className="px-6 pt-6 pb-4">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <SplitHeadline text="Contas a" highlight="Pagar" subtitle={`Referência: ${monthLabel}`} subtitleClassName="text-sm text-gray-500 dark:text-gray-400 mt-1" />
-          <div className="flex items-center gap-4 mt-1 flex-wrap">
-            <BotaoSincronizar onDone={async () => { await Promise.all([fetchEntries(), fetchBills(), fetchSicredi()]); }} />
-            {/* Tabs */}
-            <div className="flex items-center gap-1">
-              {([['contas', 'Contas a Pagar', 'violet'], ['sicredi', 'Cartões', 'emerald']] as const).map(([key, label, color]) => (
-                <button key={key} onClick={() => setActiveTab(key)}
-                  className={`px-3 py-1.5 text-sm font-bold border-b-2 transition-all ${activeTab === key ? `border-${color}-400 text-${color}-400` : 'border-transparent text-slate-500 hover:text-dark-text'}`}>
-                  {label}
-                </button>
-              ))}
-            </div>
-            {/* Month nav */}
-            <div className="flex items-center gap-2">
-              <button onClick={prevMonth} className="p-1.5 rounded-lg bg-dark-card border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 text-slate-400 hover:text-dark-text transition-colors"><ChevronLeft size={14} /></button>
-              <span className="text-xs font-bold text-dark-text bg-dark-card border border-black/10 dark:border-white/10 px-3 py-1.5 rounded-lg min-w-[110px] text-center">{monthLabel}</span>
-              <button onClick={nextMonth} className="p-1.5 rounded-lg bg-dark-card border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 text-slate-400 hover:text-dark-text transition-colors"><ChevronRight size={14} /></button>
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
+            <BotaoSincronizar className="h-10 rounded-xl" onDone={async () => { await Promise.all([fetchEntries(), fetchBills(), fetchSicredi()]); }} />
+            {/* Mês: um controle só, com as setas dentro */}
+            <div className="h-10 flex items-center rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5">
+              <button onClick={prevMonth} title="Mês anterior"
+                className="w-9 h-full flex items-center justify-center text-slate-400 hover:text-violet-500 rounded-l-xl transition-colors">
+                <ChevronLeft size={15} />
+              </button>
+              <div className="flex items-center gap-2 px-2 min-w-[150px] justify-center">
+                <Calendar size={14} className="text-violet-500" />
+                <span className="text-sm font-bold text-slate-900 dark:text-white whitespace-nowrap">{monthLabel}</span>
+              </div>
+              <button onClick={nextMonth} title="Próximo mês"
+                className="w-9 h-full flex items-center justify-center text-slate-400 hover:text-violet-500 rounded-r-xl transition-colors">
+                <ChevronRight size={15} />
+              </button>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="px-6 pt-5 pb-10 space-y-5">
+      <div className="px-6 pb-10 space-y-5">
+
+        {/* Abas principais (barra segmentada) + seletor de cartão quando a aba é Cartões */}
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Tabs */}
+          <div className={SEG_BARRA}>
+            {([['contas', 'Contas a Pagar', Receipt], ['sicredi', 'Cartões', CreditCard]] as const).map(([key, label, Icone]) => (
+              <button key={key} onClick={() => setActiveTab(key)} className={segBotao(activeTab === key)}>
+                <Icone size={14} />
+                {label}
+              </button>
+            ))}
+          </div>
+          {/* Seletor de cartão */}
+          {activeTab === 'sicredi' && (
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Cartão</span>
+              <div className={SEG_BARRA}>
+                {([['sicredi', 'Sicredi'], ['asaas_cartao', 'Asaas']] as const).map(([key, label]) => (
+                  <button key={key} onClick={() => { setCardAccount(key); setUploadMsg(null); setFilterSicrediCat(''); }}
+                    className={segBotao(cardAccount === key)}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* ══════════════════════════════════════════════════════════════════ */}
         {/* ABA: CONTAS A PAGAR */}
@@ -916,47 +963,44 @@ export default function ContasAPagar() {
           <>
             {/* KPI Cards */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <KpiCard icon={<AlertTriangle size={16} className="text-white" />} accent="bg-rose-600"
+              <KpiCard icon={<AlertTriangle size={14} />} iconClass="bg-rose-500/10 text-rose-500"
+                alerta={entrySummary.vence_7_dias > 0}
                 label="Vence em 7 dias" value={String(entrySummary.vence_7_dias)}
-                sub={entrySummary.vence_7_dias > 0 ? 'Atenção!' : 'Nenhum'} subColor={entrySummary.vence_7_dias > 0 ? 'text-rose-400' : 'text-slate-500'} />
-              <KpiCard icon={<DollarSign size={16} className="text-white" />} accent="bg-violet-600"
+                sub={entrySummary.vence_7_dias > 0 ? 'Atenção!' : 'Nenhum'} />
+              <KpiCard icon={<DollarSign size={14} />} iconClass="bg-violet-500/10 text-violet-500"
                 label="Total Previsto" value={fmtBRL(entrySummary.total_previsto)}
-                sub={`${entrySummary.total} contas`} subColor="text-violet-400" />
-              <KpiCard icon={<CheckCircle2 size={16} className="text-white" />} accent="bg-emerald-600"
+                sub={`${entrySummary.total} contas`} />
+              <KpiCard icon={<CheckCircle2 size={14} />} iconClass="bg-emerald-500/10 text-emerald-500"
                 label="Pago" value={fmtBRL(entrySummary.total_pago)}
-                sub={entrySummary.total_previsto > 0 ? `${Math.round((entrySummary.total_pago / entrySummary.total_previsto) * 100)}% do total` : '—'} subColor="text-emerald-400" />
-              <KpiCard icon={<Clock size={16} className="text-white" />} accent="bg-amber-600"
+                sub={entrySummary.total_previsto > 0 ? `${Math.round((entrySummary.total_pago / entrySummary.total_previsto) * 100)}% do total` : '—'} />
+              <KpiCard icon={<Clock size={14} />} iconClass="bg-amber-500/10 text-amber-500"
                 label="A Pagar" value={fmtBRL(entrySummary.total_pendente)}
-                sub={monthLabel} subColor="text-amber-400" />
+                sub={monthLabel} />
             </div>
 
-            {/* Sub-tabs A pagar / Pagos */}
-            <div className="flex items-center gap-1 border-b border-black/10 dark:border-white/10">
-              {([['pending', 'A Pagar', pendingCount, 'amber'], ['paid', 'Pagos', paidCount, 'emerald']] as const).map(([key, label, count, color]) => (
-                <button key={key} onClick={() => setEntrySubTab(key)}
-                  className={`pb-2.5 px-1 text-sm font-bold border-b-2 transition-all -mb-px flex items-center gap-2 ${
-                    entrySubTab === key ? `border-${color}-400 text-${color}-400` : 'border-transparent text-slate-500 hover:text-dark-text'
-                  }`}>
-                  {label}
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                    entrySubTab === key ? `bg-${color}-500/15 text-${color}-400` : 'bg-white/5 text-slate-500'
-                  }`}>{count}</span>
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <ThemedDropdown value={filterCat}
+            {/* Barra de ferramentas: sub-abas A pagar / Pagos, filtro e ações — tudo em 40px */}
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Sub-tabs A pagar / Pagos */}
+                <div className={SEG_BARRA}>
+                  {([['pending', 'A Pagar', pendingCount, 'amber'], ['paid', 'Pagos', paidCount, 'emerald']] as const).map(([key, label, count, color]) => (
+                    <button key={key} onClick={() => setEntrySubTab(key)} className={segBotao(entrySubTab === key)}>
+                      {label}
+                      <span className={`${PILULA} ${
+                        entrySubTab === key ? `bg-${color}-500/10 text-${color}-600 dark:text-${color}-400` : 'bg-slate-500/10 text-slate-500'
+                      }`}>{count}</span>
+                    </button>
+                  ))}
+                </div>
+                <ThemedDropdown value={filterCat} className="min-w-[180px]" buttonClassName="h-10"
                   options={[{ value: '', label: 'Todas categorias' }, ...categories.map(c => ({ value: c, label: c }))]}
                   onChange={setFilterCat} />
-                <button onClick={() => setShowBillsConfig(!showBillsConfig)}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-black/10 dark:border-white/10 bg-dark-card text-xs text-slate-400 hover:text-dark-text hover:border-white/20 transition-colors">
+                <button onClick={() => setShowBillsConfig(!showBillsConfig)} className={BTN_SEC}>
                   <Receipt size={13} /> Contas Cadastradas
                 </button>
               </div>
-              <button onClick={() => setBillModal({})}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition-colors">
-                <Plus size={14} /> Nova Conta
+              <button onClick={() => setBillModal({})} className={BTN_PRI}>
+                <Plus size={15} /> Nova Conta
               </button>
             </div>
 
@@ -965,30 +1009,30 @@ export default function ContasAPagar() {
               {showBillsConfig && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={e => e.target === e.currentTarget && setShowBillsConfig(false)}>
                 <motion.div initial={{ opacity: 0, scale: 0.96, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96, y: 10 }}
-                  className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl overflow-hidden w-full max-w-4xl max-h-[80vh] flex flex-col shadow-2xl">
-                  <div className="px-5 py-3 border-b border-black/5 dark:border-white/5 flex items-center justify-between shrink-0">
-                    <div className="flex items-center gap-2">
-                      <Receipt size={15} className="text-violet-400" />
+                  className="bg-dark-card border border-slate-200 dark:border-white/10 rounded-2xl overflow-hidden w-full max-w-4xl max-h-[80vh] flex flex-col shadow-2xl">
+                  <div className="px-5 py-4 border-b border-slate-200 dark:border-white/5 flex items-center justify-between shrink-0">
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-violet-500/10 text-violet-500"><Receipt size={14} /></div>
                       <p className="text-sm font-bold text-dark-text">Contas Cadastradas</p>
-                      <span className="text-[10px] text-slate-500">{bills.filter(b => b.recurrence !== 'once').length} contas</span>
+                      <span className="text-[11px] text-slate-500">{bills.filter(b => b.recurrence !== 'once').length} contas</span>
                       {(() => {
                         const semDre = bills.filter(b => b.recurrence !== 'once' && !b.category_id).length;
                         return semDre > 0 ? (
-                          <span className="ml-1 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-500 text-[10px] font-bold"
+                          <span className={`${PILULA} bg-amber-500/10 text-amber-600 dark:text-amber-400`}
                             title="Pagamento destas contas, ao ser conciliado, fica sem categoria e fora do DFC">
                             {semDre} sem categoria no DFC
                           </span>
                         ) : null;
                       })()}
                     </div>
-                    <button onClick={() => setShowBillsConfig(false)} className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-slate-400 hover:text-dark-text transition-colors"><X size={16} /></button>
+                    <button onClick={() => setShowBillsConfig(false)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 text-slate-400 hover:text-dark-text transition-colors"><X size={16} /></button>
                   </div>
                   {bills.filter(b => b.recurrence !== 'once').length === 0 ? (
-                    <div className="px-5 py-8 text-center text-slate-500 text-sm">Nenhuma conta cadastrada.</div>
+                    <div className="px-5 py-10 text-center text-slate-500 text-sm">Nenhuma conta cadastrada.</div>
                   ) : (
-                    <div className="divide-y divide-black/5 dark:divide-white/5 overflow-y-auto">
+                    <div className="divide-y divide-slate-100 dark:divide-white/5 overflow-y-auto">
                       {/* Column header */}
-                      <div className="flex items-center px-5 py-2 bg-dark-bg/30 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                      <div className={`flex items-center px-5 py-2.5 bg-slate-50 dark:bg-white/[0.02] ${TH}`}>
                         <span className="flex-1">Nome</span>
                         <span className="w-56 shrink-0">Categoria no DFC</span>
                         <span className="w-32 shrink-0">Vencimento</span>
@@ -997,10 +1041,10 @@ export default function ContasAPagar() {
                       </div>
                       {bills.filter(b => b.recurrence !== 'once').map(b => {
                         return (
-                          <div key={b.id} className="flex items-center px-5 py-3 hover:bg-black/[0.03] dark:hover:bg-white/3 transition-colors">
+                          <div key={b.id} className="flex items-center px-5 py-3 hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors">
                             <div className="flex-1 min-w-0 pr-3">
                               <p className="text-sm font-semibold text-dark-text break-words leading-tight">{b.name}</p>
-                              <p className="text-[10px] text-slate-500">
+                              <p className="text-[11px] text-slate-500 mt-0.5 flex items-center">
                                 <CatDot cat={b.category} />{b.category} · {RECURRENCE_LABELS[b.recurrence] || b.recurrence}
                               </p>
                             </div>
@@ -1016,45 +1060,51 @@ export default function ContasAPagar() {
                             </div>
                             <div className="w-32 shrink-0">
                               {b.recurrence === 'monthly' && b.due_day ? (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-violet-500/10 border border-violet-500/20 text-violet-400 text-[11px] font-bold whitespace-nowrap">
+                                <span className={`${PILULA} bg-violet-500/10 text-violet-600 dark:text-violet-400`}>
                                   <Calendar size={10} />
                                   Dia {b.due_day}
                                 </span>
                               ) : b.recurrence === 'once' && b.due_date ? (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] font-bold whitespace-nowrap">
+                                <span className={`${PILULA} bg-emerald-500/10 text-emerald-600 dark:text-emerald-400`}>
                                   <Calendar size={10} />
                                   {fmtDate(b.due_date)}
                                 </span>
                               ) : b.recurrence === 'yearly' && b.due_date ? (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-pink-500/10 border border-pink-500/20 text-pink-400 text-[11px] font-bold whitespace-nowrap">
+                                <span className={`${PILULA} bg-pink-500/10 text-pink-600 dark:text-pink-400`}>
                                   <Calendar size={10} />
                                   {fmtDate(b.due_date).slice(0, 5)}
                                 </span>
                               ) : b.recurrence === 'weekly' && b.due_day ? (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[11px] font-bold whitespace-nowrap">
+                                <span className={`${PILULA} bg-blue-500/10 text-blue-600 dark:text-blue-400`}>
                                   <Calendar size={10} />
                                   Dia {b.due_day} (Semanal)
                                 </span>
                               ) : b.due_day ? (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-violet-500/10 border border-violet-500/20 text-violet-400 text-[11px] font-bold whitespace-nowrap">
+                                <span className={`${PILULA} bg-violet-500/10 text-violet-600 dark:text-violet-400`}>
                                   <Calendar size={10} />
                                   Dia {b.due_day}
                                 </span>
                               ) : b.due_date ? (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] font-bold whitespace-nowrap">
+                                <span className={`${PILULA} bg-emerald-500/10 text-emerald-600 dark:text-emerald-400`}>
                                   <Calendar size={10} />
                                   {fmtDate(b.due_date)}
                                 </span>
                               ) : (
-                                <span className="text-[11px] text-slate-600">—</span>
+                                <span className="text-[11px] text-slate-400 dark:text-slate-600">—</span>
                               )}
                             </div>
                             <div className="w-36 shrink-0">
-                              <p className="text-sm font-bold text-dark-text">{b.value ? fmtBRL(Number(b.value)) : 'Variável'}</p>
+                              <p className="text-sm font-bold text-dark-text tabular-nums">{b.value ? fmtBRL(Number(b.value)) : 'Variável'}</p>
                             </div>
-                            <div className="w-20 shrink-0 flex items-center gap-2 justify-end">
-                              <button onClick={() => setBillModal(b)} className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-slate-400 hover:text-dark-text transition-colors"><Pencil size={13} /></button>
-                              <button onClick={() => handleDeleteBill(b.id)} className="p-1.5 rounded-lg hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition-colors"><Trash2 size={13} /></button>
+                            <div className="w-20 shrink-0 flex items-center gap-1.5 justify-end">
+                              <button onClick={() => setBillModal(b)} title="Editar conta"
+                                className={`${BTN_LINHA} w-7 border-slate-200 dark:border-white/10 text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10`}>
+                                <Pencil size={12} />
+                              </button>
+                              <button onClick={() => handleDeleteBill(b.id)} title="Remover conta"
+                                className={`${BTN_LINHA} w-7 border-slate-200 dark:border-white/10 text-slate-500 hover:text-rose-500 hover:border-rose-500/30 hover:bg-rose-500/10`}>
+                                <Trash2 size={12} />
+                              </button>
                             </div>
                           </div>
                         );
@@ -1072,134 +1122,133 @@ export default function ContasAPagar() {
                 <div className="w-8 h-8 rounded-full border-2 border-violet-500/30 border-t-violet-500 animate-spin" />
               </div>
             ) : filteredEntries.length === 0 ? (
-              <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl py-16 flex flex-col items-center gap-3">
-                <Receipt size={32} className="text-slate-600" />
+              <div className={`${CAIXA} py-12 flex flex-col items-center gap-3`}>
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-slate-500/10 text-slate-400"><Receipt size={18} /></div>
                 <p className="text-sm text-slate-500">Nenhuma conta prevista para {monthLabel}.</p>
-                <button onClick={() => setBillModal({})} className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold mt-1">
-                  <Plus size={13} /> Adicionar Conta
+                <button onClick={() => setBillModal({})} className={`${BTN_PRI} mt-1`}>
+                  <Plus size={14} /> Adicionar Conta
                 </button>
               </div>
             ) : (
-              <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl overflow-x-auto">
+              <div className={CAIXA}>
+                <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse min-w-[800px]">
                   <thead>
-                    <tr className="border-b border-black/10 dark:border-white/10 text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-dark-bg/25">
-                      <th className="px-4 py-2.5">Conta</th>
-                      <th className="px-4 py-2.5">Valor</th>
-                      <th className="px-4 py-2.5">Categoria</th>
-                      <th className="px-4 py-2.5">Recorrência</th>
-                      <th className="px-4 py-2.5">Vencimento</th>
-                      <th className="px-4 py-2.5 text-right">Status / Ações</th>
+                    <tr className={`border-b border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-white/[0.02] ${TH}`}>
+                      <th className="px-4 py-3 font-bold">Conta</th>
+                      <th className="px-4 py-3 font-bold">Valor</th>
+                      <th className="px-4 py-3 font-bold">Categoria</th>
+                      <th className="px-4 py-3 font-bold">Recorrência</th>
+                      <th className="px-4 py-3 font-bold">Vencimento</th>
+                      <th className="px-4 py-3 font-bold text-right">Status / Ações</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-black/5 dark:divide-white/5">
+                  <tbody className="divide-y divide-slate-100 dark:divide-white/5">
                     {filteredEntries.map((entry) => {
                       const isPaid = entry.status === 'paid';
                       const value = Number(isPaid && entry.actual_value ? entry.actual_value : entry.expected_value);
                       const catStyle = getCategoryStyles(entry.category || 'Outros');
-                      
+
                       // Recurrence colors/labels
                       const recColors: Record<string, string> = {
-                        monthly: 'bg-violet-500/10 text-violet-400 border-violet-500/20',
-                        once: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
-                        yearly: 'bg-pink-500/10 text-pink-400 border-pink-500/20',
-                        weekly: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
+                        monthly: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
+                        once: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+                        yearly: 'bg-pink-500/10 text-pink-600 dark:text-pink-400',
+                        weekly: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
                       };
-                      const recStyle = recColors[entry.recurrence || ''] || 'bg-slate-500/10 text-slate-400 border-slate-500/20';
+                      const recStyle = recColors[entry.recurrence || ''] || 'bg-slate-500/10 text-slate-500 dark:text-slate-400';
                       const recLabel = RECURRENCE_LABELS[entry.recurrence || ''] || entry.recurrence || '';
 
                       const ds = getDueDateStatus(entry.due_date, entry.status);
                       const rowBg = ds === 'overdue'
-                        ? 'bg-red-500/5 border-l-2 border-l-red-500/40 hover:bg-red-500/10'
+                        ? 'bg-rose-500/[0.04] border-l-2 border-l-rose-500/50 hover:bg-rose-500/[0.08]'
                         : ds === 'today'
-                          ? 'bg-emerald-500/5 border-l-2 border-l-emerald-500/40 hover:bg-emerald-500/10'
-                          : ds === 'paid'
-                            ? 'hover:bg-black/[0.03] dark:hover:bg-white/3'
-                            : 'hover:bg-black/[0.03] dark:hover:bg-white/3';
+                          ? 'bg-emerald-500/[0.04] border-l-2 border-l-emerald-500/50 hover:bg-emerald-500/[0.08]'
+                          : 'hover:bg-slate-50 dark:hover:bg-white/[0.03]';
 
                       return (
                         <tr key={entry.id} className={`transition-colors align-middle ${rowBg}`}>
                           {/* Col 1: Conta */}
-                          <td className="px-4 py-2">
-                            <div className="flex items-center gap-2.5">
-                              {/* Circle avatar with Category colors and category icon */}
-                              <div className={`w-7 h-7 rounded-full ${catStyle.bg} ${catStyle.text} ${catStyle.border} border flex items-center justify-center shrink-0 shadow-[0_0_15px_rgba(255,255,255,0.02)]`}>
-                                {getCategoryIcon(entry.category, 13)}
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-3">
+                              {/* Ícone da categoria em quadrado com fundo da cor ~10% */}
+                              <div className={`w-8 h-8 rounded-lg ${catStyle.bg} ${catStyle.text} flex items-center justify-center shrink-0`}>
+                                {getCategoryIcon(entry.category, 14)}
                               </div>
-                              <div 
+                              <div
                                 onClick={() => {
                                   const b = bills.find(x => x.id === entry.bill_id);
                                   if (b) setBillModal(b);
                                 }}
                                 className="min-w-0 cursor-pointer group"
                               >
-                                <p className={`text-[13px] font-semibold truncate group-hover:text-violet-400 transition-colors ${isPaid ? 'text-slate-500 line-through group-hover:text-slate-400' : 'text-dark-text'}`}>{entry.bill_name}</p>
+                                <p className={`text-[13px] font-semibold truncate group-hover:text-violet-500 transition-colors ${isPaid ? 'text-slate-500 line-through group-hover:text-slate-400' : 'text-dark-text'}`}>{entry.bill_name}</p>
                                 {isPaid && entry.linked_description ? (
-                                  <p className="text-[10px] text-emerald-400/70 truncate mt-0.5" title={entry.linked_description}>
-                                    🔗 {entry.linked_description}
+                                  <p className="text-[11px] text-emerald-600/80 dark:text-emerald-400/70 truncate mt-0.5 flex items-center gap-1" title={entry.linked_description}>
+                                    <Link2 size={10} className="shrink-0" /> {entry.linked_description}
                                   </p>
                                 ) : entry.notes ? (
-                                  <p className="text-[10px] text-slate-500 truncate mt-0.5 group-hover:text-slate-400 transition-colors">{entry.notes}</p>
+                                  <p className="text-[11px] text-slate-500 truncate mt-0.5 group-hover:text-slate-400 transition-colors">{entry.notes}</p>
                                 ) : null}
                               </div>
                             </div>
                           </td>
 
                           {/* Col 2: Valor */}
-                          <td className="px-4 py-2 text-[13px] font-bold text-dark-text">
+                          <td className="px-4 py-3 text-[13px] font-bold text-dark-text tabular-nums whitespace-nowrap">
                             {fmtBRL(value)}
                           </td>
 
-                          {/* Col 3: Categoria (Tag/Badge) */}
-                          <td className="px-4 py-2">
-                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border ${catStyle.bg} ${catStyle.text} ${catStyle.border}`}>
+                          {/* Col 3: Categoria (pílula) */}
+                          <td className="px-4 py-3">
+                            <span className={`${PILULA} ${catStyle.bg} ${catStyle.text}`}>
                               <span className={`w-1.5 h-1.5 rounded-full ${catStyle.dot}`} />
                               {entry.category || 'Outros'}
                             </span>
                           </td>
 
                           {/* Col 4: Recorrência */}
-                          <td className="px-4 py-2">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold border ${recStyle}`}>
+                          <td className="px-4 py-3">
+                            <span className={`${PILULA} ${recStyle}`}>
                               {recLabel}
                             </span>
                           </td>
 
                           {/* Col 4: Vencimento */}
-                          <td className="px-4 py-2 text-xs text-slate-600 dark:text-slate-300 font-medium">
+                          <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-300 font-medium tabular-nums whitespace-nowrap">
                             {fmtDate(entry.due_date)}
                           </td>
 
                           {/* Col 5: Status / Ações */}
-                          <td className="px-4 py-2 text-right">
-                            <div className="inline-flex items-center gap-2">
+                          <td className="px-4 py-3">
+                            <div className="flex items-center justify-end gap-1.5">
                               <StatusBadge status={entry.status} dueDate={entry.due_date} />
                               {isPaid && entry.linked_movement_id ? (
                                 <button onClick={() => handleUnlink(entry.id)}
-                                  className="flex items-center gap-1 px-2 py-1 rounded-lg bg-white/5 hover:bg-rose-600/20 text-slate-500 hover:text-rose-400 text-[10px] font-bold transition-colors border border-black/5 dark:border-white/5 hover:border-rose-500/20"
+                                  className={`${BTN_LINHA} px-2 border-slate-200 dark:border-white/10 text-slate-500 hover:text-rose-500 hover:border-rose-500/30 hover:bg-rose-500/10`}
                                   title="Desvincular do extrato">
-                                  <X size={10} /> Desvincular
+                                  <X size={11} /> Desvincular
                                 </button>
                               ) : !isPaid && entry.status !== 'cancelled' ? (
                                 <>
                                   <button onClick={() => setEditEntry(entry)}
-                                    className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-dark-text text-[10px] font-bold transition-colors border border-black/5 dark:border-white/5"
+                                    className={`${BTN_LINHA} w-7 border-slate-200 dark:border-white/10 text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10`}
                                     title="Editar este lançamento (só o mês)">
-                                    <Pencil size={11} />
+                                    <Pencil size={12} />
                                   </button>
                                   <button onClick={() => openLinkModal(entry)}
-                                    className="flex items-center gap-1 px-2 py-1 rounded-lg bg-violet-600/15 hover:bg-violet-600/30 text-violet-400 text-[10px] font-bold transition-colors border border-violet-500/20"
+                                    className={`${BTN_LINHA} px-2 border-violet-500/20 bg-violet-500/10 text-violet-600 dark:text-violet-400 hover:bg-violet-500/20`}
                                     title="Vincular manualmente ao extrato">
-                                    🔗 Vincular
+                                    <Link2 size={12} /> Vincular
                                   </button>
                                   <button onClick={() => setPayModal(entry)}
-                                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 text-[10px] font-bold transition-colors border border-emerald-500/20">
-                                    <Check size={10} /> Pagar
+                                    className={`${BTN_LINHA} px-2 border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20`}>
+                                    <Check size={12} /> Pagar
                                   </button>
                                   <button onClick={() => handleDeleteEntry(entry.id)}
-                                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-600/10 hover:bg-rose-600/25 text-rose-400 text-[10px] font-bold transition-colors border border-rose-500/20"
+                                    className={`${BTN_LINHA} w-7 border-slate-200 dark:border-white/10 text-slate-500 hover:text-rose-500 hover:border-rose-500/30 hover:bg-rose-500/10`}
                                     title="Excluir este lançamento do mês">
-                                    <Trash2 size={10} />
+                                    <Trash2 size={12} />
                                   </button>
                                 </>
                               ) : null}
@@ -1210,15 +1259,16 @@ export default function ContasAPagar() {
                     })}
                   </tbody>
                   <tfoot>
-                    <tr className="border-t-2 border-black/10 dark:border-white/10 bg-dark-bg/40">
-                      <td className="px-4 py-3 text-[11px] font-bold text-slate-400 uppercase tracking-widest">
-                        Total {filterCat ? `· ${filterCat}` : ''} <span className="text-slate-500 normal-case">({filteredEntries.length} {filteredEntries.length === 1 ? 'conta' : 'contas'})</span>
+                    <tr className="border-t border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-white/[0.02]">
+                      <td className="px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                        Total {filterCat ? `· ${filterCat}` : ''} <span className="text-slate-400 normal-case tracking-normal font-semibold">({filteredEntries.length} {filteredEntries.length === 1 ? 'conta' : 'contas'})</span>
                       </td>
-                      <td className="px-4 py-3 text-sm font-black text-dark-text tabular-nums">{fmtBRL(filteredTotal)}</td>
+                      <td className="px-4 py-3 text-sm font-bold text-slate-900 dark:text-white tabular-nums whitespace-nowrap">{fmtBRL(filteredTotal)}</td>
                       <td colSpan={4}></td>
                     </tr>
                   </tfoot>
                 </table>
+                </div>
               </div>
             )}
           </>
@@ -1229,31 +1279,17 @@ export default function ContasAPagar() {
         {/* ══════════════════════════════════════════════════════════════════ */}
         {activeTab === 'sicredi' && (
           <>
-            {/* Seletor de cartão */}
-            <div className="flex items-center gap-1.5">
-              {([['sicredi', 'Sicredi'], ['asaas_cartao', 'Asaas']] as const).map(([key, label]) => (
-                <button key={key} onClick={() => { setCardAccount(key); setUploadMsg(null); setFilterSicrediCat(''); }}
-                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold border transition-colors ${
-                    cardAccount === key
-                      ? 'bg-emerald-600 border-emerald-600 text-white'
-                      : 'bg-dark-card border-black/10 dark:border-white/10 text-slate-500 hover:text-dark-text'
-                  }`}>
-                  {label}
-                </button>
-              ))}
-            </div>
-
             {/* KPI Cards */}
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              <KpiCard icon={<CreditCard size={16} className="text-white" />} accent="bg-emerald-600"
+              <KpiCard icon={<CreditCard size={14} />} iconClass="bg-emerald-500/10 text-emerald-500"
                 label="Total da Fatura" value={fmtBRL(sicrediSummary.total)}
-                sub={`${sicrediSummary.total_items} lançamentos`} subColor="text-emerald-400" />
-              <KpiCard icon={<Tag size={16} className="text-white" />} accent="bg-amber-600"
+                sub={`${sicrediSummary.total_items} lançamentos`} />
+              <KpiCard icon={<Tag size={14} />} iconClass="bg-amber-500/10 text-amber-500"
                 label="Categorizados"
                 value={sicrediSummary.total_items > 0 ? `${Math.round((sicrediSummary.categorized / sicrediSummary.total_items) * 100)}%` : '0%'}
-                sub={`${sicrediSummary.categorized} de ${sicrediSummary.total_items}`} subColor="text-amber-400" />
-              <KpiCard icon={<Upload size={16} className="text-white" />} accent="bg-blue-600"
-                label="Período" value={monthLabel} sub="Fatura do cartão" subColor="text-blue-400" />
+                sub={`${sicrediSummary.categorized} de ${sicrediSummary.total_items}`} />
+              <KpiCard icon={<Calendar size={14} />} iconClass="bg-blue-500/10 text-blue-500"
+                label="Período" value={monthLabel} sub="Fatura do cartão" />
             </div>
 
             {/* Upload area — aceita também arrastar e soltar o arquivo da fatura */}
@@ -1262,80 +1298,83 @@ export default function ContasAPagar() {
               onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
               onDragLeave={e => { e.preventDefault(); if (--profundidadeArraste.current <= 0) { profundidadeArraste.current = 0; setArrastando(false); } }}
               onDrop={aoSoltar}
-              className={`relative bg-dark-card border rounded-2xl p-5 flex flex-col sm:flex-row items-center gap-4 transition-colors ${
+              className={`relative rounded-2xl border px-5 py-4 flex flex-col lg:flex-row lg:items-center gap-4 transition-colors ${
                 arrastando
-                  ? 'border-2 border-dashed border-emerald-500 bg-emerald-500/5'
-                  : 'border-black/10 dark:border-white/10'}`}>
+                  ? 'border-2 border-dashed border-violet-500 bg-violet-500/5'
+                  : 'bg-white dark:bg-dark-card/60 border-slate-200 dark:border-white/5'}`}>
               {arrastando && (
                 <div className="absolute inset-0 z-10 rounded-2xl flex flex-col items-center justify-center gap-1.5 bg-dark-card/90 pointer-events-none">
-                  <Upload size={22} className="text-emerald-500" />
-                  <p className="text-sm font-bold text-emerald-500">Solte a fatura aqui</p>
+                  <Upload size={22} className="text-violet-500" />
+                  <p className="text-sm font-bold text-violet-500">Solte a fatura aqui</p>
                   <p className="text-[11px] text-slate-500">
                     {cardAccount === 'asaas_cartao' ? 'PDF da fatura do Asaas' : 'OFX, CSV ou PDF da fatura'}
                   </p>
                 </div>
               )}
-              <div className="flex-1">
-                <p className="text-sm font-bold text-dark-text mb-0.5">
-                  {cardAccount === 'asaas_cartao' ? 'Importar Fatura (PDF)' : 'Importar Fatura (OFX, CSV ou PDF)'}
-                </p>
-                <p className="text-xs text-slate-500">
-                  {cardAccount === 'asaas_cartao'
-                    ? 'O Asaas só exporta a fatura em PDF. Arraste o PDF para cá ou use o botão — os lançamentos são lidos e categorizados automaticamente.'
-                    : 'Arraste o arquivo .ofx ou .csv da fatura exportada pelo Sicredi Internet Banking para cá, ou use o botão (PDF também funciona).'}
-                </p>
-                {uploadMsg && (
-                  <p className={`text-xs mt-2 font-semibold ${uploadMsg.type === 'ok' ? 'text-emerald-400' : 'text-rose-400'}`}>{uploadMsg.text}</p>
-                )}
-                {/* Histórico de importações deste cartão/mês */}
-                {importacoes.length > 0 && (
-                  <div className="mt-3 space-y-1">
-                    {importacoes.slice(0, 3).map((imp: any) => {
-                      const brlI = (v: any) => Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-                      const conf = imp.conferencia === 'ok' ? { t: `✓ conferida (${brlI(imp.total_impresso)})`, c: 'text-emerald-400' }
-                        : imp.conferencia === 'divergente' ? { t: `⚠ soma ${brlI(imp.soma)} ≠ total ${brlI(imp.total_impresso)}`, c: 'text-amber-400' }
-                        : imp.conferencia === 'sem_total' ? { t: 'sem total no PDF', c: 'text-slate-500' }
-                        : null;
-                      return (
-                        <div key={imp.id} className={`flex items-center gap-2 text-[11px] ${imp.undone_at ? 'text-slate-600 line-through' : 'text-slate-400'}`}>
-                          <span>{new Date(imp.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</span>
-                          <span className="uppercase text-[9px] font-bold px-1.5 py-0.5 rounded bg-white/5">{imp.formato}</span>
-                          <span>{imp.itens} itens</span>
-                          {imp.created_by && <span className="truncate max-w-[160px]">· {String(imp.created_by).split('@')[0]}</span>}
-                          {conf && !imp.undone_at && <span className={`font-semibold ${conf.c}`}>· {conf.t}</span>}
-                          {imp.undone_at && <span className="no-underline">· desfeita</span>}
-                          {imp.pode_desfazer && (
-                            <button onClick={() => desfazerImportacao(imp)} disabled={desfazendo}
-                              className="ml-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border border-white/10 text-slate-300 hover:text-rose-300 hover:border-rose-500/40 disabled:opacity-40 transition-colors">
-                              <RotateCcw size={10} /> Desfazer
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-              <div className="flex flex-col shrink-0">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Pagamento da fatura</label>
-                <div className="relative">
-                  <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-violet-400 pointer-events-none z-10" />
-                  <input
-                    type="date"
-                    value={sicrediSummary.payment_date || ''}
-                    onChange={(e) => handleSavePaymentDate(e.target.value)}
-                    className="w-[152px] bg-dark-card border border-black/10 dark:border-white/10 rounded-xl pl-9 pr-3 py-2.5 text-xs font-bold text-dark-text cursor-pointer transition-colors hover:border-violet-500/40 focus:outline-none focus:border-violet-500/60 focus:ring-2 focus:ring-violet-500/15 dark:[color-scheme:dark] [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0"
-                  />
+              <div className="flex-1 min-w-0 flex items-start gap-3">
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 bg-violet-500/10 text-violet-500 mt-0.5"><FileText size={14} /></div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold text-dark-text mb-0.5">
+                    {cardAccount === 'asaas_cartao' ? 'Importar Fatura (PDF)' : 'Importar Fatura (OFX, CSV ou PDF)'}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {cardAccount === 'asaas_cartao'
+                      ? 'O Asaas só exporta a fatura em PDF. Arraste o PDF para cá ou use o botão — os lançamentos são lidos e categorizados automaticamente.'
+                      : 'Arraste o arquivo .ofx ou .csv da fatura exportada pelo Sicredi Internet Banking para cá, ou use o botão (PDF também funciona).'}
+                  </p>
+                  {uploadMsg && (
+                    <p className={`text-xs mt-2 font-semibold ${uploadMsg.type === 'ok' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500'}`}>{uploadMsg.text}</p>
+                  )}
+                  {/* Histórico de importações deste cartão/mês */}
+                  {importacoes.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-slate-100 dark:border-white/5 space-y-1.5">
+                      {importacoes.slice(0, 3).map((imp: any) => {
+                        const brlI = (v: any) => Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                        const conf = imp.conferencia === 'ok' ? { t: `✓ conferida (${brlI(imp.total_impresso)})`, c: 'text-emerald-600 dark:text-emerald-400' }
+                          : imp.conferencia === 'divergente' ? { t: `⚠ soma ${brlI(imp.soma)} ≠ total ${brlI(imp.total_impresso)}`, c: 'text-amber-600 dark:text-amber-400' }
+                          : imp.conferencia === 'sem_total' ? { t: 'sem total no PDF', c: 'text-slate-500' }
+                          : null;
+                        return (
+                          <div key={imp.id} className={`flex items-center gap-2 flex-wrap text-[11px] ${imp.undone_at ? 'text-slate-400 dark:text-slate-600 line-through' : 'text-slate-500 dark:text-slate-400'}`}>
+                            <span className="tabular-nums">{new Date(imp.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                            <span className={`${PILULA} uppercase bg-slate-500/10 text-slate-500 dark:text-slate-400`}>{imp.formato}</span>
+                            <span>{imp.itens} itens</span>
+                            {imp.created_by && <span className="truncate max-w-[160px]">· {String(imp.created_by).split('@')[0]}</span>}
+                            {conf && !imp.undone_at && <span className={`font-semibold ${conf.c}`}>· {conf.t}</span>}
+                            {imp.undone_at && <span className="no-underline">· desfeita</span>}
+                            {imp.pode_desfazer && (
+                              <button onClick={() => desfazerImportacao(imp)} disabled={desfazendo}
+                                className="ml-1 h-6 inline-flex items-center gap-1 px-2 rounded-lg border border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-300 font-semibold hover:text-rose-500 hover:border-rose-500/40 hover:bg-rose-500/10 disabled:opacity-40 transition-colors">
+                                <RotateCcw size={10} /> Desfazer
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-end gap-2 flex-wrap shrink-0">
+                <div className="flex flex-col">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Pagamento da fatura</label>
+                  <div className="relative">
+                    <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-violet-500 pointer-events-none z-10" />
+                    <input
+                      type="date"
+                      value={sicrediSummary.payment_date || ''}
+                      onChange={(e) => handleSavePaymentDate(e.target.value)}
+                      className="h-10 w-[160px] bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl pl-9 pr-3 text-xs font-bold text-slate-900 dark:text-white cursor-pointer transition-colors hover:border-violet-500/40 focus:outline-none focus:border-violet-500/60 focus:ring-2 focus:ring-violet-500/15 dark:[color-scheme:dark] [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0"
+                    />
+                  </div>
+                </div>
                 <input ref={fileRef} type="file" accept=".ofx,.OFX,.csv,.CSV,.pdf,.PDF" className="hidden" onChange={handleUpload} />
-                <button onClick={() => fileRef.current?.click()} disabled={uploading}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-bold transition-colors">
+                <button onClick={() => fileRef.current?.click()} disabled={uploading} className={BTN_PRI}>
                   {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
                   {uploading ? 'Lendo fatura...' : cardAccount === 'asaas_cartao' ? 'Upload PDF' : 'Upload OFX / CSV / PDF'}
                 </button>
-                <button onClick={() => fetchSicredi()} className="p-2.5 rounded-xl border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 text-slate-400 hover:text-dark-text transition-colors">
+                <button onClick={() => fetchSicredi()} title="Recarregar lançamentos"
+                  className="h-10 w-10 flex items-center justify-center rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-400 hover:text-slate-900 dark:hover:text-white hover:border-violet-500/40 transition-colors">
                   <RefreshCw size={14} className={sicrediLoading ? 'animate-spin' : ''} />
                 </button>
               </div>
@@ -1343,8 +1382,8 @@ export default function ContasAPagar() {
 
             {/* Filter */}
             {sicrediItems.length > 0 && (
-              <div className="flex items-center gap-2">
-                <ThemedDropdown value={filterSicrediCat}
+              <div className="flex items-center gap-3">
+                <ThemedDropdown value={filterSicrediCat} className="min-w-[200px]" buttonClassName="h-10"
                   options={[
                     { value: '', label: 'Todas categorias' },
                     ...sicrediCats.map(c => ({ value: String(c), label: String(c) })),
@@ -1358,21 +1397,21 @@ export default function ContasAPagar() {
             {/* Sicredi table */}
             {sicrediLoading ? (
               <div className="flex items-center justify-center py-16">
-                <div className="w-8 h-8 rounded-full border-2 border-emerald-500/30 border-t-emerald-500 animate-spin" />
+                <div className="w-8 h-8 rounded-full border-2 border-violet-500/30 border-t-violet-500 animate-spin" />
               </div>
             ) : sicrediItems.length === 0 ? (
-              <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl py-16 flex flex-col items-center gap-3">
-                <CreditCard size={32} className="text-slate-600" />
+              <div className={`${CAIXA} py-12 px-5 flex flex-col items-center gap-3`}>
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-slate-500/10 text-slate-400"><CreditCard size={18} /></div>
                 <p className="text-sm text-slate-500">Nenhum lançamento para {monthLabel}.</p>
-                <p className="text-xs text-slate-600">
+                <p className="text-xs text-slate-400 dark:text-slate-600">
                   {cardAccount === 'asaas_cartao'
                     ? 'Arraste o PDF da fatura para a área de importação acima.'
                     : 'Arraste o arquivo OFX ou CSV para a área de importação acima.'}
                 </p>
                 {sicrediMonths.length > 0 && (
-                  <div className="flex flex-col items-center gap-2 mt-3 pt-4 border-t border-black/5 dark:border-white/5 w-full max-w-md">
+                  <div className="flex flex-col items-center gap-2 mt-3 pt-4 border-t border-slate-100 dark:border-white/5 w-full max-w-md">
                     <p className="text-xs text-slate-500">
-                      Faturas já importadas <span className="text-slate-600">(a fatura entra no mês do vencimento)</span>:
+                      Faturas já importadas <span className="text-slate-400 dark:text-slate-600">(a fatura entra no mês do vencimento)</span>:
                     </p>
                     <div className="flex flex-wrap items-center justify-center gap-1.5">
                       {sicrediMonths.map(m => {
@@ -1381,7 +1420,7 @@ export default function ContasAPagar() {
                           <button
                             key={m.billing_month}
                             onClick={() => setSelectedMonth(m.billing_month)}
-                            className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 text-xs font-bold transition-colors"
+                            className="h-7 px-2.5 rounded-lg bg-violet-500/10 text-violet-600 dark:text-violet-400 hover:bg-violet-500/20 text-xs font-semibold transition-colors"
                           >
                             {MESES[Number(mm) - 1]} {my} · {m.itens}
                           </button>
@@ -1392,16 +1431,16 @@ export default function ContasAPagar() {
                 )}
               </div>
             ) : (
-              <div className="bg-dark-card border border-black/10 dark:border-white/10 rounded-2xl overflow-hidden">
+              <div className={CAIXA}>
                 {/* Header */}
-                <div className="hidden md:grid grid-cols-12 px-5 py-2.5 border-b border-black/5 dark:border-white/5 bg-dark-bg/30">
-                  <span className="col-span-5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Descrição</span>
-                  <span className="col-span-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Categoria</span>
-                  <span className="col-span-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Data</span>
-                  <span className="col-span-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right">Valor</span>
+                <div className={`hidden md:grid grid-cols-12 gap-2 px-5 py-3 border-b border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-white/[0.02] ${TH}`}>
+                  <span className="col-span-5">Descrição</span>
+                  <span className="col-span-3">Categoria</span>
+                  <span className="col-span-2">Data</span>
+                  <span className="col-span-2 text-right pr-9">Valor</span>
                 </div>
                 {/* Rows */}
-                <div className="divide-y divide-black/5 dark:divide-white/5 max-h-[560px] overflow-y-auto">
+                <div className="divide-y divide-slate-100 dark:divide-white/5 max-h-[560px] overflow-y-auto">
                   {(filterSicrediCat === '__uncategorized'
                     ? sicrediItems.filter(i => !i.grapehub_category && !i.custom_category)
                     : filteredSicredi
@@ -1411,10 +1450,10 @@ export default function ContasAPagar() {
                     const isDebit = item.type === -1;
                     return (
                       <motion.div key={item.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: idx * 0.02 }}
-                        className="grid grid-cols-12 items-center px-5 py-3 hover:bg-black/[0.03] dark:hover:bg-white/3 transition-colors gap-2">
+                        className="grid grid-cols-12 items-center px-5 py-3 hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors gap-2">
                         <div className="col-span-5 min-w-0">
-                          <p className="text-sm text-dark-text truncate">{desc}</p>
-                          {item.user_comment && <p className="text-[10px] text-slate-500 truncate">{item.user_comment}</p>}
+                          <p className="text-[13px] font-semibold text-dark-text truncate">{desc}</p>
+                          {item.user_comment && <p className="text-[11px] text-slate-500 truncate mt-0.5">{item.user_comment}</p>}
                         </div>
                         <div className="col-span-3 min-w-0">
                           {/* Clique na categoria troca direto, sem abrir o modal. */}
@@ -1427,15 +1466,15 @@ export default function ContasAPagar() {
                           />
                         </div>
                         <div className="col-span-2">
-                          <span className="text-xs text-slate-400">{fmtDate(item.transaction_date)}</span>
+                          <span className="text-xs text-slate-600 dark:text-slate-300 font-medium tabular-nums">{fmtDate(item.transaction_date)}</span>
                         </div>
                         <div className="col-span-2 flex items-center justify-end gap-2">
-                          <span className={`text-sm font-bold ${isDebit ? 'text-rose-400' : 'text-emerald-400'}`}>
+                          <span className={`text-[13px] font-bold tabular-nums whitespace-nowrap ${isDebit ? 'text-rose-500' : 'text-emerald-600 dark:text-emerald-400'}`}>
                             {isDebit ? '-' : '+'}{fmtBRL(Number(item.value))}
                           </span>
-                          <button onClick={() => setSicrediEditItem(item)}
-                            className="p-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-slate-500 hover:text-dark-text transition-colors shrink-0">
-                            <Pencil size={11} />
+                          <button onClick={() => setSicrediEditItem(item)} title="Editar lançamento"
+                            className={`${BTN_LINHA} w-7 shrink-0 border-slate-200 dark:border-white/10 text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10`}>
+                            <Pencil size={12} />
                           </button>
                         </div>
                       </motion.div>
@@ -1443,9 +1482,9 @@ export default function ContasAPagar() {
                   })}
                 </div>
                 {/* Footer total */}
-                <div className="flex items-center justify-between px-5 py-3 border-t border-black/10 dark:border-white/10 bg-dark-bg/30">
-                  <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Total de Despesas</span>
-                  <span className="text-base font-black text-rose-400">{fmtBRL(sicrediSummary.total)}</span>
+                <div className="flex items-center justify-between px-5 py-3 border-t border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-white/[0.02]">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total de Despesas</span>
+                  <span className="text-base font-bold text-rose-500 tabular-nums">{fmtBRL(sicrediSummary.total)}</span>
                 </div>
               </div>
             )}

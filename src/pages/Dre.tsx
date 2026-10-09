@@ -42,20 +42,20 @@ export default function Dre() {
           titleAccent="Fluxo de Caixa"
           subtitle="Demonstração do fluxo de caixa realizado — regime de caixa, não de competência"
         >
-          <BotaoSincronizar onDone={() => setVersaoSync(v => v + 1)} />
+          <BotaoSincronizar onDone={() => setVersaoSync(v => v + 1)} className="h-10 rounded-xl" />
         </PageHeader>
 
-        {/* Abas */}
-        <div className="flex items-center gap-1 border-b border-white/10">
+        {/* Abas — barra segmentada (visual refeito em 09/10/2026, mesmas abas e contador) */}
+        <div className="flex items-center gap-1 p-1 w-fit max-w-full overflow-x-auto rounded-xl bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/5">
           {([['dre', 'DFC'], ['dashboard', 'Dashboard'], ['despesas', 'Despesas'], ['fechamento', 'Fechamento']] as const).map(([key, label]) => (
             <button
               key={key}
               onClick={() => setActiveTab(key)}
-              className={`px-4 py-2.5 text-sm font-bold border-b-2 -mb-px transition-colors ${activeTab === key ? 'border-violet-500 text-violet-400' : 'border-transparent text-slate-500 hover:text-dark-text'}`}
+              className={`h-9 px-4 rounded-lg text-sm font-semibold whitespace-nowrap inline-flex items-center transition-colors ${activeTab === key ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'}`}
             >
               {label}
               {key === 'despesas' && alertas > 0 && (
-                <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-rose-500/20 text-rose-400 text-[10px] font-black align-middle"
+                <span className="ml-1.5 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-rose-500/10 text-rose-500 text-[10px] font-bold tabular-nums"
                   title={`${alertas} custo(s) acima da média dos meses anteriores`}>{alertas}</span>
               )}
             </button>

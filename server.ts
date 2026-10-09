@@ -19,6 +19,7 @@ import { migrateCrmReunioes, guardarColunasApagadas, sqlReunioesMarcadas } from 
 import { setupFunilMetaRoutes } from "./src/routes/funil-meta";
 import { setupAlertaSaldoRoutes } from './src/routes/alerta-saldo';
 import { setupMenuPastaEmPastaRoutes } from './src/routes/menu-pasta-em-pasta';
+import { setupClientesMapaRoutes } from './src/routes/clientes-mapa';
 import { setupFechamentoRoutes, mesFechado, mesFechadoDoLancamento, msgMesFechado, foraDeMesFechado } from "./src/routes/fechamento";
 import { migrateBillCategory } from "./src/routes/bill-category";
 import { setupBolaoRoutes } from "./src/routes/bolao";
@@ -14048,9 +14049,10 @@ app.get("/api/todos", async (req, res) => {
         `SELECT e.id, e.due_date, e.expected_value, e.status, b.name as bill_name, b.category
          FROM fin_bill_entries e
          JOIN fin_bills b ON b.id = e.bill_id
-         WHERE e.due_date > CURRENT_DATE AND e.status NOT IN ('paid', 'cancelled')
+         WHERE e.due_date > CURRENT_DATE AND e.due_date <= CURRENT_DATE + 14
+           AND e.status NOT IN ('paid', 'cancelled')
          ORDER BY e.due_date ASC, e.expected_value DESC
-         LIMIT 7`
+         LIMIT 60`
       );
 
       // 3) Clientes em Atraso
@@ -19045,6 +19047,8 @@ ${instrucoes_extras ? `# INSTRUÇÕES ADICIONAIS\n${instrucoes_extras}` : ''}
   setupAlertaSaldoRoutes(app, pool, fetchMetaAccountInfo);
   // Gerenciar Páginas: mover uma pasta para dentro de outra (vira subpasta)
   setupMenuPastaEmPastaRoutes(app, pool);
+  // Clientes Ativos › Mapa: cidade de cada cliente a partir do texto livre de `location`
+  setupClientesMapaRoutes(app, pool);
   migrateCrmReunioes(pool).catch((e: any) => console.error("[crm-reunioes] migrate:", e.message));
   await migrateCursos(pool).catch((e: any) => console.warn('[cursos] migrate:', e.message));
   setupCursosRoutes(app, pool);

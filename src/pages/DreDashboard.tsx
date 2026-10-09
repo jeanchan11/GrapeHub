@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Wallet, Scale } from 'lucide-react';
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip as RechartsTooltip, Legend, ResponsiveContainer,
+  Tooltip as RechartsTooltip, ResponsiveContainer, Cell,
 } from 'recharts';
 
 const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
@@ -82,19 +82,45 @@ const DreDashboard: React.FC = () => {
   const margem = totais.faturamento > 0 ? (resultado / totais.faturamento) * 100 : 0;
   const mediaMensal = serie.length > 0 ? totais.faturamento / serie.length : 0;
 
-  const tooltipStyle = {
-    background: '#1a1625',
-    border: '1px solid rgba(255,255,255,0.1)',
-    borderRadius: 12,
-    fontSize: 12,
+  // Visual refeito em 09/10/2026 (mesmos números): tooltip que acompanha o tema,
+  // eixo com valor curto ("R$ 8 mil"), legenda como etiquetas no cabeçalho do card.
+  const eixoY = (v: number) => {
+    const a = Math.abs(v);
+    return a >= 1000 ? `${v < 0 ? '−' : ''}R$ ${(a / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mil` : `R$ ${Math.round(v).toLocaleString('pt-BR')}`;
   };
-  const eixoY = (v: number) => `${Math.round(v / 1000)}k`;
+  const eixo = { fontSize: 10, fill: '#94a3b8' };
+  const Dica = ({ active, payload, label }: any) => {
+    if (!active || !payload?.length) return null;
+    return (
+      <div className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-dark-card shadow-xl px-3 py-2 text-xs min-w-[200px]">
+        <p className="font-bold text-slate-900 dark:text-white mb-1">{`${label}/${year}`}</p>
+        {payload.map((p: any) => (
+          <p key={p.dataKey} className="flex items-center justify-between gap-4">
+            <span className="inline-flex items-center gap-1.5 text-slate-500">
+              <span className="w-2 h-2 rounded-sm" style={{ background: p.dataKey === 'resultado' ? '#8b5cf6' : p.color }} />
+              {p.dataKey === 'resultado' ? 'Resultado' : p.name}
+            </span>
+            <span className="font-semibold tabular-nums text-slate-900 dark:text-white">{brlFull(Number(p.value))}</span>
+          </p>
+        ))}
+      </div>
+    );
+  };
+  const Chip = ({ cor, r }: { cor: string; r: string }) => (
+    <span className="inline-flex items-center gap-1.5 text-[11px] text-slate-500">
+      <span className="w-2.5 h-2.5 rounded-sm" style={{ background: cor }} />
+      {r}
+    </span>
+  );
 
-  const Card: React.FC<{ label: string; valor: string; sub?: string; cor?: string }> = ({ label, valor, sub, cor }) => (
-    <div className="bg-dark-card border border-white/10 rounded-2xl p-5">
-      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">{label}</p>
-      <p className={`text-2xl font-black leading-none ${cor || 'text-dark-text'}`}>{valor}</p>
-      {sub && <p className="text-[11px] text-slate-500 mt-2 leading-tight">{sub}</p>}
+  const Card: React.FC<{ label: string; valor: string; sub?: string; Icone: any; cor: string; alerta?: boolean }> = ({ label, valor, sub, Icone, cor, alerta }) => (
+    <div className={`px-5 py-4 rounded-2xl border ${alerta ? 'bg-rose-500/[0.06] border-rose-500/20' : 'bg-white dark:bg-dark-card/60 border-slate-200 dark:border-white/5'}`}>
+      <div className="flex items-center gap-2 mb-2">
+        <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${cor}1a`, color: cor }}><Icone size={14} /></div>
+        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{label}</p>
+      </div>
+      <p className={`text-2xl font-bold tabular-nums ${alerta ? 'text-rose-500' : 'text-slate-900 dark:text-white'}`}>{valor}</p>
+      {sub && <p className={`text-[11px] mt-0.5 leading-snug ${alerta ? 'text-rose-400' : 'text-slate-500'}`}>{sub}</p>}
     </div>
   );
 
@@ -106,27 +132,27 @@ const DreDashboard: React.FC = () => {
       {/* Cabeçalho + seletor de ano */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h2 className="text-sm font-bold text-dark-text">Dashboard do DFC</h2>
-          <p className="text-xs text-slate-500">
-            Faturamento e custos por mês · <span className="text-amber-400">meses em destaque</span> = calculado pelo GrapeHub
+          <h2 className="text-sm font-bold text-slate-900 dark:text-white">Dashboard do DFC</h2>
+          <p className="text-[11px] text-slate-500">
+            Faturamento e custos por mês · <span className="text-amber-500">meses em destaque</span> = calculado pelo GrapeHub
           </p>
         </div>
         <div className="flex items-center gap-2">
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Ano</p>
-          <div className="flex items-center gap-1 bg-dark-card border border-white/10 rounded-xl px-1 py-0.5">
-            <button onClick={() => setYear(y => y - 1)} className="p-1.5 text-slate-400 hover:text-violet-400 transition-colors">
-              <ChevronLeft size={14} />
+          <div className="h-10 flex items-center rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5">
+            <button onClick={() => setYear(y => y - 1)} title="Ano anterior" className="w-9 h-full flex items-center justify-center rounded-l-xl text-slate-400 hover:text-violet-500 transition-colors">
+              <ChevronLeft size={15} />
             </button>
-            <span className="text-sm font-bold text-dark-text px-1 tabular-nums">{year}</span>
-            <button onClick={() => setYear(y => y + 1)} className="p-1.5 text-slate-400 hover:text-violet-400 transition-colors">
-              <ChevronRight size={14} />
+            <span className="text-sm font-bold text-slate-900 dark:text-white w-12 text-center tabular-nums">{year}</span>
+            <button onClick={() => setYear(y => y + 1)} title="Próximo ano" className="w-9 h-full flex items-center justify-center rounded-r-xl text-slate-400 hover:text-violet-500 transition-colors">
+              <ChevronRight size={15} />
             </button>
           </div>
         </div>
       </div>
 
       {serie.length === 0 ? (
-        <div className="bg-dark-card border border-white/10 rounded-2xl py-20 text-center text-sm text-slate-500">
+        <div className="rounded-2xl border border-slate-200 dark:border-white/5 bg-white dark:bg-dark-card/60 py-20 text-center text-sm text-slate-500">
           Nenhum lançamento em {year}.
         </div>
       ) : (
@@ -137,43 +163,50 @@ const DreDashboard: React.FC = () => {
               label="Faturamento total"
               valor={brl(totais.faturamento)}
               sub={`${serie.length} ${serie.length === 1 ? 'mês' : 'meses'} · média ${brl(mediaMensal)}/mês`}
-              cor="text-emerald-400"
+              Icone={TrendingUp}
+              cor="#10b981"
             />
             <Card
               label="Custo operacional"
               valor={brl(totais.custoOperacional)}
               sub={totais.faturamento > 0 ? `${((totais.custoOperacional / totais.faturamento) * 100).toFixed(1).replace('.', ',')}% do faturamento` : undefined}
-              cor="text-rose-400"
+              Icone={TrendingDown}
+              cor="#f59e0b"
             />
             <Card
               label="Custo total"
               valor={brl(totais.custoTotal)}
               sub="Operacional + não operacional + distribuição"
-              cor="text-rose-400"
+              Icone={Wallet}
+              cor="#f43f5e"
             />
             <Card
               label="Resultado"
               valor={brl(resultado)}
               sub={`Geração de caixa do período · margem ${margem.toFixed(1).replace('.', ',')}%`}
-              cor={resultado >= 0 ? 'text-emerald-400' : 'text-rose-400'}
+              Icone={Scale}
+              cor="#7c3aed"
+              alerta={resultado < 0}
             />
           </div>
 
           {/* Evolução mensal */}
-          <div className="bg-dark-card border border-white/10 rounded-2xl p-5">
-            <h3 className="text-sm font-bold text-dark-text mb-1">Faturamento x Custos</h3>
-            <p className="text-xs text-slate-500 mb-4">Evolução mês a mês em {year}</p>
+          <div className="rounded-2xl border border-slate-200 dark:border-white/5 bg-white dark:bg-dark-card/60 p-5">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-4">
+              <div className="mr-auto">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">Faturamento x Custos</h3>
+                <p className="text-[11px] text-slate-500">Evolução mês a mês em {year}</p>
+              </div>
+              <Chip cor="#2ecc8f" r="Faturamento total" />
+              <Chip cor="#f74c4c" r="Custo total" />
+              <Chip cor="#f59e0b" r="Custo operacional" />
+            </div>
             <ResponsiveContainer width="100%" height={280}>
               <AreaChart data={serie} margin={{ top: 5, right: 8, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                <XAxis dataKey="mes" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                <YAxis tickFormatter={eixoY} tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={48} />
-                <RechartsTooltip
-                  contentStyle={tooltipStyle}
-                  formatter={(v: any, n: any) => [brlFull(Number(v)), n]}
-                  labelFormatter={(l: any) => `${l}/${year}`}
-                />
-                <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} iconType="circle" />
+                <CartesianGrid vertical={false} stroke="rgba(150, 150, 150, 0.12)" />
+                <XAxis dataKey="mes" tick={eixo} axisLine={false} tickLine={false} dy={6} />
+                <YAxis tickFormatter={eixoY} tick={eixo} axisLine={false} tickLine={false} width={70} />
+                <RechartsTooltip content={<Dica />} cursor={{ stroke: '#8b5cf6', strokeOpacity: 0.25 }} />
                 <Area type="monotone" dataKey="faturamento" name="Faturamento total" stroke="#2ecc8f" fill="#2ecc8f" fillOpacity={0.15} strokeWidth={2} />
                 <Area type="monotone" dataKey="custoTotal" name="Custo total" stroke="#f74c4c" fill="#f74c4c" fillOpacity={0.12} strokeWidth={2} />
                 <Area type="monotone" dataKey="custoOperacional" name="Custo operacional" stroke="#f59e0b" fill="#f59e0b" fillOpacity={0.10} strokeWidth={2} />
@@ -182,65 +215,69 @@ const DreDashboard: React.FC = () => {
           </div>
 
           {/* Resultado por mês */}
-          <div className="bg-dark-card border border-white/10 rounded-2xl p-5">
-            <h3 className="text-sm font-bold text-dark-text mb-1">Resultado por mês</h3>
-            <p className="text-xs text-slate-500 mb-4">Todas as entradas menos todas as saídas — mesmo número da Geração de Caixa do Período</p>
+          <div className="rounded-2xl border border-slate-200 dark:border-white/5 bg-white dark:bg-dark-card/60 p-5">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-4">
+              <div className="mr-auto">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">Resultado por mês</h3>
+                <p className="text-[11px] text-slate-500">Todas as entradas menos todas as saídas — mesmo número da Geração de Caixa do Período</p>
+              </div>
+              <Chip cor="#8b5cf6" r="Resultado" />
+              <Chip cor="#f43f5e" r="Resultado negativo" />
+            </div>
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={serie} margin={{ top: 5, right: 8, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                <XAxis dataKey="mes" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                <YAxis tickFormatter={eixoY} tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={48} />
-                <RechartsTooltip
-                  contentStyle={tooltipStyle}
-                  cursor={{ fill: 'rgba(255,255,255,0.03)' }}
-                  formatter={(v: any) => [brlFull(Number(v)), 'Resultado']}
-                  labelFormatter={(l: any) => `${l}/${year}`}
-                />
-                <Bar dataKey="resultado" name="Resultado" radius={[6, 6, 0, 0]} fill="#8b5cf6" />
+                <CartesianGrid vertical={false} stroke="rgba(150, 150, 150, 0.12)" />
+                <XAxis dataKey="mes" tick={eixo} axisLine={false} tickLine={false} dy={6} />
+                <YAxis tickFormatter={eixoY} tick={eixo} axisLine={false} tickLine={false} width={70} />
+                <RechartsTooltip content={<Dica />} cursor={{ fill: 'rgba(124,58,237,0.06)' }} />
+                <Bar dataKey="resultado" name="Resultado" radius={[6, 6, 0, 0]} fill="#8b5cf6">
+                  {/* Mês com resultado negativo em rosa — só cor, o valor é o mesmo */}
+                  {serie.map(l => <Cell key={l.refMonth} fill={l.resultado < 0 ? '#f43f5e' : '#8b5cf6'} />)}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
 
           {/* Detalhe mensal */}
-          <div className="bg-dark-card border border-white/10 rounded-2xl overflow-hidden">
-            <div className="p-5 pb-3">
-              <h3 className="text-sm font-bold text-dark-text">Detalhe mensal</h3>
+          <div className="rounded-2xl border border-slate-200 dark:border-white/5 bg-white dark:bg-dark-card/60 overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100 dark:border-white/5">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Detalhe mensal</h3>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-white/5">
-                    <th className="text-left px-5 py-2 font-bold">Mês</th>
-                    <th className="text-right px-5 py-2 font-bold">Faturamento</th>
-                    <th className="text-right px-5 py-2 font-bold">Custo operacional</th>
-                    <th className="text-right px-5 py-2 font-bold">Custo total</th>
-                    <th className="text-right px-5 py-2 font-bold">Resultado</th>
-                    <th className="text-right px-5 py-2 font-bold">Margem</th>
+                  <tr className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-100 dark:border-white/5">
+                    <th className="text-left px-5 py-3 font-bold">Mês</th>
+                    <th className="text-right px-5 py-3 font-bold">Faturamento</th>
+                    <th className="text-right px-5 py-3 font-bold">Custo operacional</th>
+                    <th className="text-right px-5 py-3 font-bold">Custo total</th>
+                    <th className="text-right px-5 py-3 font-bold">Resultado</th>
+                    <th className="text-right px-5 py-3 font-bold">Margem</th>
                   </tr>
                 </thead>
                 <tbody>
                   {serie.map(l => {
                     const mg = l.faturamento > 0 ? (l.resultado / l.faturamento) * 100 : 0;
                     return (
-                      <tr key={l.refMonth} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
-                        <td className={`px-5 py-2 font-semibold ${l.historico ? 'text-dark-text' : 'text-amber-400'}`}>{l.mes}</td>
-                        <td className="px-5 py-2 text-right tabular-nums text-emerald-400">{brlFull(l.faturamento)}</td>
-                        <td className="px-5 py-2 text-right tabular-nums text-slate-400">{brlFull(l.custoOperacional)}</td>
-                        <td className="px-5 py-2 text-right tabular-nums text-rose-400">{brlFull(l.custoTotal)}</td>
-                        <td className={`px-5 py-2 text-right tabular-nums font-bold ${l.resultado >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{brlFull(l.resultado)}</td>
-                        <td className={`px-5 py-2 text-right tabular-nums ${mg >= 0 ? 'text-slate-400' : 'text-rose-400'}`}>{mg.toFixed(1).replace('.', ',')}%</td>
+                      <tr key={l.refMonth} className="border-b border-slate-100 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors">
+                        <td className={`px-5 py-3 font-semibold ${l.historico ? 'text-slate-900 dark:text-white' : 'text-amber-500'}`}>{l.mes}</td>
+                        <td className="px-5 py-3 text-right tabular-nums text-emerald-600 dark:text-emerald-400">{brlFull(l.faturamento)}</td>
+                        <td className="px-5 py-3 text-right tabular-nums text-slate-500 dark:text-slate-400">{brlFull(l.custoOperacional)}</td>
+                        <td className="px-5 py-3 text-right tabular-nums text-rose-500 dark:text-rose-400">{brlFull(l.custoTotal)}</td>
+                        <td className={`px-5 py-3 text-right tabular-nums font-bold ${l.resultado >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500 dark:text-rose-400'}`}>{brlFull(l.resultado)}</td>
+                        <td className={`px-5 py-3 text-right tabular-nums ${mg >= 0 ? 'text-slate-500 dark:text-slate-400' : 'text-rose-500 dark:text-rose-400'}`}>{mg.toFixed(1).replace('.', ',')}%</td>
                       </tr>
                     );
                   })}
                 </tbody>
                 <tfoot>
-                  <tr className="bg-violet-500/[0.07] font-bold">
-                    <td className="px-5 py-2.5 text-dark-text">Total</td>
-                    <td className="px-5 py-2.5 text-right tabular-nums text-emerald-400">{brlFull(totais.faturamento)}</td>
-                    <td className="px-5 py-2.5 text-right tabular-nums text-slate-300">{brlFull(totais.custoOperacional)}</td>
-                    <td className="px-5 py-2.5 text-right tabular-nums text-rose-400">{brlFull(totais.custoTotal)}</td>
-                    <td className={`px-5 py-2.5 text-right tabular-nums ${resultado >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{brlFull(resultado)}</td>
-                    <td className="px-5 py-2.5 text-right tabular-nums text-slate-300">{margem.toFixed(1).replace('.', ',')}%</td>
+                  <tr className="bg-violet-500/[0.06] font-bold">
+                    <td className="px-5 py-3 text-slate-900 dark:text-white">Total</td>
+                    <td className="px-5 py-3 text-right tabular-nums text-emerald-600 dark:text-emerald-400">{brlFull(totais.faturamento)}</td>
+                    <td className="px-5 py-3 text-right tabular-nums text-slate-700 dark:text-slate-300">{brlFull(totais.custoOperacional)}</td>
+                    <td className="px-5 py-3 text-right tabular-nums text-rose-500 dark:text-rose-400">{brlFull(totais.custoTotal)}</td>
+                    <td className={`px-5 py-3 text-right tabular-nums ${resultado >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500 dark:text-rose-400'}`}>{brlFull(resultado)}</td>
+                    <td className="px-5 py-3 text-right tabular-nums text-slate-700 dark:text-slate-300">{margem.toFixed(1).replace('.', ',')}%</td>
                   </tr>
                 </tfoot>
               </table>

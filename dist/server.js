@@ -471,7 +471,7 @@ async function syncSicrediBillEntry(pool, billingMonth, account = "sicredi") {
   }
 }
 async function categorizeMovements(pool, opts = {}) {
-  const norm = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const norm2 = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
   const cats = (await pool.query("SELECT id, structure, description FROM fin_categories")).rows;
   const structId = {};
   const structDesc = {};
@@ -486,7 +486,7 @@ async function categorizeMovements(pool, opts = {}) {
   }
   const colab = (await pool.query("SELECT DISTINCT name FROM collaborators")).rows.map((r) => r.name).filter(Boolean);
   const employees = colab.map((n) => {
-    const t = norm(n).split(/\s+/).filter(Boolean);
+    const t = norm2(n).split(/\s+/).filter(Boolean);
     return { first: t[0], second: (t[1] || "").slice(0, 3) };
   });
   const POR_TIPO = {
@@ -497,7 +497,7 @@ async function categorizeMovements(pool, opts = {}) {
   };
   const classify = (desc, tipoAsaas) => {
     if (tipoAsaas && POR_TIPO[tipoAsaas]) return POR_TIPO[tipoAsaas];
-    const d = norm(desc);
+    const d = norm2(desc);
     if (/pix.*para|transferencia/.test(d)) {
       if (d.includes("grape midia")) return "_T";
       if (d.includes("jean") && d.includes("chan")) return "05.01";
@@ -2127,9 +2127,9 @@ function todayBRT() {
 }
 function resolveCanal(raw) {
   const t = String(raw || "").trim();
-  const norm = t.toUpperCase().replace(/[\s-]/g, "");
-  const viaEmail = norm.includes("EMAIL");
-  const viaWhats = norm.includes("WHATS");
+  const norm2 = t.toUpperCase().replace(/[\s-]/g, "");
+  const viaEmail = norm2.includes("EMAIL");
+  const viaWhats = norm2.includes("WHATS");
   if (!viaEmail && !viaWhats) return { viaEmail: false, viaWhats: true, label: t || "Whatsapp" };
   return { viaEmail, viaWhats, label: t };
 }
@@ -3503,6 +3503,100 @@ function setupMenuPastaEmPastaRoutes(app, pool) {
       res.status(e.status || 500).json({ error: e.message || "Falha ao mover a pasta." });
     } finally {
       c.release();
+    }
+  });
+}
+
+// src/routes/clientes-mapa.ts
+var norm = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+var cache = null;
+async function carregar(pool) {
+  if (cache) return cache;
+  const mun = (await pool.query("SELECT codigo, nome, uf, lat, lng, capital FROM ibge_municipios")).rows;
+  const est = (await pool.query("SELECT uf, nome FROM ibge_estados")).rows;
+  const porNome = /* @__PURE__ */ new Map();
+  for (const m of mun) {
+    const k = norm(m.nome);
+    porNome.set(k, [...porNome.get(k) || [], m]);
+  }
+  cache = { porNome, ufs: new Set(est.map((e) => e.uf)), estados: new Map(est.map((e) => [norm(e.nome), e.uf])) };
+  return cache;
+}
+function resolver(local, c) {
+  const limpo = (local || "").replace(/\b\d{5}-?\d{3}\b/g, " ").trim();
+  if (!limpo) return { ok: false, uf: null, motivo: "sem local no cadastro" };
+  const partes = limpo.split(/[,\-\/|]/).map((p) => p.trim()).filter(Boolean);
+  let uf = null;
+  for (const p of partes) {
+    const up = p.toUpperCase();
+    if (c.ufs.has(up)) {
+      uf = up;
+      continue;
+    }
+    const ult = up.split(/\s+/).pop() || "";
+    if (!uf && ult.length === 2 && c.ufs.has(ult)) uf = ult;
+  }
+  for (const p of partes) {
+    const ufEstado = c.estados.get(norm(p));
+    const cidadeHomonima = (c.porNome.get(norm(p)) || []).some((m) => m.uf === ufEstado);
+    if (ufEstado && !cidadeHomonima && partes.every((q) => c.estados.has(norm(q)) || c.ufs.has(q.toUpperCase()))) {
+      return { ok: false, uf: ufEstado, motivo: "s\xF3 o estado no cadastro" };
+    }
+  }
+  for (let i = partes.length - 1; i >= 0; i--) {
+    const p = partes[i];
+    if (c.ufs.has(p.toUpperCase())) continue;
+    let cands = c.porNome.get(norm(p)) || [];
+    if (!cands.length) continue;
+    if (uf) {
+      const f = cands.filter((m) => m.uf === uf);
+      if (f.length) cands = f;
+    }
+    if (cands.length === 1) return { ok: true, mun: cands[0], precisao: uf || (c.porNome.get(norm(p)) || []).length === 1 ? "exata" : "suposta" };
+    return { ok: false, uf, motivo: "nome de cidade repetido", ambiguos: cands };
+  }
+  return { ok: false, uf, motivo: uf ? "cidade n\xE3o reconhecida (s\xF3 a UF)" : "cidade n\xE3o reconhecida" };
+}
+function setupClientesMapaRoutes(app, pool) {
+  app.get("/api/clientes-mapa", async (_req, res) => {
+    try {
+      const c = await carregar(pool);
+      const clientes = (await pool.query(
+        `SELECT id, name, location, tags FROM clients WHERE status = 'Ativo' ORDER BY name`
+      )).rows;
+      const primeira = clientes.map((cl) => ({ cl, r: resolver(cl.location, c) }));
+      const freq = /* @__PURE__ */ new Map();
+      for (const { r } of primeira) if (r.ok && r.mun) freq.set(r.mun.uf, (freq.get(r.mun.uf) || 0) + 1);
+      const itens = primeira.map(({ cl, r }) => {
+        let res2 = r;
+        if (!r.ok && r.ambiguos?.length) {
+          const cap = r.ambiguos.find((m) => m.capital);
+          const escolhido = cap || [...r.ambiguos].sort((a, b) => (freq.get(b.uf) || 0) - (freq.get(a.uf) || 0))[0];
+          res2 = { ok: true, mun: escolhido, precisao: "suposta" };
+        }
+        const base = {
+          id: cl.id,
+          name: cl.name,
+          location: cl.location || "",
+          // `clients.tags` é TEXT com JSON dentro ('["quarentena"]'), não array
+          retencao: (() => {
+            let t = cl.tags;
+            if (typeof t === "string") {
+              try {
+                t = JSON.parse(t);
+              } catch {
+                t = [];
+              }
+            }
+            return Array.isArray(t) && t.includes("quarentena");
+          })()
+        };
+        return res2.ok && res2.mun ? { ...base, codigo: res2.mun.codigo, cidade: res2.mun.nome, uf: res2.mun.uf, lat: res2.mun.lat, lng: res2.mun.lng, precisao: res2.precisao } : { ...base, codigo: null, cidade: null, uf: res2.uf, lat: null, lng: null, precisao: null, motivo: res2.motivo };
+      });
+      res.json({ itens });
+    } catch (e) {
+      console.error("GET /api/clientes-mapa:", e.message);
+      res.status(500).json({ error: "Falha ao montar o mapa" });
     }
   });
 }
@@ -6598,7 +6692,7 @@ var FIREBASE_STORAGE_BUCKET = (process.env.FIREBASE_STORAGE_BUCKET || process.en
 var FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || "";
 var firebaseAdminReady = false;
 function loadFirebasePrivateKey() {
-  const norm = (k) => (k || "").trim().replace(/^["']|["']$/g, "").replace(/\\r\\n/g, "\n").replace(/\\\\n/g, "\n").replace(/\\n/g, "\n").replace(/\\r/g, "");
+  const norm2 = (k) => (k || "").trim().replace(/^["']|["']$/g, "").replace(/\\r\\n/g, "\n").replace(/\\\\n/g, "\n").replace(/\\n/g, "\n").replace(/\\r/g, "");
   const isValid = (k) => {
     try {
       crypto4.createPrivateKey(k);
@@ -6607,7 +6701,7 @@ function loadFirebasePrivateKey() {
       return false;
     }
   };
-  const fromEnv = norm(process.env.FIREBASE_PRIVATE_KEY || "");
+  const fromEnv = norm2(process.env.FIREBASE_PRIVATE_KEY || "");
   if (isValid(fromEnv)) return fromEnv;
   for (const p of [".env", "./.env"]) {
     try {
@@ -6616,7 +6710,7 @@ function loadFirebasePrivateKey() {
       if (!line) continue;
       let v = line.slice("FIREBASE_PRIVATE_KEY=".length);
       if (v.startsWith('"') && v.endsWith('"')) v = v.slice(1, -1).replace(/\\n/g, "\n");
-      v = norm(v);
+      v = norm2(v);
       if (isValid(v)) {
         console.log("[BOOT] FIREBASE_PRIVATE_KEY carregada do .env (env var estava malformada).");
         return v;
@@ -14491,8 +14585,8 @@ async function startServer() {
         const lines = content.split(/\r?\n/);
         if (lines.length < 2) return res.status(400).json({ error: "CSV vazio ou inv\xE1lido" });
         for (const ln of lines.slice(0, 30)) {
-          const norm = ln.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-          if (norm.includes("vencimento")) {
+          const norm2 = ln.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+          if (norm2.includes("vencimento")) {
             const m = ln.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/);
             if (m) {
               detectedDueDate = `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
@@ -17355,9 +17449,9 @@ async function startServer() {
     }
   });
   function computeLeadScore(tempoOab, faturamento) {
-    const norm = (s) => (s || "").toString().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim();
-    const t = norm(tempoOab);
-    const f = norm(faturamento);
+    const norm2 = (s) => (s || "").toString().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim();
+    const t = norm2(tempoOab);
+    const f = norm2(faturamento);
     let col = null;
     if (t.includes("mais de 5")) col = 4;
     else if (t.includes("3 a 5")) col = 3;
@@ -19189,9 +19283,10 @@ async function startServer() {
         `SELECT e.id, e.due_date, e.expected_value, e.status, b.name as bill_name, b.category
          FROM fin_bill_entries e
          JOIN fin_bills b ON b.id = e.bill_id
-         WHERE e.due_date > CURRENT_DATE AND e.status NOT IN ('paid', 'cancelled')
+         WHERE e.due_date > CURRENT_DATE AND e.due_date <= CURRENT_DATE + 14
+           AND e.status NOT IN ('paid', 'cancelled')
          ORDER BY e.due_date ASC, e.expected_value DESC
-         LIMIT 7`
+         LIMIT 60`
       );
       const atrQtdRes = await pool.query(
         `SELECT COUNT(*)::int as count FROM fin_receivables WHERE status IN ('Confirmado', 'OVERDUE') AND due_date < CURRENT_DATE`
@@ -23728,6 +23823,7 @@ ${instrucoes_extras}` : ""}
   setupFunilMetaRoutes(app);
   setupAlertaSaldoRoutes(app, pool, fetchMetaAccountInfo);
   setupMenuPastaEmPastaRoutes(app, pool);
+  setupClientesMapaRoutes(app, pool);
   migrateCrmReunioes(pool).catch((e) => console.error("[crm-reunioes] migrate:", e.message));
   await migrateCursos(pool).catch((e) => console.warn("[cursos] migrate:", e.message));
   setupCursosRoutes(app, pool);
