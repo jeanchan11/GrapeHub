@@ -114,7 +114,8 @@ async function ehAdmin(pool: Pool, email: string | null): Promise<boolean> {
   if (!email) return false;
   const r = await pool.query('SELECT role FROM users WHERE LOWER(email) = $1', [email]);
   const role = String(r.rows[0]?.role || '');
-  return role === 'superadmin' || role === 'admin' || role.startsWith('gerente');
+  // diretor-operacional (Adriano) entrou em 21/10/2026: cria cursos, módulos e aulas.
+  return role === 'superadmin' || role === 'admin' || role === 'diretor-operacional' || role.startsWith('gerente');
 }
 
 export function setupCursosRoutes(app: Express, pool: Pool) {

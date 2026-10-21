@@ -10,6 +10,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { auth } from '../../firebase';
 import { toast } from '@/src/lib/toast';
 import { confirmDialog } from '@/src/lib/confirm';
+import { dataDoBanco, hojeLocal } from '@/src/lib/dataBanco';
 import AgendarProximoInline, { ProximoAgendamento } from './AgendarProximoInline';
 
 // Helper: fetch autenticado com token Firebase
@@ -226,8 +227,8 @@ export default function OneOnOnesTab({ collaboratorId, isAdmin }: OneOnOnesTabPr
 
   const openRealizarModal = () => {
     if (!proximo1on1) return;
-    const dataAgendada = (proximo1on1.data || '').split('T')[0];
-    setEditingItem({ data_reuniao: dataAgendada || new Date().toISOString().split('T')[0] });
+    const dataAgendada = (proximo1on1.data || '').slice(0, 10);
+    setEditingItem({ data_reuniao: dataAgendada || hojeLocal() });
     setProximoForm({ data: '', horario: proximo1on1.horario ? proximo1on1.horario.slice(0, 5) : '09:00', observacao: '' });
     setRealizando(true);
     setModalOpen(true);
@@ -235,7 +236,7 @@ export default function OneOnOnesTab({ collaboratorId, isAdmin }: OneOnOnesTabPr
 
   const openNewModal = () => {
     setRealizando(false);
-    setEditingItem({ data_reuniao: new Date().toISOString().split('T')[0] });
+    setEditingItem({ data_reuniao: hojeLocal() });
     setModalOpen(true);
   };
 
@@ -351,10 +352,7 @@ export default function OneOnOnesTab({ collaboratorId, isAdmin }: OneOnOnesTabPr
 
       {/* ── Card Próximo 1:1 ── */}
       {proximo1on1 && (() => {
-        const dataStr = proximo1on1.data.includes('T')
-          ? proximo1on1.data
-          : proximo1on1.data + 'T12:00:00';
-        const dataObj = new Date(dataStr);
+        const dataObj = dataDoBanco(proximo1on1.data);
         const hoje = new Date();
         hoje.setHours(0, 0, 0, 0);
         const diasRestantes = Math.ceil((dataObj.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24));
@@ -462,7 +460,7 @@ export default function OneOnOnesTab({ collaboratorId, isAdmin }: OneOnOnesTabPr
                         1:1 com {item.participante_nome}
                       </h4>
                       <span className="text-xs font-medium text-slate-500 dark:text-[#888] flex items-center gap-1 mt-0.5">
-                        <Calendar size={12} /> {new Date(item.data_reuniao).toLocaleDateString('pt-BR')}
+                        <Calendar size={12} /> {dataDoBanco(item.data_reuniao).toLocaleDateString('pt-BR')}
                       </span>
                     </div>
                   </div>

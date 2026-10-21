@@ -4456,7 +4456,7 @@ async function ehAdmin(pool, email) {
   if (!email) return false;
   const r = await pool.query("SELECT role FROM users WHERE LOWER(email) = $1", [email]);
   const role = String(r.rows[0]?.role || "");
-  return role === "superadmin" || role === "admin" || role.startsWith("gerente");
+  return role === "superadmin" || role === "admin" || role === "diretor-operacional" || role.startsWith("gerente");
 }
 function setupCursosRoutes(app, pool) {
   app.get("/api/cursos", async (req, res) => {
@@ -5066,6 +5066,7 @@ async function papel(pool, email) {
 }
 var ehSuperadmin2 = (role) => role === "superadmin";
 var veSaldoDaConta = (role) => role === "superadmin" || role === "diretor-operacional";
+var gereCatalogo = (role) => role === "superadmin" || role === "diretor-operacional";
 async function migrateEstudio(pool) {
   await pool.query(`CREATE SCHEMA IF NOT EXISTS estudio`);
   await pool.query(`
@@ -5417,7 +5418,7 @@ function setupEstudioRoutes(app, pool) {
   app.post("/api/estudio/vozes/clonar", uploadVoz.single("audio"), async (req, res) => {
     try {
       const { role } = await ctx(req);
-      if (!ehSuperadmin2(role)) return res.status(403).json({ error: "Apenas o super admin." });
+      if (!gereCatalogo(role)) return res.status(403).json({ error: "Apenas o super admin ou o diretor operacional." });
       const chave = (process.env.MINIMAX_API_KEY || "").trim();
       const grupo = (process.env.MINIMAX_GROUP_ID || "").trim();
       if (!chave) return res.status(503).json({ error: "MINIMAX_API_KEY n\xE3o configurada no servidor." });
@@ -5557,7 +5558,7 @@ function setupEstudioRoutes(app, pool) {
   app.get("/api/estudio/config", async (req, res) => {
     try {
       const { role } = await ctx(req);
-      if (!ehSuperadmin2(role)) return res.status(403).json({ error: "Apenas o super admin." });
+      if (!gereCatalogo(role)) return res.status(403).json({ error: "Apenas o super admin ou o diretor operacional." });
       const tipos = await pool.query(`SELECT * FROM estudio.copy_types ORDER BY ordem, name`);
       const vozes = await pool.query(`SELECT * FROM estudio.voices ORDER BY ordem, name`);
       const avatares = await pool.query(`SELECT * FROM estudio.avatars ORDER BY ordem, name`);
@@ -5599,7 +5600,7 @@ function setupEstudioRoutes(app, pool) {
   });
   app.put("/api/estudio/config", async (req, res) => {
     const { role } = await ctx(req);
-    if (!ehSuperadmin2(role)) return res.status(403).json({ error: "Apenas o super admin." });
+    if (!gereCatalogo(role)) return res.status(403).json({ error: "Apenas o super admin ou o diretor operacional." });
     const {
       tipos = [],
       vozes = [],
@@ -5722,7 +5723,8 @@ function setupEstudioRoutes(app, pool) {
           );
         }
       }
-      for (const q of cotas) {
+      const mexeEmDinheiro = ehSuperadmin2(role);
+      for (const q of mexeEmDinheiro ? cotas : []) {
         if (!q.email) continue;
         await c.query(
           `INSERT INTO estudio.quotas (user_email, modo, limite, updated_at)
@@ -5736,16 +5738,16 @@ function setupEstudioRoutes(app, pool) {
          ON CONFLICT (chave) DO UPDATE SET valor=EXCLUDED.valor, updated_at=now()`,
         [chave, String(valor)]
       );
-      if (preco_minuto) {
+      if (mexeEmDinheiro && preco_minuto) {
         for (const eng of ["avatar_iii", "avatar_iv", "avatar_v"]) {
           const v = Number(preco_minuto[eng]);
           if (Number.isFinite(v) && v >= 0) await gravarSetting(`preco_min_${eng}`, v);
         }
       }
-      if (cambio_usd_brl !== void 0 && Number(cambio_usd_brl) > 0) {
+      if (mexeEmDinheiro && cambio_usd_brl !== void 0 && Number(cambio_usd_brl) > 0) {
         await gravarSetting("cambio_usd_brl", Number(cambio_usd_brl));
       }
-      if (teto_mensal_brl !== void 0) {
+      if (mexeEmDinheiro && teto_mensal_brl !== void 0) {
         await gravarSetting("teto_mensal_brl", Math.max(0, Number(teto_mensal_brl) || 0));
       }
       await c.query("COMMIT");
@@ -5823,7 +5825,7 @@ function setupEstudioRoutes(app, pool) {
   app.post("/api/estudio/vozes/:id/previa", async (req, res) => {
     try {
       const { role } = await ctx(req);
-      if (!ehSuperadmin2(role)) return res.status(403).json({ error: "Apenas o super admin." });
+      if (!gereCatalogo(role)) return res.status(403).json({ error: "Apenas o super admin ou o diretor operacional." });
       const chave = (process.env.MINIMAX_API_KEY || "").trim();
       if (!chave) return res.status(503).json({ error: "MINIMAX_API_KEY n\xE3o configurada no servidor." });
       const grupo = (process.env.MINIMAX_GROUP_ID || "").trim();

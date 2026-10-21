@@ -26,6 +26,10 @@ async function papel(pool: Pool, email: string | null): Promise<string> {
 const ehSuperadmin = (role: string) => role === 'superadmin';
 // Quem enxerga o saldo da conta inteira, além do próprio.
 const veSaldoDaConta = (role: string) => role === 'superadmin' || role === 'diretor-operacional';
+// Catálogo (avatares, vozes, sons, tipos de copy): Jean e Adriano (diretor-operacional), pedido
+// de 21/10/2026. Dinheiro — teto da conta, câmbio, preço/minuto e cota por head — segue só
+// superadmin: o PUT /config ignora esses campos para quem não é.
+const gereCatalogo = (role: string) => role === 'superadmin' || role === 'diretor-operacional';
 
 export async function migrateEstudio(pool: Pool) {
   await pool.query(`CREATE SCHEMA IF NOT EXISTS estudio`);
@@ -451,7 +455,7 @@ export function setupEstudioRoutes(app: Express, pool: Pool) {
   app.post('/api/estudio/vozes/clonar', uploadVoz.single('audio'), async (req: any, res) => {
     try {
       const { role } = await ctx(req);
-      if (!ehSuperadmin(role)) return res.status(403).json({ error: 'Apenas o super admin.' });
+      if (!gereCatalogo(role)) return res.status(403).json({ error: 'Apenas o super admin ou o diretor operacional.' });
 
       const chave = (process.env.MINIMAX_API_KEY || '').trim();
       const grupo = (process.env.MINIMAX_GROUP_ID || '').trim();
@@ -612,11 +616,11 @@ export function setupEstudioRoutes(app: Express, pool: Pool) {
     }
   });
 
-  // ── Configuração (super admin) ────────────────────────────────────────────
+  // ── Configuração (super admin e diretor operacional) ────────────────────────────────────────────
   app.get('/api/estudio/config', async (req: any, res) => {
     try {
       const { role } = await ctx(req);
-      if (!ehSuperadmin(role)) return res.status(403).json({ error: 'Apenas o super admin.' });
+      if (!gereCatalogo(role)) return res.status(403).json({ error: 'Apenas o super admin ou o diretor operacional.' });
 
       const tipos = await pool.query(`SELECT * FROM estudio.copy_types ORDER BY ordem, name`);
       const vozes = await pool.query(`SELECT * FROM estudio.voices ORDER BY ordem, name`);
@@ -665,7 +669,7 @@ export function setupEstudioRoutes(app: Express, pool: Pool) {
   // conjunto inteiro, ou não grava nada.
   app.put('/api/estudio/config', async (req: any, res) => {
     const { role } = await ctx(req);
-    if (!ehSuperadmin(role)) return res.status(403).json({ error: 'Apenas o super admin.' });
+    if (!gereCatalogo(role)) return res.status(403).json({ error: 'Apenas o super admin ou o diretor operacional.' });
 
     const { tipos = [], vozes = [], avatares = [], ambiencias = [], cotas = [],
             preco_minuto, cambio_usd_brl, teto_mensal_brl } = req.body || {};
@@ -769,8 +773,9 @@ export function setupEstudioRoutes(app: Express, pool: Pool) {
         }
       }
 
-      // ── cotas ──
-      for (const q of cotas) {
+      // ── cotas e parâmetros de custo: só superadmin ──
+      const mexeEmDinheiro = ehSuperadmin(role);
+      for (const q of mexeEmDinheiro ? cotas : []) {
         if (!q.email) continue;
         await c.query(
           `INSERT INTO estudio.quotas (user_email, modo, limite, updated_at)
@@ -784,16 +789,16 @@ export function setupEstudioRoutes(app: Express, pool: Pool) {
          ON CONFLICT (chave) DO UPDATE SET valor=EXCLUDED.valor, updated_at=now()`,
         [chave, String(valor)]);
 
-      if (preco_minuto) {
+      if (mexeEmDinheiro && preco_minuto) {
         for (const eng of ['avatar_iii', 'avatar_iv', 'avatar_v']) {
           const v = Number(preco_minuto[eng]);
           if (Number.isFinite(v) && v >= 0) await gravarSetting(`preco_min_${eng}`, v);
         }
       }
-      if (cambio_usd_brl !== undefined && Number(cambio_usd_brl) > 0) {
+      if (mexeEmDinheiro && cambio_usd_brl !== undefined && Number(cambio_usd_brl) > 0) {
         await gravarSetting('cambio_usd_brl', Number(cambio_usd_brl));
       }
-      if (teto_mensal_brl !== undefined) {
+      if (mexeEmDinheiro && teto_mensal_brl !== undefined) {
         await gravarSetting('teto_mensal_brl', Math.max(0, Number(teto_mensal_brl) || 0));
       }
 
@@ -892,7 +897,7 @@ export function setupEstudioRoutes(app: Express, pool: Pool) {
   app.post('/api/estudio/vozes/:id/previa', async (req: any, res) => {
     try {
       const { role } = await ctx(req);
-      if (!ehSuperadmin(role)) return res.status(403).json({ error: 'Apenas o super admin.' });
+      if (!gereCatalogo(role)) return res.status(403).json({ error: 'Apenas o super admin ou o diretor operacional.' });
 
       const chave = (process.env.MINIMAX_API_KEY || '').trim();
       if (!chave) return res.status(503).json({ error: 'MINIMAX_API_KEY não configurada no servidor.' });

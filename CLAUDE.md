@@ -138,6 +138,13 @@ nunca cores fixas. A preferência fica em `App.tsx` (`'system' | 'light' | 'dark
 - **`motion.div` anima valores de `style`.** Menu em portal posicionado via `style={{top,left}}`
   num `motion.div` entra deslizando da tela. Ponha `position/top/left/zIndex` numa `div` comum
   por fora e deixe só opacity/scale no `motion.div`.
+- **Coluna DATE chega com um dia a menos em produção.** O pg converte DATE em meia-noite no fuso
+  do servidor; a produção roda em UTC, então `2026-10-27` vira `"2026-10-27T00:00:00.000Z"` e
+  `new Date(...)` no navegador (UTC−3) mostra 26/10. No dev (Mac em BRT) vem `T03:00Z` e o bug
+  **não aparece** — testar local não pega. Relato da equipe em 16/10/2026 (1:1 e Desempenho:
+  agendada e realizada um dia para trás). Use `dataDoBanco()` de `src/lib/dataBanco.ts` (pega
+  AAAA-MM-DD e fixa meio-dia local) e `hojeLocal()` no lugar de `toISOString().split('T')[0]`,
+  que depois das 21h devolve amanhã. Outras telas com DATE podem ter o mesmo defeito.
 - **Regex dentro de template literal de SQL**: `'^\d{4}'` vira `'^d{4}'` no Postgres e casa com
   zero linhas, silenciosamente. Use classes explícitas: `'^[0-9]{4}'`.
 - Comentário JSX dentro de `{cond && (` quebra o build (TS1005) — ponha acima da condicional.
@@ -189,6 +196,13 @@ Não há CI. O processo é manual e tem uma pegadinha:
    memória, então o servidor antigo continua respondendo.
    Sonda rápida: `GET /api/public/<qualquer-coisa>` devolve **HTML** no servidor antigo e
    **JSON 404** no novo.
+   **`pkill -f dist/server.js` NÃO reinicia** (09/10/2026, deploy 4.2.4): o arquivo novo estava
+   no lugar (`grep -c clientes-mapa` = 3) e a rota nova seguia 404. O painel da Hostinger não tem
+   botão "Restart" — o que reinicia é **Reimplantar** (Sites › hub.grapemidia.com.br › Painel de
+   controle). Caminho: `cp hbuilds/last-source/dist/server.js nodejs/dist/server.js` →
+   Reimplantar → conferir o grep de novo (se o Reimplantar sobrescrever com versão velha, recopiar).
+   Ao refazer o backup (`server.js.bak-<versão>`), confira antes que o arquivo ainda é a versão
+   antiga — repetir o `cp` depois da troca grava a nova por cima do backup.
 
 ## Integrações
 
@@ -295,6 +309,18 @@ Não há CI. O processo é manual e tem uma pegadinha:
   devolveu US$ 1,1687 para esse mesmo vídeo. **III e V nunca foram medidos** e
   herdaram o número do IV. A cota por head virou `modo='valor'` (reais) —
   ninguém tinha limite em crédito configurado, todos em zero.
+  **Editor de locução** (`EditorRoteiro` em `Estudio.tsx`): textarea transparente por cima de
+  uma camada que desenha as pausas `<#x#>` em pílula. As duas camadas têm de quebrar linha no
+  MESMO ponto — a pílula com `px-1`/negrito e a barra de rolagem só no textarea faziam a pausa
+  entrar no meio da palavra ("situaç<#0.25#>es", chamado de 21/10/2026). Hoje: pílula sem
+  padding (respiro via box-shadow), textarea cresce com o texto e quem rola é a caixa de fora.
+  Pausa é bloco: cursor dentro dela seleciona a marcação inteira. Inserir e apagar vão pelo
+  caminho nativo (`execCommand('insertText')` / estender a seleção e deixar o Backspace agir) —
+  `onChange` com texto montado à mão jogava o cursor para o fim.
+  **Quem configura** (21/10/2026): o catálogo — avatares, vozes (incl. clonar e prévia), sons
+  ambiente, tipos de copy — é do superadmin **e** do `diretor-operacional` (Adriano)
+  (`gereCatalogo` em `estudio.ts`). A aba **Gastos** (teto, câmbio, preço/minuto, cotas) só
+  aparece para o superadmin, e o `PUT /api/estudio/config` **ignora** esses campos de quem não é.
   **Os dois tetos barram de verdade**, conferidos em `POST /api/estudio/videos`
   ANTES de subir o asset: o da conta (`teto_mensal_brl`) vale para todo mundo,
   superadmin incluído, e o de cada head vale por cima. A checagem soma o custo
@@ -571,6 +597,9 @@ Não há CI. O processo é manual e tem uma pegadinha:
   `assistiu` (player) ou `manual` (gestor marcou na Turma, com `completed_by`); marcar/desmarcar
   vai para `lesson_completion_log`. Conclusão manual nunca sobrescreve quem assistiu, e só ela
   pode ser desfeita. Aula tem descrição editável no lugar e comentários (`lesson_comments`).
+  Quem administra (cria curso/módulo/aula, marca conclusão, vê a Turma) é decidido só no servidor
+  (`ehAdmin` em `cursos.ts` → `is_admin` para a tela): superadmin, admin, `gerente-*` e, desde
+  21/10/2026, `diretor-operacional` (Adriano).
   Pendente: atribuição de trilha por cargo (tabela
   `course_assignments` existe, falta a tela), prazo e certificado.
 

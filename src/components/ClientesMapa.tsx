@@ -156,8 +156,9 @@ const ClientesMapa: React.FC<{ onAbrirCliente: (id: string) => void }> = ({ onAb
           </div>
         )}
         {erro && (
-          <div className="absolute top-3 left-3 right-3 z-[500] flex items-center gap-2 px-3 py-2 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs text-rose-500">
-            <AlertCircle size={14} /> {erro}
+          // abaixo do seletor Mapa/Satélite (antes ficava por cima dele) e com fundo opaco
+          <div className="absolute top-16 left-3 right-3 z-[500] flex items-center gap-2 px-3 py-2 rounded-xl bg-white dark:bg-dark-card border border-rose-500/30 text-xs text-rose-500 shadow-sm">
+            <AlertCircle size={14} /> Não foi possível carregar os clientes do mapa ({erro}).
           </div>
         )}
         {itens && (

@@ -66,10 +66,28 @@ const espera = (ms: number) => new Promise(r => setTimeout(r, ms));
 // ATRÁS, com as marcações <#x#> em pílula, e o textarea fica por cima com a
 // fonte transparente. Assim o cursor, a seleção, o desfazer e o "inserir no
 // cursor" continuam sendo os nativos — nada de contenteditable.
+//
+// As duas camadas têm de quebrar as linhas EXATAMENTE no mesmo lugar, senão o
+// texto que a pessoa vê não é o que está sob o cursor: ela clica entre duas
+// palavras e a pausa entra no meio de outra ("situaç<#0.25#>es" — chamado de
+// 21/10/2026). Por isso:
+//  - a pílula não tem padding nem negrito (os dois mudam a largura do texto);
+//    o respiro visual é um box-shadow, que não ocupa espaço;
+//  - o textarea cresce com o conteúdo e quem rola é a caixa de fora. Com
+//    rolagem própria, a barra de rolagem estreitava só o textarea.
 const RE_PAUSA = /(<#\d*\.?\d+#>)/g;
 // Separada e SEM /g: `test()` em regex global avança o lastIndex e alterna o
 // resultado a cada chamada — o destaque piscaria linha sim, linha não.
 const EH_PAUSA = /^<#\d*\.?\d+#>$/;
+
+// Trechos [início, fim) de cada pausa no texto.
+function trechosDePausa(texto: string): Array<[number, number]> {
+  const out: Array<[number, number]> = [];
+  const re = /<#\d*\.?\d+#>/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(texto))) out.push([m.index, m.index + m[0].length]);
+  return out;
+}
 
 const EditorRoteiro = React.forwardRef<HTMLTextAreaElement, {
   valor: string;
@@ -77,84 +95,85 @@ const EditorRoteiro = React.forwardRef<HTMLTextAreaElement, {
   linhas?: number;
   placeholder?: string;
 }>(({ valor, onChange, linhas = 14, placeholder }, ref) => {
-  const fundoRef = React.useRef<HTMLDivElement>(null);
+  const textoRef = React.useRef<HTMLTextAreaElement>(null);
+  React.useImperativeHandle(ref, () => textoRef.current as HTMLTextAreaElement);
 
-  // As duas camadas precisam rolar juntas, senão o destaque descola do texto.
-  const sincronizar = (el: HTMLTextAreaElement) => {
-    if (fundoRef.current) {
-      fundoRef.current.scrollTop = el.scrollTop;
-      fundoRef.current.scrollLeft = el.scrollLeft;
-    }
-  };
+  // Altura acompanha o conteúdo (mínimo de `linhas`); a caixa de fora rola.
+  React.useLayoutEffect(() => {
+    const el = textoRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [valor]);
 
   // Mesmas métricas nos dois lados: qualquer diferença desalinha o destaque.
   const metricas = 'px-3 py-2.5 text-sm leading-relaxed font-sans whitespace-pre-wrap break-words';
 
-  // A marcação é apagada INTEIRA, como um bloco. Sem isso, cada backspace come
-  // um caractere e a pausa passa por estados quebrados — "<#0.5#", "<#0.5" — que
-  // deixam de ser reconhecidos e parecem bug na tela.
+  // A pausa se comporta como um bloco: o cursor não para dentro dela. Clicou ou
+  // andou com a seta para o meio de uma, ela fica selecionada inteira — dá para
+  // apagar com uma tecla ou arrastar para outro lugar. Sem isso, cada backspace
+  // comia um caractere e a marcação virava "<#0.5#", que nem é reconhecida.
+  const ajustarSelecao = (el: HTMLTextAreaElement) => {
+    const { selectionStart: ini, selectionEnd: fim, selectionDirection: dir } = el;
+    let novoIni = ini, novoFim = fim;
+    for (const [a, b] of trechosDePausa(el.value)) {
+      if (ini > a && ini < b) novoIni = a;
+      if (fim > a && fim < b) novoFim = b;
+    }
+    if (novoIni !== ini || novoFim !== fim) el.setSelectionRange(novoIni, novoFim, dir || 'none');
+  };
+
   const FIM_PAUSA = /<#\d*\.?\d+#>$/;
   const INICIO_PAUSA = /^<#\d*\.?\d+#>/;
 
+  // Backspace/Delete colado numa pausa: só estende a seleção até cobrir a
+  // marcação e deixa o navegador apagar. Apagar "na mão" (onChange com o texto
+  // novo) jogava o cursor para o fim do roteiro, e parecia que nada tinha sido
+  // apagado. Do jeito nativo o cursor fica no lugar e o Ctrl+Z desfaz.
   const aoTeclar = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const el = e.currentTarget;
     if (el.selectionStart !== el.selectionEnd) return;   // com seleção, o normal já resolve
     const pos = el.selectionStart;
 
     if (e.key === 'Backspace') {
-      const antes = valor.slice(0, pos);
-      const m = antes.match(FIM_PAUSA);
-      if (!m) return;
-      e.preventDefault();
-      const novoPos = pos - m[0].length;
-      onChange(valor.slice(0, novoPos) + valor.slice(pos));
-      requestAnimationFrame(() => el.setSelectionRange(novoPos, novoPos));
-      return;
-    }
-
-    if (e.key === 'Delete') {
-      const depois = valor.slice(pos);
-      const m = depois.match(INICIO_PAUSA);
-      if (!m) return;
-      e.preventDefault();
-      onChange(valor.slice(0, pos) + valor.slice(pos + m[0].length));
-      requestAnimationFrame(() => el.setSelectionRange(pos, pos));
+      const m = el.value.slice(0, pos).match(FIM_PAUSA);
+      if (m) el.setSelectionRange(pos - m[0].length, pos);
+    } else if (e.key === 'Delete') {
+      const m = el.value.slice(pos).match(INICIO_PAUSA);
+      if (m) el.setSelectionRange(pos, pos + m[0].length);
     }
   };
 
   return (
-    <div className="relative">
-      <div
-        ref={fundoRef}
-        aria-hidden
-        className={`absolute inset-0 overflow-hidden rounded-t-xl border border-black/10 dark:border-white/10 text-dark-text pointer-events-none ${metricas}`}
-      >
-        {valor.split(RE_PAUSA).map((parte, i) =>
-          EH_PAUSA.test(parte) ? (
-            <span key={i} className="rounded-md bg-violet-500/15 text-violet-400 font-medium px-1 py-0.5">
-              {parte}
-            </span>
-          ) : (
-            <React.Fragment key={i}>{parte}</React.Fragment>
-          )
-        )}
-        {/* linha extra: sem ela a última quebra some e o fundo encurta */}
-        {'\n'}
-      </div>
+    <div className="max-h-[22rem] overflow-y-auto rounded-t-xl border border-black/10 dark:border-white/10 focus-within:border-violet-500/60 transition-colors">
+      <div className="relative">
+        <div aria-hidden className={`absolute inset-0 overflow-hidden text-dark-text pointer-events-none ${metricas}`}>
+          {valor.split(RE_PAUSA).map((parte, i) =>
+            EH_PAUSA.test(parte) ? (
+              <span key={i} className="rounded bg-violet-500/20 text-violet-400 shadow-[0_0_0_2px_rgba(139,92,246,0.2)]">
+                {parte}
+              </span>
+            ) : (
+              <React.Fragment key={i}>{parte}</React.Fragment>
+            )
+          )}
+          {/* linha extra: sem ela a última quebra some e o fundo encurta */}
+          {'\n'}
+        </div>
 
-      <textarea
-        ref={ref}
-        value={valor}
-        onChange={e => onChange(e.target.value)}
-        onScroll={e => sincronizar(e.currentTarget)}
-        onKeyDown={aoTeclar}
-        rows={linhas}
-        placeholder={placeholder}
-        spellCheck={false}
-        className={`relative w-full bg-transparent text-transparent caret-violet-500 placeholder-slate-600
-                    border border-black/10 dark:border-white/10 rounded-t-xl resize-none
-                    focus:outline-none focus:border-violet-500/60 selection:bg-violet-500/30 ${metricas}`}
-      />
+        <textarea
+          ref={textoRef}
+          value={valor}
+          onChange={e => onChange(e.target.value)}
+          onKeyDown={aoTeclar}
+          onSelect={e => ajustarSelecao(e.currentTarget)}
+          rows={linhas}
+          placeholder={placeholder}
+          spellCheck={false}
+          className={`relative block w-full overflow-hidden bg-transparent text-transparent caret-violet-500 placeholder-slate-600
+                      resize-none focus:outline-none selection:bg-violet-500/30 ${metricas}`}
+        />
+      </div>
     </div>
   );
 });
@@ -277,9 +296,13 @@ const ModalGeracao: React.FC<{
   };
 
   // Insere a marcação na posição do cursor, como no editor do MiniMax.
+  // Pelo caminho nativo (insertText): o cursor fica logo depois da pausa e o
+  // Ctrl+Z desfaz. O caminho por estado fica de reserva para navegador sem ele.
   const inserirNoCursor = (marcacao: string) => {
     const el = textareaRef.current;
     if (!el) return;
+    el.focus();
+    if (document.execCommand?.('insertText', false, marcacao)) { setAudioPronto(false); return; }
     const ini = el.selectionStart ?? roteiroLocucao.length;
     const fim = el.selectionEnd ?? ini;
     const novo = roteiroLocucao.slice(0, ini) + marcacao + roteiroLocucao.slice(fim);
@@ -1193,8 +1216,8 @@ const Estudio: React.FC = () => {
     return () => clearInterval(t);
   }, [fila, carregarFila]);
 
-  // Catálogo (tipos de copy, vozes, avatares) e cotas são configuração de
-  // operação — só o super admin mexe.
+  // Catálogo (tipos de copy, vozes, avatares, sons): super admin e diretor
+  // operacional. Gastos (teto, câmbio, preço, cotas): só o super admin.
   const ehSuperadmin = userData?.role === 'superadmin';
   // Jean (superadmin) e Adriano (diretor-operacional) enxergam o saldo da conta
   // inteira; head vê o próprio teto.
@@ -1226,7 +1249,7 @@ const Estudio: React.FC = () => {
           subtitleClassName="text-sm text-gray-500 dark:text-gray-400 mt-1" />
         <div className="flex items-center gap-3 flex-wrap">
         <IndicadorGastos visaoDaConta={veSaldoDaConta} recarregar={fila.length} />
-        {ehSuperadmin && (
+        {veSaldoDaConta && (
           <button onClick={() => setConfig(true)}
             className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl border border-black/10 dark:border-white/10 text-slate-400 hover:text-dark-text hover:border-violet-500/40 text-sm font-bold transition-colors">
             <Settings size={15} /> Configurações
@@ -1270,7 +1293,7 @@ const Estudio: React.FC = () => {
       <AnimatePresence>
         {aberto && <ModalGeracao projetos={projetos} tipos={tipos} avatares={avatares} ambiencias={ambiencias}
           onFechar={() => { setAberto(false); void carregarFila(); }} />}
-        {config && <EstudioConfig onFechar={() => setConfig(false)} />}
+        {config && <EstudioConfig onFechar={() => setConfig(false)} veGastos={ehSuperadmin} />}
       </AnimatePresence>
 
       {lightbox !== null && lightbox >= 0 && arquivosLb[lightbox] && (

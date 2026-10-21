@@ -9,9 +9,9 @@ import {
 } from 'lucide-react';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Configurações do Estúdio — só superadmin. FRONT COM DADOS DE MENTIRA: nada
-// aqui persiste ainda. Trocar os `useState` iniciais por fetch quando o backend
-// entrar (tabelas estudio.voices / estudio.avatars / tipos de copy / cotas).
+// Configurações do Estúdio — super admin e diretor operacional. A aba Gastos
+// (teto, câmbio, preço/minuto, cotas) só aparece para o super admin; o servidor
+// também ignora esses campos no PUT de quem não é.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface TipoCopy { id: string; nome: string; desc: string; prompt: string; }
@@ -41,7 +41,7 @@ const Campo: React.FC<{ label: string; children: React.ReactNode; dica?: string 
 
 const inputCls = 'w-full bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-xl px-3 py-2 text-sm text-dark-text placeholder-slate-600 focus:outline-none focus:border-violet-500/60';
 
-const EstudioConfig: React.FC<{ onFechar: () => void }> = ({ onFechar }) => {
+const EstudioConfig: React.FC<{ onFechar: () => void; veGastos?: boolean }> = ({ onFechar, veGastos = true }) => {
   const [aba, setAba] = useState<Aba>('copy');
   const [salvando, setSalvando] = useState(false);
 
@@ -322,7 +322,7 @@ const EstudioConfig: React.FC<{ onFechar: () => void }> = ({ onFechar }) => {
         </div>
 
         <div className="px-5 pt-4 flex items-center gap-1 flex-wrap border-b border-black/10 dark:border-white/10">
-          {ABAS.map(a => {
+          {ABAS.filter(a => veGastos || a.id !== 'limites').map(a => {
             const Icone = a.icone;
             return (
               <button key={a.id} onClick={() => setAba(a.id)}
@@ -614,7 +614,7 @@ const EstudioConfig: React.FC<{ onFechar: () => void }> = ({ onFechar }) => {
           )}
 
           {/* ── GASTOS ── */}
-          {aba === 'limites' && (() => {
+          {veGastos && aba === 'limites' && (() => {
             // Tudo em reais na tela, porque é a moeda do orçamento. Por baixo o
             // HeyGen cobra em dólar por minuto de render — daí o câmbio editável.
             const fmt = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
