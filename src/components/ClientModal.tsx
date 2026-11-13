@@ -58,6 +58,9 @@ interface FinMovement {
   movement_date: string | null;   // dia em que o cliente pagou (YYYY-MM-DD)
   credit_date?: string | null;    // dia em que o dinheiro cai (cartão: ~30 dias depois)
   expiration_date: string;
+  original_due_date?: string;     // vencimento original — define o mês da mensalidade
+  subscription_id?: string | null;
+  description?: string | null;
   movement_value: string;
   status: string;
   asaas_status?: string;
@@ -166,7 +169,8 @@ const AbaFinanceiro: React.FC<{
   carregandoMov: boolean;
   clientId?: string;
   onVincular: (id: string | null) => Promise<void> | void;
-}> = ({ clientName, subId, subs, carregandoSubs, movimentos, carregandoMov, clientId, onVincular }) => {
+  semComentarios?: boolean;
+}> = ({ clientName, subId, subs, carregandoSubs, movimentos, carregandoMov, clientId, onVincular, semComentarios = false }) => {
   const [trocando, setTrocando] = useState(false);
   const [busca, setBusca] = useState('');
   const [comCanceladas, setComCanceladas] = useState(false);
@@ -218,7 +222,7 @@ const AbaFinanceiro: React.FC<{
   };
 
   // Resumo do mês corrente e do que está em atraso
-  const doMes = movimentos.find(m => m.expiration_date?.slice(0, 7) === hoje.slice(0, 7));
+  const doMes = movimentos.find(m => (m.original_due_date || m.expiration_date)?.slice(0, 7) === hoje.slice(0, 7));
   const atrasados = movimentos.filter(m => m.status === 'Atrasado');
   const valorAtraso = atrasados.reduce((t, m) => t + (parseFloat(m.movement_value) || 0), 0);
   const linhas = verTudo ? movimentos : movimentos.slice(0, 6);
@@ -250,7 +254,33 @@ const AbaFinanceiro: React.FC<{
 
   return (
     <div className="space-y-5">
-      {/* ── Assinatura ── */}
+      {/* ── Assinatura ──
+          Vinculada: uma linha só (o valor já aparece em "Mensalidade" logo abaixo).
+          Sem vínculo, trocando ou com problema: o bloco completo com a busca. */}
+      {sub && !escolhendo ? (
+        <div className="flex items-center gap-3 rounded-xl border border-slate-200 dark:border-white/10 px-4 py-2.5">
+          <CreditCard size={15} className="shrink-0 text-emerald-500" />
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] text-light-text dark:text-white truncate">
+              <span className="text-slate-500">Assinatura Asaas · </span>
+              <span className="font-medium">{sub.customer_name || 'Sem nome'}</span>
+              {sub.status !== 'ACTIVE' && (() => { const st = STATUS_SUB[sub.status] || { t: sub.status, c: 'bg-slate-500/10 text-slate-500' };
+                return <span className={`ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold ${st.c}`}>{st.t}</span>; })()}
+            </p>
+            <p className="text-[11px] text-slate-500 truncate">
+              {CICLO[sub.cycle] || sub.cycle} · {FORMA[sub.billing_type] || sub.billing_type}
+              {sub.next_due ? ` · próximo vencimento ${dataBR(sub.next_due)}` : ''}
+              {sub.customer_cnpjcpf ? ` · ${sub.customer_cnpjcpf}` : ''}
+            </p>
+          </div>
+          <button type="button" onClick={() => setTrocando(true)}
+            className="shrink-0 px-2 py-1 rounded-md text-[12px] font-medium text-violet-500 hover:bg-violet-500/10 transition-colors">Trocar</button>
+          <button type="button" onClick={desvincular} title="Desvincular assinatura"
+            className="shrink-0 w-7 h-7 flex items-center justify-center rounded-md text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors">
+            <Unlink size={13} />
+          </button>
+        </div>
+      ) : (
       <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.03] p-6">
         <div className="flex items-center justify-between gap-3 mb-4">
           <div>
@@ -339,6 +369,7 @@ const AbaFinanceiro: React.FC<{
           </div>
         )}
       </div>
+      )}
 
       {/* ── Resumo + histórico ── */}
       {subId && (
@@ -396,8 +427,19 @@ const AbaFinanceiro: React.FC<{
                       return (
                         <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors">
                           <td className="px-4 py-2.5">
-                            <p className="text-xs font-bold text-light-text dark:text-white">{mesNome(m.expiration_date)}</p>
-                            <p className="text-[10px] text-slate-500">vence {dataBR(m.expiration_date)}{m.payment_method ? ` · ${FORMA[m.payment_method] || m.payment_method}` : ''}</p>
+                            {/* Mês = vencimento original (competência); prorrogação aparece embaixo */}
+                            <p className="text-xs font-bold text-light-text dark:text-white">
+                              {mesNome(m.original_due_date || m.expiration_date)}
+                              {!m.subscription_id && /pix recebido/i.test(m.description || '') && (
+                                <span className="ml-1.5 px-1.5 py-0.5 rounded bg-slate-500/10 text-[9.5px] font-semibold text-slate-500" title={m.description}>Pix avulso</span>
+                              )}
+                            </p>
+                            <p className="text-[10px] text-slate-500">
+                              {m.original_due_date && m.original_due_date !== m.expiration_date
+                                ? <>vencia {dataBR(m.original_due_date)} · <span className="text-amber-500">prorrogada para {dataBR(m.expiration_date)}</span></>
+                                : <>vence {dataBR(m.expiration_date)}</>}
+                              {m.payment_method ? ` · ${FORMA[m.payment_method] || m.payment_method}` : ''}
+                            </p>
                           </td>
                           <td className="px-4 py-2.5 text-xs font-medium text-slate-600 dark:text-slate-300">{brlC(parseFloat(m.movement_value) || 0)}</td>
                           <td className="px-4 py-2.5"><span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${sit.c}`}>{sit.t}</span></td>
@@ -428,7 +470,7 @@ const AbaFinanceiro: React.FC<{
       )}
 
       {/* ── Comentários (independem da assinatura) ── */}
-      {clientId && (
+      {clientId && !semComentarios && (
         <div className="space-y-4 pt-1">
           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
             <MessageSquare size={12} className="text-violet-500" /> Histórico de comentários
@@ -437,6 +479,81 @@ const AbaFinanceiro: React.FC<{
         </div>
       )}
     </div>
+  );
+};
+
+/**
+ * Mensalidade + histórico de pagamentos de um cliente, carregando os próprios dados.
+ * Mesmo conteúdo da aba Financeiro dos Clientes Ativos — usado no popup da Retenção.
+ * Vincular/desvincular grava `fin_subscription_id` e `fin_people_guid` como lá.
+ */
+export const FinanceiroDoCliente: React.FC<{
+  clientId: string;
+  clientName: string;
+  finSubscriptionId?: string | null;
+  finPeopleGuid?: string | null;
+  onAlterado?: () => void;
+}> = ({ clientId, clientName, finSubscriptionId, finPeopleGuid, onAlterado }) => {
+  const [subId, setSubId] = useState(finSubscriptionId ? String(finSubscriptionId) : '');
+  const [guid, setGuid] = useState<string | null>(finPeopleGuid || null);
+  const [subs, setSubs] = useState<SubLista[]>([]);
+  const [carregandoSubs, setCarregandoSubs] = useState(true);
+  const [pessoas, setPessoas] = useState<FinPerson[]>([]);
+  const [movimentos, setMovimentos] = useState<FinMovement[]>([]);
+  const [carregandoMov, setCarregandoMov] = useState(false);
+
+  useEffect(() => { setSubId(finSubscriptionId ? String(finSubscriptionId) : ''); setGuid(finPeopleGuid || null); }, [clientId]);
+  useEffect(() => {
+    fetch('/api/fin-subscriptions').then(r => r.ok ? r.json() : []).then(setSubs).catch(() => {}).finally(() => setCarregandoSubs(false));
+    fetch('/api/fin-people').then(r => r.ok ? r.json() : []).then(setPessoas).catch(() => {});
+  }, []);
+
+  // Pessoa do Asaas: pelo guid gravado; sem ele, pela assinatura vinculada
+  const pessoa = React.useMemo(() => {
+    if (guid) return pessoas.find(p => p.guid === guid) || null;
+    const sub = subs.find(s => String(s.id) === String(subId));
+    return sub?.customer_id ? pessoas.find(p => p.asaas_id === sub.customer_id) || null : pessoas.find(p => p.grapehub_client_id === clientId) || null;
+  }, [guid, pessoas, subs, subId, clientId]);
+
+  useEffect(() => {
+    if (!pessoa) { setMovimentos([]); return; }
+    let vivo = true;
+    setCarregandoMov(true);
+    fetch(`/api/fin-people/${pessoa.id}/movements`)
+      .then(r => r.ok ? r.json() : [])
+      .then(d => { if (vivo) setMovimentos(d); })
+      .catch(() => {})
+      .finally(() => { if (vivo) setCarregandoMov(false); });
+    return () => { vivo = false; };
+  }, [pessoa?.id]);
+
+  const vincular = async (novo: string | null) => {
+    setSubId(novo || '');
+    await fetch(`/api/clients/${clientId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fin_subscription_id: novo }) });
+    let novoGuid: string | null = null;
+    if (novo) {
+      const sub = subs.find(s => String(s.id) === String(novo));
+      novoGuid = (sub?.customer_id && pessoas.find(p => p.asaas_id === sub.customer_id)?.guid) || null;
+    }
+    if (novoGuid !== guid) {
+      setGuid(novoGuid);
+      await fetch(`/api/clients/${clientId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fin_people_guid: novoGuid }) });
+    }
+    onAlterado?.();
+  };
+
+  return (
+    <AbaFinanceiro
+      clientName={clientName}
+      subId={subId}
+      subs={subs}
+      carregandoSubs={carregandoSubs}
+      movimentos={movimentos}
+      carregandoMov={carregandoMov}
+      clientId={clientId}
+      onVincular={vincular}
+      semComentarios
+    />
   );
 };
 

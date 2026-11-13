@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 
-import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from 'recharts';
 import SplitHeadline from '../components/SplitHeadline';
+// Gráficos no desenho do painel de teste do GrapeCRM
+import { Anel, BarrasPorCategoria, Cartao, CartaoKpi, DivisaoDoKpi, LinhaComBolinha, LinhaDoKpi, LinhasNoTempo } from '../components/graficos';
 import { confirmDialog } from '@/src/lib/confirm';
 import {
   Users, TrendingUp, DollarSign, AlertTriangle,
@@ -280,9 +281,24 @@ const CountUp = ({ value, prefix = '', suffix = '', className = '', format = fal
   const [display, setDisplay] = React.useState(0);
   const ref = React.useRef<HTMLSpanElement>(null);
   const animated = React.useRef(false);
+  const shownRef = React.useRef(0);
 
   React.useEffect(() => {
-    if (animated.current) { setDisplay(Math.round(value)); return; }
+    // Depois da 1ª contagem, troca de valor (ex.: outro head) anima do número atual até o novo.
+    if (animated.current) {
+      const de = shownRef.current, para = Math.round(value);
+      if (de === para) return;
+      const inicio = performance.now();
+      let raf = 0;
+      const passo = (agora: number) => {
+        const t = Math.min((agora - inicio) / 600, 1);
+        const v = Math.round(de + (para - de) * (1 - Math.pow(1 - t, 3)));
+        shownRef.current = v; setDisplay(v);
+        if (t < 1) raf = requestAnimationFrame(passo);
+      };
+      raf = requestAnimationFrame(passo);
+      return () => cancelAnimationFrame(raf);
+    }
     const el = ref.current;
     if (!el) return;
     const observer = new IntersectionObserver(
@@ -296,7 +312,7 @@ const CountUp = ({ value, prefix = '', suffix = '', className = '', format = fal
             const elapsed = now - start;
             const t = Math.min(elapsed / duration, 1);
             const eased = 1 - Math.pow(1 - t, 3);
-            setDisplay(Math.round(eased * target));
+            shownRef.current = Math.round(eased * target); setDisplay(shownRef.current);
             if (t < 1) requestAnimationFrame(step);
           };
           requestAnimationFrame(step);
@@ -312,230 +328,6 @@ const CountUp = ({ value, prefix = '', suffix = '', className = '', format = fal
 
   return <span ref={ref} className={className}>{prefix}{formattedStr}{suffix}</span>;
 };
-
-const AnimatedColorBar = ({ widthPercent, color }: { widthPercent: number; color: string }) => {
-  const [width, setWidth] = React.useState(0);
-  const ref = React.useRef<HTMLDivElement>(null);
-  const animated = React.useRef(false);
-
-  React.useEffect(() => {
-    if (animated.current) { setWidth(widthPercent); return; }
-    const el = ref.current;
-    if (!el) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting && !animated.current) {
-          animated.current = true;
-          requestAnimationFrame(() => setWidth(widthPercent));
-        }
-      },
-      { threshold: 0.1 }
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [widthPercent]);
-
-  return (
-    <div ref={ref} className="h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(100,100,120,0.15)' }}>
-      <div
-        className="h-full rounded-full transition-all duration-1000 ease-out"
-        style={{ width: `${width}%`, background: color }}
-      />
-    </div>
-  );
-};
-
-function KpiCard({ icon, iconBg, label, value, sub, extra }: {
-  icon: React.ReactNode; iconBg: string; label: string;
-  value: React.ReactNode; sub?: React.ReactNode; extra?: React.ReactNode;
-}) {
-  return (
-    <div className="bg-dark-card border border-white/10 rounded-2xl p-5 flex flex-col gap-2 min-w-0 transition-colors duration-200">
-      <div className="flex items-center justify-between">
-        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-tight">{label}</span>
-        <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${iconBg}`}>{icon}</div>
-      </div>
-      <div className="text-2xl lg:text-3xl font-black text-dark-text leading-tight">{value}</div>
-      {sub && <div className="text-xs text-slate-400">{sub}</div>}
-      {extra}
-    </div>
-  );
-}
-
-function DonutChart({ data, onClick }: { data: { label: string; count: number; color: string }[], onClick?: (label: string) => void }) {
-  const [hovered, setHovered] = React.useState<number | null>(null);
-  const [mousePos, setMousePos] = React.useState({ x: 0, y: 0 });
-  const wrapRef = React.useRef<HTMLDivElement>(null);
-
-  const total = data.reduce((s, d) => s + d.count, 0);
-  if (total === 0) return (
-    <div className="flex flex-col items-center justify-center gap-2 py-10 text-slate-400">
-      <span className="text-3xl">📊</span>
-      <span className="text-sm">Sem dados de resultado</span>
-    </div>
-  );
-
-  const cx = 140; const cy = 140;
-
-  const hoveredSlice = hovered !== null ? data[hovered] : null;
-  const centerVal = hoveredSlice ? `${Math.round((hoveredSlice.count / total) * 100)}%` : String(total);
-  const centerSub = hoveredSlice
-    ? (hoveredSlice.label === '-' ? 'SEM RES.' : hoveredSlice.label.toUpperCase().replace('RESULTADO ', 'RES.').slice(0, 9))
-    : 'PROJETOS';
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    const rect = wrapRef.current?.getBoundingClientRect();
-    if (rect) setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
-  };
-
-  return (
-    <div className="flex gap-8 items-center justify-between w-full h-full">
-      <div
-        ref={wrapRef}
-        className="relative flex items-center justify-center pl-2"
-        style={{ width: 280, height: 280, flexShrink: 0 }}
-        onMouseMove={handleMouseMove}
-      >
-        <PieChart width={280} height={280}>
-          <Pie
-            data={data}
-            cx={cx} cy={cy}
-            innerRadius={82} outerRadius={120}
-            dataKey="count"
-            strokeWidth={0}
-            paddingAngle={data.length > 1 ? 3 : 0}
-            startAngle={90} endAngle={-270}
-            isAnimationActive={true}
-            animationDuration={800}
-            animationEasing="ease-out"
-            onMouseEnter={(_, index) => setHovered(index)}
-            onMouseLeave={() => setHovered(null)}
-          >
-            {data.map((d, idx) => (
-              <Cell 
-                key={idx} 
-                fill={d.color}
-                stroke={hovered === idx ? 'rgba(255,255,255,0.25)' : 'none'}
-                strokeWidth={hovered === idx ? 2 : 0}
-                style={{
-                  transform: hovered === idx ? 'scale(1.05)' : 'scale(1)',
-                  transformOrigin: `${cx}px ${cy}px`,
-                  transition: 'transform 0.15s ease, opacity 0.15s ease',
-                  cursor: 'pointer',
-                  opacity: hovered === null || hovered === idx ? 1 : 0.35,
-                }}
-              />
-            ))}
-          </Pie>
-
-          {/* Center Text */}
-          <text x={cx} y={cy - 6} textAnchor="middle" 
-            fill={hoveredSlice ? hoveredSlice.color : undefined}
-            className={hoveredSlice ? "" : "fill-slate-800 dark:fill-white"}
-            fontSize={hovered !== null ? 32 : 36} fontWeight={900}
-            style={{ transition: 'all 0.12s ease', pointerEvents: 'none' }}>
-            {centerVal}
-          </text>
-          <text x={cx} y={cy + 16} textAnchor="middle" 
-            fill={hovered !== null && hoveredSlice ? hoveredSlice.color + 'bb' : '#64748b'}
-            fontSize={10} fontWeight={800} letterSpacing={1.5}
-            style={{ transition: 'all 0.12s ease', pointerEvents: 'none' }}>
-            {centerSub}
-          </text>
-        </PieChart>
-
-        {/* Flyout tooltip */}
-        {hovered !== null && hoveredSlice && (
-          <div
-            className="pointer-events-none absolute z-50"
-            style={{
-              left: mousePos.x + 16,
-              top: mousePos.y - 48,
-              transform: mousePos.x > 140 ? 'translateX(-110%)' : undefined,
-            }}
-          >
-            <div
-              className="rounded-xl px-4 py-3 shadow-2xl border bg-white/95 dark:bg-[#0a0c14]/95 backdrop-blur-md"
-              style={{
-                borderColor: `${hoveredSlice.color}44`,
-                boxShadow: `0 8px 32px ${hoveredSlice.color}33, 0 4px 12px rgba(0,0,0,0.1)`,
-              }}
-            >
-              <div className="flex items-center gap-2 mb-1.5">
-                <div className="w-3 h-3 rounded-sm" style={{ background: hoveredSlice.color, boxShadow: `0 0 8px ${hoveredSlice.color}` }} />
-                <span className="text-sm font-bold text-slate-800 dark:text-white capitalize">
-                  {hoveredSlice.label === '-' ? 'Sem resultado' : hoveredSlice.label.charAt(0) + hoveredSlice.label.slice(1).toLowerCase()}
-                </span>
-              </div>
-              <div className="pl-5 flex items-center gap-2">
-                <span className="text-base font-black" style={{ color: hoveredSlice.color }}>
-                  {hoveredSlice.count}
-                </span>
-                <span className="text-xs text-slate-500">projetos</span>
-                <span className="text-xs text-slate-600">·</span>
-                <span className="text-[11px] font-bold text-slate-400">
-                  {Math.round((hoveredSlice.count / total) * 100)}%
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Legend */}
-      <div className="space-y-3 flex-1 min-w-0 h-full overflow-y-auto custom-scrollbar pr-1">
-        {data.map((d, i) => (
-          <div
-            key={d.label}
-            onClick={() => onClick && onClick(d.label)}
-            className={`flex items-center gap-4 rounded-xl px-4 py-2.5 transition-all duration-100 border ${onClick ? 'cursor-pointer hover:bg-white/5' : 'cursor-default'}`}
-            style={{
-              background: hovered === i ? `${d.color}18` : undefined,
-              borderColor: hovered === i ? d.color + '33' : 'transparent',
-              opacity: hovered === null || hovered === i ? 1 : 0.4,
-            }}
-            onMouseEnter={() => setHovered(i)}
-            onMouseLeave={() => setHovered(null)}
-          >
-            <div
-              className="w-3.5 h-3.5 rounded flex-shrink-0 transition-all"
-              style={{
-                background: d.color,
-                boxShadow: hovered === i ? `0 0 12px ${d.color}99` : `0 0 4px ${d.color}44`,
-              }}
-            />
-            <div className="flex-1 min-w-0 flex items-center justify-between">
-              <span className="text-sm font-bold text-dark-text capitalize truncate">
-                {d.label === '-' ? 'Sem resultado' : d.label.charAt(0) + d.label.slice(1).toLowerCase()}
-              </span>
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-black text-slate-800 dark:text-white">{d.count}</span>
-                <span className="text-xs font-bold text-slate-500 min-w-[36px] text-right">
-                  {Math.round((d.count / total) * 100)}%
-                </span>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-
-function GestorBar({ results, total }: { results: Record<string, number>; total: number }) {
-  return (
-    <div className="flex h-2 rounded-full overflow-hidden w-full gap-px">
-      {Object.entries(results).map(([label, count]) => (
-        <div
-          key={label}
-          style={{ width: `${(count / total) * 100}%`, background: getResultColor(label) }}
-          title={`${label}: ${count}`}
-        />
-      ))}
-    </div>
-  );
-}
 
 function Spinner() {
   return (
@@ -1055,199 +847,200 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
   const investAntes = histFirst?.investimento || 0;
   const investDelta = investAntes > 0 ? Math.round(((investHoje - investAntes) / investAntes) * 100) : null;
 
-  // Cards de carteira (evolução, investimento e churn). Renderizados no Dashboard Head
-  // e também no Operacional — em ambos os casos já recortados pelo head selecionado.
-  const renderCardsCarteira = () => (
-    <>
-      {/* 2) Evolução da carteira + 4) Distribuição de resultados */}
-      <div className="grid grid-cols-1 lg:grid-cols-11 gap-5">
-        <div className="lg:col-span-6 bg-dark-card border border-white/5 rounded-2xl p-5 flex flex-col">
-          <h2 className="text-sm font-bold text-dark-text mb-1 shrink-0">Evolução da Carteira</h2>
-          <p className="text-xs text-slate-500 mb-4 shrink-0">% de projetos com Resultado Bom ou Ok · últimos 90 dias</p>
-          {history.length < 2 ? (
-            <p className="text-xs text-slate-500 py-10 text-center">
-              A série começa a partir de hoje — volte em alguns dias para ver a evolução.
-            </p>
-          ) : (
-            <div className="flex-1 min-h-0 flex flex-col">
-              <div className="flex items-end gap-3 mb-3 shrink-0">
-                <span className="text-3xl font-black text-dark-text leading-none">{saudavelHoje}%</span>
-                {saudavelDelta !== 0 && (
-                  <span className={`text-xs font-bold pb-1 ${saudavelDelta > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    {saudavelDelta > 0 ? '↑' : '↓'} {Math.abs(saudavelDelta)} p.p.
-                  </span>
-                )}
-              </div>
-              {/* flex-1 + height="100%": o gráfico estica para o card acompanhar a
-                  altura da linha, definida pelo card de distribuição ao lado. */}
-              <div className="flex-1 min-h-[180px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={history.map(h => {
-                  // "Outros" = tudo que não é Bom, Ok nem Ruim (Testando, Sem Resultado,
-                  // Campanha Pausada, Aguardando...). Calculado por resto para que as três
-                  // séries sempre fechem 100% da carteira.
-                  const outrosQtd = Math.max(0, h.total - h.bom - h.ok - h.ruim);
-                  return {
-                    date: h.date.slice(8, 10) + '/' + h.date.slice(5, 7),
-                    saudavel: h.total > 0 ? Math.round(((h.bom + h.ok) / h.total) * 100) : 0,
-                    ruim: h.total > 0 ? Math.round((h.ruim / h.total) * 100) : 0,
-                    outros: h.total > 0 ? Math.round((outrosQtd / h.total) * 100) : 0,
-                    // guardados para o tooltip mostrar o valor absoluto junto do percentual
-                    _saudavelQtd: h.bom + h.ok,
-                    _ruimQtd: h.ruim,
-                    _outrosQtd: outrosQtd,
-                    _total: h.total,
-                  };
-                })}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} unit="%" />
-                  <RechartsTooltip
-                    contentStyle={{ background: '#1a1625', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, fontSize: 12 }}
-                    formatter={(v: any, nome: any, item: any) => {
-                      const p = item?.payload || {};
-                      const qtd = nome === 'Ruim' ? p._ruimQtd : nome === 'Outros' ? p._outrosQtd : p._saudavelQtd;
-                      return [`${v}% (${qtd} de ${p._total})`, nome];
-                    }}
-                  />
-                  <Area type="monotone" dataKey="saudavel" name="Bom + Ok" stroke="#2ecc8f" fill="#2ecc8f" fillOpacity={0.15} strokeWidth={2} />
-                  <Area type="monotone" dataKey="ruim" name="Ruim" stroke="#f74c4c" fill="#f74c4c" fillOpacity={0.12} strokeWidth={2} />
-                  <Area type="monotone" dataKey="outros" name="Outros" stroke="#94a3b8" fill="#94a3b8" fillOpacity={0.10} strokeWidth={2} />
-                </AreaChart>
-              </ResponsiveContainer>
-              </div>
-            </div>
-          )}
-        </div>
+  // ── Séries e recortes usados pelos gráficos (desenho do painel de teste do GrapeCRM) ──
+  const rotuloDia = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
+  const ehPositivo = (r?: string) => ['resultado bom', 'resultado ok'].includes(String(r || '').toLowerCase());
+  const positivosAgora = filteredProjects.filter(p => ehPositivo(p.projectResult)).length;
+  const pctPositivoAgora = filteredProjects.length ? Math.round((positivosAgora / filteredProjects.length) * 100) : 0;
+  const deltaPositivo = history.length >= 2 ? pctPositivoAgora - saudavelAntes : null;
+  const pctRuim = filteredProjects.length ? Math.round((kpis.resultadoRuim / filteredProjects.length) * 100) : 0;
+  const nomeResultado = (l: string) => (l === '-' ? 'Sem resultado' : l.charAt(0) + l.slice(1).toLowerCase());
+  const segmentosResultado = distrib.map(d => ({ rotulo: nomeResultado(d.label), valor: d.count, cor: d.color, chave: d.label }));
+  const pctReuniao = Math.round((comReuniao30 / Math.max(projects.length, 1)) * 100);
 
-        <div className="lg:col-span-5 bg-dark-card border border-white/5 rounded-2xl p-5 flex flex-col min-h-[384px]">
-          <h2 className="text-sm font-bold text-dark-text mb-1 shrink-0">Distribuição de Resultados</h2>
-          <p className="text-xs text-slate-500 mb-4 shrink-0">Todos os projetos por resultado atual</p>
-          <div className="flex-1 min-h-0">
-            <DonutChart data={distrib} onClick={setSelectedResultCategory} />
-          </div>
-        </div>
-      </div>
+  // Status da carteira (Rodando, Gargalo…) — barra dividida do cartão Projetos
+  const statusCarteira = (() => {
+    const cont: Record<string, number> = {};
+    for (const p of filteredProjects) { const st = p.status || 'Sem status'; cont[st] = (cont[st] || 0) + 1; }
+    const corStatus: Record<string, string> = { Rodando: 'rgb(var(--accent-color))', Gargalo: '#f59e0b' };
+    return Object.entries(cont)
+      .sort((a, b) => b[1] - a[1])
+      .map(([rotulo, valor]) => ({ rotulo, valor, cor: corStatus[rotulo] || '#94a3b8' }));
+  })();
+  const deltaRuim = history.length >= 2 ? kpis.resultadoRuim - histFirst.ruim : null;
 
-      {/* 3) Churn — só no Dashboard Head; retirado do Operacional */}
-      {isSingleHeadMode && (
-        <div className="bg-dark-card border border-white/5 rounded-2xl p-5">
-          <h2 className="text-sm font-bold text-dark-text mb-1">Churn nos últimos 6 meses</h2>
-          <p className="text-xs text-slate-500 mb-4">
-            {churnScopeName
-              ? `Saídas atribuídas a ${churnScopeName} na planilha de churn`
-              : 'Saídas de toda a operação na planilha de churn'}
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="bg-dark-bg/40 border border-white/5 rounded-xl p-4">
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Clientes perdidos</p>
-              <p className="text-2xl font-black text-rose-400">{churn6m.length}</p>
-            </div>
-            <div className="bg-dark-bg/40 border border-white/5 rounded-xl p-4">
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Evitáveis</p>
-              <p className="text-2xl font-black text-amber-400">{evitaveis}<span className="text-sm text-slate-500 font-bold"> de {churn6m.length}</span></p>
-            </div>
-          </div>
-          {churn6m.length > 0 && (
-            <div className="mt-4 space-y-2 max-h-[220px] overflow-y-auto custom-scrollbar pr-1">
-              {churn6m.map((c: any, i: number) => (
-                <div key={c.id || i} className="flex items-center justify-between gap-3 bg-dark-bg/40 border border-white/5 rounded-xl px-3 py-2.5">
-                  <div className="min-w-0">
-                    <p className="text-xs font-bold text-dark-text truncate">{c.cliente}</p>
-                    {c.motivo && <p className="text-[10px] text-slate-500 truncate">{c.motivo}</p>}
-                  </div>
-                  <span className="text-[10px] text-slate-500 shrink-0">{c.day_exit ? new Date(c.day_exit).toLocaleDateString('pt-BR') : ''}</span>
-                </div>
-              ))}
-            </div>
-          )}
-          {churnSemGestor > 0 && (
-            <p className="text-[11px] text-amber-400/80 mt-4 border-t border-white/5 pt-3">
-              ⚠ {churnSemGestor} saída(s) no período estão sem gestor preenchido na planilha e não entram nesta conta.
-            </p>
-          )}
-        </div>
-      )}
-    </>
+  // Indicadores do topo — os mesmos nos três modos (squad, operação, head)
+  const renderIndicadores = () => (
+    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <CartaoKpi
+        titulo="Projetos"
+        pilula={`${kpis.totalAtivos} operacionais`}
+        valor={<CountUp value={filteredProjects.length} />}
+        apoio="Situação da carteira hoje"
+        visual={<DivisaoDoKpi partes={statusCarteira} />}
+      />
+      <CartaoKpi
+        titulo="Resultado positivo"
+        pilula="Bom + Ok"
+        valor={<CountUp value={pctPositivoAgora} suffix="%" />}
+        apoio={deltaPositivo === null
+          ? `${positivosAgora} de ${filteredProjects.length} projetos`
+          : <span>{positivosAgora} projetos · <span className={deltaPositivo > 0 ? 'text-emerald-500' : deltaPositivo < 0 ? 'text-rose-500' : ''}>{deltaPositivo > 0 ? '+' : ''}{deltaPositivo} p.p. em {history.length} dias</span></span>}
+        visual={<LinhaDoKpi id="positivo" cor="#10b981" valores={history.map(h => (h.total > 0 ? Math.round(((h.bom + h.ok) / h.total) * 100) : null))} rotulos={history.map(h => rotuloDia(h.date))} formato={v => `${v}%`} />}
+      />
+      <CartaoKpi
+        titulo="Resultado ruim"
+        pilula={`${pctRuim}% da carteira`}
+        alerta={pctRuim >= 30}
+        valor={<CountUp value={kpis.resultadoRuim} />}
+        apoio={deltaRuim === null
+          ? 'Projetos em Resultado Ruim'
+          : <span>Projetos em Resultado Ruim · <span className={deltaRuim > 0 ? 'text-rose-500' : deltaRuim < 0 ? 'text-emerald-500' : ''}>{deltaRuim > 0 ? '+' : ''}{deltaRuim} em {history.length} dias</span></span>}
+        visual={<LinhaDoKpi id="ruim" cor="#f43f5e" valores={history.map(h => h.ruim)} rotulos={history.map(h => rotuloDia(h.date))} formato={v => `${v} projetos`} />}
+      />
+      <CartaoKpi
+        titulo="Investimento sob gestão"
+        pilula={`${fmtBRL(kpis.orcamentoTotal / 30)}/dia`}
+        valor={<CountUp value={kpis.orcamentoTotal} prefix="R$ " format />}
+        apoio={history.length >= 2 && investDelta !== null
+          ? <span className={investDelta > 0 ? 'text-emerald-500' : investDelta < 0 ? 'text-rose-500' : ''}>{investDelta > 0 ? '+' : ''}{investDelta}% desde {rotuloDia(histFirst.date)}</span>
+          : 'Verba mensal somada da carteira'}
+        visual={<LinhaDoKpi id="invest" valores={history.map(h => h.investimento || null)} rotulos={history.map(h => rotuloDia(h.date))} formato={fmtBRL} />}
+      />
+    </div>
   );
 
-  // Comentários + investimento. Extraído para poder trocar de posição: no
-  // Operacional fica logo abaixo da carteira; no Dashboard Head vai para o fim,
-  // depois da cadência, evolução e churn do head.
-  // Card "Parceiros Sem Atualização", sempre ao lado dos Últimos Comentários.
-  // No Head ocupa a coluna inteira e cresce com o conteúdo; no Operacional entra
-  // com a mesma altura dos comentários no Operacional. A lista rola por dentro.
-  const renderSemUpdate = (altura: string) => (
-    <div className={`bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200 flex flex-col ${altura}`}>
-      <h2 className="text-sm font-bold text-dark-text mb-1 shrink-0">Parceiros Sem Atualização</h2>
-      <p className="text-xs text-slate-500 mb-4 shrink-0">
-        {semUpdate.length === 0
-          ? 'Mais de 4 dias sem otimização registrada'
-          : `${semUpdate.length} projeto(s) há mais de 4 dias sem otimização`}
-      </p>
-      {semUpdate.length === 0 ? (
-        <p className="text-xs text-emerald-400 py-6 text-center">Toda a carteira atualizada ✅</p>
+  // Evolução da carteira (90 dias) — % de Bom+Ok, Ruim e Outros dia a dia, já recortada pelo head
+  const renderEvolucao = (className: string) => {
+    const pct = (q: number, t: number) => (t > 0 ? Math.round((q / t) * 100) : 0);
+    const outros = (h: typeof histFirst) => Math.max(0, h.total - h.bom - h.ok - h.ruim);
+    return (
+      <Cartao
+        titulo="Evolução da carteira"
+        legenda={`% de projetos por resultado · últimos ${Math.max(history.length, 1)} dias`}
+        className={className}
+      >
+        {history.length < 2 ? (
+          <p className="py-10 text-center text-[12.5px] text-slate-500">A série começa a partir de hoje — volte em alguns dias para ver a evolução.</p>
+        ) : (
+          <div className="h-[300px]">
+            <LinhasNoTempo
+              id="evolucao"
+              rotulos={history.map(h => rotuloDia(h.date))}
+              series={[
+                { rotulo: 'Bom + Ok', cor: '#10b981', valores: history.map(h => pct(h.bom + h.ok, h.total)), detalhe: i => `${history[i].bom + history[i].ok} de ${history[i].total}` },
+                { rotulo: 'Ruim', cor: '#f43f5e', valores: history.map(h => pct(h.ruim, h.total)), detalhe: i => `${history[i].ruim} de ${history[i].total}` },
+                { rotulo: 'Outros', cor: '#94a3b8', valores: history.map(h => pct(outros(h), h.total)), detalhe: i => `${outros(history[i])} de ${history[i].total}` },
+              ]}
+            />
+          </div>
+        )}
+      </Cartao>
+    );
+  };
+
+  // Distribuição de resultados — o anel abre a lista de projetos do resultado clicado
+  const renderDistribuicao = (className: string) => (
+    <Cartao titulo="Distribuição de resultados" legenda="Clique num resultado para ver os projetos" className={className}>
+      {segmentosResultado.length === 0 ? (
+        <p className="py-10 text-center text-[12.5px] text-slate-500">Sem dados de resultado.</p>
       ) : (
-        <div className="space-y-2 flex-1 overflow-y-auto pr-1 min-h-0">
-          {semUpdate.map(({ p, dias }) => {
-            const dbUser = findUser(p.responsible);
-            return (
-              <div key={p.id} className="flex items-center justify-between gap-3 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-xl px-3 py-2.5 hover:border-slate-300 dark:hover:border-white/10 transition-colors">
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-bold text-dark-text truncate">{p.partner}</p>
-                  {p.responsible && (
-                    <div className="flex items-center gap-1.5 mt-1">
-                      <div className="w-4 h-4 rounded-full overflow-hidden bg-white/5 shrink-0 border border-white/10">
-                        <img
-                          src={dbUser?.picture || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(p.responsible)}`}
-                          alt={p.responsible}
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                      <p className="text-[11px] text-slate-500 truncate">{p.responsible}</p>
-                    </div>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  {p.projectResult && p.projectResult !== '-' && (
-                    <span
-                      className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
-                      style={{
-                        background: (getResultColor(p.projectResult) || '#64748b') + '22',
-                        color: getResultColor(p.projectResult) || '#94a3b8',
-                      }}
-                    >
-                      {p.projectResult}
-                    </span>
-                  )}
-                  <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${
-                    dias === 999 ? 'bg-slate-500/15 text-slate-400' : dias > 14 ? 'bg-rose-500/15 text-rose-400' : 'bg-amber-500/15 text-amber-400'
-                  }`}>
-                    {dias === 999 ? 'sem histórico' : `${dias}d`}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
+        <div className="h-[240px]">
+          <Anel segmentos={segmentosResultado} centro={filteredProjects.length} legendaDoCentro="projetos" aoClicar={setSelectedResultCategory} />
         </div>
       )}
-    </div>
+    </Cartao>
+  );
+
+  // Churn dos últimos 6 meses — só no Dashboard Head
+  const renderChurnHead = (className: string) => (
+    <Cartao
+      titulo="Churn nos últimos 6 meses"
+      legenda={churnScopeName ? `Saídas atribuídas a ${churnScopeName} na planilha de churn` : 'Saídas de toda a operação na planilha de churn'}
+      className={className}
+    >
+      <div className="grid grid-cols-2 gap-3 shrink-0">
+        <div className="rounded-2xl bg-rose-500/[0.06] px-4 py-3">
+          <p className="text-[12px] text-slate-500 dark:text-slate-400">Clientes perdidos</p>
+          <p className="numero mt-1 text-[30px] leading-none text-rose-500">{churn6m.length}</p>
+        </div>
+        <div className="rounded-2xl bg-amber-500/[0.07] px-4 py-3">
+          <p className="text-[12px] text-slate-500 dark:text-slate-400">Evitáveis</p>
+          <p className="numero mt-1 text-[30px] leading-none text-amber-500">{evitaveis}<span className="text-[14px] text-slate-400"> de {churn6m.length}</span></p>
+        </div>
+      </div>
+      {churn6m.length > 0 && (
+        <div className="-mx-2.5 mt-3 min-h-0 flex-1 overflow-y-auto custom-scrollbar">
+          {churn6m.map((c: any, i: number) => (
+            <LinhaComBolinha
+              key={c.id || i}
+              cor="#f43f5e"
+              titulo={c.cliente}
+              detalhe={c.motivo || undefined}
+              valor={c.day_exit ? new Date(c.day_exit).toLocaleDateString('pt-BR') : ''}
+            />
+          ))}
+        </div>
+      )}
+      {churnSemGestor > 0 && (
+        <p className="text-[11.5px] text-amber-500 mt-3 border-t border-slate-100 dark:border-white/5 pt-3 shrink-0">
+          {churnSemGestor} saída(s) no período estão sem gestor preenchido na planilha e não entram nesta conta.
+        </p>
+      )}
+    </Cartao>
+  );
+
+  // Parceiros Sem Atualização, sempre ao lado dos Últimos Comentários. A lista rola por dentro.
+  const renderSemUpdate = (altura: string) => (
+    <Cartao
+      titulo="Parceiros sem atualização"
+      legenda={semUpdate.length === 0 ? 'Mais de 4 dias sem otimização registrada' : `${semUpdate.length} projeto(s) há mais de 4 dias sem otimização`}
+      acao={semUpdate.length > 0 ? <span className="pilula-cartao pilula-cartao--alerta">{semUpdate.length}</span> : undefined}
+      className={altura}
+    >
+      {semUpdate.length === 0 ? (
+        <p className="text-[12.5px] text-emerald-500 py-6 text-center">Toda a carteira atualizada.</p>
+      ) : (
+        <>
+          {/* Gravidade: quanto tempo sem otimização */}
+          <div className="mb-3 shrink-0">
+            <DivisaoDoKpi partes={[
+              { rotulo: 'Mais de 14 dias', valor: semUpdate.filter(x => x.dias !== 999 && x.dias > 14).length, cor: '#f43f5e' },
+              { rotulo: '5 a 14 dias', valor: semUpdate.filter(x => x.dias <= 14).length, cor: '#f59e0b' },
+              { rotulo: 'Sem histórico', valor: semUpdate.filter(x => x.dias === 999).length, cor: '#94a3b8' },
+            ]} />
+          </div>
+          <div className="-mx-2.5 min-h-0 flex-1 overflow-y-auto custom-scrollbar">
+            {semUpdate.map(({ p, dias }) => {
+              const cor = dias === 999 ? '#94a3b8' : dias > 14 ? '#f43f5e' : '#f59e0b';
+              return (
+                <LinhaComBolinha
+                  key={p.id}
+                  cor={cor}
+                  titulo={p.partner}
+                  dica={p.partner}
+                  detalhe={[p.responsible, p.projectResult && p.projectResult !== '-' ? nomeResultado(p.projectResult) : null].filter(Boolean).join(' · ') || undefined}
+                  valor={dias === 999 ? 'sem histórico' : `${dias} dias`}
+                  valorEmPilula
+                  onClick={() => setSelectedProject(p)}
+                />
+              );
+            })}
+          </div>
+        </>
+      )}
+    </Cartao>
   );
 
   const renderComentariosEInvestimento = () => (
     <>
-    {/* ── Últimos Comentários + Parceiros Sem Atualização, lado a lado ─────────────── */}
-    <div className={`grid grid-cols-1 lg:grid-cols-2 gap-5 ${isSingleHeadMode ? 'lg:items-start' : ''}`}>
+    {/* ── Parceiros Sem Atualização + Últimos Comentários, lado a lado ─────────────── */}
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
-      {/* No Head, "Parceiros Sem Atualização" ocupa a coluna da esquerda */}
-      {isSingleHeadMode && renderSemUpdate('max-h-[380px] lg:max-h-[780px]')}
+      {renderSemUpdate('h-[420px] lg:h-[640px]')}
 
       {/* Histórico de Comentários */}
-      <div className="bg-dark-card border border-white/10 rounded-2xl p-6 transition-colors duration-200 flex flex-col h-[380px] lg:h-[780px]">
-        <h2 className="text-sm font-bold text-dark-text mb-1">Últimos Comentários</h2>
-        <p className="text-xs text-slate-500 mb-3 shrink-0">
-          Histórico consolidado dos projetos
-        </p>
+      <Cartao titulo="Últimos comentários" legenda="Histórico consolidado dos projetos" className="h-[420px] lg:h-[640px]">
         {/* Busca dentro do histórico de comentários */}
         <div className="relative mb-4 shrink-0">
           <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
@@ -1427,11 +1220,7 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
             })}
           </div>
         )}
-      </div>
-
-      {/* Operacional: o card ocupa a coluna inteira, com a mesma altura dos comentários.
-          O Investimento sob Gestão virou KPI no topo e não disputa mais este espaço. */}
-      {!isSingleHeadMode && renderSemUpdate('h-[380px] lg:h-[780px]')}
+      </Cartao>
     </div>
     </>
   );
@@ -1486,7 +1275,8 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
       {/* Filtro de gestores — oculto no modo "head" (a página já é de um head só) */}
       {!isSingleHeadMode && tab === 'geral' && (<>
       {/* ── Filtro de Gestores ─────────────────────────────────────────── */}
-      <div className="px-6 md:px-8 pb-8 flex flex-wrap gap-3">
+      {/* pt-6 com abas: mesmo respiro das outras abas (Ações, Risco, Tokens) abaixo da linha */}
+      <div className={`px-6 md:px-8 pb-8 flex flex-wrap gap-3 ${isHeadsMode ? 'pt-6' : ''}`}>
         <button
           onClick={() => setSelectedGestor(null)}
           className={`flex items-center gap-2.5 px-4 py-2 rounded-xl border transition-all ${
@@ -1580,67 +1370,41 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
             return (
               <>
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div className="bg-dark-card border border-white/5 rounded-2xl p-5">
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Com erro</p>
-                    <p className="text-3xl font-black text-rose-400">{comErro.length}</p>
-                  </div>
-                  <div className="bg-dark-card border border-white/5 rounded-2xl p-5">
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Reautenticar</p>
-                    <p className="text-3xl font-black text-amber-400">{reauth.length}</p>
-                  </div>
+                  <CartaoKpi titulo="Com erro" alerta={comErro.length > 0} valor={comErro.length} apoio="Coleta de dados parada" />
+                  <CartaoKpi titulo="Reautenticar" valor={reauth.length} apoio="Token pedindo novo login" />
                   {Object.entries(porPlataforma).slice(0, 2).map(([k, v]) => (
-                    <div key={k} className="bg-dark-card border border-white/5 rounded-2xl p-5">
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">{k}</p>
-                      <p className="text-3xl font-black text-dark-text">{v as number}</p>
-                    </div>
+                    <CartaoKpi key={k} titulo={k} valor={v as number} apoio="Contas com problema" />
                   ))}
                 </div>
 
-                <div className="bg-dark-card border border-white/5 rounded-2xl overflow-hidden">
-                  <div className="px-5 py-4 border-b border-white/5">
-                    <h2 className="text-sm font-bold text-dark-text">Tokens com problema</h2>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Contas cujo token parou de funcionar — a coleta de dados está parada nelas.
-                    </p>
-                  </div>
+                <Cartao titulo="Tokens com problema" legenda="Contas cujo token parou de funcionar — a coleta de dados está parada nelas.">
 
                   {tokenErrors.length === 0 ? (
-                    <p className="text-sm text-emerald-400 text-center py-14">Nenhum token com erro ✅</p>
+                    <p className="text-[12.5px] text-emerald-500 text-center py-10">Nenhum token com erro.</p>
                   ) : (
-                    <div className="divide-y divide-white/5">
+                    <div className="-mx-2.5">
                       {tokenErrors.map(t => {
                         const isErro = String(t.status) === 'error';
+                        const cor = isErro ? '#f43f5e' : '#f59e0b';
                         const quando = t.last_synced_at
                           ? new Date(t.last_synced_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
                           : 'sem sincronização';
                         return (
-                          <div key={t.id} className={`relative flex items-start gap-3 pl-5 pr-5 py-4 ${isErro ? 'bg-rose-500/[0.03]' : ''}`}>
-                            <span className={`absolute left-0 top-0 bottom-0 w-1 ${isErro ? 'bg-rose-500' : 'bg-amber-500'}`} />
+                          <div key={t.id} className="gf-item flex items-start gap-3 rounded-xl border-t border-slate-200/70 px-2.5 py-3 first:border-t-0 hover:bg-violet-500/5 dark:border-white/5">
+                            <i className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: cor, boxShadow: `0 0 0 4px color-mix(in srgb, ${cor} 18%, transparent)` }} />
                             <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <p className="text-sm font-bold text-dark-text truncate">
-                                  {t.partner || t.project_id || '—'}
-                                </p>
-                                <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-400 uppercase">
-                                  {t.platform === 'meta_ads' ? 'Meta Ads' : (t.platform || 'outro')}
-                                </span>
-                                {t.account_name && (
-                                  <span className="text-[10px] text-slate-500 truncate">{t.account_name}</span>
-                                )}
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="truncate text-[13.5px] font-medium text-dark-text">{t.partner || t.project_id || '—'}</p>
+                                <span className="pilula-cartao">{t.platform === 'meta_ads' ? 'Meta Ads' : (t.platform || 'outro')}</span>
                               </div>
+                              <p className="mt-0.5 text-[11.5px] text-slate-500 dark:text-slate-400">
+                                {[t.account_name, t.responsible, `última coleta ${quando}`].filter(Boolean).join(' · ')}
+                              </p>
                               {t.last_error && (
-                                <p className="text-[11px] text-rose-400/90 mt-1.5 leading-snug line-clamp-2">{t.last_error}</p>
+                                <p className="mt-2 line-clamp-2 rounded-lg bg-rose-500/[0.06] px-2.5 py-1.5 font-mono text-[11px] leading-snug text-rose-500 dark:text-rose-400">{t.last_error}</p>
                               )}
-                              <div className="flex items-center gap-2 mt-1.5 text-[10px] text-slate-500">
-                                {t.responsible && <span>{t.responsible}</span>}
-                                {t.responsible && <span>·</span>}
-                                <span>{quando}</span>
-                              </div>
                             </div>
-                            <span className={`shrink-0 text-[9px] font-black px-2 py-1 rounded-full border ${
-                              isErro ? 'bg-rose-500/10 text-rose-400 border-rose-500/25'
-                                     : 'bg-amber-500/10 text-amber-400 border-amber-500/25'
-                            }`}>
+                            <span className="shrink-0 rounded-full px-2.5 py-1 text-[11.5px] font-medium" style={{ color: cor, background: `color-mix(in srgb, ${cor} 12%, transparent)` }}>
                               {isErro ? 'Erro' : 'Reautenticar'}
                             </span>
                           </div>
@@ -1648,7 +1412,7 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
                       })}
                     </div>
                   )}
-                </div>
+                </Cartao>
               </>
             );
           })()}
@@ -1657,116 +1421,108 @@ export default function DashboardOperacional({ activePage = '', subsessionId: su
 
       {/* Visão Geral — escondida (não desmontada) ao trocar de aba, preservando o estado */}
       <div className={`px-6 md:px-8 pb-10 space-y-5 ${tab !== 'geral' ? 'hidden' : ''}`}>
-        {/* ── KPI Cards ──────────────────────────────────────────────────── */}
-        <div className={`grid grid-cols-2 lg:grid-cols-3 gap-4 ${isSingleHeadMode ? 'xl:grid-cols-4' : 'xl:grid-cols-6'}`}>
-          <KpiCard
-            iconBg="bg-violet-500/15"
-            icon={<Users size={17} className="text-violet-500" />}
-            label="Projetos"
-            value={<CountUp value={filteredProjects.length} />}
-            sub={<span><span className="text-violet-400 font-bold">{kpis.totalAtivos}</span> operacionais</span>}
-          />
-          {/* Retenção e Onboarding são leituras da operação inteira — fora do Dashboard Head */}
-          {!isSingleHeadMode && (
-            <>
-              <KpiCard
-                iconBg="bg-amber-500/15"
-                icon={<ShieldAlert size={17} className="text-amber-500" />}
-                label="Retenção"
-                value={<CountUp value={retentionShown} />}
-                sub={<span className="text-amber-500 font-bold">Clientes em retenção</span>}
-              />
-              <KpiCard
-                iconBg="bg-indigo-500/15"
-                icon={<Calendar size={17} className="text-indigo-500" />}
-                label="Onboarding"
-                value={<CountUp value={briefingShown} />}
-                sub={<span className="text-indigo-400 font-bold">Em reunião de briefing</span>}
-              />
-            </>
-          )}
-          <KpiCard
-            iconBg="bg-red-500/15"
-            icon={<AlertTriangle size={17} className="text-red-500" />}
-            label="Resultado Ruim"
-            value={<CountUp value={kpis.resultadoRuim} />}
-            sub={<span><span className="text-red-400 font-bold">{projects.length ? Math.round((kpis.resultadoRuim / projects.length) * 100) : 0}%</span> do total</span>}
-          />
-          <KpiCard
-            iconBg="bg-emerald-500/15"
-            icon={<DollarSign size={17} className="text-emerald-500" />}
-            label="Investimento Diário"
-            value={<CountUp value={kpis.orcamentoTotal / 30} prefix="R$ " format />}
-            sub={<span>Mensal: <span className="text-emerald-400 font-bold">{fmtBRL(kpis.orcamentoTotal)}</span></span>}
-          />
-          {/* Investimento sob Gestão é KPI nos dois dashboards. O sub carrega a variação
-              do período — a única informação que o "Investimento Diário" não mostra. */}
-          <KpiCard
-            iconBg="bg-teal-500/15"
-            icon={<TrendingUp size={17} className="text-teal-500" />}
-            label="Investimento sob Gestão"
-            value={<CountUp value={kpis.orcamentoTotal} prefix="R$ " format />}
-            sub={history.length >= 2 && investDelta !== null
-              ? <span className={investDelta > 0 ? 'text-emerald-400 font-bold' : investDelta < 0 ? 'text-rose-400 font-bold' : 'text-slate-500'}>
-                  {investDelta > 0 ? '↑' : investDelta < 0 ? '↓' : ''} {Math.abs(investDelta)}% vs. início do período
-                </span>
-              : <span>Verba mensal somada da carteira</span>}
-          />
-        </div>
+        {renderIndicadores()}
 
-        {/* ── Carteira: evolução e investimento ─────────────────────────────────────────
-             Só no Operacional — no Dashboard Head estes cards já vêm no bloco próprio
-             do head, mais abaixo, junto da cadência de reuniões. */}
-        {!isSingleHeadMode && renderCardsCarteira()}
+        {!isSingleHeadMode && (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            {renderEvolucao('lg:col-span-7')}
+            {renderDistribuicao('lg:col-span-5')}
+          </div>
+        )}
+
+        {!isSingleHeadMode && (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            {/* Carteira por head (operação) ou por gestor (squad) — clicar filtra a tela */}
+            <Cartao
+              titulo={isHeadsMode ? 'Carteira por head' : 'Carteira por gestor'}
+              legenda={selectedGestor ? 'Clique de novo para voltar a todos' : 'Clique numa barra para filtrar a tela'}
+              className="lg:col-span-8"
+            >
+              <div className="h-[220px]">
+                <BarrasPorCategoria
+                  itens={[...gestoresList]
+                    .sort((x: any, y: any) => y.total - x.total)
+                    .map((g: any) => ({ rotulo: String(g.displayName || g.name).trim().split(/\s+/)[0], valor: g.total, chave: g.name }))}
+                  unidade="projetos"
+                  limite={8}
+                  aoClicar={chave => setSelectedGestor(selectedGestor === chave ? null : chave)}
+                />
+              </div>
+            </Cartao>
+
+            {/* Retenção e Onboarding são leituras da operação inteira — fora do Dashboard Head */}
+            <div className="lg:col-span-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-4">
+              <CartaoKpi
+                titulo="Retenção"
+                pilula="clientes"
+                alerta={retentionShown > 0}
+                valor={<CountUp value={retentionShown} />}
+                apoio="Clientes ativos em retenção"
+              />
+              <CartaoKpi
+                titulo="Onboarding"
+                pilula="briefing"
+                valor={<CountUp value={briefingShown} />}
+                apoio="Em reunião de briefing"
+              />
+            </div>
+          </div>
+        )}
 
         {!isSingleHeadMode && renderComentariosEInvestimento()}
 
         {/* ════ Desempenho do Head — blocos exclusivos do Dashboard Head ════ */}
         {isSingleHeadMode && (
           <>
-            {/* 1) Cadência de reuniões */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-              <div className="bg-dark-card border border-white/5 rounded-2xl p-5">
-                <h2 className="text-sm font-bold text-dark-text mb-1">Cadência de Reuniões</h2>
-                <p className="text-xs text-slate-500 mb-4">Clientes atendidos nos últimos 30 dias</p>
-                <div className="flex items-end gap-2">
-                  <span className="text-4xl font-black text-dark-text leading-none">{comReuniao30}</span>
-                  <span className="text-lg font-bold text-slate-500 leading-none pb-0.5">/ {projects.length}</span>
-                </div>
-                <div className="mt-4 h-2 rounded-full bg-white/5 overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all ${comReuniao30 / Math.max(projects.length, 1) >= 0.8 ? 'bg-emerald-500' : comReuniao30 / Math.max(projects.length, 1) >= 0.5 ? 'bg-amber-500' : 'bg-rose-500'}`}
-                    style={{ width: `${Math.round((comReuniao30 / Math.max(projects.length, 1)) * 100)}%` }}
-                  />
-                </div>
-                <p className="text-[11px] text-slate-500 mt-2">
-                  {Math.round((comReuniao30 / Math.max(projects.length, 1)) * 100)}% da carteira com reunião no período
-                </p>
-              </div>
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+              {renderEvolucao('lg:col-span-7')}
+              {renderDistribuicao('lg:col-span-5')}
+            </div>
 
-              <div className="lg:col-span-2 bg-dark-card border border-white/5 rounded-2xl p-5">
-                <h2 className="text-sm font-bold text-dark-text mb-1">Sem Reunião há mais de {DIAS_SEM_REUNIAO} dias</h2>
-                <p className="text-xs text-slate-500 mb-4">{semReuniao.length} cliente(s) precisando de contato</p>
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+              <CartaoKpi
+                className="lg:col-span-12"
+                titulo="Cadência de reuniões"
+                pilula={`${pctReuniao}% da carteira`}
+                alerta={pctReuniao < 50}
+                valor={<span>{comReuniao30}<span className="text-[20px] text-slate-400"> / {projects.length}</span></span>}
+                apoio="Clientes com reunião nos últimos 30 dias"
+                visual={
+                  <DivisaoDoKpi partes={[
+                    { rotulo: 'Com reunião', valor: comReuniao30, cor: '#10b981' },
+                    { rotulo: 'Sem reunião', valor: Math.max(0, projects.length - comReuniao30), cor: 'rgb(var(--accent-color) / .25)' },
+                  ]} />
+                }
+              />
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+              <Cartao
+                titulo={`Sem reunião há mais de ${DIAS_SEM_REUNIAO} dias`}
+                legenda={`${semReuniao.length} cliente(s) precisando de contato`}
+                className="lg:col-span-7 max-h-[420px]"
+              >
                 {semReuniao.length === 0 ? (
-                  <p className="text-xs text-emerald-400 py-6 text-center">Toda a carteira teve reunião recente ✅</p>
+                  <p className="text-[12.5px] text-emerald-500 py-6 text-center">Toda a carteira teve reunião recente.</p>
                 ) : (
-                  <div className="space-y-2 max-h-[280px] overflow-y-auto custom-scrollbar pr-1">
-                    {semReuniao.slice(0, 12).map(({ p, dias }) => (
-                      <div key={p.id} className="flex items-center justify-between gap-3 bg-dark-bg/40 border border-white/5 rounded-xl px-3 py-2.5">
-                        <span className="text-xs font-bold text-dark-text truncate">{p.partner}</span>
-                        <span className={`text-[10px] font-bold px-2 py-1 rounded-full shrink-0 ${dias === null ? 'bg-slate-500/15 text-slate-400' : dias > 60 ? 'bg-rose-500/15 text-rose-400' : 'bg-amber-500/15 text-amber-400'}`}>
-                          {dias === null ? 'sem registro' : `${dias}d`}
-                        </span>
-                      </div>
+                  <div className="-mx-2.5 min-h-0 flex-1 overflow-y-auto custom-scrollbar">
+                    {semReuniao.map(({ p, dias }) => (
+                      <LinhaComBolinha
+                        key={p.id}
+                        cor={dias === null ? '#94a3b8' : dias > 60 ? '#f43f5e' : '#f59e0b'}
+                        titulo={p.partner}
+                        valor={dias === null ? 'sem registro' : `${dias} dias`}
+                        valorEmPilula
+                        onClick={() => setSelectedProject(p)}
+                      />
                     ))}
                   </div>
                 )}
-              </div>
+              </Cartao>
+              {renderChurnHead('lg:col-span-5 max-h-[420px]')}
             </div>
 
-            {renderCardsCarteira()}
-
-            {/* Comentários e investimento fecham o Dashboard Head, abaixo dos cards do head */}
+            {/* Comentários e parceiros sem atualização fecham o Dashboard Head */}
             {renderComentariosEInvestimento()}
           </>
         )}

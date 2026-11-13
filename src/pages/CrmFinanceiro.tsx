@@ -39,7 +39,9 @@ import CrmCommentHistory, { COMMENT_TYPES } from '../components/CrmCommentHistor
 import LoadingSpinner from '../components/LoadingSpinner';
 import CrmChecklist from '../components/CrmChecklist';
 import ArchiveClientModal from '../components/ArchiveClientModal';
+import { FinanceiroDoCliente } from '../components/ClientModal';
 import { toast } from '@/src/lib/toast';
+import '../components/graficos.css';
 import { confirmDialog } from '@/src/lib/confirm';
 
 interface Client {
@@ -109,6 +111,11 @@ const CARD_VALUE_STYLE: Record<string, { bg: string; text: string }> = {
   finalizacao:   { bg: '#2d240a', text: '#fbbf24' },
   yellow:        { bg: '#2d240a', text: '#fbbf24' },
 };
+
+// "R$ 1.200" sem centavos — cabe no card
+const brlCurto = (v: number) => 'R$ ' + Math.round(v || 0).toLocaleString('pt-BR');
+// "PEDIDO DE FINALIZAÇÃO" → "Pedido de finalização" (as colunas foram gravadas em caixa alta)
+const tituloColuna = (t: string) => (t ? t.charAt(0).toUpperCase() + t.slice(1).toLowerCase() : t);
 
 const AVATAR_COLORS = [
   { bg: 'bg-blue-500', text: 'text-white' },
@@ -234,12 +241,10 @@ const SortableCard: React.FC<SortableCardProps> = ({ client, onClick, onMove, co
 
   const col = COLUMNS.find(c => c.id === client.crmStatus || c.id === client.displayColumn);
   const valueStyle = col ? { bg: col.color + '22', text: col.color } : CARD_VALUE_STYLE['red'];
-  const avatar = getAvatarColor(client.name);
-  const initials = getInitialsFromName(client.name);
 
   const cardBorderClass = isDragging
     ? 'ring-2 ring-violet-500 shadow-2xl border-violet-500/50'
-    : 'border-gray-200 dark:border-white/5 hover:border-gray-300 dark:hover:border-white/10';
+    : 'border-gray-200 dark:border-white/5 hover:border-violet-500/30 hover:shadow-md';
 
   return (
     <div
@@ -247,7 +252,7 @@ const SortableCard: React.FC<SortableCardProps> = ({ client, onClick, onMove, co
       {...attributes}
       {...listeners}
       onClick={() => onClick(client)}
-      className={`relative cursor-grab active:cursor-grabbing rounded-xl border transition-all ${cardBorderClass} ${client.isArchived ? 'opacity-50 grayscale' : ''} bg-white dark:bg-dark-card`}
+      className={`relative cursor-grab active:cursor-grabbing rounded-xl border shadow-sm transition-all duration-200 ${cardBorderClass} ${client.isArchived ? 'opacity-50 grayscale' : ''} bg-white dark:bg-dark-card`}
       style={{ ...style, marginBottom: 12 }}
     >
       <div className="p-3">
@@ -259,38 +264,44 @@ const SortableCard: React.FC<SortableCardProps> = ({ client, onClick, onMove, co
         </div>
       )}
 
-      {/* Top: avatar + name + squad + menu */}
-      <div className="flex items-start justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <div
-            className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold ${avatar.bg} ${avatar.text}`}
-          >
-            {initials}
-          </div>
-          <div>
-            <div className="text-[13px] font-medium leading-tight text-gray-900 dark:text-white darker:text-gray-100">{client.name}</div>
-            <div className="text-[11px] mt-0.5 text-gray-500 dark:text-slate-400 darker:text-slate-500">{client.squad}</div>
-            {/* Aviso prévio visível sem abrir o card. Só aparece quando a data existe. */}
-            {client.aviso_previo_date && (() => {
-              const d = new Date(client.aviso_previo_date + 'T00:00:00');
-              if (isNaN(d.getTime())) return null;
-              const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
-              const dias = Math.round((d.getTime() - hoje.getTime()) / 86400000);
-              // vermelho quando venceu, âmbar na última semana, neutro no resto
-              const cor = dias < 0
-                ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
-                : dias <= 7
-                  ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
-                  : 'bg-slate-500/10 text-slate-600 dark:text-slate-400';
-              const legenda = dias < 0 ? `há ${Math.abs(dias)}d` : dias === 0 ? 'hoje' : `em ${dias}d`;
-              return (
-                <div className={`inline-flex items-center gap-1 mt-1.5 px-1.5 py-0.5 rounded-md text-[10px] font-semibold ${cor}`}>
-                  <Calendar size={10} />
-                  {d.toLocaleDateString('pt-BR')}
-                  <span className="opacity-70 font-normal">· {legenda}</span>
-                </div>
-              );
-            })()}
+      {/* Molde do card do Comercial: nome em negrito, pílulas, e embaixo squad × valor */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <h4 className="font-bold text-[13px] leading-tight text-gray-900 dark:text-white line-clamp-2 min-w-0" title={client.name}>{client.name}</h4>
+          {(client.aviso_previo_date || (client.diasAtraso && client.diasAtraso > 0)) && (
+            <div className="mt-2 flex items-center gap-1 flex-wrap">
+              {client.aviso_previo_date && (() => {
+                const d = new Date(String(client.aviso_previo_date).slice(0, 10) + 'T12:00:00');
+                if (isNaN(d.getTime())) return null;
+                const hoje = new Date(); hoje.setHours(12, 0, 0, 0);
+                const dias = Math.round((d.getTime() - hoje.getTime()) / 86400000);
+                // vermelho quando venceu, âmbar na última semana, neutro no resto
+                const cor = dias < 0
+                  ? 'text-red-600 bg-red-50 border-red-200 dark:bg-red-500/10 dark:border-red-500/20 dark:text-red-400'
+                  : dias <= 7
+                    ? 'text-yellow-600 bg-yellow-50 border-yellow-200 dark:bg-yellow-500/10 dark:border-yellow-500/20 dark:text-yellow-400'
+                    : 'text-gray-600 bg-gray-50 border-gray-200 dark:bg-white/5 dark:border-white/10 dark:text-slate-300';
+                const legenda = dias < 0 ? `venceu há ${Math.abs(dias)}d` : dias === 0 ? 'vence hoje' : `vence em ${dias}d`;
+                return (
+                  <span className={`flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-md border shrink-0 ${cor}`} title={`Aviso prévio: ${d.toLocaleDateString('pt-BR')}`}>
+                    <Calendar size={9} /> Aviso {legenda}
+                  </span>
+                );
+              })()}
+              {client.diasAtraso && client.diasAtraso > 0 ? (
+                <span className="flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-md border shrink-0 text-red-600 bg-red-50 border-red-200 dark:bg-red-500/10 dark:border-red-500/20 dark:text-red-400">
+                  <Clock size={9} /> Atrasado {client.diasAtraso}d
+                </span>
+              ) : null}
+            </div>
+          )}
+          <div className="flex items-center justify-between mt-2.5">
+            <span className="text-[10px] text-gray-500 dark:text-slate-400 truncate">
+              {client.proximaCobranca ? `Próx. cobrança ${new Date(String(client.proximaCobranca).slice(0, 10) + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}` : ''}
+            </span>
+            {client.subscriptionValue ? (
+              <span className="text-[11px] font-black text-emerald-500 shrink-0 ml-2">{brlCurto(client.subscriptionValue)}</span>
+            ) : null}
           </div>
         </div>
 
@@ -399,6 +410,8 @@ const CrmFinanceiro = () => {
   const [isLoading, setIsLoading] = useState(true);
   // Colunas do kanban (dinâmicas) — carregadas da API
   const [columns, setColumns] = useState<RetColumn[]>([]);
+  const [colMenu, setColMenu] = useState<string | null>(null);
+  const [menuQuadro, setMenuQuadro] = useState(false);
   const COLUMNS = columns; // alias: mantém as referências existentes funcionando
   const [colModal, setColModal] = useState<{ mode: 'new' | 'edit'; id?: string; title: string; emoji: string; color: string } | null>(null);
   const fetchColumns = async () => {
@@ -419,7 +432,7 @@ const CrmFinanceiro = () => {
   
   // Slide-over state
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
-  const [activeTab, setActiveTab] = useState<'tarefas' | 'historico' | 'checklist'>('tarefas');
+  const [activeTab, setActiveTab] = useState<'historico' | 'financeiro' | 'checklist'>('historico');
   const [activeId, setActiveId] = useState<string | null>(null);
   
   // Archive state
@@ -551,7 +564,7 @@ const CrmFinanceiro = () => {
       if (selectedClient.crmStatus === 'processo_saida') {
         setActiveTab('checklist');
       } else {
-        setActiveTab('tarefas');
+        setActiveTab('historico');
       }
     }
   }, [selectedClient]);
@@ -746,7 +759,7 @@ const CrmFinanceiro = () => {
   const filteredClients = useMemo(() => {
     return clients.filter(c => {
       const matchesSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesSquad = squadFilter === 'Todos' || c.squad === squadFilter;
+      const matchesSquad = true; // filtro de squad saiu da tela (13/11/2026)
       const isArchived = c.crmStatus === 'arquivado';
       
       if (isArchived && !showArchived) return false;
@@ -805,62 +818,103 @@ const CrmFinanceiro = () => {
         titleAccent="Retenção" 
         subtitle="Acompanhamento de clientes em risco e negociações ativas."
       >
-        <button
-          onClick={async () => {
-            setIsSyncing(true);
-            await fetchClients();
-            setIsSyncing(false);
-          }}
-          disabled={isSyncing}
-          className="p-3 bg-white dark:bg-[#1a1a1a] darker:bg-[#0d0d0d] border border-gray-100 dark:border-neutral-800 darker:border-neutral-900 rounded-2xl text-gray-500 hover:text-purple-500 dark:hover:text-purple-400 transition-colors disabled:opacity-50"
-          title="Atualizar dados"
-        >
-          <RefreshCw size={18} className={isSyncing ? "animate-spin" : ""} />
-        </button>
-        <button
-          onClick={() => setShowArchived(!showArchived)}
-          className={`flex items-center gap-2 px-4 py-3 rounded-2xl text-sm font-bold transition-colors ${
-            showArchived 
-              ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/20' 
-              : 'bg-white dark:bg-[#1a1a1a] darker:bg-[#0d0d0d] border border-gray-100 dark:border-neutral-800 darker:border-neutral-900 text-gray-500 hover:text-gray-900 dark:hover:text-white'
-          }`}
-        >
-          <Archive size={18} />
-          {showArchived ? 'Ocultar Arquivados' : 'Mostrar Arquivados'}
-        </button>
-        <div className="relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
-          <input 
-            type="text" 
-            placeholder="Buscar cliente no CRM..." 
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="bg-white dark:bg-[#1a1a1a] darker:bg-[#0d0d0d] border border-gray-100 dark:border-neutral-800 darker:border-neutral-900 rounded-2xl py-3 pl-12 pr-4 text-sm text-gray-900 dark:text-white placeholder:text-gray-500 outline-none focus:ring-2 focus:ring-purple-500/20 transition-all w-64"
-          />
-        </div>
-        <button className="p-3 bg-white dark:bg-[#1a1a1a] darker:bg-[#0d0d0d] border border-gray-100 dark:border-neutral-800 darker:border-neutral-900 rounded-2xl text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors">
-          <Download size={18} />
-        </button>
-        <div className="flex items-center bg-white dark:bg-[#1a1a1a] darker:bg-[#0d0d0d] border border-gray-100 dark:border-neutral-800 darker:border-neutral-900 rounded-2xl p-1 gap-0.5">
-          {['Todos', 'Able', 'Baker'].map((s) => (
+        {/* Barra do topo no molde do Comercial: busca, arquivados, atualizar e "⋮" */}
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500" size={16} />
+            <input
+              type="text"
+              placeholder="Buscar cliente..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-72 h-[38px] bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-lg pl-10 pr-4 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-slate-500 outline-none focus:border-violet-500/50 transition-colors"
+            />
+          </div>
+          <button
+            onClick={() => setShowArchived(!showArchived)}
+            title={showArchived ? 'Ocultar arquivados' : 'Mostrar arquivados'}
+            className={`h-[38px] flex items-center gap-2 px-3 rounded-lg border text-sm font-medium transition-colors ${
+              showArchived
+                ? 'bg-violet-500/10 border-violet-500/40 text-violet-600 dark:text-violet-300'
+                : 'bg-white dark:bg-dark-card border-gray-200 dark:border-white/10 text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'
+            }`}
+          >
+            <Archive size={15} />
+            Arquivados
+          </button>
+          <button
+            onClick={async () => {
+              setIsSyncing(true);
+              await fetchClients();
+              setIsSyncing(false);
+            }}
+            disabled={isSyncing}
+            title="Atualizar dados"
+            className="w-[38px] h-[38px] flex items-center justify-center bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-lg text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white transition-colors disabled:opacity-50"
+          >
+            <RefreshCw size={15} className={isSyncing ? 'animate-spin' : ''} />
+          </button>
+          <div className="relative">
             <button
-              key={s}
-              onClick={() => setSquadFilter(s)}
-              className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${
-                squadFilter === s
-                  ? s === 'Able'
-                    ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20'
-                    : s === 'Baker'
-                      ? 'bg-blue-500 text-white shadow-md shadow-blue-500/20'
-                      : 'bg-violet-500 text-white shadow-md shadow-violet-500/20'
-                  : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'
-              }`}
+              onClick={() => setMenuQuadro(v => !v)}
+              title="Mais opções"
+              className="w-[38px] h-[38px] flex items-center justify-center bg-white dark:bg-dark-card border border-gray-200 dark:border-white/10 rounded-lg text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white transition-colors"
             >
-              {s}
+              <MoreHorizontal size={16} className="rotate-90" />
             </button>
-          ))}
+            {menuQuadro && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setMenuQuadro(false)} />
+                <div className="absolute right-0 top-full mt-2 z-50 min-w-[200px] bg-white dark:bg-[#1A1625] rounded-xl shadow-xl border border-gray-100 dark:border-white/10 p-2">
+                  <button
+                    onClick={() => { setColModal({ mode: 'new', title: '', emoji: '📌', color: '#8b5cf6' }); setMenuQuadro(false); }}
+                    className="w-full text-left flex items-center gap-2 p-2 hover:bg-gray-50 dark:hover:bg-white/5 rounded-lg text-violet-600 dark:text-violet-400 font-bold text-sm"
+                  >
+                    <Plus size={14} /> Nova coluna
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </PageHeader>
+
+      {/* Resumo da retenção — o que está em jogo antes de olhar coluna por coluna */}
+      {(() => {
+        const ids = new Set(COLUMNS.map(c => c.id));
+        const naRetencao = filteredClients.filter(c => !c.isArchived && c.displayColumn && ids.has(c.displayColumn));
+        const mrr = naRetencao.reduce((a, c) => a + (c.subscriptionValue || 0), 0);
+        const hoje = new Date(); hoje.setHours(12, 0, 0, 0);
+        const avisos7 = naRetencao.filter(c => {
+          if (!c.aviso_previo_date) return false;
+          const d = new Date(String(c.aviso_previo_date).slice(0, 10) + 'T12:00:00');
+          const dias = Math.round((d.getTime() - hoje.getTime()) / 86400000);
+          return dias >= 0 && dias <= 7;
+        }).length;
+        const atrasados = naRetencao.filter(c => (c.diasAtraso || 0) > 0).length;
+        const itens: { rotulo: string; valor: string; apoio: string; cor: string; Icone: any; alerta?: boolean }[] = [
+          { rotulo: 'Clientes na retenção', valor: String(naRetencao.length), apoio: `em ${COLUMNS.length} etapas`, cor: '#8b5cf6', Icone: Users },
+          { rotulo: 'Mensalidade em jogo', valor: brlCurto(mrr), apoio: 'por mês, somando as assinaturas', cor: '#10b981', Icone: DollarSign },
+          { rotulo: 'Aviso prévio em 7 dias', valor: String(avisos7), apoio: avisos7 > 0 ? 'vencem nesta semana' : 'nenhum vencendo', cor: '#f59e0b', Icone: Calendar, alerta: avisos7 > 0 },
+          { rotulo: 'Cobrança atrasada', valor: String(atrasados), apoio: atrasados > 0 ? 'clientes com fatura vencida' : 'ninguém em atraso', cor: '#f43f5e', Icone: AlertCircle, alerta: atrasados > 0 },
+        ];
+        return (
+          <div className="mb-5 grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {itens.map(({ rotulo, valor, apoio, cor, Icone, alerta }) => (
+              <div key={rotulo} className="gf-cartao flex items-center gap-4 px-5 py-4">
+                <div className="w-11 h-11 shrink-0 rounded-xl flex items-center justify-center" style={{ background: `color-mix(in srgb, ${cor} 14%, transparent)`, color: cor }}>
+                  <Icone size={20} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[12.5px] text-slate-500 dark:text-slate-400 truncate">{rotulo}</p>
+                  <p className="numero text-[26px] leading-tight text-dark-text" style={alerta ? { color: cor } : undefined}>{valor}</p>
+                  <p className="text-[11.5px] text-slate-400 dark:text-slate-500 truncate">{apoio}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
 
       {(
         <DndContext
@@ -870,7 +924,7 @@ const CrmFinanceiro = () => {
           onDragOver={handleDragOver}
           onDragEnd={handleDragEnd}
         >
-        <div className="flex overflow-x-auto pb-4 gap-5 items-start snap-x">
+        <div className="flex overflow-x-auto pb-4 gap-3 items-stretch snap-x">
           {COLUMNS.map((column, colIdx) => {
             // Arquivados vêm dos mais recentes para os mais antigos; os que já estavam
             // arquivados antes de existir o carimbo (crmArchivedAt nulo) vão para o fim.
@@ -884,49 +938,67 @@ const CrmFinanceiro = () => {
                 const tb = b.crmArchivedAt ? new Date(b.crmArchivedAt).getTime() : -Infinity;
                 return tb - ta;
               });
+            const ativosDaColuna = columnClients.filter(c => !c.isArchived);
+            const mrrColuna = ativosDaColuna.reduce((a, c) => a + (c.subscriptionValue || 0), 0);
             return (
               <div
                 key={column.id}
-                className="flex flex-col flex-1 min-h-[500px] min-w-[320px] w-[320px] snap-start bg-slate-50/50 dark:bg-white/[0.02] rounded-3xl border border-gray-200 dark:border-white/5 darker:border-white/5 p-2"
+                className="flex flex-col flex-1 basis-0 min-h-[500px] min-w-[180px] snap-start bg-slate-50/50 dark:bg-white/[0.02] rounded-3xl border border-gray-200 dark:border-white/5 darker:border-white/5 p-2 relative"
               >
-                {/* Column header */}
-                <div className="px-3 pt-3 pb-2 border-b border-gray-200 dark:border-white/5 darker:border-white/5 mb-3 group/col">
-                  <div className="flex items-center gap-2 mb-1">
-                    <div
-                      className="w-7 h-7 rounded-lg flex items-center justify-center text-sm flex-shrink-0"
-                      style={{ background: column.color + '22', color: column.color }}
-                    >
+                {/* Cabeçalho no molde do kanban do Comercial: ícone na cor, título, "R$ • N clientes" */}
+                <div className="p-3 flex items-start justify-between mb-2 group/col">
+                  <div className="flex items-start gap-2 pt-1 pl-1 w-full overflow-hidden">
+                    <div className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 mt-0.5 text-[12px]" style={{ background: column.color }}>
                       {column.emoji}
                     </div>
-                    <span className="text-[12px] font-black uppercase tracking-widest text-gray-900 dark:text-white darker:text-gray-100 flex-1 truncate">
-                      {column.title}
-                    </span>
-                    {/* Controles da coluna (aparecem no hover) */}
-                    <div className="flex items-center gap-0.5 opacity-0 group-hover/col:opacity-100 transition-opacity">
-                      <button onClick={() => moveColumn(column.id, -1)} disabled={colIdx === 0} title="Mover para a esquerda"
-                        className="w-6 h-6 flex items-center justify-center rounded-md text-gray-400 hover:text-violet-500 hover:bg-violet-500/10 disabled:opacity-25 disabled:hover:bg-transparent transition-colors"><ChevronLeft size={14} /></button>
-                      <button onClick={() => moveColumn(column.id, 1)} disabled={colIdx === COLUMNS.length - 1} title="Mover para a direita"
-                        className="w-6 h-6 flex items-center justify-center rounded-md text-gray-400 hover:text-violet-500 hover:bg-violet-500/10 disabled:opacity-25 disabled:hover:bg-transparent transition-colors"><ChevronRight size={14} /></button>
-                      <button onClick={() => setColModal({ mode: 'edit', id: column.id, title: column.title, emoji: column.emoji, color: column.color })} title="Editar coluna"
-                        className="w-6 h-6 flex items-center justify-center rounded-md text-gray-400 hover:text-violet-500 hover:bg-violet-500/10 transition-colors"><Pencil size={12} /></button>
-                      <button onClick={() => deleteColumn(column.id)} title="Excluir coluna"
-                        className="w-6 h-6 flex items-center justify-center rounded-md text-gray-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors"><Trash2 size={13} /></button>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-bold text-gray-900 dark:text-white text-[14px] leading-tight truncate pr-2" title={column.title}>{tituloColuna(column.title)}</h3>
+                      <p className="text-gray-500 dark:text-slate-400 text-[11px] mt-1 font-medium flex items-center gap-1.5">
+                        <span className="text-gray-600 dark:text-slate-300 font-semibold flex-shrink-0">{brlCurto(mrrColuna)}</span>
+                        <span className="flex-shrink-0">•</span>
+                        <span className="truncate">{ativosDaColuna.length} {ativosDaColuna.length === 1 ? 'cliente' : 'clientes'}</span>
+                      </p>
                     </div>
                   </div>
-                  <div className="text-[11px] pl-9 text-gray-500 dark:text-slate-400 darker:text-slate-500">
-                    {columnClients.length} cliente{columnClients.length !== 1 ? 's' : ''}
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    {/* Menu da coluna (mover, editar, excluir) — como o "..." do Comercial */}
+                    <div className="relative">
+                      <button
+                        onClick={() => setColMenu(colMenu === column.id ? null : column.id)}
+                        className="p-1.5 text-gray-400 dark:text-slate-500 hover:text-gray-900 dark:hover:text-white transition-colors"
+                      >
+                        <MoreHorizontal size={16} />
+                      </button>
+                      {colMenu === column.id && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => setColMenu(null)} />
+                          <div className="absolute right-0 top-full mt-1 z-50 min-w-[180px] bg-white dark:bg-slate-800 border border-gray-100 dark:border-white/10 rounded-xl shadow-xl p-2">
+                            <button onClick={() => { setIsAddDropdownOpen(column.id); setColMenu(null); }}
+                              className="w-full text-left flex items-center gap-2.5 px-3 py-2 text-sm font-semibold text-violet-600 dark:text-violet-400 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
+                              <Plus size={15} />Adicionar cliente
+                            </button>
+                            <div className="h-px bg-gray-200 dark:bg-white/10 my-1" />
+                            {[
+                              { rotulo: 'Mover para a esquerda', icone: <ChevronLeft size={15} />, acao: () => moveColumn(column.id, -1), off: colIdx === 0 },
+                              { rotulo: 'Mover para a direita', icone: <ChevronRight size={15} />, acao: () => moveColumn(column.id, 1), off: colIdx === COLUMNS.length - 1 },
+                              { rotulo: 'Editar coluna', icone: <Pencil size={14} />, acao: () => setColModal({ mode: 'edit', id: column.id, title: column.title, emoji: column.emoji, color: column.color }), off: false },
+                            ].map(it => (
+                              <button key={it.rotulo} disabled={it.off} onClick={() => { it.acao(); setColMenu(null); }}
+                                className="w-full text-left flex items-center gap-2.5 px-3 py-2 text-sm font-semibold text-gray-600 dark:text-slate-300 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 disabled:opacity-30 disabled:hover:bg-transparent transition-colors">
+                                {it.icone}{it.rotulo}
+                              </button>
+                            ))}
+                            <button onClick={() => { deleteColumn(column.id); setColMenu(null); }}
+                              className="w-full text-left flex items-center gap-2.5 px-3 py-2 text-sm font-semibold text-rose-500 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors mt-1">
+                              <Trash2 size={15} />Excluir
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
-
                 <DroppableColumn column={column} isOver={false}>
-                  {/* Add client button */}
-                  <button
-                    onClick={() => setIsAddDropdownOpen(isAddDropdownOpen === column.id ? null : column.id)}
-                    className="w-full py-2 mb-3 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors text-gray-500 hover:text-violet-600 hover:bg-violet-50 dark:text-slate-400 dark:hover:text-violet-400 dark:hover:bg-violet-500/10 darker:text-slate-500"
-                  >
-                    <Plus size={14} />
-                    Adicionar Cliente
-                  </button>
 
                   {isAddDropdownOpen === column.id && (
                     <div className="relative mb-3 animate-in fade-in slide-in-from-top-2 duration-200">
@@ -979,6 +1051,12 @@ const CrmFinanceiro = () => {
                     strategy={verticalListSortingStrategy}
                   >
                     <div className="min-h-[80px]">
+                      {columnClients.length === 0 && (
+                        <div className="border-2 border-dashed border-gray-200 dark:border-white/10 rounded-xl flex flex-col items-center justify-center text-gray-400 dark:text-slate-500 p-8 min-h-[150px] pointer-events-none">
+                          <p className="font-medium text-sm">Arraste clientes para cá</p>
+                          <p className="text-xs opacity-50 mt-1">Solte aqui para adicionar</p>
+                        </div>
+                      )}
                       {columnClients.map((client, idx) => (
                         <motion.div
                           key={client.id}
@@ -1001,14 +1079,6 @@ const CrmFinanceiro = () => {
             );
           })}
 
-          {/* Nova coluna */}
-          <button
-            onClick={() => setColModal({ mode: 'new', title: '', emoji: '📌', color: '#8b5cf6' })}
-            className="flex flex-col items-center justify-center gap-2 min-h-[120px] min-w-[220px] w-[220px] snap-start rounded-3xl border-2 border-dashed border-gray-300 dark:border-white/10 text-gray-400 hover:text-violet-500 hover:border-violet-500/40 hover:bg-violet-500/5 transition-all"
-          >
-            <Plus size={22} />
-            <span className="text-xs font-bold uppercase tracking-widest">Nova coluna</span>
-          </button>
         </div>
 
         <DragOverlay
@@ -1135,16 +1205,16 @@ const CrmFinanceiro = () => {
           selectedClient && (
             <>
               <button
-                onClick={() => setActiveTab('tarefas')}
-                className={`pb-4 text-sm font-bold transition-all ${activeTab === 'tarefas' ? 'modal-tab-active' : 'text-slate-500 hover:text-light-text dark:hover:text-white'}`}
-              >
-                Tarefas
-              </button>
-              <button
                 onClick={() => setActiveTab('historico')}
                 className={`pb-4 text-sm font-bold transition-all ${activeTab === 'historico' ? 'modal-tab-active' : 'text-slate-500 hover:text-light-text dark:hover:text-white'}`}
               >
                 Histórico
+              </button>
+              <button
+                onClick={() => setActiveTab('financeiro')}
+                className={`pb-4 text-sm font-bold transition-all ${activeTab === 'financeiro' ? 'modal-tab-active' : 'text-slate-500 hover:text-light-text dark:hover:text-white'}`}
+              >
+                Financeiro
               </button>
               {/* Checklist de Saída em todas as colunas (antes só em "Processo de saída"):
                   dá para adiantar itens enquanto o cliente ainda está em aviso/negociação. */}
@@ -1160,129 +1230,27 @@ const CrmFinanceiro = () => {
       >
         {selectedClient && (
           <div className="space-y-6">
-            {activeTab === 'tarefas' && (
-                  <div className="space-y-6">
-
-                    <div className="bg-white dark:bg-white/5 p-6 rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm">
-                      <div className="flex justify-between items-center mb-4">
-                        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Tarefas</div>
-                        <button 
-                          onClick={() => setIsAddingInlineTask(true)}
-                          className="text-xs font-bold text-violet-500 hover:text-violet-600 transition-colors flex items-center gap-1"
-                        >
-                          <Plus size={14} />
-                          Adicionar tarefa
-                        </button>
-                      </div>
-
-                      {isAddingInlineTask && (
-                        <div className="mb-4 p-3 bg-slate-50 dark:bg-white/5 rounded-xl border border-slate-200 dark:border-white/10 flex items-center gap-3">
-                          <input
-                            type="text"
-                            value={inlineTaskData.title}
-                            onChange={e => setInlineTaskData(prev => ({ ...prev, title: e.target.value }))}
-                            placeholder="Título da tarefa..."
-                            className="flex-1 bg-transparent text-sm text-light-text dark:text-white outline-none"
-                            autoFocus
-                          />
-                          <input
-                            type="date"
-                            value={inlineTaskData.dueDate}
-                            onChange={e => setInlineTaskData(prev => ({ ...prev, dueDate: e.target.value }))}
-                            className="bg-transparent text-sm text-slate-500 outline-none"
-                          />
-                          <button
-                            onClick={async () => {
-                              if (!inlineTaskData.title) return;
-                              try {
-                                await fetch('/api/tasks', {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({
-                                    id: crypto.randomUUID(),
-                                    title: inlineTaskData.title,
-                                    project_id: selectedClient.id,
-                                    dueDate: inlineTaskData.dueDate || null,
-                                    status: 'pending',
-                                    createdBy: user?.name || 'Sistema',
-                                    assignedTo: 'all'
-                                  })
-                                });
-                                setIsAddingInlineTask(false);
-                                setInlineTaskData({ title: '', dueDate: '' });
-                                fetchTasks();
-                              } catch (err) {
-                                console.error(err);
-                              }
-                            }}
-                            disabled={!inlineTaskData.title}
-                            className="text-xs font-bold text-white bg-violet-500 px-3 py-1.5 rounded-lg hover:bg-violet-600 transition-colors disabled:opacity-50"
-                          >
-                            Salvar
-                          </button>
-                          <button
-                            onClick={() => setIsAddingInlineTask(false)}
-                            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-                          >
-                            <X size={16} />
-                          </button>
-                        </div>
-                      )}
-
-                      <div className="space-y-2">
-                        {tasks.filter(t => t.project_id === selectedClient.id && t.status !== 'completed').slice(0, 5).map(task => (
-                          <div key={task.id} className="flex items-center gap-3 p-2 hover:bg-slate-50 dark:hover:bg-white/5 rounded-lg transition-colors group">
-                            <button 
-                              onClick={async () => {
-                                try {
-                                  await fetch(`/api/tasks/${task.id}`, {
-                                    method: 'PATCH',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ status: 'completed' })
-                                  });
-                                  fetchTasks();
-                                } catch (err) {
-                                  console.error(err);
-                                }
-                              }}
-                              className="w-4 h-4 rounded-full border-2 border-slate-300 dark:border-slate-600 flex items-center justify-center hover:border-violet-500 transition-colors flex-shrink-0"
-                            />
-                            <p className="text-sm font-medium text-light-text dark:text-white flex-1 truncate">{task.title}</p>
-                            {task.dueDate && (
-                              <span className="text-[10px] font-medium text-slate-500 flex-shrink-0">
-                                {parseLocalDate(task.dueDate).toLocaleDateString('pt-BR')}
-                              </span>
-                            )}
-                          </div>
-                        ))}
-                        {tasks.filter(t => t.project_id === selectedClient.id && t.status !== 'completed').length === 0 && !isAddingInlineTask && (
-                          <p className="text-sm text-slate-500 text-center py-4">Nenhuma tarefa pendente.</p>
-                        )}
-                      </div>
-                      
-                      {tasks.filter(t => t.project_id === selectedClient.id && t.status !== 'completed').length > 5 && (
-                        <button 
-                          onClick={() => {
-                            setTaskFilterClientId(selectedClient.id);
-                            setSelectedClient(null);
-                            setActiveMainTab('tarefas');
-                          }}
-                          className="w-full mt-4 text-xs font-bold text-slate-500 hover:text-violet-500 transition-colors text-center"
-                        >
-                          Ver todas as tarefas
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
-
                 {activeTab === 'historico' && (
                   <CrmCommentHistory clientId={selectedClient.id} />
                 )}
 
+                {/* Mensalidade e pagamentos — o mesmo bloco da aba Financeiro dos Clientes Ativos */}
+                {activeTab === 'financeiro' && (
+                  <FinanceiroDoCliente
+                    clientId={selectedClient.id}
+                    clientName={selectedClient.name}
+                    finSubscriptionId={(selectedClient as any).finSubscriptionId}
+                    finPeopleGuid={selectedClient.finPeopleGuid}
+                    onAlterado={fetchClients}
+                  />
+                )}
+
                 {activeTab === 'checklist' && (
                   <div>
-                    <div className="flex justify-end mb-4">
+                    <CrmChecklist
+                      clientId={selectedClient.id}
+                      onCompleteExit={handleCompleteExit}
+                      acaoExtra={(
                       <button
                         onClick={async () => {
                           if (!(await confirmDialog({ message: 'Tem certeza que deseja arquivar este cliente?', danger: false }))) return;
@@ -1301,13 +1269,13 @@ const CrmFinanceiro = () => {
                             toast.error('Erro ao arquivar cliente');
                           }
                         }}
-                        className="px-5 py-2.5 bg-rose-500 text-white hover:bg-rose-600 rounded-xl text-sm font-bold uppercase tracking-wider transition-all shadow-lg shadow-rose-500/20 flex items-center gap-2"
+                        className="h-8 px-3 rounded-lg border border-rose-500/30 text-rose-500 hover:bg-rose-500/10 text-[12.5px] font-medium transition-colors flex items-center gap-1.5"
                       >
-                        <Archive size={16} />
-                        Arquivar Cliente
+                        <Archive size={14} />
+                        Arquivar cliente
                       </button>
-                    </div>
-                    <CrmChecklist clientId={selectedClient.id} onCompleteExit={handleCompleteExit} />
+                      )}
+                    />
                   </div>
                  )}
           </div>

@@ -1,0 +1,162 @@
+/* Gráficos no desenho do painel de teste do GrapeCRM (graficos.tsx).
+   Cor de destaque = --accent-color do index.html (tripla RGB). */
+
+.numero { font-family: 'Azeret Mono', ui-monospace, monospace; letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+
+/* ── Cartão ─────────────────────────────────────────────────────────────── */
+.gf-cartao {
+  position: relative;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow:
+    0 1px 0 rgb(255 255 255 / .9) inset,
+    0 0 0 1px rgb(15 23 42 / .06),
+    0 30px 46px -34px rgb(var(--accent-color) / .45),
+    0 12px 22px -18px rgb(15 23 42 / .18);
+  transition: transform .35s cubic-bezier(.22, 1, .36, 1), box-shadow .35s;
+}
+html.dark .gf-cartao {
+  background: rgb(var(--dark-card));
+  box-shadow: 0 1px 0 rgb(255 255 255 / .05) inset, 0 0 0 1px rgb(255 255 255 / .07), 0 30px 46px -30px rgb(0 0 0 / .7);
+}
+.gf-cartao--alerta {
+  background: linear-gradient(160deg, rgb(245 158 11 / .12), rgb(245 158 11 / .02) 60%), #fff;
+}
+html.dark .gf-cartao--alerta {
+  background: linear-gradient(160deg, rgb(245 158 11 / .12), rgb(245 158 11 / .02) 60%), rgb(var(--dark-card));
+}
+/* Cartão com o mouse fica por cima dos vizinhos: a dica não some atrás do cartão ao lado. */
+.gf-cartao:hover { z-index: 5; }
+.gf-cartao--sobe:hover {
+  transform: translateY(-3px);
+  box-shadow:
+    0 1px 0 rgb(255 255 255 / .9) inset,
+    0 0 0 1px rgb(var(--accent-color) / .14),
+    0 40px 56px -34px rgb(var(--accent-color) / .55),
+    0 16px 26px -18px rgb(15 23 42 / .2);
+}
+html.dark .gf-cartao--sobe:hover {
+  box-shadow: 0 1px 0 rgb(255 255 255 / .06) inset, 0 0 0 1px rgb(var(--accent-color) / .3), 0 40px 56px -30px rgb(0 0 0 / .8);
+}
+
+.pilula-cartao {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgb(var(--accent-color) / .1);
+  color: rgb(var(--accent-color));
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+html.dark .pilula-cartao { background: rgb(var(--accent-color) / .2); color: rgb(196 181 253); }
+.pilula-cartao--alerta { background: rgb(245 158 11 / .14) !important; color: rgb(217 119 6) !important; }
+html.dark .pilula-cartao--alerta { color: rgb(251 191 36) !important; }
+
+/* ── Barras ─────────────────────────────────────────────────────────────── */
+.gf-barra {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 2px;
+  max-width: 54px;
+  border-radius: 5px 5px 3px 3px;
+  background: rgb(var(--accent-color) / .2);
+  transform-origin: bottom;
+  animation: gfSobe 700ms cubic-bezier(.22, 1, .36, 1) both;
+  transition: background-color .25s;
+  overflow: hidden;
+}
+.gf-barras-area { justify-content: center; }
+.gf-barra--pico { background: rgb(var(--accent-color)); }
+.gf-barra:hover { background: rgb(var(--accent-color) / .45); }
+.gf-barra--pico:hover { background: rgb(var(--accent-color) / .85); }
+.gf-barra-segunda { position: absolute; inset: auto 0 0 0; background: rgb(var(--accent-color)); border-radius: 3px; }
+@keyframes gfSobe { from { transform: scaleY(0); } }
+
+.gf-kpi-barras i {
+  flex: 1 1 0;
+  min-width: 4px;
+  border-radius: 6px 6px 3px 3px;
+  background: rgb(var(--accent-color) / .2);
+  transform-origin: bottom;
+  animation: gfSobe 650ms cubic-bezier(.22, 1, .36, 1) both;
+}
+.gf-kpi-barras i.gf-kpi-barras--fim { background: rgb(var(--accent-color)); }
+.gf-kpi-barras i:hover { background: rgb(var(--accent-color) / .45); }
+
+/* ── Anel ───────────────────────────────────────────────────────────────── */
+.gf-anel-pista { fill: none; stroke: rgb(var(--accent-color) / .1); stroke-width: 11; }
+.gf-anel-arco {
+  fill: none;
+  stroke-width: 11;
+  stroke-linecap: round;
+  cursor: pointer;
+  animation: gfAnel 900ms cubic-bezier(.22, 1, .36, 1) both;
+  transition: stroke-width .25s cubic-bezier(.22, 1, .36, 1), opacity .2s;
+}
+.gf-anel-arco.gf-em-foco { stroke-width: 15; }
+.gf-anel-arco.gf-apagado { opacity: .3; }
+@keyframes gfAnel { from { opacity: 0; } }
+
+/* ── Trilho (lista com barra fina) e divisão ────────────────────────────── */
+.gf-trilho { display: block; height: 6px; border-radius: 6px; background: rgb(var(--accent-color) / .1); overflow: hidden; }
+.gf-trilho i {
+  display: block;
+  height: 100%;
+  border-radius: 6px;
+  background: rgb(var(--accent-color));
+  transform-origin: left;
+  animation: gfCresce 800ms cubic-bezier(.22, 1, .36, 1) both;
+}
+.gf-divisao { transform-origin: left; animation: gfCresce 800ms cubic-bezier(.22, 1, .36, 1) both; }
+.gf-divisao.gf-em-foco { filter: brightness(1.08); }
+@keyframes gfCresce { from { transform: scaleX(0); } }
+
+/* ── Linha ──────────────────────────────────────────────────────────────── */
+.gf-linha-traco { stroke-dasharray: 1; stroke-dashoffset: 1; animation: gfTraco 1.2s .15s cubic-bezier(.22, 1, .36, 1) forwards; }
+@keyframes gfTraco { to { stroke-dashoffset: 0; } }
+.gf-linha-area { animation: gfEtapa .9s .3s both; }
+@keyframes gfEtapa { from { opacity: 0; } }
+.gf-ponto { animation: gfPonto 220ms cubic-bezier(.34, 1.56, .64, 1) both; box-shadow: 0 0 0 4px rgb(var(--accent-color) / .2); }
+@keyframes gfPonto { from { transform: translate(-50%, -50%) scale(0); } }
+
+/* ── Dica e foco ────────────────────────────────────────────────────────── */
+.gf-dica {
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgb(15 23 42 / .07), 0 12px 24px -10px rgb(15 23 42 / .25);
+  animation: gfDica 160ms cubic-bezier(.22, 1, .36, 1) both;
+}
+html.dark .gf-dica { background: rgb(var(--dark-tooltip)); box-shadow: 0 0 0 1px rgb(255 255 255 / .1), 0 12px 24px -10px rgb(0 0 0 / .6); }
+@keyframes gfDica { from { opacity: 0; translate: 0 4px; } }
+.gf-troca { animation: gfDica 200ms cubic-bezier(.22, 1, .36, 1) both; }
+.gf-item { transition: background-color .2s, opacity .2s, border-color .2s; }
+
+.gf-com-foco > * { transition: opacity .2s, background-color .2s, transform .25s cubic-bezier(.22, 1, .36, 1); }
+.gf-com-foco > *:not(.gf-em-foco) { opacity: .45; }
+.gf-barra.gf-em-foco, .gf-kpi-barras i.gf-em-foco { background: rgb(var(--accent-color) / .55); transform: scaleY(1.03); }
+.gf-barra--pico.gf-em-foco, .gf-kpi-barras i.gf-kpi-barras--fim.gf-em-foco { background: rgb(var(--accent-color)); }
+.gf-categoria.gf-em-foco .gf-barra { background: rgb(var(--accent-color) / .55); }
+.gf-categoria.gf-em-foco .gf-barra--pico { background: rgb(var(--accent-color)); }
+
+/* ── Troca de dados (ex.: outro head) ─────────────────────────────────────
+   Os elementos continuam montados e só os números mudam: em vez de pular, cada forma
+   desliza até o valor novo. `d` em transição funciona no Chrome/Edge; nos outros a linha
+   só troca de uma vez. */
+.gf-morfa { transition: d .7s cubic-bezier(.22, 1, .36, 1); }
+.gf-barra, .gf-kpi-barras i { transition: height .6s cubic-bezier(.22, 1, .36, 1), background-color .25s, opacity .2s, transform .25s cubic-bezier(.22, 1, .36, 1); }
+.gf-anel-arco { transition: stroke-dasharray .7s cubic-bezier(.22, 1, .36, 1), stroke-dashoffset .7s cubic-bezier(.22, 1, .36, 1), stroke-width .25s cubic-bezier(.22, 1, .36, 1), opacity .2s; }
+.gf-divisao { transition: width .6s cubic-bezier(.22, 1, .36, 1), filter .2s; }
+.gf-trilho i { transition: width .6s cubic-bezier(.22, 1, .36, 1); }
+
+@media (prefers-reduced-motion: reduce) {
+  .gf-morfa, .gf-barra, .gf-kpi-barras i, .gf-anel-arco, .gf-divisao, .gf-trilho i { transition: none; }
+  .gf-barra, .gf-kpi-barras i, .gf-anel-arco, .gf-trilho i, .gf-divisao, .gf-linha-area,
+  .gf-dica, .gf-troca, .gf-ponto { animation: none; }
+  .gf-linha-traco { animation: none; stroke-dashoffset: 0; }
+  .gf-cartao--sobe:hover { transform: none; }
+}

@@ -138,10 +138,28 @@ nunca cores fixas. A preferência fica em `App.tsx` (`'system' | 'light' | 'dark
 - **`motion.div` anima valores de `style`.** Menu em portal posicionado via `style={{top,left}}`
   num `motion.div` entra deslizando da tela. Ponha `position/top/left/zIndex` numa `div` comum
   por fora e deixe só opacity/scale no `motion.div`.
+- **Coluna DATE chega com um dia a menos em produção.** O pg converte DATE em meia-noite no fuso
+  do servidor; a produção roda em UTC, então `2026-10-27` vira `"2026-10-27T00:00:00.000Z"` e
+  `new Date(...)` no navegador (UTC−3) mostra 26/10. No dev (Mac em BRT) vem `T03:00Z` e o bug
+  **não aparece** — testar local não pega. Relato da equipe em 16/10/2026 (1:1 e Desempenho:
+  agendada e realizada um dia para trás). Use `dataDoBanco()` de `src/lib/dataBanco.ts` (pega
+  AAAA-MM-DD e fixa meio-dia local) e `hojeLocal()` no lugar de `toISOString().split('T')[0]`,
+  que depois das 21h devolve amanhã. Outras telas com DATE podem ter o mesmo defeito.
 - **Regex dentro de template literal de SQL**: `'^\d{4}'` vira `'^d{4}'` no Postgres e casa com
   zero linhas, silenciosamente. Use classes explícitas: `'^[0-9]{4}'`.
 - Comentário JSX dentro de `{cond && (` quebra o build (TS1005) — ponha acima da condicional.
 - Drag and drop: o padrão do projeto é **`@dnd-kit`** (core/sortable/utilities).
+- **Gráficos de dashboard** (13/11/2026): `src/components/graficos.tsx` + `graficos.css` — porte do
+  `graficos.tsx` do GrapeCRM ("painel de teste": barras com o pico cheio, anel fino, lista com
+  trilho, linha com degradê, `CartaoKpi`, `Cartao`). Cor = `--accent-color` (tripla RGB do
+  `index.html`), não `--primary`; números na fonte **Azeret Mono** (classe `.numero`, carregada no
+  `index.html`). Primeiro uso: Dashboard Operacional (Visão Geral, Ações e Nichos, Erros de Token).
+  As abas Risco de Churn e Churn vêm do `OperacionalConsolidado.tsx` e ainda estão no visual antigo.
+  Séries no tempo com eixo e várias linhas = `LinhasNoTempo` (curva monotônica). A "Evolução da
+  carteira" (Bom+Ok / Ruim / Outros, 90 dias) é o gráfico que o Jean considera essencial na Visão Geral — não tirar.
+  Aba Ações e Nichos (`OperacionalAcoesTab.tsx`): explorador — lista de nichos mínima à esquerda (nome, nº de
+  produtos, % positivo em texto colorido; o Jean pediu sem barras) e, à direita, resumo do nicho + ações em blocos;
+  clicar num bloco abre "Quem roda". Troca de head anima (CountUp do valor atual, `d`/altura/largura em transição).
 - **Etiqueta em linha de lista de tarefas** (aprovada pelo Jean em 06/10/2026): pílula com
   bolinha da cor, texto normal, sem borda, vazio = traço que vira "+ Adicionar" no hover.
   Use `PilulaTag` (só mostrar) ou `<OptionPicker variant="tag">` (escolher), ambos em
@@ -189,6 +207,13 @@ Não há CI. O processo é manual e tem uma pegadinha:
    memória, então o servidor antigo continua respondendo.
    Sonda rápida: `GET /api/public/<qualquer-coisa>` devolve **HTML** no servidor antigo e
    **JSON 404** no novo.
+   **`pkill -f dist/server.js` NÃO reinicia** (09/10/2026, deploy 4.2.4): o arquivo novo estava
+   no lugar (`grep -c clientes-mapa` = 3) e a rota nova seguia 404. O painel da Hostinger não tem
+   botão "Restart" — o que reinicia é **Reimplantar** (Sites › hub.grapemidia.com.br › Painel de
+   controle). Caminho: `cp hbuilds/last-source/dist/server.js nodejs/dist/server.js` →
+   Reimplantar → conferir o grep de novo (se o Reimplantar sobrescrever com versão velha, recopiar).
+   Ao refazer o backup (`server.js.bak-<versão>`), confira antes que o arquivo ainda é a versão
+   antiga — repetir o `cp` depois da troca grava a nova por cima do backup.
 
 ## Integrações
 
@@ -558,6 +583,21 @@ Não há CI. O processo é manual e tem uma pegadinha:
   por cima do mapa. Um pino por cliente, espalhados em espiral em volta do ponto da cidade.
   **`clients.tags` é TEXT com JSON dentro** (`'["quarentena"]'`), não array: quem ler direto do
   banco precisa de `JSON.parse` — a 1ª versão do mapa via zero clientes em retenção por isso.
+
+- **Retenção sem Tarefas** (13/11/2026, `CrmFinanceiro.tsx`): a aba Tarefas do popup do cliente saiu; o popup
+  abre em Histórico (ou Checklist de Saída em "Processo de saída"). As tarefas ficam em `todos` com
+  `project_id` = id do cliente: 64 no banco, 15 pendentes, a última criada em 22/05/2026. Nada foi apagado.
+  Mesma data: kanban no molde do Comercial (colunas dividem a largura, "Nova coluna" no ⋮ do topo,
+  "Adicionar cliente" no ... da coluna), filtro e pílula de squad removidos, resumo de 4 números no topo.
+  **Checklist de Saída é criado no front na 1ª abertura** (`CrmChecklist.fetchItems` → POST item a item):
+  o efeito rodando em dobro duplicava tudo (JP ANTUNES 26 = 13×2 em 13/11; Zelmo Simionato 28 = 14×2).
+  Hoje há trava por `useRef`; as cópias desses dois ainda estão no banco.
+  **Kanban da Retenção ≠ etiqueta "quarentena" — de propósito (decisão do Jean, 13/11/2026).** O kanban
+  usa `clients.crm_status`; a aba Retenção de Clientes Ativos (e o card do Dashboard Operacional e o mapa)
+  usa a etiqueta `quarentena` em `clients.tags`, ligada à mão. Não há sincronização e **não é para unificar**:
+  o Jean usa a etiqueta para separar o faturamento previsível (aba Ativos / "Assinaturas ativas") de quem
+  está em risco, e decide à mão quando alguém sai da conta. Em 13/11: 7 ativos nos dois; o kanban tem mais
+  7 já inativos (TKA e 6 em "Aguardando pagamento").
 
 - **"Dashboard Financeiro" é um RESUMO DO DIA** (página `dashboard-financeiro`, template
   `superadmin-dashboard`, esclarecido pelo Jean em 09/10/2026): contas a pagar de hoje, cobranças

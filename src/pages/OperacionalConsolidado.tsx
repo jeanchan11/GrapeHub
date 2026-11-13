@@ -4,6 +4,7 @@ import { Briefcase, CheckCircle2, AlertTriangle, DollarSign, Users, RefreshCw, S
 import LoadingSpinner from '../components/LoadingSpinner';
 import SplitHeadline from '../components/SplitHeadline';
 import ThemedDropdown from '../components/ui/ThemedDropdown';
+import { Anel, BarrasDoKpi, Cartao, CartaoKpi, DivisaoDoKpi, LinhaComBolinha, LinhaDoKpi, LinhasNoTempo, ListaDeBarras } from '../components/graficos';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface ProjectRow {
@@ -122,28 +123,6 @@ export interface ChurnRow {
 
 const monthKey = (d?: string) => String(d || '').slice(0, 7); // 'YYYY-MM'
 
-const RankBar = ({ items, max, color }: { items: { label: string; count: number }[]; max: number; color?: string }) => {
-  const sum = items.reduce((a, i) => a + i.count, 0);
-  return (
-    <div className="space-y-2">
-      {items.length === 0 && <p className="text-xs text-slate-500 py-2">Sem dados.</p>}
-      {items.map(it => {
-        const pct = sum > 0 ? Math.round((it.count / sum) * 100) : 0;
-        return (
-          <div key={it.label} className="flex items-center gap-3" title={`${it.label}: ${it.count} churn${it.count === 1 ? '' : 's'} · ${pct}%`}>
-            <span className="text-xs text-slate-300 w-32 shrink-0 truncate">{it.label}</span>
-            <div className="flex-1 h-2.5 rounded-full bg-white/5 overflow-hidden">
-              <div className="h-full rounded-full transition-all" style={{ width: `${max > 0 ? (it.count / max) * 100 : 0}%`, background: color || (SQUAD_ACCENT[it.label] || '#f74c4c') }} />
-            </div>
-            <span className="text-xs font-bold text-dark-text w-7 text-right">{it.count}</span>
-            <span className="text-[10px] font-semibold text-slate-500 w-9 text-right">{pct}%</span>
-          </div>
-        );
-      })}
-    </div>
-  );
-};
-
 export const ChurnTab = ({ churns, activeCount }: { churns: ChurnRow[]; activeCount: number }) => {
   const now = new Date();
   // last 12 months
@@ -195,84 +174,94 @@ export const ChurnTab = ({ churns, activeCount }: { churns: ChurnRow[]; activeCo
   const evitavelPct = totalTyped > 0 ? Math.round((evitavel / totalTyped) * 100) : 0;
 
   const gestorItems = Object.entries(byGestor).map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count).slice(0, 8);
-  const gestorMax = Math.max(1, ...gestorItems.map(s => s.count));
-
   const monthDelta = currentMonthTotal - prevMonthTotal;
+  const taxaAtual = lineData[lineData.length - 1]?.taxa ?? 0;
+  const taxaTxt = (t: number) => `${String(t).replace('.', ',')}%`;
 
   return (
-    <div className="space-y-6">
-      {/* KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KpiCard icon={<UserX size={16} className="text-white" />} accent="bg-rose-600" label="Churns no mês" value={String(currentMonthTotal)}
-          sub={monthDelta === 0 ? 'igual ao mês anterior' : `${monthDelta > 0 ? '+' : ''}${monthDelta} vs mês anterior`}
-          subColor={monthDelta > 0 ? 'text-rose-400' : monthDelta < 0 ? 'text-emerald-400' : 'text-slate-500'} />
-        <KpiCard icon={<Calendar size={16} className="text-white" />} accent="bg-violet-600" label={`Churns em ${currentYear}`} value={String(yearTotal)} sub="acumulado no ano" subColor="text-violet-400" />
-        <KpiCard icon={<TrendingDown size={16} className="text-white" />} accent="bg-amber-600" label="LTV médio" value={`${(avgLtv / 30).toFixed(1).replace('.', ',')} meses`} sub={`${avgLtv} dias de casa`} subColor="text-amber-400" />
-        <KpiCard icon={<ShieldAlert size={16} className="text-white" />} accent="bg-blue-600" label="% Evitável" value={`${evitavelPct}%`} sub={`${evitavel} evit. · ${inevitavel} inevit.`} subColor="text-blue-400" />
+    <div className="space-y-5">
+      {/* Indicadores */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <CartaoKpi
+          titulo="Churns no mês"
+          pilula={`${taxaTxt(taxaAtual)} da base`}
+          alerta={monthDelta > 0}
+          valor={currentMonthTotal}
+          apoio={<span className={monthDelta > 0 ? 'text-rose-500' : monthDelta < 0 ? 'text-emerald-500' : ''}>{monthDelta === 0 ? 'Igual ao mês anterior' : `${monthDelta > 0 ? '+' : ''}${monthDelta} vs mês anterior`}</span>}
+          visual={<BarrasDoKpi valores={lineData.map(m => m.churns)} rotulos={lineData.map(m => m.mes)} unidade="saídas" />}
+        />
+        <CartaoKpi
+          titulo={`Churns em ${currentYear}`}
+          valor={yearTotal}
+          apoio={`Média de ${(yearTotal / (now.getMonth() + 1)).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} por mês`}
+        />
+        <CartaoKpi
+          titulo="LTV médio"
+          pilula={`${avgLtv} dias`}
+          valor={`${(avgLtv / 30).toFixed(1).replace('.', ',')} meses`}
+          apoio="Tempo de casa de quem saiu"
+        />
+        <CartaoKpi
+          titulo="Evitáveis"
+          pilula={`${totalTyped} classificados`}
+          alerta={evitavelPct >= 50}
+          valor={`${evitavelPct}%`}
+          apoio="Saídas que dava para segurar"
+          visual={totalTyped > 0 && (
+            <DivisaoDoKpi partes={[
+              { rotulo: 'Evitável', valor: evitavel, cor: '#f59e0b' },
+              { rotulo: 'Inevitável', valor: inevitavel, cor: '#94a3b8' },
+            ]} />
+          )}
+        />
       </div>
 
-      {/* Line chart: churns per month */}
-      <div className="bg-dark-card border border-white/10 rounded-2xl p-6">
-        <h2 className="text-sm font-bold text-dark-text mb-1">Churns por mês</h2>
-        <p className="text-xs text-slate-500 mb-4">Saídas registradas nos últimos 12 meses · passe o mouse para ver a taxa (%)</p>
-        <ResponsiveContainer width="100%" height={240}>
-          <LineChart data={lineData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
-            <XAxis dataKey="mes" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-            <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={28} />
-            <RechartsTooltip
-              contentStyle={{ background: '#14082e', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, fontSize: 12 }}
-              labelStyle={{ color: '#cbd5e1' }}
-              formatter={(v: any, _n: any, p: any) => [`${v} churn(s) · ${String(p?.payload?.taxa ?? 0).replace('.', ',')}% da base`, 'Saídas']}
+      {/* Saídas por mês + por gestor */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        <Cartao titulo="Churns por mês" legenda="Saídas dos últimos 12 meses · passe o mouse para ver a taxa sobre a base" className="lg:col-span-8">
+          <div className="h-[260px]">
+            <LinhasNoTempo
+              id="churn-mes"
+              suave={0}
+              marcasX={12}
+              rotulos={lineData.map(m => m.mes)}
+              formato={n => String(Math.round(n))}
+              series={[{ rotulo: 'Saídas', cor: '#f43f5e', valores: lineData.map(m => m.churns), detalhe: i => `${taxaTxt(lineData[i].taxa)} da base` }]}
             />
-            <Line type="monotone" dataKey="churns" stroke="#f74c4c" strokeWidth={2.5} dot={{ r: 3, fill: '#f74c4c' }} activeDot={{ r: 5 }} />
-          </LineChart>
-        </ResponsiveContainer>
+          </div>
+        </Cartao>
+        <Cartao titulo="Churn por gestor" legenda={<span className="capitalize">Saídas em {currentMonthLabel}</span>} className="lg:col-span-4">
+          {gestorItems.length === 0 ? (
+            <p className="py-10 text-center text-[12.5px] text-emerald-500">Nenhuma saída neste mês.</p>
+          ) : (
+            <ListaDeBarras itens={gestorItems.map(g => ({ rotulo: g.label, valor: g.count, cor: '#f43f5e' }))} limite={8} />
+          )}
+        </Cartao>
       </div>
 
-      {/* Churn por gestor */}
-      <div className="bg-dark-card border border-white/10 rounded-2xl p-6">
-        <h2 className="text-sm font-bold text-dark-text mb-1">Churn por Gestor</h2>
-        <p className="text-xs text-slate-500 mb-4 capitalize">Gestores com saídas em {currentMonthLabel}</p>
-        <RankBar items={gestorItems} max={gestorMax} color="#f74c4c" />
-      </div>
-
-      {/* Recent churns */}
-      <div className="bg-dark-card border border-white/10 rounded-2xl p-6">
-        <h2 className="text-sm font-bold text-dark-text mb-1">Saídas recentes</h2>
-        <p className="text-xs text-slate-500 mb-4">Últimos churns registrados</p>
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs min-w-[680px]">
-            <thead>
-              <tr className="border-b border-white/5 text-[9px] font-bold text-slate-500 uppercase tracking-widest">
-                <th className="text-left pb-2 pr-2">Cliente</th>
-                <th className="text-left pb-2 pr-2">Gestor</th>
-                <th className="text-left pb-2 pr-2">Tipo</th>
-                <th className="text-left pb-2 pr-2">LTV</th>
-                <th className="text-left pb-2">Saída</th>
-              </tr>
-            </thead>
-            <tbody>
-              {churns.slice(0, 12).map(c => {
-                const isEvit = (c.tipo || '').toUpperCase().includes('INEVIT') ? false : (c.tipo || '').toUpperCase().includes('EVIT');
-                return (
-                  <tr key={c.id} className="border-b border-white/[0.04] hover:bg-white/[0.03] transition-colors">
-                    <td className="py-2.5 pr-2 font-bold text-dark-text truncate max-w-[200px]" title={c.cliente}>{c.cliente}</td>
-                    <td className="py-2.5 pr-2 text-slate-400 truncate max-w-[140px]">{c.gestor || '—'}</td>
-                    <td className="py-2.5 pr-2">
-                      {c.tipo
-                        ? <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isEvit ? 'bg-amber-500/15 text-amber-400' : 'bg-slate-500/15 text-slate-400'}`}>{c.tipo}</span>
-                        : <span className="text-slate-600">—</span>}
-                    </td>
-                    <td className="py-2.5 pr-2 text-slate-300">{c.ltv ? `${c.ltv}d` : '—'}</td>
-                    <td className="py-2.5 text-slate-400">{c.day_exit ? new Date(String(c.day_exit).slice(0, 10) + 'T12:00:00').toLocaleDateString('pt-BR') : '—'}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      {/* Saídas recentes */}
+      <Cartao titulo="Saídas recentes" legenda="Últimos 12 churns registrados">
+        {churns.length === 0 ? (
+          <p className="py-6 text-center text-[12.5px] text-slate-500">Nenhuma saída registrada.</p>
+        ) : (
+          <div className="-mx-2.5 grid grid-cols-1 md:grid-cols-2 gap-x-6">
+            {churns.slice(0, 12).map(c => {
+              const t = (c.tipo || '').toUpperCase();
+              const evit = !t.includes('INEVIT') && t.includes('EVIT');
+              return (
+                <LinhaComBolinha
+                  key={c.id}
+                  cor={c.tipo ? (evit ? '#f59e0b' : '#94a3b8') : '#64748b'}
+                  titulo={c.cliente}
+                  dica={c.motivo || c.cliente}
+                  detalhe={[c.gestor, c.tipo ? (evit ? 'Evitável' : 'Inevitável') : null, c.ltv ? `${c.ltv} dias de casa` : null].filter(Boolean).join(' · ') || undefined}
+                  valor={c.day_exit ? new Date(String(c.day_exit).slice(0, 10) + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }).replace('.', '') : '—'}
+                />
+              );
+            })}
+          </div>
+        )}
+      </Cartao>
     </div>
   );
 };
@@ -326,6 +315,10 @@ export const RiscoDeChurnTab = ({ projects, heads = [] }: { projects: ProjectRow
   // (page_id) — o mesmo critério usado na Visão Geral.
   const [headFilter, setHeadFilter] = useState<string>('all');
   const [snap, setSnap] = useState<ChurnSnap | null>(null);
+  // Faixa escolhida no anel — filtra a watchlist
+  const [faixa, setFaixa] = useState<string | null>(null);
+  const [abertoId, setAbertoId] = useState<string | null>(null);
+  const [verTodos, setVerTodos] = useState(false);
 
   const projectsOf = (headId: string) =>
     headId === 'all' ? projects : projects.filter(p => p.page_id === headId);
@@ -356,6 +349,7 @@ export const RiscoDeChurnTab = ({ projects, heads = [] }: { projects: ProjectRow
     { key: 'medio', label: 'Médio', hex: '#f59e0b', n: rows.filter(r => r.count >= 4 && r.count <= 6).length },
     { key: 'alto', label: 'Alto', hex: '#f43f5e', n: alto.length },
   ];
+  const faixaDe = (c: number) => c === 0 ? 'sem' : c <= 3 ? 'baixo' : c <= 6 ? 'medio' : 'alto';
 
   // Deltas vs baseline (~7 dias). Só mostra quando já há histórico com 7+ dias.
   const baseline = snap?.baseline || {};
@@ -367,87 +361,99 @@ export const RiscoDeChurnTab = ({ projects, heads = [] }: { projects: ProjectRow
 
   const series = snap?.series || [];
   const trendReady = series.length >= 2;
-  const deltaTxt = (d: number) => d === 0 ? 'estável' : d > 0 ? `▲ +${d} vs 7d` : `▼ ${d} vs 7d`;
-  const deltaColor = (d: number) => d > 0 ? 'text-rose-400' : d < 0 ? 'text-emerald-400' : 'text-slate-500';
+  const rotuloDia = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
+  const deltaTxt = (d: number) => d === 0 ? 'estável na semana' : d > 0 ? `+${d} na semana` : `${d} na semana`;
+  const deltaColor = (d: number) => d > 0 ? 'text-rose-500' : d < 0 ? 'text-emerald-500' : '';
 
-  const squadPills: { key: 'all' | 'Able' | 'Baker'; label: string; accent: string }[] = [
-    { key: 'all', label: 'Todos', accent: '#a78bfa' },
-  ];
+  const lista = faixa ? rows.filter(r => faixaDe(r.count) === faixa) : withSignals;
+  const faixaAtual = buckets.find(b => b.key === faixa);
 
   return (
-    <div className="space-y-6">
-      {/* Filtro por Head de Operações */}
-      <div className="flex flex-wrap items-center gap-3">
+    <div className="space-y-5">
+      {/* Filtro por Head de Operações — mesmo desenho dos botões da Visão Geral */}
+      <div className="flex flex-wrap gap-3">
         {[{ id: 'all', name: 'Todos', picture: null as string | null }, ...heads].map(h => {
           const active = headFilter === h.id;
           const n = projectsOf(h.id).length;
           const firstName = h.id === 'all' ? h.name : String(h.name).trim().split(/\s+/)[0];
           return (
             <button key={h.id} onClick={() => setHeadFilter(h.id)}
-              className={`flex items-center gap-3 pl-3 pr-5 py-2.5 rounded-2xl border transition-all ${
-                active ? 'bg-violet-600/10 border-violet-500/60' : 'bg-dark-card border-white/10 hover:border-white/25'}`}>
-              <span className="w-9 h-9 rounded-xl overflow-hidden flex items-center justify-center bg-violet-500/15 text-violet-400 shrink-0">
+              className={`flex items-center gap-2.5 px-4 py-2 rounded-xl border transition-all ${
+                active
+                  ? 'bg-violet-500/10 dark:bg-violet-500/20 border-violet-500/30 shadow-[0_0_15px_rgba(124,58,237,0.15)]'
+                  : 'bg-white dark:bg-dark-card border-slate-200 dark:border-white/5 hover:bg-slate-50 dark:hover:bg-white/5'}`}>
+              <span className="w-8 h-8 rounded-full overflow-hidden flex items-center justify-center bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 shrink-0 border border-slate-200 dark:border-white/10">
                 {h.picture
                   ? <img src={h.picture} alt={firstName} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
-                  : <Users size={17} />}
+                  : <Users size={14} />}
               </span>
               <span className="text-left">
-                <span className={`block text-sm font-black leading-tight ${active ? 'text-violet-300' : 'text-dark-text'}`}>{firstName}</span>
-                <span className="block text-[10px] font-bold uppercase tracking-widest text-slate-500">{n} parceiros</span>
+                <span className={`block text-sm font-bold leading-tight ${active ? 'text-violet-600 dark:text-violet-400' : 'text-slate-700 dark:text-white'}`}>{firstName}</span>
+                <span className="block text-[10px] uppercase tracking-widest text-slate-500">{n} parceiros</span>
               </span>
             </button>
           );
         })}
       </div>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KpiCard icon={<ShieldAlert size={16} className="text-white" />} accent="bg-amber-600" label="Parceiros em risco"
-          value={String(emRisco.length)} sub={hasBaseline ? deltaTxt(dEmRisco) : 'Médio + Alto'} subColor={hasBaseline ? deltaColor(dEmRisco) : 'text-amber-400'} />
-        <KpiCard icon={<AlertTriangle size={16} className="text-white" />} accent="bg-rose-600" label="Risco alto"
-          value={String(alto.length)} sub={hasBaseline ? deltaTxt(dAlto) : '7+ sinais'} subColor={hasBaseline ? deltaColor(dAlto) : 'text-rose-400'} />
-        <KpiCard icon={<DollarSign size={16} className="text-white" />} accent="bg-blue-600" label="R$/mês em risco"
-          value={fmtBRL(rAtRisco)} sub="Investimento Médio+Alto" subColor="text-blue-400" />
-        <KpiCard icon={<Users size={16} className="text-white" />} accent="bg-violet-600" label="% base com sinais"
-          value={total > 0 ? `${Math.round((withSignals.length / total) * 100)}%` : '—'} sub={`${withSignals.length} de ${total} parceiros`} subColor="text-violet-400" />
+      {/* Indicadores */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <CartaoKpi
+          titulo="Parceiros em risco"
+          pilula="Médio + Alto"
+          valor={emRisco.length}
+          apoio={hasBaseline ? <span className={deltaColor(dEmRisco)}>{deltaTxt(dEmRisco)}</span> : '4 ou mais sinais'}
+          visual={trendReady && <LinhaDoKpi id="em-risco" cor="#f59e0b" valores={series.map(s => s.emRisco)} rotulos={series.map(s => rotuloDia(s.date))} formato={v => `${v} parceiros`} />}
+        />
+        <CartaoKpi
+          titulo="Risco alto"
+          pilula="7+ sinais"
+          alerta={alto.length > 0}
+          valor={alto.length}
+          apoio={hasBaseline ? <span className={deltaColor(dAlto)}>{deltaTxt(dAlto)}</span> : 'Parceiros com 7 ou mais sinais'}
+          visual={trendReady && <LinhaDoKpi id="risco-alto" cor="#f43f5e" valores={series.map(s => s.alto)} rotulos={series.map(s => rotuloDia(s.date))} formato={v => `${v} parceiros`} />}
+        />
+        <CartaoKpi
+          titulo="Verba em risco"
+          pilula="por mês"
+          valor={fmtBRL(rAtRisco)}
+          apoio="Investimento dos parceiros Médio + Alto"
+        />
+        <CartaoKpi
+          titulo="Base com sinais"
+          pilula={`${withSignals.length} de ${total}`}
+          valor={total > 0 ? `${Math.round((withSignals.length / total) * 100)}%` : '—'}
+          apoio="Parceiros com ao menos 1 sinal"
+          visual={total > 0 && <DivisaoDoKpi partes={buckets.map(b => ({ rotulo: b.label, valor: b.n, cor: b.hex }))} />}
+        />
       </div>
 
       {/* Distribuição + Evolução */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="bg-dark-card border border-white/10 rounded-2xl p-6">
-          <h2 className="text-sm font-bold text-dark-text mb-1">Distribuição de risco</h2>
-          <p className="text-xs text-slate-500 mb-4">Todos os parceiros por nível de sinais</p>
-          <div className="flex w-full h-3 rounded-full overflow-hidden bg-white/5">
-            {total === 0 ? <div className="w-full" /> : buckets.map(b => b.n > 0 && (
-              <div key={b.key} title={`${b.label}: ${b.n}`} style={{ width: `${(b.n / total) * 100}%`, background: b.hex }} />
-            ))}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        <Cartao titulo="Distribuição de risco" legenda="Clique numa faixa para filtrar a lista abaixo" className="lg:col-span-5">
+          <div className="h-[240px]">
+            <Anel
+              segmentos={buckets.filter(b => b.n > 0).map(b => ({ rotulo: b.label, valor: b.n, cor: b.hex, chave: b.key }))}
+              centro={total}
+              legendaDoCentro="parceiros"
+              aoClicar={k => setFaixa(faixa === k ? null : k)}
+            />
           </div>
-          <div className="grid grid-cols-2 gap-x-6 gap-y-2 mt-4">
-            {buckets.map(b => (
-              <div key={b.key} className="flex items-center justify-between">
-                <span className="flex items-center gap-2 text-xs text-slate-300">
-                  <span className="w-2.5 h-2.5 rounded-full" style={{ background: b.hex }} /> {b.label}
-                </span>
-                <span className="text-xs font-black text-dark-text">{b.n} <span className="text-[10px] text-slate-500 font-semibold">{total > 0 ? `${Math.round((b.n / total) * 100)}%` : ''}</span></span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="bg-dark-card border border-white/10 rounded-2xl p-6">
-          <h2 className="text-sm font-bold text-dark-text mb-1">Evolução do risco</h2>
-          <p className="text-xs text-slate-500 mb-4">Parceiros em risco (Médio+Alto) e risco alto ao longo do tempo</p>
+        </Cartao>
+        <Cartao titulo="Evolução do risco" legenda="Parceiros em risco (Médio + Alto) e em risco alto, dia a dia" className="lg:col-span-7">
           {trendReady ? (
-            <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={series} margin={{ top: 5, right: 10, left: -18, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
-                <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={(d: string) => d.slice(5).split('-').reverse().join('/')} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#94a3b8' }} />
-                <RechartsTooltip contentStyle={{ background: '#14082e', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, fontSize: 12 }} labelStyle={{ color: '#e2e8f0' }} />
-                <Line type="monotone" dataKey="emRisco" name="Em risco" stroke="#f59e0b" strokeWidth={2.5} dot={false} />
-                <Line type="monotone" dataKey="alto" name="Alto" stroke="#f43f5e" strokeWidth={2.5} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
+            <div className="h-[260px]">
+              <LinhasNoTempo
+                id="risco"
+                suave={2}
+                rotulos={series.map(s => rotuloDia(s.date))}
+                formato={n => String(Math.round(n))}
+                series={[
+                  { rotulo: 'Em risco', cor: '#f59e0b', valores: series.map(s => s.emRisco) },
+                  { rotulo: 'Alto', cor: '#f43f5e', valores: series.map(s => s.alto) },
+                ]}
+              />
+            </div>
           ) : (
             <div className="flex flex-col items-center justify-center text-center gap-2 py-12 text-slate-500">
               <TrendingDown size={30} className="opacity-30" />
@@ -455,78 +461,85 @@ export const RiscoDeChurnTab = ({ projects, heads = [] }: { projects: ProjectRow
               <p className="text-xs">O gráfico de evolução aparece assim que houver alguns dias de histórico.</p>
             </div>
           )}
-        </div>
+        </Cartao>
       </div>
 
-      {/* Watchlist */}
-      <div className="bg-dark-card border border-white/10 rounded-2xl p-6">
-        <div className="flex items-center justify-between mb-1">
-          <h2 className="text-sm font-bold text-dark-text">Watchlist — agir agora</h2>
-          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{withSignals.length} parceiro{withSignals.length === 1 ? '' : 's'} com sinais</span>
-        </div>
-        <p className="text-xs text-slate-500 mb-4">Ordenado do maior risco para o menor. Os chips mostram os sinais marcados de cada parceiro.</p>
-        {withSignals.length === 0 ? (
-          <p className="text-sm text-slate-500 text-center py-10">Nenhum parceiro com sinais de churn. 🎉</p>
+      {/* Watchlist — uma linha por parceiro; os sinais viram uma régua de 15 casas por categoria.
+          Clicar na linha abre os sinais por nome. */}
+      <Cartao
+        titulo={faixaAtual ? `Watchlist — risco ${faixaAtual.label.toLowerCase()}` : 'Watchlist — agir agora'}
+        legenda={faixaAtual ? `${lista.length} parceiro(s) nesta faixa` : `${withSignals.length} parceiro(s) com sinais, do maior risco para o menor`}
+        acao={faixa ? <button onClick={() => setFaixa(null)} className="text-[12px] text-slate-400 hover:text-dark-text">Ver todos</button> : undefined}
+      >
+        {lista.length === 0 ? (
+          <p className="text-[12.5px] text-emerald-500 text-center py-8">Nenhum parceiro aqui.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-white/10">
-                  <th className="text-left py-2 pr-2">Parceiro</th>
-                  <th className="text-left py-2 pr-2">Squad</th>
-                  <th className="text-left py-2 pr-2">Gestor</th>
-                  <th className="text-left py-2 pr-2">Resultado</th>
-                  <th className="text-right py-2 pr-2">Investimento</th>
-                  <th className="text-center py-2 pr-2">Sinais</th>
-                  <th className="text-center py-2">Δ 7d</th>
-                </tr>
-              </thead>
-              <tbody>
-                {withSignals.map(({ p, count }) => {
-                  const risk = churnRisk(count);
-                  const marked = CHURN_TEMPLATE.flatMap(g => g.items).filter(it => p.churnChecklist?.[it.id]);
-                  const base = baseline[p.id];
-                  const d = base === undefined ? null : count - base;
-                  const resHex = getResultColor(p.projectResult);
-                  return (
-                    <tr key={p.id} className="border-b border-white/[0.04] align-top">
-                      <td className="py-3 pr-3 min-w-[200px]">
-                        <p className="font-semibold text-dark-text">{p.partner}</p>
-                        <div className="flex flex-wrap gap-1 mt-1.5">
-                          {marked.map(m => {
-                            const c = CAT_COLOR[CHURN_LABELS[m.id]?.cat] || '#64748b';
-                            return <span key={m.id} className="text-[9px] font-semibold px-1.5 py-0.5 rounded-md" style={{ background: `${c}1f`, color: c }}>{m.label}</span>;
-                          })}
-                        </div>
-                      </td>
-                      <td className="py-3 pr-2 whitespace-nowrap">
-                        <span className="text-xs font-bold" style={{ color: SQUAD_ACCENT[p.squad || ''] || '#94a3b8' }}>{p.squad || '—'}</span>
-                      </td>
-                      <td className="py-3 pr-2 text-slate-300 whitespace-nowrap text-xs">{p.responsible || '—'}</td>
-                      <td className="py-3 pr-2 whitespace-nowrap">
-                        <span className="inline-flex items-center gap-1.5 text-xs text-slate-300">
-                          <span className="w-2 h-2 rounded-full" style={{ background: resHex }} />{prettyResult(resultOf(p))}
-                        </span>
-                      </td>
-                      <td className="py-3 pr-2 text-right text-slate-300 font-medium whitespace-nowrap">{fmtBRL(parseCurrency(p.investment))}</td>
-                      <td className="py-3 pr-2 text-center whitespace-nowrap">
-                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ background: `${risk.hex}1f`, color: risk.hex }}>
+          <>
+            <div className="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-[11.5px] text-slate-500 dark:text-slate-400">
+              {CHURN_TEMPLATE.map(g => (
+                <span key={g.cat} className="inline-flex items-center gap-1.5"><i className="h-2 w-2 rounded-full" style={{ background: CAT_COLOR[g.cat] }} />{g.group}</span>
+              ))}
+            </div>
+            <div className="-mx-2.5">
+              {(verTodos ? lista : lista.slice(0, 10)).map(({ p, count }) => {
+                const risk = churnRisk(count);
+                const marked = CHURN_TEMPLATE.flatMap(g => g.items).filter(it => p.churnChecklist?.[it.id]);
+                const base = baseline[p.id];
+                const d = base === undefined || !hasBaseline ? null : count - base;
+                const exp = abertoId === p.id;
+                return (
+                  <div key={p.id} className="border-t border-slate-200/70 first:border-t-0 dark:border-white/5">
+                    <button
+                      onClick={() => setAbertoId(exp ? null : p.id)}
+                      className={`gf-item flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left ${exp ? 'bg-violet-500/5' : 'hover:bg-violet-500/5'}`}
+                    >
+                      <i className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: risk.hex, boxShadow: `0 0 0 4px color-mix(in srgb, ${risk.hex} 18%, transparent)` }} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[13.5px] font-medium text-dark-text" title={p.partner}>{p.partner}</span>
+                        <span className="block truncate text-[11.5px] text-slate-500 dark:text-slate-400">{p.responsible || 'Sem gestor'} · <span className="numero">{fmtBRL(parseCurrency(p.investment))}</span></span>
+                      </span>
+                      {/* Régua: 15 casas, agrupadas por categoria; cheia = sinal marcado */}
+                      <span className="hidden sm:flex shrink-0 items-center gap-1.5" title={marked.map(m => m.label).join(', ')}>
+                        {CHURN_TEMPLATE.map(g => (
+                          <span key={g.cat} className="flex gap-[2px]">
+                            {g.items.map(it => (
+                              <i key={it.id} className="h-3.5 w-1.5 rounded-sm" style={{ background: p.churnChecklist?.[it.id] ? CAT_COLOR[g.cat] : 'rgb(148 163 184 / .18)' }} />
+                            ))}
+                          </span>
+                        ))}
+                      </span>
+                      <span className="w-[120px] shrink-0 text-right">
+                        <span className="numero whitespace-nowrap rounded-full px-2.5 py-1 text-[11.5px] font-medium" style={{ color: risk.hex, background: `color-mix(in srgb, ${risk.hex} 12%, transparent)` }}>
                           {count}/{CHURN_TOTAL} · {risk.label}
                         </span>
-                      </td>
-                      <td className="py-3 text-center whitespace-nowrap">
-                        {d === null || !hasBaseline
-                          ? <span className="text-[11px] text-slate-600">—</span>
-                          : <span className={`text-[11px] font-bold ${deltaColor(d)}`}>{d === 0 ? '=' : d > 0 ? `▲ +${d}` : `▼ ${d}`}</span>}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                      </span>
+                      <span className={`numero w-8 shrink-0 text-right text-[11px] ${d ? deltaColor(d) : 'text-slate-400'}`} title="Variação de sinais na semana">
+                        {d ? (d > 0 ? `+${d}` : d) : ''}
+                      </span>
+                    </button>
+                    {exp && (
+                      <div className="gf-troca flex flex-wrap gap-1 px-2.5 pb-3 pl-[34px]">
+                        {marked.map(m => {
+                          const c = CAT_COLOR[CHURN_LABELS[m.id]?.cat] || '#64748b';
+                          return <span key={m.id} className="rounded-full px-2 py-0.5 text-[10.5px]" style={{ background: `color-mix(in srgb, ${c} 12%, transparent)`, color: c }}>{m.label}</span>;
+                        })}
+                        <span className="ml-1 inline-flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400">
+                          · <i className="h-1.5 w-1.5 rounded-full" style={{ background: getResultColor(p.projectResult) }} />{prettyResult(resultOf(p))}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            {lista.length > 10 && (
+              <button onClick={() => setVerTodos(v => !v)} className="mt-3 self-start text-[12.5px] font-medium text-violet-600 hover:text-violet-500 dark:text-violet-400">
+                {verTodos ? 'Mostrar só os 10 primeiros' : `Mostrar todos (${lista.length})`}
+              </button>
+            )}
+          </>
         )}
-      </div>
+      </Cartao>
     </div>
   );
 };

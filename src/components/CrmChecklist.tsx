@@ -26,11 +26,13 @@ interface TemplateItem {
 interface CrmChecklistProps {
   clientId: string;
   onCompleteExit: () => void;
+  /** Botão extra no cabeçalho (ex.: Arquivar cliente). */
+  acaoExtra?: React.ReactNode;
 }
 
 const BLOCKS = [
-  { id: 'diretoria' as const, label: 'Diretoria', color: 'violet', bg: 'bg-violet-500/10', border: 'border-violet-500/30', text: 'text-violet-500', dot: 'bg-violet-500' },
-  { id: 'gerente' as const, label: 'Gerente Operacional', color: 'blue', bg: 'bg-blue-500/10', border: 'border-blue-500/30', text: 'text-blue-400', dot: 'bg-blue-400' },
+  { id: 'diretoria' as const, label: 'Diretoria', hex: '#8b5cf6', color: 'violet', bg: 'bg-violet-500/10', border: 'border-violet-500/30', text: 'text-violet-500', dot: 'bg-violet-500' },
+  { id: 'gerente' as const, label: 'Gerente Operacional', hex: '#38bdf8', color: 'blue', bg: 'bg-blue-500/10', border: 'border-blue-500/30', text: 'text-blue-400', dot: 'bg-blue-400' },
 ];
 
 // ── Template Editor Modal ─────────────────────────────
@@ -368,22 +370,22 @@ const ChecklistBlock: React.FC<{
       onDragOver={e => { e.preventDefault(); setIsDragOver(true); }}
       onDragLeave={() => setIsDragOver(false)}
       onDrop={handleDrop}
-      className={`rounded-2xl border transition-all ${isDragOver ? `${block.border} ${block.bg}` : 'border-gray-200 dark:border-white/10'} overflow-hidden`}
+      className={`rounded-xl transition-colors ${isDragOver ? 'bg-violet-500/5 ring-1 ring-violet-500/30' : ''}`}
     >
-      {/* Block Header */}
-      <div className={`flex items-center justify-between px-4 py-3 ${block.bg} border-b ${block.border}`}>
-        <div className="flex items-center gap-2">
-          <div className={`w-2.5 h-2.5 rounded-full ${block.dot}`} />
-          <span className={`text-xs font-bold uppercase tracking-widest ${block.text}`}>{block.label}</span>
-        </div>
-        <span className="text-[10px] text-slate-500 font-bold">{completedCount}/{items.length}</span>
+      {/* Cabeçalho do bloco: nome, contagem e barrinha */}
+      <div className="flex items-center gap-3 px-1 pb-2">
+        <span className="w-2 h-2 rounded-full" style={{ background: block.hex }} />
+        <span className="text-[13px] font-semibold text-gray-900 dark:text-white">{block.label}</span>
+        <span className="text-[12px] text-slate-400">{completedCount}/{items.length}</span>
+        <span className="ml-auto h-1 w-24 rounded-full bg-gray-100 dark:bg-white/5 overflow-hidden">
+          <span className="block h-full rounded-full transition-all duration-500" style={{ width: `${items.length ? (completedCount / items.length) * 100 : 0}%`, background: block.hex }} />
+        </span>
       </div>
 
-      {/* Items */}
-      <div className="divide-y divide-gray-100 dark:divide-white/5">
+      <div className="rounded-xl border border-gray-200 dark:border-white/5 overflow-hidden">
         {items.length === 0 && (
-          <div className={`p-6 text-center text-sm text-slate-500 italic ${isDragOver ? 'opacity-80' : ''}`}>
-            {isDragOver ? '⬇ Solte aqui' : 'Nenhum item neste bloco'}
+          <div className="p-5 text-center text-[12.5px] text-slate-400">
+            {isDragOver ? 'Solte aqui' : 'Nenhum item neste bloco'}
           </div>
         )}
         {items.map(item => (
@@ -391,84 +393,59 @@ const ChecklistBlock: React.FC<{
             key={item.id}
             draggable
             onDragStart={e => e.dataTransfer.setData('itemId', String(item.id))}
-            className={`flex items-start gap-3 p-3.5 transition-colors cursor-grab active:cursor-grabbing group ${
-              item.completed ? 'bg-gray-50/50 dark:bg-white/[0.01]' : 'hover:bg-gray-50 dark:hover:bg-white/[0.02]'
-            }`}
+            className="group flex items-center gap-3 px-3 py-2.5 border-b border-gray-100 dark:border-white/5 last:border-b-0 hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors"
           >
-            <GripVertical size={14} className="text-slate-300 dark:text-slate-600 mt-0.5 shrink-0 group-hover:text-slate-400 transition-colors" />
-            <button
-              onClick={() => onToggle(item)}
-              className="mt-0.5 shrink-0 text-slate-400 hover:text-violet-500 transition-colors focus:outline-none"
-            >
-              {item.completed ? (
-                <CheckCircle2 size={18} className="text-emerald-500" />
-              ) : (
-                <Circle size={18} />
-              )}
+            <GripVertical size={13} className="-ml-1 text-slate-300 dark:text-slate-600 shrink-0 opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing transition-opacity" />
+            <button onClick={() => onToggle(item)} className="shrink-0 text-slate-300 dark:text-slate-600 hover:text-violet-500 transition-colors focus:outline-none">
+              {item.completed ? <CheckCircle2 size={17} className="text-emerald-500" /> : <Circle size={17} />}
             </button>
-            <div
-              className="flex-1 min-w-0 cursor-pointer"
-              onClick={() => { setNotesItem(item); setNotesText(item.notes || ''); }}
-            >
-              <p className={`text-sm font-medium leading-snug ${item.completed ? 'text-slate-400 line-through' : 'text-gray-800 dark:text-white'}`}>
+            <div className="flex-1 min-w-0 cursor-pointer" onClick={() => { setNotesItem(item); setNotesText(item.notes || ''); }}>
+              <p className={`text-[13px] leading-snug truncate ${item.completed ? 'text-slate-400 line-through' : 'text-gray-800 dark:text-slate-200'}`} title={item.item}>
                 {item.item}
               </p>
-              {item.notes ? (
-                <p className="text-[10px] text-violet-500 mt-0.5 flex items-center gap-1">
-                  <MessageSquare size={10} /> {item.notes.length > 60 ? item.notes.slice(0, 60) + '...' : item.notes}
-                </p>
-              ) : item.completed && item.completed_by ? (
-                <p className="text-[10px] text-slate-400 mt-0.5">por {item.completed_by}</p>
-              ) : (
-                <p className="text-[10px] text-slate-400 mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                  <MessageSquare size={10} /> Adicionar observação...
-                </p>
-              )}
+              {item.completed && item.completed_by ? (
+                <p className="text-[11px] text-slate-400 truncate">por {item.completed_by}</p>
+              ) : item.notes ? (
+                <p className="text-[11px] text-slate-400 dark:text-slate-500 truncate">{item.notes}</p>
+              ) : null}
             </div>
-            <button
-              onClick={() => { setNotesItem(item); setNotesText(item.notes || ''); }}
-              className={`shrink-0 mt-0.5 transition-colors opacity-0 group-hover:opacity-100 ${
-                item.notes ? 'text-violet-500' : 'text-slate-400 hover:text-violet-500'
-              }`}
-            >
-              <MessageSquare size={14} />
-            </button>
+            {item.notes && (
+              <button
+                onClick={() => { setNotesItem(item); setNotesText(item.notes || ''); }}
+                title="Ver observação"
+                className="shrink-0 text-slate-300 dark:text-slate-600 hover:text-violet-500 transition-colors"
+              >
+                <MessageSquare size={13} />
+              </button>
+            )}
           </div>
         ))}
-      </div>
 
-      {/* Add item inline */}
-      <div className="px-4 py-2.5 bg-gray-50 dark:bg-white/[0.02] border-t border-gray-100 dark:border-white/5">
-        {isAdding ? (
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              value={newText}
-              onChange={e => setNewText(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter' && newText.trim()) { onAddItem(newText.trim(), block.id); setNewText(''); setIsAdding(false); }
-                if (e.key === 'Escape') { setIsAdding(false); setNewText(''); }
-              }}
-              placeholder="Novo item..."
-              className="flex-1 text-xs bg-transparent outline-none text-gray-800 dark:text-white placeholder:text-slate-400"
-              autoFocus
-            />
-            <button
-              onClick={() => { if (newText.trim()) { onAddItem(newText.trim(), block.id); setNewText(''); } setIsAdding(false); }}
-              className="text-violet-500 hover:text-violet-400"
-            ><Check size={14} /></button>
-            <button onClick={() => { setIsAdding(false); setNewText(''); }} className="text-slate-400 hover:text-slate-600">
-              <X size={14} />
+        {/* Adicionar item */}
+        <div className="px-3 py-2 border-t border-gray-100 dark:border-white/5">
+          {isAdding ? (
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={newText}
+                onChange={e => setNewText(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && newText.trim()) { onAddItem(newText.trim(), block.id); setNewText(''); setIsAdding(false); }
+                  if (e.key === 'Escape') { setIsAdding(false); setNewText(''); }
+                }}
+                placeholder="Novo item..."
+                className="flex-1 text-[13px] bg-transparent outline-none text-gray-800 dark:text-white placeholder:text-slate-400"
+                autoFocus
+              />
+              <button onClick={() => { if (newText.trim()) { onAddItem(newText.trim(), block.id); setNewText(''); } setIsAdding(false); }} className="text-violet-500 hover:text-violet-400"><Check size={14} /></button>
+              <button onClick={() => { setIsAdding(false); setNewText(''); }} className="text-slate-400 hover:text-slate-600"><X size={14} /></button>
+            </div>
+          ) : (
+            <button onClick={() => setIsAdding(true)} className="flex items-center gap-1.5 text-[12px] text-slate-400 hover:text-violet-500 transition-colors">
+              <Plus size={13} /> Adicionar item
             </button>
-          </div>
-        ) : (
-          <button
-            onClick={() => setIsAdding(true)}
-            className="flex items-center gap-1.5 text-[11px] text-slate-400 hover:text-violet-500 transition-colors font-medium"
-          >
-            <Plus size={13} /> Adicionar item
-          </button>
-        )}
+          )}
+        </div>
       </div>
     </div>
 
@@ -503,7 +480,7 @@ const ChecklistBlock: React.FC<{
 };
 
 // ── Main Component ────────────────────────────────────
-const CrmChecklist: React.FC<CrmChecklistProps> = ({ clientId, onCompleteExit }) => {
+const CrmChecklist: React.FC<CrmChecklistProps> = ({ clientId, onCompleteExit, acaoExtra }) => {
   const { user } = useAuth();
   const [items, setItems] = useState<ChecklistItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -511,12 +488,19 @@ const CrmChecklist: React.FC<CrmChecklistProps> = ({ clientId, onCompleteExit })
   const [isApplying, setIsApplying] = useState(false);
   const [showApplyConfirm, setShowApplyConfirm] = useState(false);
 
+  // Trava contra criar o checklist duas vezes: o efeito roda em dobro no modo de
+  // desenvolvimento (StrictMode) e ao reabrir o popup rápido — foi assim que o JP ANTUNES
+  // ganhou 26 itens (13 em dobro) em 13/11/2026.
+  const criandoPara = useRef<string | null>(null);
+
   const fetchItems = async () => {
     try {
       const res = await fetch(`/api/crm-checklist?client_id=${clientId}`);
       if (res.ok) {
         const data: ChecklistItem[] = await res.json();
         if (data.length === 0) {
+          if (criandoPara.current === clientId) return;
+          criandoPara.current = clientId;
           await createFromTemplate();
         } else {
           setItems(data.map(i => ({ ...i, block: (i.block as any) || 'diretoria' })));
@@ -637,42 +621,40 @@ const CrmChecklist: React.FC<CrmChecklistProps> = ({ clientId, onCompleteExit })
 
   return (
     <div className="space-y-4">
-      {/* Header row */}
-      <div className="flex items-center justify-between">
-        <div className="flex-1">
-          {/* Progress Bar */}
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Progresso da Saída</span>
-            <span className="text-xs font-bold text-violet-500">{completedCount} de {totalCount} concluídos</span>
-          </div>
-          <div className="w-full h-2 bg-gray-100 dark:bg-white/5 rounded-full overflow-hidden">
-            <div className="h-full bg-violet-500 transition-all duration-500 ease-out rounded-full" style={{ width: `${progress}%` }} />
+      {/* Cabeçalho: progresso à esquerda; modelo e arquivar à direita, discretos */}
+      <div className="flex items-end justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] text-slate-500 dark:text-slate-400">
+            <span className="numero text-[22px] text-gray-900 dark:text-white mr-1">{completedCount}</span>
+            de {totalCount} itens concluídos
+          </p>
+          <div className="mt-2 w-full h-1.5 bg-gray-100 dark:bg-white/5 rounded-full overflow-hidden">
+            <div className={`h-full rounded-full transition-all duration-500 ease-out ${isAllDone ? 'bg-emerald-500' : 'bg-violet-500'}`} style={{ width: `${progress}%` }} />
           </div>
         </div>
-        <div className="ml-4 flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
           <button
             onClick={() => setShowApplyConfirm(true)}
             disabled={isApplying}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 hover:border-emerald-500/40 text-xs font-bold text-slate-500 hover:text-emerald-500 rounded-xl transition-all disabled:opacity-50"
+            title="Apagar o checklist e recriar pelo modelo padrão"
+            className="h-8 px-2.5 flex items-center gap-1.5 rounded-lg text-[12.5px] text-slate-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5 transition-colors disabled:opacity-50"
           >
-            {isApplying ? (
-              <><div className="w-3 h-3 border-2 border-slate-300 border-t-emerald-500 rounded-full animate-spin" /> Aplicando...</>
-            ) : (
-              <><FileText size={13} /> Aplicar Modelo</>
-            )}
+            {isApplying ? <div className="w-3 h-3 border-2 border-slate-300 border-t-violet-500 rounded-full animate-spin" /> : <FileText size={13} />}
+            Recriar pelo modelo
           </button>
           <button
             onClick={() => setShowTemplateModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 hover:border-violet-500/40 text-xs font-bold text-slate-500 hover:text-violet-500 rounded-xl transition-all"
+            title="Editar o modelo padrão"
+            className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
           >
-            <Settings size={13} />
-            Modelo Padrão
+            <Settings size={14} />
           </button>
+          {acaoExtra}
         </div>
       </div>
 
       {/* Two blocks */}
-      <div className="space-y-4">
+      <div className="space-y-5">
         {BLOCKS.map(block => (
           <ChecklistBlock
             key={block.id}
@@ -691,9 +673,9 @@ const CrmChecklist: React.FC<CrmChecklistProps> = ({ clientId, onCompleteExit })
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
           <button
             onClick={onCompleteExit}
-            className="w-full py-4 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl font-bold uppercase tracking-widest text-sm transition-colors flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
+            className="w-full py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-semibold text-sm transition-colors flex items-center justify-center gap-2"
           >
-            <Check size={18} /> Concluir Saída
+            <Check size={17} /> Concluir saída
           </button>
         </div>
       )}

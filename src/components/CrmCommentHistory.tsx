@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, CheckCircle2, Image as ImageIcon, X, RefreshCw, Send, Bot } from 'lucide-react';
+import { CheckCircle2, Image as ImageIcon, X, RefreshCw, Send, Bot, ArrowRight, MessageSquare, Phone, Handshake, CalendarClock, Receipt, PenLine } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from '@/src/lib/toast';
@@ -12,6 +12,37 @@ export const COMMENT_TYPES = [
   { id: 'COBRANÇA', label: 'Cobrança Automática', color: 'bg-red-500' },
   { id: 'Mudança de Status', label: 'Mudança de Status', color: 'bg-violet-500' }
 ];
+
+// Cor e ícone de cada tipo — usados na bolinha da linha do tempo e na pílula
+const TIPO_VISUAL: Record<string, { cor: string; Icone: React.ComponentType<{ size?: number; className?: string }> }> = {
+  'Observação': { cor: '#64748b', Icone: MessageSquare },
+  'Contato realizado': { cor: '#3b82f6', Icone: Phone },
+  'Acordo fechado': { cor: '#10b981', Icone: Handshake },
+  'Promessa de pagamento': { cor: '#f59e0b', Icone: CalendarClock },
+  'COBRANÇA': { cor: '#f43f5e', Icone: Receipt },
+  'Mudança de Status': { cor: '#8b5cf6', Icone: ArrowRight },
+};
+const visualDo = (tipo: string) => TIPO_VISUAL[tipo] || { cor: '#64748b', Icone: PenLine };
+const rotuloDoTipo = (tipo: string) => COMMENT_TYPES.find(t => t.id === tipo)?.label || tipo;
+
+// "PEDIDO DE FINALIZAÇÃO" → "Pedido de finalização"
+const frase = (t: string) => (t ? t.trim().charAt(0).toUpperCase() + t.trim().slice(1).toLowerCase() : t);
+
+const dataDe = (dateString: string) => {
+  let s = dateString;
+  if (!s.includes('Z') && !s.includes('+') && s.includes('T')) s += 'Z';
+  else if (!s.includes('T') && !s.includes('Z')) s = s.replace(' ', 'T') + 'Z';
+  return new Date(s);
+};
+const horaDe = (d: Date) => d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+const diaDe = (d: Date) => {
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  const x = new Date(d); x.setHours(0, 0, 0, 0);
+  const dif = Math.round((hoje.getTime() - x.getTime()) / 86400000);
+  if (dif === 0) return 'Hoje';
+  if (dif === 1) return 'Ontem';
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: x.getFullYear() === hoje.getFullYear() ? undefined : 'numeric' }).replace('.', '');
+};
 
 interface Comment {
   id: number;
@@ -36,24 +67,6 @@ const getInitials = (name?: string) => {
   return name.substring(0, 2).toUpperCase();
 };
 
-const formatDate = (dateString: string) => {
-  let parsedString = dateString;
-  if (!parsedString.includes('Z') && !parsedString.includes('+') && parsedString.includes('T')) {
-      parsedString += 'Z';
-  } else if (!parsedString.includes('T') && !parsedString.includes('Z')) {
-      parsedString = parsedString.replace(' ', 'T') + 'Z';
-  }
-  
-  const date = new Date(parsedString);
-  return date.toLocaleDateString('pt-BR', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
-};
-
 const CrmCommentHistory: React.FC<CrmCommentHistoryProps> = ({ clientId }) => {
   const { user } = useAuth();
   const [comments, setComments] = useState<Comment[]>([]);
@@ -64,6 +77,7 @@ const CrmCommentHistory: React.FC<CrmCommentHistoryProps> = ({ clientId }) => {
   const [isInternalNote, setIsInternalNote] = useState(false);
   const [commentImages, setCommentImages] = useState<File[]>([]);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+  const [expandidos, setExpandidos] = useState<Set<number>>(new Set());
 
   const fetchComments = async () => {
     try {
@@ -157,27 +171,28 @@ const CrmCommentHistory: React.FC<CrmCommentHistoryProps> = ({ clientId }) => {
   };
 
   return (
-    <div className="mt-8">
+    <div className="mt-2">
       {!isAddingNote ? (
-        <button 
+        <button
           onClick={() => setIsAddingNote(true)}
-          className="w-full py-4 border-2 border-dashed border-slate-200 dark:border-white/10 rounded-2xl text-slate-400 hover:text-violet-500 hover:border-violet-500/50 hover:bg-violet-500/5 transition-all flex items-center justify-center gap-2 mb-8 group"
+          className="w-full mb-6 flex items-center gap-3 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/[0.03] px-4 py-3 text-left text-sm text-slate-400 hover:border-violet-500/40 transition-colors"
         >
-          <Plus size={18} className="group-hover:scale-110 transition-transform" />
-          <span className="text-xs font-bold uppercase tracking-widest">Adicionar Nota</span>
+          <PenLine size={15} />
+          Escreva uma nota, contato ou acordo…
         </button>
       ) : (
-        <div className="bg-white dark:bg-white/5 p-4 rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm mb-8 animate-in fade-in slide-in-from-top-4 duration-300">
+        <div className="bg-white dark:bg-white/[0.03] p-4 rounded-xl border border-violet-500/30 shadow-sm mb-6 animate-in fade-in slide-in-from-top-2 duration-200">
           <div className="flex flex-wrap gap-2 mb-3">
             {COMMENT_TYPES.filter(t => t.id !== 'Mudança de Status').map(type => (
               <button
                 key={type.id}
                 onClick={() => setCommentType(type.id)}
-                className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest whitespace-nowrap transition-colors ${
-                  commentType === type.id 
-                    ? `${type.color} text-white` 
-                    : 'bg-slate-50 dark:bg-white/5 text-slate-500 hover:bg-slate-200 dark:hover:bg-white/10'
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11.5px] font-medium whitespace-nowrap transition-colors ${
+                  commentType === type.id
+                    ? 'text-white'
+                    : 'bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
                 }`}
+                style={commentType === type.id ? { background: visualDo(type.id).cor } : undefined}
               >
                 {type.label}
               </button>
@@ -193,7 +208,8 @@ const CrmCommentHistory: React.FC<CrmCommentHistoryProps> = ({ clientId }) => {
               onChange={(e) => setNewComment(e.target.value)}
               onPaste={handlePaste}
               placeholder="Adicione uma nota, observação ou acordo... (Cole ou arraste imagens aqui)"
-              className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-white/10 rounded-xl p-3 text-sm text-light-text dark:text-white placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-violet-500/20 min-h-[100px] resize-none mb-3"
+              autoFocus
+              className="w-full bg-transparent border-0 p-0 text-sm text-light-text dark:text-white placeholder:text-slate-400 outline-none focus:ring-0 min-h-[80px] resize-none mb-3"
             />
             {commentImages.length > 0 && (
               <div className="flex flex-wrap gap-2 mb-3">
@@ -227,7 +243,7 @@ const CrmCommentHistory: React.FC<CrmCommentHistoryProps> = ({ clientId }) => {
                   checked={isInternalNote}
                   onChange={(e) => setIsInternalNote(e.target.checked)}
                 />
-                <span className="text-xs font-bold text-slate-500 uppercase tracking-widest group-hover:text-slate-700 dark:group-hover:text-slate-300 transition-colors">Nota Interna</span>
+                <span className="text-[12px] text-slate-500 group-hover:text-slate-700 dark:group-hover:text-slate-300 transition-colors">Nota interna</span>
               </label>
               
               <label className="cursor-pointer text-slate-400 hover:text-violet-500 transition-colors" title="Adicionar Imagem">
@@ -252,77 +268,128 @@ const CrmCommentHistory: React.FC<CrmCommentHistoryProps> = ({ clientId }) => {
                   setNewComment('');
                   setCommentImages([]);
                 }}
-                className="px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
+                className="px-3 py-1.5 rounded-lg text-[12.5px] font-medium text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
               >
                 Cancelar
               </button>
               <button 
                 onClick={handleAddComment}
                 disabled={(!newComment.trim() && commentImages.length === 0) || isSubmittingComment}
-                className="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-colors flex items-center gap-2 disabled:opacity-50"
+                className="bg-violet-600 hover:bg-violet-700 text-white px-3.5 py-1.5 rounded-lg text-[12.5px] font-medium transition-colors flex items-center gap-2 disabled:opacity-50"
               >
                 {isSubmittingComment ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}
-                Salvar Nota
+                Salvar
               </button>
             </div>
           </div>
         </div>
       )}
 
-      <div className="space-y-6 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-200 dark:before:via-white/10 before:to-transparent">
-        {comments.length > 0 ? comments.map(comment => {
-          const typeConfig = COMMENT_TYPES.find(t => t.id === comment.type) || COMMENT_TYPES[0];
-          const authorName = comment.user_name || comment.user_email || comment.user_id;
-          const authorRole = comment.user_role || 'user';
-          
-          return (
-            <div key={comment.id} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
-              <div className={`flex items-center justify-center w-10 h-10 rounded-full border-4 border-white dark:border-slate-900 ${comment.user_id === 'sistema' ? 'bg-emerald-500' : typeConfig.color} text-white shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10 overflow-hidden`}>
-                {comment.user_id === 'sistema' ? (
-                  <Bot size={20} className="text-white" />
-                ) : comment.user_picture ? (
-                  <img src={comment.user_picture} alt={authorName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                ) : (
-                  <span className="text-xs font-bold">{getInitials(authorName)}</span>
-                )}
+      {/* Linha do tempo: feed compacto com trilho contínuo, agrupado por dia.
+          - mudança de status: uma linha;
+          - cobrança automática: uma linha ("2ª cobrança + multa · WhatsApp"), mensagem sob demanda;
+          - nota de pessoa: autor, tipo e o texto direto, sem caixa. */}
+      {comments.length === 0 ? (
+        <div className="text-center text-slate-500 text-sm py-8 rounded-xl border border-dashed border-slate-200 dark:border-white/10">
+          Nenhum registro ainda.
+        </div>
+      ) : (
+        <div className="relative">
+          <span className="absolute left-[13px] top-3 bottom-3 w-px bg-slate-200 dark:bg-white/10" />
+          {comments.map((comment, i) => {
+            const d = dataDe(comment.created_at);
+            const dia = diaDe(d);
+            const diaAnterior = i > 0 ? diaDe(dataDe(comments[i - 1].created_at)) : null;
+            const { cor, Icone } = visualDo(comment.type);
+            const sistema = comment.user_id === 'sistema';
+            const autor = sistema ? 'Automação' : (comment.user_name || comment.user_email || comment.user_id);
+            const papel = !sistema && comment.user_role && comment.user_role.toLowerCase() !== 'user' ? comment.user_role : null;
+            const texto = comment.content || '';
+            const status = comment.type === 'Mudança de Status' ? /Movido de (.*) para (.*)/i.exec(texto) : null;
+            // Cobrança automática: tira o resumo e o canal da própria mensagem
+            const disparo = /Disparo automático de cobrança\s*[—-]\s*(.+)/i.exec(texto);
+            const canal = /(WhatsApp|E-?mail)\s*·\s*([^\n]+)/i.exec(texto);
+            const aberto = expandidos.has(comment.id);
+            const alternar = () => setExpandidos(prev => { const n = new Set(prev); n.has(comment.id) ? n.delete(comment.id) : n.add(comment.id); return n; });
+
+            const bolinha = (
+              <div className="relative z-10 w-7 h-7 shrink-0 rounded-full overflow-hidden flex items-center justify-center ring-4 ring-white dark:ring-[rgb(var(--dark-card))]"
+                style={{ background: comment.user_picture && !sistema ? undefined : `color-mix(in srgb, ${cor} 16%, rgb(var(--dark-card)))`, color: cor }}>
+                {disparo ? <Icone size={13} />
+                  : sistema ? <Bot size={13} />
+                  : comment.user_picture ? <img src={comment.user_picture} alt={autor} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  : status ? <ArrowRight size={13} />
+                  : <span className="text-[10px] font-bold">{getInitials(autor)}</span>}
               </div>
-              <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] bg-white dark:bg-dark-card/40 p-4 rounded-2xl border border-slate-200 dark:border-white/5 shadow-sm">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-sm text-light-text dark:text-white">{authorName}</span>
-                    <span className="text-[10px] text-slate-400 capitalize">({authorRole})</span>
-                  </div>
-                  <span className="text-[10px] font-bold text-slate-400">{formatDate(comment.created_at)}</span>
-                </div>
-                <div className="mb-3">
-                  <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md ${typeConfig.color} bg-opacity-10 text-${typeConfig.color.replace('bg-', '')}`}>
-                    {comment.type}
-                  </span>
-                </div>
-                <p className="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-wrap">{comment.content}</p>
-                
-                {comment.images && comment.images.length > 0 && (
-                  <div className="mt-4 grid grid-cols-2 gap-2">
-                    {comment.images.map((img, idx) => (
-                      <button 
-                        key={idx} 
-                        onClick={() => setLightboxImage(img)} 
-                        className="block w-full text-left focus:outline-none"
-                      >
-                        <img src={img} alt="Anexo" className="w-full h-32 object-cover rounded-lg border border-slate-200 dark:border-white/10 hover:opacity-90 transition-opacity cursor-pointer" />
-                      </button>
-                    ))}
-                  </div>
+            );
+
+            return (
+              <React.Fragment key={comment.id}>
+                {dia !== diaAnterior && (
+                  <p className={`pl-10 text-[11px] font-semibold uppercase tracking-wider text-slate-400 ${i === 0 ? 'pb-1' : 'pt-4 pb-1'}`}>{dia}</p>
                 )}
-              </div>
-            </div>
-          );
-        }) : (
-          <div className="text-center text-slate-500 text-sm py-8 relative z-10 bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-slate-200 dark:border-white/10 shadow-sm">
-            Nenhum comentário registrado ainda.
-          </div>
-        )}
-      </div>
+                <div className="relative flex gap-3 py-1.5">
+                  {bolinha}
+                  <div className="min-w-0 flex-1 pt-[5px]">
+                    {status ? (
+                      <div className="flex items-baseline gap-3">
+                        <p className="min-w-0 flex-1 text-[13px] text-slate-500 dark:text-slate-400 leading-snug">
+                          <span className="font-medium text-light-text dark:text-white">{autor}</span> moveu de{' '}
+                          <span className="text-slate-700 dark:text-slate-300">{frase(status[1]) === 'Nenhum' ? 'fora da retenção' : frase(status[1])}</span>
+                          {' '}para{' '}
+                          <span className="font-medium" style={{ color: cor }}>{frase(status[2])}</span>
+                        </p>
+                        <span className="shrink-0 text-[11px] text-slate-400">{horaDe(d)}</span>
+                      </div>
+                    ) : disparo ? (
+                      <>
+                        <div className="flex items-baseline gap-3">
+                          <p className="min-w-0 flex-1 text-[13px] leading-snug text-slate-500 dark:text-slate-400">
+                            <span className="font-medium text-light-text dark:text-white">Cobrança automática</span>
+                            {' · '}{disparo[1].replace(/[^\p{L}\p{N}\s+ºª.,-]/gu, '').trim()}
+                            {canal && <span className="ml-2 inline-flex items-center rounded-full bg-slate-100 dark:bg-white/5 px-2 py-0.5 text-[10.5px] text-slate-500 dark:text-slate-400">{/mail/i.test(canal[1]) ? 'E-mail' : 'WhatsApp'}</span>}
+                            <button onClick={alternar} className="ml-2 text-[12px] font-medium text-violet-600 dark:text-violet-400 hover:underline">
+                              {aberto ? 'ocultar' : 'ver mensagem'}
+                            </button>
+                          </p>
+                          <span className="shrink-0 text-[11px] text-slate-400">{horaDe(d)}</span>
+                        </div>
+                        {aberto && (
+                          <p className="mt-2 rounded-xl bg-slate-50 dark:bg-white/[0.03] px-3.5 py-2.5 text-[12.5px] leading-relaxed text-slate-600 dark:text-slate-300 whitespace-pre-wrap break-words">{texto}</p>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-[13px] font-medium text-light-text dark:text-white">{autor}</span>
+                          {papel && <span className="text-[11px] text-slate-400">{papel}</span>}
+                          <span className="text-[11px] font-medium" style={{ color: cor }}>{rotuloDoTipo(comment.type)}</span>
+                          <span className="ml-auto shrink-0 text-[11px] text-slate-400">{horaDe(d)}</span>
+                        </div>
+                        {texto && (
+                          <p className={`mt-1 text-[13px] leading-relaxed text-slate-600 dark:text-slate-300 whitespace-pre-wrap break-words ${texto.length > 400 && !aberto ? 'line-clamp-6' : ''}`}>{texto}</p>
+                        )}
+                        {texto.length > 400 && (
+                          <button onClick={alternar} className="mt-0.5 text-[12px] font-medium text-violet-600 dark:text-violet-400 hover:underline">{aberto ? 'Recolher' : 'Ver tudo'}</button>
+                        )}
+                        {comment.images && comment.images.length > 0 && (
+                          <div className="mt-2 grid grid-cols-3 gap-2">
+                            {comment.images.map((img, idx) => (
+                              <button key={idx} onClick={() => setLightboxImage(img)} className="block w-full text-left focus:outline-none">
+                                <img src={img} alt="Anexo" className="w-full h-24 object-cover rounded-lg border border-slate-200 dark:border-white/10 hover:opacity-90 transition-opacity cursor-pointer" />
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              </React.Fragment>
+            );
+          })}
+        </div>
+      )}
 
       {/* Lightbox Popup */}
       <AnimatePresence>

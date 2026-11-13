@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
+import '../components/graficos.css';
 import ClientesMapa from '../components/ClientesMapa';
 import { MapPin as IconeMapa } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -604,28 +605,29 @@ const ActiveClients: React.FC = () => {
         const totais = allActiveClients.length;
         const comAssinatura = allActiveClients.filter(c => c.hasActiveSubscription).length;
         const pct = (n: number) => (totais ? `${Math.round((n / totais) * 100)}%` : '—');
+        // Mesmo desenho do resumo da Retenção (13/11/2026): cartão gf, ícone grande à esquerda,
+        // rótulo, número em fonte de número e uma linha de apoio. Cor só no número quando há alerta.
         const cards = [
-          { rotulo: 'Clientes totais', valor: totais, sub: `${comAssinatura} com assinatura no Asaas`, Icone: Users, cor: 'text-violet-500', fundo: 'bg-violet-500/10', carregando: statsLoading, alerta: false },
-          { rotulo: 'Clientes ativos', valor: activeClients.length, sub: `${pct(activeClients.length)} da base, fora da retenção`, Icone: CheckCircle2, cor: 'text-emerald-500', fundo: 'bg-emerald-500/10', carregando: statsLoading, alerta: false },
-          { rotulo: 'Retenção', valor: quarentenaClients.length, sub: quarentenaClients.length ? `${pct(quarentenaClients.length)} da base em risco` : 'ninguém em retenção', Icone: ShieldAlert, cor: 'text-amber-500', fundo: 'bg-amber-500/10', carregando: false, alerta: false },
-          { rotulo: 'Entradas', valor: stats.entradas, sub: 'fechamentos este mês', Icone: UserPlus, cor: 'text-blue-500', fundo: 'bg-blue-500/10', carregando: statsLoading, alerta: false },
-          { rotulo: 'Churn', valor: stats.churn, sub: stats.churn ? `saída${stats.churn > 1 ? 's' : ''} este mês` : 'nenhuma saída este mês', Icone: UserMinus, cor: 'text-rose-500', fundo: 'bg-rose-500/10', carregando: statsLoading, alerta: stats.churn > 0 },
+          { rotulo: 'Clientes totais', valor: totais, sub: `${comAssinatura} com assinatura no Asaas`, Icone: Users, cor: '#8b5cf6', carregando: statsLoading, alerta: false },
+          { rotulo: 'Clientes ativos', valor: activeClients.length, sub: `${pct(activeClients.length)} da base, fora da retenção`, Icone: CheckCircle2, cor: '#10b981', carregando: statsLoading, alerta: false },
+          { rotulo: 'Retenção', valor: quarentenaClients.length, sub: quarentenaClients.length ? `${pct(quarentenaClients.length)} da base em risco` : 'ninguém em retenção', Icone: ShieldAlert, cor: '#f59e0b', carregando: false, alerta: quarentenaClients.length > 0 },
+          { rotulo: 'Entradas', valor: stats.entradas, sub: 'fechamentos este mês', Icone: UserPlus, cor: '#3b82f6', carregando: statsLoading, alerta: false },
+          { rotulo: 'Churn', valor: stats.churn, sub: stats.churn ? `saída${stats.churn > 1 ? 's' : ''} este mês` : 'nenhuma saída este mês', Icone: UserMinus, cor: '#f43f5e', carregando: statsLoading, alerta: stats.churn > 0 },
         ];
         return (
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4 mb-8">
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 mb-8">
             {cards.map(c => (
-              <div key={c.rotulo} className={`px-5 py-4 rounded-2xl border backdrop-blur-md ${
-                c.alerta ? 'bg-rose-500/[0.06] border-rose-500/20' : 'bg-white dark:bg-dark-card/60 border-slate-200 dark:border-white/5'
-              }`}>
-                <div className="flex items-center gap-2 mb-2">
-                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${c.fundo}`}>
-                    <c.Icone size={14} className={c.cor} />
-                  </div>
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{c.rotulo}</p>
-                  {c.carregando && <div className="ml-auto w-3 h-3 border-2 border-slate-300/40 border-t-slate-400 rounded-full animate-spin" />}
+              <div key={c.rotulo} className="gf-cartao flex items-center gap-4 px-5 py-4">
+                <div className="w-11 h-11 shrink-0 rounded-xl flex items-center justify-center" style={{ background: `color-mix(in srgb, ${c.cor} 14%, transparent)`, color: c.cor }}>
+                  <c.Icone size={20} />
                 </div>
-                <h3 className={`text-2xl font-bold ${c.alerta ? 'text-rose-500' : 'text-light-text dark:text-white'}`}>{c.valor}</h3>
-                <p className={`text-[11px] mt-0.5 ${c.alerta ? 'text-rose-400' : 'text-slate-500'}`}>{c.sub}</p>
+                <div className="min-w-0">
+                  <p className="text-[12.5px] text-slate-500 dark:text-slate-400 truncate">{c.rotulo}</p>
+                  {c.carregando
+                    ? <div className="my-1.5 h-6 w-12 rounded bg-slate-200/60 dark:bg-white/5 animate-pulse" />
+                    : <p className="numero text-[26px] leading-tight text-dark-text" style={c.alerta ? { color: c.cor } : undefined}>{c.valor}</p>}
+                  <p className="text-[11.5px] text-slate-400 dark:text-slate-500 truncate">{c.sub}</p>
+                </div>
               </div>
             ))}
           </div>

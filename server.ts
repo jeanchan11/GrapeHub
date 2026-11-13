@@ -9861,6 +9861,11 @@ app.get("/api/todos", async (req, res) => {
           COALESCE(r.payment_date, r.credit_date, r.estimated_credit_date,
                    (r.raw_json->>'estimatedCreditDate')::date)::text as credit_date,
           r.due_date::text as expiration_date,
+          -- Vencimento ORIGINAL: define o mês a que a mensalidade se refere. Cobrança
+          -- prorrogada (ex.: setembro vencia 25/09 e foi para 12/10) aparecia como um
+          -- segundo "Outubro" quando o mês saía do vencimento atual.
+          COALESCE((r.raw_json->>'originalDueDate')::date, r.due_date)::text as original_due_date,
+          r.subscription_id,
           r.status as asaas_status,
           r.invoice_url,
           CASE 

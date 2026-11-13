@@ -12,6 +12,7 @@ import { iconOf, colorOf, NotaSnapshot } from '../../components/performanceCrite
 import StarRow from '../../components/StarRow';
 import { confirmDialog } from '@/src/lib/confirm';
 import { toast } from '@/src/lib/toast';
+import { dataDoBanco } from '@/src/lib/dataBanco';
 import AgendarProximoInline, { ProximoAgendamento } from './AgendarProximoInline';
 
 // Helper: fetch autenticado com token Firebase
@@ -90,11 +91,7 @@ function TrendBadge({ trend, diff }: { trend: 'subiu' | 'caiu' | 'estavel' | nul
 
 function fmtDate(iso: string) {
   if (!iso) return '';
-  // If it's a date string like '2026-06-01' without time, add T12:00:00 to avoid timezone offset issues.
-  // If it already has 'T' (like from Postgres timestamp), parse it directly.
-  const dateStr = iso.includes('T') ? iso : iso + 'T12:00:00';
-  const d = new Date(dateStr);
-  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
+  return dataDoBanco(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 // ── Star Picker ───────────────────────────────────────────────────────────────
@@ -590,10 +587,7 @@ export default function DesempenhoTab({ collaboratorId, isAdmin }: { collaborato
 
       {/* ── Card Próxima Avaliação ── */}
       {proximaAvaliacao && (() => {
-        const dataStr = proximaAvaliacao.data.includes('T')
-          ? proximaAvaliacao.data
-          : proximaAvaliacao.data + 'T12:00:00';
-        const dataObj = new Date(dataStr);
+        const dataObj = dataDoBanco(proximaAvaliacao.data);
         const hoje = new Date();
         hoje.setHours(0, 0, 0, 0);
         const diasRestantes = Math.ceil((dataObj.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24));
