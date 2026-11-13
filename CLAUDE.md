@@ -320,6 +320,18 @@ Não há CI. O processo é manual e tem uma pegadinha:
   devolveu US$ 1,1687 para esse mesmo vídeo. **III e V nunca foram medidos** e
   herdaram o número do IV. A cota por head virou `modo='valor'` (reais) —
   ninguém tinha limite em crédito configurado, todos em zero.
+  **Editor de locução** (`EditorRoteiro` em `Estudio.tsx`): textarea transparente por cima de
+  uma camada que desenha as pausas `<#x#>` em pílula. As duas camadas têm de quebrar linha no
+  MESMO ponto — a pílula com `px-1`/negrito e a barra de rolagem só no textarea faziam a pausa
+  entrar no meio da palavra ("situaç<#0.25#>es", chamado de 21/10/2026). Hoje: pílula sem
+  padding (respiro via box-shadow), textarea cresce com o texto e quem rola é a caixa de fora.
+  Pausa é bloco: cursor dentro dela seleciona a marcação inteira. Inserir e apagar vão pelo
+  caminho nativo (`execCommand('insertText')` / estender a seleção e deixar o Backspace agir) —
+  `onChange` com texto montado à mão jogava o cursor para o fim.
+  **Quem configura** (21/10/2026): o catálogo — avatares, vozes (incl. clonar e prévia), sons
+  ambiente, tipos de copy — é do superadmin **e** do `diretor-operacional` (Adriano)
+  (`gereCatalogo` em `estudio.ts`). A aba **Gastos** (teto, câmbio, preço/minuto, cotas) só
+  aparece para o superadmin, e o `PUT /api/estudio/config` **ignora** esses campos de quem não é.
   **Os dois tetos barram de verdade**, conferidos em `POST /api/estudio/videos`
   ANTES de subir o asset: o da conta (`teto_mensal_brl`) vale para todo mundo,
   superadmin incluído, e o de cada head vale por cima. A checagem soma o custo
@@ -611,6 +623,9 @@ Não há CI. O processo é manual e tem uma pegadinha:
   `assistiu` (player) ou `manual` (gestor marcou na Turma, com `completed_by`); marcar/desmarcar
   vai para `lesson_completion_log`. Conclusão manual nunca sobrescreve quem assistiu, e só ela
   pode ser desfeita. Aula tem descrição editável no lugar e comentários (`lesson_comments`).
+  Quem administra (cria curso/módulo/aula, marca conclusão, vê a Turma) é decidido só no servidor
+  (`ehAdmin` em `cursos.ts` → `is_admin` para a tela): superadmin, admin, `gerente-*` e, desde
+  21/10/2026, `diretor-operacional` (Adriano).
   Pendente: atribuição de trilha por cargo (tabela
   `course_assignments` existe, falta a tela), prazo e certificado.
 
